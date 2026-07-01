@@ -397,7 +397,7 @@ export default function TradesPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="plannedEntry" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                     Planned Entry
@@ -408,6 +408,21 @@ export default function TradesPage() {
                     step="any"
                     value={form.plannedEntry}
                     onChange={(e) => setForm((f) => ({ ...f, plannedEntry: e.target.value }))}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="plannedTarget1" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Target 1
+                  </label>
+                  <input
+                    id="plannedTarget1"
+                    type="number"
+                    step="any"
+                    value={form.plannedTarget1}
+                    onChange={(e) => setForm((f) => ({ ...f, plannedTarget1: e.target.value }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     placeholder="0.00"
                   />
@@ -429,34 +444,19 @@ export default function TradesPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="plannedTarget1" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Target 1
+                  <label htmlFor="plannedTarget2" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Target 2
                   </label>
                   <input
-                    id="plannedTarget1"
+                    id="plannedTarget2"
                     type="number"
                     step="any"
-                    value={form.plannedTarget1}
-                    onChange={(e) => setForm((f) => ({ ...f, plannedTarget1: e.target.value }))}
+                    value={form.plannedTarget2}
+                    onChange={(e) => setForm((f) => ({ ...f, plannedTarget2: e.target.value }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     placeholder="0.00"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label htmlFor="plannedTarget2" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Target 2
-                </label>
-                <input
-                  id="plannedTarget2"
-                  type="number"
-                  step="any"
-                  value={form.plannedTarget2}
-                  onChange={(e) => setForm((f) => ({ ...f, plannedTarget2: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
               </div>
 
               <div>
