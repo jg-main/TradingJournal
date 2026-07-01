@@ -33,6 +33,28 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     let accountId = searchParams.get('accountId');
+    const dateFrom = searchParams.get('dateFrom');
+    const dateTo = searchParams.get('dateTo');
+
+    // Validate date parameters if provided
+    if (dateFrom && isNaN(Date.parse(dateFrom))) {
+      return NextResponse.json(
+        {
+          error: 'Invalid dateFrom parameter',
+          details: { fieldErrors: { dateFrom: ['Invalid date format. Use ISO date (YYYY-MM-DD).'] } },
+        },
+        { status: 400 },
+      );
+    }
+    if (dateTo && isNaN(Date.parse(dateTo))) {
+      return NextResponse.json(
+        {
+          error: 'Invalid dateTo parameter',
+          details: { fieldErrors: { dateTo: ['Invalid date format. Use ISO date (YYYY-MM-DD).'] } },
+        },
+        { status: 400 },
+      );
+    }
 
     // Resolve account: provided param -> settings.defaultAccountId -> first active account
     if (!accountId) {
@@ -70,7 +92,20 @@ export async function GET(request: NextRequest) {
 
     // 2. Separate closed trades from non-closed trades
     const closedTrades = allTrades.filter((t) => t.status === 'closed');
-    const closedTradeIds = closedTrades.map((t) => t.id);
+
+    // Apply date filter to closed trades (scope P&L metrics to date range)
+    const dateFilteredClosedTrades =
+      dateFrom || dateTo
+        ? closedTrades.filter((t) => {
+            if (!t.closedAt) return false;
+            const closedDate = t.closedAt.slice(0, 10);
+            if (dateFrom && closedDate < dateFrom) return false;
+            if (dateTo && closedDate > dateTo) return false;
+            return true;
+          })
+        : closedTrades;
+
+    const closedTradeIds = dateFilteredClosedTrades.map((t) => t.id);
 
     // 3. Batch-fetch related data for ALL trade IDs (follows review-dashboard pattern)
     const executionsMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();
@@ -111,8 +146,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 4. Build KpiTradeInput array from ALL trades (allTrades for counts, closedTrades for P&L metrics)
-    const closedKpiInputs: KpiTradeInput[] = closedTrades.map((trade) => ({
+    // 4. Build KpiTradeInput array from ALL trades (allTrades for counts, dateFilteredClosedTrades for P&L metrics)
+    const closedKpiInputs: KpiTradeInput[] = dateFilteredClosedTrades.map((trade) => ({
       id: trade.id,
       direction: trade.direction as 'long' | 'short',
       status: trade.status,
@@ -185,7 +220,17 @@ export async function GET(request: NextRequest) {
       .orderBy(accountRollforward.date)
       .all();
 
-    const rollforwardRowsForCharts: RollforwardRow[] = allRollforwardRows.map((r) => ({
+    // Apply date filter to rollforward rows for charts
+    const dateFilteredRollforwardRows = dateFrom || dateTo
+      ? allRollforwardRows.filter((r) => {
+          const d = r.date;
+          if (dateFrom && d < dateFrom) return false;
+          if (dateTo && d > dateTo) return false;
+          return true;
+        })
+      : allRollforwardRows;
+
+    const rollforwardRowsForCharts: RollforwardRow[] = dateFilteredRollforwardRows.map((r) => ({
       date: r.date,
       endingEquity: r.endingEquity ?? null,
       drawdownAmount: r.drawdownAmount ?? null,

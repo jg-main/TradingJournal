@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
 import { DashboardChart } from '@/components/dashboard-chart';
+import { DashboardFilters } from '@/components/dashboard-filters';
 import type { EquityDataPoint, DrawdownDataPoint } from '@/lib/equity';
 import type { MonthlyPerformanceItem, RDistributionBin } from '@/lib/dashboard';
 
@@ -137,11 +138,26 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Filter state
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [accountId, setAccountId] = useState<string | null>(null);
+
+  const buildDashboardUrl = () => {
+    const params = new URLSearchParams();
+    if (accountId) params.set('accountId', accountId);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    const qs = params.toString();
+    return `/api/dashboard${qs ? `?${qs}` : ''}`;
+  };
+
   const fetchDashboard = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dashboard');
+      const url = buildDashboardUrl();
+      const res = await fetch(url);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? 'Failed to load dashboard');
@@ -162,7 +178,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchDashboard();
-  }, []);
+  }, [dateFrom, dateTo, accountId]);
 
   // Detect empty state: all measurable fields are at empty/null baseline
   const isEmpty =
@@ -183,6 +199,16 @@ export default function Home() {
       <p className="mb-8 text-sm text-zinc-500 dark:text-zinc-400">
         Overview of your trading performance and activity.
       </p>
+
+      {/* Global Filter Bar */}
+      <DashboardFilters
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        accountId={accountId}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
+        onAccountIdChange={setAccountId}
+      />
 
       {/* Error state — shown inline below header, keeps rest of page visible */}
       {error && (

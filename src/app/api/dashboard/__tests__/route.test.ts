@@ -241,7 +241,11 @@ interface DashboardRouteResult {
   body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; error?: string; details?: unknown };
 }
 
-function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
+function doGetDashboard(
+  queryAccountId?: string | null,
+  dateFrom?: string | null,
+  dateTo?: string | null,
+): DashboardRouteResult {
   try {
     let accountId: string | null = queryAccountId ?? null;
 
@@ -281,6 +285,19 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
 
     // 2. Separate closed trades
     const closedTrades = allTrades.filter((t) => t.status === 'closed');
+
+    // Apply date filter to closed trades (matches route.ts logic)
+    const dateFilteredClosedTrades =
+      dateFrom || dateTo
+        ? closedTrades.filter((t) => {
+            if (!t.closedAt) return false;
+            const closedDate = t.closedAt.slice(0, 10);
+            if (dateFrom && closedDate < dateFrom) return false;
+            if (dateTo && closedDate > dateTo) return false;
+            return true;
+          })
+        : closedTrades;
+
     // 3. Batch-fetch related data (using raw SQL for test replica — same effect as inArray)
     const executionsMap = new Map<string, (typeof schema.tradeExecutions.$inferSelect)[]>();
     const gradesMap = new Map<string, typeof schema.tradeGrades.$inferSelect>();
@@ -371,7 +388,7 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
       closedAt: trade.closedAt ?? null,
     }));
 
-    const closedKpiInputs: KpiTradeInput[] = closedTrades.map((trade) => ({
+    const closedKpiInputs: KpiTradeInput[] = dateFilteredClosedTrades.map((trade) => ({
       id: trade.id,
       direction: trade.direction as 'long' | 'short',
       status: trade.status,
@@ -420,7 +437,17 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
       .orderBy(schema.accountRollforward.date)
       .all();
 
-    const rollforwardRowsForCharts: RollforwardRow[] = allRfRows.map((r) => ({
+    // Apply date filter to rollforward rows for charts (matches route.ts logic)
+    const dateFilteredRfRows = dateFrom || dateTo
+      ? allRfRows.filter((r) => {
+          const d = r.date;
+          if (dateFrom && d < dateFrom) return false;
+          if (dateTo && d > dateTo) return false;
+          return true;
+        })
+      : allRfRows;
+
+    const rollforwardRowsForCharts: RollforwardRow[] = dateFilteredRfRows.map((r) => ({
       date: r.date,
       endingEquity: r.endingEquity ?? null,
       drawdownAmount: r.drawdownAmount ?? null,
@@ -1382,6 +1409,184 @@ cleanup();
   assert(result.body.monthlyPerformance!.length === 2, 'Two months from different months');
   assert(result.body.monthlyPerformance![0].month === '2026-07', 'First is July (chronological)');
   assert(result.body.monthlyPerformance![1].month === '2026-08', 'Second is August');
+}
+
+// ── Test 29: Date filter - no dateFrom or dateTo (shows all) ────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'DT-ALL',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+  seedRiskSnapshot(t1, 100)
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'DT-ALL2',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-07-01T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 120 });
+  seedRiskSnapshot(t2, 100)
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.kpis!.totalTrades === 2, 'No date filter shows all 2 trades');
+  assertClose(result.body.kpis!.netPnl, 300, 'No date filter netPnl = 100 + 200');
+}
+
+// ── Test 30: Date filter - only dateFrom ───────────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'DT-FROM1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+  seedRiskSnapshot(t1, 100)
+
+  // This trade closed after dateFrom cutoff
+  const t2 = seedTrade(accountId, {
+    symbol: 'DT-FROM2',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-07-15T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 120 });
+  seedRiskSnapshot(t2, 100)
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  // Only trades with closedAt >= 2026-07-01 should contribute P&L
+  const result = doGetDashboard(accountId, '2026-07-01');
+
+  // totalTrades still counts all trades (unfiltered)
+  assert(result.body.kpis!.totalTrades === 2, 'totalTrades still = 2 (unfiltered)');
+  // netPnl only includes trades closed on/after dateFrom
+  assertClose(result.body.kpis!.netPnl, 200, 'dateFrom filter: netPnl only from July trade');
+}
+
+// ── Test 31: Date filter - only dateTo ─────────────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'DT-TO1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+  seedRiskSnapshot(t1, 100)
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'DT-TO2',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-07-15T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 120 });
+  seedRiskSnapshot(t2, 100)
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  // Only trades with closedAt <= 2026-06-30 should contribute P&L
+  const result = doGetDashboard(accountId, null, '2026-06-30');
+
+  assert(result.body.kpis!.totalTrades === 2, 'totalTrades still = 2 (unfiltered)');
+  assertClose(result.body.kpis!.netPnl, 100, 'dateTo filter: netPnl only from June trade');
+}
+
+// ── Test 32: Date filter - both dateFrom and dateTo set ────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'DT-BOTH1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-05-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+  seedRiskSnapshot(t1, 100)
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'DT-BOTH2',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 120 });
+  seedRiskSnapshot(t2, 100)
+
+  const t3 = seedTrade(accountId, {
+    symbol: 'DT-BOTH3',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-07-20T10:00:00.000Z',
+  });
+  seedExecution(t3, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t3, { action: 'sell', quantity: 10, price: 130 });
+  seedRiskSnapshot(t3, 100)
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  // dateFrom=2026-06-01, dateTo=2026-06-30 — only t2 should contribute
+  const result = doGetDashboard(accountId, '2026-06-01', '2026-06-30');
+
+  assert(result.body.kpis!.totalTrades === 3, 'totalTrades still = 3 (unfiltered)');
+  assertClose(result.body.kpis!.netPnl, 200, 'Both filters: netPnl only from June trade');
+}
+
+// ── Test 33: Date filter - no matching trades ──────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'DT-NONE1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+  seedRiskSnapshot(t1, 100)
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  // Filter to a date range with no closed trades
+  const result = doGetDashboard(accountId, '2025-01-01', '2025-01-31');
+
+  assert(result.body.kpis!.totalTrades === 1, 'totalTrades still = 1 (unfiltered)');
+  assertClose(result.body.kpis!.netPnl, 0, 'No matching closed trades → netPnl = 0');
+  assert(result.body.kpis!.winRate === null, 'No matching closed trades → winRate = null');
+  assert(result.body.kpis!.avgR === null, 'No matching closed trades → avgR = null');
 }
 
 // ── Summary ────────────────────────────────────────────────────────────
