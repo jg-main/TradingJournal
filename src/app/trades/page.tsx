@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus, NotebookPen } from 'lucide-react';
+import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
 import {
@@ -561,7 +562,12 @@ export default function TradesPage() {
               {filteredItems.map((item) => (
                 <tr key={item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
                   <td className="px-4 py-3 font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                    {item.tradeCode}
+                    <Link
+                      href={'/trades/' + item.id}
+                      className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    >
+                      {item.tradeCode}
+                    </Link>
                   </td>
                   <td className="px-4 py-3 font-semibold text-zinc-900 dark:text-zinc-100">
                     {item.symbol}
