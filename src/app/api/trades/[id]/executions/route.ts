@@ -114,6 +114,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // ── Action-direction validation ────────────────────────────
+
+    const DIRECTION_ACTIONS: Record<string, string[]> = {
+      long: ['buy', 'add', 'sell', 'reduce'],
+      short: ['sell_short', 'buy_to_cover'],
+    };
+
+    if (!DIRECTION_ACTIONS[trade.direction]?.includes(parsed.data.action)) {
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              action: [
+                `Action "${parsed.data.action}" is not valid for a ${trade.direction} trade. ` +
+                `Valid actions: ${DIRECTION_ACTIONS[trade.direction].join(', ')}`,
+              ],
+            },
+          },
+        },
+        { status: 400 },
+      );
+    }
+
     const executionId = randomUUID();
     const now = new Date().toISOString();
 
