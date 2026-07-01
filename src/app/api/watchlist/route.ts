@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { watchlistItems } from '@/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { watchlistItems, lookupValues } from '@/db/schema';
+import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
 
 const createWatchlistItemSchema = z.object({
-  symbol: z.string().min(1, 'Symbol is required').max(20),
+  symbol: z.string().trim().min(1, 'Symbol is required').max(20),
   sectorId: z.string().nullable().optional(),
-  setupId: z.string().nullable().optional(),
+  setup: z.string().nullable().optional(),
   direction: z.enum(['long', 'short']),
   thesis: z.string().nullable().optional(),
   marketContext: z.string().nullable().optional(),
@@ -23,9 +23,9 @@ const createWatchlistItemSchema = z.object({
 });
 
 const updateWatchlistItemSchema = z.object({
-  symbol: z.string().min(1).max(20).optional(),
+  symbol: z.string().trim().min(1).max(20).optional(),
   sectorId: z.string().nullable().optional(),
-  setupId: z.string().nullable().optional(),
+  setup: z.string().nullable().optional(),
   direction: z.enum(['long', 'short']).optional(),
   thesis: z.string().nullable().optional(),
   marketContext: z.string().nullable().optional(),
@@ -79,6 +79,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Resolve setup string to UUID if provided
+    let resolvedSetupId: string | null = null;
+    if (parsed.data.setup) {
+      const lowerValue = parsed.data.setup.toLowerCase();
+      const lookup = db
+        .select()
+        .from(lookupValues)
+        .where(and(eq(lookupValues.type, 'setup'), eq(lookupValues.value, lowerValue)))
+        .get();
+      if (!lookup) {
+        return NextResponse.json(
+          { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } },
+          { status: 400 }
+        );
+      }
+      resolvedSetupId = lookup.id;
+    }
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -88,7 +106,7 @@ export async function POST(request: NextRequest) {
         dateAdded: now,
         symbol: parsed.data.symbol,
         sectorId: parsed.data.sectorId ?? null,
-        setupId: parsed.data.setupId ?? null,
+        setupId: resolvedSetupId,
         direction: parsed.data.direction,
         thesis: parsed.data.thesis ?? null,
         marketContext: parsed.data.marketContext ?? null,

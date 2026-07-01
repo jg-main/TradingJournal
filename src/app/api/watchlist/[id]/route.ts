@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { watchlistItems } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { watchlistItems, lookupValues } from '@/db/schema';
+import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 
 const updateWatchlistItemSchema = z.object({
-  symbol: z.string().min(1).max(20).optional(),
+  symbol: z.string().trim().min(1).max(20).optional(),
   sectorId: z.string().nullable().optional(),
-  setupId: z.string().nullable().optional(),
+  setup: z.string().nullable().optional(),
   direction: z.enum(['long', 'short']).optional(),
   thesis: z.string().nullable().optional(),
   marketContext: z.string().nullable().optional(),
@@ -76,8 +76,43 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Map 'setup' back to 'setupId' for the DB column
+    const updateData: Record<string, unknown> = {};
+    if (parsed.data.setup !== undefined) {
+      if (parsed.data.setup === null) {
+        updateData.setupId = null;
+      } else {
+        const lowerValue = parsed.data.setup.toLowerCase();
+        const lookup = db
+          .select()
+          .from(lookupValues)
+          .where(and(eq(lookupValues.type, 'setup'), eq(lookupValues.value, lowerValue)))
+          .get();
+        if (!lookup) {
+          return NextResponse.json(
+            { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } },
+            { status: 400 }
+          );
+        }
+        updateData.setupId = lookup.id;
+      }
+    }
+    if (parsed.data.symbol !== undefined) updateData.symbol = parsed.data.symbol;
+    if (parsed.data.sectorId !== undefined) updateData.sectorId = parsed.data.sectorId;
+    if (parsed.data.direction !== undefined) updateData.direction = parsed.data.direction;
+    if (parsed.data.thesis !== undefined) updateData.thesis = parsed.data.thesis;
+    if (parsed.data.marketContext !== undefined) updateData.marketContext = parsed.data.marketContext;
+    if (parsed.data.keyLevel !== undefined) updateData.keyLevel = parsed.data.keyLevel;
+    if (parsed.data.triggerPrice !== undefined) updateData.triggerPrice = parsed.data.triggerPrice;
+    if (parsed.data.plannedStop !== undefined) updateData.plannedStop = parsed.data.plannedStop;
+    if (parsed.data.targetPrice !== undefined) updateData.targetPrice = parsed.data.targetPrice;
+    if (parsed.data.status !== undefined) updateData.status = parsed.data.status;
+    if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
+    if (parsed.data.promotedTradeId !== undefined) updateData.promotedTradeId = parsed.data.promotedTradeId;
+    updateData.updatedAt = new Date().toISOString();
+
     db.update(watchlistItems)
-      .set({ ...parsed.data, updatedAt: new Date().toISOString() })
+      .set(updateData)
       .where(eq(watchlistItems.id, id))
       .run();
 
