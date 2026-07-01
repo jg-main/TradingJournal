@@ -640,12 +640,8 @@ export default function Home() {
               </CardContent>
             </Card>
           </div>
-
-          {/* Empty state when both sides have 0 trades */}
-          </div>
-        ) : null}
-      </section>
-    )}
+        </section>
+      )}
 
     {/* Process Quality Score Distribution Panel — grade-tier histogram */}
     {!loading && kpis !== null && !isEmpty && processScoreDistribution !== null && (
@@ -717,23 +713,7 @@ export default function Home() {
           </CardContent>
         </Card>
       </section>
-    )}
-          {directionalPerformance.long.tradeCount === 0 && directionalPerformance.short.tradeCount === 0 && (
-            <div className="mt-2">
-              <EmptyState
-                icon={
-                  <Target
-                    className="size-10 text-zinc-300 dark:text-zinc-600"
-                    strokeWidth={1}
-                  />
-                }
-                title="No directional data available"
-                description="Close long and short trades to see your directional performance breakdown."
-              />
-            </div>
-          )}
-        </section>
-      )}
+)}
 
       {/* Charts loading skeleton — pulse-animated rectangles during data fetch */}
       {loading && (
