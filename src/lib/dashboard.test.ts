@@ -153,9 +153,12 @@ const PLANNED_TRADE: KpiTradeInput = makeTrade(
 );
 
 const ROLLFORWARD: RollforwardRow = {
+  date: '2026-06-30',
   endingEquity: 12500,
   drawdownAmount: 850,
   drawdownPct: 6.8,
+  cumulativePnl: 2500,
+  highWaterMark: 13000,
 };
 
 // ────────────────────────────────────────────────────────────────────────

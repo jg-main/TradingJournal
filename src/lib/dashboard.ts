@@ -33,9 +33,12 @@ export interface KpiTradeInput {
  * A single row from the account_rollforward table.
  */
 export interface RollforwardRow {
-  endingEquity: number;
-  drawdownAmount: number;
-  drawdownPct: number;
+  date: string;
+  endingEquity: number | null;
+  drawdownAmount: number | null;
+  drawdownPct: number | null;
+  cumulativePnl: number | null;
+  highWaterMark: number | null;
 }
 
 /**

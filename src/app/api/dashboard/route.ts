@@ -158,9 +158,12 @@ export async function GET(request: NextRequest) {
 
     const latestRollforward: RollforwardRow | null = rollforwardRow
       ? {
+          date: rollforwardRow.date,
           endingEquity: rollforwardRow.endingEquity ?? 0,
           drawdownAmount: rollforwardRow.drawdownAmount ?? 0,
           drawdownPct: rollforwardRow.drawdownPct ?? 0,
+          cumulativePnl: rollforwardRow.cumulativePnl ?? null,
+          highWaterMark: rollforwardRow.highWaterMark ?? null,
         }
       : null;
 

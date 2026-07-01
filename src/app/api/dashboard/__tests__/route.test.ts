@@ -384,9 +384,12 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
 
     const latestRollforward: RollforwardRow | null = rf
       ? {
+          date: rf.date,
           endingEquity: rf.endingEquity ?? 0,
           drawdownAmount: rf.drawdownAmount ?? 0,
           drawdownPct: rf.drawdownPct ?? 0,
+          cumulativePnl: rf.cumulativePnl ?? null,
+          highWaterMark: rf.highWaterMark ?? null,
         }
       : null;
 
