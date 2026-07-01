@@ -46,3 +46,4 @@ tmp/
 # ── Project-specific ──
 .trading-journal/
 next-env.d.ts
+*.tsbuildinfo
