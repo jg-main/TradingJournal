@@ -31,6 +31,18 @@ import {
   type DrawdownDataPoint,
 } from '@/lib/equity';
 
+/**
+ * Chunk an array of IDs into batches of CHUNK_SIZE and run a query for each chunk,
+ * concatenating results. Avoids SQLite's parameter count limit (~999 per statement).
+ */
+function batchInArray<T>(ids: string[], queryFn: (chunk: string[]) => T[], chunkSize = 999): T[] {
+  const results: T[] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    results.push(...queryFn(ids.slice(i, i + chunkSize)));
+  }
+  return results;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -115,34 +127,40 @@ export async function GET(request: NextRequest) {
     const riskMap = new Map<string, typeof tradeRiskSnapshots.$inferSelect>();
 
     if (allTradeIds.length > 0) {
-      // Executions
-      const execs = db
-        .select()
-        .from(tradeExecutions)
-        .where(inArray(tradeExecutions.tradeId, allTradeIds))
-        .all();
+      // Executions — batch in chunks of 999 to avoid SQLite parameter limit
+      const execs = batchInArray(allTradeIds, (chunk) =>
+        db
+          .select()
+          .from(tradeExecutions)
+          .where(inArray(tradeExecutions.tradeId, chunk))
+          .all(),
+      );
       for (const exec of execs) {
         const list = executionsMap.get(exec.tradeId) ?? [];
         list.push(exec);
         executionsMap.set(exec.tradeId, list);
       }
 
-      // Grades
-      const gradeRows = db
-        .select()
-        .from(tradeGrades)
-        .where(inArray(tradeGrades.tradeId, allTradeIds))
-        .all();
+      // Grades — batch in chunks of 999
+      const gradeRows = batchInArray(allTradeIds, (chunk) =>
+        db
+          .select()
+          .from(tradeGrades)
+          .where(inArray(tradeGrades.tradeId, chunk))
+          .all(),
+      );
       for (const grade of gradeRows) {
         gradesMap.set(grade.tradeId, grade);
       }
 
-      // Risk snapshots
-      const snapshots = db
-        .select()
-        .from(tradeRiskSnapshots)
-        .where(inArray(tradeRiskSnapshots.tradeId, allTradeIds))
-        .all();
+      // Risk snapshots — batch in chunks of 999
+      const snapshots = batchInArray(allTradeIds, (chunk) =>
+        db
+          .select()
+          .from(tradeRiskSnapshots)
+          .where(inArray(tradeRiskSnapshots.tradeId, chunk))
+          .all(),
+      );
       for (const snap of snapshots) {
         riskMap.set(snap.tradeId, snap);
       }

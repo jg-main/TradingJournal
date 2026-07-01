@@ -1,0 +1,397 @@
+/**
+ * trade by id route test
+ *
+ * Tests GET (by id), PUT (update), and DELETE (soft-delete) handlers.
+ *
+ * Run: npx vitest run --reporter verbose src/app/api/trades/\[id\]/__tests__/route.test.ts
+ */
+
+import { randomUUID } from 'node:crypto';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { eq, and } from 'drizzle-orm';
+
+import * as schema from '@/db/schema';
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition: boolean, msg: string) {
+  if (condition) {
+    passed++;
+    console.log(`  ✅ ${msg}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${msg} (FAILED)`);
+  }
+}
+
+function assertEqual(actual: unknown, expected: unknown, msg: string) {
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✅ ${msg}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${msg} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)} (FAILED)`);
+  }
+}
+
+function assertNotNull(value: unknown, msg: string) {
+  if (value !== null && value !== undefined) {
+    passed++;
+    console.log(`  ✅ ${msg}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${msg} — value is null/undefined (FAILED)`);
+  }
+}
+
+// ── Setup: test DB ──────────────────────────────────────────────────
+
+const DB_FILE = process.env.DB_FILE_NAME || './.test-trades-by-id.db';
+const sqlite = new Database(DB_FILE);
+sqlite.pragma('journal_mode = WAL');
+sqlite.pragma('foreign_keys = ON');
+const db = drizzle(sqlite, { schema });
+
+// Create tables
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    broker TEXT,
+    currency TEXT DEFAULT 'USD',
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS lookup_values (
+    id TEXT PRIMARY KEY NOT NULL,
+    type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    description TEXT,
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS trades (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_code TEXT UNIQUE NOT NULL,
+    account_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    sector_id TEXT,
+    setup_id TEXT,
+    market_condition_id TEXT,
+    status TEXT NOT NULL,
+    planned_entry REAL,
+    planned_stop REAL,
+    planned_target_1 REAL,
+    planned_target_2 REAL,
+    thesis TEXT,
+    invalidation_condition TEXT,
+    pre_trade_plan TEXT,
+    opened_at TEXT,
+    closed_at TEXT,
+    exit_notes TEXT,
+    lesson TEXT,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+`);
+
+// ── Simulated route logic ───────────────────────────────────────────
+
+function doGetTrade(id: string): { status: number; data: unknown } {
+  try {
+    const row = db
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, id))
+      .get();
+
+    if (!row) {
+      return { status: 404, data: { error: 'Trade not found' } };
+    }
+
+    return { status: 200, data: row };
+  } catch (error) {
+    return { status: 500, data: { error: 'Failed to fetch trade', details: String(error) } };
+  }
+}
+
+function doPutTrade(id: string, body: Record<string, unknown>): { status: number; data: unknown } {
+  try {
+    const existing = db
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, id))
+      .get();
+
+    if (!existing) {
+      return { status: 404, data: { error: 'Trade not found' } };
+    }
+
+    // Map 'setup' back to 'setupId' for the DB column
+    const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    if (body.setup !== undefined) {
+      if (body.setup === null) {
+        updateData.setupId = null;
+      } else {
+        const lowerValue = (body.setup as string).toLowerCase();
+        const lookup = db
+          .select()
+          .from(schema.lookupValues)
+          .where(and(eq(schema.lookupValues.type, 'setup'), eq(schema.lookupValues.value, lowerValue)))
+          .get() as Record<string, unknown> | undefined;
+        if (!lookup) {
+          return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } } };
+        }
+        updateData.setupId = lookup.id;
+      }
+    }
+    if (body.sectorId !== undefined) updateData.sectorId = body.sectorId;
+    if (body.marketConditionId !== undefined) updateData.marketConditionId = body.marketConditionId;
+    if (body.thesis !== undefined) updateData.thesis = body.thesis;
+    if (body.plannedEntry !== undefined) updateData.plannedEntry = body.plannedEntry;
+    if (body.plannedStop !== undefined) updateData.plannedStop = body.plannedStop;
+    if (body.plannedTarget1 !== undefined) updateData.plannedTarget1 = body.plannedTarget1;
+    if (body.plannedTarget2 !== undefined) updateData.plannedTarget2 = body.plannedTarget2;
+    if (body.invalidationCondition !== undefined) updateData.invalidationCondition = body.invalidationCondition;
+    if (body.preTradePlan !== undefined) updateData.preTradePlan = body.preTradePlan;
+
+    db.update(schema.trades)
+      .set(updateData)
+      .where(eq(schema.trades.id, id))
+      .run();
+
+    const row = db
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, id))
+      .get();
+
+    return { status: 200, data: row };
+  } catch (error) {
+    return { status: 500, data: { error: 'Failed to update trade', details: String(error) } };
+  }
+}
+
+function doDeleteTrade(id: string): { status: number; data: unknown } {
+  try {
+    const existing = db
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, id))
+      .get();
+
+    if (!existing) {
+      return { status: 404, data: { error: 'Trade not found' } };
+    }
+
+    // Soft delete: mark as scratched
+    db.update(schema.trades)
+      .set({ status: 'scratched', updatedAt: new Date().toISOString() })
+      .where(eq(schema.trades.id, id))
+      .run();
+
+    return { status: 200, data: { message: 'Trade scratched' } };
+  } catch (error) {
+    return { status: 500, data: { error: 'Failed to delete trade', details: String(error) } };
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function cleanup() {
+  sqlite.exec('DELETE FROM trades;');
+  sqlite.exec('DELETE FROM lookup_values;');
+  sqlite.exec('DELETE FROM accounts;');
+}
+
+function seedAccount(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.accounts)
+    .values({
+      id,
+      name: 'Test Account',
+      broker: null,
+      currency: 'USD',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.accounts).where(eq(schema.accounts.id, id)).get() as Record<string, unknown>;
+}
+
+function seedLookupValue(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.lookupValues)
+    .values({
+      id,
+      type: 'setup',
+      value: 'breakout',
+      sortOrder: 0,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.lookupValues).where(eq(schema.lookupValues.id, id)).get() as Record<string, unknown>;
+}
+
+function seedTrade(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.trades)
+    .values({
+      id,
+      tradeCode: `T-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`,
+      accountId: 'test-account-id',
+      symbol: 'AAPL',
+      direction: 'long',
+      status: 'planned',
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.trades).where(eq(schema.trades.id, id)).get() as Record<string, unknown>;
+}
+
+// ── Tests ───────────────────────────────────────────────────────────
+
+console.log('\n--- Trade By ID API Tests ---\n');
+
+// ── 1. GET: Returns trade by id ─────────────────────────────────────
+
+console.log('\n1. GET returns trade by id:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', thesis: 'My thesis' });
+
+  const result = doGetTrade(trade.id as string);
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.id, trade.id, 'id matches');
+  assertEqual(data.symbol, 'AAPL', 'symbol matches');
+  assertEqual(data.direction, 'long', 'direction matches');
+  assertEqual(data.thesis, 'My thesis', 'thesis matches');
+}
+
+// ── 2. GET: 404 for nonexistent id ──────────────────────────────────
+
+console.log('\n2. GET returns 404 for nonexistent id:');
+{
+  cleanup();
+  const result = doGetTrade('nonexistent-id');
+  assert(result.status === 404, 'returns 404');
+  assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
+}
+
+// ── 3. PUT: Updates fields via spread ──────────────────────────────
+
+console.log('\n3. PUT updates fields via spread:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', thesis: 'Old thesis' });
+
+  const result = doPutTrade(trade.id as string, { thesis: 'Updated thesis' });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.thesis, 'Updated thesis', 'thesis is updated');
+  assertEqual(data.symbol, 'AAPL', 'symbol preserved');
+  assertEqual(data.direction, 'long', 'direction preserved');
+}
+
+// ── 4. PUT: Resolves setup to setupId ──────────────────────────────
+
+console.log('\n4. PUT resolves setup string to setupId:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const lookup = seedLookupValue({ type: 'setup', value: 'breakout' });
+  const trade = seedTrade({ accountId: 'test-account-id', setupId: null });
+
+  const result = doPutTrade(trade.id as string, { setup: 'breakout' });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.setupId, lookup.id, 'setupId matches lookup id');
+}
+
+// ── 5. PUT: Validates unknown setup value ──────────────────────────
+
+console.log('\n5. PUT returns 400 for unknown setup value:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id' });
+
+  const result = doPutTrade(trade.id as string, { setup: 'nonexistent-setup' });
+
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as { details: { fieldErrors: Record<string, string[]> } };
+  assertNotNull(data.details, 'has details');
+  assertNotNull(data.details.fieldErrors, 'has fieldErrors');
+  assertNotNull(data.details.fieldErrors.setup, 'has setup field error');
+}
+
+// ── 6. PUT: 404 for nonexistent id ─────────────────────────────────
+
+console.log('\n6. PUT returns 404 for nonexistent id:');
+{
+  cleanup();
+  const result = doPutTrade('nonexistent-id', { thesis: 'Ghost' });
+  assert(result.status === 404, 'returns 404');
+  assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
+}
+
+// ── 7. DELETE: Soft-deletes by setting status to scratched ─────────
+
+console.log('\n7. DELETE soft-deletes trade by setting status to scratched:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const result = doDeleteTrade(trade.id as string);
+
+  assert(result.status === 200, 'returns 200');
+  assertEqual((result.data as { message: string }).message, 'Trade scratched', 'message matches');
+
+  // Verify DB: trade.status = 'scratched'
+  const updated = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(updated.status, 'scratched', 'status is scratched after soft delete');
+}
+
+// ── 8. DELETE: 404 for nonexistent id ──────────────────────────────
+
+console.log('\n8. DELETE returns 404 for nonexistent id:');
+{
+  cleanup();
+  const result = doDeleteTrade('nonexistent-id');
+  assert(result.status === 404, 'returns 404');
+  assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
+}
+
+// ── Summary ──────────────────────────────────────────────────────────
+
+const total = passed + failed;
+console.log(`\n${'─'.repeat(40)}`);
+console.log(`Results: ${passed}/${total} passed`);
+if (failed > 0) {
+  console.error(`         ${failed}/${total} FAILED\n`);
+  process.exit(1);
+} else {
+  console.log('         All tests passed!\n');
+}

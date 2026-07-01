@@ -74,6 +74,12 @@ db-studio: ## Open Drizzle Studio (GUI for the DB)
 seed: ## Seed database with reference data (lookup_values)
 	$(NPX) tsx src/db/seed.ts
 
+seed-10k: ## Seed 10K benchmark trades
+	$(NPX) tsx src/db/seed-10k.ts
+
+benchmark: ## Run performance benchmark (seeds + measures API response times)
+	$(NPX) tsx src/db/benchmark.ts
+
 db-reset: ## Drop and recreate the database, run migrations and seed
 	@rm -f .trading-journal/journal.db .trading-journal/journal.db-wal .trading-journal/journal.db-shm
 	$(NPX) drizzle-kit migrate

@@ -23,21 +23,39 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
-
-    const query = db
-      .select()
-      .from(trades)
-      .orderBy(desc(trades.createdAt));
+    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10) || 50));
+    const offset = (page - 1) * limit;
 
     const validStatuses = ['idea', 'planned', 'open', 'closed', 'scratched'] as const;
     type TradeStatus = (typeof validStatuses)[number];
 
+    // Total count
+    let countQuery = db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(trades);
+
     if (status) {
-      query.where(eq(trades.status, status as TradeStatus));
+      countQuery = countQuery.where(eq(trades.status, status as TradeStatus));
     }
 
-    const rows = query.all();
-    return NextResponse.json(rows);
+    const countResult = countQuery.get();
+    const total = countResult?.count ?? 0;
+
+    // Paginated data
+    let dataQuery = db
+      .select()
+      .from(trades)
+      .orderBy(desc(trades.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    if (status) {
+      dataQuery = dataQuery.where(eq(trades.status, status as TradeStatus));
+    }
+
+    const rows = dataQuery.all();
+    return NextResponse.json({ data: rows, total, page, limit });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch trades', details: String(error) },

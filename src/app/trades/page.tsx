@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, NotebookPen } from 'lucide-react';
+import { Download, Plus, NotebookPen } from 'lucide-react';
 import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
@@ -102,8 +102,12 @@ function directionBadgeClass(direction: 'long' | 'short'): string {
 
 // ── Page ───────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50;
+
 export default function TradesPage() {
-  const [items, setItems] = useState<Trade[]>([]);
+  const [data, setData] = useState<Trade[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -114,18 +118,24 @@ export default function TradesPage() {
 
   // ── Data ────────────────────────────────────────────────────────────
 
-  const fetchItems = async () => {
+  const fetchItems = async (targetPage: number, status: string) => {
     try {
-      const res = await fetch('/api/trades');
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        // Map API response: setupId -> setup
-        setItems(
-          data.map((item: Record<string, unknown>) => ({
+      const params = new URLSearchParams();
+      params.set('page', String(targetPage));
+      params.set('limit', String(PAGE_SIZE));
+      if (status && status !== 'all') params.set('status', status);
+
+      const res = await fetch(`/api/trades?${params.toString()}`);
+      const result = await res.json();
+      if (result.data) {
+        setData(
+          result.data.map((item: Record<string, unknown>) => ({
             ...item,
             setup: (item as { setupId?: string | null }).setupId ?? null,
           })) as Trade[]
         );
+        setTotal(result.total);
+        setPage(result.page);
       }
     } catch {
       setMessage({ type: 'error', text: 'Failed to load trades.' });
@@ -134,14 +144,16 @@ export default function TradesPage() {
     }
   };
 
-  useEffect(() => { fetchItems(); }, []);
+  useEffect(() => {
+    setLoading(true);
+    setPage(1);
+    fetchItems(1, statusFilter);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
 
   // ── Filter ──────────────────────────────────────────────────────────
 
-  const filteredItems =
-    statusFilter === 'all'
-      ? items
-      : items.filter((item) => item.status === statusFilter);
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
   // ── Form helpers ────────────────────────────────────────────────────
 
@@ -214,7 +226,7 @@ export default function TradesPage() {
       setMessage({ type: 'success', text: editingId ? 'Trade updated.' : 'Trade created.' });
       setDialogOpen(false);
       resetForm();
-      fetchItems();
+      fetchItems(1, statusFilter);
     } catch {
       setMessage({ type: 'error', text: 'Failed to save trade.' });
     }
@@ -230,7 +242,7 @@ export default function TradesPage() {
         return;
       }
       setMessage({ type: 'success', text: `Trade ${tradeCode} scratched.` });
-      fetchItems();
+      fetchItems(1, statusFilter);
     } catch {
       setMessage({ type: 'error', text: 'Failed to delete trade.' });
     }
@@ -271,7 +283,15 @@ export default function TradesPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           Trade Log
         </h1>
-        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { window.location.href = '/api/trades/export'; }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            <Download className="size-4" />
+            Export CSV
+          </button>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <button
               className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -488,6 +508,7 @@ export default function TradesPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Status message */}
@@ -498,7 +519,7 @@ export default function TradesPage() {
       )}
 
       {/* Filter */}
-      {items.length > 0 && (
+      {total > 0 && (
         <div className="mb-6 flex items-center gap-2">
           <label className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Filter:</label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -514,13 +535,13 @@ export default function TradesPage() {
             </SelectContent>
           </Select>
           <span className="text-xs text-zinc-400 dark:text-zinc-500">
-            {filteredItems.length} of {items.length}
+            {data.length} of {total.toLocaleString()}
           </span>
         </div>
       )}
 
       {/* Empty state */}
-      {filteredItems.length === 0 ? (
+      {data.length === 0 ? (
         <EmptyState
           icon={<NotebookPen className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
           title="No trades yet"
@@ -559,7 +580,7 @@ export default function TradesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {filteredItems.map((item) => (
+              {data.map((item) => (
                 <tr key={item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
                   <td className="px-4 py-3 font-mono text-xs text-zinc-500 dark:text-zinc-400">
                     <Link
@@ -619,6 +640,37 @@ export default function TradesPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {total > PAGE_SIZE && (
+        <div className="mt-4 flex items-center justify-between text-sm text-zinc-500">
+          <span>
+            Page {page} of {totalPages.toLocaleString()} ({total.toLocaleString()} total trades)
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setLoading(true);
+                fetchItems(page - 1, statusFilter);
+              }}
+              disabled={page <= 1}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-1 text-sm disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => {
+                setLoading(true);
+                fetchItems(page + 1, statusFilter);
+              }}
+              disabled={page >= totalPages}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-1 text-sm disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
     </div>
