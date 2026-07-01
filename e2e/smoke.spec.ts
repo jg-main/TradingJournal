@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test';
 
-const KNOWN_TRADE_ID = 'de87857a-03c5-4617-97ab-39a529989772';
-
 test.describe('Smoke tests — new M002 pages', () => {
   test('/sizing renders with Position Sizing heading', async ({ page }) => {
     await page.goto('/sizing');
@@ -15,11 +13,31 @@ test.describe('Smoke tests — new M002 pages', () => {
     // Page should load even with empty or populated trade list
   });
 
-  test('/trades/[id] renders trade detail for a known trade', async ({ page }) => {
-    await page.goto(`/trades/${KNOWN_TRADE_ID}`);
+  test('/checks renders the Checks & Validation heading', async ({ page }) => {
+    await page.goto('/checks');
+    await expect(page.locator('h1')).toContainText('Checks & Validation');
+    // Verify the tab bar is present (checklists + validation rules tabs)
+    await expect(page.getByRole('button', { name: 'Pre-Trade Checklists' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Validation Rules' })).toBeVisible();
+  });
+
+  test('/trades/[id] renders trade detail with lifecycle stepper', async ({ page }) => {
+    // Dynamically seed an account and trade to avoid test-DB dependency on a hardcoded ID
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: 'Smoke Test Account', isActive: true },
+    });
+    expect(accRes.ok()).toBeTruthy();
+
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'AAPL', direction: 'long' },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    await page.goto(`/trades/${trade.id}`);
     // The heading should render the trade symbol (AAPL)
     await expect(page.locator('h1')).toContainText('AAPL');
-    // Verify lifecycle status badge is present
+    // Verify lifecycle status badge is present (the sibling after h1)
     await expect(page.locator('h1 + *')).toBeVisible();
   });
 });

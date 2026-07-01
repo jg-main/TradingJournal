@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, AlertCircle, Loader2, TrendingUp, TrendingDown, Target, DollarSign, Activity } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Loader2, TrendingUp, TrendingDown, Target, DollarSign, Activity, Pencil, ImageIcon, LinkIcon, Trash2, Upload } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState } from '@/components/empty-state';
+import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import {
   calculatePnL,
   calculateRMultiple,
@@ -66,6 +69,30 @@ interface RiskSnapshot {
   accountRiskPct: number | null;
   plannedRewardRisk: number | null;
   createdAt: string | null;
+}
+
+interface StopAdjustment {
+  id: string;
+  tradeId: string;
+  adjustedAt: string | null;
+  previousStop: number | null;
+  newStop: number | null;
+  reason: string | null;
+  ruleBased: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+}
+
+interface TradeAsset {
+  id: string;
+  tradeId: string;
+  assetType: 'screenshot' | 'document' | 'link' | 'image' | 'other';
+  phase: 'pre_trade' | 'entry' | 'management' | 'exit' | 'review';
+  label: string | null;
+  filePath: string | null;
+  externalUrl: string | null;
+  notes: string | null;
+  createdAt: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -157,6 +184,39 @@ export default function TradeDetailPage() {
   const [riskSnapshot, setRiskSnapshot] = useState<RiskSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stopAdjustments, setStopAdjustments] = useState<StopAdjustment[]>([]);
+  const [adjustmentMessage, setAdjustmentMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
+  const [riskSnapshotEditMode, setRiskSnapshotEditMode] = useState(false);
+  const [riskSnapshotForm, setRiskSnapshotForm] = useState({
+    accountEquityAtOpen: '',
+    initialEntryPrice: '',
+    initialStopPrice: '',
+    initialQuantity: '',
+    riskPerShare: '',
+    initialRiskAmount: '',
+    accountRiskPct: '',
+    plannedRewardRisk: '',
+  });
+  const [adjustmentForm, setAdjustmentForm] = useState({
+    previousStop: '',
+    newStop: '',
+    reason: '',
+    ruleBased: false,
+  });
+
+  // ── Asset State ────────────────────────────────────────────────
+
+  const [assets, setAssets] = useState<TradeAsset[]>([]);
+  const [showAssetForm, setShowAssetForm] = useState(false);
+  const [assetFormMode, setAssetFormMode] = useState<'upload' | 'link'>('upload');
+  const [assetMessage, setAssetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [assetFile, setAssetFile] = useState<File | null>(null);
+  const [assetPhase, setAssetPhase] = useState<string>('pre_trade');
+  const [assetLabel, setAssetLabel] = useState('');
+  const [assetUrl, setAssetUrl] = useState('');
+  const [linkPhase, setLinkPhase] = useState<string>('pre_trade');
+  const [linkLabel, setLinkLabel] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -166,10 +226,11 @@ export default function TradeDetailPage() {
       setError(null);
 
       try {
-        const [tradeRes, executionsRes, riskRes] = await Promise.all([
+        const [tradeRes, executionsRes, riskRes, adjustmentsRes] = await Promise.all([
           fetch(`/api/trades/${id}`),
           fetch(`/api/trades/${id}/executions`),
           fetch(`/api/trades/${id}/risk-snapshot`),
+          fetch(`/api/trades/${id}/stop-adjustments`),
         ]);
 
         if (cancelled) return;
@@ -199,6 +260,19 @@ export default function TradeDetailPage() {
           const riskData: RiskSnapshot = await riskRes.json();
           setRiskSnapshot(riskData);
         }
+
+        // Stop adjustments — 404 means none exist, which is valid
+        if (adjustmentsRes.ok) {
+          const adjData: StopAdjustment[] = await adjustmentsRes.json();
+          setStopAdjustments(adjData);
+        }
+
+        // Assets — 404 means none exist, which is valid
+        const assetsRes = await fetch(`/api/trades/${id}/assets`);
+        if (!cancelled && assetsRes.ok) {
+          const assetData: TradeAsset[] = await assetsRes.json();
+          setAssets(assetData);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(String(err));
@@ -213,6 +287,214 @@ export default function TradeDetailPage() {
     loadData();
     return () => { cancelled = true; };
   }, [id]);
+
+  // ── Stop Adjustment Form Handler ──────────────────────────────────
+
+  const handleAddAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdjustmentMessage(null);
+
+    if (!adjustmentForm.previousStop || !adjustmentForm.newStop) {
+      setAdjustmentMessage({ type: 'error', text: 'Previous Stop and New Stop are required.' });
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/trades/${id}/stop-adjustments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          previousStop: parseFloat(adjustmentForm.previousStop),
+          newStop: parseFloat(adjustmentForm.newStop),
+          reason: adjustmentForm.reason.trim() || null,
+          ruleBased: adjustmentForm.ruleBased,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setAdjustmentMessage({
+          type: 'error',
+          text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Failed to save.'),
+        });
+        return;
+      }
+
+      setAdjustmentMessage({ type: 'success', text: 'Stop adjustment added.' });
+      setAdjustmentForm({ previousStop: '', newStop: '', reason: '', ruleBased: false });
+      setShowAdjustmentForm(false);
+
+      // Refetch adjustments
+      const adjustmentsRes = await fetch(`/api/trades/${id}/stop-adjustments`);
+      if (adjustmentsRes.ok) {
+        const adjData: StopAdjustment[] = await adjustmentsRes.json();
+        setStopAdjustments(adjData);
+      }
+    } catch {
+      setAdjustmentMessage({ type: 'error', text: 'Failed to save stop adjustment.' });
+    }
+  };
+
+  // ── Asset Handlers ────────────────────────────────────────────────
+
+  const handleAssetUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAssetMessage(null);
+
+    if (!assetFile) {
+      setAssetMessage({ type: 'error', text: 'Please select a file to upload.' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', assetFile);
+    formData.append('phase', assetPhase);
+    if (assetLabel.trim()) formData.append('label', assetLabel.trim());
+
+    try {
+      const res = await fetch(`/api/trades/${id}/assets`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setAssetMessage({
+          type: 'error',
+          text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Upload failed.'),
+        });
+        return;
+      }
+
+      setAssetMessage({ type: 'success', text: 'Screenshot uploaded.' });
+      setAssetFile(null);
+      setAssetLabel('');
+
+      // Refetch assets
+      const assetsRes = await fetch(`/api/trades/${id}/assets`);
+      if (assetsRes.ok) setAssets(await assetsRes.json());
+    } catch {
+      setAssetMessage({ type: 'error', text: 'Upload failed.' });
+    }
+  };
+
+  const handleAddLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAssetMessage(null);
+
+    if (!assetUrl.trim()) {
+      setAssetMessage({ type: 'error', text: 'URL is required.' });
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/trades/${id}/assets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assetType: 'link',
+          phase: linkPhase,
+          externalUrl: assetUrl.trim(),
+          label: linkLabel.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setAssetMessage({
+          type: 'error',
+          text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Failed to add link.'),
+        });
+        return;
+      }
+
+      setAssetMessage({ type: 'success', text: 'Link added.' });
+      setAssetUrl('');
+      setLinkLabel('');
+
+      // Refetch assets
+      const assetsRes = await fetch(`/api/trades/${id}/assets`);
+      if (assetsRes.ok) setAssets(await assetsRes.json());
+    } catch {
+      setAssetMessage({ type: 'error', text: 'Failed to add link.' });
+    }
+  };
+
+  const handleDeleteAsset = async (assetId: string) => {
+    try {
+      const res = await fetch(`/api/trades/${id}/assets?id=${assetId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Failed to delete asset', err);
+        return;
+      }
+
+      setAssets((prev) => prev.filter((a) => a.id !== assetId));
+    } catch (err) {
+      console.error('Failed to delete asset', err);
+    }
+  };
+
+  // ── Risk Snapshot Edit Handlers ────────────────────────────────────
+
+  const enterEditMode = () => {
+    setRiskSnapshotForm({
+      accountEquityAtOpen: riskSnapshot?.accountEquityAtOpen?.toString() ?? '',
+      initialEntryPrice: riskSnapshot?.initialEntryPrice?.toString() ?? '',
+      initialStopPrice: riskSnapshot?.initialStopPrice?.toString() ?? '',
+      initialQuantity: riskSnapshot?.initialQuantity?.toString() ?? '',
+      riskPerShare: riskSnapshot?.riskPerShare?.toString() ?? '',
+      initialRiskAmount: riskSnapshot?.initialRiskAmount?.toString() ?? '',
+      accountRiskPct: riskSnapshot?.accountRiskPct?.toString() ?? '',
+      plannedRewardRisk: riskSnapshot?.plannedRewardRisk?.toString() ?? '',
+    });
+    setRiskSnapshotEditMode(true);
+  };
+
+  const handleRiskSnapshotSave = async () => {
+    const payload: Record<string, number | null> = {};
+    const fields: (keyof typeof riskSnapshotForm)[] = [
+      'accountEquityAtOpen',
+      'initialEntryPrice',
+      'initialStopPrice',
+      'initialQuantity',
+      'riskPerShare',
+      'initialRiskAmount',
+      'accountRiskPct',
+      'plannedRewardRisk',
+    ];
+
+    for (const field of fields) {
+      const val = riskSnapshotForm[field];
+      payload[field] = val === '' ? null : parseFloat(val);
+    }
+
+    try {
+      const res = await fetch(`/api/trades/${id}/risk-snapshot`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        console.error('Failed to save risk snapshot', await res.text());
+        return;
+      }
+
+      const updated: RiskSnapshot = await res.json();
+      setRiskSnapshot(updated);
+      setRiskSnapshotEditMode(false);
+    } catch (err) {
+      console.error('Failed to save risk snapshot', err);
+    }
+  };
+
+  const cancelEditMode = () => {
+    setRiskSnapshotEditMode(false);
+  };
 
   // ── Derived P&L-R ──────────────────────────────────────────────────
 
@@ -318,6 +600,17 @@ export default function TradeDetailPage() {
         </div>
       </div>
 
+      {/* Lifecycle Stepper */}
+      <div className="mb-8">
+        <LifecycleStepper
+          status={trade.status}
+          direction={trade.direction}
+          openedAt={trade.openedAt}
+          exitNotes={trade.exitNotes}
+          lesson={trade.lesson}
+        />
+      </div>
+
       {/* Grid: Trade Metadata + Risk Snapshot */}
       <div className="mb-8 grid gap-6 md:grid-cols-2">
         {/* Trade Metadata Card */}
@@ -374,13 +667,147 @@ export default function TradeDetailPage() {
         {/* Risk Snapshot Card */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="size-4 text-zinc-500" />
-              Risk Snapshot
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Target className="size-4 text-zinc-500" />
+                Risk Snapshot
+              </CardTitle>
+              {riskSnapshot && !riskSnapshotEditMode && (
+                <button
+                  onClick={enterEditMode}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                >
+                  <Pencil className="size-3" />
+                  Edit
+                </button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
-            {riskSnapshot ? (
+            {riskSnapshotEditMode && riskSnapshot ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Equity at Open
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.accountEquityAtOpen}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, accountEquityAtOpen: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Initial Entry
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.initialEntryPrice}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, initialEntryPrice: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Initial Stop
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.initialStopPrice}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, initialStopPrice: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Initial Qty
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.initialQuantity}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, initialQuantity: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Risk/Share
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.riskPerShare}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, riskPerShare: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Risk Amount
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.initialRiskAmount}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, initialRiskAmount: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Account Risk %
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.accountRiskPct}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, accountRiskPct: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Planned R:R
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={riskSnapshotForm.plannedRewardRisk}
+                      onChange={(e) => setRiskSnapshotForm((f) => ({ ...f, plannedRewardRisk: e.target.value }))}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={handleRiskSnapshotSave}
+                    className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={cancelEditMode}
+                    className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : riskSnapshot ? (
               <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <div className="text-zinc-500 dark:text-zinc-400">Initial Entry</div>
                 <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
@@ -594,6 +1021,426 @@ export default function TradeDetailPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Stop Adjustments */}
+      <Card className="mb-8">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Stop Adjustments</CardTitle>
+            <button
+              onClick={() => setShowAdjustmentForm((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              {showAdjustmentForm ? 'Cancel' : '+ Add Adjustment'}
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* Collapsible form */}
+          {showAdjustmentForm && (
+            <form onSubmit={handleAddAdjustment} className="mb-6 space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              {adjustmentMessage && (
+                <div
+                  className={`rounded-md border px-3 py-2 text-xs ${
+                    adjustmentMessage.type === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+                  }`}
+                >
+                  {adjustmentMessage.text}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Previous Stop *
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={adjustmentForm.previousStop}
+                    onChange={(e) => setAdjustmentForm((f) => ({ ...f, previousStop: e.target.value }))}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    New Stop *
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={adjustmentForm.newStop}
+                    onChange={(e) => setAdjustmentForm((f) => ({ ...f, newStop: e.target.value }))}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Reason
+                </label>
+                <textarea
+                  value={adjustmentForm.reason}
+                  onChange={(e) => setAdjustmentForm((f) => ({ ...f, reason: e.target.value }))}
+                  rows={2}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  placeholder="Why is the stop being adjusted?"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="ruleBased"
+                  checked={adjustmentForm.ruleBased}
+                  onChange={(e) => setAdjustmentForm((f) => ({ ...f, ruleBased: e.target.checked }))}
+                  className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700"
+                />
+                <label htmlFor="ruleBased" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Rule-based adjustment (e.g. trailing stop, volatility-based)
+                </label>
+              </div>
+              <button
+                type="submit"
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                Add Stop Adjustment
+              </button>
+            </form>
+          )}
+
+          {/* Adjustments table */}
+          {stopAdjustments.length === 0 ? (
+            <p className="text-sm text-zinc-400 dark:text-zinc-500">
+              No stop adjustments recorded yet.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Previous Stop</TableHead>
+                  <TableHead className="text-right">New Stop</TableHead>
+                  <TableHead className="text-right">Change</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Rule-Based</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stopAdjustments.map((adj) => {
+                  const change =
+                    adj.previousStop != null && adj.newStop != null
+                      ? adj.newStop - adj.previousStop
+                      : null;
+                  return (
+                    <TableRow key={adj.id}>
+                      <TableCell className="tabular-nums text-zinc-500 dark:text-zinc-400">
+                        {formatDate(adj.adjustedAt ?? adj.createdAt)}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-right text-zinc-900 dark:text-zinc-100">
+                        {formatPrice(adj.previousStop)}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-right text-zinc-900 dark:text-zinc-100">
+                        {formatPrice(adj.newStop)}
+                      </TableCell>
+                      <TableCell
+                        className={`tabular-nums text-right ${
+                          change != null
+                            ? change > 0
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : change < 0
+                                ? 'text-red-600 dark:text-red-400'
+                                : 'text-zinc-500 dark:text-zinc-400'
+                            : 'text-zinc-500 dark:text-zinc-400'
+                        }`}
+                      >
+                        {change != null
+                          ? `${change >= 0 ? '+' : ''}${change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : '-'}
+                      </TableCell>
+                      <TableCell className="text-zinc-500 dark:text-zinc-400">
+                        {adj.reason ?? '-'}
+                      </TableCell>
+                      <TableCell>
+                        {adj.ruleBased != null ? (
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                              adj.ruleBased
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                            }`}
+                          >
+                            {adj.ruleBased ? 'Auto' : 'Manual'}
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Assets */}
+      <Card className="mb-8">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <ImageIcon className="size-4 text-zinc-500" />
+              Assets
+            </CardTitle>
+            <button
+              onClick={() => setShowAssetForm((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              {showAssetForm ? 'Cancel' : '+ Add Asset'}
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* Asset form — collapsible */}
+          {showAssetForm && (
+            <div className="mb-6 space-y-4 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              {assetMessage && (
+                <div
+                  className={`rounded-md border px-3 py-2 text-xs ${
+                    assetMessage.type === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+                  }`}
+                >
+                  {assetMessage.text}
+                </div>
+              )}
+
+              {/* Mode toggle */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAssetFormMode('upload')}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
+                    assetFormMode === 'upload'
+                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'border border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Upload className="size-3" />
+                  Upload Screenshot
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAssetFormMode('link')}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
+                    assetFormMode === 'link'
+                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'border border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <LinkIcon className="size-3" />
+                  Add Link
+                </button>
+              </div>
+
+              {assetFormMode === 'upload' ? (
+                <form onSubmit={handleAssetUpload} className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Screenshot File
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setAssetFile(e.target.files?.[0] ?? null)}
+                      className="w-full text-sm text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-200 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-zinc-700 hover:file:bg-zinc-300 dark:text-zinc-400 dark:file:bg-zinc-700 dark:file:text-zinc-300 dark:hover:file:bg-zinc-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Phase
+                    </label>
+                    <div className="inline-block">
+                      <Select value={assetPhase} onValueChange={setAssetPhase}>
+                        <SelectTrigger className="w-36">
+                          <SelectValue placeholder="Select phase" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pre_trade">Pre-Trade</SelectItem>
+                          <SelectItem value="entry">Entry</SelectItem>
+                          <SelectItem value="management">Management</SelectItem>
+                          <SelectItem value="exit">Exit</SelectItem>
+                          <SelectItem value="review">Review</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Label{' '}
+                      <span className="text-zinc-400 dark:text-zinc-500">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={assetLabel}
+                      onChange={(e) => setAssetLabel(e.target.value)}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="Chart setup screenshot"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  >
+                    Upload
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleAddLink} className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      URL *
+                    </label>
+                    <input
+                      type="url"
+                      value={assetUrl}
+                      onChange={(e) => setAssetUrl(e.target.value)}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="https://www.tradingview.com/chart/..."
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Phase
+                    </label>
+                    <div className="inline-block">
+                      <Select value={linkPhase} onValueChange={setLinkPhase}>
+                        <SelectTrigger className="w-36">
+                          <SelectValue placeholder="Select phase" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pre_trade">Pre-Trade</SelectItem>
+                          <SelectItem value="entry">Entry</SelectItem>
+                          <SelectItem value="management">Management</SelectItem>
+                          <SelectItem value="exit">Exit</SelectItem>
+                          <SelectItem value="review">Review</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      Label{' '}
+                      <span className="text-zinc-400 dark:text-zinc-500">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={linkLabel}
+                      onChange={(e) => setLinkLabel(e.target.value)}
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      placeholder="TradingView chart analysis"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  >
+                    Add Link
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* Asset gallery — grouped by phase */}
+          {assets.length === 0 ? (
+            <p className="text-sm text-zinc-400 dark:text-zinc-500">
+              No assets attached to this trade yet.
+            </p>
+          ) : (
+            <div className="space-y-6">
+              {(['pre_trade', 'entry', 'management', 'exit', 'review'] as const).map(
+                (phase) => {
+                  const phaseAssets = assets.filter((a) => a.phase === phase);
+                  if (phaseAssets.length === 0) return null;
+
+                  const phaseLabel: Record<string, string> = {
+                    pre_trade: 'Pre-Trade',
+                    entry: 'Entry',
+                    management: 'Management',
+                    exit: 'Exit',
+                    review: 'Review',
+                  };
+
+                  return (
+                    <div key={phase}>
+                      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        {phaseLabel[phase]}
+                      </h4>
+                      <div className="flex flex-wrap gap-3">
+                        {phaseAssets.map((asset) => (
+                          <div
+                            key={asset.id}
+                            className="group relative w-40 rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-800/50"
+                          >
+                            {/* Delete button */}
+                            <button
+                              onClick={() => handleDeleteAsset(asset.id)}
+                              className="absolute -right-1.5 -top-1.5 z-10 flex size-5 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-400 opacity-0 shadow-sm transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-red-900/30"
+                              aria-label={`Delete ${asset.label ?? 'asset'}`}
+                            >
+                              <Trash2 className="size-3" />
+                            </button>
+
+                            {asset.filePath ? (
+                              /* Screenshot thumbnail */
+                              <>
+                                <img
+                                  src={asset.filePath}
+                                  alt={asset.label ?? 'Screenshot'}
+                                  className="mb-1 h-20 w-full rounded object-cover"
+                                />
+                                {asset.label && (
+                                  <p className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+                                    {asset.label}
+                                  </p>
+                                )}
+                              </>
+                            ) : asset.externalUrl ? (
+                              /* Link card */
+                              <a
+                                href={asset.externalUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mb-1 flex h-20 w-full flex-col items-center justify-center rounded bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                              >
+                                <LinkIcon className="mb-1 size-5" />
+                                <span className="max-w-[120px] truncate text-[10px]">
+                                  {new URL(asset.externalUrl).hostname}
+                                </span>
+                              </a>
+                            ) : null}
+
+                            {asset.label && !asset.filePath && (
+                              <p className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+                                {asset.label}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                },
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
