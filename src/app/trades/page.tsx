@@ -520,7 +520,7 @@ export default function TradesPage() {
       )}
 
       {/* Empty state */}
-      {filteredItems.length === 0 && !message?.type ? (
+      {filteredItems.length === 0 ? (
         <EmptyState
           icon={<NotebookPen className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
           title="No trades yet"
