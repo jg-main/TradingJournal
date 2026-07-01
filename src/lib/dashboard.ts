@@ -98,6 +98,15 @@ export interface RDistributionBin {
   count: number;
 }
 
+/**
+ * Directional performance breakdown for long vs short closed trades.
+ * Each side has netPnl, winRate (null if no trades), and tradeCount.
+ */
+export interface DirectionalPerformanceResult {
+  long: { netPnl: number; winRate: number | null; tradeCount: number };
+  short: { netPnl: number; winRate: number | null; tradeCount: number };
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -217,6 +226,52 @@ export function computeRDistribution(
     label: bin.label,
     count: counts[i],
   }));
+}
+
+/**
+ * Compute directional performance breakdown (long vs short) for closed trades.
+ *
+ * Each trade is bucketed by direction, then:
+ * - netPnl: Sum of realized P&L via calculatePnL
+ * - winRate: Win rate per D013 (P&L > 0 = win, null if no trades in bucket)
+ * - tradeCount: Number of closed trade decisions in bucket
+ *
+ * Returns a DirectionalPerformanceResult with long and short sides.
+ */
+export function computeDirectionalPerformance(
+  closedTrades: KpiTradeInput[],
+): DirectionalPerformanceResult {
+  const buckets: Record<string, { netPnl: number; wins: number; decisions: number }> = {
+    long: { netPnl: 0, wins: 0, decisions: 0 },
+    short: { netPnl: 0, wins: 0, decisions: 0 },
+  };
+
+  for (const trade of closedTrades) {
+    const dir = trade.direction as keyof typeof buckets;
+    if (!buckets[dir]) continue;
+
+    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    buckets[dir].netPnl += totalRealizedPnL;
+
+    // Per D013: >0 P&L = win, <=0 = loss
+    if (totalRealizedPnL > 0) {
+      buckets[dir].wins++;
+    }
+    buckets[dir].decisions++;
+  }
+
+  return {
+    long: {
+      netPnl: buckets.long.netPnl,
+      winRate: computeWinRate(buckets.long.wins, buckets.long.decisions),
+      tradeCount: buckets.long.decisions,
+    },
+    short: {
+      netPnl: buckets.short.netPnl,
+      winRate: computeWinRate(buckets.short.wins, buckets.short.decisions),
+      tradeCount: buckets.short.decisions,
+    },
+  };
 }
 
 // ── Library ─────────────────────────────────────────────────────────────

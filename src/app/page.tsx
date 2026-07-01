@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/empty-state';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { DashboardFilters } from '@/components/dashboard-filters';
 import type { EquityDataPoint, DrawdownDataPoint } from '@/lib/equity';
-import type { MonthlyPerformanceItem, RDistributionBin } from '@/lib/dashboard';
+import type { MonthlyPerformanceItem, RDistributionBin, DirectionalPerformanceResult } from '@/lib/dashboard';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -38,6 +38,7 @@ interface DashboardResponse {
   drawdown: DrawdownDataPoint[];
   monthlyPerformance: MonthlyPerformanceItem[];
   rDistribution: RDistributionBin[];
+  directionalPerformance?: DirectionalPerformanceResult;
 }
 
 // ── Grade Rubric (matches reviews page) ────────────────────────────────
@@ -135,6 +136,7 @@ export default function Home() {
   const [drawdown, setDrawdown] = useState<DrawdownDataPoint[]>([]);
   const [monthlyPerformance, setMonthlyPerformance] = useState<MonthlyPerformanceItem[]>([]);
   const [rDistribution, setRDistribution] = useState<RDistributionBin[]>([]);
+  const [directionalPerformance, setDirectionalPerformance] = useState<DirectionalPerformanceResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -168,6 +170,7 @@ export default function Home() {
       setDrawdown(data.drawdown);
       setMonthlyPerformance(data.monthlyPerformance);
       setRDistribution(data.rDistribution);
+      setDirectionalPerformance(data.directionalPerformance ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       setKpis(null);
@@ -566,6 +569,90 @@ export default function Home() {
               </CardContent>
             </Card>
           </div>
+        </section>
+      )}
+
+      {/* Directional Performance Panel — long vs short breakdown */}
+      {!loading && kpis !== null && !isEmpty && directionalPerformance && (
+        <section className="mt-8">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            Directional Performance
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Long Side */}
+            <Card>
+              <CardContent className="flex flex-col gap-3 p-5">
+                <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  Long
+                </p>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <p className={`text-xl font-bold tabular-nums ${pnlColorClass(directionalPerformance.long.netPnl)}`}>
+                      {formatCurrency(directionalPerformance.long.netPnl)}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {formatPercent(directionalPerformance.long.winRate)}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Win Rate</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {directionalPerformance.long.tradeCount}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Trades</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Short Side */}
+            <Card>
+              <CardContent className="flex flex-col gap-3 p-5">
+                <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  Short
+                </p>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <p className={`text-xl font-bold tabular-nums ${pnlColorClass(directionalPerformance.short.netPnl)}`}>
+                      {formatCurrency(directionalPerformance.short.netPnl)}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {formatPercent(directionalPerformance.short.winRate)}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Win Rate</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {directionalPerformance.short.tradeCount}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Trades</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Empty state when both sides have 0 trades */}
+          {directionalPerformance.long.tradeCount === 0 && directionalPerformance.short.tradeCount === 0 && (
+            <div className="mt-2">
+              <EmptyState
+                icon={
+                  <Target
+                    className="size-10 text-zinc-300 dark:text-zinc-600"
+                    strokeWidth={1}
+                  />
+                }
+                title="No directional data available"
+                description="Close long and short trades to see your directional performance breakdown."
+              />
+            </div>
+          )}
         </section>
       )}
 

@@ -15,9 +15,11 @@ import {
   computeWinRate,
   computeMonthlyPerformance,
   computeRDistribution,
+  computeDirectionalPerformance,
   type KpiTradeInput,
   type MonthlyPerformanceItem,
   type RDistributionBin,
+  type DirectionalPerformanceResult,
   type RollforwardRow,
 } from './dashboard';
 import { type ExecutionData } from './trade-calc';
@@ -705,6 +707,95 @@ test('computeRDistribution — short trades compute R correctly', () => {
   ];
   const r = computeRDistribution(shortWins);
   assertEqual(r[7].count, 1, '> 3: 1 (short profit R=25)');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: computeDirectionalPerformance
+// ────────────────────────────────────────────────────────────────────────
+
+test('computeDirectionalPerformance — all long trades', () => {
+  const longTrades = [
+    makeTrade('l1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'),  // PnL = 1000
+    makeTrade('l2', 'long', 'closed', longTradeExecutions(100, 120, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'),  // PnL = 2000
+  ];
+  const r = computeDirectionalPerformance(longTrades);
+  assertApprox(r.long.netPnl, 3000, 'long netPnl = 3000 (1000 + 2000)');
+  assertClose(r.long.winRate, 1, 'long winRate = 1 (2 wins / 2 decisions)');
+  assertEqual(r.long.tradeCount, 2, 'long tradeCount = 2');
+  assertApprox(r.short.netPnl, 0, 'short netPnl = 0');
+  assertNull(r.short.winRate, 'short winRate = null');
+  assertEqual(r.short.tradeCount, 0, 'short tradeCount = 0');
+});
+
+test('computeDirectionalPerformance — all short trades', () => {
+  const shortTrades = [
+    makeTrade('s1', 'short', 'closed', [
+      { action: 'sell_short', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-01T10:00:00Z' },
+      { action: 'buy_to_cover', quantity: 100, price: 80, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
+    ], null, null, '2026-01-01T10:00:00Z'),  // short PnL = (100-80)*100 = 2000
+    makeTrade('s2', 'short', 'closed', [
+      { action: 'sell_short', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-01T10:00:00Z' },
+      { action: 'buy_to_cover', quantity: 100, price: 90, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
+    ], null, null, '2026-01-01T10:00:00Z'),  // short PnL = (100-90)*100 = 1000
+  ];
+  const r = computeDirectionalPerformance(shortTrades);
+  assertApprox(r.short.netPnl, 3000, 'short netPnl = 3000 (2000 + 1000)');
+  assertClose(r.short.winRate, 1, 'short winRate = 1');
+  assertEqual(r.short.tradeCount, 2, 'short tradeCount = 2');
+  assertApprox(r.long.netPnl, 0, 'long netPnl = 0');
+  assertNull(r.long.winRate, 'long winRate = null');
+  assertEqual(r.long.tradeCount, 0, 'long tradeCount = 0');
+});
+
+test('computeDirectionalPerformance — mixed long and short trades', () => {
+  const mixed = [
+    // Long win
+    makeTrade('l1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'),  // +1000
+    // Long loss
+    makeTrade('l2', 'long', 'closed', longTradeExecutions(100, 90, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'),  // -1000
+    // Short win
+    makeTrade('s1', 'short', 'closed', [
+      { action: 'sell_short', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-01T10:00:00Z' },
+      { action: 'buy_to_cover', quantity: 100, price: 80, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
+    ], null, null, '2026-01-01T10:00:00Z'),  // +2000
+    // Short loss
+    makeTrade('s2', 'short', 'closed', [
+      { action: 'sell_short', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-01T10:00:00Z' },
+      { action: 'buy_to_cover', quantity: 100, price: 110, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
+    ], null, null, '2026-01-01T10:00:00Z'),  // -1000
+  ];
+  const r = computeDirectionalPerformance(mixed);
+  assertApprox(r.long.netPnl, 0, 'long netPnl = 0 (1000 + (-1000))');
+  assertClose(r.long.winRate, 0.5, 'long winRate = 0.5 (1 win / 2 decisions)');
+  assertEqual(r.long.tradeCount, 2, 'long tradeCount = 2');
+  assertApprox(r.short.netPnl, 1000, 'short netPnl = 1000 (2000 + (-1000))');
+  assertClose(r.short.winRate, 0.5, 'short winRate = 0.5 (1 win / 2 decisions)');
+  assertEqual(r.short.tradeCount, 2, 'short tradeCount = 2');
+});
+
+test('computeDirectionalPerformance — empty input', () => {
+  const r = computeDirectionalPerformance([]);
+  assertApprox(r.long.netPnl, 0, 'long netPnl = 0');
+  assertNull(r.long.winRate, 'long winRate = null');
+  assertEqual(r.long.tradeCount, 0, 'long tradeCount = 0');
+  assertApprox(r.short.netPnl, 0, 'short netPnl = 0');
+  assertNull(r.short.winRate, 'short winRate = null');
+  assertEqual(r.short.tradeCount, 0, 'short tradeCount = 0');
+});
+
+test('computeDirectionalPerformance — all scratches (PnL=0) counted as loss per D013', () => {
+  const scratches = [
+    makeTrade('s1', 'long', 'closed', longTradeExecutions(100, 100, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'),  // PnL = 0
+    makeTrade('s2', 'short', 'closed', [
+      { action: 'sell_short', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-01T10:00:00Z' },
+      { action: 'buy_to_cover', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
+    ], null, null, '2026-01-01T10:00:00Z'),  // PnL = 0
+  ];
+  const r = computeDirectionalPerformance(scratches);
+  assertClose(r.long.winRate, 0, 'long winRate = 0 (scratch counted as loss)');
+  assertClose(r.short.winRate, 0, 'short winRate = 0 (scratch counted as loss)');
+  assertApprox(r.long.netPnl, 0, 'long netPnl = 0');
+  assertApprox(r.short.netPnl, 0, 'short netPnl = 0');
 });
 
 // ────────────────────────────────────────────────────────────────────────

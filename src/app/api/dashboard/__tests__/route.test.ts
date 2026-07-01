@@ -24,11 +24,13 @@ import {
   computeKpiMetrics,
   computeMonthlyPerformance,
   computeRDistribution,
+  computeDirectionalPerformance,
   type KpiMetrics,
   type KpiTradeInput,
   type RollforwardRow,
   type MonthlyPerformanceItem,
   type RDistributionBin,
+  type DirectionalPerformanceResult,
 } from '@/lib/dashboard';
 import {
   computeEquityCurve,
@@ -238,7 +240,7 @@ sqlite.exec(`
 
 interface DashboardRouteResult {
   status: number;
-  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; error?: string; details?: unknown };
+  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; error?: string; details?: unknown };
 }
 
 function doGetDashboard(
@@ -466,11 +468,12 @@ function doGetDashboard(
     // 8. Compute KPIs
     const kpis = computeKpiMetrics(allKpiInputs, closedKpiInputs, latestRollforward, startingAccountValue);
 
-    // 9. Compute monthly performance and R distribution
+    // 9. Compute monthly performance, R distribution, and directional performance
     const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
     const rDistribution = computeRDistribution(closedKpiInputs);
+    const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
 
-    return { status: 200, body: { kpis, equityCurve, drawdown, monthlyPerformance, rDistribution } };
+    return { status: 200, body: { kpis, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance } };
   } catch (error) {
     return {
       status: 500,
@@ -1587,6 +1590,133 @@ cleanup();
   assertClose(result.body.kpis!.netPnl, 0, 'No matching closed trades → netPnl = 0');
   assert(result.body.kpis!.winRate === null, 'No matching closed trades → winRate = null');
   assert(result.body.kpis!.avgR === null, 'No matching closed trades → avgR = null');
+}
+
+// ── Directional Performance Tests ───────────────────────────────────────
+
+console.log('\n▶ Directional Performance');
+
+// ── Test 34: directionalPerformance present in response ─────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Long win: buy 100 @ 100, sell @ 120, fees $10 → net $1990
+  const t1 = seedTrade(accountId, {
+    symbol: 'DIR-LONG',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+
+  // Short loss: sell_short 50 @ 200, buy_to_cover @ 210, fees $10 → net -$510
+  const t2 = seedTrade(accountId, {
+    symbol: 'DIR-SHORT',
+    direction: 'short',
+    status: 'closed',
+    closedAt: '2026-06-20T14:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'sell_short', quantity: 50, price: 200, fees: 5 });
+  seedExecution(t2, { action: 'buy_to_cover', quantity: 50, price: 210, fees: 5 });
+
+  seedRollforward(accountId, { endingEquity: 51000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.directionalPerformance !== undefined, 'directionalPerformance present in response');
+  assert(result.body.directionalPerformance!.long.tradeCount === 1, 'long tradeCount = 1');
+  assertClose(result.body.directionalPerformance!.long.netPnl, 1990, 'long netPnl = 1990');
+  assertClose(result.body.directionalPerformance!.long.winRate, 1, 'long winRate = 1');
+  assert(result.body.directionalPerformance!.short.tradeCount === 1, 'short tradeCount = 1');
+  assertClose(result.body.directionalPerformance!.short.netPnl, -510, 'short netPnl = -510');
+  assertClose(result.body.directionalPerformance!.short.winRate, 0, 'short winRate = 0 (loss)');
+}
+
+// ── Test 35: directionalPerformance empty (no trades) ───────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.directionalPerformance !== undefined, 'directionalPerformance present even with no trades');
+  assert(result.body.directionalPerformance!.long.tradeCount === 0, 'long tradeCount = 0');
+  assert(result.body.directionalPerformance!.long.winRate === null, 'long winRate = null');
+  assertClose(result.body.directionalPerformance!.long.netPnl, 0, 'long netPnl = 0');
+  assert(result.body.directionalPerformance!.short.tradeCount === 0, 'short tradeCount = 0');
+  assert(result.body.directionalPerformance!.short.winRate === null, 'short winRate = null');
+  assertClose(result.body.directionalPerformance!.short.netPnl, 0, 'short netPnl = 0');
+}
+
+// ── Test 36: directionalPerformance only long trades ───────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'ONLY-LONG-1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 110, fees: 0 });
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'ONLY-LONG-2',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-05T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t2, { action: 'sell', quantity: 100, price: 90, fees: 0 });
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.directionalPerformance!.long.tradeCount === 2, 'long tradeCount = 2');
+  assertClose(result.body.directionalPerformance!.long.netPnl, 0, 'long netPnl = 0 (1000 + (-1000))');
+  assertClose(result.body.directionalPerformance!.long.winRate, 0.5, 'long winRate = 0.5');
+  assert(result.body.directionalPerformance!.short.tradeCount === 0, 'short tradeCount = 0');
+}
+
+// ── Test 37: directionalPerformance respects date filter ────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Trade closed before dateFrom
+  const t1 = seedTrade(accountId, {
+    symbol: 'BEFORE-FILTER',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-05-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 110, fees: 0 });
+
+  // Trade after dateFrom
+  const t2 = seedTrade(accountId, {
+    symbol: 'AFTER-FILTER',
+    direction: 'short',
+    status: 'closed',
+    closedAt: '2026-07-01T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'sell_short', quantity: 50, price: 200, fees: 0 });
+  seedExecution(t2, { action: 'buy_to_cover', quantity: 50, price: 150, fees: 0 });
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  // Only July trades should contribute
+  const result = doGetDashboard(accountId, '2026-06-01', null);
+  assert(result.body.directionalPerformance!.long.tradeCount === 0, 'long tradeCount = 0 (May trade filtered out)');
+  assert(result.body.directionalPerformance!.short.tradeCount === 1, 'short tradeCount = 1 (July trade included)');
+  assertClose(result.body.directionalPerformance!.short.netPnl, 2500, 'short netPnl = 2500 ((200-150)*50)');
 }
 
 // ── Summary ────────────────────────────────────────────────────────────

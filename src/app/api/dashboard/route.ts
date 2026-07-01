@@ -19,6 +19,7 @@ import {
   computeKpiMetrics,
   computeMonthlyPerformance,
   computeRDistribution,
+  computeDirectionalPerformance,
   type KpiTradeInput,
   type RollforwardRow,
 } from '@/lib/dashboard';
@@ -254,11 +255,19 @@ export async function GET(request: NextRequest) {
       startingAccountValue,
     );
 
-    // 9. Compute monthly performance and R distribution (pure, no DB queries)
+    // 9. Compute monthly performance, R distribution, and directional performance
     const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
     const rDistribution = computeRDistribution(closedKpiInputs);
+    const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
 
-    return NextResponse.json({ kpis, equityCurve, drawdown, monthlyPerformance, rDistribution });
+    return NextResponse.json({
+      kpis,
+      equityCurve,
+      drawdown,
+      monthlyPerformance,
+      rDistribution,
+      directionalPerformance,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch dashboard KPIs', details: String(error) },
