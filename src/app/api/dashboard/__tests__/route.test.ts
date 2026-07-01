@@ -12,7 +12,7 @@
  * Run: npx tsx src/app/api/dashboard/__tests__/route.test.ts (sets its own DB_FILE_NAME)
  */
 
-process.env.DB_FILE_NAME = './.test-m05-s02-db';
+process.env.DB_FILE_NAME = './.test-m05-s03-db';
 
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
@@ -20,7 +20,16 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, desc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
-import { computeKpiMetrics, type KpiMetrics, type KpiTradeInput, type RollforwardRow } from '@/lib/dashboard';
+import {
+  computeKpiMetrics,
+  computeMonthlyPerformance,
+  computeRDistribution,
+  type KpiMetrics,
+  type KpiTradeInput,
+  type RollforwardRow,
+  type MonthlyPerformanceItem,
+  type RDistributionBin,
+} from '@/lib/dashboard';
 import {
   computeEquityCurve,
   computeDrawdown,
@@ -80,7 +89,7 @@ function assertClose(actual: number | null | undefined, expected: number | null,
 
 // ── Setup: test DB ──────────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-m05-s02-db';
+const DB_FILE = process.env.DB_FILE_NAME || './.test-m05-s03-db';
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
@@ -229,7 +238,7 @@ sqlite.exec(`
 
 interface DashboardRouteResult {
   status: number;
-  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; error?: string; details?: unknown };
+  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; error?: string; details?: unknown };
 }
 
 function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
@@ -430,7 +439,11 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
     // 8. Compute KPIs
     const kpis = computeKpiMetrics(allKpiInputs, closedKpiInputs, latestRollforward, startingAccountValue);
 
-    return { status: 200, body: { kpis, equityCurve, drawdown } };
+    // 9. Compute monthly performance and R distribution
+    const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
+    const rDistribution = computeRDistribution(closedKpiInputs);
+
+    return { status: 200, body: { kpis, equityCurve, drawdown, monthlyPerformance, rDistribution } };
   } catch (error) {
     return {
       status: 500,
@@ -482,6 +495,7 @@ function seedTrade(
     symbol: overrides?.symbol ?? 'AAPL',
     direction: overrides?.direction ?? 'long',
     status: overrides?.status ?? 'closed',
+    closedAt: overrides?.closedAt ?? null,
     createdAt: NOW,
     updatedAt: NOW,
   }).run();
@@ -965,6 +979,409 @@ cleanup();
   // Drawdown assertions
   assert(Array.isArray(result.body.drawdown), 'drawdown present alongside KPIs');
   assert(result.body.drawdown!.length === 1, 'drawdown has 1 point');
+}
+
+// ── Monthly Performance Tests ──────────────────────────────────────────
+
+console.log('\n▶ Monthly Performance');
+
+// ── Test 17: Empty trades → monthlyPerformance empty ────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const result = doGetDashboard(accountId);
+  assert(Array.isArray(result.body.monthlyPerformance), 'monthlyPerformance is an array');
+  assert(result.body.monthlyPerformance!.length === 0, 'monthlyPerformance is empty when no trades');
+}
+
+// ── Test 18: Single month with multiple trades ───────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Trade 1: Win in June — buy 100 @ 100, sell 100 @ 120, fees $10 → net $1990
+  const t1 = seedTrade(accountId, {
+    symbol: 'WIN1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+
+  // Trade 2: Loss in June — buy 50 @ 200, sell 50 @ 190, fees $10 → net -$510
+  const t2 = seedTrade(accountId, {
+    symbol: 'LOSS1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-20T14:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 50, price: 200, fees: 5 });
+  seedExecution(t2, { action: 'sell', quantity: 50, price: 190, fees: 5 });
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.monthlyPerformance!.length === 1, 'Single month has 1 entry');
+  assert(result.body.monthlyPerformance![0].month === '2026-06', 'Month is 2026-06');
+  assertClose(result.body.monthlyPerformance![0].netPnl, 1480, 'June netPnl = 1990 + (-510) = 1480');
+  assertClose(result.body.monthlyPerformance![0].winRate, 0.5, 'June winRate = 1/2 = 0.5');
+  assert(result.body.monthlyPerformance![0].tradeCount === 2, 'June tradeCount = 2');
+}
+
+// ── Test 19: Multiple months ─────────────────────────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // May: 1 win → net $1990
+  const t1 = seedTrade(accountId, {
+    symbol: 'MAY-WIN',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-05-10T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+
+  // June: 1 loss → net -$510
+  const t2 = seedTrade(accountId, {
+    symbol: 'JUN-LOSS',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 50, price: 200, fees: 5 });
+  seedExecution(t2, { action: 'sell', quantity: 50, price: 190, fees: 5 });
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.monthlyPerformance!.length === 2, 'Two months have 2 entries');
+  assert(result.body.monthlyPerformance![0].month === '2026-05', 'First month is May (chronological)');
+  assert(result.body.monthlyPerformance![1].month === '2026-06', 'Second month is June');
+  assertClose(result.body.monthlyPerformance![0].netPnl, 1990, 'May netPnl = 1990');
+  assertClose(result.body.monthlyPerformance![0].winRate, 1, 'May winRate = 1.0');
+  assert(result.body.monthlyPerformance![0].tradeCount === 1, 'May tradeCount = 1');
+  assertClose(result.body.monthlyPerformance![1].netPnl, -510, 'June netPnl = -510');
+  assertClose(result.body.monthlyPerformance![1].winRate, 0, 'June winRate = 0 (loss)');
+  assert(result.body.monthlyPerformance![1].tradeCount === 1, 'June tradeCount = 1');
+}
+
+// ── Test 20: Open trades excluded from monthly performance ───────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Closed trade in June
+  const t1 = seedTrade(accountId, {
+    symbol: 'CLOSED-JUN',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-10T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100, fees: 2 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110, fees: 2 });
+
+  // Open trade (should not appear)
+  const t2 = seedTrade(accountId, {
+    symbol: 'OPEN-TRADE',
+    direction: 'long',
+    status: 'open',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 150 });
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.monthlyPerformance!.length === 1, 'Only 1 month from closed trade');
+  assert(result.body.monthlyPerformance![0].tradeCount === 1, 'Open trade excluded from tradeCount');
+}
+
+// ── Test 21: Trades without closedAt excluded from monthly ───────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Trade with closedAt
+  const t1 = seedTrade(accountId, {
+    symbol: 'WITH-DATE',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-10T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100, fees: 2 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110, fees: 2 });
+
+  // Trade without closedAt (should not appear)
+  const t2 = seedTrade(accountId, {
+    symbol: 'NO-DATE',
+    direction: 'long',
+    status: 'closed',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 105 });
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.monthlyPerformance!.length === 1, 'Only the trade with closedAt contributes');
+  assert(result.body.monthlyPerformance![0].tradeCount === 1, 'Trade without closedAt excluded');
+}
+
+// ── R Distribution Tests ────────────────────────────────────────────────
+
+console.log('\n▶ R Distribution');
+
+// ── Test 22: Empty trades → all bins at 0 ───────────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const result = doGetDashboard(accountId);
+  assert(Array.isArray(result.body.rDistribution), 'rDistribution is an array');
+  assert(result.body.rDistribution!.length === 8, 'rDistribution has 8 bins');
+  const allZero = result.body.rDistribution!.every((b) => b.count === 0);
+  assert(allZero, 'All R distribution bins are 0 when no trades');
+  // Verify bin labels
+  const expectedLabels = ['<= -3', '-3 to -2', '-2 to -1', '-1 to 0', '0 to 1', '1 to 2', '2 to 3', '> 3'];
+  assertDeepEqual(
+    result.body.rDistribution!.map((b) => b.label),
+    expectedLabels,
+    'R distribution has correct bin labels',
+  );
+}
+
+// ── Test 23: No risk snapshots → all bins at 0 ─────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Closed trades but no risk snapshots
+  const t1 = seedTrade(accountId, {
+    symbol: 'NO-RISK-1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-10T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'NO-RISK-2',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 200 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 190 });
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.rDistribution!.length === 8, 'rDistribution has 8 bins');
+  const allZero = result.body.rDistribution!.every((b) => b.count === 0);
+  assert(allZero, 'All R distribution bins are 0 when no risk snapshots');
+}
+
+// ── Test 24: Mixed R values across different bins ───────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Trade: R = (110-100)*10 / 200 = 100/200 = 0.5 → "0 to 1" bin
+  const t1 = seedTrade(accountId, {
+    symbol: 'R05',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110, fees: 0 });
+  seedRiskSnapshot(t1, 200);
+
+  // Trade: R = (190-200)*50 / 400 = -500/400 = -1.25 → "-2 to -1" bin (index 2)
+  const t2 = seedTrade(accountId, {
+    symbol: 'R125',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-02T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 50, price: 200, fees: 0 });
+  seedExecution(t2, { action: 'sell', quantity: 50, price: 190, fees: 0 });
+  seedRiskSnapshot(t2, 400);
+
+  // Trade: R = 3.98 → "> 3" bin
+  const t3 = seedTrade(accountId, {
+    symbol: 'R398',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-03T10:00:00.000Z',
+  });
+  seedExecution(t3, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t3, { action: 'sell', quantity: 100, price: 120, fees: 10 });
+  seedRiskSnapshot(t3, 500);
+
+  // Trade: R = -3.2 → "<= -3" bin
+  const t4 = seedTrade(accountId, {
+    symbol: 'R32',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-04T10:00:00.000Z',
+  });
+  seedExecution(t4, { action: 'buy', quantity: 10, price: 200, fees: 0 });
+  seedExecution(t4, { action: 'sell', quantity: 10, price: 100, fees: 0 });
+  seedRiskSnapshot(t4, 300);
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.rDistribution!.length === 8, 'rDistribution has 8 bins');
+  assert(result.body.rDistribution![3].label === '-1 to 0', 'Bin -1 to 0 is at index 3');
+  assert(result.body.rDistribution![4].label === '0 to 1', 'Bin 0 to 1 is at index 4');
+  assert(result.body.rDistribution![1].label === '-3 to -2', 'Bin -3 to -2 is at index 1');
+  assert(result.body.rDistribution![2].label === '-2 to -1', 'Bin -2 to -1 is at index 2');
+  assert(result.body.rDistribution![7].label === '> 3', 'Bin > 3 is at index 7');
+  assert(result.body.rDistribution![4].count === 1, '0 to 1 bin count = 1 (R=0.5)');
+  assert(result.body.rDistribution![2].count === 1, '-2 to -1 bin count = 1 (R=-1.25)');
+  assert(result.body.rDistribution![7].count === 1, '> 3 bin count = 1 (R=3.98)');
+  assert(result.body.rDistribution![0].count === 1, '<= -3 bin count = 1 (R=-3.2)');
+}
+
+// ── Test 25: R = 0 goes to 0 to 1 bin (not -1 to 0) ─────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // PnL = 0, R = 0 / 500 = 0 → "0 to 1" bin (since 0 >= 0 and 0 < 1)
+  const t1 = seedTrade(accountId, {
+    symbol: 'RZERO',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 100, fees: 0 });
+  seedRiskSnapshot(t1, 500);
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.rDistribution![4].label === '0 to 1', 'Bin 0 to 1 label correct');
+  assert(result.body.rDistribution![4].count === 1, 'R=0 goes to 0 to 1 bin (edge: >= 0)');
+  assert(result.body.rDistribution![3].count === 0, '-1 to 0 bin is empty');
+}
+
+// ── Test 26: R = -1 goes to -1 to 0 bin ────────────────────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // PnL = -500, R = -500 / 500 = -1 → "-1 to 0" bin (since -1 >= -1 and -1 < 0)
+  const t1 = seedTrade(accountId, {
+    symbol: 'RNEG1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 95, fees: 0 });
+  seedRiskSnapshot(t1, 500);
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.rDistribution![3].label === '-1 to 0', 'Bin -1 to 0 label correct');
+  assert(result.body.rDistribution![3].count === 1, 'R=-1.0 goes to -1 to 0 bin (edge: >= -1)');
+  assert(result.body.rDistribution![1].count === 0, '-3 to -2 bin is empty');
+}
+
+// ── Test 27: Combined: monthlyPerformance and rDistribution present alongside KPIs ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'COMBINED',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+  seedRiskSnapshot(t1, 500);
+  seedGrade(t1, 80);
+
+  seedRollforward(accountId, { endingEquity: 52000, drawdownAmount: -200, drawdownPct: -0.01 });
+
+  const result = doGetDashboard(accountId);
+
+  // Existing KPIs still present
+  assert(result.body.kpis !== undefined, 'kpis present with new fields');
+  assertClose(result.body.kpis?.netPnl, 1990, 'netPnl still correct');
+  assert(result.body.kpis?.totalTrades === 1, 'totalTrades still correct');
+
+  // Equity curve still present
+  assert(Array.isArray(result.body.equityCurve), 'equityCurve present');
+
+  // Drawdown still present
+  assert(Array.isArray(result.body.drawdown), 'drawdown present');
+
+  // New fields present
+  assert(Array.isArray(result.body.monthlyPerformance), 'monthlyPerformance present');
+  assert(result.body.monthlyPerformance!.length === 1, 'monthlyPerformance has data');
+  assert(result.body.monthlyPerformance![0].month === '2026-06', 'monthlyPerformance month correct');
+  assertClose(result.body.monthlyPerformance![0].netPnl, 1990, 'monthlyPerformance netPnl correct');
+
+  assert(Array.isArray(result.body.rDistribution), 'rDistribution present');
+  assert(result.body.rDistribution!.length === 8, 'rDistribution has 8 bins');
+  // R = (120-100)*100 - 10 = 1990 / 500 = 3.98
+  assert(result.body.rDistribution![7].count === 1, 'R=3.98 in > 3 bin');
+}
+
+// ── Test 28: Monthly performance sorted chronologically ─────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Insert out of order (Aug before July) — should sort by YYYY-MM
+  const aug = seedTrade(accountId, {
+    symbol: 'AUG-TRADE',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-08-10T10:00:00.000Z',
+  });
+  seedExecution(aug, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(aug, { action: 'sell', quantity: 10, price: 110 });
+
+  const jul = seedTrade(accountId, {
+    symbol: 'JUL-TRADE',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-07-10T10:00:00.000Z',
+  });
+  seedExecution(jul, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(jul, { action: 'sell', quantity: 10, price: 110 });
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.monthlyPerformance!.length === 2, 'Two months from different months');
+  assert(result.body.monthlyPerformance![0].month === '2026-07', 'First is July (chronological)');
+  assert(result.body.monthlyPerformance![1].month === '2026-08', 'Second is August');
 }
 
 // ── Summary ────────────────────────────────────────────────────────────

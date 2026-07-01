@@ -17,6 +17,8 @@ import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollfo
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import {
   computeKpiMetrics,
+  computeMonthlyPerformance,
+  computeRDistribution,
   type KpiTradeInput,
   type RollforwardRow,
 } from '@/lib/dashboard';
@@ -207,7 +209,11 @@ export async function GET(request: NextRequest) {
       startingAccountValue,
     );
 
-    return NextResponse.json({ kpis, equityCurve, drawdown });
+    // 9. Compute monthly performance and R distribution (pure, no DB queries)
+    const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
+    const rDistribution = computeRDistribution(closedKpiInputs);
+
+    return NextResponse.json({ kpis, equityCurve, drawdown, monthlyPerformance, rDistribution });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch dashboard KPIs', details: String(error) },
