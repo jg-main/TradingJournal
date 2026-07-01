@@ -90,6 +90,16 @@ const seedData: SeedEntry[] = [
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (c) => c.toUpperCase()),
   })),
+
+  // Source types (for reviews / action items)
+  ...[
+    'weekly_review', 'trade_review', 'general',
+  ].map((v) => ({ type: 'source_type' as const, value: v })),
+
+  // Action item statuses
+  ...[
+    'open', 'in_progress', 'done', 'cancelled',
+  ].map((v) => ({ type: 'action_item_status' as const, value: v })),
 ];
 
 function seed() {
