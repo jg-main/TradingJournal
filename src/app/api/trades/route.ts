@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, settings, accounts } from '@/db/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { trades, settings, accounts, lookupValues } from '@/db/schema';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 const createTradeSchema = z.object({
-  symbol: z.string().min(1, 'Symbol is required').max(20),
+  symbol: z.string().trim().min(1, 'Symbol is required').max(20),
   direction: z.enum(['long', 'short']),
   setup: z.string().nullable().optional(),
   sectorId: z.string().nullable().optional(),
@@ -89,6 +89,24 @@ export async function POST(request: NextRequest) {
     const nextNumber = (countResult?.count ?? 0) + 1;
     const tradeCode = `T-${String(nextNumber).padStart(4, '0')}`;
 
+    // Resolve setup string to UUID if provided
+    let resolvedSetupId: string | null = null;
+    if (parsed.data.setup) {
+      const lowerValue = parsed.data.setup.toLowerCase();
+      const lookup = db
+        .select()
+        .from(lookupValues)
+        .where(and(eq(lookupValues.type, 'setup'), eq(lookupValues.value, lowerValue)))
+        .get();
+      if (!lookup) {
+        return NextResponse.json(
+          { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } },
+          { status: 400 }
+        );
+      }
+      resolvedSetupId = lookup.id;
+    }
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -99,7 +117,7 @@ export async function POST(request: NextRequest) {
         accountId,
         symbol: parsed.data.symbol,
         direction: parsed.data.direction,
-        setupId: parsed.data.setup ?? null,
+        setupId: resolvedSetupId,
         sectorId: parsed.data.sectorId ?? null,
         marketConditionId: parsed.data.marketConditionId ?? null,
         status: 'planned',
