@@ -9,8 +9,10 @@
  *  - Rollforward vs settings fallback for account value
  *  - Error shapes
  *
- * Run: DB_FILE_NAME=./.test-m05-s01-db npx tsx src/app/api/dashboard/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/dashboard/__tests__/route.test.ts (sets its own DB_FILE_NAME)
  */
+
+process.env.DB_FILE_NAME = './.test-m05-s02-db';
 
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
@@ -19,6 +21,12 @@ import { eq, desc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import { computeKpiMetrics, type KpiMetrics, type KpiTradeInput, type RollforwardRow } from '@/lib/dashboard';
+import {
+  computeEquityCurve,
+  computeDrawdown,
+  type EquityDataPoint,
+  type DrawdownDataPoint,
+} from '@/lib/equity';
 
 let passed = 0;
 let failed = 0;
@@ -72,7 +80,7 @@ function assertClose(actual: number | null | undefined, expected: number | null,
 
 // ── Setup: test DB ──────────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-m05-s01-db';
+const DB_FILE = process.env.DB_FILE_NAME || './.test-m05-s02-db';
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
@@ -221,7 +229,7 @@ sqlite.exec(`
 
 interface DashboardRouteResult {
   status: number;
-  body: { kpis?: KpiMetrics; error?: string; details?: unknown };
+  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; error?: string; details?: unknown };
 }
 
 function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
@@ -351,6 +359,7 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
       riskSnapshot: riskMap.has(trade.id)
         ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
         : null,
+      closedAt: trade.closedAt ?? null,
     }));
 
     const closedKpiInputs: KpiTradeInput[] = closedTrades.map((trade) => ({
@@ -371,6 +380,7 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
       riskSnapshot: riskMap.has(trade.id)
         ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
         : null,
+      closedAt: trade.closedAt ?? null,
     }));
 
     // 5. Fetch latest rollforward
@@ -393,14 +403,34 @@ function doGetDashboard(queryAccountId?: string | null): DashboardRouteResult {
         }
       : null;
 
-    // 6. Fetch settings startingAccountValue
+    // 6. Fetch ALL account_rollforward rows ordered by date ASC for charts
+    const allRfRows = db
+      .select()
+      .from(schema.accountRollforward)
+      .where(eq(schema.accountRollforward.accountId, accountId))
+      .orderBy(schema.accountRollforward.date)
+      .all();
+
+    const rollforwardRowsForCharts: RollforwardRow[] = allRfRows.map((r) => ({
+      date: r.date,
+      endingEquity: r.endingEquity ?? null,
+      drawdownAmount: r.drawdownAmount ?? null,
+      drawdownPct: r.drawdownPct ?? null,
+      cumulativePnl: r.cumulativePnl ?? null,
+      highWaterMark: r.highWaterMark ?? null,
+    }));
+
+    const equityCurve = computeEquityCurve(rollforwardRowsForCharts);
+    const drawdown = computeDrawdown(rollforwardRowsForCharts);
+
+    // 7. Fetch settings startingAccountValue
     const setting = db.select().from(schema.settings).get();
     const startingAccountValue = setting?.startingAccountValue ?? null;
 
-    // 7. Compute KPIs
+    // 8. Compute KPIs
     const kpis = computeKpiMetrics(allKpiInputs, closedKpiInputs, latestRollforward, startingAccountValue);
 
-    return { status: 200, body: { kpis } };
+    return { status: 200, body: { kpis, equityCurve, drawdown } };
   } catch (error) {
     return {
       status: 500,
@@ -508,15 +538,25 @@ function seedRollforward(
   overrides?: Partial<typeof schema.accountRollforward.$inferInsert>,
 ): string {
   const id = overrides?.id ?? randomUUID();
-  db.insert(schema.accountRollforward).values({
+  // Use a spread of overrides so null values are passed through explicitly
+  // (?? would convert null back to default, breaking null-filtering tests)
+  const values: Record<string, unknown> = {
     id,
     accountId,
-    date: overrides?.date ?? '2026-07-01',
-    endingEquity: overrides?.endingEquity ?? 50000,
-    drawdownAmount: overrides?.drawdownAmount ?? 0,
-    drawdownPct: overrides?.drawdownPct ?? 0,
+    date: '2026-07-01',
+    endingEquity: 50000,
+    drawdownAmount: 0,
+    drawdownPct: 0,
     createdAt: NOW,
-  }).run();
+  };
+  if (overrides) {
+    for (const key of Object.keys(overrides)) {
+      if (overrides[key as keyof typeof overrides] !== undefined) {
+        values[key] = overrides[key as keyof typeof overrides] as unknown;
+      }
+    }
+  }
+  db.insert(schema.accountRollforward).values(values as typeof schema.accountRollforward.$inferInsert).run();
   return id;
 }
 
@@ -545,7 +585,7 @@ cleanup();
 {
   const result = doGetDashboard(null);
   assert(result.status === 400, 'No account config returns 400');
-  assert(result.body.error?.includes('No active account'), 'Error message mentions no active account');
+  assert((result.body.error?.includes('No active account') ?? false), 'Error message mentions no active account');
   assertDeepEqual(
     (result.body.details as Record<string, unknown>)?.fieldErrors,
     { accountId: ['No account resolved'] },
@@ -756,6 +796,175 @@ console.log('▶ Error Shape');
 // For now, just validate the 400 shape from early return
 {
   // Already tested: 400 shape in Test 1
+}
+
+// ── Equity Curve & Drawdown Tests ────────────────────────────────────
+
+console.log('\n▶ Equity Curve & Drawdown');
+
+// ── Test 12: equityCurve and drawdown are arrays (empty when no rollforward rows) ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const result = doGetDashboard(accountId);
+  assert(Array.isArray(result.body.equityCurve), 'equityCurve is an array');
+  assert(result.body.equityCurve!.length === 0, 'equityCurve is empty when no rollforward rows');
+  assert(Array.isArray(result.body.drawdown), 'drawdown is an array');
+  assert(result.body.drawdown!.length === 0, 'drawdown is empty when no rollforward rows');
+}
+
+// ── Test 13: equityCurve ordering and shape with multiple rollforward rows ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Seed 3 rollforward rows with increasing equity
+  seedRollforward(accountId, {
+    date: '2026-06-01',
+    endingEquity: 10000,
+    cumulativePnl: 500,
+    highWaterMark: 10000,
+    drawdownAmount: 0,
+    drawdownPct: 0,
+  });
+  seedRollforward(accountId, {
+    date: '2026-06-02',
+    endingEquity: 10500,
+    cumulativePnl: 1000,
+    highWaterMark: 10500,
+    drawdownAmount: 0,
+    drawdownPct: 0,
+  });
+  seedRollforward(accountId, {
+    date: '2026-06-03',
+    endingEquity: 10200,
+    cumulativePnl: 700,
+    highWaterMark: 10500,
+    drawdownAmount: -300,
+    drawdownPct: -0.0286,
+  });
+
+  const result = doGetDashboard(accountId);
+
+  assert(result.body.equityCurve!.length === 3, 'equityCurve has 3 points');
+  assert(result.body.drawdown!.length === 3, 'drawdown has 3 points');
+
+  // Equity curve ordering by date ASC
+  assertDeepEqual(
+    result.body.equityCurve![0],
+    { date: '2026-06-01', equity: 10000, cumulativePnl: 500, highWaterMark: 10000 },
+    'equityCurve[0] shape matches',
+  );
+  assertDeepEqual(
+    result.body.equityCurve![1],
+    { date: '2026-06-02', equity: 10500, cumulativePnl: 1000, highWaterMark: 10500 },
+    'equityCurve[1] shape matches',
+  );
+  assertDeepEqual(
+    result.body.equityCurve![2],
+    { date: '2026-06-03', equity: 10200, cumulativePnl: 700, highWaterMark: 10500 },
+    'equityCurve[2] shape matches',
+  );
+
+  // Drawdown ordering by date ASC
+  assertDeepEqual(
+    result.body.drawdown![2],
+    { date: '2026-06-03', drawdownAmount: -300, drawdownPct: -0.0286 },
+    'drawdown[2] has drawdown values',
+  );
+}
+
+// ── Test 14: Drawdown filters rows where drawdownPct is null ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Row with null drawdownPct — should be filtered out by computeDrawdown
+  seedRollforward(accountId, {
+    date: '2026-06-01',
+    endingEquity: 10000,
+    drawdownPct: null as unknown as number,
+    drawdownAmount: null as unknown as number,
+  });
+  seedRollforward(accountId, {
+    date: '2026-06-02',
+    endingEquity: 10200,
+    drawdownPct: -0.02,
+    drawdownAmount: -200,
+  });
+
+  const result = doGetDashboard(accountId);
+  // Both rows have endingEquity set, so both appear in equityCurve
+  // drawdown filters null drawdownPct, so only row 2 appears
+  assert(result.body.drawdown!.length === 1, 'drawdown filters rows with null drawdownPct');
+  assertDeepEqual(
+    result.body.drawdown![0],
+    { date: '2026-06-02', drawdownAmount: -200, drawdownPct: -0.02 },
+    'drawdown[0] is the non-null row',
+  );
+}
+
+// ── Test 15: Equity curve filters rows where endingEquity is null ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  seedRollforward(accountId, {
+    date: '2026-06-01',
+    endingEquity: null as unknown as number,
+    drawdownPct: 0,
+    drawdownAmount: 0,
+  });
+  seedRollforward(accountId, {
+    date: '2026-06-02',
+    endingEquity: 11000,
+    drawdownPct: 0,
+    drawdownAmount: 0,
+  });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.equityCurve!.length === 1, 'equityCurve filters rows with null endingEquity');
+  assertDeepEqual(
+    result.body.equityCurve![0],
+    { date: '2026-06-02', equity: 11000, cumulativePnl: 0, highWaterMark: 11000 },
+    'equityCurve[0] is the non-null row',
+  );
+}
+
+// ── Test 16: Existing KPI tests still pass alongside equity/drawdown ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, { symbol: 'AAPL', direction: 'long', status: 'closed' });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+  seedRiskSnapshot(t1, 500);
+  seedGrade(t1, 85);
+
+  seedRollforward(accountId, { endingEquity: 52000, drawdownAmount: -200, drawdownPct: -0.01 });
+
+  const result = doGetDashboard(accountId);
+
+  // KPI assertions (same as Test 5 subset)
+  assertClose(result.body.kpis?.netPnl, 1990, 'netPnl still correct with equity/drawdown in response');
+  assertClose(result.body.kpis?.accountValue, 52000, 'accountValue still correct');
+  assertClose(result.body.kpis?.currentDrawdown, -200, 'currentDrawdown still correct');
+
+  // Equity curve assertions
+  assert(Array.isArray(result.body.equityCurve), 'equityCurve present alongside KPIs');
+  assert(result.body.equityCurve!.length === 1, 'equityCurve has 1 point');
+  assert(result.body.equityCurve![0].equity === 52000, 'equityCurve equity matches rollforward');
+
+  // Drawdown assertions
+  assert(Array.isArray(result.body.drawdown), 'drawdown present alongside KPIs');
+  assert(result.body.drawdown!.length === 1, 'drawdown has 1 point');
 }
 
 // ── Summary ────────────────────────────────────────────────────────────

@@ -20,6 +20,12 @@ import {
   type KpiTradeInput,
   type RollforwardRow,
 } from '@/lib/dashboard';
+import {
+  computeEquityCurve,
+  computeDrawdown,
+  type EquityDataPoint,
+  type DrawdownDataPoint,
+} from '@/lib/equity';
 
 export async function GET(request: NextRequest) {
   try {
@@ -123,6 +129,7 @@ export async function GET(request: NextRequest) {
       riskSnapshot: riskMap.has(trade.id)
         ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
         : null,
+      closedAt: trade.closedAt ?? null,
     }));
 
     // Build all-trades KpiTradeInput for counts (non-closed trades have no P&L contribution)
@@ -145,6 +152,7 @@ export async function GET(request: NextRequest) {
       riskSnapshot: riskMap.has(trade.id)
         ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
         : null,
+      closedAt: trade.closedAt ?? null,
     }));
 
     // 5. Fetch latest account_rollforward row for this account
@@ -167,11 +175,31 @@ export async function GET(request: NextRequest) {
         }
       : null;
 
-    // 6. Fetch settings.startingAccountValue for fallback
+    // 6. Fetch ALL account_rollforward rows ordered by date ASC for equity curve and drawdown charts
+    const allRollforwardRows = db
+      .select()
+      .from(accountRollforward)
+      .where(eq(accountRollforward.accountId, accountId))
+      .orderBy(accountRollforward.date)
+      .all();
+
+    const rollforwardRowsForCharts: RollforwardRow[] = allRollforwardRows.map((r) => ({
+      date: r.date,
+      endingEquity: r.endingEquity ?? null,
+      drawdownAmount: r.drawdownAmount ?? null,
+      drawdownPct: r.drawdownPct ?? null,
+      cumulativePnl: r.cumulativePnl ?? null,
+      highWaterMark: r.highWaterMark ?? null,
+    }));
+
+    const equityCurve = computeEquityCurve(rollforwardRowsForCharts);
+    const drawdown = computeDrawdown(rollforwardRowsForCharts);
+
+    // 7. Fetch settings.startingAccountValue for fallback
     const setting = db.select().from(settings).get();
     const startingAccountValue = setting?.startingAccountValue ?? null;
 
-    // 7. Compute KPIs
+    // 8. Compute KPIs
     const kpis = computeKpiMetrics(
       allKpiInputs,
       closedKpiInputs,
@@ -179,7 +207,7 @@ export async function GET(request: NextRequest) {
       startingAccountValue,
     );
 
-    return NextResponse.json({ kpis });
+    return NextResponse.json({ kpis, equityCurve, drawdown });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch dashboard KPIs', details: String(error) },

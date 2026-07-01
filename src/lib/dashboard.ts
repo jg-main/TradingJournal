@@ -27,6 +27,7 @@ export interface KpiTradeInput {
   executions: ExecutionData[];
   grade: { totalScore: number } | null;
   riskSnapshot: { initialRiskAmount: number | null } | null;
+  closedAt: string | null;
 }
 
 /**
@@ -71,6 +72,32 @@ export interface KpiMetrics {
   accountValue: number | null;
 }
 
+/**
+ * A single monthly performance data point.
+ *
+ * - month:        YYYY-MM string identifying the month
+ * - netPnl:       Sum of realized P&L for all closed trades in this month
+ * - winRate:      Win rate for this month (per D013), or null if no trades
+ * - tradeCount:   Number of closed decisions (wins + losses) in this month
+ */
+export interface MonthlyPerformanceItem {
+  month: string;
+  netPnl: number;
+  winRate: number | null;
+  tradeCount: number;
+}
+
+/**
+ * A single bin for the R-multiple distribution histogram.
+ *
+ * - label:   Human-readable bin label (e.g. "-3 to -2", "> 3")
+ * - count:   Number of trades whose R-multiple falls in this bin
+ */
+export interface RDistributionBin {
+  label: string;
+  count: number;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -81,6 +108,115 @@ export interface KpiMetrics {
 export function computeWinRate(wins: number, decisions: number): number | null {
   if (decisions === 0) return null;
   return wins / decisions;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Monthly Performance & R Distribution
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Monthly performance bins for bar-chart display.
+ *
+ * For each month with closed trades, computes:
+ * - netPnl:  Sum of realized P&L
+ * - winRate: Per-month win rate using D013 win/loss semantics
+ * - tradeCount: Number of closed trade decisions
+ *
+ * Months are sorted chronologically by YYYY-MM.
+ * Only months with at least one closed trade appear (no zero-filled gaps).
+ */
+export function computeMonthlyPerformance(
+  closedTrades: KpiTradeInput[],
+): MonthlyPerformanceItem[] {
+  const closed = closedTrades.filter(
+    (t) => t.status === 'closed' && t.closedAt !== null && t.closedAt !== undefined,
+  );
+
+  const groups = new Map<string, { netPnl: number; wins: number; decisions: number }>();
+
+  for (const trade of closed) {
+    const month = (trade.closedAt as string).substring(0, 7); // YYYY-MM
+    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+
+    let g = groups.get(month);
+    if (!g) {
+      g = { netPnl: 0, wins: 0, decisions: 0 };
+      groups.set(month, g);
+    }
+
+    g.netPnl += totalRealizedPnL;
+
+    // Per D013: >0 P&L = win, <=0 = loss
+    if (totalRealizedPnL > 0) {
+      g.wins++;
+    }
+    g.decisions++;
+  }
+
+  const months = Array.from(groups.keys()).sort();
+
+  return months.map((month) => {
+    const g = groups.get(month)!;
+    return {
+      month,
+      netPnl: g.netPnl,
+      winRate: computeWinRate(g.wins, g.decisions),
+      tradeCount: g.decisions,
+    };
+  });
+}
+
+/**
+ * R-multiple distribution bins for histogram display.
+ *
+ * Assigns each closed trade with a valid (non-null) R-multiple into one of 8 bins.
+ * Returns all 8 bins with zero-fill for empty bins.
+ * Trades without valid risk data are excluded.
+ */
+export function computeRDistribution(
+  closedTrades: KpiTradeInput[],
+): RDistributionBin[] {
+  // Bin definitions: [label, lowerBound (inclusive), upperBound (exclusive)]
+  // The last bin (>3) has no upper bound.
+  const binDefs: { label: string; min: number; max: number | null }[] = [
+    { label: '<= -3', min: -Infinity, max: -3 },
+    { label: '-3 to -2', min: -3, max: -2 },
+    { label: '-2 to -1', min: -2, max: -1 },
+    { label: '-1 to 0', min: -1, max: 0 },
+    { label: '0 to 1', min: 0, max: 1 },
+    { label: '1 to 2', min: 1, max: 2 },
+    { label: '2 to 3', min: 2, max: 3 },
+    { label: '> 3', min: 3, max: null },
+  ];
+
+  const counts = new Array<number>(binDefs.length).fill(0);
+
+  for (const trade of closedTrades) {
+    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
+    const { rMultiple } = calculateRMultiple(totalRealizedPnL, initialRiskAmount);
+
+    if (rMultiple === null) continue;
+
+    for (let i = 0; i < binDefs.length; i++) {
+      const bin = binDefs[i];
+      if (i === binDefs.length - 1) {
+        // Last bin: >= min
+        if (rMultiple >= bin.min) {
+          counts[i]++;
+          break;
+        }
+      } else if (bin.max !== null && rMultiple >= bin.min && rMultiple < bin.max) {
+        counts[i]++;
+        break;
+      }
+    }
+  }
+
+  return binDefs.map((bin, i) => ({
+    label: bin.label,
+    count: counts[i],
+  }));
 }
 
 // ── Library ─────────────────────────────────────────────────────────────
