@@ -25,12 +25,14 @@ import {
   computeMonthlyPerformance,
   computeRDistribution,
   computeDirectionalPerformance,
+  computeProcessScoreDistribution,
   type KpiMetrics,
   type KpiTradeInput,
   type RollforwardRow,
   type MonthlyPerformanceItem,
   type RDistributionBin,
   type DirectionalPerformanceResult,
+  type ProcessScoreBin,
 } from '@/lib/dashboard';
 import {
   computeEquityCurve,
@@ -240,7 +242,7 @@ sqlite.exec(`
 
 interface DashboardRouteResult {
   status: number;
-  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; error?: string; details?: unknown };
+  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; processScoreDistribution?: ProcessScoreBin[]; error?: string; details?: unknown };
 }
 
 function doGetDashboard(
@@ -472,8 +474,9 @@ function doGetDashboard(
     const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
     const rDistribution = computeRDistribution(closedKpiInputs);
     const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
+    const processScoreDistribution = computeProcessScoreDistribution(closedKpiInputs);
 
-    return { status: 200, body: { kpis, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance } };
+    return { status: 200, body: { kpis, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution } };
   } catch (error) {
     return {
       status: 500,
@@ -1717,6 +1720,141 @@ cleanup();
   assert(result.body.directionalPerformance!.long.tradeCount === 0, 'long tradeCount = 0 (May trade filtered out)');
   assert(result.body.directionalPerformance!.short.tradeCount === 1, 'short tradeCount = 1 (July trade included)');
   assertClose(result.body.directionalPerformance!.short.netPnl, 2500, 'short netPnl = 2500 ((200-150)*50)');
+}
+
+// ── Test 38: processScoreDistribution present in response ───────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Trade with grade A (score 58)
+  const t1 = seedTrade(accountId, {
+    symbol: 'GRADE-A-1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 110, fees: 0 });
+  seedGrade(t1, 58);
+
+  // Trade with grade C (score 35)
+  const t2 = seedTrade(accountId, {
+    symbol: 'GRADE-C-1',
+    direction: 'short',
+    status: 'closed',
+    closedAt: '2026-06-03T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'sell_short', quantity: 50, price: 200, fees: 0 });
+  seedExecution(t2, { action: 'buy_to_cover', quantity: 50, price: 150, fees: 0 });
+  seedGrade(t2, 35);
+
+  // Trade with grade F (score 10)
+  const t3 = seedTrade(accountId, {
+    symbol: 'GRADE-F-1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-05T10:00:00.000Z',
+  });
+  seedExecution(t3, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t3, { action: 'sell', quantity: 100, price: 104, fees: 0 });
+  seedGrade(t3, 10);
+
+  // Open trade (ungraded) — should be excluded
+  const t4 = seedTrade(accountId, {
+    symbol: 'OPEN-UNGRADED',
+    direction: 'long',
+    status: 'open',
+  });
+  seedExecution(t4, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+
+  // Ungraded closed trade
+  const t5 = seedTrade(accountId, {
+    symbol: 'UNGRADED-CLOSED',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-07T10:00:00.000Z',
+  });
+  seedExecution(t5, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t5, { action: 'sell', quantity: 100, price: 105, fees: 0 });
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.processScoreDistribution !== undefined, 'processScoreDistribution present in response');
+  assert(result.body.processScoreDistribution!.length === 5, '5 bins returned');
+  assert(result.body.processScoreDistribution![0].label === 'A (54-60)', 'bin 0 label = A (54-60)');
+  assert(result.body.processScoreDistribution![0].count === 1, 'A: 1 trade');
+  assert(result.body.processScoreDistribution![2].label === 'C (30-41)', 'bin 2 label = C (30-41)');
+  assert(result.body.processScoreDistribution![2].count === 1, 'C: 1 trade');
+  assert(result.body.processScoreDistribution![4].label === 'F (0-17)', 'bin 4 label = F (0-17)');
+  assert(result.body.processScoreDistribution![4].count === 1, 'F: 1 trade');
+  // Bins B (42-53) and D (18-29) should have 0
+  assert(result.body.processScoreDistribution![1].count === 0, 'B: 0 trades');
+  assert(result.body.processScoreDistribution![3].count === 0, 'D: 0 trades');
+}
+
+// ── Test 39: processScoreDistribution empty (no graded trades) ─────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Closed trades but none graded
+  const t1 = seedTrade(accountId, {
+    symbol: 'NO-GRADE-1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-01T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 110, fees: 0 });
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.processScoreDistribution !== undefined, 'processScoreDistribution present even with no grades');
+  const total = result.body.processScoreDistribution!.reduce((s, b) => s + b.count, 0);
+  assert(total === 0, 'all bins have 0 count when no graded trades');
+}
+
+// ── Test 40: processScoreDistribution respects date filter ──────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Closed trade before date filter (May)
+  const t1 = seedTrade(accountId, {
+    symbol: 'MAY-GRADE',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-05-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 110, fees: 0 });
+  seedGrade(t1, 55);
+
+  // Closed trade within date filter (June)
+  const t2 = seedTrade(accountId, {
+    symbol: 'JUNE-GRADE',
+    direction: 'short',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'sell_short', quantity: 50, price: 200, fees: 0 });
+  seedExecution(t2, { action: 'buy_to_cover', quantity: 50, price: 150, fees: 0 });
+  seedGrade(t2, 58);
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  // Filter to June only: only the June trade counted
+  const result = doGetDashboard(accountId, '2026-06-01', '2026-06-30');
+  assert(result.body.processScoreDistribution !== undefined, 'processScoreDistribution present with date filter');
+  assert(result.body.processScoreDistribution![0].count === 1, 'A: 1 trade (June, within filter)');
+  const total = result.body.processScoreDistribution!.reduce((s, b) => s + b.count, 0);
+  assert(total === 1, 'total = 1 (May trade filtered out)');
 }
 
 // ── Summary ────────────────────────────────────────────────────────────

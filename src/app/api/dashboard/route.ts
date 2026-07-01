@@ -20,6 +20,7 @@ import {
   computeMonthlyPerformance,
   computeRDistribution,
   computeDirectionalPerformance,
+  computeProcessScoreDistribution,
   type KpiTradeInput,
   type RollforwardRow,
 } from '@/lib/dashboard';
@@ -255,10 +256,11 @@ export async function GET(request: NextRequest) {
       startingAccountValue,
     );
 
-    // 9. Compute monthly performance, R distribution, and directional performance
+    // 9. Compute monthly performance, R distribution, directional performance, and process score distribution
     const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
     const rDistribution = computeRDistribution(closedKpiInputs);
     const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
+    const processScoreDistribution = computeProcessScoreDistribution(closedKpiInputs);
 
     return NextResponse.json({
       kpis,
@@ -267,6 +269,7 @@ export async function GET(request: NextRequest) {
       monthlyPerformance,
       rDistribution,
       directionalPerformance,
+      processScoreDistribution,
     });
   } catch (error) {
     return NextResponse.json(

@@ -107,6 +107,19 @@ export interface DirectionalPerformanceResult {
   short: { netPnl: number; winRate: number | null; tradeCount: number };
 }
 
+/**
+ * A single bin for the process quality score distribution histogram.
+ *
+ * - label:    Human-readable bin label with grade tier and score range (e.g. "A (54-60)")
+ * - count:    Number of trades whose totalScore falls in this bin
+ * - minScore: Minimum score threshold for this bin (e.g. 54 for A)
+ */
+export interface ProcessScoreBin {
+  label: string;
+  count: number;
+  minScore: number;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -272,6 +285,52 @@ export function computeDirectionalPerformance(
       tradeCount: buckets.short.decisions,
     },
   };
+}
+
+/**
+ * Process quality score distribution bins for grade-tier histogram display.
+ *
+ * Assigns each closed trade with a valid grade.totalScore into one of 5 bins
+ * matching the GRADE_RUBRIC thresholds:
+ *   A: 54-60, B: 42-53, C: 30-41, D: 18-29, F: 0-17
+ *
+ * Non-graded trades (grade === null or totalScore === null) are excluded.
+ * Returns all 5 bins with zero-fill for empty bins.
+ * Bins are ordered by grade tier descending (A first, F last).
+ */
+export function computeProcessScoreDistribution(
+  closedTrades: KpiTradeInput[],
+): ProcessScoreBin[] {
+  // Bin definitions: [label, minScore (inclusive), maxScore (inclusive)]
+  const binDefs: { label: string; minScore: number; maxScore: number }[] = [
+    { label: 'A (54-60)', minScore: 54, maxScore: 60 },
+    { label: 'B (42-53)', minScore: 42, maxScore: 53 },
+    { label: 'C (30-41)', minScore: 30, maxScore: 41 },
+    { label: 'D (18-29)', minScore: 18, maxScore: 29 },
+    { label: 'F (0-17)', minScore: 0, maxScore: 17 },
+  ];
+
+  const counts = new Array<number>(binDefs.length).fill(0);
+
+  for (const trade of closedTrades) {
+    const totalScore = trade.grade?.totalScore;
+    if (totalScore === null || totalScore === undefined) continue;
+    if (totalScore < 0 || totalScore > 60) continue; // out of valid range
+
+    for (let i = 0; i < binDefs.length; i++) {
+      const bin = binDefs[i];
+      if (totalScore >= bin.minScore && totalScore <= bin.maxScore) {
+        counts[i]++;
+        break;
+      }
+    }
+  }
+
+  return binDefs.map((bin, i) => ({
+    label: bin.label,
+    count: counts[i],
+    minScore: bin.minScore,
+  }));
 }
 
 // ── Library ─────────────────────────────────────────────────────────────

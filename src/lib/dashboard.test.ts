@@ -16,10 +16,12 @@ import {
   computeMonthlyPerformance,
   computeRDistribution,
   computeDirectionalPerformance,
+  computeProcessScoreDistribution,
   type KpiTradeInput,
   type MonthlyPerformanceItem,
   type RDistributionBin,
   type DirectionalPerformanceResult,
+  type ProcessScoreBin,
   type RollforwardRow,
 } from './dashboard';
 import { type ExecutionData } from './trade-calc';
@@ -796,6 +798,128 @@ test('computeDirectionalPerformance — all scratches (PnL=0) counted as loss pe
   assertClose(r.short.winRate, 0, 'short winRate = 0 (scratch counted as loss)');
   assertApprox(r.long.netPnl, 0, 'long netPnl = 0');
   assertApprox(r.short.netPnl, 0, 'short netPnl = 0');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: computeProcessScoreDistribution
+// ────────────────────────────────────────────────────────────────────────
+
+test('computeProcessScoreDistribution — all bins filled with trades', () => {
+  const trades = [
+    makeTrade('a1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 58 }, null, '2026-01-01T10:00:00Z'), // A
+    makeTrade('b1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 45 }, null, '2026-01-01T10:00:00Z'), // B
+    makeTrade('c1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 35 }, null, '2026-01-01T10:00:00Z'), // C
+    makeTrade('d1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 20 }, null, '2026-01-01T10:00:00Z'), // D
+    makeTrade('f1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 5 }, null, '2026-01-01T10:00:00Z'),  // F
+  ];
+  const r = computeProcessScoreDistribution(trades);
+  assertEqual(r.length, 5, 'all 5 bins returned');
+  assertEqual(r[0].label, 'A (54-60)', 'bin 0 label');
+  assertEqual(r[1].label, 'B (42-53)', 'bin 1 label');
+  assertEqual(r[2].label, 'C (30-41)', 'bin 2 label');
+  assertEqual(r[3].label, 'D (18-29)', 'bin 3 label');
+  assertEqual(r[4].label, 'F (0-17)', 'bin 4 label');
+  assertEqual(r[0].count, 1, 'A: 1');
+  assertEqual(r[1].count, 1, 'B: 1');
+  assertEqual(r[2].count, 1, 'C: 1');
+  assertEqual(r[3].count, 1, 'D: 1');
+  assertEqual(r[4].count, 1, 'F: 1');
+  assertEqual(r[0].minScore, 54, 'A minScore = 54');
+  assertEqual(r[4].minScore, 0, 'F minScore = 0');
+});
+
+test('computeProcessScoreDistribution — multiple trades in one bin accumulate', () => {
+  const trades = [
+    makeTrade('a1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 55 }, null, '2026-01-01T10:00:00Z'),
+    makeTrade('a2', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 58 }, null, '2026-01-01T10:00:00Z'),
+    makeTrade('a3', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 60 }, null, '2026-01-01T10:00:00Z'),
+    makeTrade('b1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 42 }, null, '2026-01-01T10:00:00Z'),
+  ];
+  const r = computeProcessScoreDistribution(trades);
+  assertEqual(r[0].count, 3, 'A: 3');
+  assertEqual(r[1].count, 1, 'B: 1');
+  assertEqual(r[2].count, 0, 'C: 0');
+  assertEqual(r[3].count, 0, 'D: 0');
+  assertEqual(r[4].count, 0, 'F: 0');
+});
+
+test('computeProcessScoreDistribution — no graded trades returns all zeros', () => {
+  const trades = [
+    makeTrade('u1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'),
+    makeTrade('u2', 'long', 'closed', longTradeExecutions(100, 120, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'),
+  ];
+  const r = computeProcessScoreDistribution(trades);
+  assertEqual(r.length, 5, 'all 5 bins returned');
+  for (let i = 0; i < r.length; i++) {
+    assertEqual(r[i].count, 0, `bin ${i} count = 0`);
+  }
+});
+
+test('computeProcessScoreDistribution — empty trades returns all zeros', () => {
+  const r = computeProcessScoreDistribution([]);
+  assertEqual(r.length, 5, 'all 5 bins returned');
+  for (let i = 0; i < r.length; i++) {
+    assertEqual(r[i].count, 0, `bin ${i} count = 0`);
+  }
+});
+
+test('computeProcessScoreDistribution — exact bin boundaries', () => {
+  const trades = [
+    // A: 54-60
+    makeTrade('bd1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 54 }, null, '2026-01-01T10:00:00Z'),  // lower bound A
+    makeTrade('bd2', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 60 }, null, '2026-01-01T10:00:00Z'),  // upper bound A
+    // B: 42-53
+    makeTrade('bd3', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 42 }, null, '2026-01-01T10:00:00Z'),  // lower bound B
+    makeTrade('bd4', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 53 }, null, '2026-01-01T10:00:00Z'),  // upper bound B
+    // C: 30-41
+    makeTrade('bd5', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 30 }, null, '2026-01-01T10:00:00Z'),  // lower bound C
+    makeTrade('bd6', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 41 }, null, '2026-01-01T10:00:00Z'),  // upper bound C
+    // D: 18-29
+    makeTrade('bd7', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 18 }, null, '2026-01-01T10:00:00Z'),  // lower bound D
+    makeTrade('bd8', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 29 }, null, '2026-01-01T10:00:00Z'),  // upper bound D
+    // F: 0-17
+    makeTrade('bd9', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 0 }, null, '2026-01-01T10:00:00Z'),   // lower bound F
+    makeTrade('bd10', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 17 }, null, '2026-01-01T10:00:00Z'), // upper bound F
+  ];
+  const r = computeProcessScoreDistribution(trades);
+  assertEqual(r[0].count, 2, 'A: 2 (54 and 60)');
+  assertEqual(r[1].count, 2, 'B: 2 (42 and 53)');
+  assertEqual(r[2].count, 2, 'C: 2 (30 and 41)');
+  assertEqual(r[3].count, 2, 'D: 2 (18 and 29)');
+  assertEqual(r[4].count, 2, 'F: 2 (0 and 17)');
+});
+
+test('computeProcessScoreDistribution — values outside valid range excluded', () => {
+  const trades = [
+    makeTrade('out1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: -1 }, null, '2026-01-01T10:00:00Z'),  // below range
+    makeTrade('out2', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 61 }, null, '2026-01-01T10:00:00Z'),  // above range
+    makeTrade('ok1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 30 }, null, '2026-01-01T10:00:00Z'),   // valid C
+  ];
+  const r = computeProcessScoreDistribution(trades);
+  // Only the valid trade counted
+  assertEqual(r[2].count, 1, 'C: 1 (only valid trade)');
+  const total = r.reduce((s, b) => s + b.count, 0);
+  assertEqual(total, 1, 'total = 1 (out-of-range excluded)');
+});
+
+test('computeProcessScoreDistribution — spread across multiple bins', () => {
+  const trades = [
+    makeTrade('s1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 58 }, null, '2026-01-01T10:00:00Z'), // A
+    makeTrade('s2', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 48 }, null, '2026-01-01T10:00:00Z'), // B
+    makeTrade('s3', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 33 }, null, '2026-01-01T10:00:00Z'), // C
+    makeTrade('s4', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 36 }, null, '2026-01-01T10:00:00Z'), // C
+    makeTrade('s5', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 10 }, null, '2026-01-01T10:00:00Z'), // F
+    makeTrade('s6', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 22 }, null, '2026-01-01T10:00:00Z'), // D
+    makeTrade('s7', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), { totalScore: 56 }, null, '2026-01-01T10:00:00Z'), // A
+  ];
+  const r = computeProcessScoreDistribution(trades);
+  assertEqual(r[0].count, 2, 'A: 2');
+  assertEqual(r[1].count, 1, 'B: 1');
+  assertEqual(r[2].count, 2, 'C: 2');
+  assertEqual(r[3].count, 1, 'D: 1');
+  assertEqual(r[4].count, 1, 'F: 1');
+  const total = r.reduce((s, b) => s + b.count, 0);
+  assertEqual(total, 7, 'total = 7 (all trades counted)');
 });
 
 // ────────────────────────────────────────────────────────────────────────

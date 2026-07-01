@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/empty-state';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { DashboardFilters } from '@/components/dashboard-filters';
 import type { EquityDataPoint, DrawdownDataPoint } from '@/lib/equity';
-import type { MonthlyPerformanceItem, RDistributionBin, DirectionalPerformanceResult } from '@/lib/dashboard';
+import type { MonthlyPerformanceItem, RDistributionBin, DirectionalPerformanceResult, ProcessScoreBin } from '@/lib/dashboard';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -39,6 +39,7 @@ interface DashboardResponse {
   monthlyPerformance: MonthlyPerformanceItem[];
   rDistribution: RDistributionBin[];
   directionalPerformance?: DirectionalPerformanceResult;
+  processScoreDistribution?: ProcessScoreBin[];
 }
 
 // ── Grade Rubric (matches reviews page) ────────────────────────────────
@@ -137,6 +138,7 @@ export default function Home() {
   const [monthlyPerformance, setMonthlyPerformance] = useState<MonthlyPerformanceItem[]>([]);
   const [rDistribution, setRDistribution] = useState<RDistributionBin[]>([]);
   const [directionalPerformance, setDirectionalPerformance] = useState<DirectionalPerformanceResult | null>(null);
+  const [processScoreDistribution, setProcessScoreDistribution] = useState<ProcessScoreBin[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,6 +173,7 @@ export default function Home() {
       setMonthlyPerformance(data.monthlyPerformance);
       setRDistribution(data.rDistribution);
       setDirectionalPerformance(data.directionalPerformance ?? null);
+      setProcessScoreDistribution(data.processScoreDistribution ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       setKpis(null);
@@ -639,6 +642,82 @@ export default function Home() {
           </div>
 
           {/* Empty state when both sides have 0 trades */}
+          </div>
+        ) : null}
+      </section>
+    )}
+
+    {/* Process Quality Score Distribution Panel — grade-tier histogram */}
+    {!loading && kpis !== null && !isEmpty && processScoreDistribution !== null && (
+      <section className="mt-8">
+        <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          Process Quality Score Distribution
+        </h2>
+        <Card>
+          <CardHeader>
+            <CardTitle>Score Distribution</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {processScoreDistribution.every((b) => b.count === 0) ? (
+              <div className="px-(--card-spacing) pb-(--card-spacing)">
+                <EmptyState
+                  icon={
+                    <Star
+                      className="size-10 text-zinc-300 dark:text-zinc-600"
+                      strokeWidth={1}
+                    />
+                  }
+                  title="No scores available"
+                  description="Grade your trades to see the process quality score distribution."
+                />
+              </div>
+            ) : (
+              <DashboardChart
+                option={{
+                  tooltip: {
+                    trigger: 'axis',
+                    formatter: (params: any) => {
+                      if (!Array.isArray(params) || params.length === 0) return '';
+                      const idx = params[0].dataIndex;
+                      const bin = processScoreDistribution[idx];
+                      if (!bin) return '';
+                      return `<strong>${bin.label}</strong><br/>Trades: ${bin.count}`;
+                    },
+                  },
+                  xAxis: {
+                    type: 'category' as const,
+                    data: processScoreDistribution.map((b) => b.label),
+                    axisLabel: { rotate: 30 },
+                  },
+                  yAxis: { type: 'value' as const, name: 'Trades' },
+                  series: [
+                    {
+                      name: 'Trades',
+                      type: 'bar' as const,
+                      data: processScoreDistribution.map((b) => {
+                        // Color-coded bars: green A -> red F
+                        const colors: Record<string, string> = {
+                          'A (54-60)': '#22c55e',
+                          'B (42-53)': '#84cc16',
+                          'C (30-41)': '#eab308',
+                          'D (18-29)': '#f97316',
+                          'F (0-17)': '#ef4444',
+                        };
+                        return {
+                          value: b.count,
+                          itemStyle: { color: colors[b.label] ?? '#a1a1aa' },
+                        };
+                      }),
+                    },
+                  ],
+                  grid: { left: '10%', right: '5%', top: 20, bottom: 35 },
+                }}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </section>
+    )}
           {directionalPerformance.long.tradeCount === 0 && directionalPerformance.short.tradeCount === 0 && (
             <div className="mt-2">
               <EmptyState
