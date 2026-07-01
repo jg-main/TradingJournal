@@ -11,8 +11,10 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
+import { DashboardChart } from '@/components/dashboard-chart';
+import type { EquityDataPoint, DrawdownDataPoint } from '@/lib/equity';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -30,6 +32,8 @@ interface KpiMetrics {
 
 interface DashboardResponse {
   kpis: KpiMetrics;
+  equityCurve: EquityDataPoint[];
+  drawdown: DrawdownDataPoint[];
 }
 
 // ── Grade Rubric (matches reviews page) ────────────────────────────────
@@ -123,6 +127,8 @@ function SkeletonCard() {
 
 export default function Home() {
   const [kpis, setKpis] = useState<KpiMetrics | null>(null);
+  const [equityCurve, setEquityCurve] = useState<EquityDataPoint[]>([]);
+  const [drawdown, setDrawdown] = useState<DrawdownDataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,6 +143,8 @@ export default function Home() {
       }
       const data: DashboardResponse = await res.json();
       setKpis(data.kpis);
+      setEquityCurve(data.equityCurve);
+      setDrawdown(data.drawdown);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       setKpis(null);
@@ -269,6 +277,134 @@ export default function Home() {
           title="No trades yet"
           description="Start logging trades to see your dashboard come to life."
         />
+      )}
+
+      {/* Charts section — equity curve and drawdown */}
+      {!loading && kpis !== null && !isEmpty && (
+        <section className="mt-8">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            Performance Charts
+          </h2>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Equity Curve Panel */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Equity Curve</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {equityCurve.length === 0 ? (
+                  <div className="px-(--card-spacing) pb-(--card-spacing)">
+                    <EmptyState
+                      icon={
+                        <TrendingUp
+                          className="size-10 text-zinc-300 dark:text-zinc-600"
+                          strokeWidth={1}
+                        />
+                      }
+                      title="No equity data available"
+                      description="Start trading to see your equity curve."
+                    />
+                  </div>
+                ) : (
+                  <DashboardChart
+                    option={{
+                      xAxis: { type: 'time' } as const,
+                      yAxis: { type: 'value', axisLabel: { formatter: '${value}' } },
+                      series: [{
+                        type: 'line',
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { width: 2 },
+                        color: '#2563eb',
+                        areaStyle: {
+                          color: {
+                            type: 'linear',
+                            x: 0, y: 0, x2: 0, y2: 1,
+                            colorStops: [
+                              { offset: 0, color: 'rgba(37, 99, 235, 0.25)' },
+                              { offset: 1, color: 'rgba(37, 99, 235, 0.01)' },
+                            ],
+                          },
+                        },
+                        data: equityCurve.map(
+                          (dp) => [Date.parse(dp.date), dp.equity] as [number, number],
+                        ),
+                      }],
+                      tooltip: {
+                        trigger: 'axis',
+                        valueFormatter: (v: number) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                      },
+                      grid: { left: '10%', right: '5%', top: 20, bottom: 25 },
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Drawdown Panel */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Drawdown</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {drawdown.length === 0 ? (
+                  <div className="px-(--card-spacing) pb-(--card-spacing)">
+                    <EmptyState
+                      icon={
+                        <TrendingDown
+                          className="size-10 text-zinc-300 dark:text-zinc-600"
+                          strokeWidth={1}
+                        />
+                      }
+                      title="No drawdown data available"
+                      description="Your drawdown chart will appear here after you start trading."
+                    />
+                  </div>
+                ) : (
+                  <DashboardChart
+                    option={{
+                      xAxis: { type: 'time' } as const,
+                      yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
+                      series: [{
+                        type: 'line',
+                        smooth: true,
+                        showSymbol: false,
+                        lineStyle: { width: 2 },
+                        color: '#ef4444',
+                        areaStyle: { color: 'rgba(239, 68, 68, 0.15)' },
+                        data: drawdown.map(
+                          (dp) => [Date.parse(dp.date), dp.drawdownPct * 100] as [number, number],
+                        ),
+                      }],
+                      tooltip: {
+                        trigger: 'axis',
+                        valueFormatter: (v: number) => `${v.toFixed(1)}%`,
+                      },
+                      grid: { left: '10%', right: '5%', top: 20, bottom: 25 },
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+      )}
+
+      {/* Charts loading skeleton — pulse-animated rectangles during data fetch */}
+      {loading && (
+        <section className="mt-8">
+          <div className="mb-4 h-5 w-40 rounded bg-zinc-200 dark:bg-zinc-700 animate-pulse" />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="animate-pulse rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-3 h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
+              <div className="h-[300px] w-full rounded bg-zinc-100 dark:bg-zinc-800" />
+            </div>
+            <div className="animate-pulse rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-3 h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
+              <div className="h-[300px] w-full rounded bg-zinc-100 dark:bg-zinc-800" />
+            </div>
+          </div>
+        </section>
       )}
     </div>
   );
