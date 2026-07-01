@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
 import { DashboardChart } from '@/components/dashboard-chart';
 import type { EquityDataPoint, DrawdownDataPoint } from '@/lib/equity';
+import type { MonthlyPerformanceItem, RDistributionBin } from '@/lib/dashboard';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -34,6 +35,8 @@ interface DashboardResponse {
   kpis: KpiMetrics;
   equityCurve: EquityDataPoint[];
   drawdown: DrawdownDataPoint[];
+  monthlyPerformance: MonthlyPerformanceItem[];
+  rDistribution: RDistributionBin[];
 }
 
 // ── Grade Rubric (matches reviews page) ────────────────────────────────
@@ -129,6 +132,8 @@ export default function Home() {
   const [kpis, setKpis] = useState<KpiMetrics | null>(null);
   const [equityCurve, setEquityCurve] = useState<EquityDataPoint[]>([]);
   const [drawdown, setDrawdown] = useState<DrawdownDataPoint[]>([]);
+  const [monthlyPerformance, setMonthlyPerformance] = useState<MonthlyPerformanceItem[]>([]);
+  const [rDistribution, setRDistribution] = useState<RDistributionBin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +150,8 @@ export default function Home() {
       setKpis(data.kpis);
       setEquityCurve(data.equityCurve);
       setDrawdown(data.drawdown);
+      setMonthlyPerformance(data.monthlyPerformance);
+      setRDistribution(data.rDistribution);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       setKpis(null);
@@ -390,11 +397,165 @@ export default function Home() {
         </section>
       )}
 
+      {/* Monthly Performance and R Distribution charts */}
+      {!loading && kpis !== null && !isEmpty && (
+        <section className="mt-8">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            Performance Analytics
+          </h2>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Monthly Performance Panel */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Monthly Performance</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {monthlyPerformance.length === 0 ? (
+                  <div className="px-(--card-spacing) pb-(--card-spacing)">
+                    <EmptyState
+                      icon={
+                        <TrendingUp
+                          className="size-10 text-zinc-300 dark:text-zinc-600"
+                          strokeWidth={1}
+                        />
+                      }
+                      title="No monthly data available"
+                      description="Your monthly performance chart will appear here after you close trades across multiple months."
+                    />
+                  </div>
+                ) : (
+                  <DashboardChart
+                    option={{
+                      tooltip: {
+                        trigger: 'axis',
+                        formatter: (params: any) => {
+                          if (!Array.isArray(params) || params.length === 0) return '';
+                          const idx = params[0].dataIndex;
+                          const item = monthlyPerformance[idx];
+                          if (!item) return '';
+                          return [
+                            `<strong>${item.month}</strong>`,
+                            `P&amp;L: ${formatCurrency(item.netPnl)}`,
+                            `Win Rate: ${formatPercent(item.winRate)}`,
+                            `Trades: ${item.tradeCount}`,
+                          ].join('<br/>');
+                        },
+                      },
+                      xAxis: {
+                        type: 'category' as const,
+                        data: monthlyPerformance.map((m) => m.month),
+                        axisLabel: {
+                          formatter: (v: string) => v.slice(5),
+                        },
+                      },
+                      yAxis: [
+                        { type: 'value' as const, name: 'P&L ($)' },
+                        { type: 'value' as const, name: 'Win Rate', min: 0, max: 1, axisLabel: { formatter: '{value}%' } },
+                      ],
+                      series: [
+                        {
+                          name: 'Net P&L',
+                          type: 'bar' as const,
+                          data: monthlyPerformance.map((m) => ({
+                            value: m.netPnl,
+                            itemStyle: { color: m.netPnl >= 0 ? '#22c55e' : '#ef4444' },
+                          })),
+                        },
+                        {
+                          name: 'Win Rate',
+                          type: 'line' as const,
+                          yAxisIndex: 1,
+                          data: monthlyPerformance.map((m) => m.winRate ?? 0),
+                          smooth: true,
+                          color: '#3b82f6',
+                          symbol: 'none',
+                        },
+                      ],
+                      grid: { left: '10%', right: '10%', top: 20, bottom: 25 },
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+
+            {/* R Distribution Panel */}
+            <Card>
+              <CardHeader>
+                <CardTitle>R Distribution</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {rDistribution.length === 0 || rDistribution.every((b) => b.count === 0) ? (
+                  <div className="px-(--card-spacing) pb-(--card-spacing)">
+                    <EmptyState
+                      icon={
+                        <TrendingUp
+                          className="size-10 text-zinc-300 dark:text-zinc-600"
+                          strokeWidth={1}
+                        />
+                      }
+                      title="No R distribution data available"
+                      description="Your R-multiple distribution chart will appear here after you close trades with risk data."
+                    />
+                  </div>
+                ) : (
+                  <DashboardChart
+                    option={{
+                      tooltip: {
+                        trigger: 'axis',
+                        formatter: (params: any) => {
+                          if (!Array.isArray(params) || params.length === 0) return '';
+                          const idx = params[0].dataIndex;
+                          const bin = rDistribution[idx];
+                          if (!bin) return '';
+                          return `<strong>${bin.label}</strong><br/>Trades: ${bin.count}`;
+                        },
+                      },
+                      xAxis: {
+                        type: 'category' as const,
+                        data: rDistribution.map((b) => b.label),
+                        axisLabel: { rotate: 30 },
+                      },
+                      yAxis: { type: 'value' as const, name: 'Trades' },
+                      series: [
+                        {
+                          name: 'Trades',
+                          type: 'bar' as const,
+                          data: rDistribution.map((b) => {
+                            let color: string;
+                            if (b.label === '-1 to 0') {
+                              color = '#a1a1aa'; // gray (zinc-400)
+                            } else if (['0 to 1', '1 to 2', '2 to 3', '> 3'].includes(b.label)) {
+                              color = '#22c55e'; // green
+                            } else {
+                              color = '#ef4444'; // red
+                            }
+                            return { value: b.count, itemStyle: { color } };
+                          }),
+                        },
+                      ],
+                      grid: { left: '10%', right: '5%', top: 20, bottom: 35 },
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+      )}
+
       {/* Charts loading skeleton — pulse-animated rectangles during data fetch */}
       {loading && (
         <section className="mt-8">
           <div className="mb-4 h-5 w-40 rounded bg-zinc-200 dark:bg-zinc-700 animate-pulse" />
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="animate-pulse rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-3 h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
+              <div className="h-[300px] w-full rounded bg-zinc-100 dark:bg-zinc-800" />
+            </div>
+            <div className="animate-pulse rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-3 h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
+              <div className="h-[300px] w-full rounded bg-zinc-100 dark:bg-zinc-800" />
+            </div>
             <div className="animate-pulse rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="mb-3 h-4 w-24 rounded bg-zinc-200 dark:bg-zinc-700" />
               <div className="h-[300px] w-full rounded bg-zinc-100 dark:bg-zinc-800" />
