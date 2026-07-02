@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Building2, ChartNoAxesCombined, User, ShieldCheck, Gamepad2 } from 'lucide-react';
+import { Building2, ChartNoAxesCombined, User, Gamepad2 } from 'lucide-react';
 
 interface HubCard {
   title: string;
@@ -22,12 +22,6 @@ const cards: HubCard[] = [
     description: 'Configure display name, timezone, and default currency.',
     href: '/settings/app',
     icon: <User className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
-  },
-  {
-    title: 'Risk Settings',
-    description: 'Set max risk per trade, default commission, and starting account value.',
-    href: '/settings/risk',
-    icon: <ShieldCheck className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
   },
   {
     title: 'Accounts',
@@ -51,7 +45,7 @@ export default function SettingsHubPage() {
           Settings
         </h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Manage your trading journal preferences, risk parameters, and trading setups.
+          Manage your trading journal preferences and trading setups.
         </p>
       </div>
 
