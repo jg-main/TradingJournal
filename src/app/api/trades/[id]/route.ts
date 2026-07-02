@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { trades, lookupValues } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
+import { resolveSetup } from '@/lib/setup-resolver';
 
 const updateTradeSchema = z.object({
   setup: z.string().nullable().optional(),
@@ -77,19 +78,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (parsed.data.setup === null) {
         updateData.setupId = null;
       } else {
-        const lowerValue = parsed.data.setup.toLowerCase();
-        const lookup = db
-          .select()
-          .from(lookupValues)
-          .where(and(eq(lookupValues.type, 'setup'), eq(lookupValues.value, lowerValue)))
-          .get();
-        if (!lookup) {
-          return NextResponse.json(
-            { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } },
-            { status: 400 }
-          );
+        const resolved = resolveSetup(parsed.data.setup);
+        if (!resolved) {
+          // This shouldn't happen since resolveSetup always creates a record for non-null values
+          updateData.setupId = null;
+        } else {
+          updateData.setupId = resolved.id;
         }
-        updateData.setupId = lookup.id;
       }
     }
     if (parsed.data.sectorId !== undefined) updateData.sectorId = parsed.data.sectorId;

@@ -25,6 +25,16 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────
 
+interface SetupDefinition {
+  id: string;
+  name: string;
+  description: string | null;
+  howToPlay: string | null;
+  entryRules: string | null;
+  exitRules: string | null;
+  isActive: boolean;
+}
+
 interface Trade {
   id: string;
   tradeCode: string;
@@ -114,6 +124,8 @@ export default function TradesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const [setups, setSetups] = useState<SetupDefinition[]>([]);
+  const [selectedSetupDetail, setSelectedSetupDetail] = useState<SetupDefinition | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
   // ── Data ────────────────────────────────────────────────────────────
@@ -157,13 +169,41 @@ export default function TradesPage() {
 
   // ── Form helpers ────────────────────────────────────────────────────
 
+  const fetchSetups = async () => {
+    try {
+      const res = await fetch('/api/setup-definitions');
+      const data = await res.json();
+      setSetups(data.data ?? []);
+    } catch {
+      // Non-critical — setups just won't show in dropdown
+    }
+  };
+
+  const fetchSetupDetail = async (name: string) => {
+    if (!name) {
+      setSelectedSetupDetail(null);
+      return;
+    }
+    try {
+      const allRes = await fetch('/api/setup-definitions?includeInactive=true');
+      const allData = await allRes.json();
+      const found = (allData.data ?? []).find(
+        (s: SetupDefinition) => s.name.toLowerCase() === name.toLowerCase()
+      );
+      setSelectedSetupDetail(found ?? null);
+    } catch {
+      setSelectedSetupDetail(null);
+    }
+  };
+
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setSelectedSetupDetail(null);
     setMessage(null);
   };
 
-  const openEdit = (item: Trade) => {
+  const openEdit = async (item: Trade) => {
     setForm({
       symbol: item.symbol,
       direction: item.direction,
@@ -180,6 +220,9 @@ export default function TradesPage() {
     setEditingId(item.id);
     setDialogOpen(true);
     setMessage(null);
+    if (item.setup) {
+      await fetchSetupDetail(item.setup);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -291,7 +334,7 @@ export default function TradesPage() {
             <Download className="size-4" />
             Export CSV
           </button>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); fetchSetups(); }}>
           <DialogTrigger asChild>
             <button
               className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -373,14 +416,51 @@ export default function TradesPage() {
                 <label htmlFor="setup" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                   Setup
                 </label>
-                <input
-                  id="setup"
-                  type="text"
+                <Select
                   value={form.setup}
-                  onChange={(e) => setForm((f) => ({ ...f, setup: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="e.g. Breakout, Pullback, Trend reversal"
-                />
+                  onValueChange={(val) => {
+                    setForm((f) => ({ ...f, setup: val }));
+                    fetchSetupDetail(val);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a setup..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {setups.map((s) => (
+                      <SelectItem key={s.id} value={s.name}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                    {setups.length === 0 && (
+                      <SelectItem value="__none__" disabled>
+                        No setups available — create one in Settings &gt; Plays
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedSetupDetail && (
+                  <div className="mt-2 space-y-1 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
+                    {selectedSetupDetail.description && (
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{selectedSetupDetail.description}</p>
+                    )}
+                    {selectedSetupDetail.howToPlay && (
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                        <span className="font-medium text-zinc-500 dark:text-zinc-400">How:</span> {selectedSetupDetail.howToPlay}
+                      </p>
+                    )}
+                    {selectedSetupDetail.entryRules && (
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                        <span className="font-medium text-zinc-500 dark:text-zinc-400">Entry:</span> {selectedSetupDetail.entryRules}
+                      </p>
+                    )}
+                    {selectedSetupDetail.exitRules && (
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                        <span className="font-medium text-zinc-500 dark:text-zinc-400">Exit:</span> {selectedSetupDetail.exitRules}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>

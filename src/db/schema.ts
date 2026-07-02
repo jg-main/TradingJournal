@@ -55,6 +55,24 @@ export const lookupValues = sqliteTable('lookup_values', {
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });
 
+// ── Setup Definitions ────────────────────────────────────────────────────
+
+export const setupDefinitions = sqliteTable('setup_definitions', {
+  id: text('id').primaryKey().notNull(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+  howToPlay: text('how_to_play'),
+  entryRules: text('entry_rules'),
+  exitRules: text('exit_rules'),
+  tags: text('tags'),
+  defaultRiskPct: real('default_risk_pct'),
+  positionSizingRules: text('position_sizing_rules'),
+  chartPatterns: text('chart_patterns'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+});
+
 // ── Trades ─────────────────────────────────────────────────────────────
 
 export const trades = sqliteTable('trades', {
@@ -206,6 +224,19 @@ export const watchlistItems = sqliteTable('watchlist_items', {
   promotedTradeId: text('promoted_trade_id').references(() => trades.id),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+});
+
+// ── Account Transactions ────────────────────────────────────────────────
+
+export const accountTransactions = sqliteTable('account_transactions', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id').references(() => accounts.id).notNull(),
+  type: text('type', { enum: ['deposit', 'withdrawal'] }).notNull(),
+  amount: real('amount').notNull(),
+  balanceAfter: real('balance_after').notNull(),
+  date: text('date').notNull(),
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
 });
 
 // ── Accounting & Reviews ────────────────────────────────────────────────

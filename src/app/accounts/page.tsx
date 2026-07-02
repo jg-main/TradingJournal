@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 interface Account {
   id: string;
@@ -217,7 +218,14 @@ export default function AccountsPage() {
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {accounts.map((account) => (
                 <tr key={account.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                  <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{account.name}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <Link
+                      href={'/accounts/' + account.id}
+                      className="text-zinc-900 hover:text-zinc-600 dark:text-zinc-100 dark:hover:text-zinc-400"
+                    >
+                      {account.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{account.broker ?? '-'}</td>
                   <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{account.currency}</td>
                   <td className="px-4 py-3">
