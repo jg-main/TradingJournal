@@ -1,172 +1,227 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+
+const depositAmount = '1250';
+const withdrawalAmount = '325';
+
+async function createAccount(page: Parameters<typeof test>[0]['page'], name: string) {
+  const response = await page.request.post('/api/accounts', {
+    data: {
+      name,
+      broker: 'Deterministic Broker',
+      currency: 'USD',
+      startingBalance: 0,
+    },
+  });
+
+  expect(response.status()).toBe(201);
+  const account = await response.json();
+  expect(account).toMatchObject({
+    name,
+    broker: 'Deterministic Broker',
+    currency: 'USD',
+  });
+
+  return account as { id: string; name: string };
+}
+
+async function createOpenTrade(page: Parameters<typeof test>[0]['page'], accountId: string) {
+  const tradeResponse = await page.request.post('/api/trades', {
+    data: {
+      symbol: 'AAPL',
+      direction: 'long',
+      accountId,
+      thesis: 'Deterministic lifecycle regression seed',
+    },
+  });
+
+  expect(tradeResponse.status()).toBe(201);
+  const trade = (await tradeResponse.json()) as { id: string };
+
+  const executionResponse = await page.request.post(`/api/trades/${trade.id}/executions`, {
+    data: {
+      action: 'buy',
+      quantity: 1,
+      price: 100,
+    },
+  });
+
+  expect(executionResponse.status()).toBe(201);
+  return trade;
+}
 
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Accounts', () => {
-  test('page renders with Accounts heading', async ({ page }) => {
-    await page.goto('/settings/accounts');
-    await expect(page.locator('h1')).toContainText('Accounts');
+  test('exposes only the canonical Settings navigation entry', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute('href', '/settings');
+    await expect(page.getByRole('link', { name: 'Account', exact: true })).toHaveCount(0);
   });
 
-  test('shows empty state when no accounts exist', async ({ page }) => {
-    await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
+  test('redirects the legacy /account route into Settings-owned accounts', async ({ page }) => {
+    const accountName = `Settings Workflow ${Date.now()}-legacy-account-redirect`;
+    const account = await createAccount(page, accountName);
 
-    // Either shows empty state or table with accounts
-    const emptyState = page.getByText('No accounts yet');
-    const tableRows = page.locator('tbody tr');
-
-    const rowCount = await tableRows.count();
-    if (rowCount === 0) {
-      await expect(emptyState).toBeVisible();
-    }
+    await page.goto('/account');
+    await expect(page).toHaveURL(/\/settings\/accounts/);
+    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
+    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+    expect(account.id).toBeTruthy();
   });
 
-  test('Add Account button opens the create form', async ({ page }) => {
+  test('persists deposit and withdrawal through Settings workflow', async ({ page }) => {
+    const accountName = `Settings Workflow ${Date.now()}-deposit-withdrawal`;
+    const account = await createAccount(page, accountName);
+
     await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/settings\/accounts$/);
+    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
+    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
 
-    // Click Add Account button
-    await page.getByRole('button', { name: 'Add Account' }).click();
+    await page.getByRole('link', { name: accountName, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+    await expect(page.getByText('Current Balance')).toBeVisible();
+    await expect(page.getByText('No transactions yet.')).toBeVisible();
 
-    // Form should be visible
-    await expect(page.getByRole('heading', { name: 'Add Account' })).toBeVisible();
+    await page.getByRole('button', { name: 'Add Funds' }).click();
+    await page.getByLabel('Amount ($)').fill(depositAmount);
+    await page.getByLabel('Notes').fill('Initial funding');
+    await page.getByRole('button', { name: 'Add Funds' }).click();
 
-    // Form fields should exist
-    await expect(page.locator('#account-name')).toBeVisible();
-    await expect(page.locator('#account-broker')).toBeVisible();
-    await expect(page.locator('#account-currency')).toBeVisible();
+    await expect(page.getByText('Deposit recorded.')).toBeVisible();
+    await expect(page.locator('p').filter({ hasText: '$1,250.00' }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Deposit' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: '$1,250.00', exact: true })).toBeVisible();
 
-    // Cancel button should close the form
+    await page.getByRole('button', { name: 'Withdraw' }).click();
+    await page.getByLabel('Amount ($)').fill(withdrawalAmount);
+    await page.getByLabel('Notes').fill('Risk reduction');
+    await page.getByRole('button', { name: 'Withdraw' }).click();
+
+    await expect(page.getByText('Withdrawal recorded.')).toBeVisible();
+    await expect(page.locator('p').filter({ hasText: '$925.00' }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Withdrawal' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: '$925.00', exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.locator('p').filter({ hasText: '$925.00' }).first()).toBeVisible();
+    await expect(page.getByRole('row', { name: /Deposit/ })).toBeVisible();
+    await expect(page.getByRole('row', { name: /Withdrawal/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+  });
+
+  test('prevents withdrawal beyond balance', async ({ page }) => {
+    const accountName = `Settings Workflow ${Date.now()}-withdrawal-guard`;
+    const account = await createAccount(page, accountName);
+
+    await page.goto(`/settings/accounts/${account.id}`);
+    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Withdraw' }).click();
+    await page.getByLabel('Amount ($)').fill('1');
+    await page.getByRole('button', { name: 'Withdraw' }).click();
+
+    await expect(page.getByText('Insufficient balance. Current balance: $0.00')).toBeVisible();
+    await expect(page.getByText('No transactions yet.')).toBeVisible();
+  });
+
+  test('moves an account through inactive and active Settings states', async ({ page }) => {
+    const accountName = `Settings Workflow ${Date.now()}-reactivate-inactive`;
+    const account = await createAccount(page, accountName);
+
+    await page.goto(`/settings/accounts/${account.id}`);
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Close Account' }).click();
+    await page.getByRole('button', { name: 'Confirm Close' }).click();
+
+    await expect(page.getByText('Closed')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reactivate Account' })).toBeVisible();
+
+    await page.goto('/settings/accounts');
+    await page.getByText(/Inactive accounts/).click();
+    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: accountName, exact: true })).toHaveAttribute(
+      'href',
+      `/settings/accounts/${account.id}`,
+    );
+    await page.getByRole('link', { name: accountName, exact: true }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.getByText('Closed')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reactivate Account' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Reactivate Account' }).click();
+
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+
+    await page.goto('/settings/accounts');
+    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+  });
+
+  test('blocks deactivate, close, and delete lifecycle actions when trades exist', async ({ page }) => {
+    const accountName = `Settings Workflow ${Date.now()}-blocked-lifecycle`;
+    const account = await createAccount(page, accountName);
+    await createOpenTrade(page, account.id);
+
+    await page.goto(`/settings/accounts/${account.id}`);
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+
+    const deactivateResponse = await page.request.put(`/api/accounts/${account.id}`, {
+      data: { isActive: false },
+    });
+    expect(deactivateResponse.status()).toBe(409);
+    const deactivateBody = (await deactivateResponse.json()) as { error: string };
+    expect(deactivateBody.error).toBe('Cannot deactivate account with open trades');
+
+    await page.getByRole('button', { name: 'Close Account' }).click();
+    await page.getByRole('button', { name: 'Confirm Close' }).click();
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.getByText('Cannot deactivate account with open trades')).toBeVisible();
+
+    const deleteResponse = await page.request.delete(`/api/accounts/${account.id}`);
+    expect(deleteResponse.status()).toBe(409);
+    const deleteBody = (await deleteResponse.json()) as { error: string };
+    expect(deleteBody.error).toBe('Cannot delete account with any trade history');
+    await page.reload();
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
+  });
+
+  test('cancels the Close Account dialog without state change', async ({ page }) => {
+    const accountName = `Settings Workflow ${Date.now()}-cancel-close`;
+    const account = await createAccount(page, accountName);
+
+    await page.goto(`/settings/accounts/${account.id}`);
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Close Account' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByText('Confirm Close')).toBeVisible();
+
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('heading', { name: 'Add Account' })).not.toBeVisible();
+    await expect(page.getByRole('dialog')).not.toBeVisible();
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Close Account' })).toBeVisible();
   });
 
-  test('creating a new account succeeds', async ({ page }) => {
-    const uniqueName = `E2E Test ${Date.now()}`;
+  test('deletes account with no trades from the list page', async ({ page }) => {
+    const accountName = `Settings Workflow ${Date.now()}-delete-no-trades`;
+    const account = await createAccount(page, accountName);
 
     await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
 
-    // Click Add Account
-    await page.getByRole('button', { name: 'Add Account' }).click();
-
-    // Fill the form
-    await page.locator('#account-name').fill(uniqueName);
-    await page.locator('#account-broker').fill('Playwright Broker');
-    await page.locator('#account-currency').fill('USD');
-
-    // Submit
-    await page.getByRole('button', { name: 'Create Account' }).click();
-
-    // Wait for the account to appear in the table (success message is cleared
-    // by React batching since resetForm() nullifies the message immediately)
-    await expect(page.getByRole('cell', { name: uniqueName })).toBeVisible({ timeout: 5000 });
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { title: 'Deactivate account' }).first().click();
+    await expect(page.getByRole('link', { name: accountName, exact: true })).not.toBeVisible();
   });
-
-  test('edit button opens edit form with populated data', async ({ page }) => {
-    await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
-
-    const tableRows = page.locator('tbody tr');
-    const rowCount = await tableRows.count();
-    test.skip(rowCount === 0, 'no accounts to edit');
-
-    // Click Edit on the first row
-    await page.getByRole('button', { name: 'Edit account' }).first().click();
-
-    // Edit form should appear
-    await expect(page.getByText('Edit Account')).toBeVisible();
-
-    // Verify name field is populated
-    const nameVal = await page.locator('#account-name').inputValue();
-    expect(nameVal.length).toBeGreaterThan(0);
-
-    // Cancel
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText('Edit Account')).not.toBeVisible();
-  });
-
-  test('deactivate account via confirm dialog', async ({ page }) => {
-    await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
-
-    const deactivateButtons = page.getByRole('button', { name: 'Deactivate account' });
-    const initialCount = await deactivateButtons.count();
-    test.skip(initialCount === 0, 'no active accounts to deactivate');
-
-    // Override confirm to auto-accept
-    await page.evaluate(() => { window.confirm = () => true; });
-    await deactivateButtons.first().click();
-
-    // Wait for the re-fetched data after deactivation
-    // Use a locator that re-queries: wait for count to decrease by 1
-    await expect(async () => {
-      const newCount = await deactivateButtons.count();
-      expect(newCount).toBe(initialCount - 1);
-    }).toPass({ timeout: 5000 });
-  });
-
-  test('creating an account with empty name shows validation error', async ({ page }) => {
-    await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
-
-    // Open form
-    await page.getByRole('button', { name: 'Add Account' }).click();
-
-    // Leave name empty — the Create Account button should be disabled
-    await page.locator('#account-name').fill('');
-
-    // The new page validates client-side: button is disabled when name is empty
-    await expect(page.getByRole('button', { name: 'Create Account' })).toBeDisabled();
-  });
-
-  test('creating an account with risk fields succeeds', async ({ page }) => {
-    const uniqueName = `Risk Account ${Date.now()}`;
-
-    await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
-
-    // Open create form
-    await page.getByRole('button', { name: 'Add Account' }).click();
-
-    // Fill basic fields
-    await page.locator('#account-name').fill(uniqueName);
-    await page.locator('#account-broker').fill('Risk Broker');
-    await page.locator('#account-currency').fill('USD');
-
-    // Fill risk fields
-    await page.locator('#account-max-risk').fill('2');
-    await page.locator('#account-default-commission').fill('1.50');
-    await page.locator('#account-starting-balance').fill('25000');
-
-    // Submit
-    await page.getByRole('button', { name: 'Create Account' }).click();
-
-    // Verify account appears in table
-    await expect(page.getByRole('cell', { name: uniqueName })).toBeVisible({ timeout: 5000 });
-  });
-
-  test('edit dialog shows risk fields populated', async ({ page }) => {
-    await page.goto('/settings/accounts');
-    await page.waitForLoadState('networkidle');
-
-    const tableRows = page.locator('tbody tr');
-    const rowCount = await tableRows.count();
-    test.skip(rowCount === 0, 'no accounts to edit');
-
-    // Open edit dialog on the first account
-    await page.getByRole('button', { name: 'Edit account' }).first().click();
-    await expect(page.getByText('Edit Account')).toBeVisible();
-
-    // Verify risk fields exist in the dialog
-    await expect(page.locator('#account-max-risk')).toBeVisible();
-    await expect(page.locator('#account-default-commission')).toBeVisible();
-    await expect(page.locator('#account-starting-balance')).toBeVisible();
-
-    // Cancel
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText('Edit Account')).not.toBeVisible();
-  });
-
 });

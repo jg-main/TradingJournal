@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { accounts, accountTransactions, tradeExecutions, trades, tradeRiskSnapshots, tradeGrades } from '@/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
+import { canDeactivateAccount } from '@/lib/account-lifecycle';
 
 type RouteParams = { params: Promise<{ id: string }> };
 

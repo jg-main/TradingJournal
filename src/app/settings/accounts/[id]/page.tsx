@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
-import { ArrowLeft, Plus, Minus, TriangleAlert } from 'lucide-react';
+import { useEffect, useState, use, useCallback } from 'react';
+import { ArrowLeft, Plus, Minus, TriangleAlert, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,6 +92,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [closureSummary, setClosureSummary] = useState<ClosureSummary | null>(null);
+  const [actionPending, setActionPending] = useState<'deactivate' | 'reactivate' | 'delete' | null>(null);
 
   const fetchData = async () => {
     try {
@@ -129,26 +130,62 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const surfaceError = (payload: { error?: string; details?: unknown } | null, fallback: string) => {
+    if (!payload) return fallback;
+    if (payload.details) return typeof payload.details === 'string' ? payload.details : JSON.stringify(payload.details);
+    return payload.error ?? fallback;
+  };
+
+  const mutateLifecycle = async (method: 'PUT' | 'DELETE', body: unknown, pending: 'deactivate' | 'reactivate' | 'delete', success: string, fallback: string) => {
+    setActionPending(pending);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/accounts/${id}`, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        setMessage({ type: 'error', text: surfaceError(payload, fallback) });
+        return;
+      }
+      setMessage({ type: 'success', text: success });
+      await fetchData();
+    } catch {
+      setMessage({ type: 'error', text: fallback });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleDeactivateAccount = async () => {
+    if (!confirm('Deactivate this account? It will remain accessible from Settings.')) return;
+    await mutateLifecycle('PUT', { isActive: false }, 'deactivate', 'Account deactivated.', 'Failed to deactivate account.');
+  };
+
+  const handleReactivateAccount = async () => {
+    await mutateLifecycle('PUT', { isActive: true }, 'reactivate', 'Account reactivated.', 'Failed to reactivate account.');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!confirm('Delete this account? This cannot be undone.')) return;
+    await mutateLifecycle('DELETE', undefined, 'delete', 'Account deleted.', 'Failed to delete account.');
+  };
+
   const handleCloseAccount = async () => {
     setIsClosing(true);
     setMessage(null);
 
     try {
-      const res = await fetch(`/api/accounts/${id}/close`, { method: 'POST' });
-
-      if (!res.ok) {
-        const err = await res.json();
-        setMessage({ type: 'error', text: err.error ?? 'Failed to close account.' });
-        setCloseDialogOpen(false);
-        return;
-      }
-
-      const data = await res.json();
-      setClosureSummary(data);
+      await mutateLifecycle(
+        'PUT',
+        { isActive: false },
+        'deactivate',
+        'Account deactivated.',
+        'Failed to deactivate account.',
+      );
       setCloseDialogOpen(false);
-      await fetchData();
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to close account.' });
     } finally {
       setIsClosing(false);
     }
@@ -256,7 +293,11 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             {account.name}
           </h1>
-          {!account.isActive && (
+          {account.isActive ? (
+            <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              Active
+            </span>
+          ) : (
             <span className="inline-flex items-center rounded-full border border-zinc-300 bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
               Closed
             </span>
@@ -362,6 +403,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
       {/* Transaction form */}
       {message && (
         <div
+          role="alert"
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
@@ -613,6 +655,22 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
           >
             <TriangleAlert className="size-4" />
             Close Account
+          </Button>
+        </div>
+      )}
+
+      {/* Lifecycle actions for inactive accounts */}
+      {!account.isActive && (
+        <div className="mt-8 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+          <p className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            Account Actions
+          </p>
+          <Button
+            onClick={handleReactivateAccount}
+            disabled={actionPending === 'reactivate'}
+          >
+            <RotateCcw className="size-4" />
+            Reactivate Account
           </Button>
         </div>
       )}

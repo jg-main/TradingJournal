@@ -13,6 +13,7 @@ import { eq, inArray, and } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
+import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
 
 let passed = 0;
 let failed = 0;
@@ -357,6 +358,17 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
     if (body.name !== undefined) updateData.name = body.name;
     if (body.broker !== undefined) updateData.broker = body.broker;
     if (body.currency !== undefined) updateData.currency = body.currency;
+
+    const accountTrades = db.select({ status: schema.trades.status }).from(schema.trades).where(eq(schema.trades.accountId, id)).all();
+
+    if (body.isActive === false && !canDeactivateAccount(accountTrades)) {
+      return { status: 409, data: { error: 'Cannot deactivate account with open trades' } };
+    }
+
+    if (body.isActive === true && !canReactivateAccount(accountTrades)) {
+      return { status: 409, data: { error: 'Cannot reactivate account with open trades' } };
+    }
+
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
 
     db.update(schema.accounts)
@@ -378,13 +390,17 @@ function doDeleteAccount(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Account not found' } };
     }
 
-    // Soft delete: mark as inactive
-    db.update(schema.accounts)
-      .set({ isActive: false, updatedAt: new Date().toISOString() })
+    const accountTrades = db.select({ status: schema.trades.status }).from(schema.trades).where(eq(schema.trades.accountId, id)).all();
+
+    if (!canDeleteAccount(accountTrades)) {
+      return { status: 409, data: { error: 'Cannot delete account with any trade history' } };
+    }
+
+    db.delete(schema.accounts)
       .where(eq(schema.accounts.id, id))
       .run();
 
-    return { status: 200, data: { message: 'Account deactivated' } };
+    return { status: 200, data: { message: 'Account deleted' } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to delete account', details: String(error) } };
   }
@@ -539,23 +555,65 @@ console.log('\n6. PUT returns 404 for nonexistent id:');
   assertEqual((result.data as { error: string }).error, 'Account not found', 'error message');
 }
 
-// ── 7. DELETE: Soft-deactivates account ─────────────────────────────
+// ── 7. PUT: Blocks inactivation while open trade exists ─────────────
 
-console.log('\n7. DELETE soft-deactivates account:');
+console.log('\n7. PUT blocks inactivation with open trade:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Open Trade Account', isActive: true });
+  seedTrade({ accountId: account.id as string, status: 'open' });
+  const result = doPutAccount(account.id as string, { isActive: false });
+
+  assert(result.status === 409, 'returns 409');
+  assertEqual((result.data as { error: string }).error, 'Cannot deactivate account with open trades', 'error message');
+  const updated = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
+  assertEqual(updated.isActive, true, 'account remains active');
+}
+
+// ── 8. PUT: Reactivates inactive empty account ──────────────────────
+
+console.log('\n8. PUT reactivates inactive account:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Inactive Account', isActive: false });
+  const result = doPutAccount(account.id as string, { isActive: true });
+
+  assert(result.status === 200, 'returns 200');
+  const updated = result.data as Record<string, unknown>;
+  assertEqual(updated.isActive, true, 'response reports active account');
+}
+
+// ── 9. DELETE: Hard-deletes empty account ───────────────────────────
+
+console.log('\n7. DELETE hard-deletes empty account:');
 {
   cleanup();
   const account = seedAccount({ name: 'To Delete', isActive: true });
   const result = doDeleteAccount(account.id as string);
 
   assert(result.status === 200, 'returns 200');
-  assertEqual((result.data as { message: string }).message, 'Account deactivated', 'message matches');
+  assertEqual((result.data as { message: string }).message, 'Account deleted', 'message matches');
 
-  // Verify it's still in DB but inactive
-  const updated = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
-  assertEqual(updated.isActive, false, 'isActive is false after soft delete');
+  const deleted = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get();
+  assertEqual(deleted, undefined, 'account row is removed');
 }
 
-// ── 8. DELETE: 404 for nonexistent id ───────────────────────────────
+// ── 8. DELETE: 409 for historical-trade account ─────────────────────
+
+console.log('\n8. DELETE blocks historical-trade account:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Historical', isActive: true });
+  seedTrade({ accountId: account.id as string, status: 'closed' });
+  const result = doDeleteAccount(account.id as string);
+
+  assert(result.status === 409, 'returns 409');
+  assertEqual((result.data as { error: string }).error, 'Cannot delete account with any trade history', 'error message');
+  const stillThere = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
+  assertEqual(stillThere.isActive, true, 'historical account remains active');
+}
+
+// ── 9. DELETE: 404 for nonexistent id ───────────────────────────────
 
 console.log('\n8. DELETE returns 404 for nonexistent id:');
 {

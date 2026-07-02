@@ -10,7 +10,6 @@ import {
   Target,
   Star,
   ClipboardCheck,
-  User,
   Settings,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,7 +27,6 @@ const navItems: NavItem[] = [
   { href: '/sizing', label: 'Position Sizing', icon: Target },
   { href: '/reviews', label: 'Reviews', icon: Star },
   { href: '/checks', label: 'Checks', icon: ClipboardCheck },
-  { href: '/settings/accounts', label: 'Account', icon: User },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -50,7 +48,8 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 space-y-0.5 p-2">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href || (item.href === '/settings' && pathname.startsWith('/settings/'));
           const Icon = item.icon;
 
           return (

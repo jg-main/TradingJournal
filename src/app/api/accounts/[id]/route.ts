@@ -4,6 +4,7 @@ import { accounts, accountTransactions, tradeExecutions, trades, tradeRiskSnapsh
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
+import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
 
 const updateAccountSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -200,6 +201,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }
 
+    const accountTrades = db.select({ status: trades.status }).from(trades).where(eq(trades.accountId, id)).all();
+
+    if (parsed.data.isActive === false && !canDeactivateAccount(accountTrades)) {
+      return NextResponse.json(
+        { error: 'Cannot deactivate account with open trades' },
+        { status: 409 },
+      );
+    }
+
+    if (parsed.data.isActive === true && !canReactivateAccount(accountTrades)) {
+      return NextResponse.json(
+        { error: 'Cannot reactivate account with open trades' },
+        { status: 409 },
+      );
+    }
+
     db.update(accounts)
       .set({ ...parsed.data, updatedAt: new Date().toISOString() })
       .where(eq(accounts.id, id))
@@ -224,13 +241,20 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }
 
-    // Soft delete: mark as inactive instead of removing
-    db.update(accounts)
-      .set({ isActive: false, updatedAt: new Date().toISOString() })
+    const accountTrades = db.select({ status: trades.status }).from(trades).where(eq(trades.accountId, id)).all();
+
+    if (!canDeleteAccount(accountTrades)) {
+      return NextResponse.json(
+        { error: 'Cannot delete account with any trade history' },
+        { status: 409 },
+      );
+    }
+
+    db.delete(accounts)
       .where(eq(accounts.id, id))
       .run();
 
-    return NextResponse.json({ message: 'Account deactivated' });
+    return NextResponse.json({ message: 'Account deleted' });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to delete account', details: String(error) },
