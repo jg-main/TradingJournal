@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "clean": "npm run clean:artifacts",
-    "clean:artifacts": "rm -rf playwright-report test-results docs .gsd-backups .test*db .test*-shm .test*-wal .next/dev/logs"
+    "clean:artifacts": "rm -rf playwright-report test-results docs .gsd-backups .test*db .test*-shm .test*-wal .next/dev/logs",
+    "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "archiver": "^8.0.0",

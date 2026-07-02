@@ -1,8 +1,9 @@
 import 'server-only';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import * as schema from './schema';
 
 const DB_FILE = process.env.DB_FILE_NAME || './.trading-journal/journal.db';
@@ -19,6 +20,10 @@ export function initializeDatabase() {
   sqlite.pragma('foreign_keys = ON');
 
   dbInstance = drizzle(sqlite, { schema });
+
+  // Auto-apply pending migrations on startup so schema stays in sync
+  migrate(dbInstance, { migrationsFolder: join(process.cwd(), 'src/db/migrations') });
+
   return dbInstance;
 }
 
