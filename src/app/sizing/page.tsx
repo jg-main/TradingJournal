@@ -30,6 +30,17 @@ interface SettingsData {
   journalStartDate: string | null;
 }
 
+interface Account {
+  id: string;
+  name: string;
+  broker: string | null;
+  currency: string;
+  isActive: boolean;
+  maxRiskPerTradePct: number | null;
+  defaultCommission: number | null;
+  startingBalance: number | null;
+}
+
 interface CreatedTrade {
   id: string;
   tradeCode: string;
@@ -57,6 +68,10 @@ export default function SizingPage() {
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
+  // ── Accounts state ──────────────────────────────────────────────────
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+
   // ── Form state ──────────────────────────────────────────────────────
   const [accountEquity, setAccountEquity] = useState('');
   const [riskPerTradePct, setRiskPerTradePct] = useState('');
@@ -74,20 +89,25 @@ export default function SizingPage() {
   const [createdTrade, setCreatedTrade] = useState<CreatedTrade | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // ── Load settings ──────────────────────────────────────────────────
+  // ── Load settings and accounts ──────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
-    async function loadSettings() {
+    async function loadData() {
       setSettingsLoading(true);
       setSettingsError(null);
 
       try {
-        const res = await fetch('/api/settings');
+        const [settingsRes, accountsRes] = await Promise.all([
+          fetch('/api/settings'),
+          fetch('/api/accounts'),
+        ]);
+
         if (cancelled) return;
 
-        if (res.ok) {
-          const data: SettingsData = await res.json();
+        // Settings
+        if (settingsRes.ok) {
+          const data: SettingsData = await settingsRes.json();
           if (!cancelled) {
             setSettings(data);
             if (data.startingAccountValue != null) {
@@ -97,10 +117,17 @@ export default function SizingPage() {
               setRiskPerTradePct(String(data.maxRiskPerTradePct));
             }
           }
-        } else {
-          // 200 with message means no settings — that's fine, user enters manually
-          if (res.status !== 200) {
+        } else if (settingsRes.status !== 200) {
+          if (!cancelled) {
             setSettingsError('Failed to load settings.');
+          }
+        }
+
+        // Accounts
+        if (accountsRes.ok) {
+          const data: Account[] = await accountsRes.json();
+          if (!cancelled) {
+            setAccounts(data ?? []);
           }
         }
       } catch (err) {
@@ -114,9 +141,52 @@ export default function SizingPage() {
       }
     }
 
-    loadSettings();
+    loadData();
     return () => { cancelled = true; };
   }, []);
+
+  // ── Account change handler ─────────────────────────────────────────
+
+  function handleAccountChange(accountId: string) {
+    setSelectedAccountId(accountId);
+    setResult(null);
+    setCreatedTrade(null);
+    setCreateError(null);
+
+    if (!accountId) {
+      // Revert to settings defaults
+      if (settings?.startingAccountValue != null) {
+        setAccountEquity(String(settings.startingAccountValue));
+      } else {
+        setAccountEquity('');
+      }
+      if (settings?.maxRiskPerTradePct != null) {
+        setRiskPerTradePct(String(settings.maxRiskPerTradePct));
+      } else {
+        setRiskPerTradePct('');
+      }
+      return;
+    }
+
+    const account = accounts.find((a) => a.id === accountId);
+    if (account) {
+      if (account.startingBalance != null) {
+        setAccountEquity(String(account.startingBalance));
+      } else if (settings?.startingAccountValue != null) {
+        setAccountEquity(String(settings.startingAccountValue));
+      } else {
+        setAccountEquity('');
+      }
+
+      if (account.maxRiskPerTradePct != null) {
+        setRiskPerTradePct(String(account.maxRiskPerTradePct));
+      } else if (settings?.maxRiskPerTradePct != null) {
+        setRiskPerTradePct(String(settings.maxRiskPerTradePct));
+      } else {
+        setRiskPerTradePct('');
+      }
+    }
+  }
 
   // ── Calculate handler ──────────────────────────────────────────────
 
@@ -202,6 +272,7 @@ export default function SizingPage() {
         body: JSON.stringify({
           symbol: 'TBD',
           direction,
+          accountId: selectedAccountId || null,
           plannedEntry: entry,
           plannedStop: stop,
           plannedTarget1: target ?? null,
@@ -359,8 +430,46 @@ export default function SizingPage() {
             </div>
           </div>
 
+          {/* Account selector */}
+          <div className="mt-4 space-y-1.5">
+            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Account
+            </label>
+            <Select
+              value={selectedAccountId}
+              onValueChange={handleAccountChange}
+            >
+              <SelectTrigger className="w-full sm:w-72">
+                <SelectValue placeholder="Using global defaults" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Using global defaults</SelectItem>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}{a.broker ? ` (${a.broker})` : ''}
+                  </SelectItem>
+                ))}
+                {accounts.length === 0 && (
+                  <SelectItem value="__none__" disabled>
+                    No accounts found
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            {selectedAccountId && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                Using account: {accounts.find((a) => a.id === selectedAccountId)?.name ?? 'Unknown'}
+              </p>
+            )}
+            {!selectedAccountId && (
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                Using global defaults from settings
+              </p>
+            )}
+          </div>
+
           {/* Settings context */}
-          {settings && (
+          {settings && !selectedAccountId && (
             <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-500">
               Defaults from settings: equity={formatCurrency(settings.startingAccountValue)},
               risk={settings.maxRiskPerTradePct ?? '-'}%

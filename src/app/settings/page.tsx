@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ChartNoAxesCombined, User, ShieldCheck, Gamepad2 } from 'lucide-react';
+import { Building2, ChartNoAxesCombined, User, ShieldCheck, Gamepad2 } from 'lucide-react';
 
 interface HubCard {
   title: string;
@@ -28,6 +28,12 @@ const cards: HubCard[] = [
     description: 'Set max risk per trade, default commission, and starting account value.',
     href: '/settings/risk',
     icon: <ShieldCheck className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
+  },
+  {
+    title: 'Accounts',
+    description: 'Manage your brokerage accounts, deposits, and withdrawals.',
+    href: '/settings/accounts',
+    icon: <Building2 className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
   },
   {
     title: 'Export & Backup',

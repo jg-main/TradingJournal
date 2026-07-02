@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
   { href: '/sizing', label: 'Position Sizing', icon: Target },
   { href: '/reviews', label: 'Reviews', icon: Star },
   { href: '/checks', label: 'Checks', icon: ClipboardCheck },
-  { href: '/account', label: 'Account', icon: User },
+  { href: '/settings/accounts', label: 'Account', icon: User },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

@@ -32,6 +32,9 @@ export const accounts = sqliteTable('accounts', {
   broker: text('broker'),
   currency: text('currency').default('USD'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  maxRiskPerTradePct: real('max_risk_per_trade_pct'),
+  defaultCommission: real('default_commission'),
+  startingBalance: real('starting_balance'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });

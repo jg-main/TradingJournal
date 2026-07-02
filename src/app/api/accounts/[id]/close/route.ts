@@ -2,38 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { accounts, accountTransactions, tradeExecutions, trades, tradeRiskSnapshots, tradeGrades } from '@/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
-import { z } from 'zod';
 import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
-
-const updateAccountSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  broker: z.string().max(200).nullable().optional(),
-  currency: z.string().min(1).max(3).optional(),
-  isActive: z.boolean().optional(),
-  maxRiskPerTradePct: z.number().positive().optional(),
-  defaultCommission: z.number().min(0).optional(),
-  startingBalance: z.number().min(0).optional(),
-});
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
 
+    // 1. Validate account exists and is active
     const account = db.select().from(accounts).where(eq(accounts.id, id)).get();
     if (!account) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }
+    if (!account.isActive) {
+      return NextResponse.json({ error: 'Account is already inactive' }, { status: 400 });
+    }
 
-    // 2. Fetch all closed trades for this account
+    // 2. Fetch account base fields
+    const startingBalance = account.startingBalance ?? 0;
+    const accountCreatedAt = account.createdAt ?? new Date().toISOString();
+
+    // 3. Query all closed trades for this account
     const closedTrades = db
       .select()
       .from(trades)
       .where(and(eq(trades.accountId, id), eq(trades.status, 'closed')))
       .all();
 
-    // 3. Compute realized P&L across closed trades
+    // 4. Compute realized P&L and KPIs
     let realizedPnl = 0;
     let kpis = {
       tradeCount: 0,
@@ -42,6 +39,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       avgR: null as number | null,
       avgGrade: null as number | null,
     };
+
     if (closedTrades.length > 0) {
       const tradeIds = closedTrades.map((t) => t.id);
 
@@ -78,7 +76,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         realizedPnl += pnl.totalRealizedPnL;
       }
 
-      // 3b. Compute per-account KPI metrics
+      // Compute per-account KPI metrics
       const riskSnapshots = db
         .select()
         .from(tradeRiskSnapshots)
@@ -146,95 +144,69 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       };
     }
 
-    // 4. Fetch account transactions for deposits/withdrawals
+    // 5. Query accountTransactions for deposits/withdrawals
     const transactions = db
       .select()
       .from(accountTransactions)
       .where(eq(accountTransactions.accountId, id))
       .all();
 
-    const netDeposits = transactions
+    const depositsTotal = transactions
       .filter((t) => t.type === 'deposit')
       .reduce((s, t) => s + t.amount, 0);
 
-    const netWithdrawals = transactions
+    const withdrawalsTotal = transactions
       .filter((t) => t.type === 'withdrawal')
       .reduce((s, t) => s + t.amount, 0);
 
-    // 5. Compute current balance
-    const startingBalance = account.startingBalance ?? 0;
-    const currentBalance = startingBalance + netDeposits - netWithdrawals + realizedPnl;
+    // 6. Compute final balance and net return
+    const finalBalance = startingBalance + depositsTotal - withdrawalsTotal + realizedPnl;
+    const netReturn = depositsTotal > 0
+      ? (realizedPnl / depositsTotal) * 100
+      : null;
 
-    // 6. Return JSON with account fields plus rollforward data
-    return NextResponse.json({
-      ...account,
-      currentBalance,
-      realizedPnl,
-      netDeposits,
-      netWithdrawals,
-      kpis,
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to fetch account', details: String(error) },
-      { status: 500 },
-    );
-  }
-}
+    // 7. Compute datesActive
+    const transactionDates = transactions
+      .filter((t) => t.date != null)
+      .map((t) => t.date as string)
+      .sort();
 
-export async function PUT(request: NextRequest, { params }: RouteParams) {
-  try {
-    const { id } = await params;
-    const body = await request.json();
-    const parsed = updateAccountSchema.safeParse(body);
+    const earliestDate = transactionDates.length > 0
+      ? new Date(Math.min(
+          new Date(accountCreatedAt).getTime(),
+          ...transactionDates.map((d) => new Date(d).getTime()),
+        )).toISOString()
+      : accountCreatedAt;
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
+    const datesActive = {
+      from: earliestDate,
+      to: new Date().toISOString(),
+    };
 
-    const existing = db.select().from(accounts).where(eq(accounts.id, id)).get();
-    if (!existing) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
-    }
-
-    db.update(accounts)
-      .set({ ...parsed.data, updatedAt: new Date().toISOString() })
-      .where(eq(accounts.id, id))
-      .run();
-
-    const row = db.select().from(accounts).where(eq(accounts.id, id)).get();
-    return NextResponse.json(row);
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to update account', details: String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
-  try {
-    const { id } = await params;
-
-    const existing = db.select().from(accounts).where(eq(accounts.id, id)).get();
-    if (!existing) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
-    }
-
-    // Soft delete: mark as inactive instead of removing
+    // 8. Deactivate the account
     db.update(accounts)
       .set({ isActive: false, updatedAt: new Date().toISOString() })
       .where(eq(accounts.id, id))
       .run();
 
-    return NextResponse.json({ message: 'Account deactivated' });
+    // 9. Return closure summary JSON
+    return NextResponse.json({
+      accountId: id,
+      accountName: account.name,
+      startingBalance,
+      depositsTotal,
+      withdrawalsTotal,
+      realizedPnl,
+      finalBalance,
+      netReturn,
+      kpis,
+      datesActive,
+      closedAt: new Date().toISOString(),
+    });
   } catch (error) {
     return NextResponse.json(
-      { error: 'Failed to delete account', details: String(error) },
-      { status: 500 }
+      { error: 'Failed to close account', details: String(error) },
+      { status: 500 },
     );
   }
 }

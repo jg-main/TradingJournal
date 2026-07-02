@@ -9,6 +9,9 @@ const createAccountSchema = z.object({
   broker: z.string().max(200).nullable().optional(),
   currency: z.string().min(1).max(3).default('USD'),
   isActive: z.boolean().optional().default(true),
+  maxRiskPerTradePct: z.number().positive().optional(),
+  defaultCommission: z.number().min(0).optional(),
+  startingBalance: z.number().min(0).optional(),
 });
 
 const updateAccountSchema = z.object({
@@ -52,6 +55,9 @@ export async function POST(request: NextRequest) {
         broker: parsed.data.broker ?? null,
         currency: parsed.data.currency,
         isActive: parsed.data.isActive,
+        maxRiskPerTradePct: parsed.data.maxRiskPerTradePct ?? null,
+        defaultCommission: parsed.data.defaultCommission ?? null,
+        startingBalance: parsed.data.startingBalance ?? null,
         createdAt: now,
         updatedAt: now,
       })

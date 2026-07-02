@@ -67,12 +67,29 @@ const db = drizzle(sqlite, { schema });
 
 // Create tables
 sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS accounts (
+  DROP TABLE IF EXISTS settings;
+  DROP TABLE IF EXISTS account_rollforward;
+  DROP TABLE IF EXISTS account_transactions;
+  DROP TABLE IF EXISTS trade_stop_adjustments;
+  DROP TABLE IF EXISTS trade_risk_snapshots;
+  DROP TABLE IF EXISTS trade_mistakes;
+  DROP TABLE IF EXISTS trade_grades;
+  DROP TABLE IF EXISTS trade_executions;
+  DROP TABLE IF EXISTS trade_assets;
+  DROP TABLE IF EXISTS trades;
+  DROP TABLE IF EXISTS watchlist_items;
+  DROP TABLE IF EXISTS weekly_reviews;
+  DROP TABLE IF EXISTS setup_definitions;
+  DROP TABLE IF EXISTS accounts;
+  CREATE TABLE accounts (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     broker TEXT,
     currency TEXT DEFAULT 'USD',
     is_active INTEGER DEFAULT 1,
+    max_risk_per_trade_pct REAL,
+    default_commission REAL,
+    starting_balance REAL,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );

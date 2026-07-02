@@ -56,12 +56,29 @@ const db = drizzle(sqlite, { schema });
 
 // Create tables
 sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS accounts (
+  DROP TABLE IF EXISTS settings;
+  DROP TABLE IF EXISTS account_rollforward;
+  DROP TABLE IF EXISTS account_transactions;
+  DROP TABLE IF EXISTS trade_stop_adjustments;
+  DROP TABLE IF EXISTS trade_risk_snapshots;
+  DROP TABLE IF EXISTS trade_mistakes;
+  DROP TABLE IF EXISTS trade_grades;
+  DROP TABLE IF EXISTS trade_executions;
+  DROP TABLE IF EXISTS trade_assets;
+  DROP TABLE IF EXISTS trades;
+  DROP TABLE IF EXISTS watchlist_items;
+  DROP TABLE IF EXISTS weekly_reviews;
+  DROP TABLE IF EXISTS setup_definitions;
+  DROP TABLE IF EXISTS accounts;
+  CREATE TABLE accounts (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     broker TEXT,
     currency TEXT DEFAULT 'USD',
     is_active INTEGER DEFAULT 1,
+    max_risk_per_trade_pct REAL,
+    default_commission REAL,
+    starting_balance REAL,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -98,6 +115,27 @@ sqlite.exec(`
     price REAL NOT NULL,
     fees REAL DEFAULT 0,
     reason_id TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS settings (
+    id TEXT PRIMARY KEY NOT NULL,
+    default_account_id TEXT REFERENCES accounts(id),
+    starting_account_value REAL,
+    max_risk_per_trade_pct REAL,
+    default_commission REAL,
+    journal_start_date TEXT,
+    currency TEXT DEFAULT 'USD',
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS account_transactions (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    amount REAL NOT NULL,
+    balance_after REAL NOT NULL,
+    date TEXT NOT NULL,
     notes TEXT,
     created_at TEXT DEFAULT (current_timestamp)
   );
@@ -350,6 +388,106 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
             snapshotValues.initialStopPrice = tradeRec.plannedStop;
           }
 
+          // ── Compute accountEquityAtOpen in the test mirror ──────────
+          if (tradeRec.accountId) {
+            const account = db
+              .select()
+              .from(schema.accounts)
+              .where(eq(schema.accounts.id, tradeRec.accountId as string))
+              .get() as Record<string, unknown> | undefined;
+
+            if (account) {
+              const executionDate = (body.executedAt as string) ?? now;
+
+              const allTxns = db
+                .select()
+                .from(schema.accountTransactions)
+                .where(eq(schema.accountTransactions.accountId, tradeRec.accountId as string))
+                .all()
+                .filter((tx) => tx.date <= executionDate);
+
+              const sumDeposits = allTxns
+                .filter((tx) => tx.type === 'deposit')
+                .reduce((s, tx) => s + tx.amount, 0);
+              const sumWithdrawals = allTxns
+                .filter((tx) => tx.type === 'withdrawal')
+                .reduce((s, tx) => s + tx.amount, 0);
+
+              const priorClosedTrades = db
+                .select()
+                .from(schema.trades)
+                .where(eq(schema.trades.accountId, tradeRec.accountId as string))
+                .all()
+                .filter((t) => t.closedAt != null && t.closedAt <= executionDate);
+
+              let realizedPnL = 0;
+              for (const ct of priorClosedTrades) {
+                const execs = db
+                  .select()
+                  .from(schema.tradeExecutions)
+                  .where(eq(schema.tradeExecutions.tradeId, ct.id))
+                  .orderBy(schema.tradeExecutions.executedAt, schema.tradeExecutions.createdAt)
+                  .all() as Record<string, unknown>[];
+
+                const ctDirection = ct.direction as string;
+                const entries = execs.filter((ex) =>
+                  ctDirection === 'long'
+                    ? ex.action === 'buy' || ex.action === 'add'
+                    : ex.action === 'sell_short',
+                );
+                const exits = execs.filter((ex) =>
+                  ctDirection === 'long'
+                    ? ex.action === 'sell' || ex.action === 'reduce'
+                    : ex.action === 'buy_to_cover',
+                );
+
+                const totalEntryQty = entries.reduce((s, ex) => s + (ex.quantity as number), 0);
+                if (totalEntryQty > 0 && exits.length > 0) {
+                  const weightedSum = entries.reduce(
+                    (s, ex) => s + (ex.price as number) * (ex.quantity as number),
+                    0,
+                  );
+                  const avgEntry = weightedSum / totalEntryQty;
+                  realizedPnL += exits.reduce(
+                    (s, ex) =>
+                      s +
+                      ((ex.price as number) - avgEntry) *
+                        Math.min(ex.quantity as number, totalEntryQty),
+                    0,
+                  );
+                }
+                realizedPnL -= execs.reduce(
+                  (s, ex) => s + ((ex.fees as number) ?? 0),
+                  0,
+                );
+              }
+
+              const startingBalance = (account.startingBalance as number) ?? 0;
+              const effectiveEquity =
+                startingBalance + sumDeposits - sumWithdrawals + realizedPnL;
+
+              if (effectiveEquity > 0) {
+                snapshotValues.accountEquityAtOpen = effectiveEquity;
+              } else if (
+                account.startingBalance == null &&
+                allTxns.length === 0 &&
+                priorClosedTrades.length === 0
+              ) {
+                const globalSettings = db
+                  .select()
+                  .from(schema.settings)
+                  .get() as Record<string, unknown> | undefined;
+                if (
+                  globalSettings?.startingAccountValue != null &&
+                  (globalSettings.startingAccountValue as number) > 0
+                ) {
+                  snapshotValues.accountEquityAtOpen =
+                    globalSettings.startingAccountValue;
+                }
+              }
+            }
+          }
+
           db.insert(schema.tradeRiskSnapshots)
             .values(snapshotValues as any)
             .run();
@@ -376,6 +514,8 @@ function cleanup() {
   sqlite.exec('DELETE FROM trade_executions;');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM accounts;');
+  sqlite.exec('DELETE FROM account_transactions;');
+  sqlite.exec('DELETE FROM settings;');
 }
 
 function seedAccount(overrides: Record<string, unknown> = {}) {
@@ -762,6 +902,187 @@ console.log('\n16. POST creates risk snapshot without initialStopPrice when plan
   assertNotNull(snapshot, 'risk snapshot was created');
   assertEqual(snapshot!.initialEntryPrice, 150.0, 'initialEntryPrice matches');
   assertEqual(snapshot!.initialStopPrice, null, 'initialStopPrice is null');
+}
+
+// ── 17. POST: Populates accountEquityAtOpen from account.startingBalance ─
+
+console.log('\n17. POST populates accountEquityAtOpen from account.startingBalance:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'buy',
+    quantity: 100,
+    price: 150.0,
+  });
+
+  assert(result.status === 201, 'returns 201');
+
+  const snapshot = db
+    .select()
+    .from(schema.tradeRiskSnapshots)
+    .where(eq(schema.tradeRiskSnapshots.tradeId, trade.id as string))
+    .get() as Record<string, unknown> | undefined;
+
+  assertNotNull(snapshot, 'risk snapshot was created');
+  assertEqual(snapshot!.accountEquityAtOpen, 10000, 'accountEquityAtOpen matches startingBalance');
+}
+
+// ── 18. POST: accountEquityAtOpen includes deposit contributions ───────
+
+console.log('\n18. POST accountEquityAtOpen includes deposit contributions:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 5000 });
+
+  const now = new Date().toISOString();
+  db.insert(schema.accountTransactions)
+    .values({
+      id: randomUUID(),
+      accountId: 'test-account-id',
+      type: 'deposit',
+      amount: 3000,
+      balanceAfter: 8000,
+      date: now,
+      notes: null,
+      createdAt: now,
+    })
+    .run();
+
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'buy',
+    quantity: 100,
+    price: 150.0,
+  });
+
+  assert(result.status === 201, 'returns 201');
+
+  const snapshot = db
+    .select()
+    .from(schema.tradeRiskSnapshots)
+    .where(eq(schema.tradeRiskSnapshots.tradeId, trade.id as string))
+    .get() as Record<string, unknown> | undefined;
+
+  assertNotNull(snapshot, 'risk snapshot was created');
+  assertEqual(snapshot!.accountEquityAtOpen, 8000, 'equity = startingBalance + deposit (5000 + 3000)');
+}
+
+// ── 19. POST: accountEquityAtOpen subtracts withdrawals ────────────────
+
+console.log('\n19. POST accountEquityAtOpen subtracts withdrawals:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 5000 });
+
+  const now = new Date().toISOString();
+  db.insert(schema.accountTransactions)
+    .values({
+      id: randomUUID(),
+      accountId: 'test-account-id',
+      type: 'withdrawal',
+      amount: 2000,
+      balanceAfter: 3000,
+      date: now,
+      notes: null,
+      createdAt: now,
+    })
+    .run();
+
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'buy',
+    quantity: 100,
+    price: 150.0,
+  });
+
+  assert(result.status === 201, 'returns 201');
+
+  const snapshot = db
+    .select()
+    .from(schema.tradeRiskSnapshots)
+    .where(eq(schema.tradeRiskSnapshots.tradeId, trade.id as string))
+    .get() as Record<string, unknown> | undefined;
+
+  assertNotNull(snapshot, 'risk snapshot was created');
+  assertEqual(snapshot!.accountEquityAtOpen, 3000, 'equity = startingBalance - withdrawal (5000 - 2000)');
+}
+
+// ── 20. POST: Falls back to settings.startingAccountValue when no account data ─
+
+console.log('\n20. POST falls back to settings.startingAccountValue:');
+{
+  cleanup();
+  // Create a trade with no account (accountId is set to an unlinked UUID so
+  // the lookup finds no account row — the test seedTrade always sets
+  // accountId = 'test-account-id', so we need an account with null startingBalance)
+  seedAccount({ id: 'test-account-id', startingBalance: null });
+
+  // Insert a settings row with startingAccountValue
+  const now = new Date().toISOString();
+  db.insert(schema.settings)
+    .values({
+      id: 'default',
+      startingAccountValue: 25000,
+      maxRiskPerTradePct: null,
+      defaultCommission: null,
+      journalStartDate: null,
+      currency: 'USD',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'buy',
+    quantity: 100,
+    price: 150.0,
+  });
+
+  assert(result.status === 201, 'returns 201');
+
+  const snapshot = db
+    .select()
+    .from(schema.tradeRiskSnapshots)
+    .where(eq(schema.tradeRiskSnapshots.tradeId, trade.id as string))
+    .get() as Record<string, unknown> | undefined;
+
+  assertNotNull(snapshot, 'risk snapshot was created');
+  assertEqual(snapshot!.accountEquityAtOpen, 25000, 'equity falls back to settings.startingAccountValue');
+}
+
+// ── 21. POST: Leaves accountEquityAtOpen as null when nothing is available ─
+
+console.log('\n21. POST leaves accountEquityAtOpen as null when nothing is available:');
+{
+  cleanup();
+  // No settings row, account has no startingBalance
+  seedAccount({ id: 'test-account-id', startingBalance: null });
+
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'buy',
+    quantity: 100,
+    price: 150.0,
+  });
+
+  assert(result.status === 201, 'returns 201');
+
+  const snapshot = db
+    .select()
+    .from(schema.tradeRiskSnapshots)
+    .where(eq(schema.tradeRiskSnapshots.tradeId, trade.id as string))
+    .get() as Record<string, unknown> | undefined;
+
+  assertNotNull(snapshot, 'risk snapshot was created');
+  assertEqual(snapshot!.accountEquityAtOpen, null, 'accountEquityAtOpen is null when nothing available');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

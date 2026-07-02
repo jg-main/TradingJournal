@@ -25,6 +25,17 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────
 
+interface Account {
+  id: string;
+  name: string;
+  broker: string | null;
+  currency: string;
+  isActive: boolean;
+  maxRiskPerTradePct: number | null;
+  defaultCommission: number | null;
+  startingBalance: number | null;
+}
+
 interface SetupDefinition {
   id: string;
   name: string;
@@ -40,6 +51,7 @@ interface Trade {
   tradeCode: string;
   symbol: string;
   direction: 'long' | 'short';
+  accountId: string | null;
   setup: string | null;
   thesis: string | null;
   plannedEntry: number | null;
@@ -63,6 +75,7 @@ interface TradeForm {
   symbol: string;
   direction: 'long' | 'short';
   status: Trade['status'];
+  accountId: string;
   setup: string;
   thesis: string;
   plannedEntry: string;
@@ -77,6 +90,7 @@ const EMPTY_FORM: TradeForm = {
   symbol: '',
   direction: 'long',
   status: 'planned',
+  accountId: '',
   setup: '',
   thesis: '',
   plannedEntry: '',
@@ -124,6 +138,7 @@ export default function TradesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [setups, setSetups] = useState<SetupDefinition[]>([]);
   const [selectedSetupDetail, setSelectedSetupDetail] = useState<SetupDefinition | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -179,6 +194,16 @@ export default function TradesPage() {
     }
   };
 
+  const fetchAccounts = async () => {
+    try {
+      const res = await fetch('/api/accounts');
+      const data = await res.json();
+      setAccounts(data ?? []);
+    } catch {
+      // Non-critical — accounts just won't show in dropdown
+    }
+  };
+
   const fetchSetupDetail = async (name: string) => {
     if (!name) {
       setSelectedSetupDetail(null);
@@ -208,6 +233,7 @@ export default function TradesPage() {
       symbol: item.symbol,
       direction: item.direction,
       status: item.status,
+      accountId: item.accountId ?? '',
       setup: item.setup ?? '',
       thesis: item.thesis ?? '',
       plannedEntry: item.plannedEntry?.toString() ?? '',
@@ -247,6 +273,7 @@ export default function TradesPage() {
         plannedTarget2: form.plannedTarget2 ? parseFloat(form.plannedTarget2) : null,
         invalidationCondition: form.invalidationCondition.trim() || null,
         preTradePlan: form.preTradePlan.trim() || null,
+        accountId: form.accountId || null,
       };
 
       if (!editingId) {
@@ -334,7 +361,7 @@ export default function TradesPage() {
             <Download className="size-4" />
             Export CSV
           </button>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); fetchSetups(); }}>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); fetchSetups(); fetchAccounts(); }}>
           <DialogTrigger asChild>
             <button
               className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -410,6 +437,32 @@ export default function TradesPage() {
                     <option value="planned">Planned</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="account" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Account
+                </label>
+                <Select
+                  value={form.accountId}
+                  onValueChange={(val) => setForm((f) => ({ ...f, accountId: val }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select an account..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}{a.broker ? ` (${a.broker})` : ''}
+                      </SelectItem>
+                    ))}
+                    {accounts.length === 0 && (
+                      <SelectItem value="__none__" disabled>
+                        No accounts found — create one in Settings &gt; Accounts
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>

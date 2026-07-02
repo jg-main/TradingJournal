@@ -8,6 +8,7 @@ import { resolveSetup } from '@/lib/setup-resolver';
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
   direction: z.enum(['long', 'short']),
+  accountId: z.string().uuid().optional(),
   setup: z.string().nullable().optional(),
   sectorId: z.string().nullable().optional(),
   marketConditionId: z.string().nullable().optional(),
@@ -77,19 +78,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Resolve account: settings.defaultAccountId first, then first active account
-    const setting = db.select().from(settings).get();
+    // Resolve account: body.accountId overrides the default chain
     let accountId: string | undefined;
 
-    if (setting?.defaultAccountId) {
-      accountId = setting.defaultAccountId;
-    } else {
-      const firstActive = db
+    if (parsed.data.accountId) {
+      const provided = db
         .select()
         .from(accounts)
-        .where(eq(accounts.isActive, true))
+        .where(eq(accounts.id, parsed.data.accountId))
         .get();
-      accountId = firstActive?.id;
+      if (provided) {
+        accountId = provided.id;
+      }
+    }
+
+    if (!accountId) {
+      const setting = db.select().from(settings).get();
+      if (setting?.defaultAccountId) {
+        accountId = setting.defaultAccountId;
+      } else {
+        const firstActive = db
+          .select()
+          .from(accounts)
+          .where(eq(accounts.isActive, true))
+          .get();
+        accountId = firstActive?.id;
+      }
     }
 
     if (!accountId) {
@@ -97,6 +111,29 @@ export async function POST(request: NextRequest) {
         { error: 'No active account found. Create an account first or set a default account in settings.' },
         { status: 400 }
       );
+    }
+
+    // Read per-account risk parameters and append to preTradePlan metadata
+    const account = db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, accountId))
+      .get();
+
+    let preTradePlanValue = parsed.data.preTradePlan ?? null;
+    if (account) {
+      const riskParts: string[] = [];
+      if (account.name) riskParts.push(`Account: ${account.name}`);
+      if (account.maxRiskPerTradePct != null) riskParts.push(`Max Risk Per Trade: ${account.maxRiskPerTradePct}%`);
+      if (account.defaultCommission != null) riskParts.push(`Default Commission: $${account.defaultCommission}`);
+      if (account.startingBalance != null) riskParts.push(`Starting Balance: $${account.startingBalance}`);
+
+      if (riskParts.length > 0) {
+        const metadata = `--- Risk Parameters ---\n${riskParts.join('\n')}`;
+        preTradePlanValue = preTradePlanValue
+          ? `${preTradePlanValue}\n\n${metadata}`
+          : metadata;
+      }
     }
 
     // Generate tradeCode: T-XXXX
@@ -132,7 +169,7 @@ export async function POST(request: NextRequest) {
         plannedTarget1: parsed.data.plannedTarget1 ?? null,
         plannedTarget2: parsed.data.plannedTarget2 ?? null,
         invalidationCondition: parsed.data.invalidationCondition ?? null,
-        preTradePlan: parsed.data.preTradePlan ?? null,
+        preTradePlan: preTradePlanValue,
         createdAt: now,
         updatedAt: now,
       })
