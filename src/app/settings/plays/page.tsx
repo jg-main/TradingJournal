@@ -135,7 +135,9 @@ export default function PlaysSettingsPage() {
     setMessage(null);
     try {
       const res = await fetch(`/api/setup-definitions/${setup.id}`, {
-        method: 'DELETE',
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: false }),
       });
 
       if (!res.ok) {
@@ -148,6 +150,50 @@ export default function PlaysSettingsPage() {
       await fetchSetups();
     } catch {
       setMessage({ type: 'error', text: 'Failed to deactivate setup.' });
+    }
+  };
+
+  const handleDelete = async (setup: SetupDefinition) => {
+    if (!confirm(`Permanently delete "${setup.name}"? This cannot be undone.`)) return;
+
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/setup-definitions/${setup.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage({ type: 'error', text: err.error });
+        return;
+      }
+
+      setMessage({ type: 'success', text: `${setup.name} permanently deleted.` });
+      await fetchSetups();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to delete setup.' });
+    }
+  };
+
+  const handleReactivate = async (setup: SetupDefinition) => {
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/setup-definitions/${setup.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: true }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage({ type: 'error', text: err.error });
+        return;
+      }
+
+      setMessage({ type: 'success', text: `${setup.name} reactivated.` });
+      await fetchSetups();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to reactivate setup.' });
     }
   };
 
@@ -395,17 +441,45 @@ export default function PlaysSettingsPage() {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(setup)}>
-                    Edit
-                  </Button>
-                  {setup.isActive && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeactivate(setup)}
-                    >
-                      Deactivate
-                    </Button>
+                  {setup.isActive ? (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(setup)}>
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeactivate(setup)}
+                      >
+                        Deactivate
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+                        onClick={() => handleDelete(setup)}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleReactivate(setup)}
+                      >
+                        Reactivate
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+                        onClick={() => handleDelete(setup)}
+                      >
+                        Delete
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>

@@ -2,7 +2,7 @@
  * setup-definitions route test
  *
  * Tests POST (create with dual-write), GET (list), GET (single by ID),
- * PUT (update with lookup sync), DELETE (soft-deactivate).
+ * PUT (update with lookup sync, inactive-edit guard), DELETE (hard-delete with trade check).
  *
  * Run: DB_FILE_NAME=./.test-setups.db npx tsx src/app/api/setup-definitions/__tests__/route.test.ts
  */
@@ -92,6 +92,26 @@ sqlite.exec(`
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
+  );
+
+  CREATE TABLE IF NOT EXISTS trades (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_code TEXT NOT NULL UNIQUE,
+    account_id TEXT NOT NULL REFERENCES accounts(id),
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('long','short')),
+    setup_id TEXT REFERENCES lookup_values(id),
+    status TEXT NOT NULL CHECK(status IN ('idea','planned','open','partially_closed','closed','scratched')),
+    entry_price REAL,
+    exit_price REAL,
+    quantity REAL,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+
+  CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL
   );
 `);
 
@@ -184,6 +204,16 @@ function doPutSetup(id: string, body: Record<string, unknown>): { status: number
     }
 
     const now = new Date().toISOString();
+
+    // Inactive plays cannot be edited (only reactivated)
+    const existingRecord = existing as Record<string, unknown>;
+    if (!existingRecord.isActive) {
+      const nonActiveFields = Object.keys(body).filter(k => k !== 'isActive');
+      if (nonActiveFields.length > 0) {
+        return { status: 400, data: { error: 'Inactive plays cannot be edited. Only reactivation is allowed.' } };
+      }
+    }
+
     const updateData: Record<string, unknown> = { updatedAt: now };
 
     const stringFields = ['name', 'description', 'howToPlay', 'entryRules', 'exitRules', 'tags', 'positionSizingRules', 'chartPatterns'] as const;
@@ -234,27 +264,26 @@ function doDeleteSetup(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Setup definition not found' } };
     }
 
-    const now = new Date().toISOString();
-    db.update(schema.setupDefinitions)
-      .set({ isActive: false, updatedAt: now })
-      .where(eq(schema.setupDefinitions.id, id))
-      .run();
+    // Check if any trades reference this setup
+    const linkedTrades = db.select({ id: schema.trades.id }).from(schema.trades).where(eq(schema.trades.setupId, id)).all();
+    if (linkedTrades.length > 0) {
+      return { status: 409, data: { error: 'Cannot delete this play because it is linked to ' + linkedTrades.length + ' trade(s). Deactivate it instead to hide it from new trades.', tradeCount: linkedTrades.length } };
+    }
 
-    db.update(schema.lookupValues)
-      .set({ isActive: false, updatedAt: now })
-      .where(eq(schema.lookupValues.id, id))
-      .run();
+    // Hard delete
+    db.delete(schema.setupDefinitions).where(eq(schema.setupDefinitions.id, id)).run();
+    db.delete(schema.lookupValues).where(eq(schema.lookupValues.id, id)).run();
 
-    return { status: 200, data: { message: 'Setup definition deactivated' } };
+    return { status: 200, data: { message: 'Setup definition permanently deleted' } };
   } catch (error) {
-    return { status: 500, data: { error: 'Failed to deactivate setup definition', details: String(error) } };
+    return { status: 500, data: { error: 'Failed to delete setup definition', details: String(error) } };
   }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function cleanup() {
-  sqlite.exec('DELETE FROM setup_definitions; DELETE FROM lookup_values;');
+  sqlite.exec('DELETE FROM trades; DELETE FROM setup_definitions; DELETE FROM lookup_values; DELETE FROM accounts;');
 }
 
 function seedSetup(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -483,20 +512,20 @@ console.log('\n12. PUT returns 404 for unknown ID:');
   assert(result.status === 404, 'returns 404');
 }
 
-// ── 13. DELETE: Deactivates setup ────────────────────────────────────
+// ── 13. DELETE: Hard-deletes setup when no trades reference it ─────────
 
-console.log('\n13. DELETE deactivates setup in both tables:');
+console.log('\n13. DELETE hard-deletes setup from both tables when no trades reference it:');
 {
   cleanup();
-  const seed = seedSetup({ name: 'To Deactivate' });
+  const seed = seedSetup({ name: 'To Delete Permanently' });
   const result = doDeleteSetup(seed.id as string);
   assert(result.status === 200, 'returns 200');
 
   const row = db.select().from(schema.setupDefinitions).where(eq(schema.setupDefinitions.id, seed.id as string)).get();
-  assertEqual(row!.isActive, false, 'setupDefinitions isActive set to false');
+  assertNull(row, 'setupDefinitions row is gone');
 
   const lookup = db.select().from(schema.lookupValues).where(eq(schema.lookupValues.id, seed.id as string)).get();
-  assertEqual(lookup!.isActive, false, 'lookupValues isActive set to false');
+  assertNull(lookup, 'lookupValues row is gone');
 }
 
 // ── 14. DELETE: Unknown ID ───────────────────────────────────────────
@@ -506,6 +535,57 @@ console.log('\n14. DELETE returns 404 for unknown ID:');
   cleanup();
   const result = doDeleteSetup(randomUUID());
   assert(result.status === 404, 'returns 404');
+}
+
+// ── 15. PUT: Inactive setup reject edit ─────────────────────────────────
+
+console.log('\n15. PUT on inactive setup with field changes returns 400:');
+{
+  cleanup();
+  const seed = seedSetup({ name: 'Will Be Inactive', isActive: false });
+  const result = doPutSetup(seed.id as string, { name: 'Should Not Work' });
+  assert(result.status === 400, 'returns 400');
+}
+
+// ── 16. PUT: Inactive setup reactivate ──────────────────────────────────
+
+console.log('\n16. PUT on inactive setup with isActive=true succeeds:');
+{
+  cleanup();
+  const seed = seedSetup({ name: 'Sleepy Setup', isActive: false });
+  const result = doPutSetup(seed.id as string, { isActive: true });
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.isActive, true, 'isActive set to true');
+
+  // Verify lookupValues also updated
+  const lookup = db.select().from(schema.lookupValues).where(eq(schema.lookupValues.id, seed.id as string)).get();
+  assertEqual(lookup!.isActive, true, 'lookupValues isActive synced to true');
+}
+
+// ── 17. DELETE: Setup linked to trades ──────────────────────────────────
+
+console.log('\n17. DELETE on setup linked to trades returns 409:');
+{
+  cleanup();
+  const seed = seedSetup({ name: 'Linked Setup' });
+
+  // Create a trade that references this setup
+  const accountId = randomUUID();
+  const tradeId = randomUUID();
+  const now = new Date().toISOString();
+
+  sqlite.prepare('INSERT INTO accounts (id, name) VALUES (?, ?)').run(accountId, 'Test Account');
+  sqlite.prepare('INSERT INTO trades (id, trade_code, account_id, symbol, direction, setup_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(tradeId, 'TC-001', accountId, 'AAPL', 'long', seed.id as string, 'closed', now, now);
+
+  const result = doDeleteSetup(seed.id as string);
+  assert(result.status === 409, 'returns 409');
+  const data = result.data as { error: string; tradeCount: number };
+  assert(data.tradeCount === 1, 'tradeCount is 1');
+
+  // Verify the setup still exists (not deleted)
+  const row = db.select().from(schema.setupDefinitions).where(eq(schema.setupDefinitions.id, seed.id as string)).get();
+  assertNotNull(row, 'setup still exists after failed delete');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

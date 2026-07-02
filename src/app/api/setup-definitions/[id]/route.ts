@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { setupDefinitions, lookupValues } from '@/db/schema';
+import { setupDefinitions, lookupValues, trades } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -50,6 +50,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const body = await request.json();
     const now = new Date().toISOString();
+
+    // Inactive plays cannot be edited (only reactivated)
+    if (!existing.isActive) {
+      const nonActiveFields = Object.keys(body).filter(k => k !== 'isActive');
+      if (nonActiveFields.length > 0) {
+        return NextResponse.json(
+          { error: 'Inactive plays cannot be edited. Only reactivation is allowed.' },
+          { status: 400 }
+        );
+      }
+    }
 
     // Build update data from allowed fields
     const updateData: Record<string, unknown> = { updatedAt: now };
@@ -134,23 +145,36 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Soft delete: deactivate instead of removing (preserves FK references)
-    const now = new Date().toISOString();
-    db.update(setupDefinitions)
-      .set({ isActive: false, updatedAt: now })
+    // Check if any trades reference this setup
+    const linkedTrades = db
+      .select({ id: trades.id })
+      .from(trades)
+      .where(eq(trades.setupId, id))
+      .all();
+
+    if (linkedTrades.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Cannot delete this play because it is linked to ' + linkedTrades.length + ' trade(s). Deactivate it instead to hide it from new trades.',
+          tradeCount: linkedTrades.length,
+        },
+        { status: 409 }
+      );
+    }
+
+    // Hard delete: remove from both tables (no FK references to protect)
+    db.delete(setupDefinitions)
       .where(eq(setupDefinitions.id, id))
       .run();
 
-    // Also deactivate in lookupValues
-    db.update(lookupValues)
-      .set({ isActive: false, updatedAt: now })
+    db.delete(lookupValues)
       .where(eq(lookupValues.id, id))
       .run();
 
-    return NextResponse.json({ message: 'Setup definition deactivated' });
+    return NextResponse.json({ message: 'Setup definition permanently deleted' });
   } catch (error) {
     return NextResponse.json(
-      { error: 'Failed to deactivate setup definition', details: String(error) },
+      { error: 'Failed to delete setup definition', details: String(error) },
       { status: 500 }
     );
   }
