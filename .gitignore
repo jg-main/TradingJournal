@@ -1,10 +1,12 @@
 
-# ── GSD baseline (auto-generated) ──
+# ── GSD (auto-generated) ──
 .gsd
 .gsd-worktrees/
 .gsd-id
 .mcp.json
-.bg-shell/
+.gsd-backups/
+
+# ── OS ──
 .DS_Store
 Thumbs.db
 nul
@@ -19,34 +21,40 @@ com[1-9]
 com[1-9].*
 lpt[1-9]
 lpt[1-9].*
+
+# ── Editors ──
 *.swp
 *.swo
 *~
 .idea/
 .vscode/
 *.code-workspace
+
+# ── Environment ──
 .env
 .env.*
 !.env.example
+
+# ── Dependencies & Build ──
 node_modules/
 .next/
 dist/
 build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Language runtimes ──
 __pycache__/
 *.pyc
 .venv/
 venv/
 target/
 vendor/
-*.log
-coverage/
-.cache/
 tmp/
+.cache/
 
-# ── Project-specific ──
-.trading-journal/
-next-env.d.ts
-*.tsbuildinfo
+# ── Logs ──
+*.log
 
 # ── Test Artifacts ──
 .test-*.db
@@ -54,9 +62,11 @@ next-env.d.ts
 .test-*.db-wal
 test-results/
 playwright-report/
+coverage/
 
 # ── Stale docs ──
 docs/
 
-# ── GSD baseline (auto-generated) ──
-.gsd-backups/
+# ── Runtime directories ──
+.trading-journal/
+.bg-shell/
