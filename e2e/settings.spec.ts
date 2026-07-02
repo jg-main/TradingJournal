@@ -14,8 +14,8 @@ test.describe('Settings migration', () => {
     await page.goto('/settings/accounts');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
-    await expect(page.getByText('Manage your brokerage accounts.')).toBeVisible();
+    await expect(page.locator('h1')).toHaveText('Accounts');
+    await expect(page.getByText('Create your first trading account to start tracking performance.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Add Account' }).click();
     await expect(page.getByRole('dialog', { name: 'Add Account' })).toBeVisible();
