@@ -57,3 +57,6 @@ playwright-report/
 
 # ── Stale docs ──
 docs/
+
+# ── GSD baseline (auto-generated) ──
+.gsd-backups/
