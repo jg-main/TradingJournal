@@ -34,6 +34,15 @@ test.describe('Settings', () => {
     await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
   });
 
+  test('legacy risk route redirects to account settings', async ({ page }) => {
+    await page.goto('/settings/risk');
+    await page.waitForURL('**/settings/accounts');
+
+    await expect(page).toHaveURL(/\/settings\/accounts$/);
+    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
+    await expect(page.getByText('Manage your brokerage accounts.')).toBeVisible();
+  });
+
   test('saving valid settings shows success feedback', async ({ page }) => {
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
