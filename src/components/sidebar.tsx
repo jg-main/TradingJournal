@@ -13,6 +13,7 @@ import {
   Settings,
   type LucideIcon,
 } from 'lucide-react';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 interface NavItem {
   href: string;
@@ -73,8 +74,9 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-        <p className="text-center text-xs text-zinc-400 dark:text-zinc-500">
+      <div className="border-t border-zinc-200 p-2 dark:border-zinc-800">
+        <ThemeToggle />
+        <p className="mt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">
           v0.1.0
         </p>
       </div>
