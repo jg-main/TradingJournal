@@ -46,10 +46,34 @@ export async function GET(request: NextRequest) {
 
     const total = countResult?.count ?? 0;
 
-    // Paginated data
+    // Paginated data with setup name from lookup values
     const rows = db
-      .select()
+      .select({
+        id: trades.id,
+        tradeCode: trades.tradeCode,
+        accountId: trades.accountId,
+        symbol: trades.symbol,
+        direction: trades.direction,
+        setupId: trades.setupId,
+        setupName: lookupValues.value,
+        sectorId: trades.sectorId,
+        marketConditionId: trades.marketConditionId,
+        status: trades.status,
+        thesis: trades.thesis,
+        plannedEntry: trades.plannedEntry,
+        plannedStop: trades.plannedStop,
+        plannedTarget1: trades.plannedTarget1,
+        plannedTarget2: trades.plannedTarget2,
+        invalidationCondition: trades.invalidationCondition,
+        preTradePlan: trades.preTradePlan,
+        openedAt: trades.openedAt,
+        exitNotes: trades.exitNotes,
+        lesson: trades.lesson,
+        createdAt: trades.createdAt,
+        updatedAt: trades.updatedAt,
+      })
       .from(trades)
+      .leftJoin(lookupValues, eq(trades.setupId, lookupValues.id))
       .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
       .orderBy(desc(trades.createdAt))
       .limit(limit)
