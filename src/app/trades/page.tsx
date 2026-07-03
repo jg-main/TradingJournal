@@ -381,6 +381,8 @@ export default function TradesPage() {
           <DialogContent
             className="sm:max-w-md"
             onInteractOutside={(e) => e.preventDefault()}
+            onPointerDownOutside={(e) => e.preventDefault()}
+            onFocusOutside={(e) => e.preventDefault()}
           >
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Trade' : 'Plan Trade'}</DialogTitle>
