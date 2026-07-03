@@ -1,7 +1,7 @@
 /**
  * trade by id route test
  *
- * Tests GET (by id), PUT (update), and DELETE (soft-delete) handlers.
+ * Tests GET (by id), PUT (update), and DELETE (hard-delete) handlers.
  *
  * Run: npx vitest run --reporter verbose src/app/api/trades/\[id\]/__tests__/route.test.ts
  */
@@ -89,6 +89,25 @@ sqlite.exec(`
     description TEXT,
     sort_order INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS watchlist_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    date_added TEXT,
+    symbol TEXT NOT NULL,
+    sector_id TEXT,
+    setup_id TEXT,
+    direction TEXT NOT NULL,
+    thesis TEXT,
+    market_context TEXT,
+    key_level REAL,
+    trigger_price REAL,
+    planned_stop REAL,
+    target_price REAL,
+    status TEXT NOT NULL,
+    notes TEXT,
+    promoted_trade_id TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -207,13 +226,19 @@ function doDeleteTrade(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
-    // Soft delete: mark as scratched
-    db.update(schema.trades)
-      .set({ status: 'scratched', updatedAt: new Date().toISOString() })
-      .where(eq(schema.trades.id, id))
-      .run();
+    // Hard delete: nullify watchlist FK references, then delete the trade row
+    db.transaction((tx) => {
+      tx.update(schema.watchlistItems)
+        .set({ promotedTradeId: null })
+        .where(eq(schema.watchlistItems.promotedTradeId, id))
+        .run();
 
-    return { status: 200, data: { message: 'Trade scratched' } };
+      tx.delete(schema.trades)
+        .where(eq(schema.trades.id, id))
+        .run();
+    });
+
+    return { status: 204, data: null };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to delete trade', details: String(error) } };
   }
@@ -222,6 +247,7 @@ function doDeleteTrade(id: string): { status: number; data: unknown } {
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function cleanup() {
+  sqlite.exec('DELETE FROM watchlist_items;');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM lookup_values;');
   sqlite.exec('DELETE FROM accounts;');
@@ -280,6 +306,23 @@ function seedTrade(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return db.select().from(schema.trades).where(eq(schema.trades.id, id)).get() as Record<string, unknown>;
+}
+
+function seedWatchlistItem(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.watchlistItems)
+    .values({
+      id,
+      symbol: 'AAPL',
+      direction: 'long',
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.watchlistItems).where(eq(schema.watchlistItems.id, id)).get() as Record<string, unknown>;
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -373,9 +416,9 @@ console.log('\n6. PUT returns 404 for nonexistent id:');
   assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
 }
 
-// ── 7. DELETE: Soft-deletes by setting status to scratched ─────────
+// ── 7. DELETE: Hard-deletes trade (removes from DB) and returns 204
 
-console.log('\n7. DELETE soft-deletes trade by setting status to scratched:');
+console.log('\n7. DELETE hard-deletes trade and returns 204:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
@@ -383,12 +426,12 @@ console.log('\n7. DELETE soft-deletes trade by setting status to scratched:');
 
   const result = doDeleteTrade(trade.id as string);
 
-  assert(result.status === 200, 'returns 200');
-  assertEqual((result.data as { message: string }).message, 'Trade scratched', 'message matches');
+  assert(result.status === 204, 'returns 204');
+  assertEqual(result.data, null, 'body is null');
 
-  // Verify DB: trade.status = 'scratched'
-  const updated = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
-  assertEqual(updated.status, 'scratched', 'status is scratched after soft delete');
+  // Verify DB: trade row is gone
+  const deleted = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get();
+  assertEqual(deleted, undefined, 'trade row is removed from database');
 }
 
 // ── 8. DELETE: 404 for nonexistent id ──────────────────────────────
@@ -399,6 +442,32 @@ console.log('\n8. DELETE returns 404 for nonexistent id:');
   const result = doDeleteTrade('nonexistent-id');
   assert(result.status === 404, 'returns 404');
   assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
+}
+
+// 9. DELETE: Nullifies watchlist_items.promotedTradeId
+
+console.log('\n9. DELETE nullifies watchlist promotedTradeId:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
+  const wlItem = seedWatchlistItem({
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'triggered',
+    promotedTradeId: trade.id as string,
+  });
+
+  const result = doDeleteTrade(trade.id as string);
+  assert(result.status === 204, 'returns 204');
+
+  // Verify watchlist FK is nullified
+  const wl = db.select().from(schema.watchlistItems).where(eq(schema.watchlistItems.id, wlItem.id as string)).get() as Record<string, unknown>;
+  assertEqual(wl.promotedTradeId, null, 'promotedTradeId is null after trade delete');
+
+  // Verify trade is gone
+  const deleted = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get();
+  assertEqual(deleted, undefined, 'trade row is removed from database');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
