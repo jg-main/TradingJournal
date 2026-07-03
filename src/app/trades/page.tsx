@@ -80,10 +80,6 @@ interface TradeForm {
   accountId: string;
   setup: string;
   thesis: string;
-  plannedEntry: string;
-  plannedStop: string;
-  plannedTarget1: string;
-  plannedTarget2: string;
 }
 
 const EMPTY_FORM: TradeForm = {
@@ -92,10 +88,6 @@ const EMPTY_FORM: TradeForm = {
   accountId: '',
   setup: '',
   thesis: '',
-  plannedEntry: '',
-  plannedStop: '',
-  plannedTarget1: '',
-  plannedTarget2: '',
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -195,6 +187,21 @@ export default function TradesPage() {
       const res = await fetch('/api/accounts');
       const data = await res.json();
       setAccounts(data ?? []);
+      // Auto-select the default account if available
+      if (data && Array.isArray(data)) {
+        // Fetch settings to find the default account
+        const settingsRes = await fetch('/api/settings');
+        const settings = await settingsRes.json();
+        if (settings?.defaultAccountId) {
+          setForm((f) => ({ ...f, accountId: settings.defaultAccountId }));
+        } else if (data.length > 0) {
+          // Fall back to first active account
+          const firstActive = data.find((a: Account) => a.isActive);
+          if (firstActive) {
+            setForm((f) => ({ ...f, accountId: firstActive.id }));
+          }
+        }
+      }
     } catch {
       // Non-critical — accounts just won't show in dropdown
     }
@@ -231,10 +238,6 @@ export default function TradesPage() {
       accountId: item.accountId ?? '',
       setup: item.setup ?? '',
       thesis: item.thesis ?? '',
-      plannedEntry: item.plannedEntry?.toString() ?? '',
-      plannedStop: item.plannedStop?.toString() ?? '',
-      plannedTarget1: item.plannedTarget1?.toString() ?? '',
-      plannedTarget2: item.plannedTarget2?.toString() ?? '',
     });
     setEditingId(item.id);
     setDialogOpen(true);
@@ -260,10 +263,6 @@ export default function TradesPage() {
       const body: Record<string, unknown> = {
         setup: form.setup.trim() || null,
         thesis: form.thesis.trim() || null,
-        plannedEntry: form.plannedEntry ? parseFloat(form.plannedEntry) : null,
-        plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
-        plannedTarget1: form.plannedTarget1 ? parseFloat(form.plannedTarget1) : null,
-        plannedTarget2: form.plannedTarget2 ? parseFloat(form.plannedTarget2) : null,
         accountId: form.accountId || null,
       };
 
@@ -361,13 +360,13 @@ export default function TradesPage() {
               Plan Trade
             </button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Trade' : 'Plan Trade'}</DialogTitle>
               <DialogDescription>
                 {editingId
                   ? 'Update the details for this planned trade.'
-                  : 'Define a new planned trade with entry, stop, and target levels.'}
+                  : 'Set the ticker, direction, account, and setup. Prices are set when executing.'}
               </DialogDescription>
             </DialogHeader>
 
@@ -383,10 +382,10 @@ export default function TradesPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="symbol" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="symbol" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
                     Symbol *
                   </label>
                   <input
@@ -396,75 +395,20 @@ export default function TradesPage() {
                     onChange={(e) => setForm((f) => ({ ...f, symbol: e.target.value }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     placeholder="e.g. AAPL"
-                    readOnly={!!editingId}
+                    autoFocus
                   />
                 </div>
-      {/* Trade Log Filter Bar */}
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Search</label>
-          <input
-            type="text"
-            placeholder="Symbol, setup, thesis..."
-            className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm text-zinc-900 transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/50 dark:text-zinc-100"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Direction</label>
-          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
-            <option value="">All</option>
-            <option value="long">Long</option>
-            <option value="short">Short</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Status</label>
-          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
-            <option value="">All</option>
-            <option value="planned">Planned</option>
-            <option value="open">Open</option>
-            <option value="closed">Closed</option>
-            <option value="deleted">Deleted</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</label>
-          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">To</label>
-          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
-        </div>
-      </div>
-
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
                     Direction
                   </label>
                   <select
                     value={form.direction}
                     onChange={(e) => setForm((f) => ({ ...f, direction: e.target.value as 'long' | 'short' }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    disabled={!!editingId}
                   >
                     <option value="long">Long</option>
                     <option value="short">Short</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Status
-                  </label>
-                  <select
-                    value={form.status}
-                    onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as Trade['status'] }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="planned">Planned</option>
-                    <option value="open">Open</option>
-                    <option value="closed">Closed</option>
-                    <option value="deleted">Deleted</option>
                   </select>
                 </div>
               </div>
@@ -560,67 +504,7 @@ export default function TradesPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="plannedEntry" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Planned Entry
-                  </label>
-                  <input
-                    id="plannedEntry"
-                    type="number"
-                    step="any"
-                    value={form.plannedEntry}
-                    onChange={(e) => setForm((f) => ({ ...f, plannedEntry: e.target.value }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="plannedTarget1" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Target 1
-                  </label>
-                  <input
-                    id="plannedTarget1"
-                    type="number"
-                    step="any"
-                    value={form.plannedTarget1}
-                    onChange={(e) => setForm((f) => ({ ...f, plannedTarget1: e.target.value }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="plannedStop" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Planned Stop
-                  </label>
-                  <input
-                    id="plannedStop"
-                    type="number"
-                    step="any"
-                    value={form.plannedStop}
-                    onChange={(e) => setForm((f) => ({ ...f, plannedStop: e.target.value }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="plannedTarget2" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Target 2
-                  </label>
-                  <input
-                    id="plannedTarget2"
-                    type="number"
-                    step="any"
-                    value={form.plannedTarget2}
-                    onChange={(e) => setForm((f) => ({ ...f, plannedTarget2: e.target.value }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
+              {/* Prices are set during execution, not planning */}
 
               <DialogFooter className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
                 <div className="flex w-full justify-end gap-2">
