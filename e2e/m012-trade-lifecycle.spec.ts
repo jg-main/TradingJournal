@@ -139,7 +139,7 @@ test.describe('M012 Trade Lifecycle', () => {
 
     // Create a trade
     const tradeRes = await page.request.post('/api/trades', {
-      data: { symbol: 'MSFT', direction: 'long', accountId: account.id },
+      data: { symbol: 'M012-DEL', direction: 'long', accountId: account.id },
     });
     expect(tradeRes.ok()).toBeTruthy();
     const trade = await tradeRes.json();
@@ -162,14 +162,14 @@ test.describe('M012 Trade Lifecycle', () => {
         resp.status() === 200,
     );
 
-    // Click Remove on the MSFT row
-    await page.locator('tr').filter({ hasText: 'MSFT' }).getByText('Remove').click();
+    // Click Remove on the M012-DEL row (use unique symbol to avoid clashing with other specs' MSFT data)
+    await page.locator('tr').filter({ hasText: 'M012-DEL' }).getByText('Remove').first().click();
 
     // Wait for the trade log to refresh after deletion
     await refreshPromise;
 
-    // MSFT should no longer appear in the table (hard delete)
-    await expect(page.locator('tr').filter({ hasText: 'MSFT' })).not.toBeVisible();
+    // M012-DEL should no longer appear in the table (hard delete)
+    await expect(page.locator('tr').filter({ hasText: 'M012-DEL' })).not.toBeVisible();
 
     // Navigate to the deleted trade detail page — should show "Trade not found"
     await page.goto(`/trades/${trade.id}`);
