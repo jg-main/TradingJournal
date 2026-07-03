@@ -5,6 +5,8 @@ import { Download, Plus, NotebookPen } from 'lucide-react';
 import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
+import { ExecuteDialog } from '@/components/execute-dialog';
+import type { ExecuteTradeData } from '@/components/execute-dialog';
 import {
   Dialog,
   DialogContent,
@@ -128,6 +130,7 @@ export default function TradesPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [executeTrade, setExecuteTrade] = useState<ExecuteTradeData | null>(null);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [setups, setSetups] = useState<SetupDefinition[]>([]);
@@ -588,6 +591,19 @@ export default function TradesPage() {
         </div>
       </div>
 
+      {/* Execute Dialog */}
+      {executeTrade && (
+        <ExecuteDialog
+          trade={executeTrade}
+          open={true}
+          onOpenChange={(open) => { if (!open) setExecuteTrade(null); }}
+          onComplete={() => {
+            setExecuteTrade(null);
+            fetchItems(1, statusFilter);
+          }}
+        />
+      )}
+
       {/* Status message */}
       {message && message.type === 'success' && (
         <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
@@ -700,6 +716,14 @@ export default function TradesPage() {
                     {formatDate(item.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-right">
+                    {item.status === 'planned' && (
+                      <button
+                        onClick={() => setExecuteTrade(item)}
+                        className="mr-2 text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                      >
+                        Execute
+                      </button>
+                    )}
                     <button
                       onClick={() => openEdit(item)}
                       className="mr-2 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"

@@ -234,8 +234,8 @@ function seed() {
 
   // ── Compute trade distributions ────────────────────────────────────────
   const closedCount = Math.floor(tradeCount * 0.80);
-  const scratchedCount = Math.floor(tradeCount * 0.05);
-  const openPlannedCount = tradeCount - closedCount - scratchedCount;
+  const deletedCount = Math.floor(tradeCount * 0.05);
+  const openPlannedCount = tradeCount - closedCount - deletedCount;
 
   // ── Generate all trades ────────────────────────────────────────────────
   const now = new Date().toISOString();
@@ -288,7 +288,7 @@ function seed() {
       closeDate.setDate(closeDate.getDate() + rngInt(1, 30));
       if (closeDate > endDate) closeDate.setTime(endDate.getTime());
       closedAt = formatDate(closeDate);
-    } else if (i < closedCount + scratchedCount) {
+    } else if (i < closedCount + deletedCount) {
       status = 'deleted';
     } else {
       status = Math.random() < 0.5 ? 'open' : 'planned';
@@ -635,7 +635,7 @@ function seed() {
   console.log('\n=== Seed Summary ===');
   console.log(`  Trades:           ${tradeRows.length}`);
   console.log(`    - Closed:       ${closedCount}`);
-  console.log(`    - Scratched:    ${scratchedCount}`);
+  console.log(`    - Deleted:     ${deletedCount}`);
   console.log(`    - Open/Planned: ${openPlannedCount}`);
   console.log(`  Executions:       ${totalExecutions}`);
   console.log(`  Risk Snapshots:   ${riskRows.length}`);

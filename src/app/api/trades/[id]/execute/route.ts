@@ -1,0 +1,423 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/db';
+import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransactions, settings as settingsTable } from '@/db/schema';
+import { eq, and, lte } from 'drizzle-orm';
+import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import {
+  deriveTradeStatus,
+  calculateAvgCost,
+  calculatePnL,
+  type ExecutionData,
+} from '@/lib/trade-calc';
+
+const executeTradeSchema = z.object({
+  entryPrice: z.number().positive(),
+  entryQuantity: z.number().positive(),
+  stopPrice: z.number().optional(),
+  exit1Price: z.number().positive().optional(),
+  exit1Quantity: z.number().positive().optional(),
+  exit2Price: z.number().positive().optional(),
+  exit2Quantity: z.number().positive().optional(),
+  executedAt: z.string().optional(),
+  fees: z.number().min(0).optional().default(0),
+});
+
+type RouteParams = { params: Promise<{ id: string }> };
+
+function toExecutionData(
+  rows: typeof tradeExecutions.$inferSelect[],
+): ExecutionData[] {
+  return rows.map((r) => ({
+    action: r.action,
+    quantity: r.quantity,
+    price: r.price,
+    fees: r.fees,
+    executedAt: r.executedAt ?? r.createdAt ?? '',
+  }));
+}
+
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+    const parsed = executeTradeSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: parsed.error.flatten() },
+        { status: 400 },
+      );
+    }
+
+    const {
+      entryPrice,
+      entryQuantity,
+      stopPrice,
+      exit1Price,
+      exit1Quantity,
+      exit2Price,
+      exit2Quantity,
+      executedAt,
+      fees,
+    } = parsed.data;
+
+    // ── Validate exit quantities don't exceed entry quantity ──────────
+
+    const exitQty1 = exit1Quantity ?? 0;
+    const exitQty2 = exit2Quantity ?? 0;
+    if (exitQty1 + exitQty2 > entryQuantity) {
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              exitQuantity: [
+                `Total exit quantity (${exitQty1 + exitQty2}) exceeds entry quantity (${entryQuantity})`,
+              ],
+            },
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    // Exit prices must be provided when exit quantities are given, and vice versa
+    if ((exit1Price != null && exit1Quantity == null) || (exit1Quantity != null && exit1Price == null)) {
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              exit1: ['Both exit1Price and exit1Quantity must be provided together'],
+            },
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    if ((exit2Price != null && exit2Quantity == null) || (exit2Quantity != null && exit2Price == null)) {
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              exit2: ['Both exit2Price and exit2Quantity must be provided together'],
+            },
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    // Exit 2 requires exit 1
+    if (exit2Price != null && exit1Price == null) {
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              exit2: ['Exit 2 requires Exit 1 to be provided first'],
+            },
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    // ── Fetch and validate trade ──────────────────────────────────────
+
+    const trade = db
+      .select()
+      .from(trades)
+      .where(eq(trades.id, id))
+      .get();
+
+    if (!trade) {
+      return NextResponse.json(
+        { error: 'Trade not found' },
+        { status: 404 },
+      );
+    }
+
+    if (trade.status === 'deleted') {
+      return NextResponse.json(
+        { error: 'Cannot execute a deleted trade' },
+        { status: 400 },
+      );
+    }
+
+    if (trade.status !== 'planned') {
+      return NextResponse.json(
+        { error: 'Trade is not in planned status' },
+        { status: 400 },
+      );
+    }
+
+    // ── Validate action-direction rules ───────────────────────────────
+
+    const DIRECTION_ACTIONS: Record<string, string[]> = {
+      long: ['buy', 'add', 'sell', 'reduce'],
+      short: ['sell_short', 'buy_to_cover'],
+    };
+
+    const entryAction = trade.direction === 'long' ? 'buy' : 'sell_short';
+    const exitAction = trade.direction === 'long' ? 'sell' : 'buy_to_cover';
+
+    if (!DIRECTION_ACTIONS[trade.direction]?.includes(entryAction)) {
+      return NextResponse.json(
+        {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              action: [
+                `Action "${entryAction}" is not valid for a ${trade.direction} trade. ` +
+                `Valid actions: ${DIRECTION_ACTIONS[trade.direction].join(', ')}`,
+              ],
+            },
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    // ── Execute within a transaction ──────────────────────────────────
+
+    const now = new Date().toISOString();
+    const execTimestamp = executedAt ?? now;
+
+    const result = db.transaction((tx) => {
+      // 1. Insert entry execution
+      const entryId = randomUUID();
+      tx.insert(tradeExecutions)
+        .values({
+          id: entryId,
+          tradeId: id,
+          action: entryAction,
+          quantity: entryQuantity,
+          price: entryPrice,
+          fees,
+          executedAt: execTimestamp,
+          notes: null,
+          createdAt: now,
+        })
+        .run();
+
+      // 2. Insert exit 1 execution if provided
+      let exit1Id: string | null = null;
+      if (exit1Price != null && exit1Quantity != null) {
+        exit1Id = randomUUID();
+        tx.insert(tradeExecutions)
+          .values({
+            id: exit1Id,
+            tradeId: id,
+            action: exitAction,
+            quantity: exit1Quantity,
+            price: exit1Price,
+            fees: 0,
+            executedAt: execTimestamp,
+            notes: null,
+            createdAt: now,
+          })
+          .run();
+      }
+
+      // 3. Insert exit 2 execution if provided
+      let exit2Id: string | null = null;
+      if (exit2Price != null && exit2Quantity != null) {
+        exit2Id = randomUUID();
+        tx.insert(tradeExecutions)
+          .values({
+            id: exit2Id,
+            tradeId: id,
+            action: exitAction,
+            quantity: exit2Quantity,
+            price: exit2Price,
+            fees: 0,
+            executedAt: execTimestamp,
+            notes: null,
+            createdAt: now,
+          })
+          .run();
+      }
+
+      // 4. Reload all executions and derive new status
+      const allExecutions = tx
+        .select()
+        .from(tradeExecutions)
+        .where(eq(tradeExecutions.tradeId, id))
+        .orderBy(tradeExecutions.executedAt, tradeExecutions.createdAt)
+        .all();
+
+      const execData = toExecutionData(allExecutions);
+      const derived = deriveTradeStatus(execData, trade.direction as 'long' | 'short');
+
+      // 5. Update trade row
+      tx.update(trades)
+        .set({
+          status: derived.status,
+          openedAt: derived.openedAt,
+          closedAt: derived.closedAt,
+          updatedAt: now,
+        })
+        .where(eq(trades.id, id))
+        .run();
+
+      // 6. Upsert risk snapshot on first entry (skip if one exists)
+      if (derived.totalEntryQty > 0) {
+        const existingSnapshot = tx
+          .select()
+          .from(tradeRiskSnapshots)
+          .where(eq(tradeRiskSnapshots.tradeId, id))
+          .get();
+
+        if (!existingSnapshot) {
+          const entryExecs = allExecutions.filter((e) =>
+            trade.direction === 'long'
+              ? e.action === 'buy' || e.action === 'add'
+              : e.action === 'sell_short',
+          );
+
+          if (entryExecs.length > 0) {
+            const { avgEntryPrice } = calculateAvgCost(
+              entryExecs.map((e) => ({
+                action: e.action,
+                quantity: e.quantity,
+                price: e.price,
+                fees: e.fees ?? 0,
+                executedAt: e.executedAt ?? e.createdAt ?? '',
+              })),
+            );
+
+            if (avgEntryPrice !== null) {
+              const snapshotValues: Record<string, unknown> = {
+                id: randomUUID(),
+                tradeId: id,
+                initialEntryPrice: avgEntryPrice,
+                initialQuantity: derived.totalEntryQty,
+                createdAt: now,
+              };
+
+              // Use stopPrice from request body, fall back to trade.plannedStop
+              const effectiveStopPrice = stopPrice ?? trade.plannedStop;
+              if (effectiveStopPrice != null) {
+                snapshotValues.initialStopPrice = effectiveStopPrice;
+              }
+
+              // ── Compute accountEquityAtOpen ────────────────────────
+              if (trade.accountId) {
+                const account = tx
+                  .select()
+                  .from(accounts)
+                  .where(eq(accounts.id, trade.accountId))
+                  .get();
+
+                if (account) {
+                  const allTxns = tx
+                    .select()
+                    .from(accountTransactions)
+                    .where(
+                      and(
+                        eq(accountTransactions.accountId, trade.accountId),
+                        lte(accountTransactions.date, execTimestamp),
+                      ),
+                    )
+                    .all();
+
+                  const sumDeposits = allTxns
+                    .filter((tx) => tx.type === 'deposit')
+                    .reduce((s, tx) => s + tx.amount, 0);
+                  const sumWithdrawals = allTxns
+                    .filter((tx) => tx.type === 'withdrawal')
+                    .reduce((s, tx) => s + tx.amount, 0);
+
+                  const priorClosedTrades = tx
+                    .select()
+                    .from(trades)
+                    .where(eq(trades.accountId, trade.accountId))
+                    .all()
+                    .filter(
+                      (t) => t.closedAt != null && t.closedAt <= execTimestamp,
+                    );
+
+                  let realizedPnL = 0;
+                  for (const ct of priorClosedTrades) {
+                    const execs = tx
+                      .select()
+                      .from(tradeExecutions)
+                      .where(eq(tradeExecutions.tradeId, ct.id))
+                      .orderBy(
+                        tradeExecutions.executedAt,
+                        tradeExecutions.createdAt,
+                      )
+                      .all();
+                    const pnlResult = calculatePnL(
+                      toExecutionData(execs),
+                      ct.direction as 'long' | 'short',
+                    );
+                    realizedPnL += pnlResult.totalRealizedPnL;
+                  }
+
+                  const startingBalance = account.startingBalance ?? 0;
+                  const effectiveEquity =
+                    startingBalance +
+                    sumDeposits -
+                    sumWithdrawals +
+                    realizedPnL;
+
+                  if (effectiveEquity > 0) {
+                    snapshotValues.accountEquityAtOpen = effectiveEquity;
+                  } else if (
+                    account.startingBalance == null &&
+                    allTxns.length === 0 &&
+                    priorClosedTrades.length === 0
+                  ) {
+                    const globalSettings = tx
+                      .select()
+                      .from(settingsTable)
+                      .get();
+                    if (
+                      globalSettings?.startingAccountValue != null &&
+                      globalSettings.startingAccountValue > 0
+                    ) {
+                      snapshotValues.accountEquityAtOpen =
+                        globalSettings.startingAccountValue;
+                    }
+                  }
+                }
+              }
+
+              tx.insert(tradeRiskSnapshots)
+                .values(snapshotValues as unknown as typeof tradeRiskSnapshots.$inferInsert)
+                .run();
+            }
+          }
+        }
+      }
+
+      // Return the created executions for the response
+      const createdExecutions = tx
+        .select()
+        .from(tradeExecutions)
+        .where(eq(tradeExecutions.tradeId, id))
+        .orderBy(tradeExecutions.executedAt, tradeExecutions.createdAt)
+        .all();
+
+      const updatedTrade = tx
+        .select()
+        .from(trades)
+        .where(eq(trades.id, id))
+        .get();
+
+      return { executions: createdExecutions, trade: updatedTrade };
+    });
+
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to execute trade', details: String(error) },
+      { status: 500 },
+    );
+  }
+}

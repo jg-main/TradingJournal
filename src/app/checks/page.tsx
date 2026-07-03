@@ -116,7 +116,7 @@ const VALIDATION_RULES: ValidationRule[] = [
     id: 'open-quantity-valid',
     name: 'Open Quantity Integrity',
     description:
-      'Open quantity must never be negative. Exit quantity must not exceed entry quantity. Status is derived from net open quantity (open, partially_closed, closed).',
+      'Open quantity must never be negative. Exit quantity must not exceed entry quantity. Status is derived from net open quantity (planned, open, closed, deleted).',
     severity: 'error',
     source: 'trade-calc.ts: deriveTradeStatus()',
     formula: 'openQuantity = max(0, totalEntryQty - totalExitQty)',
