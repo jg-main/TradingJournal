@@ -128,6 +128,7 @@ export default function TradesPage() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [setups, setSetups] = useState<SetupDefinition[]>([]);
+  const [defaultAccountId, setDefaultAccountId] = useState<string | null>(null);
 
   const [form, setForm] = useState(EMPTY_FORM);
 
@@ -166,6 +167,37 @@ export default function TradesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
+  // Pre-fetch accounts, settings, and setups on mount
+  useEffect(() => {
+    fetchSetups();
+    (async () => {
+      try {
+        const [accountsRes, settingsRes] = await Promise.all([
+          fetch('/api/accounts'),
+          fetch('/api/settings'),
+        ]);
+        const accountsData = await accountsRes.json();
+        const settingsData = await settingsRes.json();
+        const accounts = Array.isArray(accountsData) ? accountsData : [];
+        setAccounts(accounts);
+
+        let defaultId: string | null = null;
+        if (settingsData?.defaultAccountId) {
+          defaultId = settingsData.defaultAccountId;
+        } else {
+          const firstActive = accounts.find((a: Account) => a.isActive);
+          if (firstActive) defaultId = firstActive.id;
+        }
+        setDefaultAccountId(defaultId);
+        if (defaultId) {
+          setForm((f) => ({ ...f, accountId: defaultId }));
+        }
+      } catch {
+        // Non-critical
+      }
+    })();
+  }, []);
+
   // ── Filter ──────────────────────────────────────────────────────────
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -187,30 +219,14 @@ export default function TradesPage() {
       const res = await fetch('/api/accounts');
       const data = await res.json();
       setAccounts(data ?? []);
-      // Auto-select the default account if available
-      if (data && Array.isArray(data)) {
-        // Fetch settings to find the default account
-        const settingsRes = await fetch('/api/settings');
-        const settings = await settingsRes.json();
-        if (settings?.defaultAccountId) {
-          setForm((f) => ({ ...f, accountId: settings.defaultAccountId }));
-        } else if (data.length > 0) {
-          // Fall back to first active account
-          const firstActive = data.find((a: Account) => a.isActive);
-          if (firstActive) {
-            setForm((f) => ({ ...f, accountId: firstActive.id }));
-          }
-        }
-      }
     } catch {
-      // Non-critical — accounts just won't show in dropdown
+      // Non-critical
     }
   };
 
   const resetForm = () => {
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, accountId: defaultAccountId ?? '' });
     setEditingId(null);
-    setSelectedSetupDetail(null);
     setMessage(null);
   };
 
@@ -332,7 +348,7 @@ export default function TradesPage() {
             <Download className="size-4" />
             Export CSV
           </button>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); fetchSetups(); fetchAccounts(); }}>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <button
               className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
