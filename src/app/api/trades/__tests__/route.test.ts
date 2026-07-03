@@ -392,7 +392,7 @@ console.log('\n3. GET filters by status:');
   seedAccount({ id: 'test-account-id' });
   seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'planned' });
   seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'open' });
-  seedTrade({ accountId: 'test-account-id', symbol: 'GOOGL', status: 'scratched' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'GOOGL', status: 'deleted' });
 
   const planned = doGetTrades({ status: 'planned' });
   assert(planned.status === 200, 'status filter returns 200');
