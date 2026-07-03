@@ -169,9 +169,14 @@ export async function POST(request: NextRequest) {
     const nextNumber = (countResult?.count ?? 0) + 1;
     const tradeCode = `T-${String(nextNumber).padStart(4, '0')}`;
 
-    // Resolve setup string to UUID using auto-create bridge
-    const resolved = resolveSetup(parsed.data.setup);
-    const resolvedSetupId = resolved ? resolved.id : null;
+    // Use setupId directly if provided, otherwise resolve setup name to UUID
+    let resolvedSetupId: string | null = parsed.data.setupId ?? null;
+    if (!resolvedSetupId && parsed.data.setup) {
+      const resolved = resolveSetup(parsed.data.setup);
+      if (resolved) {
+        resolvedSetupId = resolved.id;
+      }
+    }
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
