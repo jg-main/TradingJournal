@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Download, Plus, NotebookPen } from 'lucide-react';
+import { Download, Plus, NotebookPen, ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
@@ -61,6 +61,7 @@ interface Trade {
   plannedStop: number | null;
   plannedTarget1: number | null;
   plannedTarget2: number | null;
+  setupId: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
 
@@ -85,7 +86,6 @@ interface TradeForm {
   plannedEntry: string;
   plannedStop: string;
   plannedTarget1: string;
-  plannedTarget2: string;
 }
 
 const EMPTY_FORM: TradeForm = {
@@ -97,7 +97,6 @@ const EMPTY_FORM: TradeForm = {
   plannedEntry: '',
   plannedStop: '',
   plannedTarget1: '',
-  plannedTarget2: '',
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -134,6 +133,8 @@ export default function TradesPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
+  const [editTab, setEditTab] = useState<'plan' | 'executions'>('plan');
   const [executeTrade, setExecuteTrade] = useState<ExecuteTradeData | null>(null);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -240,10 +241,13 @@ export default function TradesPage() {
   const resetForm = () => {
     setForm({ ...EMPTY_FORM, accountId: defaultAccountId ?? '' });
     setEditingId(null);
+    setEditingTrade(null);
     setMessage(null);
   };
 
   const openEdit = async (item: Trade) => {
+    setEditTab('plan');
+    setEditingTrade(item);
     setForm({
       symbol: item.symbol,
       direction: item.direction,
@@ -253,8 +257,14 @@ export default function TradesPage() {
       plannedEntry: item.plannedEntry?.toString() ?? '',
       plannedStop: item.plannedStop?.toString() ?? '',
       plannedTarget1: item.plannedTarget1?.toString() ?? '',
-      plannedTarget2: item.plannedTarget2?.toString() ?? '',
     });
+    // Resolve setup name from loaded setups if the API returned a null name
+    if (!item.setup && item.setupId && setups.length > 0) {
+      const found = setups.find(s => s.id === item.setupId);
+      if (found) {
+        setForm((f) => ({ ...f, setup: found.name }));
+      }
+    }
     setEditingId(item.id);
     setDialogOpen(true);
     setMessage(null);
@@ -280,7 +290,6 @@ export default function TradesPage() {
         plannedEntry: form.plannedEntry ? parseFloat(form.plannedEntry) : null,
         plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
         plannedTarget1: form.plannedTarget1 ? parseFloat(form.plannedTarget1) : null,
-        plannedTarget2: form.plannedTarget2 ? parseFloat(form.plannedTarget2) : null,
         accountId: form.accountId || null,
       };
 
@@ -385,15 +394,73 @@ export default function TradesPage() {
             onFocusOutside={(e) => e.preventDefault()}
           >
             <DialogHeader>
-              <DialogTitle>{editingId ? 'Edit Trade' : 'Plan Trade'}</DialogTitle>
+              <DialogTitle>{editingId && editingTrade && editingTrade.status !== 'planned' ? 'Edit Trade' : editingId ? 'Edit Trade' : 'Plan Trade'}</DialogTitle>
               <DialogDescription>
                 {editingId
-                  ? 'Update the details for this planned trade.'
+                  ? 'Update the details for this trade.'
                   : 'Set the ticker, direction, account, setup, and planned price levels.'}
               </DialogDescription>
             </DialogHeader>
 
-            {message && (
+            {editingId && editingTrade && editingTrade.status !== 'planned' && (
+              <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-700">
+                <button
+                  type="button"
+                  onClick={() => setEditTab('plan')}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    editTab === 'plan'
+                      ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  Plan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditTab('executions')}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                    editTab === 'executions'
+                      ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
+                      : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  Executions
+                </button>
+              </div>
+            )}
+
+            {editingId && editTab === 'executions' && editingTrade && (
+              <div className="space-y-3 py-2">
+                <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Manage executions, stop adjustments, and assets on the trade detail page.
+                  </p>
+                  <a
+                    href={`/trades/${editingTrade.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-zinc-900 hover:text-zinc-600 dark:text-zinc-100 dark:hover:text-zinc-300"
+                  >
+                    Open Trade Detail
+                    <ArrowUpRight className="size-3.5" />
+                  </a>
+                </div>
+                <DialogFooter className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                  <div className="flex w-full justify-end gap-2">
+                    <DialogClose asChild>
+                      <button
+                        type="button"
+                        className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                      >
+                        Close
+                      </button>
+                    </DialogClose>
+                  </div>
+                </DialogFooter>
+              </div>
+            )}
+
+            {(!editingId || editTab === 'plan') && message && (
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
                   message.type === 'success'
@@ -405,6 +472,7 @@ export default function TradesPage() {
               </div>
             )}
 
+            {(!editingId || editTab === 'plan') && (
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -491,20 +559,6 @@ export default function TradesPage() {
 
               </div>
 
-              <div>
-                <label htmlFor="thesis" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Thesis
-                </label>
-                <textarea
-                  id="thesis"
-                  value={form.thesis}
-                  onChange={(e) => setForm((f) => ({ ...f, thesis: e.target.value }))}
-                  rows={2}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="Why this trade should work..."
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="plannedEntry" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
@@ -551,20 +605,20 @@ export default function TradesPage() {
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="plannedTarget2" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                    Target 2
-                  </label>
-                  <input
-                    id="plannedTarget2"
-                    type="number"
-                    step="any"
-                    value={form.plannedTarget2}
-                    onChange={(e) => setForm((f) => ({ ...f, plannedTarget2: e.target.value }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="0.00"
-                  />
-                </div>
+              </div>
+
+              <div>
+                <label htmlFor="thesis" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Thesis
+                </label>
+                <textarea
+                  id="thesis"
+                  value={form.thesis}
+                  onChange={(e) => setForm((f) => ({ ...f, thesis: e.target.value }))}
+                  rows={2}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  placeholder="Why this trade should work..."
+                />
               </div>
 
               <DialogFooter className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
@@ -586,6 +640,7 @@ export default function TradesPage() {
                 </div>
               </DialogFooter>
             </form>
+            )}
           </DialogContent>
         </Dialog>
         </div>
