@@ -378,7 +378,10 @@ export default function TradesPage() {
               Plan Trade
             </button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent
+            className="sm:max-w-md"
+            onInteractOutside={(e) => e.preventDefault()}
+          >
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Trade' : 'Plan Trade'}</DialogTitle>
               <DialogDescription>
