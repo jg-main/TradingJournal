@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10) || 50));
     const offset = (page - 1) * limit;
 
-    const validStatuses = ['idea', 'planned', 'open', 'closed', 'scratched'] as const;
+    const validStatuses = ['planned', 'open', 'closed', 'deleted'] as const;
     type TradeStatus = (typeof validStatuses)[number];
 
     // Build status filter conditions

@@ -101,9 +101,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (trade.status === 'scratched') {
+    if (trade.status === 'deleted') {
       return NextResponse.json(
-        { error: 'Cannot add executions to a scratched trade' },
+        { error: 'Cannot add executions to a deleted trade' },
         { status: 400 },
       );
     }
