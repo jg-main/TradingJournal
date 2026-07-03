@@ -13,17 +13,30 @@
  * Pattern: src/lib/export-csv.ts, src/lib/dashboard.ts
  */
 
-import { db } from '@/db/index';
+import type { drizzle } from 'drizzle-orm/better-sqlite3';
+import type * as schema from '@/db/schema';
 import { sql } from 'drizzle-orm';
 import { ZipArchive } from 'archiver';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 
 // ── Configuration ───────────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.trading-journal/journal.db';
-const UPLOADS_DIR = 'public/uploads/trades';
+function getDbFilePath(): string {
+  return process.env.DB_FILE_NAME || './.trading-journal/journal.db';
+}
+
+/**
+ * Derive the uploads directory from the DB file path.
+ * The DB lives at <project-root>/.trading-journal/journal.db and uploads
+ * live at <project-root>/public/uploads/trades; going up two levels from
+ * the DB file lands at the project root.
+ */
+function getUploadsDir(): string {
+  const dbPath = getDbFilePath();
+  return join(dirname(dbPath), '..', 'public', 'uploads', 'trades');
+}
 
 // ── Stream conversion ───────────────────────────────────────────────────
 
@@ -67,9 +80,12 @@ function nodeStreamToWeb(nodeStream: Readable): ReadableStream<Uint8Array> {
  * @returns A ReadableStream<Uint8Array> of the ZIP archive bytes
  * @throws Error if the DB file does not exist or ZIP creation fails
  */
-export async function createBackupArchive(): Promise<ReadableStream<Uint8Array>> {
+export async function createBackupArchive(
+  dbParam?: ReturnType<typeof drizzle<typeof schema>>
+): Promise<ReadableStream<Uint8Array>> {
   // Step 1: WAL checkpoint — flush pending writes into the main DB file
-  db.run(sql.raw('PRAGMA wal_checkpoint(TRUNCATE)'));
+  const database = dbParam ?? (await import('@/db/index')).db;
+  database.run(sql.raw('PRAGMA wal_checkpoint(TRUNCATE)'));
 
   // Step 2: Create the archiver ZIP instance
   const archive = new ZipArchive({ zlib: { level: 9 } });
@@ -80,26 +96,28 @@ export async function createBackupArchive(): Promise<ReadableStream<Uint8Array>>
   const webStream = nodeStreamToWeb(archive);
 
   // Step 4: Add the database file
-  if (!existsSync(DB_FILE)) {
-    throw new Error(`Database file not found at ${DB_FILE}`);
+  const dbFilePath = getDbFilePath();
+  if (!existsSync(dbFilePath)) {
+    throw new Error(`Database file not found at ${dbFilePath}`);
   }
 
-  archive.file(DB_FILE, { name: 'journal.db' });
+  archive.file(dbFilePath, { name: 'journal.db' });
 
   // Step 5: Add uploaded screenshot assets
-  if (existsSync(UPLOADS_DIR)) {
-    const files = readdirSync(UPLOADS_DIR);
+  const uploadsDir = getUploadsDir();
+  if (existsSync(uploadsDir)) {
+    const files = readdirSync(uploadsDir);
     for (const file of files) {
       // Skip .gitkeep placeholder — it has no useful content
       if (file === '.gitkeep') continue;
 
-      const filePath = join(UPLOADS_DIR, file);
+      const filePath = join(uploadsDir, file);
       if (statSync(filePath).isFile()) {
         archive.file(filePath, { name: `uploads/${file}` });
       }
     }
   }
-  // If UPLOADS_DIR does not exist, skip gracefully — no uploads to back up
+  // If uploads directory does not exist, skip gracefully — no uploads to back up
 
   // Step 6: Finalize the archive (no more files can be added) —
   //         finalize() triggers the data flow through the stream.

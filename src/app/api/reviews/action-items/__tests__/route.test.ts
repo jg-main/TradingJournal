@@ -243,6 +243,12 @@ function doDelete(id: string): { status: number; data: Record<string, unknown> }
   return { status: 200, data: { message: 'Action item removed' } };
 }
 
+// ── Clean slate for isolated runs ────────────────────────────────────
+
+// Clear any rows from previous runs so each invocation starts fresh.
+// The table is already created above, so we just TRUNCATE/delete all rows.
+sqlite.exec('DELETE FROM review_action_items;');
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 console.log('\n--- Action Items POST Handler Tests ---\n');
