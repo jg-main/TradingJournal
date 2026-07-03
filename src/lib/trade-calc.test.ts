@@ -78,7 +78,7 @@ function assertNull(v: unknown, msg: string) {
     assert(r.openQuantity === 100, 'entry → openQuantity 100');
   }
 
-  // 3. Partial exit → partially_closed (long)
+  // 3. Partial exit → open (was partially_closed)
   {
     const execs: ExecutionData[] = [
       { action: 'buy', quantity: 100, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
