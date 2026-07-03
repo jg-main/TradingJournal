@@ -60,15 +60,16 @@ interface Trade {
   plannedTarget2: number | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
-  status: 'idea' | 'planned' | 'open' | 'closed' | 'scratched';
+  status: 'planned' | 'open' | 'closed' | 'deleted';
   createdAt: string | null;
 }
 
 const STATUS_FILTER_OPTIONS = [
   { value: 'all', label: 'All Status' },
-  { value: 'idea', label: 'Idea' },
   { value: 'planned', label: 'Planned' },
-  { value: 'scratched', label: 'Scratched' },
+  { value: 'open', label: 'Open' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'deleted', label: 'Deleted' },
 ] as const;
 
 interface TradeForm {
@@ -105,15 +106,13 @@ const EMPTY_FORM: TradeForm = {
 
 function statusBadgeClass(status: Trade['status']): string {
   switch (status) {
-    case 'idea':
-      return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400';
     case 'planned':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'open':
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
     case 'closed':
       return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
-    case 'scratched':
+    case 'deleted':
       return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
   }
 }
@@ -303,7 +302,7 @@ export default function TradesPage() {
   };
 
   const handleDelete = async (id: string, tradeCode: string) => {
-    if (!confirm(`Scratch trade "${tradeCode}"? This will mark it as scratched.`)) return;
+    if (!confirm(`Delete trade "${tradeCode}"? This will permanently remove it and all its executions.`)) return;
 
     try {
       const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
@@ -311,7 +310,7 @@ export default function TradesPage() {
         setMessage({ type: 'error', text: 'Failed to delete trade.' });
         return;
       }
-      setMessage({ type: 'success', text: `Trade ${tradeCode} scratched.` });
+      setMessage({ type: 'success', text: `Trade ${tradeCode} deleted.` });
       fetchItems(1, statusFilter);
     } catch {
       setMessage({ type: 'error', text: 'Failed to delete trade.' });
@@ -430,11 +429,10 @@ export default function TradesPage() {
           <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Status</label>
           <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
             <option value="">All</option>
-            <option value="idea">Idea</option>
             <option value="planned">Planned</option>
             <option value="open">Open</option>
             <option value="closed">Closed</option>
-            <option value="scratched">Scratched</option>
+            <option value="deleted">Deleted</option>
           </select>
         </div>
         <div className="flex flex-col gap-1">
@@ -471,8 +469,10 @@ export default function TradesPage() {
                     onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as Trade['status'] }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   >
-                    <option value="idea">Idea</option>
                     <option value="planned">Planned</option>
+                    <option value="open">Open</option>
+                    <option value="closed">Closed</option>
+                    <option value="deleted">Deleted</option>
                   </select>
                 </div>
               </div>

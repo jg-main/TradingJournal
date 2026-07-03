@@ -29,7 +29,7 @@ interface Trade {
   direction: 'long' | 'short';
   setupId: string | null;
   marketConditionId: string | null;
-  status: 'idea' | 'planned' | 'open' | 'partially_closed' | 'closed' | 'scratched';
+  status: 'planned' | 'open' | 'closed' | 'deleted';
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
@@ -141,17 +141,13 @@ function statusBadgeVariant(status: Trade['status']): {
   className: string;
 } {
   switch (status) {
-    case 'idea':
-      return { variant: 'secondary', className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' };
     case 'planned':
       return { variant: 'secondary', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
     case 'open':
       return { variant: 'default', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
-    case 'partially_closed':
-      return { variant: 'default', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
     case 'closed':
       return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400' };
-    case 'scratched':
+    case 'deleted':
       return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400 line-through' };
   }
 }
@@ -206,10 +202,7 @@ function toExecutionData(executions: Execution[]): ExecutionData[] {
 }
 
 function statusLabel(status: Trade['status']): string {
-  switch (status) {
-    case 'partially_closed': return 'Partially Closed';
-    default: return status.charAt(0).toUpperCase() + status.slice(1);
-  }
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 // ── Page ───────────────────────────────────────────────────────────────

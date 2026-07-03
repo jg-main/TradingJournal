@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, lookupValues } from '@/db/schema';
+import { trades, lookupValues, watchlistItems } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -135,13 +135,17 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Soft delete: mark as scratched instead of removing
-    db.update(trades)
-      .set({ status: 'scratched', updatedAt: new Date().toISOString() })
+    // Hard delete: nullify watchlist FK references first, then delete
+    db.update(watchlistItems)
+      .set({ promotedTradeId: null })
+      .where(eq(watchlistItems.promotedTradeId, id))
+      .run();
+
+    db.delete(trades)
       .where(eq(trades.id, id))
       .run();
 
-    return NextResponse.json({ message: 'Trade scratched' });
+    return NextResponse.json({ message: 'Trade deleted' });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to delete trade', details: String(error) },
