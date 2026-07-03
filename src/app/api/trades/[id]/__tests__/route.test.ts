@@ -202,7 +202,6 @@ function doPutTrade(id: string, body: Record<string, unknown>): { status: number
     if (body.plannedEntry !== undefined) updateData.plannedEntry = body.plannedEntry;
     if (body.plannedStop !== undefined) updateData.plannedStop = body.plannedStop;
     if (body.plannedTarget1 !== undefined) updateData.plannedTarget1 = body.plannedTarget1;
-    if (body.plannedTarget2 !== undefined) updateData.plannedTarget2 = body.plannedTarget2;
     if (body.invalidationCondition !== undefined) updateData.invalidationCondition = body.invalidationCondition;
     if (body.preTradePlan !== undefined) updateData.preTradePlan = body.preTradePlan;
 

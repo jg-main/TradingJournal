@@ -302,9 +302,6 @@ function seed() {
     const plannedTarget1 = direction === 'long'
       ? round2(plannedEntry * (1 + rng(0.02, 0.08)))
       : round2(plannedEntry * (1 - rng(0.02, 0.08)));
-    const plannedTarget2 = direction === 'long'
-      ? round2(plannedTarget1 * (1 + rng(0.01, 0.04)))
-      : round2(plannedTarget1 * (1 - rng(0.01, 0.04)));
 
     tradeRows.push({
       id: tradeId,
@@ -319,7 +316,6 @@ function seed() {
       plannedEntry,
       plannedStop,
       plannedTarget1,
-      plannedTarget2,
       thesis: `Seed trade on ${stock.symbol} — ${setupLv.value} setup in ${stock.sector}`,
       invalidationCondition: `${direction === 'long' ? 'Below' : 'Above'} ${plannedStop}`,
       openedAt: formatDate(openedAt),

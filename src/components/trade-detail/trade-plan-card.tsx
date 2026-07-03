@@ -5,7 +5,7 @@ import { formatPrice } from './helpers';
 import type { Trade } from './types';
 
 interface TradePlanCardProps {
-  trade: Pick<Trade, 'plannedEntry' | 'plannedStop' | 'plannedTarget1' | 'plannedTarget2' | 'thesis' | 'invalidationCondition' | 'preTradePlan'>;
+  trade: Pick<Trade, 'plannedEntry' | 'plannedStop' | 'plannedTarget1' | 'thesis' | 'invalidationCondition' | 'preTradePlan'>;
 }
 
 export default function TradePlanCard({ trade }: TradePlanCardProps) {
@@ -31,10 +31,6 @@ export default function TradePlanCard({ trade }: TradePlanCardProps) {
             {formatPrice(trade.plannedTarget1)}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Target 2</div>
-          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-            {formatPrice(trade.plannedTarget2)}
-          </div>
         </div>
 
         {trade.thesis && (

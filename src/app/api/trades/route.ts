@@ -10,6 +10,7 @@ const createTradeSchema = z.object({
   direction: z.enum(['long', 'short']),
   accountId: z.string().uuid().optional(),
   setup: z.string().nullable().optional(),
+  setupId: z.string().uuid().nullable().optional(),
   sectorId: z.string().nullable().optional(),
   marketConditionId: z.string().nullable().optional(),
   thesis: z.string().nullable().optional(),
@@ -29,8 +30,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50', 10) || 50));
     const offset = (page - 1) * limit;
 
-    const validStatuses = ['planned', 'open', 'closed', 'deleted'] as const;
-    type TradeStatus = (typeof validStatuses)[number];
+    type TradeStatus = 'planned' | 'open' | 'closed' | 'deleted';
 
     // Build status filter conditions
     const statusFilter = status

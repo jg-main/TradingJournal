@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   NotebookPen,
@@ -138,7 +138,7 @@ function SkeletonCard() {
 
 // ── Page ───────────────────────────────────────────────────────────────
 
-export default function Home() {
+function HomeContent() {
   const [kpis, setKpis] = useState<KpiMetrics | null>(null);
   const [equityCurve, setEquityCurve] = useState<EquityDataPoint[]>([]);
   const [drawdown, setDrawdown] = useState<DrawdownDataPoint[]>([]);
@@ -803,5 +803,13 @@ export default function Home() {
         </section>
       )}
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
   );
 }

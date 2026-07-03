@@ -142,7 +142,6 @@ function assertNull(v: unknown, msg: string) {
       plannedEntry: 150.00,
       plannedStop: 145.00,
       plannedTarget1: 165.00,
-      plannedTarget2: 180.00,
       thesis: 'Strong earnings growth',
       invalidationCondition: 'Below 145 support',
       preTradePlan: 'Enter on breakout above 152',
@@ -209,7 +208,6 @@ function assertNull(v: unknown, msg: string) {
       {
         tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
         setup: null, sector: null, marketCondition: null,
-        plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedTarget2: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
         realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -223,7 +221,6 @@ function assertNull(v: unknown, msg: string) {
       {
         tradeCode: 'T002', symbol: 'GOOGL', direction: 'short', status: 'open',
         setup: null, sector: null, marketCondition: null,
-        plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedTarget2: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
         realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -248,7 +245,6 @@ function assertNull(v: unknown, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedTarget2: null,
       thesis: 'Entry on breakout above $152.50, with stop at $149.00', // contains comma
       invalidationCondition: '"Below $145" is the key level', // contains quotes
       preTradePlan: 'Plan A:\nEnter at open\nPlan B:\nWait for pullback', // contains newlines
@@ -313,7 +309,6 @@ function assertNull(v: unknown, msg: string) {
       {
         tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
         setup: null, sector: null, marketCondition: null,
-        plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedTarget2: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
         realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -342,7 +337,6 @@ function assertNull(v: unknown, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedTarget2: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
       realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -384,7 +378,7 @@ function assertNull(v: unknown, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: 150.5, plannedStop: 145, plannedTarget1: 165.75, plannedTarget2: null,
+      plannedEntry: 150.5, plannedStop: 145, plannedTarget1: 165.75,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
       realizedPnL: 1500, rMultiple: 3, avgEntryPrice: 150.5,
@@ -399,20 +393,16 @@ function assertNull(v: unknown, msg: string) {
     const csv = exportTradesToCsv([trade]);
     const csvWithoutBom = csv.replace('\uFEFF', '');
     const lines = csvWithoutBom.trim().split('\n');
+    const header = lines[0].split(',');
     const dataRow = lines[1];
     const parts = dataRow.split(',');
+    const valueFor = (label: string) => parts[header.indexOf(label)];
 
-    // Column indices for numeric fields (0-indexed):
-    // 7: plannedEntry (formatNumber)
-    assert(parts[7] === '150.50', 'number format → plannedEntry is 150.50');
-    // 8: plannedStop
-    assert(parts[8] === '145.00', 'number format → plannedStop is 145.00');
-    // 9: plannedTarget1
-    assert(parts[9] === '165.75', 'number format → plannedTarget1 is 165.75');
-    // 20: realizedPnL
-    assert(parts[20] === '1500.00', 'number format → realizedPnL is 1500.00');
-    // 21: rMultiple
-    assert(parts[21] === '3.00', 'number format → rMultiple is 3.00');
+    assert(valueFor('Planned Entry') === '150.50', 'number format → plannedEntry is 150.50');
+    assert(valueFor('Planned Stop') === '145.00', 'number format → plannedStop is 145.00');
+    assert(valueFor('Planned Target 1') === '165.75', 'number format → plannedTarget1 is 165.75');
+    assert(valueFor('Realized P&L') === '1500.00', 'number format → realizedPnL is 1500.00');
+    assert(valueFor('R Multiple') === '3.00', 'number format → rMultiple is 3.00');
   }
 
   // 8. Boolean formatting — Yes/No instead of true/false
@@ -420,7 +410,6 @@ function assertNull(v: unknown, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedTarget2: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
       realizedPnL: null, rMultiple: null, avgEntryPrice: null,

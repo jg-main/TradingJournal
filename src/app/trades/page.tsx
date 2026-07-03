@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Download, Plus, NotebookPen, ArrowUpRight } from 'lucide-react';
+import { Download, Plus, NotebookPen } from 'lucide-react';
 import Link from 'next/link';
 
 import { EmptyState } from '@/components/empty-state';
@@ -60,7 +60,6 @@ interface Trade {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
-  plannedTarget2: number | null;
   setupId: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
@@ -81,7 +80,7 @@ interface TradeForm {
   symbol: string;
   direction: 'long' | 'short';
   accountId: string;
-  setup: string;
+  setupId: string;
   thesis: string;
   plannedEntry: string;
   plannedStop: string;
@@ -92,12 +91,58 @@ const EMPTY_FORM: TradeForm = {
   symbol: '',
   direction: 'long',
   accountId: '',
-  setup: '',
+  setupId: '',
   thesis: '',
   plannedEntry: '',
   plannedStop: '',
   plannedTarget1: '',
 };
+
+type ExecutionAction = 'buy' | 'sell' | 'buy_to_cover' | 'sell_short' | 'add' | 'reduce';
+
+interface TradeExecution {
+  id: string;
+  action: ExecutionAction;
+  quantity: number;
+  price: number;
+  fees: number | null;
+  executedAt: string | null;
+  notes: string | null;
+}
+
+interface ExecutionForm {
+  action: ExecutionAction;
+  quantity: string;
+  price: string;
+  fees: string;
+  executedAt: string;
+  notes: string;
+}
+
+const EXECUTION_ACTION_OPTIONS: Array<{ value: ExecutionAction; label: string }> = [
+  { value: 'buy', label: 'Buy' },
+  { value: 'sell', label: 'Sell' },
+  { value: 'buy_to_cover', label: 'Buy to Cover' },
+  { value: 'sell_short', label: 'Sell Short' },
+  { value: 'add', label: 'Add' },
+  { value: 'reduce', label: 'Reduce' },
+];
+
+const toDateTimeLocalValue = (value: string | null): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+};
+
+const toExecutionForm = (execution: TradeExecution): ExecutionForm => ({
+  action: execution.action,
+  quantity: execution.quantity.toString(),
+  price: execution.price.toString(),
+  fees: (execution.fees ?? 0).toString(),
+  executedAt: toDateTimeLocalValue(execution.executedAt),
+  notes: execution.notes ?? '',
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -136,6 +181,10 @@ export default function TradesPage() {
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [editTab, setEditTab] = useState<'plan' | 'executions'>('plan');
   const [executeTrade, setExecuteTrade] = useState<ExecuteTradeData | null>(null);
+  const [executions, setExecutions] = useState<TradeExecution[]>([]);
+  const [executionForms, setExecutionForms] = useState<Record<string, ExecutionForm>>({});
+  const [executionsLoading, setExecutionsLoading] = useState(false);
+  const [executionsSaving, setExecutionsSaving] = useState(false);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [setups, setSetups] = useState<SetupDefinition[]>([]);
@@ -146,6 +195,7 @@ export default function TradesPage() {
   // ── Data ────────────────────────────────────────────────────────────
 
   const fetchItems = async (targetPage: number, status: string) => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set('page', String(targetPage));
@@ -175,48 +225,8 @@ export default function TradesPage() {
   };
 
   useEffect(() => {
-    setLoading(true);
-    setPage(1);
-    fetchItems(1, statusFilter);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    void Promise.resolve().then(() => fetchItems(1, statusFilter));
   }, [statusFilter]);
-
-  // Pre-fetch accounts, settings, and setups on mount
-  useEffect(() => {
-    fetchSetups();
-    (async () => {
-      try {
-        const [accountsRes, settingsRes] = await Promise.all([
-          fetch('/api/accounts'),
-          fetch('/api/settings'),
-        ]);
-        const accountsData = await accountsRes.json();
-        const settingsData = await settingsRes.json();
-        const accounts = Array.isArray(accountsData) ? accountsData : [];
-        setAccounts(accounts);
-
-        let defaultId: string | null = null;
-        if (settingsData?.defaultAccountId) {
-          defaultId = settingsData.defaultAccountId;
-        } else {
-          const firstActive = accounts.find((a: Account) => a.isActive);
-          if (firstActive) defaultId = firstActive.id;
-        }
-        setDefaultAccountId(defaultId);
-        if (defaultId) {
-          setForm((f) => ({ ...f, accountId: defaultId }));
-        }
-      } catch {
-        // Non-critical
-      }
-    })();
-  }, []);
-
-  // ── Filter ──────────────────────────────────────────────────────────
-
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
-  // ── Form helpers ────────────────────────────────────────────────────
 
   const fetchSetups = async () => {
     try {
@@ -228,54 +238,102 @@ export default function TradesPage() {
     }
   };
 
-  const fetchAccounts = async () => {
-    try {
-      const res = await fetch('/api/accounts');
-      const data = await res.json();
-      setAccounts(data ?? []);
-    } catch {
-      // Non-critical
-    }
-  };
+  // Pre-fetch accounts, settings, and setups on mount
+  useEffect(() => {
+    void Promise.resolve().then(async () => {
+      await fetchSetups();
+
+        try {
+          const [accountsRes, settingsRes] = await Promise.all([
+            fetch('/api/accounts'),
+            fetch('/api/settings'),
+          ]);
+          const accountsData = await accountsRes.json();
+          const settingsData = await settingsRes.json();
+          const accounts = Array.isArray(accountsData) ? accountsData : [];
+          setAccounts(accounts);
+
+          let defaultId: string | null = null;
+          if (settingsData?.defaultAccountId) {
+            defaultId = settingsData.defaultAccountId;
+          } else {
+            const firstActive = accounts.find((a: Account) => a.isActive);
+            if (firstActive) defaultId = firstActive.id;
+          }
+          setDefaultAccountId(defaultId);
+          if (defaultId) {
+            setForm((f) => ({ ...f, accountId: defaultId }));
+          }
+        } catch {
+          // Non-critical
+        }
+    });
+  }, []);
+
+  // ── Filter ──────────────────────────────────────────────────────────
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  // ── Form helpers ────────────────────────────────────────────────────
+
 
   const resetForm = () => {
     setForm({ ...EMPTY_FORM, accountId: defaultAccountId ?? '' });
     setEditingId(null);
     setEditingTrade(null);
+    setEditTab('plan');
+    setExecutions([]);
+    setExecutionForms({});
     setMessage(null);
+  };
+
+  const fetchExecutionsForEdit = async (tradeId: string) => {
+    setExecutionsLoading(true);
+    try {
+      const res = await fetch(`/api/trades/${tradeId}/executions`);
+      if (!res.ok) {
+        setMessage({ type: 'error', text: 'Failed to load executions.' });
+        return;
+      }
+      const rows = (await res.json()) as TradeExecution[];
+      setExecutions(rows);
+      setExecutionForms(Object.fromEntries(rows.map((row) => [row.id, toExecutionForm(row)])));
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to load executions.' });
+    } finally {
+      setExecutionsLoading(false);
+    }
   };
 
   const openEdit = async (item: Trade) => {
     setEditTab('plan');
     setEditingTrade(item);
+    setExecutions([]);
+    setExecutionForms({});
     setForm({
       symbol: item.symbol,
       direction: item.direction,
       accountId: item.accountId ?? '',
-      setup: item.setup ?? '',
+      setupId: item.setupId ?? '',
       thesis: item.thesis ?? '',
       plannedEntry: item.plannedEntry?.toString() ?? '',
       plannedStop: item.plannedStop?.toString() ?? '',
       plannedTarget1: item.plannedTarget1?.toString() ?? '',
     });
-    // Resolve setup name from loaded setups if the API returned a null name
-    if (!item.setup && item.setupId && setups.length > 0) {
-      const found = setups.find(s => s.id === item.setupId);
-      if (found) {
-        setForm((f) => ({ ...f, setup: found.name }));
-      }
-    }
     setEditingId(item.id);
     setDialogOpen(true);
     setMessage(null);
 
+    if (item.status !== 'planned') {
+      await fetchExecutionsForEdit(item.id);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
 
-    if (!form.symbol.trim()) {
+    if (!editingId && !form.symbol.trim()) {
       setMessage({ type: 'error', text: 'Symbol is required.' });
       return;
     }
@@ -285,7 +343,7 @@ export default function TradesPage() {
       const method = editingId ? 'PUT' : 'POST';
 
       const body: Record<string, unknown> = {
-        setup: form.setup.trim() || null,
+        setupId: form.setupId || null,
         thesis: form.thesis.trim() || null,
         plannedEntry: form.plannedEntry ? parseFloat(form.plannedEntry) : null,
         plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
@@ -316,6 +374,58 @@ export default function TradesPage() {
       fetchItems(1, statusFilter);
     } catch {
       setMessage({ type: 'error', text: 'Failed to save trade.' });
+    }
+  };
+
+  const updateExecutionForm = (id: string, patch: Partial<ExecutionForm>) => {
+    setExecutionForms((current) => ({
+      ...current,
+      [id]: { ...current[id], ...patch },
+    }));
+  };
+
+  const handleExecutionSave = async (executionId: string) => {
+    if (!editingId) return;
+    const executionForm = executionForms[executionId];
+    if (!executionForm) return;
+
+    const quantity = parseFloat(executionForm.quantity);
+    const price = parseFloat(executionForm.price);
+    const fees = executionForm.fees ? parseFloat(executionForm.fees) : 0;
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price <= 0 || !Number.isFinite(fees) || fees < 0) {
+      setMessage({ type: 'error', text: 'Execution quantity and price must be positive, and fees cannot be negative.' });
+      return;
+    }
+
+    setExecutionsSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/trades/${editingId}/executions/${executionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: executionForm.action,
+          quantity,
+          price,
+          fees,
+          executedAt: executionForm.executedAt ? new Date(executionForm.executedAt).toISOString() : undefined,
+          notes: executionForm.notes.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Failed to update execution.') });
+        return;
+      }
+
+      setMessage({ type: 'success', text: 'Execution updated.' });
+      await fetchExecutionsForEdit(editingId);
+      fetchItems(page, statusFilter);
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to update execution.' });
+    } finally {
+      setExecutionsSaving(false);
     }
   };
 
@@ -378,7 +488,7 @@ export default function TradesPage() {
             <Download className="size-4" />
             Export CSV
           </button>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+          <Dialog open={dialogOpen} onOpenChange={(open) => { if (open) { setDialogOpen(true); } else { setDialogOpen(false); resetForm(); } }}>
           <DialogTrigger asChild>
             <button
               className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -388,7 +498,7 @@ export default function TradesPage() {
             </button>
           </DialogTrigger>
           <DialogContent
-            className="sm:max-w-md"
+            className="sm:max-w-2xl"
             onInteractOutside={(e) => e.preventDefault()}
             onPointerDownOutside={(e) => e.preventDefault()}
             onFocusOutside={(e) => e.preventDefault()}
@@ -430,21 +540,111 @@ export default function TradesPage() {
             )}
 
             {editingId && editTab === 'executions' && editingTrade && (
-              <div className="space-y-3 py-2">
-                <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Manage executions, stop adjustments, and assets on the trade detail page.
-                  </p>
-                  <a
-                    href={`/trades/${editingTrade.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-zinc-900 hover:text-zinc-600 dark:text-zinc-100 dark:hover:text-zinc-300"
-                  >
-                    Open Trade Detail
-                    <ArrowUpRight className="size-3.5" />
-                  </a>
-                </div>
+              <div className="space-y-4 py-2">
+                {executionsLoading ? (
+                  <div className="rounded-md border border-zinc-200 px-4 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                    Loading executions...
+                  </div>
+                ) : executions.length === 0 ? (
+                  <div className="rounded-md border border-zinc-200 px-4 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                    This trade has no execution rows yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {executions.map((execution, index) => {
+                      const executionForm = executionForms[execution.id];
+                      if (!executionForm) return null;
+
+                      return (
+                        <div key={execution.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+                          <div className="mb-3 flex items-center justify-between">
+                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Execution {index + 1}</p>
+                            <button
+                              type="button"
+                              onClick={() => handleExecutionSave(execution.id)}
+                              disabled={executionsSaving}
+                              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+                            >
+                              Save execution
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Action</label>
+                              <Select
+                                value={executionForm.action}
+                                onValueChange={(value) => updateExecutionForm(execution.id, { action: value as ExecutionAction })}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {EXECUTION_ACTION_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <label htmlFor={`execution-${execution.id}-executedAt`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Executed At</label>
+                              <input
+                                id={`execution-${execution.id}-executedAt`}
+                                type="datetime-local"
+                                value={executionForm.executedAt}
+                                onChange={(e) => updateExecutionForm(execution.id, { executedAt: e.target.value })}
+                                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={`execution-${execution.id}-quantity`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Quantity</label>
+                              <input
+                                id={`execution-${execution.id}-quantity`}
+                                type="number"
+                                step="any"
+                                value={executionForm.quantity}
+                                onChange={(e) => updateExecutionForm(execution.id, { quantity: e.target.value })}
+                                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={`execution-${execution.id}-price`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Price</label>
+                              <input
+                                id={`execution-${execution.id}-price`}
+                                type="number"
+                                step="any"
+                                value={executionForm.price}
+                                onChange={(e) => updateExecutionForm(execution.id, { price: e.target.value })}
+                                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                              />
+                            </div>
+                            <div>
+                              <label htmlFor={`execution-${execution.id}-fees`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Fees</label>
+                              <input
+                                id={`execution-${execution.id}-fees`}
+                                type="number"
+                                step="any"
+                                value={executionForm.fees}
+                                onChange={(e) => updateExecutionForm(execution.id, { fees: e.target.value })}
+                                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                              />
+                            </div>
+                            <div className="col-span-2">
+                              <label htmlFor={`execution-${execution.id}-notes`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Notes</label>
+                              <textarea
+                                id={`execution-${execution.id}-notes`}
+                                rows={2}
+                                value={executionForm.notes}
+                                onChange={(e) => updateExecutionForm(execution.id, { notes: e.target.value })}
+                                className="w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <DialogFooter className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
                   <div className="flex w-full justify-end gap-2">
                     <DialogClose asChild>
@@ -535,21 +735,25 @@ export default function TradesPage() {
                   Setup
                 </label>
                 <Select
-                  value={form.setup}
+                  value={form.setupId || undefined}
                   onValueChange={(val) => {
-                    setForm((f) => ({ ...f, setup: val }));
+                    if (val === '__none__') return;
+                    setForm((f) => ({ ...f, setupId: val }));
                   }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select a setup..." />
                   </SelectTrigger>
                   <SelectContent>
+                    {form.setupId && editingTrade?.setup && !setups.some((s) => s.id === form.setupId) && (
+                      <SelectItem value={form.setupId}>{editingTrade.setup}</SelectItem>
+                    )}
                     {setups.map((s) => (
-                      <SelectItem key={s.id} value={s.name}>
+                      <SelectItem key={s.id} value={s.id}>
                         {s.name}
                       </SelectItem>
                     ))}
-                    {setups.length === 0 && (
+                    {setups.length === 0 && !form.setupId && (
                       <SelectItem value="__none__" disabled>
                         No setups available — create one in Settings &gt; Plays
                       </SelectItem>

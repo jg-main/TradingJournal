@@ -13,6 +13,11 @@ import {
   type ExecutionData,
 } from '@/lib/trade-calc';
 import { calculateGrade, type GradeScores } from '@/lib/grading';
+import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
+import PlannedPhaseView from '@/components/trade-detail/planned-phase-view';
+import ActivePhaseView from '@/components/trade-detail/active-phase-view';
+import ClosedPhaseView from '@/components/trade-detail/closed-phase-view';
+import DeletedPhaseView from '@/components/trade-detail/deleted-phase-view';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -27,7 +32,6 @@ interface Trade {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
-  plannedTarget2: number | null;
   thesis: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;

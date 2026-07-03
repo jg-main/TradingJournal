@@ -22,7 +22,6 @@ export interface ExecuteTradeData {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
-  plannedTarget2: number | null;
 }
 
 interface ExecuteDialogProps {
@@ -53,7 +52,7 @@ function buildInitialState(trade: ExecuteTradeData): FormState {
     exit1Price: trade.plannedTarget1?.toString() ?? '',
     exit1Quantity: '',
     showExit2: false,
-    exit2Price: trade.plannedTarget2?.toString() ?? '',
+    exit2Price: '',
     exit2Quantity: '',
     executedAt: '',
     fees: '0',

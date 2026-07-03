@@ -244,7 +244,6 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
         plannedEntry: (body.plannedEntry as number) ?? null,
         plannedStop: (body.plannedStop as number) ?? null,
         plannedTarget1: (body.plannedTarget1 as number) ?? null,
-        plannedTarget2: (body.plannedTarget2 as number) ?? null,
         invalidationCondition: (body.invalidationCondition as string) ?? null,
         preTradePlan: (body.preTradePlan as string) ?? null,
         createdAt: now,

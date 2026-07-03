@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, lookupValues, watchlistItems } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { trades, watchlistItems } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
 
 const updateTradeSchema = z.object({
   setup: z.string().nullable().optional(),
+  setupId: z.string().uuid().nullable().optional(),
   sectorId: z.string().nullable().optional(),
   marketConditionId: z.string().nullable().optional(),
   thesis: z.string().nullable().optional(),
@@ -74,7 +75,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Map 'setup' back to 'setupId' for the DB column
     const updateData: Record<string, unknown> = {};
-    if (parsed.data.setup !== undefined) {
+    if (parsed.data.setupId !== undefined) {
+      updateData.setupId = parsed.data.setupId;
+    } else if (parsed.data.setup !== undefined) {
       if (parsed.data.setup === null) {
         updateData.setupId = null;
       } else {
