@@ -128,7 +128,7 @@ export default function TradesPage() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [setups, setSetups] = useState<SetupDefinition[]>([]);
-  const [selectedSetupDetail, setSelectedSetupDetail] = useState<SetupDefinition | null>(null);
+
   const [form, setForm] = useState(EMPTY_FORM);
 
   // ── Data ────────────────────────────────────────────────────────────
@@ -207,23 +207,6 @@ export default function TradesPage() {
     }
   };
 
-  const fetchSetupDetail = async (name: string) => {
-    if (!name) {
-      setSelectedSetupDetail(null);
-      return;
-    }
-    try {
-      const allRes = await fetch('/api/setup-definitions?includeInactive=true');
-      const allData = await allRes.json();
-      const found = (allData.data ?? []).find(
-        (s: SetupDefinition) => s.name.toLowerCase() === name.toLowerCase()
-      );
-      setSelectedSetupDetail(found ?? null);
-    } catch {
-      setSelectedSetupDetail(null);
-    }
-  };
-
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
@@ -242,9 +225,7 @@ export default function TradesPage() {
     setEditingId(item.id);
     setDialogOpen(true);
     setMessage(null);
-    if (item.setup) {
-      await fetchSetupDetail(item.setup);
-    }
+
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -447,7 +428,6 @@ export default function TradesPage() {
                   value={form.setup}
                   onValueChange={(val) => {
                     setForm((f) => ({ ...f, setup: val }));
-                    fetchSetupDetail(val);
                   }}
                 >
                   <SelectTrigger className="w-full">
@@ -466,28 +446,7 @@ export default function TradesPage() {
                     )}
                   </SelectContent>
                 </Select>
-                {selectedSetupDetail && (
-                  <div className="mt-2 space-y-1 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50">
-                    {selectedSetupDetail.description && (
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">{selectedSetupDetail.description}</p>
-                    )}
-                    {selectedSetupDetail.howToPlay && (
-                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                        <span className="font-medium text-zinc-500 dark:text-zinc-400">How:</span> {selectedSetupDetail.howToPlay}
-                      </p>
-                    )}
-                    {selectedSetupDetail.entryRules && (
-                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                        <span className="font-medium text-zinc-500 dark:text-zinc-400">Entry:</span> {selectedSetupDetail.entryRules}
-                      </p>
-                    )}
-                    {selectedSetupDetail.exitRules && (
-                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                        <span className="font-medium text-zinc-500 dark:text-zinc-400">Exit:</span> {selectedSetupDetail.exitRules}
-                      </p>
-                    )}
-                  </div>
-                )}
+
               </div>
 
               <div>
