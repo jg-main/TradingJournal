@@ -18,8 +18,8 @@ import { type ExecutionData } from './trade-calc';
  */
 function longTradeExecutions(entryPrice: number, exitPrice: number, qty = 100, fees = 0): ExecutionData[] {
   return [
-    { action: 'buy', quantity: qty, price: entryPrice, fees: null, executedAt: '2026-01-01T10:00:00Z' },
-    { action: 'sell', quantity: qty, price: exitPrice, fees: null, executedAt: '2026-01-01T14:00:00Z' },
+    { action: 'buy', quantity: qty, price: entryPrice, fees, executedAt: '2026-01-01T10:00:00Z' },
+    { action: 'sell', quantity: qty, price: exitPrice, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
   ];
 }
 
@@ -28,8 +28,8 @@ function longTradeExecutions(entryPrice: number, exitPrice: number, qty = 100, f
  */
 function shortTradeExecutions(entryPrice: number, exitPrice: number, qty = 100, fees = 0): ExecutionData[] {
   return [
-    { action: 'sell_short', quantity: qty, price: entryPrice, fees: null, executedAt: '2026-01-01T10:00:00Z' },
-    { action: 'buy_to_cover', quantity: qty, price: exitPrice, fees: null, executedAt: '2026-01-01T14:00:00Z' },
+    { action: 'sell_short', quantity: qty, price: entryPrice, fees, executedAt: '2026-01-01T10:00:00Z' },
+    { action: 'buy_to_cover', quantity: qty, price: exitPrice, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
   ];
 }
 
@@ -38,7 +38,7 @@ function makeTrade(
   direction: 'long' | 'short',
   executions: ExecutionData[],
   setupId: string | null,
-  grade: { totalScore: number } | null = null,
+  grade: { totalScore: number | null } | null = null,
   riskSnapshot: { initialRiskAmount: number | null } | null = null,
 ): SetupPerfTradeInput {
   return { id, direction, executions, grade, riskSnapshot, setupId };

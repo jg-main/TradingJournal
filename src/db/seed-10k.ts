@@ -193,7 +193,7 @@ function seed() {
 
   // ── Cache lookup values ────────────────────────────────────────────────
   const allLookups = db.select().from(schema.lookupValues).all();
-  const byTypeAndValue = new Map<string, schema.LookupValues>();
+  const byTypeAndValue = new Map<string, typeof schema.lookupValues.$inferSelect>();
   for (const lv of allLookups) {
     byTypeAndValue.set(`${lv.type}:${lv.value}`, lv);
   }
@@ -277,10 +277,9 @@ function seed() {
     ]));
 
     const openedAt = pick(tradingDates);
-    let status: string;
+    let status: typeof schema.trades.$inferInsert.status;
     let closedAt: string | null = null;
     let isClosed = false;
-    let isScratched = false;
 
     if (i < closedCount) {
       status = 'closed';
@@ -291,7 +290,6 @@ function seed() {
       closedAt = formatDate(closeDate);
     } else if (i < closedCount + scratchedCount) {
       status = 'scratched';
-      isScratched = true;
     } else {
       status = Math.random() < 0.5 ? 'open' : 'planned';
     }
@@ -317,7 +315,7 @@ function seed() {
       sectorId: sectorLv.id,
       setupId: setupLv.id,
       marketConditionId: conditionLv.id,
-      status: status as any,
+      status,
       plannedEntry,
       plannedStop,
       plannedTarget1,
@@ -334,10 +332,6 @@ function seed() {
     // ── Executions for closed trades ──────────────────────────────────────
     if (isClosed) {
       const numExecutions = rngInt(1, 6);
-      const actions = direction === 'long'
-        ? (numExecutions <= 2 ? ['buy', 'sell'] : ['buy', 'add', 'sell', 'reduce'])
-        : (numExecutions <= 2 ? ['sell_short', 'buy_to_cover'] : ['sell_short', 'sell_short', 'buy_to_cover', 'buy_to_cover']);
-
       // Distribute executions across the trade's lifespan
       const msRange = new Date(closedAt!).getTime() - openedAt.getTime();
       let totalQty = 0;
@@ -345,7 +339,7 @@ function seed() {
       let totalFee = 0;
 
       for (let e = 0; e < numExecutions; e++) {
-        const action = direction === 'long'
+        const action: typeof schema.tradeExecutions.$inferInsert.action = direction === 'long'
           ? (e < Math.ceil(numExecutions / 2) ? pick(['buy', 'add']) : pick(['sell', 'reduce']))
           : (e < Math.ceil(numExecutions / 2) ? pick(['sell_short', 'sell_short']) : pick(['buy_to_cover', 'buy_to_cover']));
 
@@ -394,7 +388,7 @@ function seed() {
           id: crypto.randomUUID(),
           tradeId,
           executedAt: formatDate(execDate),
-          action: action as any,
+          action,
           quantity: qty,
           price: execPrice,
           fees,

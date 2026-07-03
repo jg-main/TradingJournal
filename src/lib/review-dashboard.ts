@@ -25,7 +25,7 @@ export interface SetupPerfTradeInput {
   id: string;
   direction: 'long' | 'short';
   executions: ExecutionData[];
-  grade: { totalScore: number } | null;
+  grade: { totalScore: number | null } | null;
   riskSnapshot: { initialRiskAmount: number | null } | null;
   setupId: string | null;
 }
