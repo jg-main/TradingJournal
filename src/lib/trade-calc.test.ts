@@ -85,7 +85,7 @@ function assertNull(v: unknown, msg: string) {
       { action: 'sell', quantity: 30, price: 55, fees: 0, executedAt: '2026-01-10T14:00:00Z' },
     ];
     const r = deriveTradeStatus(execs, 'long');
-    assert(r.status === 'partially_closed', 'partial exit → partially_closed');
+    assert(r.status === 'open', 'partial exit → open');
     assert(r.openQuantity === 70, 'partial exit → openQuantity 70');
     assert(r.totalExitQty === 30, 'partial exit → totalExitQty 30');
   }
@@ -122,7 +122,7 @@ function assertNull(v: unknown, msg: string) {
       { action: 'buy_to_cover', quantity: 40, price: 78, fees: 0, executedAt: '2026-01-10T11:00:00Z' },
     ];
     const r = deriveTradeStatus(execs, 'short');
-    assert(r.status === 'partially_closed', 'short partial exit → partially_closed');
+    assert(r.status === 'open', 'short partial exit → open');
     assert(r.openQuantity === 60, 'short partial exit → openQuantity 60');
   }
 
@@ -144,7 +144,7 @@ function assertNull(v: unknown, msg: string) {
       { action: 'reduce', quantity: 40, price: 55, fees: 0, executedAt: '2026-01-10T13:00:00Z' },
     ];
     const r = deriveTradeStatus(execs, 'long');
-    assert(r.status === 'partially_closed', 'reduce → partially_closed');
+    assert(r.status === 'open', 'reduce → open');
     assert(r.totalExitQty === 40, 'reduce → totalExitQty 40');
   }
 

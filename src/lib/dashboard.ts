@@ -46,7 +46,7 @@ export interface RollforwardRow {
  * Dashboard KPI metrics returned by computeKpiMetrics.
  *
  * - totalTrades:       Total number of all trades (any status)
- * - openTrades:        Count of trades with active status (open, partially_closed)
+ * - openTrades:        Count of trades with active status (open)
  * - winRate:           Fraction of closed trades with positive P&L (0-1).
  *                      $0 P&L is counted as loss (per D013).
  *                      Null when there are no closed trades.
@@ -363,7 +363,7 @@ export function computeKpiMetrics(
   // ── Trade counts ─────────────────────────────────────────────────
   const totalTrades = allTrades.length;
   const openTrades = allTrades.filter(
-    (t) => t.status === 'open' || t.status === 'partially_closed',
+    (t) => t.status === 'open',
   ).length;
 
   // ── Closed trade metrics ─────────────────────────────────────────

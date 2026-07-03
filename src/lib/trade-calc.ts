@@ -15,7 +15,7 @@ export interface ExecutionData {
 }
 
 export type Direction = 'long' | 'short';
-export type TradeStatus = 'planned' | 'open' | 'partially_closed' | 'closed';
+export type TradeStatus = 'planned' | 'open' | 'closed';
 
 export interface DeriveStatusResult {
   status: TradeStatus;
@@ -82,7 +82,7 @@ export function deriveTradeStatus(
   } else if (totalExitQty === 0) {
     status = 'open';
   } else if (totalExitQty < totalEntryQty) {
-    status = 'partially_closed';
+    status = 'open';
   } else {
     status = 'closed';
   }

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
 
 interface LifecycleStepperProps {
-  status: 'idea' | 'planned' | 'open' | 'partially_closed' | 'closed' | 'scratched';
+  status: 'planned' | 'open' | 'closed' | 'deleted';
   direction: 'long' | 'short';
   openedAt?: string | null;
   exitNotes?: string | null;
@@ -32,7 +32,6 @@ export function getCurrentStep(
   lesson?: string | null,
 ): { currentStep: number; isScratched: boolean } {
   switch (status) {
-    case 'idea':
     case 'planned':
       return { currentStep: 1, isScratched: false };
     case 'open':
@@ -40,14 +39,12 @@ export function getCurrentStep(
         currentStep: openedAt ? 4 : 3,
         isScratched: false,
       };
-    case 'partially_closed':
-      return { currentStep: 4, isScratched: false };
     case 'closed':
       return {
         currentStep: exitNotes || lesson ? 6 : 5,
         isScratched: false,
       };
-    case 'scratched':
+    case 'deleted':
       return { currentStep: 1, isScratched: true };
   }
 }

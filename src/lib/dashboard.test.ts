@@ -148,7 +148,7 @@ const OPEN_TRADE: KpiTradeInput = makeTrade(
 );
 
 const PARTIALLY_CLOSED_TRADE: KpiTradeInput = makeTrade(
-  'partial-001', 'long', 'partially_closed',
+  'partial-001', 'long', 'open',
   [
     { action: 'buy', quantity: 100, price: 50, fees: 2, executedAt: '2026-01-01T10:00:00Z' },
     { action: 'sell', quantity: 50, price: 55, fees: 1, executedAt: '2026-01-01T14:00:00Z' },
@@ -391,15 +391,15 @@ test('all scratches — winRate = 0 (all counted as losses)', () => {
 // Tests: openTrades counts correctly
 // ────────────────────────────────────────────────────────────────────────
 
-test('openTrades counts open and partially_closed trades', () => {
+test('openTrades counts open trades', () => {
   const allTrades = [WIN_TRADE, OPEN_TRADE, PARTIALLY_CLOSED_TRADE, PLANNED_TRADE];
   const r = computeKpiMetrics(allTrades, [WIN_TRADE], null, null);
 
   assertEqual(r.totalTrades, 4, 'totalTrades = 4');
-  assertEqual(r.openTrades, 2, 'openTrades = 2 (open + partially_closed)');
+  assertEqual(r.openTrades, 2, 'openTrades = 2 (both open)');
 });
 
-test('openTrades — planned and idea trades not counted as open', () => {
+test('openTrades — planned, idea, scratched trades not counted as open', () => {
   const ideaTrade = makeTrade('idea-1', 'long', 'idea', [], null, null);
   const scratchedTrade = makeTrade('s1', 'long', 'scratched', longTradeExecutions(100, 100), null, null);
   const allTrades = [ideaTrade, scratchedTrade, PLANNED_TRADE];
