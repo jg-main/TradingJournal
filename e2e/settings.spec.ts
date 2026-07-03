@@ -1,4 +1,41 @@
 import { test, expect } from '@playwright/test';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { dirname, resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import * as schema from '@/db/schema';
+
+const DB_FILE = process.env.DB_FILE_NAME ?? './.trading-journal/journal.db';
+
+function openDb() {
+  mkdirSync(dirname(resolve(DB_FILE)), { recursive: true });
+  const sqlite = new Database(resolve(DB_FILE));
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = ON');
+  const db = drizzle(sqlite, { schema });
+  migrate(db, { migrationsFolder: resolve('src/db/migrations') });
+  return sqlite;
+}
+
+function resetReadinessState() {
+  const db = openDb();
+
+  // Temporarily disable FK checks during bulk cleanup since parallel workers
+  // may have rows in trades/account_transactions/etc referencing these tables
+  db.pragma('foreign_keys = OFF');
+  db.exec(`
+    DELETE FROM settings;
+    DELETE FROM app_profile;
+    DELETE FROM accounts;
+    DELETE FROM setup_definitions;
+    DELETE FROM lookup_values WHERE type = 'setup';
+  `);
+
+  // Force WAL checkpoint so the dev server's connection sees the deletes
+  db.pragma('wal_checkpoint(TRUNCATE)');
+  db.close();
+}
 
 test.describe('Settings', () => {
   test('page renders with Settings heading', async ({ page }) => {
@@ -6,88 +43,49 @@ test.describe('Settings', () => {
     await expect(page.locator('h1')).toContainText('Settings');
   });
 
-  test('settings form fields are present', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
+  test.describe('first-run checklist', () => {
+    test('first-run checklist exposes a continue path and refreshes after a risk save', async ({ page }) => {
+      // Reset readiness tables at test start so the DB is clean regardless of
+      // what other specs left behind. This is the same WAL-isolated
+      // resetReadinessState pattern used by the m011 spec, applied here so the
+      // settings spec is self-cleaning (the original bug was relying on other
+      // specs to leave a clean DB).
+      resetReadinessState();
 
-    // General section fields
-    await expect(page.locator('#startingAccountValue')).toBeVisible();
-    await expect(page.locator('#journalStartDate')).toBeVisible();
-    await expect(page.locator('#currency')).toBeVisible();
+      // Seed app_profile first so the first missing step is 'settings' (risk)
+      const profileRes = await page.request.put('/api/app-profile', {
+        data: {
+          displayName: 'Playwright Trader',
+          timezone: 'America/Bogota',
+          defaultCurrency: 'USD',
+        },
+      });
+      expect(profileRes.ok()).toBeTruthy();
 
-    // Risk & Commission section fields
-    await expect(page.locator('#maxRiskPerTradePct')).toBeVisible();
-    await expect(page.locator('#defaultCommission')).toBeVisible();
-    await expect(page.locator('#defaultAccountId')).toBeVisible();
+      await page.goto('/settings');
+      await page.waitForLoadState('networkidle');
 
-    // Backup section
-    await expect(page.getByText('Download Full Backup')).toBeVisible();
-    await expect(page.getByText('Download a full backup of your trading journal')).toBeVisible();
-  });
+      const continueLink = page.getByRole('link', { name: /continue setup/i }).first();
+      await expect(continueLink).toHaveAttribute('href', '/settings/risk');
 
-  test('section headings are visible', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
+      await continueLink.click();
+      await expect(page).toHaveURL(/\/settings\/risk$/);
 
-    await expect(page.getByText('General')).toBeVisible();
-    await expect(page.getByText('Risk & Commission')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
-  });
+      await page.locator('#startingAccountValue').fill('25000');
+      await page.locator('#defaultCommission').fill('0.5');
+      await page.locator('#maxRiskPerTradePct').fill('1.5');
+      await page.locator('#journalStartDate').fill('2025-01-01');
 
-  test('saving valid settings shows success feedback', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
+      // Wait for the save API response before checking the redirect
+      const saveRespPromise = page.waitForResponse(
+        (r) => r.url().includes('/api/settings') && r.request().method() === 'PUT',
+      );
+      await page.getByRole('button', { name: 'Save Risk Settings' }).click();
+      expect((await saveRespPromise).ok()).toBeTruthy();
 
-    // Read current values first to restore after test
-    const currentStartVal = await page.locator('#startingAccountValue').inputValue();
-
-    // Set a known test value
-    await page.locator('#startingAccountValue').fill('25000');
-    await page.locator('#currency').fill('USD');
-
-    // Click Save
-    await page.getByRole('button', { name: 'Save Settings' }).click();
-
-    // Wait for success message
-    await expect(page.getByText('Settings saved successfully.')).toBeVisible({ timeout: 5000 });
-
-    // Restore original value
-    if (currentStartVal) {
-      await page.locator('#startingAccountValue').fill(currentStartVal);
-      await page.getByRole('button', { name: 'Save Settings' }).click();
-      await expect(page.getByText('Settings saved successfully.')).toBeVisible({ timeout: 5000 });
-    }
-  });
-
-  test('invalid negative values are handled gracefully', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
-
-    // The inputs have min="0" so negative values won't set via the number stepper,
-    // but we can try manually typing them via the JS-backed form state.
-    // The form will parse them via parseFloat and the API may reject them.
-    await page.locator('#maxRiskPerTradePct').fill('-5');
-    await page.locator('#defaultCommission').fill('-10');
-
-    await page.getByRole('button', { name: 'Save Settings' }).click();
-
-    // Should either show a success (API accepts after validation) or error
-    // Wait quietly for the UI to settle — either outcome is fine as a smoke test
-    await page.waitForTimeout(2000);
-
-    // Verify the page is still functional
-    await expect(page.locator('h1')).toContainText('Settings');
-  });
-
-  test('currency field accepts exactly 3 characters', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
-
-    // The currency input has maxLength={3}
-    const currencyInput = page.locator('#currency');
-    await currencyInput.fill('EUR');
-
-    const val = await currencyInput.inputValue();
-    expect(val.length).toBeLessThanOrEqual(3);
+      await expect(page).toHaveURL(/\/settings$/);
+      await page.waitForLoadState('networkidle');
+      await expect(page.getByRole('link', { name: /continue setup/i })).toHaveAttribute('href', '/settings/accounts');
+    });
   });
 });

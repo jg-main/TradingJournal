@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+process.env.DB_FILE_NAME ??= './.trading-journal/playwright-readiness.db';
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -14,13 +16,24 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     port: 3000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 30_000,
+    env: {
+      DB_FILE_NAME: process.env.DB_FILE_NAME,
+    },
   },
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop WebKit'] },
     },
   ],
 });

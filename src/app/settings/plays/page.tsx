@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,7 @@ const emptyForm = {
 };
 
 export default function PlaysSettingsPage() {
+  const router = useRouter();
   const [setups, setSetups] = useState<SetupDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -118,10 +120,11 @@ export default function PlaysSettingsPage() {
         return;
       }
 
-      setMessage({ type: 'success', text: editingId ? 'Setup updated.' : 'Setup created.' });
+      setMessage({ type: 'success', text: editingId ? 'Setup updated. Returning to Settings…' : 'Setup created. Returning to Settings…' });
       setDialogOpen(false);
       resetForm();
       await fetchSetups();
+      router.push('/settings');
     } catch {
       setMessage({ type: 'error', text: 'Failed to save setup.' });
     } finally {

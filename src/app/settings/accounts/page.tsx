@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Plus, Edit3, Trash2, User, Building2, Wallet, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +54,7 @@ type AccountForm = {
 const EMPTY_FORM: AccountForm = { name: '', broker: '', currency: 'USD', maxRiskPerTradePct: '', defaultCommission: '', startingBalance: '' };
 
 export default function AccountsSettingsPage() {
+  const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,6 +133,7 @@ export default function AccountsSettingsPage() {
 
       setDialogOpen(false);
       await fetchData();
+      router.push('/settings');
     } catch {
       setError('Failed to save account.');
     } finally {

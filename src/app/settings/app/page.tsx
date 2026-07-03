@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
 interface AppSettings {
@@ -12,6 +13,7 @@ interface AppSettings {
 }
 
 export default function AppSettingsPage() {
+  const router = useRouter();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -24,7 +26,7 @@ export default function AppSettingsPage() {
   });
 
   useEffect(() => {
-    fetch('/api/settings')
+    fetch('/api/app-profile')
       .then((r) => r.json())
       .then((data) => {
         if (data && data.id) {
@@ -46,7 +48,7 @@ export default function AppSettingsPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch('/api/app-profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -64,7 +66,8 @@ export default function AppSettingsPage() {
 
       const data = await res.json();
       setSettings(data);
-      setMessage({ type: 'success', text: 'App preferences saved.' });
+      setMessage({ type: 'success', text: 'App preferences saved. Returning to Settings…' });
+      router.push('/settings');
     } catch {
       setMessage({ type: 'error', text: 'Failed to save preferences.' });
     } finally {

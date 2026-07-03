@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
 interface Account {
@@ -15,9 +16,11 @@ interface RiskSettings {
   defaultCommission: number | null;
   startingAccountValue: number | null;
   defaultAccountId: string | null;
+  journalStartDate: string | null;
 }
 
 export default function RiskSettingsPage() {
+  const router = useRouter();
   const [settings, setSettings] = useState<RiskSettings | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +32,7 @@ export default function RiskSettingsPage() {
     defaultCommission: '',
     startingAccountValue: '',
     defaultAccountId: '',
+    journalStartDate: '',
   });
 
   useEffect(() => {
@@ -43,6 +47,7 @@ export default function RiskSettingsPage() {
           defaultCommission: settingsData.defaultCommission?.toString() ?? '',
           startingAccountValue: settingsData.startingAccountValue?.toString() ?? '',
           defaultAccountId: settingsData.defaultAccountId ?? '',
+          journalStartDate: settingsData.journalStartDate ?? '',
         });
       }
       if (Array.isArray(accountsData)) {
@@ -62,6 +67,7 @@ export default function RiskSettingsPage() {
     if (form.defaultCommission) payload.defaultCommission = parseFloat(form.defaultCommission);
     if (form.startingAccountValue) payload.startingAccountValue = parseFloat(form.startingAccountValue);
     payload.defaultAccountId = form.defaultAccountId || null;
+    if (form.journalStartDate) payload.journalStartDate = form.journalStartDate;
 
     try {
       const res = await fetch('/api/settings', {
@@ -78,7 +84,8 @@ export default function RiskSettingsPage() {
 
       const data = await res.json();
       setSettings(data);
-      setMessage({ type: 'success', text: 'Risk settings saved.' });
+      setMessage({ type: 'success', text: 'Risk settings saved. Returning to Settings…' });
+      router.push('/settings');
     } catch {
       setMessage({ type: 'error', text: 'Failed to save risk settings.' });
     } finally {
@@ -172,6 +179,19 @@ export default function RiskSettingsPage() {
               onChange={handleChange('startingAccountValue')}
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
               placeholder="50000"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="journalStartDate" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Journal Start Date
+            </label>
+            <input
+              id="journalStartDate"
+              type="date"
+              value={form.journalStartDate}
+              onChange={handleChange('journalStartDate')}
+              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
           </div>
 
