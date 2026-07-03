@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/sidebar";
+import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -38,8 +39,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex">
         <TooltipProvider>
-          <Sidebar />
-          <main className="flex-1 overflow-auto">{children}</main>
+          <KeyboardShortcutsProvider>
+            <Sidebar />
+            <main className="flex-1 overflow-auto">{children}</main>
+          </KeyboardShortcutsProvider>
         </TooltipProvider>
       </body>
     </html>

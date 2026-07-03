@@ -408,6 +408,44 @@ export default function TradesPage() {
                     readOnly={!!editingId}
                   />
                 </div>
+      {/* Trade Log Filter Bar */}
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Search</label>
+          <input
+            type="text"
+            placeholder="Symbol, setup, thesis..."
+            className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm text-zinc-900 transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/50 dark:text-zinc-100"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Direction</label>
+          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
+            <option value="">All</option>
+            <option value="long">Long</option>
+            <option value="short">Short</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Status</label>
+          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
+            <option value="">All</option>
+            <option value="idea">Idea</option>
+            <option value="planned">Planned</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+            <option value="scratched">Scratched</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</label>
+          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">To</label>
+          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
+        </div>
+      </div>
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">

@@ -238,8 +238,9 @@ export default function SettingsHubPage() {
 
       {shouldShowChecklist && readiness && <SetupChecklist readiness={readiness} />}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {cards.map((card) => (
+      {!loading && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {cards.map((card) => (
           <Link
             key={card.href}
             href={card.href}
@@ -251,6 +252,7 @@ export default function SettingsHubPage() {
           </Link>
         ))}
       </div>
+    )}
     </div>
   );
 }

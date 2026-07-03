@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   NotebookPen,
   TrendingUp,
@@ -84,7 +85,7 @@ function gradeLabelFromScore(score: number | null): string {
 // ── Color helpers ──────────────────────────────────────────────────────
 
 function pnlColorClass(v: number): string {
-  if (v > 0) return 'text-emerald-600 dark:text-emerald-400';
+  if (v > 0) return 'text-zinc-700 dark:text-zinc-300';
   if (v < 0) return 'text-red-600 dark:text-red-400';
   return 'text-zinc-500 dark:text-zinc-400';
 }
@@ -148,10 +149,13 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter state
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [accountId, setAccountId] = useState<string | null>(null);
+  // Filter state — persisted to URL search params
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const [dateFrom, setDateFrom] = useState(searchParams.get('dateFrom') ?? '');
+  const [dateTo, setDateTo] = useState(searchParams.get('dateTo') ?? '');
+  const [accountId, setAccountId] = useState<string | null>(searchParams.get('accountId') ?? null);
 
   const buildDashboardUrl = () => {
     const params = new URLSearchParams();
@@ -188,9 +192,23 @@ export default function Home() {
     }
   };
 
+  // Sync filter state to URL search params
+  const syncFilters = useCallback(() => {
+    const params = new URLSearchParams();
+    if (accountId) params.set('accountId', accountId);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    const qs = params.toString();
+    router.replace(qs ? `/?${qs}` : '/', { scroll: false });
+  }, [dateFrom, dateTo, accountId, router]);
+
   useEffect(() => {
     fetchDashboard();
   }, [dateFrom, dateTo, accountId]);
+
+  useEffect(() => {
+    syncFilters();
+  }, [syncFilters]);
 
   // Detect empty state: all measurable fields are at empty/null baseline
   const isEmpty =
@@ -205,7 +223,7 @@ export default function Home() {
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-10">
-      <h1 className="mb-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h1 className="mb-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
         Dashboard
       </h1>
       <p className="mb-8 text-sm text-zinc-500 dark:text-zinc-400">
@@ -221,12 +239,51 @@ export default function Home() {
         onDateToChange={setDateTo}
         onAccountIdChange={setAccountId}
       />
+      {/* Quick date filters */}
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {[
+          { label: '1W', days: 7 },
+          { label: '1M', days: 30 },
+          { label: '3M', days: 90 },
+          { label: '6M', days: 180 },
+          { label: 'YTD', days: null },
+          { label: 'All', days: null, clear: true },
+        ].map((preset) => (
+          <button
+            key={preset.label}
+            onClick={() => {
+              if (preset.clear) {
+                setDateFrom('');
+                setDateTo('');
+              } else if (preset.label === 'YTD') {
+                const year = new Date().getFullYear();
+                setDateFrom(year + '-01-01');
+                setDateTo('');
+              } else if (preset.days) {
+                const from = new Date();
+                from.setDate(from.getDate() - preset.days);
+                setDateFrom(from.toISOString().split('T')[0]);
+                setDateTo('');
+              }
+            }}
+            className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
 
       {/* Error state — shown inline below header, keeps rest of page visible */}
       {error && (
         <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           <AlertTriangle className="size-4 shrink-0" />
-          <span>{error}</span>
+          <span className="flex-1">{error}</span>
+          <button
+            onClick={fetchDashboard}
+            className="ml-2 shrink-0 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-700 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-800/50"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -244,24 +301,24 @@ export default function Home() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {/* 1. Total Trades */}
           <KpiCard
-            icon={<NotebookPen className="size-4 text-emerald-600 dark:text-emerald-400" />}
-            iconBg="bg-emerald-100 dark:bg-emerald-900/30"
+            icon={<NotebookPen className="size-4 text-zinc-700 dark:text-zinc-300" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
             value={kpis.totalTrades}
             label="Total Trades"
           />
 
           {/* 2. Win Rate */}
           <KpiCard
-            icon={<TrendingUp className="size-4 text-blue-600 dark:text-blue-400" />}
-            iconBg="bg-blue-100 dark:bg-blue-900/30"
+            icon={<TrendingUp className="size-4 text-zinc-700 dark:text-zinc-300" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
             value={formatPercent(kpis.winRate)}
             label="Win Rate"
           />
 
           {/* 3. Net P&L */}
           <KpiCard
-            icon={<Target className="size-4 text-amber-600 dark:text-amber-400" />}
-            iconBg="bg-amber-100 dark:bg-amber-900/30"
+            icon={<Target className="size-4 text-zinc-700 dark:text-zinc-300" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
             value={formatCurrency(kpis.netPnl)}
             valueClassName={pnlColorClass(kpis.netPnl)}
             label="Net P&amp;L"
@@ -269,8 +326,8 @@ export default function Home() {
 
           {/* 4. Avg R */}
           <KpiCard
-            icon={<Star className="size-4 text-purple-600 dark:text-purple-400" />}
-            iconBg="bg-purple-100 dark:bg-purple-900/30"
+            icon={<Star className="size-4 text-zinc-700 dark:text-zinc-300" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
             value={formatDecimal(kpis.avgR)}
             label="Avg R"
           />
@@ -290,7 +347,7 @@ export default function Home() {
           {/* 6. Current Drawdown */}
           <KpiCard
             icon={<TrendingDown className="size-4 text-red-600 dark:text-red-400" />}
-            iconBg="bg-red-100 dark:bg-red-900/30"
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
             value={
               kpis.currentDrawdown !== null
                 ? `${formatCurrency(Math.abs(kpis.currentDrawdown))}${kpis.currentDrawdownPct !== null ? ` (${formatPercent(Math.abs(kpis.currentDrawdownPct))})` : ''}`
@@ -302,8 +359,8 @@ export default function Home() {
 
           {/* 7. Account Value */}
           <KpiCard
-            icon={<Wallet className="size-4 text-emerald-600 dark:text-emerald-400" />}
-            iconBg="bg-emerald-100 dark:bg-emerald-900/30"
+            icon={<Wallet className="size-4 text-zinc-700 dark:text-zinc-300" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
             value={formatCurrency(kpis.accountValue)}
             label="Account Value"
           />
@@ -327,7 +384,7 @@ export default function Home() {
       {/* Charts section — equity curve and drawdown */}
       {!loading && kpis !== null && !isEmpty && (
         <section className="mt-8">
-          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
             Performance Charts
           </h2>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -438,7 +495,7 @@ export default function Home() {
       {/* Monthly Performance and R Distribution charts */}
       {!loading && kpis !== null && !isEmpty && (
         <section className="mt-8">
-          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
             Performance Analytics
           </h2>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -584,7 +641,7 @@ export default function Home() {
       {/* Directional Performance Panel — long vs short breakdown */}
       {!loading && kpis !== null && !isEmpty && directionalPerformance && (
         <section className="mt-8">
-          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
             Directional Performance
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -652,7 +709,7 @@ export default function Home() {
     {/* Process Quality Score Distribution Panel — grade-tier histogram */}
     {!loading && kpis !== null && !isEmpty && processScoreDistribution !== null && (
       <section className="mt-8">
-        <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
           Process Quality Score Distribution
         </h2>
         <Card>
