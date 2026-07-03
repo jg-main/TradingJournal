@@ -88,7 +88,7 @@ export const trades = sqliteTable('trades', {
   setupId: text('setup_id').references(() => lookupValues.id),
   marketConditionId: text('market_condition_id').references(() => lookupValues.id),
   status: text('status', {
-    enum: ['idea', 'planned', 'open', 'partially_closed', 'closed', 'scratched'],
+    enum: ['planned', 'open', 'closed', 'deleted'],
   }).notNull(),
   plannedEntry: real('planned_entry'),
   plannedStop: real('planned_stop'),

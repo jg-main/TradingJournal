@@ -289,7 +289,7 @@ function seed() {
       if (closeDate > endDate) closeDate.setTime(endDate.getTime());
       closedAt = formatDate(closeDate);
     } else if (i < closedCount + scratchedCount) {
-      status = 'scratched';
+      status = 'deleted';
     } else {
       status = Math.random() < 0.5 ? 'open' : 'planned';
     }

@@ -24,6 +24,12 @@ export function initializeDatabase() {
   // Auto-apply pending migrations on startup so schema stays in sync
   migrate(dbInstance, { migrationsFolder: join(process.cwd(), 'src/db/migrations') });
 
+  // Data migration: convert old status values to the new 4-status model
+  // (idea -> planned, partially_closed -> open, scratched -> deleted)
+  sqlite.exec(`UPDATE trades SET status = 'planned' WHERE status = 'idea'`);
+  sqlite.exec(`UPDATE trades SET status = 'open' WHERE status = 'partially_closed'`);
+  sqlite.exec(`UPDATE trades SET status = 'deleted' WHERE status = 'scratched'`);
+
   return dbInstance;
 }
 
