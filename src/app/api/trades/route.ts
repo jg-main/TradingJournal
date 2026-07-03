@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, settings, accounts, lookupValues } from '@/db/schema';
+import { trades, settings, accounts, setupDefinitions } from '@/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         symbol: trades.symbol,
         direction: trades.direction,
         setupId: trades.setupId,
-        setupName: lookupValues.value,
+        setupName: setupDefinitions.name,
         sectorId: trades.sectorId,
         marketConditionId: trades.marketConditionId,
         status: trades.status,
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         updatedAt: trades.updatedAt,
       })
       .from(trades)
-      .leftJoin(lookupValues, eq(trades.setupId, lookupValues.id))
+      .leftJoin(setupDefinitions, eq(trades.setupId, setupDefinitions.id))
       .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
       .orderBy(desc(trades.createdAt))
       .limit(limit)
