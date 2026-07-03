@@ -801,9 +801,9 @@ export default function ChecksPage() {
         {VALIDATION_RULES.map((rule) => (
           <Card
             key={rule.id}
-            className={`border-l-4 ${severityColor(rule.severity)}`}
+            className={`border-t-2 ${severityColor(rule.severity)}`}
             style={{
-              borderLeftColor:
+              borderTopColor:
                 rule.severity === 'error'
                   ? 'var(--color-red-500)'
                   : rule.severity === 'warning'

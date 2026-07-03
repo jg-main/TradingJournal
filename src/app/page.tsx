@@ -108,10 +108,16 @@ function KpiCard({ icon, iconBg, value, label, valueClassName }: KpiCardProps) {
         </div>
         <p
           className={`text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100 ${valueClassName ?? ''}`}
+          title={typeof value === 'string' && value === '--' ? 'No data available' : String(label)}
         >
           {value}
         </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400" title={
+            label === 'Avg R' ? 'Average risk multiple (R) per trade. R = |entry - stop| / risk per share. Higher is better.' :
+            label === 'Avg Grade' ? 'Average process quality score. Grades range from A (54-60) to F (0-17).' :
+            label === 'Current Drawdown' ? 'Peak-to-trough decline from your highest account value.' :
+            label === 'Account Value' ? 'Current total value of your trading account.' : label
+          }>{label}</p>
       </CardContent>
     </Card>
   );
@@ -226,8 +232,8 @@ export default function Home() {
 
       {/* Loading state — pulse-animated skeleton rectangles */}
       {loading && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 7 }).map((_, i) => (
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
+          {Array.from({ length: 4 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
@@ -314,7 +320,7 @@ export default function Home() {
             />
           }
           title="No trades yet"
-          description="Start logging trades to see your dashboard come to life."
+          description="Plan your first trade from the Trade Log. Track setups, entries, and outcomes to build your performance history."
         />
       )}
 

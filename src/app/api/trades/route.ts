@@ -32,31 +32,29 @@ export async function GET(request: NextRequest) {
     const validStatuses = ['idea', 'planned', 'open', 'closed', 'scratched'] as const;
     type TradeStatus = (typeof validStatuses)[number];
 
+    // Build status filter conditions
+    const statusFilter = status
+      ? [eq(trades.status, status as TradeStatus)]
+      : [];
+
     // Total count
-    let countQuery = db
+    const countResult = db
       .select({ count: sql<number>`COUNT(*)` })
-      .from(trades);
+      .from(trades)
+      .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
+      .get();
 
-    if (status) {
-      countQuery = countQuery.where(eq(trades.status, status as TradeStatus));
-    }
-
-    const countResult = countQuery.get();
     const total = countResult?.count ?? 0;
 
     // Paginated data
-    let dataQuery = db
+    const rows = db
       .select()
       .from(trades)
+      .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
       .orderBy(desc(trades.createdAt))
       .limit(limit)
-      .offset(offset);
-
-    if (status) {
-      dataQuery = dataQuery.where(eq(trades.status, status as TradeStatus));
-    }
-
-    const rows = dataQuery.all();
+      .offset(offset)
+      .all();
     return NextResponse.json({ data: rows, total, page, limit });
   } catch (error) {
     return NextResponse.json(

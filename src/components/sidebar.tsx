@@ -49,7 +49,9 @@ export function Sidebar() {
       <nav className="flex-1 space-y-0.5 p-2">
         {navItems.map((item) => {
           const isActive =
-            pathname === item.href || (item.href === '/settings' && pathname.startsWith('/settings/'));
+            item.href === '/'
+              ? pathname === '/'
+              : pathname.startsWith(item.href);
           const Icon = item.icon;
 
           return (

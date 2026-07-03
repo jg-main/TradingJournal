@@ -2087,7 +2087,7 @@ export default function TradeDetailPage() {
                             {/* Delete button */}
                             <button
                               onClick={() => handleDeleteAsset(asset.id)}
-                              className="absolute -right-1.5 -top-1.5 z-10 flex size-5 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-400 opacity-0 shadow-sm transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-red-900/30"
+                              className="absolute -right-1.5 -top-1.5 z-10 flex size-5 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 opacity-0 shadow-sm transition-colors hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-red-900/30"
                               aria-label={`Delete ${asset.label ?? 'asset'}`}
                             >
                               <Trash2 className="size-3" />
