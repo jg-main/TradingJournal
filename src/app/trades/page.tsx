@@ -58,23 +58,21 @@ interface Trade {
   plannedStop: number | null;
   plannedTarget1: number | null;
   plannedTarget2: number | null;
-  invalidationCondition: string | null;
-  preTradePlan: string | null;
-  status: 'idea' | 'planned' | 'open' | 'closed' | 'scratched';
+  status: 'planned' | 'open' | 'closed' | 'deleted';
   createdAt: string | null;
 }
 
 const STATUS_FILTER_OPTIONS = [
   { value: 'all', label: 'All Status' },
-  { value: 'idea', label: 'Idea' },
   { value: 'planned', label: 'Planned' },
-  { value: 'scratched', label: 'Scratched' },
+  { value: 'open', label: 'Open' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'deleted', label: 'Deleted' },
 ] as const;
 
 interface TradeForm {
   symbol: string;
   direction: 'long' | 'short';
-  status: Trade['status'];
   accountId: string;
   setup: string;
   thesis: string;
@@ -82,14 +80,11 @@ interface TradeForm {
   plannedStop: string;
   plannedTarget1: string;
   plannedTarget2: string;
-  invalidationCondition: string;
-  preTradePlan: string;
 }
 
 const EMPTY_FORM: TradeForm = {
   symbol: '',
   direction: 'long',
-  status: 'planned',
   accountId: '',
   setup: '',
   thesis: '',
@@ -97,23 +92,19 @@ const EMPTY_FORM: TradeForm = {
   plannedStop: '',
   plannedTarget1: '',
   plannedTarget2: '',
-  invalidationCondition: '',
-  preTradePlan: '',
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function statusBadgeClass(status: Trade['status']): string {
   switch (status) {
-    case 'idea':
-      return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400';
     case 'planned':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'open':
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
     case 'closed':
       return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
-    case 'scratched':
+    case 'deleted':
       return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
   }
 }
@@ -232,7 +223,6 @@ export default function TradesPage() {
     setForm({
       symbol: item.symbol,
       direction: item.direction,
-      status: item.status,
       accountId: item.accountId ?? '',
       setup: item.setup ?? '',
       thesis: item.thesis ?? '',
@@ -240,8 +230,6 @@ export default function TradesPage() {
       plannedStop: item.plannedStop?.toString() ?? '',
       plannedTarget1: item.plannedTarget1?.toString() ?? '',
       plannedTarget2: item.plannedTarget2?.toString() ?? '',
-      invalidationCondition: item.invalidationCondition ?? '',
-      preTradePlan: item.preTradePlan ?? '',
     });
     setEditingId(item.id);
     setDialogOpen(true);
@@ -271,8 +259,6 @@ export default function TradesPage() {
         plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
         plannedTarget1: form.plannedTarget1 ? parseFloat(form.plannedTarget1) : null,
         plannedTarget2: form.plannedTarget2 ? parseFloat(form.plannedTarget2) : null,
-        invalidationCondition: form.invalidationCondition.trim() || null,
-        preTradePlan: form.preTradePlan.trim() || null,
         accountId: form.accountId || null,
       };
 
@@ -303,7 +289,7 @@ export default function TradesPage() {
   };
 
   const handleDelete = async (id: string, tradeCode: string) => {
-    if (!confirm(`Scratch trade "${tradeCode}"? This will mark it as scratched.`)) return;
+    if (!confirm(`Delete trade "${tradeCode}"? This will permanently delete it.`)) return;
 
     try {
       const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
@@ -311,7 +297,7 @@ export default function TradesPage() {
         setMessage({ type: 'error', text: 'Failed to delete trade.' });
         return;
       }
-      setMessage({ type: 'success', text: `Trade ${tradeCode} scratched.` });
+      setMessage({ type: 'success', text: `Trade ${tradeCode} deleted.` });
       fetchItems(1, statusFilter);
     } catch {
       setMessage({ type: 'error', text: 'Failed to delete trade.' });
@@ -393,7 +379,7 @@ export default function TradesPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="symbol" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                     Symbol *
@@ -408,44 +394,6 @@ export default function TradesPage() {
                     readOnly={!!editingId}
                   />
                 </div>
-      {/* Trade Log Filter Bar */}
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Search</label>
-          <input
-            type="text"
-            placeholder="Symbol, setup, thesis..."
-            className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm text-zinc-900 transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/50 dark:text-zinc-100"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Direction</label>
-          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
-            <option value="">All</option>
-            <option value="long">Long</option>
-            <option value="short">Short</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Status</label>
-          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
-            <option value="">All</option>
-            <option value="idea">Idea</option>
-            <option value="planned">Planned</option>
-            <option value="open">Open</option>
-            <option value="closed">Closed</option>
-            <option value="scratched">Scratched</option>
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</label>
-          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">To</label>
-          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
-        </div>
-      </div>
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -459,20 +407,6 @@ export default function TradesPage() {
                   >
                     <option value="long">Long</option>
                     <option value="short">Short</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Status
-                  </label>
-                  <select
-                    value={form.status}
-                    onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as Trade['status'] }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="idea">Idea</option>
-                    <option value="planned">Planned</option>
                   </select>
                 </div>
               </div>
@@ -628,34 +562,6 @@ export default function TradesPage() {
                     placeholder="0.00"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label htmlFor="invalidationCondition" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Invalidation Condition
-                </label>
-                <textarea
-                  id="invalidationCondition"
-                  value={form.invalidationCondition}
-                  onChange={(e) => setForm((f) => ({ ...f, invalidationCondition: e.target.value }))}
-                  rows={2}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="What would invalidate this thesis..."
-                />
-              </div>
-
-              <div>
-                <label htmlFor="preTradePlan" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Pre-Trade Plan
-                </label>
-                <textarea
-                  id="preTradePlan"
-                  value={form.preTradePlan}
-                  onChange={(e) => setForm((f) => ({ ...f, preTradePlan: e.target.value }))}
-                  rows={2}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="Entry criteria, position sizing, risk management rules..."
-                />
               </div>
 
               <DialogFooter className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
