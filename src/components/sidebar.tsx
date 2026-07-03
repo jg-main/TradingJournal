@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -11,7 +12,9 @@ import {
   Star,
   ClipboardCheck,
   Settings,
+  Menu,
   type LucideIcon,
+  X,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -33,9 +36,26 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <aside className="flex w-56 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+    <>
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="fixed left-3 top-3 z-40 flex size-8 items-center justify-center rounded-lg border border-zinc-200 bg-white shadow-sm md:hidden dark:border-zinc-700 dark:bg-zinc-900"
+        aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+      >
+        {sidebarOpen ? <X className="size-4" /> : <Menu className="size-4" />}
+      </button>
+
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <aside className={
+        'fixed inset-y-0 left-0 z-30 flex w-56 flex-col border-r border-zinc-200 bg-white transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-950 md:static md:translate-x-0 ' +
+        (sidebarOpen ? 'translate-x-0' : '-translate-x-full')
+      }>
       {/* Brand */}
       <div className="flex h-14 items-center gap-2 border-b border-zinc-200 px-5 dark:border-zinc-800">
         <div className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-xs font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
@@ -81,5 +101,6 @@ export function Sidebar() {
         </p>
       </div>
     </aside>
+    </>
   );
 }
