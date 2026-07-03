@@ -220,8 +220,18 @@ test.describe('Accounts', () => {
     await page.goto('/settings/accounts');
     await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
 
+    // Target the deactivate button in THIS account's row, not the first one in the list
+    const row = page.locator('tr').filter({ hasText: accountName });
+    const deletePromise = page.waitForResponse(
+      (resp) =>
+        resp.url().includes('/api/accounts') &&
+        resp.request().method() === 'DELETE' &&
+        resp.status() < 500,
+    );
     page.on('dialog', (dialog) => dialog.accept());
-    await page.getByRole('button', { title: 'Deactivate account' }).first().click();
+    await row.locator('[title="Deactivate account"]').click();
+    await deletePromise;
+    await page.waitForLoadState('networkidle');
     await expect(page.getByRole('link', { name: accountName, exact: true })).not.toBeVisible();
   });
 });

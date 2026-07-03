@@ -26,14 +26,13 @@ test.describe('Watchlist', () => {
     await page.waitForLoadState('networkidle');
 
     // Click Add Symbol button
-    await page.getByRole('button', { name: 'Add Symbol' }).click();
+    await page.getByRole('button', { name: 'Add Symbol' }).first().click();
 
     // Dialog title should appear
     await expect(page.getByText('Add to Watchlist')).toBeVisible();
 
-    // Fill form
+    // Fill form (setup is optional and requires a valid lookup value that may not be seeded in test DB)
     await page.locator('#symbol').fill('META');
-    await page.locator('#setup').fill('Breakout');
     await page.locator('#keyLevel').fill('500');
     await page.locator('#triggerPrice').fill('510');
     // Status select is the second select in the form

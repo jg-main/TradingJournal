@@ -69,6 +69,19 @@ test.describe('M004 review system flow', () => {
     // The API expects mistakeType as a lookup value string (e.g. 'fv_entry_timing'), not a UUID
     // It resolves the string to a lookup ID internally
 
+    // Seed the mistake_type lookup values the API needs
+    const mistakeTypes = ['fv_entry_timing', 'fv_exit_discipline'];
+    for (const mt of mistakeTypes) {
+      await page.request.post('/api/lookups', {
+        data: {
+          type: 'mistake_type',
+          value: mt,
+          description: 'Seeded by test',
+          sortOrder: 0,
+        },
+      });
+    }
+
     // Add first mistake
     let mRes = await page.request.post(`/api/trades/${tradeId}/mistakes`, {
       data: {
@@ -117,7 +130,7 @@ test.describe('M004 review system flow', () => {
     await expect(page.locator('h1')).toContainText('Reviews');
 
     // The Generate Review button should be present
-    await expect(page.getByRole('button', { name: 'Generate Review' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Generate Review' }).first()).toBeVisible();
 
     // ── Generate a weekly review via API directly (the dialog hardcodes
     //    accountId='default', so use the API with the test's accountId) ──
@@ -215,7 +228,7 @@ test.describe('M004 review system flow', () => {
     // Grade Trends should show the grade label from the weekly review
     // Use a more specific locator — the grade badge inside the Grade Trends table
     const gradeTrendsSection = page.locator('h2').filter({ hasText: 'Grade Trends' }).locator('..');
-    await expect(gradeTrendsSection.getByText(GRADE_LABEL)).toBeVisible();
+    await expect(gradeTrendsSection.getByText(GRADE_LABEL).first()).toBeVisible();
 
     // Mistake Frequency should show the mistakes we created
     await expect(page.getByText('Mistake Frequency')).toBeVisible();

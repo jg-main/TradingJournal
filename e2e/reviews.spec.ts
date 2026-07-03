@@ -12,7 +12,7 @@ test.describe('Reviews', () => {
     await page.goto('/reviews');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByRole('button', { name: 'Generate Review' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Generate Review' }).first()).toBeVisible();
   });
 
   test('shows reviews list or empty state', async ({ page }) => {
@@ -41,7 +41,7 @@ test.describe('Reviews', () => {
     await page.waitForLoadState('networkidle');
 
     // Click Generate Review button
-    await page.getByRole('button', { name: 'Generate Review' }).click();
+    await page.getByRole('button', { name: 'Generate Review' }).first().click();
 
     // Dialog should appear
     await expect(page.getByText('Generate Weekly Review')).toBeVisible();

@@ -36,7 +36,22 @@ test.describe('M003 cross-slice flow', () => {
     await expect(page.locator('h1')).toContainText('M003FLOW');
     console.log('Trade detail page renders correctly');
 
-    // ── Step 4: Add a stop adjustment via API ──────────────────────────────
+    // ── Step 4: Execute the trade so it becomes 'open' ───────────────────────
+    // PlannedPhaseView does not render stop adjustments; the trade must be open first
+    const execRes = await page.request.post(`/api/trades/${trade.id}/executions`, {
+      data: {
+        action: 'buy',
+        quantity: 100,
+        price: 152.00,
+        fees: 2.50,
+      },
+    });
+    expect(execRes.ok()).toBeTruthy();
+    const tAfter = await (await page.request.get(`/api/trades/${trade.id}`)).json();
+    expect(tAfter.status).toBe('open');
+    console.log(`Trade status after execution: ${tAfter.status}`);
+
+    // ── Step 5: Add a stop adjustment via API ──────────────────────────────
     const adjRes = await page.request.post(`/api/trades/${trade.id}/stop-adjustments`, {
       data: {
         previousStop: 150.00,
@@ -51,11 +66,12 @@ test.describe('M003 cross-slice flow', () => {
     expect(adjustment.reason).toBe('Earnings support level');
     console.log(`Created stop adjustment ${adjustment.id}`);
 
-    // ── Step 5: Navigate to trade detail and verify stop adjustment appears ─
+    // ── Step 6: Navigate to trade detail and verify stop adjustment appears ─
     await page.goto(`/trades/${trade.id}`);
     await page.waitForLoadState('networkidle');
 
     // The stop adjustment should be visible somewhere on the page
+    // TradeStopAdjustmentsCard renders the reason in a table cell for 'open' trades
     await expect(page.getByText('Earnings support level', { exact: false })).toBeVisible();
     console.log('Stop adjustment visible on trade detail page');
 
@@ -63,7 +79,7 @@ test.describe('M003 cross-slice flow', () => {
     const assetRes = await page.request.post(`/api/trades/${trade.id}/assets`, {
       data: {
         assetType: 'link',
-        phase: 'pre_trade',
+        phase: 'entry',
         externalUrl: 'https://example.com/m003-chart',
         label: 'M003 Reference Chart',
         notes: 'Key support/resistance levels',
