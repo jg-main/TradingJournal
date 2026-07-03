@@ -135,6 +135,15 @@ sqlite.exec(`
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
+  CREATE TABLE IF NOT EXISTS watchlist_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    status TEXT DEFAULT 'watching',
+    promoted_trade_id TEXT,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
 `);
 
 // ── Simulated route logic ───────────────────────────────────────────
@@ -226,19 +235,17 @@ function doDeleteTrade(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
-    // Hard delete: nullify watchlist FK references, then delete the trade row
-    db.transaction((tx) => {
-      tx.update(schema.watchlistItems)
-        .set({ promotedTradeId: null })
-        .where(eq(schema.watchlistItems.promotedTradeId, id))
-        .run();
+    // Hard delete: nullify watchlist FK references first, then delete
+    db.update(schema.watchlistItems)
+      .set({ promotedTradeId: null })
+      .where(eq(schema.watchlistItems.promotedTradeId, id))
+      .run();
 
-      tx.delete(schema.trades)
-        .where(eq(schema.trades.id, id))
-        .run();
-    });
+    db.delete(schema.trades)
+      .where(eq(schema.trades.id, id))
+      .run();
 
-    return { status: 204, data: null };
+    return { status: 200, data: { message: 'Trade deleted' } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to delete trade', details: String(error) } };
   }
@@ -416,9 +423,9 @@ console.log('\n6. PUT returns 404 for nonexistent id:');
   assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
 }
 
-// ── 7. DELETE: Hard-deletes trade (removes from DB) and returns 204
+// ── 7. DELETE: Hard-deletes trade permanently ───────────────────────
 
-console.log('\n7. DELETE hard-deletes trade and returns 204:');
+console.log('\n7. DELETE hard-deletes trade permanently from DB:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
@@ -426,12 +433,12 @@ console.log('\n7. DELETE hard-deletes trade and returns 204:');
 
   const result = doDeleteTrade(trade.id as string);
 
-  assert(result.status === 204, 'returns 204');
-  assertEqual(result.data, null, 'body is null');
+  assert(result.status === 200, 'returns 200');
+  assertEqual((result.data as { message: string }).message, 'Trade deleted', 'message matches');
 
-  // Verify DB: trade row is gone
-  const deleted = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get();
-  assertEqual(deleted, undefined, 'trade row is removed from database');
+  // Verify DB: row no longer exists
+  const updated = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown> | undefined;
+  assert(updated === undefined, 'trade is permanently removed from DB');
 }
 
 // ── 8. DELETE: 404 for nonexistent id ──────────────────────────────

@@ -123,7 +123,7 @@ sqlite.exec(`
     sector_id TEXT,
     setup_id TEXT REFERENCES lookup_values(id),
     market_condition_id TEXT,
-    status TEXT NOT NULL CHECK(status IN ('idea','planned','open','partially_closed','closed','scratched')),
+    status TEXT NOT NULL CHECK(status IN ('planned','open','closed','deleted')),
     planned_entry REAL,
     planned_stop REAL,
     planned_target_1 REAL,

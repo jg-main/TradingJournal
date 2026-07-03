@@ -5,14 +5,201 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { EmptyState } from '@/components/empty-state';
-import { calculatePnL, calculateRMultiple, deriveTradeStatus } from '@/lib/trade-calc';
-import { toExecutionData, formatDate } from '@/components/trade-detail/helpers';
-import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset, TradeGrade, TradeMistake, LookupValue } from '@/components/trade-detail/types';
-import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
-import PlannedPhaseView from '@/components/trade-detail/planned-phase-view';
-import ActivePhaseView from '@/components/trade-detail/active-phase-view';
-import ClosedPhaseView from '@/components/trade-detail/closed-phase-view';
-import DeletedPhaseView from '@/components/trade-detail/deleted-phase-view';
+import { LifecycleStepper } from '@/components/lifecycle-stepper';
+import {
+  calculatePnL,
+  calculateRMultiple,
+  deriveTradeStatus,
+  type ExecutionData,
+} from '@/lib/trade-calc';
+import { calculateGrade, type GradeScores } from '@/lib/grading';
+
+// ── Types ──────────────────────────────────────────────────────────────
+
+interface Trade {
+  id: string;
+  tradeCode: string;
+  symbol: string;
+  direction: 'long' | 'short';
+  setupId: string | null;
+  marketConditionId: string | null;
+  status: 'planned' | 'open' | 'closed' | 'deleted';
+  plannedEntry: number | null;
+  plannedStop: number | null;
+  plannedTarget1: number | null;
+  plannedTarget2: number | null;
+  thesis: string | null;
+  invalidationCondition: string | null;
+  preTradePlan: string | null;
+  openedAt: string | null;
+  closedAt: string | null;
+  exitNotes: string | null;
+  lesson: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+interface Execution {
+  id: string;
+  tradeId: string;
+  action: string;
+  quantity: number;
+  price: number;
+  fees: number | null;
+  executedAt: string | null;
+  reasonId: string | null;
+  notes: string | null;
+  createdAt: string | null;
+}
+
+interface RiskSnapshot {
+  id: string;
+  tradeId: string;
+  accountEquityAtOpen: number | null;
+  initialEntryPrice: number | null;
+  initialStopPrice: number | null;
+  initialQuantity: number | null;
+  riskPerShare: number | null;
+  initialRiskAmount: number | null;
+  accountRiskPct: number | null;
+  plannedRewardRisk: number | null;
+  createdAt: string | null;
+}
+
+interface StopAdjustment {
+  id: string;
+  tradeId: string;
+  adjustedAt: string | null;
+  previousStop: number | null;
+  newStop: number | null;
+  reason: string | null;
+  ruleBased: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+}
+
+interface TradeAsset {
+  id: string;
+  tradeId: string;
+  assetType: 'screenshot' | 'document' | 'link' | 'image' | 'other';
+  phase: 'pre_trade' | 'entry' | 'management' | 'exit' | 'review';
+  label: string | null;
+  filePath: string | null;
+  externalUrl: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+interface TradeGrade {
+  id: string;
+  tradeId: string;
+  setupQualityScore: number;
+  riskQualityScore: number;
+  entryQualityScore: number;
+  managementQualityScore: number;
+  exitQualityScore: number;
+  reviewQualityScore: number;
+  totalScore: number;
+  gradeLabel: string;
+  followedPlan: boolean | null;
+  ruleViolation: boolean | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface TradeMistake {
+  id: string;
+  tradeId: string;
+  mistakeTypeId: string | null;
+  phase: 'pre_trade' | 'entry' | 'management' | 'exit' | 'review';
+  severity: 'minor' | 'moderate' | 'major' | 'critical';
+  rootCause: string | null;
+  correctiveAction: string | null;
+  status: 'open' | 'addressed' | 'improved' | 'resolved';
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+interface LookupValue {
+  id: string;
+  type: string;
+  value: string;
+  description: string | null;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+function statusBadgeVariant(status: Trade['status']): {
+  variant: 'default' | 'secondary' | 'destructive' | 'outline';
+  className: string;
+} {
+  switch (status) {
+    case 'planned':
+      return { variant: 'secondary', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
+    case 'open':
+      return { variant: 'default', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+    case 'closed':
+      return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400' };
+    case 'deleted':
+      return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400 line-through' };
+  }
+}
+
+function formatPrice(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '-';
+  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatCurrency(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '-';
+  const abs = Math.abs(v);
+  const formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v >= 0 ? `$${formatted}` : `-$${formatted}`;
+}
+
+function formatDate(d: string | null): string {
+  if (!d) return '-';
+  try {
+    return new Date(d).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return d;
+  }
+}
+
+function formatAction(action: string): string {
+  const labels: Record<string, string> = {
+    buy: 'Buy',
+    sell: 'Sell',
+    buy_to_cover: 'Buy to Cover',
+    sell_short: 'Sell Short',
+    add: 'Add',
+    reduce: 'Reduce',
+  };
+  return labels[action] ?? action;
+}
+
+function toExecutionData(executions: Execution[]): ExecutionData[] {
+  return executions.map((e) => ({
+    action: e.action,
+    quantity: e.quantity,
+    price: e.price,
+    fees: e.fees ?? 0,
+    executedAt: e.executedAt ?? e.createdAt ?? '',
+  }));
+}
+
+function statusLabel(status: Trade['status']): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+// ── Page ───────────────────────────────────────────────────────────────
 
 export default function TradeDetailPage() {
   const params = useParams();

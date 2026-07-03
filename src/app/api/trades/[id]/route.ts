@@ -135,19 +135,17 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Hard delete: nullify watchlist FK references, then delete the trade row
-    db.transaction((tx) => {
-      tx.update(watchlistItems)
-        .set({ promotedTradeId: null })
-        .where(eq(watchlistItems.promotedTradeId, id))
-        .run();
+    // Hard delete: nullify watchlist FK references first, then delete
+    db.update(watchlistItems)
+      .set({ promotedTradeId: null })
+      .where(eq(watchlistItems.promotedTradeId, id))
+      .run();
 
-      tx.delete(trades)
-        .where(eq(trades.id, id))
-        .run();
-    });
+    db.delete(trades)
+      .where(eq(trades.id, id))
+      .run();
 
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json({ message: 'Trade deleted' });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to delete trade', details: String(error) },

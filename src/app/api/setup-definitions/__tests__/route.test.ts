@@ -101,7 +101,7 @@ sqlite.exec(`
     symbol TEXT NOT NULL,
     direction TEXT NOT NULL CHECK(direction IN ('long','short')),
     setup_id TEXT REFERENCES lookup_values(id),
-    status TEXT NOT NULL CHECK(status IN ('idea','planned','open','partially_closed','closed','scratched')),
+    status TEXT NOT NULL CHECK(status IN ('planned','open','closed','deleted')),
     entry_price REAL,
     exit_price REAL,
     quantity REAL,

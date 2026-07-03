@@ -60,6 +60,8 @@ interface Trade {
   plannedStop: number | null;
   plannedTarget1: number | null;
   plannedTarget2: number | null;
+  invalidationCondition: string | null;
+  preTradePlan: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
   createdAt: string | null;
 }
@@ -292,7 +294,7 @@ export default function TradesPage() {
   };
 
   const handleDelete = async (id: string, tradeCode: string) => {
-    if (!confirm(`Delete trade "${tradeCode}"? This will permanently delete it.`)) return;
+    if (!confirm(`Delete trade "${tradeCode}"? This will permanently remove it and all its executions.`)) return;
 
     try {
       const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
@@ -397,6 +399,43 @@ export default function TradesPage() {
                     readOnly={!!editingId}
                   />
                 </div>
+      {/* Trade Log Filter Bar */}
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Search</label>
+          <input
+            type="text"
+            placeholder="Symbol, setup, thesis..."
+            className="h-8 w-44 rounded-lg border border-input bg-transparent px-2.5 text-sm text-zinc-900 transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/50 dark:text-zinc-100"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Direction</label>
+          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
+            <option value="">All</option>
+            <option value="long">Long</option>
+            <option value="short">Short</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Status</label>
+          <select className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100">
+            <option value="">All</option>
+            <option value="planned">Planned</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+            <option value="deleted">Deleted</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">From</label>
+          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">To</label>
+          <input type="date" className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-zinc-900 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]" />
+        </div>
+      </div>
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -410,6 +449,22 @@ export default function TradesPage() {
                   >
                     <option value="long">Long</option>
                     <option value="short">Short</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Status
+                  </label>
+                  <select
+                    value={form.status}
+                    onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as Trade['status'] }))}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  >
+                    <option value="planned">Planned</option>
+                    <option value="open">Open</option>
+                    <option value="closed">Closed</option>
+                    <option value="deleted">Deleted</option>
                   </select>
                 </div>
               </div>
