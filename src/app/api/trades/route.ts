@@ -163,12 +163,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate tradeCode: T-XXXX
-    const countResult = db
-      .select({ count: sql<number>`COUNT(*)` })
+    // Use MAX(trade_code) to find the highest existing code, handling gaps from
+    // stale data, deletions, or re-used test databases.
+    const maxResult = db
+      .select({ max: sql<string | null>`MAX(trade_code)` })
       .from(trades)
       .get();
 
-    const nextNumber = (countResult?.count ?? 0) + 1;
+    let nextNumber = 1;
+    if (maxResult?.max) {
+      const match = maxResult.max.match(/T-(\d+)/);
+      if (match) {
+        nextNumber = parseInt(match[1], 10) + 1;
+      }
+    }
     const tradeCode = `T-${String(nextNumber).padStart(4, '0')}`;
 
     // Use setupId directly if provided, otherwise resolve setup name to UUID
