@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('M012 Trade Lifecycle', () => {
+  test.describe.configure({ mode: 'serial' });
   test('plan a trade via API and verify Planned status on trade log', async ({ page }) => {
     // Create a test account
     const accRes = await page.request.post('/api/accounts', {
@@ -119,7 +120,7 @@ test.describe('M012 Trade Lifecycle', () => {
     await expect(page.locator('[data-slot="badge"]').filter({ hasText: 'Closed' }).first()).toBeVisible();
 
     // Lifecycle stepper shows at least step 5 (Exit) for closed trades
-    await expect(page.getByText('Exit')).toBeVisible();
+    await expect(page.getByText('Exit', { exact: true })).toBeVisible();
 
     // Closed trades render TradeGradeCard (always rendered, even without grade data)
     // CardTitle renders as a <div data-slot="card-title">, not a heading role
