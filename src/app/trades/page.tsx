@@ -472,14 +472,14 @@ export default function TradesPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-3 sm:px-8 sm:py-10">
+      <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
         <p className="text-sm text-zinc-500">Loading trades...</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-3 sm:px-8 sm:py-10">
+    <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
