@@ -211,7 +211,17 @@ export default function TradeDetailPage() {
           if (lookupRes.ok) setMistakeTypes(await lookupRes.json());
         }
       } catch (err) {
-        if (!cancelled) setError(String(err));
+        if (!cancelled) {
+          // Detect transient navigation aborts — not real errors
+          if (
+            (err instanceof DOMException && err.name === 'AbortError') ||
+            (err instanceof TypeError && /abort/i.test(err.message)) ||
+            (err instanceof TypeError && /cancelled/i.test(err.message))
+          ) {
+            return;
+          }
+          setError(String(err));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
