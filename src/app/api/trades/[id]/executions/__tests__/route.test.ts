@@ -287,10 +287,6 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
       return { status: 400, data: { error: 'Cannot add executions to a scratched trade' } };
     }
 
-    if (tradeRec.status === 'closed') {
-      return { status: 400, data: { error: 'Cannot add executions to a closed trade' } };
-    }
-
     if (!DIRECTION_ACTIONS[tradeRec.direction as string]?.includes(action as string)) {
       return {
         status: 400,
@@ -794,23 +790,35 @@ console.log('\n11. POST returns 400 for scratched trade:');
   assert(data.error.includes('scratched'), 'error mentions scratched');
 }
 
-// ── 12. POST: Returns 400 for closed trade ──────────────────────────
+// ── 12. POST: Successfully adds execution to a closed trade ───────────
 
-console.log('\n12. POST returns 400 for closed trade:');
+console.log('\n12. POST successfully adds execution to a closed trade:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
   const trade = seedTrade({ accountId: 'test-account-id', status: 'closed' });
 
+  // Seed executions to make it properly closed (buy 100, then sell 100)
+  seedExecution({ tradeId: trade.id, action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+  seedExecution({ tradeId: trade.id, action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-01T11:00:00Z' });
+
+  // Now add an additional exit execution on the closed trade
   const result = doPostExecution(trade.id as string, {
-    action: 'buy',
+    action: 'sell',
     quantity: 100,
-    price: 150.0,
+    price: 162.0,
   });
 
-  assert(result.status === 400, 'returns 400');
-  const data = result.data as { error: string };
-  assert(data.error.includes('closed'), 'error mentions closed');
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.id, 'has id');
+  assertEqual(data.action, 'sell', 'action matches');
+  assertEqual(data.quantity, 100, 'quantity matches');
+  assertEqual(data.price, 162.0, 'price matches');
+
+  // Trade status should remain closed
+  const updatedTrade = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(updatedTrade.status, 'closed', 'trade status remains closed');
 }
 
 // ── 13. POST: Validates action-direction compatibility for long trade ──

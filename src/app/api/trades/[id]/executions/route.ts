@@ -108,12 +108,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (trade.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Cannot add executions to a closed trade' },
-        { status: 400 },
-      );
-    }
 
     // ── Action-direction validation ────────────────────────────
 
