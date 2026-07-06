@@ -31,6 +31,7 @@ interface ClosedPhaseViewProps {
   onAssetsChanged: () => Promise<void>;
   onMistakesChanged: () => Promise<void>;
   onGradeSave: (payload: GradeFormPayload) => Promise<void>;
+  onExecutionAdded?: () => void;
 }
 
 export default function ClosedPhaseView({
@@ -48,6 +49,7 @@ export default function ClosedPhaseView({
   onAssetsChanged,
   onMistakesChanged,
   onGradeSave,
+  onExecutionAdded,
 }: ClosedPhaseViewProps) {
   const badgeInfo = statusBadgeVariant(trade.status);
 

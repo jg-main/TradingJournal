@@ -176,6 +176,7 @@ export default function TradeDetailPage() {
   const [grade, setGrade] = useState<TradeGrade | null>(null);
   const [mistakes, setMistakes] = useState<TradeMistake[]>([]);
   const [mistakeTypes, setMistakeTypes] = useState<LookupValue[]>([]);
+  const [refetchTrigger, setRefetchTrigger] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,7 +218,7 @@ export default function TradeDetailPage() {
     }
     loadData();
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, refetchTrigger]);
 
   const execData = trade ? toExecutionData(executions) : [];
   const pnlResult = trade && executions.length > 0 ? calculatePnL(execData, trade.direction) : null;
@@ -244,6 +245,12 @@ export default function TradeDetailPage() {
   const handleAssetsChanged = async () => { const res = await fetch(`/api/trades/${id}/assets`); if (res.ok) setAssets(await res.json()); };
   const handleMistakesChanged = async () => { const [mR, tR] = await Promise.all([fetch(`/api/trades/${id}/mistakes`), fetch('/api/lookups?type=mistake_type')]); if (mR.ok) setMistakes(await mR.json()); if (tR.ok) setMistakeTypes(await tR.json()); };
 
+  const handleExecutionAdded = async () => {
+    const res = await fetch(`/api/trades/${id}/executions`);
+    if (res.ok) setExecutions(await res.json());
+    setRefetchTrigger((n) => n + 1);
+  };
+
   if (loading) return (
     <div className="mx-auto flex max-w-4xl items-center justify-center px-8 py-20">
       <Loader2 className="mr-2 size-5 animate-spin text-zinc-400" />
@@ -263,8 +270,8 @@ export default function TradeDetailPage() {
       <Link href="/trades" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"><ArrowLeft className="size-4" />Back to Trade Log</Link>
 
       {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} />}
-      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onRiskSnapshotSave={handleRiskSnapshotSave} />}
-      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} stopAdjustments={stopAdjustments} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} />}
+      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onRiskSnapshotSave={handleRiskSnapshotSave} onExecutionAdded={handleExecutionAdded} />}
+      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} stopAdjustments={stopAdjustments} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
 
       <p className="mt-8 text-xs text-zinc-400 dark:text-zinc-600">Created {formatDate(trade.createdAt)}{trade.updatedAt && ` · Updated ${formatDate(trade.updatedAt)}`}</p>
