@@ -503,7 +503,7 @@ export default function TradesPage() {
             </button>
           </DialogTrigger>
           <DialogContent
-            className="sm:max-w-2xl"
+            className="max-w-2xl"
             onInteractOutside={(e) => e.preventDefault()}
             onPointerDownOutside={(e) => e.preventDefault()}
             onFocusOutside={(e) => e.preventDefault()}
