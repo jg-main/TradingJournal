@@ -60,6 +60,7 @@ interface Trade {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
+  plannedQuantity: number | null;
   setupId: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
@@ -85,6 +86,7 @@ interface TradeForm {
   plannedEntry: string;
   plannedStop: string;
   plannedTarget1: string;
+  plannedQuantity: string;
 }
 
 const EMPTY_FORM: TradeForm = {
@@ -96,6 +98,7 @@ const EMPTY_FORM: TradeForm = {
   plannedEntry: '',
   plannedStop: '',
   plannedTarget1: '',
+  plannedQuantity: '',
 };
 
 type ExecutionAction = 'buy' | 'sell' | 'buy_to_cover' | 'sell_short' | 'add' | 'reduce';
@@ -319,6 +322,7 @@ export default function TradesPage() {
       plannedEntry: item.plannedEntry?.toString() ?? '',
       plannedStop: item.plannedStop?.toString() ?? '',
       plannedTarget1: item.plannedTarget1?.toString() ?? '',
+      plannedQuantity: item.plannedQuantity?.toString() ?? '',
     });
     setEditingId(item.id);
     setDialogOpen(true);
@@ -348,6 +352,7 @@ export default function TradesPage() {
         plannedEntry: form.plannedEntry ? parseFloat(form.plannedEntry) : null,
         plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
         plannedTarget1: form.plannedTarget1 ? parseFloat(form.plannedTarget1) : null,
+        plannedQuantity: form.plannedQuantity ? parseFloat(form.plannedQuantity) : null,
         accountId: form.accountId || null,
       };
 

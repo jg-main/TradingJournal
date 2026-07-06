@@ -22,6 +22,7 @@ export interface ExecuteTradeData {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
+  plannedQuantity: number | null;
 }
 
 interface ExecuteDialogProps {

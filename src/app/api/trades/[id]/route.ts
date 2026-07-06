@@ -14,6 +14,7 @@ const updateTradeSchema = z.object({
   plannedEntry: z.number().nullable().optional(),
   plannedStop: z.number().nullable().optional(),
   plannedTarget1: z.number().nullable().optional(),
+  plannedQuantity: z.number().nullable().optional(),
 
   invalidationCondition: z.string().nullable().optional(),
   preTradePlan: z.string().nullable().optional(),
@@ -96,6 +97,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (parsed.data.plannedEntry !== undefined) updateData.plannedEntry = parsed.data.plannedEntry;
     if (parsed.data.plannedStop !== undefined) updateData.plannedStop = parsed.data.plannedStop;
     if (parsed.data.plannedTarget1 !== undefined) updateData.plannedTarget1 = parsed.data.plannedTarget1;
+    if (parsed.data.plannedQuantity !== undefined) updateData.plannedQuantity = parsed.data.plannedQuantity;
 
     if (parsed.data.invalidationCondition !== undefined) updateData.invalidationCondition = parsed.data.invalidationCondition;
     if (parsed.data.preTradePlan !== undefined) updateData.preTradePlan = parsed.data.preTradePlan;

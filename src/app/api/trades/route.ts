@@ -17,6 +17,7 @@ const createTradeSchema = z.object({
   plannedEntry: z.number().nullable().optional(),
   plannedStop: z.number().nullable().optional(),
   plannedTarget1: z.number().nullable().optional(),
+  plannedQuantity: z.number().nullable().optional(),
 
   invalidationCondition: z.string().nullable().optional(),
   preTradePlan: z.string().nullable().optional(),
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
         plannedEntry: trades.plannedEntry,
         plannedStop: trades.plannedStop,
         plannedTarget1: trades.plannedTarget1,
+        plannedQuantity: trades.plannedQuantity,
 
         invalidationCondition: trades.invalidationCondition,
         preTradePlan: trades.preTradePlan,
@@ -196,6 +198,7 @@ export async function POST(request: NextRequest) {
         plannedEntry: parsed.data.plannedEntry ?? null,
         plannedStop: parsed.data.plannedStop ?? null,
         plannedTarget1: parsed.data.plannedTarget1 ?? null,
+        plannedQuantity: parsed.data.plannedQuantity ?? null,
 
         invalidationCondition: parsed.data.invalidationCondition ?? null,
         preTradePlan: preTradePlanValue,

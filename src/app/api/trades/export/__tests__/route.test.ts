@@ -422,6 +422,7 @@ function doGetExport(queryAccountId?: string | null): ExportRouteResult {
         plannedEntry: trade.plannedEntry ?? null,
         plannedStop: trade.plannedStop ?? null,
         plannedTarget1: trade.plannedTarget1 ?? null,
+        plannedQuantity: trade.plannedQuantity ?? null,
         thesis: trade.thesis ?? null,
         invalidationCondition: trade.invalidationCondition ?? null,
         preTradePlan: trade.preTradePlan ?? null,
