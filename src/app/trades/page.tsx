@@ -768,7 +768,7 @@ export default function TradesPage() {
 
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label htmlFor="plannedEntry" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
                     Planned Entry
@@ -811,6 +811,21 @@ export default function TradesPage() {
                     onChange={(e) => setForm((f) => ({ ...f, plannedTarget1: e.target.value }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="plannedQuantity" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    Qty
+                  </label>
+                  <input
+                    id="plannedQuantity"
+                    type="number"
+                    step="any"
+                    value={form.plannedQuantity}
+                    onChange={(e) => setForm((f) => ({ ...f, plannedQuantity: e.target.value }))}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    placeholder="0"
                   />
                 </div>
 
