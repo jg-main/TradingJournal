@@ -117,6 +117,7 @@ sqlite.exec(`
     planned_stop REAL,
     planned_target_1 REAL,
     planned_target_2 REAL,
+    planned_quantity REAL,
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
@@ -235,6 +236,7 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
         plannedEntry: (body.plannedEntry as number) ?? null,
         plannedStop: (body.plannedStop as number) ?? null,
         plannedTarget1: (body.plannedTarget1 as number) ?? null,
+        plannedQuantity: (body.plannedQuantity as number) ?? null,
         invalidationCondition: (body.invalidationCondition as string) ?? null,
         preTradePlan: (body.preTradePlan as string) ?? null,
         createdAt: now,
@@ -488,9 +490,35 @@ console.log('\n9. POST picks first active account when no default settings:');
   assertEqual(data.accountId, account1.id, 'accountId matches first active account');
 }
 
-// ── 10. POST: Returns 400 with no active accounts ───────────────────
+// ── 10. POST: With plannedQuantity 100 returns plannedQuantity in response ─
 
-console.log('\n10. POST returns 400 when no active accounts exist:');
+console.log('\n10. POST with plannedQuantity 100 returns plannedQuantity in response:');
+{
+  cleanup();
+  seedAccount({ name: 'Trading Account' });
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', plannedQuantity: 100 });
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.plannedQuantity, 100, 'plannedQuantity = 100 in POST response');
+}
+
+// ── 11. POST: Without plannedQuantity returns null ────────────────────
+
+console.log('\n11. POST without plannedQuantity returns null:');
+{
+  cleanup();
+  seedAccount({ name: 'Trading Account' });
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.plannedQuantity, null, 'plannedQuantity is null when not provided');
+}
+
+// ── 12. POST: Returns 400 with no active accounts ───────────────────
+
+console.log('\n12. POST returns 400 when no active accounts exist:');
 {
   cleanup();
   const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });

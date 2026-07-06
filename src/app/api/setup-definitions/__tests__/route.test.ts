@@ -105,6 +105,7 @@ sqlite.exec(`
     entry_price REAL,
     exit_price REAL,
     quantity REAL,
+    planned_quantity REAL,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );

@@ -96,6 +96,7 @@ sqlite.exec(`
     planned_stop REAL,
     planned_target_1 REAL,
     planned_target_2 REAL,
+    planned_quantity REAL,
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
