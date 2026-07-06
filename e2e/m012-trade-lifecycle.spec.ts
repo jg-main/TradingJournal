@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('M012 Trade Lifecycle', () => {
+  test.describe.configure({ mode: 'serial' });
   test('plan a trade via API and verify Planned status on trade log', async ({ page }) => {
     // Create a test account
     const accRes = await page.request.post('/api/accounts', {
@@ -119,7 +120,7 @@ test.describe('M012 Trade Lifecycle', () => {
     await expect(page.locator('[data-slot="badge"]').filter({ hasText: 'Closed' }).first()).toBeVisible();
 
     // Lifecycle stepper shows at least step 5 (Exit) for closed trades
-    await expect(page.getByText('Exit')).toBeVisible();
+    await expect(page.getByText('Exit', { exact: true })).toBeVisible();
 
     // Closed trades render TradeGradeCard (always rendered, even without grade data)
     // CardTitle renders as a <div data-slot="card-title">, not a heading role
@@ -127,6 +128,75 @@ test.describe('M012 Trade Lifecycle', () => {
     // P&L-R Metrics is always present for closed trades with executions
     // Exit Notes is conditionally rendered only when exitNotes or lesson exist
     await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' })).toBeVisible();
+  });
+
+  test('open trade detail page renders and full lifecycle flows correctly', async ({ page }) => {
+    // Create a test account
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: 'E2E Lifecycle Test', isActive: true, startingBalance: 50000 },
+    });
+    expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+
+    // Create a planned trade
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'META', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+    expect(trade.status).toBe('planned');
+
+    // Execute entry-only via API (no exit data) → status becomes 'open'
+    const execRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: {
+        entryPrice: 580.0,
+        entryQuantity: 100,
+        stopPrice: 560.0,
+        fees: 5.0,
+      },
+    });
+    expect(execRes.ok()).toBeTruthy();
+    const execData = await execRes.json();
+    expect(execData.trade.status).toBe('open');
+
+    // Navigate to trade log → verify Open badge
+    await page.goto('/trades');
+    await expect(page.locator('h1')).toContainText('Trade Log');
+    const row = page.locator('tr').filter({ hasText: 'META' }).first();
+    await expect(row).toBeVisible();
+    await expect(row.getByText('Open')).toBeVisible();
+
+    // Navigate to trade detail → verify h1 contains 'META' (proves no ERR_ABORTED crash)
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await expect(page.locator('h1')).toContainText('META');
+
+    // Verify Add Exit button is visible
+    await expect(page.getByRole('button', { name: /add exit/i })).toBeVisible();
+
+    // Verify lifecycle stepper shows Execute step
+    await expect(page.getByText('Execute', { exact: true })).toBeVisible();
+
+    // Verify P&L-R Metrics card renders
+    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' })).toBeVisible();
+
+    // Verify Executions card renders
+    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Executions' })).toBeVisible();
+
+    // Add partial exit (sell, qty 50)
+    const partialExitRes = await page.request.post(`/api/trades/${trade.id}/executions`, {
+      data: { action: 'sell', quantity: 50, price: 600.0, fees: 2.0 },
+    });
+    expect(partialExitRes.status()).toBe(201);
+
+    // Add full exit (sell, qty 50)
+    const fullExitRes = await page.request.post(`/api/trades/${trade.id}/executions`, {
+      data: { action: 'sell', quantity: 50, price: 610.0, fees: 2.0 },
+    });
+    expect(fullExitRes.status()).toBe(201);
+
+    // Navigate to detail page → verify Closed badge
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await expect(page.locator('[data-slot="badge"]').filter({ hasText: 'Closed' }).first()).toBeVisible();
   });
 
   test('delete a trade with confirmation and verify removal', async ({ page }) => {
@@ -163,7 +233,7 @@ test.describe('M012 Trade Lifecycle', () => {
     );
 
     // Click Remove on the M012-DEL row (use unique symbol to avoid clashing with other specs' MSFT data)
-    await page.locator('tr').filter({ hasText: 'M012-DEL' }).getByText('Remove').first().click();
+    await page.locator('tr').filter({ hasText: 'M012-DEL' }).locator('[title="Remove"]').first().click();
 
     // Wait for the trade log to refresh after deletion
     await refreshPromise;

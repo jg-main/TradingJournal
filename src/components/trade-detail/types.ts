@@ -15,6 +15,7 @@ export interface Trade {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
+  plannedQuantity: number | null;
   thesis: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;

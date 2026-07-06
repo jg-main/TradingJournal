@@ -132,6 +132,7 @@ function assert(condition: boolean, msg: string) {
       plannedEntry: 150.00,
       plannedStop: 145.00,
       plannedTarget1: 165.00,
+      plannedQuantity: 100,
       thesis: 'Strong earnings growth',
       invalidationCondition: 'Below 145 support',
       preTradePlan: 'Enter on breakout above 152',
@@ -198,7 +199,7 @@ function assert(condition: boolean, msg: string) {
       {
         tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
         setup: null, sector: null, marketCondition: null,
-        plannedEntry: null, plannedStop: null, plannedTarget1: null,
+        plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
         realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -212,7 +213,7 @@ function assert(condition: boolean, msg: string) {
       {
         tradeCode: 'T002', symbol: 'GOOGL', direction: 'short', status: 'open',
         setup: null, sector: null, marketCondition: null,
-        plannedEntry: null, plannedStop: null, plannedTarget1: null,
+        plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
         realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -237,7 +238,7 @@ function assert(condition: boolean, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: null, plannedStop: null, plannedTarget1: null,
+      plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
       thesis: 'Entry on breakout above $152.50, with stop at $149.00', // contains comma
       invalidationCondition: '"Below $145" is the key level', // contains quotes
       preTradePlan: 'Plan A:\nEnter at open\nPlan B:\nWait for pullback', // contains newlines
@@ -302,7 +303,7 @@ function assert(condition: boolean, msg: string) {
       {
         tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
         setup: null, sector: null, marketCondition: null,
-        plannedEntry: null, plannedStop: null, plannedTarget1: null,
+        plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
         realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -331,7 +332,7 @@ function assert(condition: boolean, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: null, plannedStop: null, plannedTarget1: null,
+      plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
       realizedPnL: null, rMultiple: null, avgEntryPrice: null,
@@ -373,7 +374,7 @@ function assert(condition: boolean, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: 150.5, plannedStop: 145, plannedTarget1: 165.75,
+      plannedEntry: 150.5, plannedStop: 145, plannedTarget1: 165.75, plannedQuantity: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
       realizedPnL: 1500, rMultiple: 3, avgEntryPrice: 150.5,
@@ -405,7 +406,7 @@ function assert(condition: boolean, msg: string) {
     const trade: ExportTradeRow = {
       tradeCode: 'T001', symbol: 'AAPL', direction: 'long', status: 'closed',
       setup: null, sector: null, marketCondition: null,
-      plannedEntry: null, plannedStop: null, plannedTarget1: null,
+      plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
       realizedPnL: null, rMultiple: null, avgEntryPrice: null,

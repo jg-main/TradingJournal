@@ -17,6 +17,7 @@ const createTradeSchema = z.object({
   plannedEntry: z.number().nullable().optional(),
   plannedStop: z.number().nullable().optional(),
   plannedTarget1: z.number().nullable().optional(),
+  plannedQuantity: z.number().nullable().optional(),
 
   invalidationCondition: z.string().nullable().optional(),
   preTradePlan: z.string().nullable().optional(),
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
         plannedEntry: trades.plannedEntry,
         plannedStop: trades.plannedStop,
         plannedTarget1: trades.plannedTarget1,
+        plannedQuantity: trades.plannedQuantity,
 
         invalidationCondition: trades.invalidationCondition,
         preTradePlan: trades.preTradePlan,
@@ -161,12 +163,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate tradeCode: T-XXXX
-    const countResult = db
-      .select({ count: sql<number>`COUNT(*)` })
+    // Use MAX(trade_code) to find the highest existing code, handling gaps from
+    // stale data, deletions, or re-used test databases.
+    const maxResult = db
+      .select({ max: sql<string | null>`MAX(trade_code)` })
       .from(trades)
       .get();
 
-    const nextNumber = (countResult?.count ?? 0) + 1;
+    let nextNumber = 1;
+    if (maxResult?.max) {
+      const match = maxResult.max.match(/T-(\d+)/);
+      if (match) {
+        nextNumber = parseInt(match[1], 10) + 1;
+      }
+    }
     const tradeCode = `T-${String(nextNumber).padStart(4, '0')}`;
 
     // Use setupId directly if provided, otherwise resolve setup name to UUID
@@ -196,6 +206,7 @@ export async function POST(request: NextRequest) {
         plannedEntry: parsed.data.plannedEntry ?? null,
         plannedStop: parsed.data.plannedStop ?? null,
         plannedTarget1: parsed.data.plannedTarget1 ?? null,
+        plannedQuantity: parsed.data.plannedQuantity ?? null,
 
         invalidationCondition: parsed.data.invalidationCondition ?? null,
         preTradePlan: preTradePlanValue,

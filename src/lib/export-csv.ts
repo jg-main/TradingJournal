@@ -34,6 +34,7 @@ export interface ExportTradeRow {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
+  plannedQuantity: number | null;
 
   // Trade narrative
   thesis: string | null;
@@ -161,6 +162,7 @@ export const CSV_COLUMNS: CsvColumn<ExportTradeRow>[] = [
   { key: 'plannedEntry', label: 'Planned Entry', format: formatNumber },
   { key: 'plannedStop', label: 'Planned Stop', format: formatNumber },
   { key: 'plannedTarget1', label: 'Planned Target 1', format: formatNumber },
+  { key: 'plannedQuantity', label: 'Planned Quantity', format: formatNumber },
 
   // Narrative
   { key: 'thesis', label: 'Thesis' },

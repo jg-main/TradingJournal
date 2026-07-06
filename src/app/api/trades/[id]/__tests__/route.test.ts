@@ -125,6 +125,7 @@ sqlite.exec(`
     planned_stop REAL,
     planned_target_1 REAL,
     planned_target_2 REAL,
+    planned_quantity REAL,
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
@@ -202,6 +203,7 @@ function doPutTrade(id: string, body: Record<string, unknown>): { status: number
     if (body.plannedEntry !== undefined) updateData.plannedEntry = body.plannedEntry;
     if (body.plannedStop !== undefined) updateData.plannedStop = body.plannedStop;
     if (body.plannedTarget1 !== undefined) updateData.plannedTarget1 = body.plannedTarget1;
+    if (body.plannedQuantity !== undefined) updateData.plannedQuantity = body.plannedQuantity;
     if (body.invalidationCondition !== undefined) updateData.invalidationCondition = body.invalidationCondition;
     if (body.preTradePlan !== undefined) updateData.preTradePlan = body.preTradePlan;
 
@@ -474,6 +476,34 @@ console.log('\n9. DELETE nullifies watchlist promotedTradeId:');
   // Verify trade is gone
   const deleted = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get();
   assertEqual(deleted, undefined, 'trade row is removed from database');
+}
+
+// ── 10. GET: Returns plannedQuantity matching what was posted ───────
+
+console.log('\n10. GET returns plannedQuantity matching what was posted:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', plannedQuantity: 100 });
+
+  const result = doGetTrade(trade.id as string);
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.plannedQuantity, 100, 'plannedQuantity = 100 returned by GET');
+}
+
+// ── 11. PUT: Can clear plannedQuantity by sending null ───────────────
+
+console.log('\n11. PUT clears plannedQuantity when sent null:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', plannedQuantity: 200 });
+
+  const result = doPutTrade(trade.id as string, { plannedQuantity: null });
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.plannedQuantity, null, 'plannedQuantity is cleared to null');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

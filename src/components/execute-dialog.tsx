@@ -22,6 +22,7 @@ export interface ExecuteTradeData {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
+  plannedQuantity: number | null;
 }
 
 interface ExecuteDialogProps {
@@ -48,13 +49,13 @@ function buildInitialState(trade: ExecuteTradeData): FormState {
   return {
     entryPrice: trade.plannedEntry?.toString() ?? '',
     stopPrice: trade.plannedStop?.toString() ?? '',
-    entryQuantity: '',
+    entryQuantity: trade.plannedQuantity?.toString() ?? '',
     exit1Price: trade.plannedTarget1?.toString() ?? '',
-    exit1Quantity: '',
+    exit1Quantity: trade.plannedQuantity?.toString() ?? '',
     showExit2: false,
     exit2Price: '',
     exit2Quantity: '',
-    executedAt: '',
+    executedAt: new Date().toISOString().slice(0, 16),
     fees: '0',
   };
 }
@@ -96,7 +97,7 @@ export function ExecuteDialog({
 
     const e1p = form.exit1Price.trim();
     const e1q = form.exit1Quantity.trim();
-    const hasExit1 = e1p !== '' || e1q !== '';
+    const hasExit1 = e1p !== '';
     if (hasExit1) {
       const p = parseFloat(e1p);
       const q = parseFloat(e1q);

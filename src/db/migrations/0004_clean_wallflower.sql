@@ -1,0 +1,1 @@
+ALTER TABLE `trades` ADD `planned_quantity` real;

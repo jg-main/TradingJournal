@@ -94,6 +94,7 @@ export const trades = sqliteTable('trades', {
   plannedStop: real('planned_stop'),
   plannedTarget1: real('planned_target_1'),
   plannedTarget2: real('planned_target_2'),
+  plannedQuantity: real('planned_quantity'),
   thesis: text('thesis'),
   invalidationCondition: text('invalidation_condition'),
   preTradePlan: text('pre_trade_plan'),

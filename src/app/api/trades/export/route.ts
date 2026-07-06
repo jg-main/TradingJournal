@@ -193,6 +193,7 @@ export async function GET(request: NextRequest) {
         plannedEntry: trade.plannedEntry ?? null,
         plannedStop: trade.plannedStop ?? null,
         plannedTarget1: trade.plannedTarget1 ?? null,
+        plannedQuantity: trade.plannedQuantity ?? null,
 
         // Trade narrative
         thesis: trade.thesis ?? null,

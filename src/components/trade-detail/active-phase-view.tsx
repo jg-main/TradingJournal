@@ -1,6 +1,7 @@
 'use client';
 
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { useState } from 'react';
+import { TrendingUp, TrendingDown, PlusCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import { statusBadgeVariant, statusLabel } from './helpers';
@@ -10,6 +11,8 @@ import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
 import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
+import { AddExitDialog } from '@/components/add-exit-dialog';
+import { Button } from '@/components/ui/button';
 import TradeAssetsCard from './trade-assets-card';
 import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
@@ -26,6 +29,7 @@ interface ActivePhaseViewProps {
   onAdjustmentAdded: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onRiskSnapshotSave: (payload: Record<string, number | null>) => Promise<void>;
+  onExecutionAdded?: () => void;
 }
 
 export default function ActivePhaseView({
@@ -40,7 +44,9 @@ export default function ActivePhaseView({
   onAdjustmentAdded,
   onAssetsChanged,
   onRiskSnapshotSave,
+  onExecutionAdded,
 }: ActivePhaseViewProps) {
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const badgeInfo = statusBadgeVariant(trade.status);
   const entryManagementAssets = assets.filter(
     (a) => a.phase === 'entry' || a.phase === 'management',
@@ -119,8 +125,39 @@ export default function ActivePhaseView({
 
       {/* Executions */}
       <div className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+            Executions
+          </h3>
+          {trade.status === 'open' && onExecutionAdded && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExitDialogOpen(true)}
+            >
+              <PlusCircle className="mr-1.5 size-3.5" />
+              Add Exit
+            </Button>
+          )}
+        </div>
         <TradeExecutionsCard executions={executions} />
       </div>
+
+      {/* Add Exit Dialog */}
+      <AddExitDialog
+        trade={{
+          id: trade.id,
+          symbol: trade.symbol,
+          direction: trade.direction,
+          plannedQuantity: trade.plannedQuantity,
+        }}
+        open={exitDialogOpen}
+        onOpenChange={setExitDialogOpen}
+        onComplete={() => {
+          onExecutionAdded?.();
+          setExitDialogOpen(false);
+        }}
+      />
 
       {/* Stop Adjustments */}
       <TradeStopAdjustmentsCard
