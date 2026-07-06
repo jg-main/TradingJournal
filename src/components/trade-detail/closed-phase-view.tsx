@@ -1,6 +1,7 @@
 'use client';
 
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { useState } from 'react';
+import { TrendingUp, TrendingDown, PlusCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import { statusBadgeVariant, statusLabel } from './helpers';
@@ -13,6 +14,8 @@ import type { GradeFormPayload } from './trade-grade-card';
 import TradeMistakesCard from './trade-mistakes-card';
 import TradeAssetsCard from './trade-assets-card';
 import TradeExitNotesCard from './trade-exit-notes-card';
+import { AddExitDialog } from '@/components/add-exit-dialog';
+import { Button } from '@/components/ui/button';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 
@@ -51,6 +54,7 @@ export default function ClosedPhaseView({
   onGradeSave,
   onExecutionAdded,
 }: ClosedPhaseViewProps) {
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const badgeInfo = statusBadgeVariant(trade.status);
 
   return (
@@ -117,8 +121,39 @@ export default function ClosedPhaseView({
 
       {/* Executions */}
       <div className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+            Executions
+          </h3>
+          {onExecutionAdded && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExitDialogOpen(true)}
+            >
+              <PlusCircle className="mr-1.5 size-3.5" />
+              Add Exit
+            </Button>
+          )}
+        </div>
         <TradeExecutionsCard executions={executions} />
       </div>
+
+      {/* Add Exit Dialog */}
+      <AddExitDialog
+        trade={{
+          id: trade.id,
+          symbol: trade.symbol,
+          direction: trade.direction,
+          plannedQuantity: trade.plannedQuantity,
+        }}
+        open={exitDialogOpen}
+        onOpenChange={setExitDialogOpen}
+        onComplete={() => {
+          onExecutionAdded?.();
+          setExitDialogOpen(false);
+        }}
+      />
 
       {/* Stop Adjustments */}
       <TradeStopAdjustmentsCard
