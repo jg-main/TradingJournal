@@ -37,16 +37,6 @@ function assertEqual(actual: unknown, expected: unknown, msg: string) {
   }
 }
 
-function assertNotNull(value: unknown, msg: string) {
-  if (value !== null && value !== undefined) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — value is null/undefined (FAILED)`);
-  }
-}
-
 // ── Setup: test DB ──────────────────────────────────────────────────
 
 const DB_FILE = process.env.DB_FILE_NAME || './.test-txns.db';
@@ -308,7 +298,7 @@ console.log('\n7. POST returns 400 for invalid type:');
 {
   cleanup();
   const acctId = seedAccount();
-  const result = doPostTransaction(acctId, { type: 'transfer', amount: 100 } as any);
+  const result = doPostTransaction(acctId, { type: 'transfer', amount: 100 });
   assert(result.status === 400, 'returns 400');
 }
 

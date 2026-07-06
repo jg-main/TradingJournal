@@ -225,7 +225,7 @@ console.log('\n4. POST creates account with name only:');
 console.log('\n5. POST returns 400 for missing name:');
 {
   cleanup();
-  const result = doPostAccount({ broker: 'IB' } as any);
+  const result = doPostAccount({ broker: 'IB' });
   assert(result.status === 400, 'returns 400');
 }
 

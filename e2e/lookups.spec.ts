@@ -40,7 +40,6 @@ test.describe('Lookups', () => {
     await page.waitForLoadState('networkidle');
 
     // Setups tab is default - verify it has the active class/look
-    const setupsTab = page.getByRole('button', { name: 'Setups' });
     const sectorsTab = page.getByRole('button', { name: 'Sectors' });
 
     // Get the class of the active tab to verify tab switching works

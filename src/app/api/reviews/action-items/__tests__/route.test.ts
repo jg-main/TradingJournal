@@ -30,26 +30,6 @@ function assert(condition: boolean, msg: string) {
   }
 }
 
-function assertDeep(
-  actual: Record<string, unknown>,
-  expected: Record<string, unknown>,
-  msg: string,
-) {
-  for (const key of Object.keys(expected)) {
-    const a = actual[key];
-    const e = expected[key];
-    if (JSON.stringify(a) !== JSON.stringify(e)) {
-      failed++;
-      console.error(
-        `  ❌ ${msg} — key "${key}" expected ${JSON.stringify(e)}, got ${JSON.stringify(a)} (FAILED)`,
-      );
-      return;
-    }
-  }
-  passed++;
-  console.log(`  ✅ ${msg}`);
-}
-
 // ── Setup: test DB ──────────────────────────────────────────────────
 
 const DB_FILE = process.env.DB_FILE_NAME || './.test-ms02-t06.db';
@@ -79,7 +59,7 @@ const VALID_STATUSES = ['open', 'in_progress', 'done', 'cancelled'] as const;
 
 function doPost(body: Record<string, unknown>): { status: number; data: Record<string, unknown> } {
   // Validate sourceType
-  if (!body.sourceType || !VALID_SOURCE_TYPES.includes(body.sourceType as any)) {
+  if (!body.sourceType || !VALID_SOURCE_TYPES.includes(body.sourceType as typeof VALID_SOURCE_TYPES[number])) {
     const fieldErrors: Record<string, string[]> = {};
     if (!body.sourceType) {
       fieldErrors.sourceType = ['Required'];
@@ -98,7 +78,7 @@ function doPost(body: Record<string, unknown>): { status: number; data: Record<s
   }
 
   // Validate status if provided
-  if (body.status !== undefined && !VALID_STATUSES.includes(body.status as any)) {
+  if (body.status !== undefined && !VALID_STATUSES.includes(body.status as typeof VALID_STATUSES[number])) {
     return {
       status: 400,
       data: { error: 'Validation failed', details: { fieldErrors: { status: [`Invalid enum value. Expected 'open' | 'in_progress' | 'done' | 'cancelled', received '${body.status}'`] } } },
@@ -139,13 +119,13 @@ function doGetList(filters?: {
   const conditions: ReturnType<typeof eq>[] = [];
 
   if (filters?.sourceType) {
-    conditions.push(eq(schema.reviewActionItems.sourceType, filters.sourceType as any));
+    conditions.push(eq(schema.reviewActionItems.sourceType, filters.sourceType as typeof VALID_SOURCE_TYPES[number]));
   }
   if (filters?.sourceId) {
     conditions.push(eq(schema.reviewActionItems.sourceId, filters.sourceId));
   }
   if (filters?.status) {
-    conditions.push(eq(schema.reviewActionItems.status, filters.status as any));
+    conditions.push(eq(schema.reviewActionItems.status, filters.status as typeof VALID_STATUSES[number]));
   }
 
   const query = db
@@ -183,7 +163,7 @@ function doPut(
   }
 
   // Validate status if provided
-  if (body.status !== undefined && !VALID_STATUSES.includes(body.status as any)) {
+  if (body.status !== undefined && !VALID_STATUSES.includes(body.status as typeof VALID_STATUSES[number])) {
     return {
       status: 400,
       data: { error: 'Validation failed', details: { fieldErrors: { status: [`Invalid enum value. Expected 'open' | 'in_progress' | 'done' | 'cancelled', received '${body.status}'`] } } },
@@ -520,7 +500,7 @@ console.log('\n19. DELETE removes an action item:');
 
   // Verify it's gone
   const list = doGetList();
-  const ids = list.data.map((i: any) => i.id);
+  const ids = list.data.map((i: Record<string, unknown>) => i.id);
   assert(!ids.includes(itemId), 'item no longer in list');
 }
 

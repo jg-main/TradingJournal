@@ -14,7 +14,7 @@ interface AppSettings {
 
 export default function AppSettingsPage() {
   const router = useRouter();
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [, setSettings] = useState<AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);

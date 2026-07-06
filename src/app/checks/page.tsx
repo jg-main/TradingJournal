@@ -278,6 +278,7 @@ export default function ChecksPage() {
       if (stored) {
         const parsed = JSON.parse(stored) as ChecklistTemplate[];
         if (Array.isArray(parsed) && parsed.length > 0) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setTemplates(parsed);
           return;
         }

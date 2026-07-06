@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 
@@ -209,7 +209,7 @@ function doPromoteWatchlistItem(id: string): { status: number; data: unknown } {
         tradeCode,
         accountId,
         symbol: item.symbol as string,
-        direction: item.direction as string,
+        direction: item.direction as 'long' | 'short',
         sectorId: (item.sectorId as string) ?? null,
         setupId: (item.setupId as string) ?? null,
         status: 'planned',
@@ -457,7 +457,7 @@ console.log('\n6. POST picks first active account when no default settings:');
 console.log('\n7. POST creates trade with all optional fields from watchlist:');
 {
   cleanup();
-  const account = seedAccount({ name: 'Trading Account' });
+  seedAccount({ name: 'Trading Account' });
   const lookup = (() => {
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -497,7 +497,7 @@ console.log('\n7. POST creates trade with all optional fields from watchlist:');
 console.log('\n8. POST returns sequential trade codes:');
 {
   cleanup();
-  const account = seedAccount({ name: 'Trading Account' });
+  seedAccount({ name: 'Trading Account' });
   const item1 = seedWatchlistItem({ symbol: 'AAPL' });
   const item2 = seedWatchlistItem({ symbol: 'MSFT' });
 

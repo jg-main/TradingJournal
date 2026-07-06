@@ -17,12 +17,6 @@ const createLookupSchema = z.object({
   sortOrder: z.number().int().min(0).optional().default(0),
 });
 
-const updateLookupSchema = z.object({
-  value: z.string().min(1).max(200).optional(),
-  description: z.string().max(500).nullable().optional(),
-  sortOrder: z.number().int().min(0).optional(),
-  isActive: z.boolean().optional(),
-});
 
 export async function GET(request: NextRequest) {
   try {

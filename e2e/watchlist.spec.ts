@@ -55,9 +55,6 @@ test.describe('Watchlist', () => {
     const rowsBefore = await page.locator('tbody tr').count();
     test.skip(rowsBefore === 0, 'no rows to delete');
 
-    // Get the first row's symbol before deleting
-    const firstSymbol = await page.locator('tbody tr').first().locator('td').first().textContent();
-
     // Override confirm to auto-accept
     await page.evaluate(() => { window.confirm = () => true; });
     await page.getByRole('button', { name: 'Remove' }).first().click();

@@ -22,16 +22,6 @@ function assert(condition: boolean, msg: string) {
   }
 }
 
-function assertApprox(a: number, b: number, msg: string, tol = 0.001) {
-  if (Math.abs(a - b) < tol) {
-    passed++;
-    console.log(`  ✅ ${msg} (≈${a})`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — expected ${b}, got ${a} (FAILED)`);
-  }
-}
-
 // ────────────────────────────────────────────────────────────────────────
 // Tests: calculateGrade
 // ────────────────────────────────────────────────────────────────────────

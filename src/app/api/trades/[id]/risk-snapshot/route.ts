@@ -97,6 +97,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
 
       db.insert(tradeRiskSnapshots)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .values(insertValues as any)
         .run();
 
@@ -120,6 +121,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (Object.keys(updateValues).length > 0) {
       db.update(tradeRiskSnapshots)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .set(updateValues as any)
         .where(eq(tradeRiskSnapshots.id, existing.id))
         .run();

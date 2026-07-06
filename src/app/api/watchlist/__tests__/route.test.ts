@@ -97,7 +97,7 @@ function doGetWatchlist(params: { status?: string } = {}): { status: number; dat
       .orderBy(desc(schema.watchlistItems.createdAt));
 
     if (params.status) {
-      query.where(eq(schema.watchlistItems.status, params.status));
+      query.where(eq(schema.watchlistItems.status, params.status as 'pending' | 'watching' | 'triggered' | 'skipped' | 'expired'));
     }
 
     const rows = query.all();
@@ -138,7 +138,7 @@ function doPostWatchlist(body: Record<string, unknown>): { status: number; data:
 
     const id = randomUUID();
     const now = new Date().toISOString();
-    const status = (body.status as string) || 'pending';
+    const status = (body.status as 'pending' | 'watching' | 'triggered' | 'skipped' | 'expired') || 'pending';
 
     db.insert(schema.watchlistItems)
       .values({

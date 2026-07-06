@@ -631,7 +631,7 @@ function seedLookupValue(type: string, value: string): string {
   const id = randomUUID();
   db.insert(schema.lookupValues).values({
     id,
-    type,
+    type: type as 'sector' | 'setup' | 'market_condition',
     value,
     isActive: true,
     createdAt: NOW,
@@ -701,12 +701,12 @@ console.log('▶ First Active Account Fallback');
 cleanup();
 {
   const account1 = seedAccount({ name: 'Inactive', isActive: false });
-  const account2 = seedAccount({ name: 'Active Main', isActive: true });
+  seedAccount({ name: 'Active Main', isActive: true });
 
   const result = doGetExport(null);
   assert(result.status === 200, 'Resolves via first active account');
 
-  // Verify it's using account2 by checking no trades from account1 appear
+  // Verify it's using the active account by checking no trades from account1 appear
   seedTrade(account1, { symbol: 'HIDDEN' });
   const result2 = doGetExport(null);
   // Should be empty since account1's trade shouldn't appear

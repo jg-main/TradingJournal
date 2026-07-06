@@ -18,10 +18,6 @@ import {
   computeDirectionalPerformance,
   computeProcessScoreDistribution,
   type KpiTradeInput,
-  type MonthlyPerformanceItem,
-  type RDistributionBin,
-  type DirectionalPerformanceResult,
-  type ProcessScoreBin,
   type RollforwardRow,
 } from './dashboard';
 import { type ExecutionData } from './trade-calc';
@@ -89,15 +85,6 @@ function assertNull(v: unknown, label: string): void {
   }
 }
 
-function assertNotNull(v: unknown, label: string): void {
-  if (v !== null && v !== undefined) {
-    console.log(`  ✅ PASS: ${label}`);
-  } else {
-    console.error(`  ❌ FAIL: ${label} — expected non-null, got ${JSON.stringify(v)}`);
-    process.exitCode = 1;
-  }
-}
-
 function assertApprox(actual: number, expected: number, label: string, tolerance = 0.001): void {
   if (Math.abs(actual - expected) < tolerance) {
     console.log(`  ✅ PASS: ${label} (≈${actual})`);
@@ -129,13 +116,6 @@ const LOSS_TRADE: KpiTradeInput = makeTrade(
   longTradeExecutions(50, 40, 100, 2, 2),  // PnL = (40-50)*100 - 4 = -1004
   { totalScore: 21 },
   { initialRiskAmount: 500 },
-);
-
-const SCRATCH_TRADE: KpiTradeInput = makeTrade(
-  'scratch-001', 'long', 'closed',
-  longTradeExecutions(50, 50, 100, 1.5, 1.5),  // PnL = (50-50)*100 - 3 = -3 (fees only)
-  { totalScore: 30 },
-  { initialRiskAmount: 300 },
 );
 
 const OPEN_TRADE: KpiTradeInput = makeTrade(
@@ -543,12 +523,6 @@ test('computeRDistribution — all 8 bins filled with correct ranges', () => {
   // Bin: 1 to 2    (1 <= r < 2)
   // Bin: 2 to 3    (2 <= r < 3)
   // Bin: > 3       (r >= 3)
-  const trades = [
-    makeTrade('b0', 'long', 'closed', longTradeExecutions(100, 70, 100, 0, 0), null, { initialRiskAmount: 100 }, '2026-01-01T10:00:00Z'),    // R = -3000/100 = -30 → <= -3
-    makeTrade('b1', 'long', 'closed', longTradeExecutions(100, 80, 100, 0, 0), null, { initialRiskAmount: 100 }, '2026-01-01T10:00:00Z'),    // R = -2000/100 = -20 → <= -3
-    makeTrade('b2', 'long', 'closed', longTradeExecutions(100, 75, 100, 0, 0), null, { initialRiskAmount: 100 }, '2026-01-01T10:00:00Z'),    // shift: use risk amounts to target bins
-  ];
-  // Use precise risk amounts to land in specific bins
   const binTrades = [
     // r = -4.0 → <= -3
     makeTrade('r1', 'long', 'closed', longTradeExecutions(100, 60, 100, 0, 0), null, { initialRiskAmount: 1000 }, '2026-01-01T10:00:00Z'),  // PnL = -4000, R = -4

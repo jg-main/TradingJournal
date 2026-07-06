@@ -80,18 +80,6 @@ const SCRATCH_TRADE: WeekReviewTradeInput = {
   riskSnapshot: { initialRiskAmount: 300 },
 };
 
-// This trade is defined in fixtures but NOT passed to computeWeeklyMetrics
-// to verify that open trades are excluded from aggregation.
-const OPEN_TRADE: WeekReviewTradeInput = {
-  id: 'open-001',
-  direction: 'long',
-  executions: [
-    { action: 'buy', quantity: 100, price: 45, fees: 1, executedAt: '2026-06-04T10:00:00Z' },
-  ],
-  grade: null,
-  riskSnapshot: null,
-};
-
 // ────────────────────────────────────────────────────────────────────────
 // Tests: basic aggregation with 3 closed trades
 // ────────────────────────────────────────────────────────────────────────

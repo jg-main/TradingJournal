@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
@@ -39,7 +39,7 @@ function resetReadinessState() {
   db.close();
 }
 
-async function seedToReady(page: Parameters<typeof test>[0]['page']) {
+async function seedToReady(page: Page) {
   const accountResponse = await page.request.post('/api/accounts', {
     data: {
       name: 'Readiness Account',

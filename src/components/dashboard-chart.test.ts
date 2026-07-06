@@ -7,6 +7,15 @@
  * Run: npx tsx src/components/dashboard-chart.test.ts
  */
 
+import { DashboardChart } from './dashboard-chart';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const chartSourcePath = path.resolve(__dirname, 'dashboard-chart.tsx');
+
 let passed = 0;
 let failed = 0;
 
@@ -26,9 +35,8 @@ function assert(condition: boolean, msg: string) {
 {
   console.log('\n## Module contract');
 
-  const mod = require('./dashboard-chart');
-  assert(typeof mod.DashboardChart === 'function', 'DashboardChart is exported as a function');
-  assert(mod.DashboardChart.name === 'DashboardChart', 'exports named DashboardChart');
+  assert(typeof DashboardChart === 'function', 'DashboardChart is exported as a function');
+  assert(DashboardChart.name === 'DashboardChart', 'exports named DashboardChart');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -37,8 +45,7 @@ function assert(condition: boolean, msg: string) {
 {
   console.log('\n## Props interface (source-level)');
 
-  const fs = require('fs');
-  const source = fs.readFileSync(require.resolve('./dashboard-chart.tsx'), 'utf-8');
+  const source = fs.readFileSync(chartSourcePath, 'utf-8');
 
   assert(source.includes('height = 300'), 'default height is 300px');
   assert(source.includes("width = '100%'"), 'default width is 100%');
@@ -60,8 +67,7 @@ function assert(condition: boolean, msg: string) {
 {
   console.log('\n## Client component directive');
 
-  const fs = require('fs');
-  const source = fs.readFileSync(require.resolve('./dashboard-chart.tsx'), 'utf-8');
+  const source = fs.readFileSync(chartSourcePath, 'utf-8');
   assert(
     source.includes("'use client'") || source.includes('"use client"'),
     'source file contains use client directive'
@@ -80,8 +86,7 @@ function assert(condition: boolean, msg: string) {
 {
   console.log('\n## Import safety');
 
-  const fs = require('fs');
-  const source = fs.readFileSync(require.resolve('./dashboard-chart.tsx'), 'utf-8');
+  const source = fs.readFileSync(chartSourcePath, 'utf-8');
   assert(
     !source.includes('server-only'),
     'does not import server-only module'

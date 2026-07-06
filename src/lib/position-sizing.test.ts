@@ -12,16 +12,6 @@ import { calculatePositionSize } from './position-sizing';
 let passed = 0;
 let failed = 0;
 
-function assert(condition: boolean, msg: string) {
-  if (condition) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} (FAILED)`);
-  }
-}
-
 function assertApprox(a: number, b: number, msg: string, tol = 0.001) {
   if (Math.abs(a - b) < tol) {
     passed++;

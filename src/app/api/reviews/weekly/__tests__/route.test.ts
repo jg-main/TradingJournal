@@ -31,26 +31,6 @@ function assert(condition: boolean, msg: string) {
   }
 }
 
-function assertDeep(
-  actual: Record<string, unknown>,
-  expected: Record<string, unknown>,
-  msg: string,
-) {
-  for (const key of Object.keys(expected)) {
-    const a = actual[key];
-    const e = expected[key];
-    if (JSON.stringify(a) !== JSON.stringify(e)) {
-      failed++;
-      console.error(
-        `  ❌ ${msg} — key "${key}" expected ${JSON.stringify(e)}, got ${JSON.stringify(a)} (FAILED)`,
-      );
-      return;
-    }
-  }
-  passed++;
-  console.log(`  ✅ ${msg}`);
-}
-
 // ── Setup: test DB ──────────────────────────────────────────────────
 
 const DB_FILE = process.env.DB_FILE_NAME || './.test-ms02-t06.db';
@@ -216,12 +196,12 @@ function doPost(weekStart: string, accountId: string): {
     )
     .all();
 
-  const tradeIds = tradesInRange.map((t: any) => t.id);
+  const tradeIds = tradesInRange.map((t: Record<string, unknown>) => t.id as string);
 
   // Batch fetch related data
-  const executionsMap = new Map<string, any[]>();
-  const gradesMap = new Map<string, any>();
-  const riskMap = new Map<string, any>();
+  const executionsMap = new Map<string, Record<string, unknown>[]>();
+  const gradesMap = new Map<string, Record<string, unknown>>();
+  const riskMap = new Map<string, Record<string, unknown>>();
 
   if (tradeIds.length > 0) {
     const execs = db
@@ -258,23 +238,23 @@ function doPost(weekStart: string, accountId: string): {
   }
 
   // Convert to WeekReviewTradeInput[]
-  const reviewInputs: WeekReviewTradeInput[] = tradesInRange.map((trade: any) => ({
-    id: trade.id,
+  const reviewInputs: WeekReviewTradeInput[] = tradesInRange.map((trade: Record<string, unknown>) => ({
+    id: trade.id as string,
     direction: trade.direction as 'long' | 'short',
-    executions: (executionsMap.get(trade.id) ?? []).map((ex: any) => ({
-      action: ex.action,
-      quantity: ex.quantity,
-      price: ex.price,
-      fees: ex.fees ?? null,
-      executedAt: ex.executedAt ?? '',
+    executions: (executionsMap.get(trade.id as string) ?? []).map((ex: Record<string, unknown>) => ({
+      action: ex.action as string,
+      quantity: ex.quantity as number,
+      price: ex.price as number,
+      fees: (ex.fees ?? null) as number | null,
+      executedAt: (ex.executedAt ?? '') as string,
     })),
     grade: (() => {
-      const gradeRow = gradesMap.get(trade.id);
-      const totalScore = gradeRow?.totalScore;
+      const gradeRow = gradesMap.get(trade.id as string);
+      const totalScore = gradeRow?.totalScore as number | undefined;
       return totalScore != null ? { totalScore } : null;
     })(),
-    riskSnapshot: riskMap.has(trade.id)
-      ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
+    riskSnapshot: riskMap.has(trade.id as string)
+      ? { initialRiskAmount: (riskMap.get(trade.id as string)!.initialRiskAmount as number | null) ?? null }
       : null,
   }));
 
@@ -451,8 +431,6 @@ const trade4Id = randomUUID(); // outside week, should not be counted
 // Monday June 1 2026
 const weekStart = '2026-06-01';
 // Sunday June 7 2026
-const weekEnd = '2026-06-07';
-
 // June 3 2026 (within week)
 const inWeek = '2026-06-03T12:00:00.000Z';
 // June 14 2026 (outside week)
@@ -569,10 +547,10 @@ console.log('\n3. POST generates correct aggregated metrics from seed trades:');
   assert(data.closedTrades === 3, 'closedTrades = 3 (excludes trade outside week)');
   assert(data.netPnl === 232, 'netPnl = 232 (95 + 190 - 53)');
   assert(data.winRate === 2 / 3, 'winRate = 2/3');
-  assert((data as any).avgProcessScore === 70, 'avgProcessScore = 70');
+  assert(data['avgProcessScore'] as number === 70, 'avgProcessScore = 70');
 
   // avgR = (95/100 + 190/200) / 2 = (0.95 + 0.95) / 2 = 0.95
-  assert((data as any).avgR === 0.95, 'avgR = 0.95');
+  assert(data['avgR'] as number === 0.95, 'avgR = 0.95');
 }
 
 // ── Test 4: POST with no closed trades returns review with zeros ───

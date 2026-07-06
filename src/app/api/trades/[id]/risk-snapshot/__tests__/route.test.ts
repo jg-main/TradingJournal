@@ -9,7 +9,6 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { eq } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
@@ -45,16 +44,6 @@ function assertDeep(
   }
   passed++;
   console.log(`  ✅ ${msg}`);
-}
-
-function assertApprox(a: number, b: number, msg: string, tol = 0.001) {
-  if (Math.abs(a - b) < tol) {
-    passed++;
-    console.log(`  ✅ ${msg} (≈${a})`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — expected ${b}, got ${a} (FAILED)`);
-  }
 }
 
 // ── Setup: in-memory test DB ────────────────────────────────────────
@@ -215,7 +204,7 @@ function doPut(tradeId: string, body: Record<string, unknown>): {
     }
 
     db.insert(schema.tradeRiskSnapshots)
-      .values(insertValues as any)
+      .values(insertValues as typeof schema.tradeRiskSnapshots.$inferInsert)
       .run();
 
     const created = db
@@ -238,7 +227,7 @@ function doPut(tradeId: string, body: Record<string, unknown>): {
 
   if (Object.keys(updateValues).length > 0) {
     db.update(schema.tradeRiskSnapshots)
-      .set(updateValues as any)
+      .set(updateValues as Partial<typeof schema.tradeRiskSnapshots.$inferInsert>)
       .where(eq(schema.tradeRiskSnapshots.id, existing.id))
       .run();
   }
@@ -377,7 +366,7 @@ console.log('\n5. PUT with empty body returns existing snapshot unchanged:');
 
 console.log('\n6. PUT with string value returns 400:');
 {
-  const result = doPut(testTradeId, { initialEntryPrice: 'not-a-number' as any });
+  const result = doPut(testTradeId, { initialEntryPrice: 'not-a-number' as unknown });
   assert(result.status === 400, 'returns 400 for invalid type');
 }
 

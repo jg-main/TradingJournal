@@ -10,9 +10,7 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { cwd } from 'node:process';
+
 
 import * as schema from '@/db/schema';
 
@@ -148,11 +146,11 @@ function validateAssetBody(body: Record<string, unknown>): {
   const label = body.label;
   const notes = body.notes;
 
-  if (!assetType || !ASSET_TYPE.includes(assetType as any)) {
+  if (!assetType || !ASSET_TYPE.includes(assetType as typeof ASSET_TYPE[number])) {
     return { ok: false, error: { fieldErrors: { assetType: [`Must be one of: ${ASSET_TYPE.join(', ')}`] } } };
   }
 
-  if (!phase || !PHASE.includes(phase as any)) {
+  if (!phase || !PHASE.includes(phase as typeof PHASE[number])) {
     return { ok: false, error: { fieldErrors: { phase: [`Must be one of: ${PHASE.join(', ')}`] } } };
   }
 
@@ -213,8 +211,8 @@ function doPostJson(tradeId: string, body: Record<string, unknown>): {
     .values({
       id: assetId,
       tradeId,
-      assetType: data.assetType as any,
-      phase: data.phase as any,
+      assetType: data.assetType as (typeof ASSET_TYPE)[number],
+      phase: data.phase as (typeof PHASE)[number],
       label: (data.label as string | null) ?? null,
       filePath: null,
       externalUrl: (data.externalUrl as string | null) ?? null,
@@ -355,7 +353,7 @@ console.log('\n5. POST returns 400 for missing assetType:');
 {
   const result = doPostJson(tradeId1, {
     phase: 'entry',
-  } as any);
+  });
 
   assert(result.status === 400, 'returns 400');
 }
@@ -367,7 +365,7 @@ console.log('\n6. POST returns 400 for invalid assetType:');
   const result = doPostJson(tradeId1, {
     assetType: 'invalid_type',
     phase: 'entry',
-  } as any);
+  });
 
   assert(result.status === 400, 'returns 400');
 }
@@ -405,7 +403,7 @@ console.log('\n9. GET returns assets for tradeId1:');
   const assets = result.data as unknown[];
   assert(assets.length >= 1, 'has at least 1 asset');
   // The first created asset should be present
-  const linkAsset = assets.find((a: any) => a.assetType === 'link');
+  const linkAsset = assets.find((a) => (a as Record<string, unknown>).assetType === 'link');
   assertNotNull(linkAsset, 'link asset is in the list');
 }
 
@@ -454,7 +452,7 @@ console.log('\n13. POST returns 400 for unexpected field:');
     assetType: 'document',
     phase: 'review',
     randomField: 'should not be allowed',
-  } as any);
+  });
 
   assert(result.status === 400, 'returns 400 for unexpected field');
 }

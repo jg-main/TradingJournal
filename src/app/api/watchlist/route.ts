@@ -22,23 +22,6 @@ const createWatchlistItemSchema = z.object({
   promotedTradeId: z.string().nullable().optional(),
 });
 
-const updateWatchlistItemSchema = z.object({
-  symbol: z.string().trim().min(1).max(20).optional(),
-  sectorId: z.string().nullable().optional(),
-  setup: z.string().nullable().optional(),
-  direction: z.enum(['long', 'short']).optional(),
-  thesis: z.string().nullable().optional(),
-  marketContext: z.string().nullable().optional(),
-  keyLevel: z.number().nullable().optional(),
-  triggerPrice: z.number().nullable().optional(),
-  plannedStop: z.number().nullable().optional(),
-  targetPrice: z.number().nullable().optional(),
-  status: z
-    .enum(['pending', 'watching', 'triggered', 'skipped', 'expired'])
-    .optional(),
-  notes: z.string().nullable().optional(),
-  promotedTradeId: z.string().nullable().optional(),
-});
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,11 +33,8 @@ export async function GET(request: NextRequest) {
       .from(watchlistItems)
       .orderBy(desc(watchlistItems.createdAt));
 
-    const validStatuses = ['pending', 'watching', 'triggered', 'skipped', 'expired'] as const;
-    type WatchlistStatus = (typeof validStatuses)[number];
-
     if (status) {
-      query.where(eq(watchlistItems.status, status as WatchlistStatus));
+      query.where(eq(watchlistItems.status, status as 'pending' | 'watching' | 'triggered' | 'skipped' | 'expired'));
     }
 
     const rows = query.all();

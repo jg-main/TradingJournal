@@ -79,7 +79,7 @@ sqlite.exec(`
 function doGetLookups(typeFilter?: string): { status: number; data: unknown } {
   try {
     const rows = typeFilter && (VALID_TYPES as readonly string[]).includes(typeFilter)
-      ? db.select().from(schema.lookupValues).where(eq(schema.lookupValues.type, typeFilter)).orderBy(asc(schema.lookupValues.sortOrder)).all()
+      ? db.select().from(schema.lookupValues).where(eq(schema.lookupValues.type, typeFilter as typeof VALID_TYPES[number])).orderBy(asc(schema.lookupValues.sortOrder)).all()
       : db.select().from(schema.lookupValues).orderBy(asc(schema.lookupValues.type), asc(schema.lookupValues.sortOrder)).all();
 
     if (!typeFilter) {
@@ -127,7 +127,7 @@ function doPostLookup(body: Record<string, unknown>): { status: number; data: un
     const existing = db
       .select()
       .from(schema.lookupValues)
-      .where(and(eq(schema.lookupValues.type, type), eq(schema.lookupValues.value, value)))
+      .where(and(eq(schema.lookupValues.type, type as typeof VALID_TYPES[number]), eq(schema.lookupValues.value, value)))
       .get();
 
     if (existing) {

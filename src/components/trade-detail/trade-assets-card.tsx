@@ -353,6 +353,7 @@ export default function TradeAssetsCard({
                         {asset.filePath ? (
                           /* Screenshot thumbnail */
                           <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={asset.filePath}
                               alt={asset.label ?? 'Screenshot'}

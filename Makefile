@@ -29,8 +29,8 @@ dev: ## Start Next.js dev server (port $(PORT))
 dev-alt: ## Start dev server on alt port $(ALT_PORT) (for Playwright webServer)
 	$(NPM) run dev -- -p $(ALT_PORT)
 
-build: ## Build for production
-	$(NPM) run build
+build: ## Build for production (--webpack: see next.config.ts for turbopack config)
+	$(NPM) run build -- --webpack
 
 start: ## Start production server (port $(PORT))
 	$(NPM) run start -- -p $(PORT)

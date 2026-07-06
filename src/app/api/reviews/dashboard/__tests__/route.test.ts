@@ -243,13 +243,13 @@ function doGetDashboard(accountId: string | null): DashboardResult {
     )
     .all();
 
-  const tradeIds = closedTrades.map((t: any) => t.id);
-  const setupIds = [...new Set(closedTrades.map((t: any) => t.setupId).filter(Boolean))] as string[];
+  const tradeIds = closedTrades.map((t: Record<string, unknown>) => t.id as string);
+  const setupIds = [...new Set(closedTrades.map((t: Record<string, unknown>) => t.setupId).filter(Boolean))] as string[];
 
   // 2. Batch-fetch related data
-  const executionsMap = new Map<string, any[]>();
-  const gradesMap = new Map<string, any>();
-  const riskMap = new Map<string, any>();
+  const executionsMap = new Map<string, Record<string, unknown>[]>();
+  const gradesMap = new Map<string, Record<string, unknown>>();
+  const riskMap = new Map<string, Record<string, unknown>>();
   const setupNameMap: Record<string, string> = {};
 
   if (tradeIds.length > 0) {
@@ -303,25 +303,25 @@ function doGetDashboard(accountId: string | null): DashboardResult {
   }
 
   // 3. Build SetupPerfTradeInput array
-  const perfInputs: SetupPerfTradeInput[] = closedTrades.map((trade: any) => ({
-    id: trade.id,
+  const perfInputs: SetupPerfTradeInput[] = closedTrades.map((trade: Record<string, unknown>) => ({
+    id: trade.id as string,
     direction: trade.direction as 'long' | 'short',
-    executions: (executionsMap.get(trade.id) ?? []).map((ex: any) => ({
-      action: ex.action,
-      quantity: ex.quantity,
-      price: ex.price,
-      fees: ex.fees ?? null,
-      executedAt: ex.executedAt ?? '',
+    executions: (executionsMap.get(trade.id as string) ?? []).map((ex: Record<string, unknown>) => ({
+      action: ex.action as string,
+      quantity: ex.quantity as number,
+      price: ex.price as number,
+      fees: (ex.fees ?? null) as number | null,
+      executedAt: (ex.executedAt ?? '') as string,
     })),
     grade: (() => {
-      const gradeRow = gradesMap.get(trade.id);
-      const totalScore = gradeRow?.totalScore;
+      const gradeRow = gradesMap.get(trade.id as string);
+      const totalScore = gradeRow?.totalScore as number | undefined;
       return totalScore != null ? { totalScore } : null;
     })(),
-    riskSnapshot: riskMap.has(trade.id)
-      ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
+    riskSnapshot: riskMap.has(trade.id as string)
+      ? { initialRiskAmount: (riskMap.get(trade.id as string)!.initialRiskAmount as number | null) ?? null }
       : null,
-    setupId: trade.setupId,
+    setupId: trade.setupId as string,
   }));
 
   // 4. Compute setup performance
@@ -338,7 +338,7 @@ function doGetDashboard(accountId: string | null): DashboardResult {
       .all();
 
     if (mistakes.length > 0) {
-      const mistakeTypeIds = [...new Set(mistakes.map((m: any) => m.mistakeTypeId).filter(Boolean))] as string[];
+      const mistakeTypeIds = [...new Set(mistakes.map((m: Record<string, unknown>) => m.mistakeTypeId).filter(Boolean))] as string[];
 
       const mistakeTypeNameMap: Record<string, string> = {};
       if (mistakeTypeIds.length > 0) {
@@ -384,13 +384,13 @@ function doGetDashboard(accountId: string | null): DashboardResult {
 
   // 6. Ungraded trades
   const ungradedTrades: UngradedTradeEntry[] = closedTrades
-    .filter((trade: any) => !gradesMap.has(trade.id))
-    .map((trade: any) => ({
-      id: trade.id,
-      tradeCode: trade.tradeCode,
-      symbol: trade.symbol,
-      direction: trade.direction,
-      closedAt: trade.closedAt,
+    .filter((trade: Record<string, unknown>) => !gradesMap.has(trade.id as string))
+    .map((trade: Record<string, unknown>) => ({
+      id: trade.id as string,
+      tradeCode: trade.tradeCode as string,
+      symbol: trade.symbol as string,
+      direction: trade.direction as string,
+      closedAt: trade.closedAt as string | null,
     }));
 
   return {
@@ -609,7 +609,7 @@ console.log('\n2. Dashboard returns all sections for account with trades:');
   assert(data.ungroupedTrades === 0, 'ungroupedTrades = 0');
 
   // Verify Setup A (Momentum) — first sorted by count desc (both=2, setupA first)
-  const setupA = sp.find((s: any) => s.setupName === 'Momentum')!;
+  const setupA = sp.find((s: Record<string, unknown>) => s.setupName === 'Momentum')!;
   assert(setupA !== undefined, 'Momentum group found');
   assert(setupA.setupId === setupAId, 'Momentum setupId matches');
   assert(setupA.count === 2, 'Momentum count = 2');
@@ -619,7 +619,7 @@ console.log('\n2. Dashboard returns all sections for account with trades:');
   assert(setupA.sampleSizeWarning === 'very_small', 'Momentum sampleSizeWarning = very_small');
 
   // Verify Setup B (Breakout)
-  const setupB = sp.find((s: any) => s.setupName === 'Breakout')!;
+  const setupB = sp.find((s: Record<string, unknown>) => s.setupName === 'Breakout')!;
   assert(setupB !== undefined, 'Breakout group found');
   assert(setupB.setupId === setupBId, 'Breakout setupId matches');
   assert(setupB.count === 2, 'Breakout count = 2');
@@ -645,7 +645,7 @@ console.log('\n2. Dashboard returns all sections for account with trades:');
   assert(ut.length === 2, '2 ungraded trades (t3, t4)');
   const utIds = ut.map((t) => t.tradeCode).sort();
   assertDeepEqual(utIds, ['DB-T3', 'DB-T4'], 'ungraded trades have correct trade codes');
-  ut.forEach((t: any) => {
+  ut.forEach((t: UngradedTradeEntry) => {
     assert(t.id !== undefined, 'ungraded trade has id');
     assert(t.symbol !== undefined, 'ungraded trade has symbol');
     assert(t.direction !== undefined, 'ungraded trade has direction');
@@ -685,7 +685,7 @@ console.log('\n4. Trades with null setupId excluded from setupPerformance:');
   const sp = data.setupPerformance as Record<string, unknown>[];
 
   // t5 has null setupId, should not appear as a setup group
-  const hasNullGroup = sp.some((s: any) => s.setupId === null);
+  const hasNullGroup = sp.some((s: Record<string, unknown>) => s.setupId === null);
   assert(!hasNullGroup, 'no null-setupId group in setupPerformance');
 
   // Total trades should still be 4 (t1,t2,t3,t4) — null-setupId trades not counted
@@ -703,7 +703,7 @@ console.log('\n5. Second account returns its own dashboard data (isolation):');
   const sp = data.setupPerformance as Record<string, unknown>[];
 
   assert(sp.length === 1, '1 setup group for account 2');
-  const s = sp[0] as any;
+  const s = sp[0];
   assert(s.setupName === 'Momentum', 'setup name = Momentum');
   assert(s.count === 1, 'count = 1');
   // t7: PnL = (450-400)*8 = 400, risk = 300, R = 400/300 = 1.333, grade = 90
@@ -732,7 +732,7 @@ console.log('\n6. Account 1 trade data not visible in account 2:');
   assert(sp.length === 1, 'account 2 has only 1 setup group');
 
   // Verify no setup groups that belong to account 1
-  const groupNames = sp.map((s: any) => s.setupName);
+  const groupNames = sp.map((s: Record<string, unknown>) => s.setupName as string);
   assert(!groupNames.includes('Breakout'), 'Breakout not in account 2 results');
 }
 

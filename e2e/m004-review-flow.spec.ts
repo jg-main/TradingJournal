@@ -83,7 +83,7 @@ test.describe('M004 review system flow', () => {
     }
 
     // Add first mistake
-    let mRes = await page.request.post(`/api/trades/${tradeId}/mistakes`, {
+    const mRes = await page.request.post(`/api/trades/${tradeId}/mistakes`, {
       data: {
         mistakeType: 'fv_entry_timing',
         phase: 'entry',

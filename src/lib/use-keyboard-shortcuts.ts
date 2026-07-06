@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Shortcut {
@@ -14,20 +14,26 @@ interface Shortcut {
 export function useKeyboardShortcuts(extraShortcuts: Shortcut[] = []) {
   const router = useRouter();
 
-  const defaultShortcuts: Shortcut[] = [
-    { key: 'd', label: 'Dashboard', action: () => router.push('/') },
-    { key: 't', label: 'Trade Log', action: () => router.push('/trades') },
-    { key: 'w', label: 'Watchlist', action: () => router.push('/watchlist') },
-    { key: 's', label: 'Settings', action: () => router.push('/settings') },
-    { key: 'r', label: 'Reviews', action: () => router.push('/reviews') },
-    { key: 'c', label: 'Checks', action: () => router.push('/checks') },
-    { key: 'n', label: 'New Trade', action: () => {
-      const planBtn = document.querySelector<HTMLButtonElement>('button:has(svg.lucide-plus)');
-      planBtn?.click();
-    }},
-  ];
+  const defaultShortcuts: Shortcut[] = useMemo(
+    () => [
+      { key: 'd', label: 'Dashboard', action: () => router.push('/') },
+      { key: 't', label: 'Trade Log', action: () => router.push('/trades') },
+      { key: 'w', label: 'Watchlist', action: () => router.push('/watchlist') },
+      { key: 's', label: 'Settings', action: () => router.push('/settings') },
+      { key: 'r', label: 'Reviews', action: () => router.push('/reviews') },
+      { key: 'c', label: 'Checks', action: () => router.push('/checks') },
+      { key: 'n', label: 'New Trade', action: () => {
+        const planBtn = document.querySelector<HTMLButtonElement>('button:has(svg.lucide-plus)');
+        planBtn?.click();
+      }},
+    ],
+    [router],
+  );
 
-  const allShortcuts = [...defaultShortcuts, ...extraShortcuts];
+  const allShortcuts = useMemo(
+    () => [...defaultShortcuts, ...extraShortcuts],
+    [defaultShortcuts, extraShortcuts],
+  );
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

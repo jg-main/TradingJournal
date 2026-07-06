@@ -36,16 +36,6 @@ function assertEqual(actual: unknown, expected: unknown, msg: string) {
   }
 }
 
-function assertNotNull(value: unknown, msg: string) {
-  if (value !== null && value !== undefined) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — value is null/undefined (FAILED)`);
-  }
-}
-
 // ── Setup: test DB ──────────────────────────────────────────────────
 
 const DB_FILE = process.env.DB_FILE_NAME || './.test-lookups-by-id.db';
@@ -70,12 +60,6 @@ sqlite.exec(`
 
 // ── Simulated route logic ───────────────────────────────────────────
 
-const VALID_TYPES = [
-  'sector', 'setup', 'market_condition', 'mistake_type',
-  'execution_reason', 'asset_type', 'phase', 'severity',
-  'source_type', 'action_item_status',
-] as const;
-
 function doPutLookup(id: string, body: Record<string, unknown>): { status: number; data: unknown } {
   try {
     // Zod-compatible validation
@@ -97,14 +81,14 @@ function doPutLookup(id: string, body: Record<string, unknown>): { status: numbe
       return { status: 404, data: { error: 'Lookup not found' } };
     }
 
-    const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-    if (body.value !== undefined) updateData.value = body.value;
-    if (body.description !== undefined) updateData.description = body.description;
-    if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
-    if (body.isActive !== undefined) updateData.isActive = body.isActive;
+    const updateData: Partial<typeof schema.lookupValues.$inferInsert> = { updatedAt: new Date().toISOString() };
+    if (body.value !== undefined) updateData.value = body.value as string | undefined;
+    if (body.description !== undefined) updateData.description = body.description as string | undefined;
+    if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder as number | null | undefined;
+    if (body.isActive !== undefined) updateData.isActive = body.isActive as boolean | null | undefined;
 
     db.update(schema.lookupValues)
-      .set(updateData as any)
+      .set(updateData)
       .where(eq(schema.lookupValues.id, id))
       .run();
 

@@ -182,6 +182,7 @@ export default function SettingsHubPage() {
   useEffect(() => {
     const controller = new AbortController();
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadReadiness(controller.signal);
 
     const handleFocus = () => void loadReadiness();

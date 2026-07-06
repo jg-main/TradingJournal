@@ -14,13 +14,6 @@ const createAccountSchema = z.object({
   startingBalance: z.number().min(0).optional(),
 });
 
-const updateAccountSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  broker: z.string().max(200).nullable().optional(),
-  currency: z.string().min(1).max(3).optional(),
-  isActive: z.boolean().optional(),
-});
-
 export async function GET() {
   try {
     const rows = db.select().from(accounts).orderBy(desc(accounts.createdAt)).all();

@@ -157,20 +157,16 @@ function HomeContent() {
   const [dateTo, setDateTo] = useState(searchParams.get('dateTo') ?? '');
   const [accountId, setAccountId] = useState<string | null>(searchParams.get('accountId') ?? null);
 
-  const buildDashboardUrl = () => {
-    const params = new URLSearchParams();
-    if (accountId) params.set('accountId', accountId);
-    if (dateFrom) params.set('dateFrom', dateFrom);
-    if (dateTo) params.set('dateTo', dateTo);
-    const qs = params.toString();
-    return `/api/dashboard${qs ? `?${qs}` : ''}`;
-  };
-
   const fetchDashboard = async () => {
     setLoading(true);
     setError(null);
     try {
-      const url = buildDashboardUrl();
+      const params = new URLSearchParams();
+      if (accountId) params.set('accountId', accountId);
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
+      const qs = params.toString();
+      const url = `/api/dashboard${qs ? `?${qs}` : ''}`;
       const res = await fetch(url);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -202,9 +198,13 @@ function HomeContent() {
     router.replace(qs ? `/?${qs}` : '/', { scroll: false });
   }, [dateFrom, dateTo, accountId, router]);
 
+  // eslint-disable-next-line react-hooks/use-memo
+  const fetchDashboardCb = useCallback(fetchDashboard, [accountId, dateFrom, dateTo]);
+
   useEffect(() => {
-    fetchDashboard();
-  }, [dateFrom, dateTo, accountId]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchDashboardCb();
+  }, [fetchDashboardCb]);
 
   useEffect(() => {
     syncFilters();
@@ -523,6 +523,7 @@ function HomeContent() {
                     option={{
                       tooltip: {
                         trigger: 'axis',
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         formatter: (params: any) => {
                           if (!Array.isArray(params) || params.length === 0) return '';
                           const idx = params[0].dataIndex;
@@ -597,6 +598,7 @@ function HomeContent() {
                     option={{
                       tooltip: {
                         trigger: 'axis',
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         formatter: (params: any) => {
                           if (!Array.isArray(params) || params.length === 0) return '';
                           const idx = params[0].dataIndex;
@@ -735,6 +737,7 @@ function HomeContent() {
                 option={{
                   tooltip: {
                     trigger: 'axis',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     formatter: (params: any) => {
                       if (!Array.isArray(params) || params.length === 0) return '';
                       const idx = params[0].dataIndex;

@@ -87,13 +87,6 @@ const STOCKS = [
   { symbol: 'KLAC', sector: 'semiconductors', base: 500 },
 ];
 
-// ── Direction-action pairs per MEM025 ───────────────────────────────────
-
-const DIRECTION_ACTIONS: Record<string, string[]> = {
-  long: ['buy', 'add', 'sell', 'reduce'],
-  short: ['sell_short', 'buy_to_cover'],
-};
-
 // ── Phases for mistakes (not including 'entry' since that's phase-specific) ──
 
 const MISTAKE_PHASES = ['pre_trade', 'entry', 'management', 'exit', 'review'] as const;
@@ -114,11 +107,6 @@ function rngInt(min: number, max: number): number {
 
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function pickN<T>(arr: readonly T[], n: number): T[] {
-  const shuffled = [...arr].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, n);
 }
 
 function round2(v: number): number {

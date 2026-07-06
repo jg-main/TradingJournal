@@ -666,7 +666,7 @@ console.log('▶ First Active Account Fallback');
 cleanup();
 {
   const account1 = seedAccount({ name: 'Inactive', isActive: false });
-  const account2 = seedAccount({ name: 'Active Main', isActive: true });
+  seedAccount({ name: 'Active Main', isActive: true });
 
   const result = doGetDashboard(null);
   assert(result.status === 200, 'Resolves via first active account');

@@ -233,7 +233,7 @@ function doDeleteExecution(tradeId: string, execId: string): { status: number; d
 
     db.update(schema.trades)
       .set({
-        status: derived.status,
+        status: derived.status as 'open' | 'planned' | 'closed' | 'deleted',
         openedAt: derived.openedAt,
         closedAt: derived.closedAt,
         updatedAt: new Date().toISOString(),
@@ -374,7 +374,7 @@ console.log('\n4. DELETE reverts from closed to open after removing the exit exe
   seedAccount({ id: 'test-account-id' });
   const trade = seedTrade({ accountId: 'test-account-id', status: 'closed', openedAt: '2025-06-01T10:00:00Z', closedAt: '2025-06-05T14:00:00Z' });
 
-  const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+  seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
   const exit = seedExecution(trade.id as string, { action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-05T14:00:00Z' });
 
   // Delete the exit
@@ -396,7 +396,7 @@ console.log('\n5. DELETE reverts from partially_closed to open after removing th
   seedAccount({ id: 'test-account-id' });
   const trade = seedTrade({ accountId: 'test-account-id', status: 'partially_closed', openedAt: '2025-06-01T10:00:00Z' });
 
-  const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 150, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+  seedExecution(trade.id as string, { action: 'buy', quantity: 150, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
   const partialExit = seedExecution(trade.id as string, { action: 'sell', quantity: 50, price: 160.0, executedAt: '2025-06-03T10:00:00Z' });
 
   // Delete the partial exit

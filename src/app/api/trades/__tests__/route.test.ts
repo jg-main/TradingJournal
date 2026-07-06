@@ -137,27 +137,18 @@ function doGetTrades(params: { page?: number; limit?: number; status?: string } 
     const limit = Math.min(100, Math.max(1, params.limit ?? 50));
     const offset = (page - 1) * limit;
 
-    let countQuery = db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(schema.trades);
+    const statusFilter = params.status as 'open' | 'planned' | 'closed' | 'deleted' | undefined;
 
-    if (params.status) {
-      countQuery = countQuery.where(eq(schema.trades.status, params.status));
-    }
+    const countQuery = statusFilter
+      ? db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades).where(eq(schema.trades.status, statusFilter))
+      : db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades);
 
     const countResult = countQuery.get();
     const total = countResult?.count ?? 0;
 
-    let dataQuery = db
-      .select()
-      .from(schema.trades)
-      .orderBy(desc(schema.trades.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    if (params.status) {
-      dataQuery = dataQuery.where(eq(schema.trades.status, params.status));
-    }
+    const dataQuery = statusFilter
+      ? db.select().from(schema.trades).orderBy(desc(schema.trades.createdAt)).limit(limit).offset(offset).where(eq(schema.trades.status, statusFilter))
+      : db.select().from(schema.trades).orderBy(desc(schema.trades.createdAt)).limit(limit).offset(offset);
 
     const rows = dataQuery.all();
     return { status: 200, data: { data: rows, total, page, limit } };
@@ -472,7 +463,7 @@ console.log('\n8. POST picks defaultAccountId from settings:');
 {
   cleanup();
   const account1 = seedAccount({ name: 'Default Account' });
-  const account2 = seedAccount({ name: 'Other Account' });
+  seedAccount({ name: 'Other Account' });
   seedSettings({ defaultAccountId: account1.id });
 
   const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });

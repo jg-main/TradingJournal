@@ -8,6 +8,11 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    include: [
+      'src/lib/account-lifecycle.test.ts',
+      'src/lib/readiness.test.ts',
+      'src/app/api/app-profile/__tests__/route.test.ts',
+      'src/app/api/readiness/__tests__/route.test.ts',
+    ],
   },
 });

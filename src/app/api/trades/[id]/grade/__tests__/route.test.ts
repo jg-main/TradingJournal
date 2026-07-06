@@ -29,25 +29,7 @@ function assert(condition: boolean, msg: string) {
   }
 }
 
-function assertDeep(
-  actual: Record<string, unknown>,
-  expected: Record<string, unknown>,
-  msg: string,
-) {
-  for (const key of Object.keys(expected)) {
-    const a = actual[key];
-    const e = expected[key];
-    if (JSON.stringify(a) !== JSON.stringify(e)) {
-      failed++;
-      console.error(
-        `  ❌ ${msg} — key "${key}" expected ${JSON.stringify(e)}, got ${JSON.stringify(a)} (FAILED)`,
-      );
-      return;
-    }
-  }
-  passed++;
-  console.log(`  ✅ ${msg}`);
-}
+
 
 // ── Setup: test DB ──────────────────────────────────────────────────
 
@@ -130,18 +112,6 @@ sqlite.exec(`
 
 // ── Helpers (mirrors route.ts logic) ────────────────────────────────
 
-interface GradingPayload {
-  setupScore?: unknown;
-  riskScore?: unknown;
-  entryScore?: unknown;
-  managementScore?: unknown;
-  exitScore?: unknown;
-  reviewScore?: unknown;
-  followedPlan?: unknown;
-  ruleViolation?: unknown;
-  notes?: unknown;
-}
-
 interface ValidationError {
   error: string;
   details: unknown;
@@ -155,7 +125,7 @@ function validateGradePayload(body: Record<string, unknown>):
   const fieldErrors: Record<string, string[]> = {};
 
   // Check for unexpected fields
-  const allAllowed = new Set([...SCORE_FIELDS, ...OPTIONAL_FIELDS]);
+  const allAllowed = new Set<string>([...SCORE_FIELDS, ...OPTIONAL_FIELDS]);
   for (const key of Object.keys(body)) {
     if (!allAllowed.has(key)) {
       fieldErrors[key] = [`Unexpected field: ${key}`];
@@ -165,7 +135,6 @@ function validateGradePayload(body: Record<string, unknown>):
   // Validate each score field: required, integer, 1-10
   for (const field of SCORE_FIELDS) {
     const val = body[field];
-    const fieldDbName = field.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
     if (val === undefined) {
       fieldErrors[field] = ['Required'];
     } else if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 10) {
@@ -211,7 +180,7 @@ function doPut(
   // Validate
   const validated = validateGradePayload(body);
   if ('error' in validated) {
-    return { status: 400, data: validated };
+    return { status: 400, data: validated as unknown as Record<string, unknown> };
   }
 
   // Check trade exists

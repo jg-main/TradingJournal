@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, use, useCallback } from 'react';
-import { ArrowLeft, Plus, Minus, TriangleAlert, RotateCcw, Trash2 } from 'lucide-react';
+import { useEffect, useState, use } from 'react';
+import { ArrowLeft, Plus, Minus, TriangleAlert, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,7 +91,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
   const [showForm, setShowForm] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [closureSummary, setClosureSummary] = useState<ClosureSummary | null>(null);
+  const [closureSummary] = useState<ClosureSummary | null>(null);
   const [actionPending, setActionPending] = useState<'deactivate' | 'reactivate' | 'delete' | null>(null);
 
   const fetchData = async () => {
@@ -126,6 +126,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -159,18 +160,8 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
     }
   };
 
-  const handleDeactivateAccount = async () => {
-    if (!confirm('Deactivate this account? It will remain accessible from Settings.')) return;
-    await mutateLifecycle('PUT', { isActive: false }, 'deactivate', 'Account deactivated.', 'Failed to deactivate account.');
-  };
-
   const handleReactivateAccount = async () => {
     await mutateLifecycle('PUT', { isActive: true }, 'reactivate', 'Account reactivated.', 'Failed to reactivate account.');
-  };
-
-  const handleDeleteAccount = async () => {
-    if (!confirm('Delete this account? This cannot be undone.')) return;
-    await mutateLifecycle('DELETE', undefined, 'delete', 'Account deleted.', 'Failed to delete account.');
   };
 
   const handleCloseAccount = async () => {

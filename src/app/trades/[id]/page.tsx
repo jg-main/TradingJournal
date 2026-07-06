@@ -5,15 +5,15 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { EmptyState } from '@/components/empty-state';
-import { LifecycleStepper } from '@/components/lifecycle-stepper';
+
 import {
   calculatePnL,
   calculateRMultiple,
   deriveTradeStatus,
   type ExecutionData,
 } from '@/lib/trade-calc';
-import { calculateGrade, type GradeScores } from '@/lib/grading';
 import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
+
 import PlannedPhaseView from '@/components/trade-detail/planned-phase-view';
 import ActivePhaseView from '@/components/trade-detail/active-phase-view';
 import ClosedPhaseView from '@/components/trade-detail/closed-phase-view';
@@ -134,34 +134,6 @@ interface LookupValue {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-function statusBadgeVariant(status: Trade['status']): {
-  variant: 'default' | 'secondary' | 'destructive' | 'outline';
-  className: string;
-} {
-  switch (status) {
-    case 'planned':
-      return { variant: 'secondary', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
-    case 'open':
-      return { variant: 'default', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
-    case 'closed':
-      return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400' };
-    case 'deleted':
-      return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400 line-through' };
-  }
-}
-
-function formatPrice(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '-';
-  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function formatCurrency(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '-';
-  const abs = Math.abs(v);
-  const formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return v >= 0 ? `$${formatted}` : `-$${formatted}`;
-}
-
 function formatDate(d: string | null): string {
   if (!d) return '-';
   try {
@@ -177,18 +149,6 @@ function formatDate(d: string | null): string {
   }
 }
 
-function formatAction(action: string): string {
-  const labels: Record<string, string> = {
-    buy: 'Buy',
-    sell: 'Sell',
-    buy_to_cover: 'Buy to Cover',
-    sell_short: 'Sell Short',
-    add: 'Add',
-    reduce: 'Reduce',
-  };
-  return labels[action] ?? action;
-}
-
 function toExecutionData(executions: Execution[]): ExecutionData[] {
   return executions.map((e) => ({
     action: e.action,
@@ -197,10 +157,6 @@ function toExecutionData(executions: Execution[]): ExecutionData[] {
     fees: e.fees ?? 0,
     executedAt: e.executedAt ?? e.createdAt ?? '',
   }));
-}
-
-function statusLabel(status: Trade['status']): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 // ── Page ───────────────────────────────────────────────────────────────

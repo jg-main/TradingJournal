@@ -34,6 +34,7 @@ export default function AccountsPage() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchAccounts(); }, []);
 
   const resetForm = () => {

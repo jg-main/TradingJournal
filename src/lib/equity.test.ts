@@ -13,27 +13,12 @@
 import {
   computeEquityCurve,
   computeDrawdown,
-  type EquityDataPoint,
-  type DrawdownDataPoint,
 } from './equity';
 import { type RollforwardRow } from './dashboard';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function assertEqual(actual: unknown, expected: unknown, label: string): void {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
-  if (a !== e) {
-    console.error(`  ❌ FAIL: ${label}`);
-    console.error(`     expected: ${e}`);
-    console.error(`     actual:   ${a}`);
-    process.exitCode = 1;
-  } else {
-    console.log(`  ✅ PASS: ${label}`);
-  }
-}
-
-function assertDeepEqual(actual: unknown[], expected: unknown[], label: string): void {
   const a = JSON.stringify(actual);
   const e = JSON.stringify(expected);
   if (a !== e) {

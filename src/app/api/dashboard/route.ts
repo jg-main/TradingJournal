@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts } from '@/db/schema';
-import { eq, and, inArray, desc } from 'drizzle-orm';
+import { eq, inArray, desc } from 'drizzle-orm';
 import {
   computeKpiMetrics,
   computeMonthlyPerformance,
@@ -27,8 +27,6 @@ import {
 import {
   computeEquityCurve,
   computeDrawdown,
-  type EquityDataPoint,
-  type DrawdownDataPoint,
 } from '@/lib/equity';
 
 /**
@@ -118,8 +116,6 @@ export async function GET(request: NextRequest) {
             return true;
           })
         : closedTrades;
-
-    const closedTradeIds = dateFilteredClosedTrades.map((t) => t.id);
 
     // 3. Batch-fetch related data for ALL trade IDs (follows review-dashboard pattern)
     const executionsMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();

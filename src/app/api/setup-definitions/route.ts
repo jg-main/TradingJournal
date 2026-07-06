@@ -16,10 +16,6 @@ const createSchema = z.object({
   chartPatterns: z.string().nullable().optional(),
 });
 
-const updateSchema = createSchema.partial().extend({
-  isActive: z.boolean().optional(),
-});
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

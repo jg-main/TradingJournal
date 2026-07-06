@@ -139,34 +139,34 @@ function doPutSettings(body: Record<string, unknown>): { status: number; data: u
 
     if (!existing) {
       const id = randomUUID();
-      const values: Record<string, unknown> = {
+      const values: Partial<typeof schema.settings.$inferInsert> = {
         id,
         currency: body.currency || 'USD',
         createdAt: now,
         updatedAt: now,
       };
-      if (body.startingAccountValue !== undefined) values.startingAccountValue = body.startingAccountValue;
-      if (body.maxRiskPerTradePct !== undefined) values.maxRiskPerTradePct = body.maxRiskPerTradePct;
-      if (body.defaultCommission !== undefined) values.defaultCommission = body.defaultCommission;
-      if (body.defaultAccountId !== undefined) values.defaultAccountId = body.defaultAccountId;
-      if (body.journalStartDate !== undefined) values.journalStartDate = body.journalStartDate;
+      if (body.startingAccountValue !== undefined) values.startingAccountValue = body.startingAccountValue as number | null | undefined;
+      if (body.maxRiskPerTradePct !== undefined) values.maxRiskPerTradePct = body.maxRiskPerTradePct as number | null | undefined;
+      if (body.defaultCommission !== undefined) values.defaultCommission = body.defaultCommission as number | null | undefined;
+      if (body.defaultAccountId !== undefined) values.defaultAccountId = body.defaultAccountId as string | null | undefined;
+      if (body.journalStartDate !== undefined) values.journalStartDate = body.journalStartDate as string | null | undefined;
 
-      db.insert(schema.settings).values(values as any).run();
+      db.insert(schema.settings).values(values as typeof schema.settings.$inferInsert).run();
 
       const row = db.select().from(schema.settings).where(eq(schema.settings.id, id)).get();
       return { status: 201, data: row };
     }
 
-    const updateData: Record<string, unknown> = { updatedAt: now };
-    if (body.startingAccountValue !== undefined) updateData.startingAccountValue = body.startingAccountValue;
-    if (body.maxRiskPerTradePct !== undefined) updateData.maxRiskPerTradePct = body.maxRiskPerTradePct;
-    if (body.defaultCommission !== undefined) updateData.defaultCommission = body.defaultCommission;
-    if (body.defaultAccountId !== undefined) updateData.defaultAccountId = body.defaultAccountId;
-    if (body.currency !== undefined) updateData.currency = body.currency;
-    if (body.journalStartDate !== undefined) updateData.journalStartDate = body.journalStartDate;
+    const updateData: Partial<typeof schema.settings.$inferInsert> = { updatedAt: now };
+    if (body.startingAccountValue !== undefined) updateData.startingAccountValue = body.startingAccountValue as number | null | undefined;
+    if (body.maxRiskPerTradePct !== undefined) updateData.maxRiskPerTradePct = body.maxRiskPerTradePct as number | null | undefined;
+    if (body.defaultCommission !== undefined) updateData.defaultCommission = body.defaultCommission as number | null | undefined;
+    if (body.defaultAccountId !== undefined) updateData.defaultAccountId = body.defaultAccountId as string | null | undefined;
+    if (body.currency !== undefined) updateData.currency = body.currency as string | null | undefined;
+    if (body.journalStartDate !== undefined) updateData.journalStartDate = body.journalStartDate as string | null | undefined;
 
     db.update(schema.settings)
-      .set(updateData as any)
+      .set(updateData)
       .where(eq(schema.settings.id, (existing as Record<string, unknown>).id as string))
       .run();
 
@@ -200,21 +200,6 @@ function seedAccount(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return db.select().from(schema.accounts).where(eq(schema.accounts.id, id)).get() as Record<string, unknown>;
-}
-
-function seedSettings(overrides: Record<string, unknown> = {}) {
-  const id = randomUUID();
-  const now = new Date().toISOString();
-  db.insert(schema.settings)
-    .values({
-      id,
-      currency: 'USD',
-      createdAt: now,
-      updatedAt: now,
-      ...overrides,
-    })
-    .run();
-  return db.select().from(schema.settings).where(eq(schema.settings.id, id)).get() as Record<string, unknown>;
 }
 
 // ── Tests ───────────────────────────────────────────────────────────

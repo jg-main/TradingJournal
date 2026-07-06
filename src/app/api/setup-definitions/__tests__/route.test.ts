@@ -289,7 +289,7 @@ function cleanup() {
 function seedSetup(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const id = randomUUID();
   const now = new Date().toISOString();
-  const values: Record<string, unknown> = {
+  const values: Partial<typeof schema.setupDefinitions.$inferInsert> = {
     id,
     name: 'Test Setup',
     description: null,
@@ -307,7 +307,7 @@ function seedSetup(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 
   db.insert(schema.setupDefinitions)
-    .values(values as any)
+    .values(values as typeof schema.setupDefinitions.$inferInsert)
     .run();
 
   // Also seed the corresponding lookupValue
@@ -437,7 +437,7 @@ console.log('\n6. POST returns 409 for duplicate name:');
 console.log('\n7. POST returns 400 for missing name:');
 {
   cleanup();
-  const result = doPostSetup({ description: 'No name provided' } as any);
+  const result = doPostSetup({ description: 'No name provided' });
   assert(result.status === 400, 'returns 400');
 }
 

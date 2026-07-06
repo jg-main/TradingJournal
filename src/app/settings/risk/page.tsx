@@ -21,7 +21,7 @@ interface RiskSettings {
 
 export default function RiskSettingsPage() {
   const router = useRouter();
-  const [settings, setSettings] = useState<RiskSettings | null>(null);
+  const [, setSettings] = useState<RiskSettings | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

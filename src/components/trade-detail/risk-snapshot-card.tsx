@@ -29,6 +29,7 @@ export default function RiskSnapshotCard({ riskSnapshot, onSave }: RiskSnapshotC
 
   useEffect(() => {
     if (!editMode && riskSnapshot) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
         accountEquityAtOpen: riskSnapshot.accountEquityAtOpen?.toString() ?? '',
         initialEntryPrice: riskSnapshot.initialEntryPrice?.toString() ?? '',

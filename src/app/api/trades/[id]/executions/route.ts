@@ -303,6 +303,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             }
 
             db.insert(tradeRiskSnapshots)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .values(snapshotValues as any)
               .run();
           }

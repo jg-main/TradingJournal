@@ -314,7 +314,7 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
       .values({
         id: executionId,
         tradeId,
-        action: action as string,
+        action: action as 'buy' | 'sell' | 'buy_to_cover' | 'sell_short' | 'add' | 'reduce',
         quantity: quantity as number,
         price: price as number,
         fees,
@@ -347,7 +347,7 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
 
     db.update(schema.trades)
       .set({
-        status: derived.status,
+        status: derived.status as 'open' | 'planned' | 'closed' | 'deleted',
         openedAt: derived.openedAt,
         closedAt: derived.closedAt,
         updatedAt: now,
@@ -489,7 +489,7 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
           }
 
           db.insert(schema.tradeRiskSnapshots)
-            .values(snapshotValues as any)
+            .values(snapshotValues as typeof schema.tradeRiskSnapshots.$inferInsert)
             .run();
         }
       }

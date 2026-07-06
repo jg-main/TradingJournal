@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const depositAmount = '1250';
 const withdrawalAmount = '325';
 
-async function createAccount(page: Parameters<typeof test>[0]['page'], name: string) {
+async function createAccount(page: Page, name: string) {
   const response = await page.request.post('/api/accounts', {
     data: {
       name,
@@ -24,7 +24,7 @@ async function createAccount(page: Parameters<typeof test>[0]['page'], name: str
   return account as { id: string; name: string };
 }
 
-async function createOpenTrade(page: Parameters<typeof test>[0]['page'], accountId: string) {
+async function createOpenTrade(page: Page, accountId: string) {
   const tradeResponse = await page.request.post('/api/trades', {
     data: {
       symbol: 'AAPL',
@@ -215,7 +215,7 @@ test.describe('Accounts', () => {
 
   test('deletes account with no trades from the list page', async ({ page }) => {
     const accountName = `Settings Workflow ${Date.now()}-delete-no-trades`;
-    const account = await createAccount(page, accountName);
+    await createAccount(page, accountName);
 
     await page.goto('/settings/accounts');
     await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();

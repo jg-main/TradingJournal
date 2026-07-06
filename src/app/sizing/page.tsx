@@ -15,7 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { EmptyState } from '@/components/empty-state';
 import { calculatePositionSize, type Direction, type PositionSizingResult } from '@/lib/position-sizing';
 
 // ── Types ──────────────────────────────────────────────────────────────

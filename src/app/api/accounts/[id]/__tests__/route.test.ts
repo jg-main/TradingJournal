@@ -354,7 +354,7 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
       return { status: 404, data: { error: 'Account not found' } };
     }
 
-    const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    const updateData: Partial<typeof schema.accounts.$inferInsert> = { updatedAt: new Date().toISOString() };
     if (body.name !== undefined) updateData.name = body.name;
     if (body.broker !== undefined) updateData.broker = body.broker;
     if (body.currency !== undefined) updateData.currency = body.currency;
@@ -369,10 +369,10 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
       return { status: 409, data: { error: 'Cannot reactivate account with open trades' } };
     }
 
-    if (body.isActive !== undefined) updateData.isActive = body.isActive;
+    if (body.isActive !== undefined) updateData.isActive = body.isActive as boolean | null | undefined;
 
     db.update(schema.accounts)
-      .set(updateData as any)
+      .set(updateData)
       .where(eq(schema.accounts.id, id))
       .run();
 

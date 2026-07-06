@@ -98,7 +98,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      if (!phase || !PHASE.includes(phase as any)) {
+      if (!phase || !PHASE.includes(phase as (typeof PHASE)[number])) {
         return NextResponse.json(
           { error: 'Validation failed', details: { fieldErrors: { phase: [`Phase must be one of: ${PHASE.join(', ')}`] } } },
           { status: 400 },
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           id: assetId,
           tradeId: id,
           assetType: 'screenshot',
-          phase: phase as any,
+          phase: phase as (typeof PHASE)[number],
           label: label ?? null,
           filePath: `/uploads/trades/${uniqueName}`,
           externalUrl: null,

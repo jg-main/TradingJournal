@@ -116,15 +116,6 @@ sqlite.exec(`
 
 // ── Helpers (mirrors route.ts logic) ────────────────────────────────
 
-interface MistakePayload {
-  mistakeType?: unknown;
-  phase?: unknown;
-  severity?: unknown;
-  rootCause?: unknown;
-  correctiveAction?: unknown;
-  status?: unknown;
-}
-
 const PHASE = ['pre_trade', 'entry', 'management', 'exit', 'review'] as const;
 const SEVERITY = ['minor', 'moderate', 'major', 'critical'] as const;
 const STATUS = ['open', 'addressed', 'improved', 'resolved'] as const;
@@ -154,7 +145,7 @@ function validateMistakePayload(body: Record<string, unknown>):
   const phase = body.phase;
   if (phase === undefined || phase === null) {
     fieldErrors.phase = ['Required'];
-  } else if (!PHASE.includes(phase as any)) {
+  } else if (!PHASE.includes(phase as (typeof PHASE)[number])) {
     fieldErrors.phase = [`Invalid phase. Must be one of: ${PHASE.join(', ')}`];
   }
 
@@ -162,7 +153,7 @@ function validateMistakePayload(body: Record<string, unknown>):
   const severity = body.severity;
   if (severity === undefined || severity === null) {
     fieldErrors.severity = ['Required'];
-  } else if (!SEVERITY.includes(severity as any)) {
+  } else if (!SEVERITY.includes(severity as (typeof SEVERITY)[number])) {
     fieldErrors.severity = [`Invalid severity. Must be one of: ${SEVERITY.join(', ')}`];
   }
 
@@ -184,7 +175,7 @@ function validateMistakePayload(body: Record<string, unknown>):
 
   // status: optional, defaults to 'open'
   const status = body.status;
-  if (status !== undefined && status !== null && !STATUS.includes(status as any)) {
+  if (status !== undefined && status !== null && !STATUS.includes(status as (typeof STATUS)[number])) {
     fieldErrors.status = [`Invalid status. Must be one of: ${STATUS.join(', ')}`];
   }
 
@@ -256,11 +247,11 @@ function doPost(
       id: mistakeId,
       tradeId,
       mistakeTypeId: lookupId,
-      phase: validated.phase as any,
-      severity: validated.severity as any,
+      phase: validated.phase as (typeof PHASE)[number],
+      severity: validated.severity as (typeof SEVERITY)[number],
       rootCause: validated.rootCause,
       correctiveAction: validated.correctiveAction,
-      status: validated.status as any,
+      status: validated.status as (typeof STATUS)[number],
       createdAt: now,
       updatedAt: now,
     })

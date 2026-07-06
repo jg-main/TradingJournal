@@ -178,26 +178,6 @@ sqlite.exec(`
 
 // ── Simulated route logic ───────────────────────────────────────────
 
-interface CloseSummary {
-  accountId: string;
-  accountName: string;
-  startingBalance: number;
-  depositsTotal: number;
-  withdrawalsTotal: number;
-  realizedPnl: number;
-  finalBalance: number;
-  netReturn: number | null;
-  kpis: {
-    tradeCount: number;
-    netPnl: number;
-    winRate: number | null;
-    avgR: number | null;
-    avgGrade: number | null;
-  };
-  datesActive: { from: string; to: string };
-  closedAt: string;
-}
-
 function doCloseAccount(id: string): { status: number; data: unknown } {
   try {
     // 1. Validate account exists and is active
@@ -232,14 +212,6 @@ function doCloseAccount(id: string): { status: number; data: unknown } {
 
     if (closedTradesFiltered.length > 0) {
       const tradeIds = closedTradesFiltered.map((t) => t.id) as string[];
-
-      // Fetch all executions for the closed trades in one query
-      const allExecutions = db
-        .select()
-        .from(schema.tradeExecutions)
-        .where(eq(schema.tradeExecutions.tradeId, tradeIds[0]))
-        .all()
-        .filter(() => true); // dummy filter to start fresh
 
       // Proper batch query via inArray-like approach
       const execPlaceholders = tradeIds.map(() => '?').join(',');

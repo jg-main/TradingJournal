@@ -47,6 +47,7 @@ export default function LookupsPage() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchLookups(); }, []);
 
   const resetForm = () => {

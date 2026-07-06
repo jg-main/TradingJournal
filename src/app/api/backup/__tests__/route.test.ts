@@ -15,7 +15,7 @@
 
 process.env.DB_FILE_NAME = './.test-m06-s02-t02-db';
 
-import { mkdirSync, writeFileSync, rmSync, existsSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ZipArchive } from 'archiver';
@@ -31,18 +31,6 @@ function assert(condition: boolean, msg: string) {
   } else {
     failed++;
     console.error(`  \u274c ${msg} (FAILED)`);
-  }
-}
-
-function assertDeepEqual(actual: unknown, expected: unknown, msg: string) {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
-  if (a !== e) {
-    failed++;
-    console.error(`  \u274c ${msg} — expected ${e}, got ${a} (FAILED)`);
-  } else {
-    passed++;
-    console.log(`  \u2705 ${msg}`);
   }
 }
 
@@ -128,7 +116,6 @@ function doGetBackup(overrides?: { dbPath?: string; uploadsDir?: string }): Back
 
     // Add uploads
     if (existsSync(uploadsDir)) {
-      const { readdirSync, statSync } = require('node:fs');
       const files = readdirSync(uploadsDir);
       for (const file of files) {
         if (file === '.gitkeep') continue;
@@ -196,7 +183,7 @@ async function runTests() {
       );
 
       // Verify the stream is a valid ZIP containing expected entries
-      const buffer = await streamToBuffer(result.body);
+      const buffer = await streamToBuffer(result.body!);
       const hasZipSig = buffer[0] === 0x50 && buffer[1] === 0x4B;
       assert(hasZipSig, 'Stream produces a valid ZIP archive (PK signature)');
 
