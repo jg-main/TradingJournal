@@ -163,7 +163,7 @@ test.describe('M012 Trade Lifecycle', () => {
     );
 
     // Click Remove on the M012-DEL row (use unique symbol to avoid clashing with other specs' MSFT data)
-    await page.locator('tr').filter({ hasText: 'M012-DEL' }).getByText('Remove').first().click();
+    await page.locator('tr').filter({ hasText: 'M012-DEL' }).locator('[title="Remove"]').first().click();
 
     // Wait for the trade log to refresh after deletion
     await refreshPromise;

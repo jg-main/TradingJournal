@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Download, Plus, NotebookPen } from 'lucide-react';
+import { Download, Plus, NotebookPen, Play, Pencil, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
 import { ExecuteDialog } from '@/components/execute-dialog';
 import type { ExecuteTradeData } from '@/components/execute-dialog';
@@ -995,26 +996,25 @@ export default function TradesPage() {
                     {formatDate(item.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {item.status === 'planned' && (
-                      <button
-                        onClick={() => setExecuteTrade(item)}
-                        className="mr-2 text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                    <div className="flex items-center justify-end gap-0.5">
+                      {item.status === 'planned' && (
+                        <Button variant="ghost" size="icon-sm" onClick={() => setExecuteTrade(item)} title="Execute">
+                          <Play className="size-3.5" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon-sm" onClick={() => openEdit(item)} title="Edit">
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleDelete(item.id, item.tradeCode)}
+                        title="Remove"
+                        className="text-zinc-400 hover:text-red-600"
                       >
-                        Execute
-                      </button>
-                    )}
-                    <button
-                      onClick={() => openEdit(item)}
-                      className="mr-2 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item.id, item.tradeCode)}
-                      className="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    >
-                      Remove
-                    </button>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
