@@ -14,6 +14,7 @@ export default defineConfig({
       'src/lib/restore.test.ts',
       'src/app/api/app-profile/__tests__/route.test.ts',
       'src/app/api/readiness/__tests__/route.test.ts',
+      'src/app/api/accounts/__tests__/checks.test.ts',
     ],
   },
 });
