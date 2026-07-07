@@ -162,23 +162,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Generate tradeCode: T-XXXX
-    // Use MAX(trade_code) to find the highest existing code, handling gaps from
-    // stale data, deletions, or re-used test databases.
-    const maxResult = db
-      .select({ max: sql<string | null>`MAX(trade_code)` })
-      .from(trades)
-      .get();
-
-    let nextNumber = 1;
-    if (maxResult?.max) {
-      const match = maxResult.max.match(/T-(\d+)/);
-      if (match) {
-        nextNumber = parseInt(match[1], 10) + 1;
-      }
-    }
-    const tradeCode = `T-${String(nextNumber).padStart(4, '0')}`;
-
     // Use setupId directly if provided, otherwise resolve setup name to UUID
     let resolvedSetupId: string | null = parsed.data.setupId ?? null;
     if (!resolvedSetupId && parsed.data.setup) {
@@ -188,40 +171,79 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
+    // Retry loop: trade_code generation uses MAX(trade_code) which can race
+    // under concurrent inserts. Retry up to 3 times on UNIQUE constraint.
+    const MAX_RETRIES = 3;
+    let lastError: unknown = null;
 
-    db.insert(trades)
-      .values({
-        id,
-        tradeCode,
-        accountId,
-        symbol: parsed.data.symbol,
-        direction: parsed.data.direction,
-        setupId: resolvedSetupId,
-        sectorId: parsed.data.sectorId ?? null,
-        marketConditionId: parsed.data.marketConditionId ?? null,
-        status: 'planned',
-        thesis: parsed.data.thesis ?? null,
-        plannedEntry: parsed.data.plannedEntry ?? null,
-        plannedStop: parsed.data.plannedStop ?? null,
-        plannedTarget1: parsed.data.plannedTarget1 ?? null,
-        plannedQuantity: parsed.data.plannedQuantity ?? null,
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const row = db.transaction(() => {
+          // Generate tradeCode: T-XXXX
+          // Use MAX(trade_code) to find the highest existing code, handling gaps from
+          // stale data, deletions, or re-used test databases.
+          const maxResult = db
+            .select({ max: sql<string | null>`MAX(trade_code)` })
+            .from(trades)
+            .get();
 
-        invalidationCondition: parsed.data.invalidationCondition ?? null,
-        preTradePlan: preTradePlanValue,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
+          let nextNumber = 1;
+          if (maxResult?.max) {
+            const match = maxResult.max.match(/T-(\d+)/);
+            if (match) {
+              nextNumber = parseInt(match[1], 10) + 1;
+            }
+          }
+          const tradeCode = `T-${String(nextNumber).padStart(4, '0')}`;
 
-    const row = db
-      .select()
-      .from(trades)
-      .where(eq(trades.id, id))
-      .get();
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
 
-    return NextResponse.json(row, { status: 201 });
+          db.insert(trades)
+            .values({
+              id,
+              tradeCode,
+              accountId,
+              symbol: parsed.data.symbol,
+              direction: parsed.data.direction,
+              setupId: resolvedSetupId,
+              sectorId: parsed.data.sectorId ?? null,
+              marketConditionId: parsed.data.marketConditionId ?? null,
+              status: 'planned',
+              thesis: parsed.data.thesis ?? null,
+              plannedEntry: parsed.data.plannedEntry ?? null,
+              plannedStop: parsed.data.plannedStop ?? null,
+              plannedTarget1: parsed.data.plannedTarget1 ?? null,
+              plannedQuantity: parsed.data.plannedQuantity ?? null,
+              invalidationCondition: parsed.data.invalidationCondition ?? null,
+              preTradePlan: preTradePlanValue,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .run();
+
+          return db
+            .select()
+            .from(trades)
+            .where(eq(trades.id, id))
+            .get()!;
+        });
+
+        return NextResponse.json(row, { status: 201 });
+      } catch (error) {
+        lastError = error;
+        // Only retry on UNIQUE constraint violation (concurrent trade_code collision)
+        if (
+          error instanceof Error &&
+          error.message.includes('UNIQUE constraint failed: trades.trade_code')
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw lastError;
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to create trade', details: String(error) },

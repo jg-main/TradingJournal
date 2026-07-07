@@ -10,7 +10,6 @@ import {
   Eye,
   Target,
   Star,
-  ClipboardCheck,
   Settings,
   Menu,
   type LucideIcon,
@@ -30,7 +29,6 @@ const navItems: NavItem[] = [
   { href: '/watchlist', label: 'Watchlist', icon: Eye },
   { href: '/sizing', label: 'Position Sizing', icon: Target },
   { href: '/reviews', label: 'Reviews', icon: Star },
-  { href: '/checks', label: 'Checks', icon: ClipboardCheck },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
