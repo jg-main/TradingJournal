@@ -9,6 +9,7 @@ export interface Trade {
   tradeCode: string;
   symbol: string;
   direction: 'long' | 'short';
+  accountId: string;
   setupId: string | null;
   marketConditionId: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';

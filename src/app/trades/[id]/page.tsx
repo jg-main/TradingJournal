@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
@@ -18,6 +18,7 @@ import PlannedPhaseView from '@/components/trade-detail/planned-phase-view';
 import ActivePhaseView from '@/components/trade-detail/active-phase-view';
 import ClosedPhaseView from '@/components/trade-detail/closed-phase-view';
 import DeletedPhaseView from '@/components/trade-detail/deleted-phase-view';
+import { ExecuteDialog, type ExecuteTradeData } from '@/components/execute-dialog';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ interface Trade {
   tradeCode: string;
   symbol: string;
   direction: 'long' | 'short';
+  accountId: string;
   setupId: string | null;
   marketConditionId: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
@@ -177,6 +179,8 @@ export default function TradeDetailPage() {
   const [mistakes, setMistakes] = useState<TradeMistake[]>([]);
   const [mistakeTypes, setMistakeTypes] = useState<LookupValue[]>([]);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
+  const [executeOpen, setExecuteOpen] = useState(false);
+  const [executeData, setExecuteData] = useState<ExecuteTradeData | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,6 +265,31 @@ export default function TradeDetailPage() {
     setRefetchTrigger((n) => n + 1);
   };
 
+  const handleExecute = useCallback(() => {
+    if (!trade) return;
+    setExecuteData({
+      id: trade.id,
+      tradeCode: trade.tradeCode,
+      symbol: trade.symbol,
+      direction: trade.direction,
+      plannedEntry: trade.plannedEntry,
+      plannedStop: trade.plannedStop,
+      plannedTarget1: trade.plannedTarget1,
+      plannedQuantity: trade.plannedQuantity,
+      accountId: trade.accountId,
+      setupId: trade.setupId,
+    });
+    setExecuteOpen(true);
+  }, [trade]);
+
+  const handleExecuteClose = useCallback((open: boolean) => {
+    if (!open) {
+      setExecuteOpen(false);
+      setExecuteData(null);
+    }
+    setExecuteOpen(open);
+  }, []);
+
   if (loading) return (
     <div className="mx-auto flex max-w-4xl items-center justify-center px-8 py-20">
       <Loader2 className="mr-2 size-5 animate-spin text-zinc-400" />
@@ -279,10 +308,19 @@ export default function TradeDetailPage() {
     <div className="mx-auto max-w-4xl px-8 py-10">
       <Link href="/trades" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"><ArrowLeft className="size-4" />Back to Trade Log</Link>
 
-      {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} />}
+      {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} />}
       {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onRiskSnapshotSave={handleRiskSnapshotSave} onExecutionAdded={handleExecutionAdded} />}
       {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} stopAdjustments={stopAdjustments} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
+
+      {executeData && (
+        <ExecuteDialog
+          trade={executeData}
+          open={executeOpen}
+          onOpenChange={handleExecuteClose}
+          onComplete={handleExecutionAdded}
+        />
+      )}
 
       <p className="mt-8 text-xs text-zinc-400 dark:text-zinc-600">Created {formatDate(trade.createdAt)}{trade.updatedAt && ` · Updated ${formatDate(trade.updatedAt)}`}</p>
     </div>
