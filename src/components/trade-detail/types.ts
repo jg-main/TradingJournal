@@ -110,6 +110,17 @@ export interface TradeMistake {
   updatedAt: string | null;
 }
 
+export interface CheckResult {
+  id: string;
+  tradeId: string;
+  checklistDefinitionId: string;
+  description: string;
+  passed: boolean;
+  comment: string | null;
+  checkedAt: string | null;
+  createdAt: string | null;
+}
+
 export interface LookupValue {
   id: string;
   type: string;

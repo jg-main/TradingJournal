@@ -16,7 +16,7 @@ import TradeAssetsCard from './trade-assets-card';
 import TradeExitNotesCard from './trade-exit-notes-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
-import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment } from './types';
+import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 
 interface ClosedPhaseViewProps {
@@ -30,6 +30,7 @@ interface ClosedPhaseViewProps {
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
   rMultiple: { rMultiple: number | null } | null;
   stopAdjustments: StopAdjustment[];
+  checkResults: CheckResult[];
   onAdjustmentAdded: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onMistakesChanged: () => Promise<void>;
@@ -48,6 +49,7 @@ export default function ClosedPhaseView({
   pnlResult,
   rMultiple,
   stopAdjustments,
+  checkResults,
   onAdjustmentAdded,
   onAssetsChanged,
   onMistakesChanged,

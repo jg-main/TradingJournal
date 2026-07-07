@@ -14,7 +14,7 @@ import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import TradeAssetsCard from './trade-assets-card';
-import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset } from './types';
+import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset, CheckResult } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 
 interface ActivePhaseViewProps {
@@ -26,6 +26,7 @@ interface ActivePhaseViewProps {
   derivedStatus: DeriveStatusResult | null;
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
   rMultiple: { rMultiple: number | null } | null;
+  checkResults: CheckResult[];
   onAdjustmentAdded: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onRiskSnapshotSave: (payload: Record<string, number | null>) => Promise<void>;
@@ -41,6 +42,7 @@ export default function ActivePhaseView({
   derivedStatus,
   pnlResult,
   rMultiple,
+  checkResults,
   onAdjustmentAdded,
   onAssetsChanged,
   onRiskSnapshotSave,
