@@ -16,6 +16,8 @@ export default defineConfig({
       'src/app/api/readiness/__tests__/route.test.ts',
       'src/app/api/accounts/__tests__/checks.test.ts',
       'src/app/api/setups/__tests__/checks.test.ts',
+      'src/app/api/checks/__tests__/merged.test.ts',
+      'src/app/api/checks/__tests__/reorder.test.ts',
     ],
   },
 });
