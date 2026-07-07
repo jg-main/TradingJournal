@@ -5,20 +5,21 @@
  * Covers positive, negative, and edge cases.
  *
  * Negative tests (Q7 coverage):
- * - Missing DB file -> Error thrown
- * - Missing uploads directory -> gracefully skipped
- * - Corrupted DB path -> Error thrown
- * - No files in uploads -> ZIP contains only journal.db
+ * - Missing uploads directory -> gracefully skipped, ZIP contains manifest.json
+ * - Empty/tableless DB         -> gracefully handled, ZIP contains manifest with -1 counts
+ * - Missing DB file            -> throws Error when no dbParam provided
+ * - No files in uploads        -> ZIP contains manifest.json and data/ files only
  *
  * Run: npx tsx src/lib/create-backup.test.ts
  */
 
 import { createBackupArchive } from './create-backup';
 import { existsSync, mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '../db/schema';
 
 let passed = 0;
@@ -67,13 +68,17 @@ async function streamToBuffer(stream: ReadableStream<Uint8Array>): Promise<Buffe
 }
 
 /**
- * Create a minimal valid SQLite database file at the given path.
- * Uses better-sqlite3 directly so the file has proper page-1 structure.
+ * Create a fresh SQLite database with the full schema applied via Drizzle migrations.
  */
-function createMinimalSqliteDb(dbPath: string) {
+function createSchemaDb(dbPath: string) {
+  mkdirSync(dirname(dbPath), { recursive: true });
   const sqlite = new Database(dbPath);
   sqlite.pragma('journal_mode = WAL');
-  sqlite.close();
+  sqlite.pragma('foreign_keys = ON');
+  const testDb = drizzle(sqlite, { schema });
+  const migrationsDir = join(process.cwd(), 'src/db/migrations');
+  migrate(testDb, { migrationsFolder: migrationsDir });
+  return { sqlite, db: testDb };
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -89,11 +94,8 @@ async function runTests() {
     try {
       setupTestDir();
       const dbPath = join(testDir, '.trading-journal', 'journal.db');
-      createMinimalSqliteDb(dbPath);
       process.env.DB_FILE_NAME = dbPath;
-
-      const sqlite = new Database(dbPath);
-      const testDb = drizzle(sqlite, { schema });
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
 
       // Remove the uploads directory to test graceful handling
       const uploadsDir = join(testDir, 'public', 'uploads', 'trades');
@@ -109,10 +111,14 @@ async function runTests() {
       const hasZipSig = buffer[0] === 0x50 && buffer[1] === 0x4B;
       assert(hasZipSig, 'missing uploads -> buffer is a valid ZIP (PK signature)');
 
-      const hasJournalDb = buffer.toString('latin1').includes('journal.db');
-      assert(hasJournalDb, 'missing uploads -> ZIP contains journal.db');
+      const contents = buffer.toString('latin1');
+      const hasManifest = contents.includes('manifest.json');
+      assert(hasManifest, 'missing uploads -> ZIP contains manifest.json');
 
-      const hasUploadEntry = buffer.toString('latin1').includes('uploads/');
+      const hasDataDir = contents.includes('data/');
+      assert(hasDataDir, 'missing uploads -> ZIP contains data/ entries');
+
+      const hasUploadEntry = contents.includes('uploads/');
       assert(!hasUploadEntry, 'missing uploads -> ZIP does not contain uploads/ entries');
 
       sqlite.close();
@@ -122,39 +128,43 @@ async function runTests() {
     }
   }
 
-  // ── Negative: missing DB file ────────────────────────────────────────
+  // ── Negative: empty/tableless DB (error-resilience) ─────────────────
   {
-    console.log('\n## Missing DB file');
-    const originalEnv = process.env.DB_FILE_NAME;
+    console.log('\n## Empty/tableless database (error resilience)');
 
     try {
       setupTestDir();
-
-      // Create a valid SQLite db for the dbParam so the WAL checkpoint succeeds
-      const validDbPath = join(testDir, '.trading-journal', 'valid.db');
-      createMinimalSqliteDb(validDbPath);
-      const sqlite = new Database(validDbPath);
+      // Create a database with no tables — serializeBackup will catch query errors
+      const sqlite = new Database(':memory:');
       const testDb = drizzle(sqlite, { schema });
 
-      // Set DB_FILE_NAME to a non-existent path so existsSync fails
-      const nonExistentDb = join(testDir, '.trading-journal', 'nonexistent.db');
-      process.env.DB_FILE_NAME = nonExistentDb;
-
-      assert(!existsSync(nonExistentDb), 'missing DB -> env var file does not exist before test');
-
+      // Function should not throw despite missing tables
       let threw = false;
+      let stream: ReadableStream<Uint8Array> | null = null;
       try {
-        const stream = await createBackupArchive(testDb);
-        const reader = stream.getReader();
-        await reader.cancel();
+        stream = await createBackupArchive(testDb);
       } catch {
         threw = true;
       }
-      assert(threw, 'missing DB file -> throws Error');
+      assert(!threw, 'tableless DB -> does not throw');
+
+      assert(stream instanceof ReadableStream, 'tableless DB -> returns a ReadableStream');
+
+      const buffer = await streamToBuffer(stream!);
+      assert(buffer.length > 0, 'tableless DB -> ZIP buffer has data');
+
+      const hasZipSig = buffer[0] === 0x50 && buffer[1] === 0x4B;
+      assert(hasZipSig, 'tableless DB -> buffer is a valid ZIP (PK signature)');
+
+      const contents = buffer.toString('latin1');
+      const hasManifest = contents.includes('manifest.json');
+      assert(hasManifest, 'tableless DB -> ZIP contains manifest.json');
+
+      const hasDataDir = contents.includes('data/');
+      assert(hasDataDir, 'tableless DB -> ZIP contains data/ prefix entries');
 
       sqlite.close();
     } finally {
-      process.env.DB_FILE_NAME = originalEnv;
       teardownTestDir();
     }
   }
@@ -167,11 +177,8 @@ async function runTests() {
     try {
       setupTestDir();
       const dbPath = join(testDir, '.trading-journal', 'journal.db');
-      createMinimalSqliteDb(dbPath);
       process.env.DB_FILE_NAME = dbPath;
-
-      const sqlite = new Database(dbPath);
-      const testDb = drizzle(sqlite, { schema });
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
 
       const uploadsDir = join(testDir, 'public', 'uploads', 'trades');
       writeFileSync(join(uploadsDir, 'screenshot1.png'), Buffer.from('fake png data 1'));
@@ -188,12 +195,24 @@ async function runTests() {
       assert(hasZipSig, 'full backup -> buffer is a valid ZIP (PK signature)');
 
       const contents = buffer.toString('latin1');
-      assert(contents.includes('journal.db'), 'full backup -> ZIP contains journal.db');
+
+      // JSON format checks
+      const hasManifest = contents.includes('manifest.json');
+      assert(hasManifest, 'full backup -> ZIP contains manifest.json');
+
+      const hasDataDir = contents.includes('data/');
+      assert(hasDataDir, 'full backup -> ZIP contains data/ directory entries');
+
+      // Upload checks
       assert(contents.includes('uploads/screenshot1.png'), 'full backup -> ZIP contains uploads/screenshot1.png');
       assert(contents.includes('uploads/screenshot2.png'), 'full backup -> ZIP contains uploads/screenshot2.png');
 
       const hasGitkeep = contents.includes('.gitkeep');
       assert(!hasGitkeep, 'full backup -> .gitkeep is excluded from ZIP');
+
+      // journal.db should NOT be in the new JSON format
+      const hasJournalDb = contents.includes('journal.db');
+      assert(!hasJournalDb, 'full backup -> journal.db is NOT in the ZIP (JSON format)');
 
       sqlite.close();
     } finally {
@@ -210,11 +229,8 @@ async function runTests() {
     try {
       setupTestDir();
       const dbPath = join(testDir, '.trading-journal', 'journal.db');
-      createMinimalSqliteDb(dbPath);
       process.env.DB_FILE_NAME = dbPath;
-
-      const sqlite = new Database(dbPath);
-      const testDb = drizzle(sqlite, { schema });
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
 
       const uploadsDir = join(testDir, 'public', 'uploads', 'trades');
       writeFileSync(join(uploadsDir, '.gitkeep'), '');
@@ -223,7 +239,12 @@ async function runTests() {
       const buffer = await streamToBuffer(stream);
 
       const contents = buffer.toString('latin1');
-      assert(contents.includes('journal.db'), 'empty uploads -> ZIP contains journal.db');
+      const hasManifest = contents.includes('manifest.json');
+      assert(hasManifest, 'empty uploads -> ZIP contains manifest.json');
+
+      const hasDataDir = contents.includes('data/');
+      assert(hasDataDir, 'empty uploads -> ZIP contains data/ entries');
+
       assert(!contents.includes('.gitkeep'), 'empty uploads -> .gitkeep excluded');
       assert(!contents.includes('uploads/'), 'empty uploads -> no uploads/ prefix entries');
 

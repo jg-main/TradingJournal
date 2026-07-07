@@ -9,6 +9,7 @@ import * as schema from './schema';
 const DB_FILE = process.env.DB_FILE_NAME || './.trading-journal/journal.db';
 
 let dbInstance: ReturnType<typeof drizzle<typeof schema>> | null = null;
+let sqliteHandle: Database.Database | null = null;
 
 export function initializeDatabase() {
   if (dbInstance) return dbInstance;
@@ -16,6 +17,7 @@ export function initializeDatabase() {
   mkdirSync(dirname(DB_FILE), { recursive: true });
 
   const sqlite = new Database(DB_FILE);
+  sqliteHandle = sqlite;
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
 
@@ -34,3 +36,19 @@ export function initializeDatabase() {
 }
 
 export const db = initializeDatabase();
+
+/**
+ * Return the raw better-sqlite3 Database handle for transactional
+ * wipe-and-replace operations not available through Drizzle ORM.
+ *
+ * Throws if called before initializeDatabase() has run.
+ */
+export function getSqliteHandle(): Database.Database {
+  if (!sqliteHandle) {
+    throw new Error(
+      'getSqliteHandle() called before initializeDatabase(). ' +
+        'Ensure the database is initialized first.',
+    );
+  }
+  return sqliteHandle;
+}

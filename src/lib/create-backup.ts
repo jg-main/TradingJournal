@@ -4,13 +4,17 @@
  * Full backup archive (ZIP) creation for the Trading Journal.
  *
  * Produces a ZIP archive containing:
- * - journal.db (the SQLite database, after WAL checkpoint)
- * - uploads/ (all uploaded screenshot assets from public/uploads/trades/)
+ * - manifest.json      (schema version, backup timestamp, app version, row counts)
+ * - data/<table>.json  (per-table JSON arrays for all 17 tables)
+ * - uploads/            (all uploaded screenshot assets from public/uploads/trades/)
+ *
+ * The backup is human-readable, versioned, and self-describing via the manifest,
+ * replacing the earlier opaque journal.db-in-ZIP format.
  *
  * Returns a Web ReadableStream<Uint8Array> suitable for use as a
  * Response body in Next.js App Router route handlers.
  *
- * Pattern: src/lib/export-csv.ts, src/lib/dashboard.ts
+ * Pattern: src/lib/backup-serializer.ts, src/lib/export-csv.ts
  */
 
 import type { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -20,6 +24,7 @@ import { ZipArchive } from 'archiver';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
+import { serializeBackup, TABLE_REGISTRY } from './backup-serializer';
 
 // ── Configuration ───────────────────────────────────────────────────────
 
@@ -72,13 +77,14 @@ function nodeStreamToWeb(nodeStream: Readable): ReadableStream<Uint8Array> {
  *
  * Steps:
  * 1. Checkpoint the SQLite WAL to flush recent writes into the main DB file
- * 2. Stream journal.db into the ZIP as 'journal.db'
- * 3. Read public/uploads/trades/, filter out .gitkeep, add files with 'uploads/' prefix
- * 4. Handle a missing uploads directory gracefully (skip the directory)
- * 5. Return a ReadableStream<Uint8Array> for the Response body
+ * 2. Serialize all 17 database tables via backup-serializer (per-table JSON)
+ * 3. Write manifest.json to the archive root
+ * 4. Write data/<tableName>.json for each table in TABLE_REGISTRY order
+ * 5. Include uploads/ screenshot assets (skip .gitkeep, no crash if missing)
+ * 6. Return a ReadableStream<Uint8Array> for the Response body
  *
  * @returns A ReadableStream<Uint8Array> of the ZIP archive bytes
- * @throws Error if the DB file does not exist or ZIP creation fails
+ * @throws Error if serialization or ZIP creation fails
  */
 export async function createBackupArchive(
   dbParam?: ReturnType<typeof drizzle<typeof schema>>
@@ -87,23 +93,27 @@ export async function createBackupArchive(
   const database = dbParam ?? (await import('@/db/index')).db;
   database.run(sql.raw('PRAGMA wal_checkpoint(TRUNCATE)'));
 
-  // Step 2: Create the archiver ZIP instance
+  // Step 2: Serialize all tables via the JSON serializer
+  const backupData = await serializeBackup(database);
+
+  // Step 3: Create the archiver ZIP instance
   const archive = new ZipArchive({ zlib: { level: 9 } });
 
-  // Step 3: Wire the web stream BEFORE finalizing — data must flow as archiver
+  // Step 4: Wire the web stream BEFORE finalizing — data must flow as archiver
   //         produces it. The web stream consumer connects to the archiver's
   //         Node.js Readable stream via nodeStreamToWeb.
   const webStream = nodeStreamToWeb(archive);
 
-  // Step 4: Add the database file
-  const dbFilePath = getDbFilePath();
-  if (!existsSync(dbFilePath)) {
-    throw new Error(`Database file not found at ${dbFilePath}`);
+  // Step 5: Write manifest.json to the archive root
+  archive.append(JSON.stringify(backupData.manifest, null, 2), { name: 'manifest.json' });
+
+  // Step 6: Write per-table JSON files under data/
+  for (const { name } of TABLE_REGISTRY) {
+    const rows = backupData.tables[name] ?? [];
+    archive.append(JSON.stringify(rows, null, 2), { name: `data/${name}.json` });
   }
 
-  archive.file(dbFilePath, { name: 'journal.db' });
-
-  // Step 5: Add uploaded screenshot assets
+  // Step 7: Add uploaded screenshot assets
   const uploadsDir = getUploadsDir();
   if (existsSync(uploadsDir)) {
     const files = readdirSync(uploadsDir);
@@ -119,12 +129,12 @@ export async function createBackupArchive(
   }
   // If uploads directory does not exist, skip gracefully — no uploads to back up
 
-  // Step 6: Finalize the archive (no more files can be added) —
+  // Step 8: Finalize the archive (no more files can be added) —
   //         finalize() triggers the data flow through the stream.
   //         The Node.js stream pushes to the Web ReadableStream's
   //         controller as chunks are produced.
   archive.finalize();
 
-  // Step 7: Return the web ReadableStream for the Response body
+  // Step 9: Return the web ReadableStream for the Response body
   return webStream;
 }

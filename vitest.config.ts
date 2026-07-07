@@ -11,6 +11,7 @@ export default defineConfig({
     include: [
       'src/lib/account-lifecycle.test.ts',
       'src/lib/readiness.test.ts',
+      'src/lib/restore.test.ts',
       'src/app/api/app-profile/__tests__/route.test.ts',
       'src/app/api/readiness/__tests__/route.test.ts',
     ],

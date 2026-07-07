@@ -3,8 +3,12 @@
  *
  * GET /api/backup
  *
- * Serves a full backup ZIP archive containing journal.db and all uploaded
- * screenshot assets from public/uploads/trades/.
+ * Serves a full backup ZIP archive containing a versioned manifest.json,
+ * per-table JSON data files (data/<table>.json for all 17 tables), and all
+ * uploaded screenshot assets from public/uploads/trades/.
+ *
+ * Uses the JSON serialization format from backup-serializer.ts to produce
+ * human-readable, versioned backups instead of opaque raw-DB blobs.
  *
  * Follows the downloadable-file pattern from /api/trades/export.
  */
