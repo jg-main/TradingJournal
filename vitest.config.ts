@@ -15,6 +15,7 @@ export default defineConfig({
       'src/app/api/app-profile/__tests__/route.test.ts',
       'src/app/api/readiness/__tests__/route.test.ts',
       'src/app/api/accounts/__tests__/checks.test.ts',
+      'src/app/api/setups/__tests__/checks.test.ts',
     ],
   },
 });
