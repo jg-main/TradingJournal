@@ -14,6 +14,12 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { DashboardFilters } from '@/components/dashboard-filters';
 import type { EquityDataPoint, DrawdownDataPoint } from '@/lib/equity';
@@ -109,16 +115,24 @@ function KpiCard({ icon, iconBg, value, label, valueClassName }: KpiCardProps) {
         </div>
         <p
           className={`text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100 ${valueClassName ?? ''}`}
-          title={typeof value === 'string' && value === '--' ? 'No data available' : String(label)}
         >
           {value}
         </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400" title={
-            label === 'Avg R' ? 'Average risk multiple (R) per trade. R = |entry - stop| / risk per share. Higher is better.' :
-            label === 'Avg Grade' ? 'Average process quality score. Grades range from A (54-60) to F (0-17).' :
-            label === 'Current Drawdown' ? 'Peak-to-trough decline from your highest account value.' :
-            label === 'Account Value' ? 'Current total value of your trading account.' : label
-          }>{label}</p>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 underline decoration-dotted decoration-zinc-300 dark:decoration-zinc-600 underline-offset-2 cursor-help">{label}</p>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-64 text-xs">
+            {label === 'Avg R' ? 'Average risk multiple (R) per trade. R = |entry - stop| / risk per share. Higher is better.' :
+             label === 'Avg Grade' ? 'Average process quality score. Grades range from A (54-60) to F (0-17).' :
+             label === 'Current Drawdown' ? 'Peak-to-trough decline from your highest account value.' :
+             label === 'Account Value' ? 'Current total value of your trading account.' :
+             label === 'Net P&L' ? 'Total realized profit and loss across all closed trades.' :
+             label === 'Win Rate' ? 'Percentage of closed trades that were profitable.' :
+             label === 'Total Trades' ? 'Total number of trades in your journal.' :
+             label === 'Open Trades' ? 'Trades currently in an open position.' : label}
+          </TooltipContent>
+        </Tooltip>
       </CardContent>
     </Card>
   );
@@ -146,6 +160,7 @@ function HomeContent() {
   const [rDistribution, setRDistribution] = useState<RDistributionBin[]>([]);
   const [directionalPerformance, setDirectionalPerformance] = useState<DirectionalPerformanceResult | null>(null);
   const [processScoreDistribution, setProcessScoreDistribution] = useState<ProcessScoreBin[] | null>(null);
+  const [showMoreAnalytics, setShowMoreAnalytics] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -640,8 +655,20 @@ function HomeContent() {
         </section>
       )}
 
+      {/* Toggle for additional analytics */}
+      {!loading && kpis !== null && !isEmpty && (
+        <div className="mt-8 flex justify-center">
+          <button
+            onClick={() => setShowMoreAnalytics(!showMoreAnalytics)}
+            className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            {showMoreAnalytics ? '\u25BC Hide' : '\u25B6 Show'} detailed analytics
+          </button>
+        </div>
+      )}
+
       {/* Directional Performance Panel — long vs short breakdown */}
-      {!loading && kpis !== null && !isEmpty && directionalPerformance && (
+      {showMoreAnalytics && !loading && kpis !== null && !isEmpty && directionalPerformance && (
         <section className="mt-8">
           <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
             Directional Performance
@@ -708,8 +735,7 @@ function HomeContent() {
         </section>
       )}
 
-    {/* Process Quality Score Distribution Panel — grade-tier histogram */}
-    {!loading && kpis !== null && !isEmpty && processScoreDistribution !== null && (
+    {showMoreAnalytics && !loading && kpis !== null && !isEmpty && processScoreDistribution !== null && (
       <section className="mt-8">
         <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
           Process Quality Score Distribution
@@ -810,6 +836,7 @@ function HomeContent() {
 }
 
 export default function Home() {
+  useEffect(() => { document.title = "Dashboard — Trading Journal"; }, []);
   return (
     <Suspense fallback={null}>
       <HomeContent />

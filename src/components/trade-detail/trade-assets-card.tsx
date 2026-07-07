@@ -245,7 +245,7 @@ export default function TradeAssetsCard({
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Label{' '}
-                    <span className="text-zinc-400 dark:text-zinc-500">(optional)</span>
+                    <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
                   </label>
                   <input
                     type="text"
@@ -298,7 +298,7 @@ export default function TradeAssetsCard({
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Label{' '}
-                    <span className="text-zinc-400 dark:text-zinc-500">(optional)</span>
+                    <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
                   </label>
                   <input
                     type="text"
@@ -321,7 +321,7 @@ export default function TradeAssetsCard({
 
         {/* Asset gallery — grouped by phase */}
         {assets.length === 0 ? (
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             No assets attached to this trade yet.
           </p>
         ) : (
@@ -332,7 +332,7 @@ export default function TradeAssetsCard({
 
               return (
                 <div key={phase}>
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
                     {phaseLabel[phase]}
                   </h4>
                   <div className="flex flex-wrap gap-3">
@@ -344,7 +344,7 @@ export default function TradeAssetsCard({
                         {/* Delete button */}
                         <button
                           onClick={() => handleDelete(asset.id)}
-                          className="absolute -right-1.5 -top-1.5 z-10 flex size-5 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-500 opacity-0 shadow-sm transition-colors hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-red-900/30"
+                          className="absolute -right-1.5 -top-1.5 z-10 flex size-5 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-600 opacity-0 shadow-sm transition-colors hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-red-900/30"
                           aria-label={`Delete ${asset.label ?? 'asset'}`}
                         >
                           <Trash2 className="size-3" />

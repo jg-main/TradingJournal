@@ -85,7 +85,7 @@ export default function RiskSnapshotCard({ riskSnapshot, onSave }: RiskSnapshotC
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             No risk snapshot recorded.
           </p>
         </CardContent>
@@ -253,32 +253,32 @@ export default function RiskSnapshotCard({ riskSnapshot, onSave }: RiskSnapshotC
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <div className="text-zinc-500 dark:text-zinc-400">Initial Entry</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Initial Entry</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(riskSnapshot!.initialEntryPrice)}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Initial Stop</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Initial Stop</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(riskSnapshot!.initialStopPrice)}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Initial Qty</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Initial Qty</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {riskSnapshot!.initialQuantity?.toLocaleString() ?? '-'}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Risk/Share</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Risk/Share</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(riskSnapshot!.riskPerShare)}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Risk Amount</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Risk Amount</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatCurrency(riskSnapshot!.initialRiskAmount)}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Account Risk</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Account Risk</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {riskSnapshot!.accountRiskPct != null
               ? `${riskSnapshot!.accountRiskPct.toFixed(2)}%`
@@ -287,7 +287,7 @@ export default function RiskSnapshotCard({ riskSnapshot, onSave }: RiskSnapshotC
 
           {riskSnapshot!.plannedRewardRisk != null && (
             <>
-              <div className="text-zinc-500 dark:text-zinc-400">Planned R:R</div>
+              <div className="text-zinc-600 dark:text-zinc-300">Planned R:R</div>
               <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
                 {riskSnapshot!.plannedRewardRisk.toFixed(2)}
               </div>

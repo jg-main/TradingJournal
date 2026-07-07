@@ -88,7 +88,7 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Grading is only available for closed trades.
           </p>
         </CardContent>
@@ -262,7 +262,7 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
           </div>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             No grade recorded yet. Click &quot;Add Grade&quot; to evaluate this trade.
           </p>
         </CardContent>
@@ -293,37 +293,37 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
             <div>
-              <div className="text-zinc-500 dark:text-zinc-400">Setup</div>
+              <div className="text-zinc-600 dark:text-zinc-300">Setup</div>
               <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
                 {grade.setupQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-500 dark:text-zinc-400">Risk</div>
+              <div className="text-zinc-600 dark:text-zinc-300">Risk</div>
               <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
                 {grade.riskQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-500 dark:text-zinc-400">Entry</div>
+              <div className="text-zinc-600 dark:text-zinc-300">Entry</div>
               <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
                 {grade.entryQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-500 dark:text-zinc-400">Management</div>
+              <div className="text-zinc-600 dark:text-zinc-300">Management</div>
               <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
                 {grade.managementQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-500 dark:text-zinc-400">Exit</div>
+              <div className="text-zinc-600 dark:text-zinc-300">Exit</div>
               <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
                 {grade.exitQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-500 dark:text-zinc-400">Review</div>
+              <div className="text-zinc-600 dark:text-zinc-300">Review</div>
               <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
                 {grade.reviewQualityScore}
               </div>
@@ -331,19 +331,19 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
           </div>
           <div className="flex flex-wrap gap-6 border-t border-zinc-200 pt-3 dark:border-zinc-700">
             <div>
-              <div className="text-xs text-zinc-500 dark:text-zinc-400">Total</div>
+              <div className="text-xs text-zinc-600 dark:text-zinc-300">Total</div>
               <div className="text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
                 {grade.totalScore}/60
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-500 dark:text-zinc-400">Grade</div>
+              <div className="text-xs text-zinc-600 dark:text-zinc-300">Grade</div>
               <div className={`text-lg font-bold tabular-nums ${gradeLetterColor(grade.gradeLabel)}`}>
                 {grade.gradeLabel}
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-500 dark:text-zinc-400">Followed Plan</div>
+              <div className="text-xs text-zinc-600 dark:text-zinc-300">Followed Plan</div>
               <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 {grade.followedPlan === true
                   ? 'Yes'
@@ -353,7 +353,7 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-500 dark:text-zinc-400">Rule Violation</div>
+              <div className="text-xs text-zinc-600 dark:text-zinc-300">Rule Violation</div>
               <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 {grade.ruleViolation === true
                   ? 'Yes'

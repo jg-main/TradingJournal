@@ -144,7 +144,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   if (!account) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <Link href="/accounts" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+        <Link href="/accounts" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200">
           <ArrowLeft className="size-4" />
           Back to Accounts
         </Link>
@@ -160,7 +160,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
       {/* Back link */}
       <Link
         href="/accounts"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
         <ArrowLeft className="size-4" />
         Back to Accounts
@@ -171,7 +171,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           {account.name}
         </h1>
-        <div className="mt-2 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="mt-2 flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-300">
           {account.broker && <span>{account.broker}</span>}
           <span>{account.currency}</span>
         </div>
@@ -179,7 +179,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Balance card */}
       <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Current Balance</p>
+        <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Current Balance</p>
         <p className={`mt-1 text-3xl font-semibold tabular-nums ${
           currentBalance >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'
         }`}>
@@ -220,7 +220,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           </div>
         ) : (
           <form onSubmit={handleTransaction} className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+            <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
               {txnType === 'deposit' ? 'Add Funds' : 'Withdraw Funds'}
             </h2>
             <div className="space-y-4">
@@ -240,7 +240,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
                   autoFocus
                 />
                 {txnType === 'withdrawal' && (
-                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                     Current balance: ${formatCurrency(currentBalance)}
                   </p>
                 )}
@@ -285,24 +285,24 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
 
       {/* Transaction history */}
       <div>
-        <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+        <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
           Transaction History
         </h2>
 
         {transactions.length === 0 ? (
           <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">No transactions yet.</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-300">No transactions yet.</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                  <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Date</th>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Type</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Amount</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Balance After</th>
-                  <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Notes</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Type</th>
+                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Amount</th>
+                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Balance After</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -332,7 +332,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
                     <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
                       ${formatCurrency(txn.balanceAfter)}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400 max-w-[200px] truncate">
+                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300 max-w-[200px] truncate">
                       {txn.notes ?? '-'}
                     </td>
                   </tr>

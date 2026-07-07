@@ -157,7 +157,7 @@ export default function TradeStopAdjustmentsCard({
 
         {/* Adjustments table */}
         {stopAdjustments.length === 0 ? (
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             No stop adjustments recorded yet.
           </p>
         ) : (
@@ -180,7 +180,7 @@ export default function TradeStopAdjustmentsCard({
                     : null;
                 return (
                   <TableRow key={adj.id}>
-                    <TableCell className="tabular-nums text-zinc-500 dark:text-zinc-400">
+                    <TableCell className="tabular-nums text-zinc-600 dark:text-zinc-300">
                       {formatDate(adj.adjustedAt ?? adj.createdAt)}
                     </TableCell>
                     <TableCell className="tabular-nums text-right text-zinc-900 dark:text-zinc-100">
@@ -196,15 +196,15 @@ export default function TradeStopAdjustmentsCard({
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : change < 0
                               ? 'text-red-600 dark:text-red-400'
-                              : 'text-zinc-500 dark:text-zinc-400'
-                          : 'text-zinc-500 dark:text-zinc-400'
+                              : 'text-zinc-600 dark:text-zinc-300'
+                          : 'text-zinc-600 dark:text-zinc-300'
                       }`}
                     >
                       {change != null
                         ? `${change >= 0 ? '+' : ''}${change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                         : '-'}
                     </TableCell>
-                    <TableCell className="text-zinc-500 dark:text-zinc-400">
+                    <TableCell className="text-zinc-600 dark:text-zinc-300">
                       {adj.reason ?? '-'}
                     </TableCell>
                     <TableCell>

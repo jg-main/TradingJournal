@@ -6,6 +6,7 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/empty-state';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { ExecuteDialog } from '@/components/execute-dialog';
 import type { ExecuteTradeData } from '@/components/execute-dialog';
 import {
@@ -168,17 +169,18 @@ function directionBadgeClass(direction: 'long' | 'short'): string {
     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
     : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
 }
-
 // ── Page ───────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
 
 export default function TradesPage() {
+  useEffect(() => { document.title = "Trades — Trading Journal"; }, []);
   const [data, setData] = useState<Trade[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; tradeCode: string } | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -296,6 +298,7 @@ export default function TradesPage() {
     try {
       const res = await fetch(`/api/trades/${tradeId}/executions`);
       if (!res.ok) {
+        setConfirmDelete(null);
         setMessage({ type: 'error', text: 'Failed to load executions.' });
         return;
       }
@@ -369,6 +372,7 @@ export default function TradesPage() {
       });
 
       if (!res.ok) {
+        setConfirmDelete(null);
         const err = await res.json();
         setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Request failed.') });
         return;
@@ -420,6 +424,7 @@ export default function TradesPage() {
       });
 
       if (!res.ok) {
+        setConfirmDelete(null);
         const err = await res.json();
         setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Failed to update execution.') });
         return;
@@ -435,20 +440,8 @@ export default function TradesPage() {
     }
   };
 
-  const handleDelete = async (id: string, tradeCode: string) => {
-    if (!confirm(`Delete trade "${tradeCode}"? This will permanently remove it and all its executions.`)) return;
-
-    try {
-      const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        setMessage({ type: 'error', text: 'Failed to delete trade.' });
-        return;
-      }
-      setMessage({ type: 'success', text: `Trade ${tradeCode} deleted.` });
-      fetchItems(1, statusFilter);
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to delete trade.' });
-    }
+  const handleDelete = (id: string, tradeCode: string) => {
+    setConfirmDelete({ id, tradeCode });
   };
 
   const formatDate = (d: string | null) => {
@@ -577,7 +570,7 @@ export default function TradesPage() {
 
                           <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Action</label>
+                              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Action</label>
                               <Select
                                 value={executionForm.action}
                                 onValueChange={(value) => updateExecutionForm(execution.id, { action: value as ExecutionAction })}
@@ -593,7 +586,7 @@ export default function TradesPage() {
                               </Select>
                             </div>
                             <div>
-                              <label htmlFor={`execution-${execution.id}-executedAt`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Executed At</label>
+                              <label htmlFor={`execution-${execution.id}-executedAt`} className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Executed At</label>
                               <input
                                 id={`execution-${execution.id}-executedAt`}
                                 type="datetime-local"
@@ -603,7 +596,7 @@ export default function TradesPage() {
                               />
                             </div>
                             <div>
-                              <label htmlFor={`execution-${execution.id}-quantity`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Quantity</label>
+                              <label htmlFor={`execution-${execution.id}-quantity`} className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Quantity</label>
                               <input
                                 id={`execution-${execution.id}-quantity`}
                                 type="number"
@@ -614,7 +607,7 @@ export default function TradesPage() {
                               />
                             </div>
                             <div>
-                              <label htmlFor={`execution-${execution.id}-price`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Price</label>
+                              <label htmlFor={`execution-${execution.id}-price`} className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Price</label>
                               <input
                                 id={`execution-${execution.id}-price`}
                                 type="number"
@@ -625,7 +618,7 @@ export default function TradesPage() {
                               />
                             </div>
                             <div>
-                              <label htmlFor={`execution-${execution.id}-fees`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Fees</label>
+                              <label htmlFor={`execution-${execution.id}-fees`} className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Fees</label>
                               <input
                                 id={`execution-${execution.id}-fees`}
                                 type="number"
@@ -636,7 +629,7 @@ export default function TradesPage() {
                               />
                             </div>
                             <div className="col-span-2">
-                              <label htmlFor={`execution-${execution.id}-notes`} className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Notes</label>
+                              <label htmlFor={`execution-${execution.id}-notes`} className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">Notes</label>
                               <textarea
                                 id={`execution-${execution.id}-notes`}
                                 rows={2}
@@ -682,7 +675,7 @@ export default function TradesPage() {
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="symbol" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <label htmlFor="symbol" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     Symbol *
                   </label>
                   <input
@@ -696,7 +689,7 @@ export default function TradesPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     Direction
                   </label>
                   <select
@@ -771,7 +764,7 @@ export default function TradesPage() {
 
               <div className="grid grid-cols-4 gap-3">
                 <div>
-                  <label htmlFor="plannedEntry" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <label htmlFor="plannedEntry" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     Planned Entry
                   </label>
                   <input
@@ -786,7 +779,7 @@ export default function TradesPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="plannedStop" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <label htmlFor="plannedStop" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     Stop Loss
                   </label>
                   <input
@@ -801,7 +794,7 @@ export default function TradesPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="plannedTarget1" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <label htmlFor="plannedTarget1" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     Target 1
                   </label>
                   <input
@@ -816,7 +809,7 @@ export default function TradesPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="plannedQuantity" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <label htmlFor="plannedQuantity" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     Qty
                   </label>
                   <input
@@ -907,7 +900,7 @@ export default function TradesPage() {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
             {data.length} of {total.toLocaleString()}
           </span>
         </div>
@@ -940,22 +933,22 @@ export default function TradesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Trade Code</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Symbol</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Direction</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Setup</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Planned Entry</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Stop</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Target</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Created</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Trade Code</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Symbol</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Direction</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Setup</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Planned Entry</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Stop</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Target</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Created</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
               {data.map((item) => (
                 <tr key={item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                  <td className="px-4 py-3 font-mono text-xs text-zinc-500 dark:text-zinc-400">
+                  <td className="px-4 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-300">
                     <Link
                       href={'/trades/' + item.id}
                       className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
@@ -992,7 +985,7 @@ export default function TradesPage() {
                       {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">
+                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
                     {formatDate(item.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -1050,7 +1043,31 @@ export default function TradesPage() {
             >
               Next
             </button>
-          </div>
+      
+          <ConfirmDialog
+            open={confirmDelete !== null}
+            onOpenChange={(o) => !o && setConfirmDelete(null)}
+            onConfirm={async () => {
+              if (!confirmDelete) return;
+              try {
+                const res = await fetch(`/api/trades/${confirmDelete.id}`, { method: 'DELETE' });
+                setConfirmDelete(null);
+                if (!res.ok) {
+                  setMessage({ type: 'error', text: 'Failed to delete trade.' });
+                  return;
+                }
+                setMessage({ type: 'success', text: 'Trade deleted.' });
+                fetchItems(1, statusFilter);
+              } catch {
+                setMessage({ type: 'error', text: 'Failed to delete trade.' });
+              }
+            }}
+            title="Delete Trade"
+            description={`Permanently remove ${confirmDelete?.tradeCode ?? 'this trade'} and all its executions?`}
+            confirmLabel="Delete"
+            destructive
+          />
+    </div>
         </div>
       )}
     </div>

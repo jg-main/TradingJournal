@@ -16,17 +16,17 @@ export default function TradePlanCard({ trade }: TradePlanCardProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <div className="text-zinc-500 dark:text-zinc-400">Planned Entry</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Planned Entry</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(trade.plannedEntry)}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Planned Stop</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Planned Stop</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(trade.plannedStop)}
           </div>
 
-          <div className="text-zinc-500 dark:text-zinc-400">Target 1</div>
+          <div className="text-zinc-600 dark:text-zinc-300">Target 1</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(trade.plannedTarget1)}
           </div>
@@ -35,21 +35,21 @@ export default function TradePlanCard({ trade }: TradePlanCardProps) {
 
         {trade.thesis && (
           <div>
-            <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Thesis</div>
+            <div className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Thesis</div>
             <p className="text-sm text-zinc-700 dark:text-zinc-300">{trade.thesis}</p>
           </div>
         )}
 
         {trade.invalidationCondition && (
           <div>
-            <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Invalidation</div>
+            <div className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Invalidation</div>
             <p className="text-sm text-zinc-700 dark:text-zinc-300">{trade.invalidationCondition}</p>
           </div>
         )}
 
         {trade.preTradePlan && (
           <div>
-            <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Pre-Trade Plan</div>
+            <div className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">Pre-Trade Plan</div>
             <p className="text-sm text-zinc-700 dark:text-zinc-300">{trade.preTradePlan}</p>
           </div>
         )}

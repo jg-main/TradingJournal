@@ -438,7 +438,7 @@ export default function ChecksPage() {
         className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
           activeTab === 'checklists'
             ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
-            : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+            : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
         }`}
       >
         <ClipboardCheck className="size-4" />
@@ -449,7 +449,7 @@ export default function ChecksPage() {
         className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
           activeTab === 'validation-rules'
             ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
-            : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+            : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
         }`}
       >
         <Scale className="size-4" />
@@ -601,7 +601,7 @@ export default function ChecksPage() {
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <span className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                        <span className="text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
                           {checkedCount(tpl)}/{tpl.items.length}
                         </span>
                       </div>
@@ -624,7 +624,7 @@ export default function ChecksPage() {
 
                   {/* Items */}
                   {tpl.items.length === 0 && !addingItemToTemplate && (
-                    <p className="mb-4 text-sm text-zinc-400 dark:text-zinc-500">
+                    <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
                       No checklist items yet. Add items below.
                     </p>
                   )}
@@ -730,7 +730,7 @@ export default function ChecksPage() {
                       />
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <label className="text-xs text-zinc-500 dark:text-zinc-400">
+                          <label className="text-xs text-zinc-600 dark:text-zinc-300">
                             Importance:
                           </label>
                           <select
@@ -765,7 +765,7 @@ export default function ChecksPage() {
                   ) : (
                     <button
                       onClick={() => setAddingItemToTemplate(tpl.id)}
-                      className="mt-3 flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      className="mt-3 flex items-center gap-1.5 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
                     >
                       <Plus className="size-3.5" />
                       Add item
@@ -832,7 +832,7 @@ export default function ChecksPage() {
               </p>
               <div className="space-y-1.5">
                 <div className="flex items-start gap-2 text-xs">
-                  <span className="mt-0.5 shrink-0 font-medium text-zinc-500 dark:text-zinc-400">
+                  <span className="mt-0.5 shrink-0 font-medium text-zinc-600 dark:text-zinc-300">
                     Source:
                   </span>
                   <code className="break-all rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -840,7 +840,7 @@ export default function ChecksPage() {
                   </code>
                 </div>
                 <div className="flex items-start gap-2 text-xs">
-                  <span className="mt-0.5 shrink-0 font-medium text-zinc-500 dark:text-zinc-400">
+                  <span className="mt-0.5 shrink-0 font-medium text-zinc-600 dark:text-zinc-300">
                     Formula:
                   </span>
                   <code className="break-all rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
@@ -856,7 +856,7 @@ export default function ChecksPage() {
       {/* Summary card */}
       <Card>
         <CardContent className="pt-4">
-          <div className="flex flex-wrap items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-zinc-600 dark:text-zinc-300">
             <span className="inline-flex items-center gap-1.5">
               <AlertTriangle className="size-3.5 text-red-500" />
               {VALIDATION_RULES.filter((r) => r.severity === 'error').length} Error rules

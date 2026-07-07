@@ -107,8 +107,8 @@ export function LifecycleStepper({
                   isActive && isLong && 'text-emerald-600 dark:text-emerald-400',
                   isActive && !isLong && 'text-red-600 dark:text-red-400',
                   isCompleted && 'text-zinc-700 dark:text-zinc-300',
-                  isFuture && 'text-zinc-400 dark:text-zinc-500',
-                  isScratched && 'text-zinc-400 dark:text-zinc-500 line-through',
+                  isFuture && 'text-zinc-500 dark:text-zinc-400',
+                  isScratched && 'text-zinc-500 dark:text-zinc-400 line-through',
                 )}
               >
                 {step.label}

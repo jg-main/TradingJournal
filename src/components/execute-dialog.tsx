@@ -370,7 +370,7 @@ export function ExecuteDialog({
                       exit2Quantity: '',
                     }))
                   }
-                  className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                  className="inline-flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
                 >
                   <X className="size-3" />
                   Remove
@@ -413,7 +413,7 @@ export function ExecuteDialog({
               onClick={() =>
                 setForm((prev) => ({ ...prev, showExit2: true }))
               }
-              className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="inline-flex items-center gap-1.5 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
             >
               <Plus className="size-4" />
               Add Exit 2
@@ -422,7 +422,7 @@ export function ExecuteDialog({
 
           {/* ── Total exit indicator ──────────────────────────────────── */}
           {(form.exit1Price.trim() || form.showExit2) && entryQuantityValue > 0 && (
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Exit total: {totalExitQty.toFixed(4)} of {entryQuantityValue.toFixed(4)} shares
               {totalExitQty > entryQuantityValue ? (
                 <span className="ml-1 text-red-500">(exceeds entry!)</span>

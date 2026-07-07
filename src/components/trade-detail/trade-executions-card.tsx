@@ -17,7 +17,7 @@ export default function TradeExecutionsCard({ executions }: TradeExecutionsCardP
       </CardHeader>
       <CardContent>
         {executions.length === 0 ? (
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             No executions recorded yet.
           </p>
         ) : (
@@ -43,7 +43,7 @@ export default function TradeExecutionsCard({ executions }: TradeExecutionsCardP
 
                 return (
                   <TableRow key={exec.id}>
-                    <TableCell className="tabular-nums text-zinc-500 dark:text-zinc-400">
+                    <TableCell className="tabular-nums text-zinc-600 dark:text-zinc-300">
                       {formatDate(exec.executedAt)}
                     </TableCell>
                     <TableCell>
@@ -57,10 +57,10 @@ export default function TradeExecutionsCard({ executions }: TradeExecutionsCardP
                     <TableCell className="tabular-nums text-right text-zinc-900 dark:text-zinc-100">
                       {formatPrice(exec.price)}
                     </TableCell>
-                    <TableCell className="tabular-nums text-right text-zinc-500 dark:text-zinc-400">
+                    <TableCell className="tabular-nums text-right text-zinc-600 dark:text-zinc-300">
                       {exec.fees != null ? formatCurrency(exec.fees) : '-'}
                     </TableCell>
-                    <TableCell className="text-zinc-500 dark:text-zinc-400">
+                    <TableCell className="text-zinc-600 dark:text-zinc-300">
                       {exec.notes ?? '-'}
                     </TableCell>
                   </TableRow>

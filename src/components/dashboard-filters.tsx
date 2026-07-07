@@ -70,7 +70,7 @@ export function DashboardFilters({
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-date-from"
-          className="text-xs font-medium text-zinc-500 dark:text-zinc-400"
+          className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
         >
           From
         </label>
@@ -87,7 +87,7 @@ export function DashboardFilters({
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-date-to"
-          className="text-xs font-medium text-zinc-500 dark:text-zinc-400"
+          className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
         >
           To
         </label>
@@ -104,7 +104,7 @@ export function DashboardFilters({
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-account"
-          className="text-xs font-medium text-zinc-500 dark:text-zinc-400"
+          className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
         >
           Account
         </label>

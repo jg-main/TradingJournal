@@ -256,7 +256,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
   if (!account) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8">
-        <Link href="/settings" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+        <Link href="/settings" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200">
           <ArrowLeft className="size-4" />
           Back to Settings
         </Link>
@@ -272,7 +272,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
       {/* Back link */}
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
         <ArrowLeft className="size-4" />
         Back to Settings
@@ -294,7 +294,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
             </span>
           )}
         </div>
-        <div className="mt-2 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="mt-2 flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-300">
           {account.broker && <span>{account.broker}</span>}
           <span>{account.currency}</span>
         </div>
@@ -302,7 +302,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
 
       {/* Balance card */}
       <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Current Balance</p>
+        <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Current Balance</p>
         <p className={`mt-1 text-3xl font-semibold tabular-nums ${
           currentBalance >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'
         }`}>
@@ -312,29 +312,29 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
 
       {/* Risk Parameters card */}
       <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Risk Parameters</p>
+        <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Risk Parameters</p>
         <div className="grid grid-cols-3 gap-6">
           <div>
-            <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Max Risk Per Trade</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Max Risk Per Trade</p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
               {account.maxRiskPerTradePct != null ? `${account.maxRiskPerTradePct}%` : (
-                <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">Using global defaults</span>
+                <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Using global defaults</span>
               )}
             </p>
           </div>
           <div>
-            <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Default Commission</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Default Commission</p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
               {account.defaultCommission != null ? `$${account.defaultCommission.toFixed(2)}` : (
-                <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">Using global defaults</span>
+                <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Using global defaults</span>
               )}
             </p>
           </div>
           <div>
-            <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Starting Balance</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Starting Balance</p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
               {account.startingBalance != null ? `$${account.startingBalance.toFixed(2)}` : (
-                <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">Using global defaults</span>
+                <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Using global defaults</span>
               )}
             </p>
           </div>
@@ -344,10 +344,10 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
       {/* Performance Metrics card */}
       {account.kpis && (
         <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Performance Metrics</p>
+          <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Performance Metrics</p>
           <div className="grid grid-cols-3 gap-6">
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Net P&amp;L</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Net P&amp;L</p>
               <p className={`mt-1 text-lg font-semibold tabular-nums ${
                 account.kpis.netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
               }`}>
@@ -355,35 +355,35 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Win Rate</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Win Rate</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {account.kpis.winRate != null
                   ? `${(account.kpis.winRate * 100).toFixed(1)}%`
-                  : <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">N/A</span>
+                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
                 }
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Trade Count</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Trade Count</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {account.kpis.tradeCount}
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Avg R</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg R</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {account.kpis.avgR != null
                   ? account.kpis.avgR.toFixed(2)
-                  : <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">N/A</span>
+                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
                 }
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Avg Grade</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg Grade</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {account.kpis.avgGrade != null
                   ? account.kpis.avgGrade.toFixed(1)
-                  : <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">N/A</span>
+                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
                 }
               </p>
             </div>
@@ -426,7 +426,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
             </div>
           ) : (
             <form onSubmit={handleTransaction} className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+              <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
                 {txnType === 'deposit' ? 'Add Funds' : 'Withdraw Funds'}
               </h2>
               <div className="space-y-4">
@@ -445,7 +445,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
                     autoFocus
                   />
                   {txnType === 'withdrawal' && (
-                    <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                       Current balance: ${formatCurrency(currentBalance)}
                     </p>
                   )}
@@ -491,10 +491,10 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
       {/* Closure Summary Card */}
       {closureSummary && (
         <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">Closure Summary</p>
+          <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Closure Summary</p>
           <div className="grid grid-cols-3 gap-6">
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Final Balance</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Final Balance</p>
               <p className={`mt-1 text-lg font-semibold tabular-nums ${
                 closureSummary.finalBalance >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'
               }`}>
@@ -502,7 +502,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Net P&amp;L</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Net P&amp;L</p>
               <p className={`mt-1 text-lg font-semibold tabular-nums ${
                 closureSummary.realizedPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
               }`}>
@@ -510,7 +510,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Net Return</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Net Return</p>
               <p className={`mt-1 text-lg font-semibold tabular-nums ${
                 closureSummary.netReturn != null && closureSummary.netReturn >= 0
                   ? 'text-emerald-600 dark:text-emerald-400'
@@ -518,57 +518,57 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
               }`}>
                 {closureSummary.netReturn != null
                   ? `${closureSummary.netReturn >= 0 ? '+' : ''}${closureSummary.netReturn.toFixed(2)}%`
-                  : <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">N/A</span>
+                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
                 }
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Trade Count</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Trade Count</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {closureSummary.kpis.tradeCount}
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Win Rate</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Win Rate</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {closureSummary.kpis.winRate != null
                   ? `${(closureSummary.kpis.winRate * 100).toFixed(1)}%`
-                  : <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">N/A</span>
+                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
                 }
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Avg R</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg R</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {closureSummary.kpis.avgR != null
                   ? closureSummary.kpis.avgR.toFixed(2)
-                  : <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">N/A</span>
+                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
                 }
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Avg Grade</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg Grade</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {closureSummary.kpis.avgGrade != null
                   ? closureSummary.kpis.avgGrade.toFixed(1)
-                  : <span className="text-sm font-normal text-zinc-400 dark:text-zinc-500">N/A</span>
+                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
                 }
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Deposits</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Deposits</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                 ${formatCurrency(closureSummary.depositsTotal)}
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Withdrawals</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Withdrawals</p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-red-600 dark:text-red-400">
                 ${formatCurrency(closureSummary.withdrawalsTotal)}
               </p>
             </div>
             <div className="col-span-3">
-              <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Dates Active</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Dates Active</p>
               <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-50">
                 {formatDate(closureSummary.datesActive.from)} &ndash; {formatDate(closureSummary.datesActive.to)}
               </p>
@@ -579,13 +579,13 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
 
       {/* Transaction history */}
       <div>
-        <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+        <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
           Transaction History
         </h2>
 
         {transactions.length === 0 ? (
           <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">No transactions yet.</p>
+            <p className="text-sm text-zinc-600 dark:text-zinc-300">No transactions yet.</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
@@ -626,7 +626,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
                     <TableCell className="text-right tabular-nums text-zinc-600 dark:text-zinc-400">
                       ${formatCurrency(txn.balanceAfter)}
                     </TableCell>
-                    <TableCell className="text-zinc-500 dark:text-zinc-400 max-w-[200px] truncate">
+                    <TableCell className="text-zinc-600 dark:text-zinc-300 max-w-[200px] truncate">
                       {txn.notes ?? '-'}
                     </TableCell>
                   </TableRow>
@@ -653,7 +653,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
       {/* Lifecycle actions for inactive accounts */}
       {!account.isActive && (
         <div className="mt-8 border-t border-zinc-200 pt-8 dark:border-zinc-800">
-          <p className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+          <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">
             Account Actions
           </p>
           <Button

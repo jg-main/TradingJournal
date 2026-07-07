@@ -79,7 +79,7 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
                 </div>
               ))}
             </div>
-            <p className="mt-4 text-xs text-zinc-400 dark:text-zinc-500">
+            <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
               Press <kbd className="rounded border border-zinc-300 px-1 text-[10px] dark:border-zinc-600">?</kbd> to toggle this overlay.
             </p>
           </div>

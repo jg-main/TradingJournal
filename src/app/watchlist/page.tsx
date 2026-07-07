@@ -92,6 +92,7 @@ function directionBadgeClass(direction: 'long' | 'short'): string {
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function WatchlistPage() {
+  useEffect(() => { document.title = "Watchlist — Trading Journal"; }, []);
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -412,7 +413,7 @@ export default function WatchlistPage() {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
             {filteredItems.length} of {items.length}
           </span>
         </div>
@@ -445,14 +446,14 @@ export default function WatchlistPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Symbol</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Direction</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Setup</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Key Level</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Trigger Price</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Added</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Symbol</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Direction</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Setup</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Key Level</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Trigger Price</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Added</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -484,13 +485,13 @@ export default function WatchlistPage() {
                       {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">
+                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
                     {formatDate(item.dateAdded)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => openEdit(item)}
-                      className="mr-2 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      className="mr-2 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
                     >
                       Edit
                     </button>

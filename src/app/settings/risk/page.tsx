@@ -109,7 +109,7 @@ export default function RiskSettingsPage() {
     <div className="mx-auto max-w-2xl px-6 py-8">
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
         <ArrowLeft className="size-4" />
         Back to Settings

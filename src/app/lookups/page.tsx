@@ -162,7 +162,7 @@ export default function LookupsPage() {
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === t.key
                 ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+                : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
             }`}
           >
             {t.label}
@@ -173,7 +173,7 @@ export default function LookupsPage() {
       {/* Add/Edit form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-sm font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+          <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
             {editingId ? 'Edit Value' : 'New Value'}
           </h2>
           <div className="space-y-4">
@@ -253,17 +253,17 @@ export default function LookupsPage() {
       {/* Active values table */}
       {activeValues.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-300 p-12 text-center dark:border-zinc-700">
-          <p className="text-zinc-500 dark:text-zinc-400">No values for this type yet. Add one to get started.</p>
+          <p className="text-zinc-600 dark:text-zinc-300">No values for this type yet. Add one to get started.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Value</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Description</th>
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">Order</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Value</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Order</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -275,7 +275,7 @@ export default function LookupsPage() {
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => openEdit(item)}
-                      className="mr-2 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      className="mr-2 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
                     >
                       Edit
                     </button>
@@ -301,7 +301,7 @@ export default function LookupsPage() {
           </summary>
           <ul className="mt-2 space-y-1 pl-4">
             {inactiveValues.map((item) => (
-              <li key={item.id} className="text-sm text-zinc-400 dark:text-zinc-500">
+              <li key={item.id} className="text-sm text-zinc-500 dark:text-zinc-400">
                 {item.value}
               </li>
             ))}

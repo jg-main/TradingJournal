@@ -96,7 +96,7 @@ export function Sidebar() {
       {/* Footer */}
       <div className="border-t border-zinc-200 p-2 dark:border-zinc-800">
         <ThemeToggle />
-        <p className="mt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">
+        <p className="mt-1 text-center text-xs text-zinc-500 dark:text-zinc-400">
           v0.1.0
         </p>
       </div>

@@ -174,7 +174,7 @@ export default function AccountsSettingsPage() {
       <div className="mx-auto max-w-2xl px-6 py-8">
         <Link
           href="/settings"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
         >
           <ArrowLeft className="size-4" />
           Back to Settings
@@ -213,7 +213,7 @@ export default function AccountsSettingsPage() {
     <div className="mx-auto max-w-2xl px-6 py-8">
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
         <ArrowLeft className="size-4" />
         Back to Settings
@@ -224,7 +224,7 @@ export default function AccountsSettingsPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Accounts
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
             Manage your brokerage accounts.
           </p>
         </div>
@@ -403,7 +403,7 @@ function AccountDialog({
           )}
 
           <div>
-            <label htmlFor="account-name" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="account-name" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Account Name
             </label>
             <Input
@@ -416,7 +416,7 @@ function AccountDialog({
           </div>
 
           <div>
-            <label htmlFor="account-broker" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="account-broker" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Broker
             </label>
             <Input
@@ -428,7 +428,7 @@ function AccountDialog({
           </div>
 
           <div>
-            <label htmlFor="account-currency" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="account-currency" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Currency
             </label>
             <Input
@@ -444,7 +444,7 @@ function AccountDialog({
           <hr className="border-zinc-200 dark:border-zinc-700" />
 
           <div>
-            <label htmlFor="account-max-risk" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="account-max-risk" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Max Risk Per Trade (%)
             </label>
             <Input
@@ -460,7 +460,7 @@ function AccountDialog({
           </div>
 
           <div>
-            <label htmlFor="account-default-commission" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="account-default-commission" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Default Commission ($)
             </label>
             <Input
@@ -475,7 +475,7 @@ function AccountDialog({
           </div>
 
           <div>
-            <label htmlFor="account-starting-balance" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <label htmlFor="account-starting-balance" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Starting Balance ($)
             </label>
             <Input

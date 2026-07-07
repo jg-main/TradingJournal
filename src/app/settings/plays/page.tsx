@@ -220,7 +220,7 @@ export default function PlaysSettingsPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Plays
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
             Manage trading setups that appear in the Plan Trade dropdown.
           </p>
         </div>
@@ -386,7 +386,7 @@ export default function PlaysSettingsPage() {
 
       {setups.length === 0 ? (
         <div className="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">
             No plays defined yet. Create your first trading setup to see it in the Plan Trade dropdown.
           </p>
         </div>
@@ -412,13 +412,13 @@ export default function PlaysSettingsPage() {
                     )}
                   </div>
                   {setup.description && (
-                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                       {setup.description}
                     </p>
                   )}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {setup.defaultRiskPct !== null && (
-                      <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
                         Risk: {setup.defaultRiskPct}%
                       </span>
                     )}
@@ -431,7 +431,7 @@ export default function PlaysSettingsPage() {
                       } catch { return null; }
                     })()}
                     {setup.chartPatterns && (
-                      <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
                         Patterns: {setup.chartPatterns}
                       </span>
                     )}

@@ -26,6 +26,7 @@ interface HubCard {
   description: string;
   href: string;
   icon: React.ReactNode;
+  onClick?: () => void;
 }
 
 interface BackupManifest {
@@ -81,31 +82,39 @@ const cards: HubCard[] = [
     title: 'Plays',
     description: 'Manage trading setups that appear in the Plan Trade dropdown.',
     href: '/settings/plays',
-    icon: <Gamepad2 className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
+    icon: <Gamepad2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'App Preferences',
     description: 'Configure display name, timezone, and default currency.',
     href: '/settings/app',
-    icon: <User className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
+    icon: <User className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Risk Settings',
     description: 'Set max risk per trade, default commission, and starting account value.',
     href: '/settings/risk',
-    icon: <ShieldCheck className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
+    icon: <ShieldCheck className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Accounts',
     description: 'Manage your brokerage accounts, deposits, and withdrawals.',
     href: '/settings/accounts',
-    icon: <Building2 className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
+    icon: <Building2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Export & Backup',
     description: 'Download a full backup of your journal as versioned JSON files.',
-    href: '/api/backup',
-    icon: <ChartNoAxesCombined className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />,
+    href: '#',
+    onClick: () => {
+      const a = document.createElement('a');
+      a.href = '/api/backup';
+      a.download = 'trading-journal-backup.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    },
+    icon: <ChartNoAxesCombined className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
 ];
 
@@ -156,7 +165,7 @@ function SetupChecklist({ readiness }: { readiness: ReadinessState }) {
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Setup your journal</h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
             Complete these steps to get started.
           </p>
         </div>
@@ -183,19 +192,19 @@ function SetupChecklist({ readiness }: { readiness: ReadinessState }) {
           >
             <div className="mt-0.5 shrink-0">
               {step.isMissing ? (
-                <CircleDashed className="size-5 text-zinc-400 dark:text-zinc-500" />
+                <CircleDashed className="size-5 text-zinc-500 dark:text-zinc-400" />
               ) : (
                 <CircleCheck className="size-5 text-emerald-600 dark:text-emerald-400" />
               )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <span className="text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
                   Step {step.stepNumber}
                 </span>
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{step.label}</h3>
               </div>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{step.description}</p>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{step.description}</p>
             </div>
             <Link
               href={step.href}
@@ -366,7 +375,7 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
         {step === 'upload' && (
           <div>
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Restore from Backup</h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
               Upload a backup ZIP file to restore your journal data. This will replace all existing data.
             </p>
 
@@ -386,7 +395,7 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
             {isUploading ? (
               <div className="mt-6 flex flex-col items-center gap-3 py-8">
                 <Loader2 className="size-8 animate-spin text-zinc-400" />
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Uploading and validating backup...</p>
+                <p className="text-sm text-zinc-600 dark:text-zinc-300">Uploading and validating backup...</p>
               </div>
             ) : (
               <div className="mt-6">
@@ -416,26 +425,26 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
         {step === 'preview' && previewData && (
           <div>
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Backup Preview</h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
               Review the backup contents before restoring.
             </p>
 
             {/* Backup metadata */}
             <div className="mt-4 space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Backup Date</span>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Backup Date</span>
                 <span className="text-sm text-zinc-900 dark:text-zinc-100">
                   {formatBackupDate(previewData.manifest.backupTimestamp)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Schema Version</span>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Schema Version</span>
                 <span className="text-sm text-zinc-900 dark:text-zinc-100">
                   v{previewData.manifest.schemaVersion}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">App Version</span>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">App Version</span>
                 <span className="text-sm text-zinc-900 dark:text-zinc-100">
                   {previewData.manifest.appVersion}
                 </span>
@@ -447,8 +456,8 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400">Table</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400">Rows</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-zinc-600 dark:text-zinc-300">Table</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Rows</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -541,7 +550,7 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col items-center py-8">
             <CircleCheck className="size-12 text-emerald-600 dark:text-emerald-400" />
             <p className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">Restore Complete</p>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
               Your journal has been restored. Redirecting to dashboard...
             </p>
           </div>
@@ -808,7 +817,7 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col items-center py-8">
             <CircleCheck className="size-12 text-emerald-600 dark:text-emerald-400" />
             <p className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">Reset Complete</p>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
               Your journal has been reset. Redirecting to setup...
             </p>
           </div>
@@ -847,6 +856,7 @@ function ResetDialog({ onClose }: { onClose: () => void }) {
 // ── Main Page ───────────────────────────────────────────────────────────
 
 export default function SettingsHubPage() {
+  useEffect(() => { document.title = "Settings — Trading Journal"; }, []);
   const [readiness, setReadiness] = useState<ReadinessState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -905,7 +915,7 @@ export default function SettingsHubPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Settings
           </h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
             Manage your trading journal preferences, risk parameters, and trading setups.
           </p>
         </div>
@@ -935,7 +945,18 @@ export default function SettingsHubPage() {
 
       {!loading && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {cards.map((card) => (
+          {cards.map((card) =>
+            card.onClick ? (
+              <button
+                key={card.title}
+                onClick={card.onClick}
+                className="group rounded-lg border border-zinc-200 bg-white p-6 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
+              >
+                <div className="mb-3">{card.icon}</div>
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{card.title}</h2>
+                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{card.description}</p>
+              </button>
+            ) : (
             <Link
               key={card.href}
               href={card.href}
@@ -943,7 +964,7 @@ export default function SettingsHubPage() {
             >
               <div className="mb-3">{card.icon}</div>
               <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{card.title}</h2>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{card.description}</p>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{card.description}</p>
             </Link>
           ))}
 
@@ -953,10 +974,10 @@ export default function SettingsHubPage() {
             className="group rounded-lg border border-zinc-200 bg-white p-6 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
           >
             <div className="mb-3">
-              <Upload className="size-8 text-zinc-400 dark:text-zinc-500" strokeWidth={1.5} />
+              <Upload className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />
             </div>
             <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Restore</h2>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
               Upload a backup ZIP to restore your journal data.
             </p>
           </button>
@@ -978,7 +999,7 @@ export default function SettingsHubPage() {
         <div className="mt-4 flex items-center justify-between rounded-lg border border-red-200 bg-white p-4 dark:border-red-800 dark:bg-red-950/30">
           <div>
             <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Factory Reset</h3>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-300">
               Wipe all journal data and start fresh. A backup will be required before reset.
             </p>
           </div>

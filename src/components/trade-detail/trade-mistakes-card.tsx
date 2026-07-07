@@ -262,7 +262,7 @@ export default function TradeMistakesCard({
 
         {/* Mistakes table */}
         {mistakes.length === 0 ? (
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             No mistakes recorded yet.
           </p>
         ) : (

@@ -186,7 +186,7 @@ function actionStatusBadgeClass(status: ActionItem['status']): string {
 function pnlBadgeClass(pnl: number): string {
   if (pnl > 0) return 'text-emerald-600 dark:text-emerald-400';
   if (pnl < 0) return 'text-red-600 dark:text-red-400';
-  return 'text-zinc-500 dark:text-zinc-400';
+  return 'text-zinc-600 dark:text-zinc-300';
 }
 
 // ── Dashboard Helpers ──────────────────────────────────────────────────
@@ -216,6 +216,7 @@ function sampleSizeLabel(level: DashboardSetupPerformance['sampleSizeWarning']):
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function ReviewsPage() {
+  useEffect(() => { document.title = "Reviews — Trading Journal"; }, []);
   const [items, setItems] = useState<WeeklyReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -417,7 +418,7 @@ export default function ReviewsPage() {
                 onChange={(e) => setWeekDate(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
               />
-              <p className="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">
+              <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
                 Only trades closed between this Monday and the following Sunday
                 will be included.
               </p>
@@ -482,22 +483,22 @@ export default function ReviewsPage() {
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
                 <th className="w-8 px-2 py-3" />
-                <th className="px-4 py-3 text-left font-medium text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
                   Week
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
                   Trades
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
                   Net P&amp;L
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
                   Win Rate
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
                   Avg R
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
                   Grade
                 </th>
               </tr>
@@ -559,12 +560,12 @@ export default function ReviewsPage() {
                           {loadingActions ? (
                             <p className="text-xs text-zinc-400">Loading action items...</p>
                           ) : actionItems.length === 0 ? (
-                            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
                               No action items for this review.
                             </p>
                           ) : (
                             <div className="space-y-1.5">
-                              <p className="mb-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                              <p className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
                                 Action Items
                               </p>
                               {actionItems.map((ai) => (
@@ -589,7 +590,7 @@ export default function ReviewsPage() {
                                     {ai.actionText}
                                   </span>
                                   {ai.dueDate && (
-                                    <span className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">
+                                    <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
                                       Due {formatDate(ai.dueDate)}
                                     </span>
                                   )}
