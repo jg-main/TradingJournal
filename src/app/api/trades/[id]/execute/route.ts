@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransactions, settings as settingsTable } from '@/db/schema';
-import { eq, and, lte } from 'drizzle-orm';
+import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransactions, settings as settingsTable, checklistDefinitions, tradeCheckResults, lookupValues, setupDefinitions } from '@/db/schema';
+import { eq, and, lte, asc, or, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import {
@@ -21,6 +21,11 @@ const executeTradeSchema = z.object({
   exit2Quantity: z.number().positive().optional(),
   executedAt: z.string().optional(),
   fees: z.number().min(0).optional().default(0),
+  checkResults: z.array(z.object({
+    checklistDefinitionId: z.string(),
+    passed: z.boolean(),
+    comment: z.string().optional(),
+  })).optional(),
 });
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -180,6 +185,86 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
         { status: 400 },
       );
+    }
+
+    // ── Checklist validation ──────────────────────────────────────────
+
+    // Resolve setup definition ID from the trade's setup lookup value
+    let setupDefId: string | undefined;
+    if (trade.setupId) {
+      const lookupVal = db
+        .select()
+        .from(lookupValues)
+        .where(eq(lookupValues.id, trade.setupId))
+        .get();
+
+      if (lookupVal) {
+        const setupDef = db
+          .select()
+          .from(setupDefinitions)
+          .where(eq(setupDefinitions.name, lookupVal.value))
+          .get();
+        if (setupDef) {
+          setupDefId = setupDef.id;
+        }
+      }
+    }
+
+    // Fetch merged checklist for this trade's account + resolved setup
+    const mergedChecks = db
+      .select()
+      .from(checklistDefinitions)
+      .where(
+        and(
+          or(
+            eq(checklistDefinitions.accountId, trade.accountId),
+            ...(setupDefId ? [eq(checklistDefinitions.setupId, setupDefId)] : []),
+          ),
+          isNull(checklistDefinitions.deletedAt),
+        ),
+      )
+      .orderBy(asc(checklistDefinitions.sortOrder), asc(checklistDefinitions.createdAt))
+      .all();
+
+    if (mergedChecks.length > 0) {
+      const submitted = parsed.data.checkResults ?? [];
+
+      // Map submitted results by checklistDefinitionId for quick lookup
+      const submittedMap = new Map(submitted.map((cr) => [cr.checklistDefinitionId, cr.passed]));
+
+      // Find checklist items that are missing from submitted results or not passed
+      const missing: string[] = [];
+      const notPassed: string[] = [];
+
+      for (const check of mergedChecks) {
+        const passedResult = submittedMap.get(check.id);
+        if (passedResult === undefined) {
+          missing.push(check.description);
+        } else if (!passedResult) {
+          notPassed.push(check.description);
+        }
+      }
+
+      if (missing.length > 0 || notPassed.length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                checkResults: [
+                  ...(missing.length > 0
+                    ? [`Missing check results for: ${missing.join(', ')}`]
+                    : []),
+                  ...(notPassed.length > 0
+                    ? [`Checklist items must be passed before execution: ${notPassed.join(', ')}`]
+                    : []),
+                ],
+              },
+            },
+          },
+          { status: 400 },
+        );
+      }
     }
 
     // ── Execute within a transaction ──────────────────────────────────
@@ -394,6 +479,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             }
           }
         }
+      }
+
+      // 7. Persist trade check results atomically within the transaction
+      const submitted = parsed.data.checkResults ?? [];
+      const nowTime = now;
+      for (const cr of submitted) {
+        tx.insert(tradeCheckResults)
+          .values({
+            id: randomUUID(),
+            tradeId: id,
+            checklistDefinitionId: cr.checklistDefinitionId,
+            passed: cr.passed,
+            comment: cr.comment ?? null,
+            checkedAt: nowTime,
+            createdAt: nowTime,
+          })
+          .run();
       }
 
       // Return the created executions for the response

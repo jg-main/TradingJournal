@@ -18,6 +18,7 @@ export default defineConfig({
       'src/app/api/setups/__tests__/checks.test.ts',
       'src/app/api/checks/__tests__/merged.test.ts',
       'src/app/api/checks/__tests__/reorder.test.ts',
+      'src/app/api/trades/__tests__/execute.test.ts',
     ],
   },
 });
