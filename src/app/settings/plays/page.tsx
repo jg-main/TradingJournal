@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import ChecklistManager from '@/components/checklist-manager';
 
 interface SetupDefinition {
   id: string;
@@ -361,6 +362,14 @@ export default function PlaysSettingsPage() {
                   />
                 </div>
               </div>
+
+              {/* Entry Checks -- only when editing an existing play */}
+              {editingId && (
+                <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="mb-3 text-sm font-medium text-zinc-600 dark:text-zinc-300">Entry Checks</p>
+                  <ChecklistManager parentId={editingId} scope="setup" />
+                </div>
+              )}
 
               <DialogFooter showCloseButton className="mt-6">
                 <Button type="submit" disabled={saving || !form.name.trim()}>
