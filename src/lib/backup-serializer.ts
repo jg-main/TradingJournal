@@ -3,7 +3,7 @@
  *
  * Per-table JSON serialization with a versioned manifest for backup.
  *
- * Queries all 17 database tables defined in the Drizzle schema, serializes
+ * Queries all 19 database tables defined in the Drizzle schema, serializes
  * each table's rows to clean JSON with proper type handling (Drizzle ORM
  * automatically maps integer booleans <-> boolean, text dates <-> strings,
  * and real decimals <-> number), and produces a structured result with a
@@ -83,7 +83,7 @@ export function getMigrationCount(): number {
 // ── Table registry ──────────────────────────────────────────────────────
 
 /**
- * Ordered list of all 17 user-data tables in the schema.
+ * Ordered list of all 19 user-data tables in the schema.
  *
  * Each entry maps a snake_case database name to its Drizzle table object,
  * used for both querying (db.select().from(ref)) and output naming.
@@ -95,6 +95,7 @@ export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'accounts', ref: tables.accounts },
   { name: 'lookup_values', ref: tables.lookupValues },
   { name: 'setup_definitions', ref: tables.setupDefinitions },
+  { name: 'checklist_definitions', ref: tables.checklistDefinitions },
   { name: 'trades', ref: tables.trades },
   { name: 'trade_executions', ref: tables.tradeExecutions },
   { name: 'trade_risk_snapshots', ref: tables.tradeRiskSnapshots },
@@ -102,6 +103,7 @@ export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'trade_assets', ref: tables.tradeAssets },
   { name: 'trade_grades', ref: tables.tradeGrades },
   { name: 'trade_mistakes', ref: tables.tradeMistakes },
+  { name: 'trade_check_results', ref: tables.tradeCheckResults },
   { name: 'watchlist_items', ref: tables.watchlistItems },
   { name: 'account_transactions', ref: tables.accountTransactions },
   { name: 'account_rollforward', ref: tables.accountRollforward },

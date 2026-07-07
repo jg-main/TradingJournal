@@ -279,6 +279,32 @@ export const weeklyReviews = sqliteTable('weekly_reviews', {
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 }, (t) => [unique().on(t.accountId, t.weekStart, t.weekEnd)]);
 
+// ── Checklist Definitions ───────────────────────────────────────────────
+
+export const checklistDefinitions = sqliteTable('checklist_definitions', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id').references(() => accounts.id),
+  setupId: text('setup_id').references(() => setupDefinitions.id),
+  description: text('description').notNull(),
+  sortOrder: integer('sort_order'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  deletedAt: text('deleted_at'),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+});
+
+// ── Trade Check Results ──────────────────────────────────────────────────
+
+export const tradeCheckResults = sqliteTable('trade_check_results', {
+  id: text('id').primaryKey().notNull(),
+  tradeId: text('trade_id').references(() => trades.id, { onDelete: 'cascade' }).notNull(),
+  checklistDefinitionId: text('checklist_definition_id').references(() => checklistDefinitions.id).notNull(),
+  passed: integer('passed', { mode: 'boolean' }).notNull(),
+  comment: text('comment'),
+  checkedAt: text('checked_at').default(sql`(current_timestamp)`),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+});
+
 export const reviewActionItems = sqliteTable('review_action_items', {
   id: text('id').primaryKey().notNull(),
   sourceType: text('source_type', {
