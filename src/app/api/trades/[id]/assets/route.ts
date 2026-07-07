@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeAssets } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, count, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { writeFile, unlink } from 'node:fs/promises';
@@ -112,6 +112,51 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             details: {
               fieldErrors: {
                 file: [`Unsupported file type "${file.type}". Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`],
+              },
+            },
+          },
+          { status: 400 },
+        );
+      }
+
+      // ── 5MB file size limit ────────────────────────────────────────
+
+      const MAX_FILE_SIZE = 5 * 1024 * 1024;
+      if (file.size > MAX_FILE_SIZE) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        return NextResponse.json(
+          {
+            error: 'File too large',
+            details: {
+              fieldErrors: {
+                file: [`File size exceeds 5MB limit. Uploaded: ${sizeMb}MB`],
+              },
+            },
+          },
+          { status: 400 },
+        );
+      }
+
+      // ── Screenshot count limit (max 5 per trade) ───────────────────
+
+      const screenshotCount = db
+        .select({ count: count() })
+        .from(tradeAssets)
+        .where(
+          and(
+            eq(tradeAssets.tradeId, id),
+            eq(tradeAssets.assetType, 'screenshot'),
+          ),
+        )
+        .get();
+
+      if (screenshotCount && screenshotCount.count >= 5) {
+        return NextResponse.json(
+          {
+            error: 'Screenshot limit reached',
+            details: {
+              fieldErrors: {
+                file: ['Maximum of 5 screenshots per trade reached. Remove existing screenshots to upload more.'],
               },
             },
           },

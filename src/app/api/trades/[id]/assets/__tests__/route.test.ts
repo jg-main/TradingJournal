@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq } from 'drizzle-orm';
+import { eq, count, and } from 'drizzle-orm';
 
 
 import * as schema from '@/db/schema';
@@ -259,11 +259,134 @@ function doDelete(tradeId: string, assetId: string): { status: number; data: unk
   return { status: 200, data: { message: 'Asset removed' } };
 }
 
+function doPostUpload(
+  tradeId: string,
+  file: { name: string; size: number; type: string; arrayBuffer?: () => Promise<ArrayBuffer> },
+  phase: string,
+  label?: string | null,
+  notes?: string | null,
+): { status: number; data: unknown } {
+  const trade = db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!trade) {
+    return { status: 404, data: { error: 'Trade not found' } };
+  }
+
+  if (!file) {
+    return {
+      status: 400,
+      data: { error: 'File is required for upload', details: { fieldErrors: { file: ['File field is required'] } } },
+    };
+  }
+
+  if (!phase || !PHASE.includes(phase as (typeof PHASE)[number])) {
+    return {
+      status: 400,
+      data: { error: 'Validation failed', details: { fieldErrors: { phase: [`Phase must be one of: ${PHASE.join(', ')}`] } } },
+    };
+  }
+
+  const ALLOWED_MIME_TYPES = [
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
+    'image/gif',
+    'image/webp',
+    'image/svg+xml',
+  ];
+
+  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    return {
+      status: 400,
+      data: {
+        error: 'Invalid file type',
+        details: {
+          fieldErrors: {
+            file: [`Unsupported file type "${file.type}". Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`],
+          },
+        },
+      },
+    };
+  }
+
+  // ── 5MB file size limit ────────────────────────────────────────
+
+  const MAX_FILE_SIZE = 5 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      status: 400,
+      data: {
+        error: 'File too large',
+        details: {
+          fieldErrors: {
+            file: [`File size exceeds 5MB limit. Uploaded: ${sizeMb}MB`],
+          },
+        },
+      },
+    };
+  }
+
+  // ── Screenshot count limit (max 5 per trade) ───────────────────
+
+  const screenshotCount = db
+    .select({ count: count() })
+    .from(schema.tradeAssets)
+    .where(
+      and(
+        eq(schema.tradeAssets.tradeId, tradeId),
+        eq(schema.tradeAssets.assetType, 'screenshot'),
+      ),
+    )
+    .get();
+
+  if (screenshotCount && screenshotCount.count >= 5) {
+    return {
+      status: 400,
+      data: {
+        error: 'Screenshot limit reached',
+        details: {
+          fieldErrors: {
+            file: ['Maximum of 5 screenshots per trade reached. Remove existing screenshots to upload more.'],
+          },
+        },
+      },
+    };
+  }
+
+  const assetId = randomUUID();
+  const now = new Date().toISOString();
+
+  db.insert(schema.tradeAssets)
+    .values({
+      id: assetId,
+      tradeId,
+      assetType: 'screenshot',
+      phase: phase as (typeof PHASE)[number],
+      label: label ?? null,
+      filePath: `/uploads/trades/${assetId}.png`,
+      externalUrl: null,
+      notes: notes ?? null,
+      createdAt: now,
+    })
+    .run();
+
+  const created = db
+    .select()
+    .from(schema.tradeAssets)
+    .where(eq(schema.tradeAssets.id, assetId))
+    .get();
+
+  return { status: 201, data: created };
+}
+
 // ── Fixtures ────────────────────────────────────────────────────────
 
 const accountId = randomUUID();
 const tradeId1 = randomUUID();
 const tradeId2 = randomUUID();
+const tradeId3 = randomUUID();
+const tradeId4 = randomUUID();
+const tradeId5 = randomUUID();
 
 db.insert(schema.accounts).values({ id: accountId, name: 'Test Account' }).run();
 db.insert(schema.trades).values({
@@ -282,6 +405,75 @@ db.insert(schema.trades).values({
   direction: 'short',
   status: 'planned',
 }).run();
+db.insert(schema.trades).values({
+  id: tradeId3,
+  tradeCode: 'TEST-ASSET-003',
+  accountId,
+  symbol: 'GOOGL',
+  direction: 'long',
+  status: 'open',
+}).run();
+db.insert(schema.trades).values({
+  id: tradeId4,
+  tradeCode: 'TEST-ASSET-004',
+  accountId,
+  symbol: 'TSLA',
+  direction: 'short',
+  status: 'open',
+}).run();
+db.insert(schema.trades).values({
+  id: tradeId5,
+  tradeCode: 'TEST-ASSET-005',
+  accountId,
+  symbol: 'AMZN',
+  direction: 'long',
+  status: 'planned',
+}).run();
+
+// Pre-seed: 5 screenshots on tradeId3 (for cap test)
+for (let i = 0; i < 5; i++) {
+  db.insert(schema.tradeAssets).values({
+    id: randomUUID(),
+    tradeId: tradeId3,
+    assetType: 'screenshot',
+    phase: 'entry',
+    label: `Pre-seeded screenshot ${i + 1}`,
+    filePath: `/uploads/trades/preseeded-${i}.png`,
+    externalUrl: null,
+    notes: null,
+    createdAt: new Date().toISOString(),
+  }).run();
+}
+
+// Pre-seed: 4 link assets on tradeId4 (for grandfathering test)
+for (let i = 0; i < 4; i++) {
+  db.insert(schema.tradeAssets).values({
+    id: randomUUID(),
+    tradeId: tradeId4,
+    assetType: 'link',
+    phase: 'pre_trade',
+    label: `Pre-seeded link ${i + 1}`,
+    filePath: null,
+    externalUrl: `https://example.com/chart-${i}`,
+    notes: null,
+    createdAt: new Date().toISOString(),
+  }).run();
+}
+
+// Pre-seed: 3 screenshots on tradeId5 (for 3+1 = 4 success test)
+for (let i = 0; i < 3; i++) {
+  db.insert(schema.tradeAssets).values({
+    id: randomUUID(),
+    tradeId: tradeId5,
+    assetType: 'screenshot',
+    phase: 'exit',
+    label: `Pre-seeded screenshot ${i + 1}`,
+    filePath: `/uploads/trades/preseeded-${i + 5}.png`,
+    externalUrl: null,
+    notes: null,
+    createdAt: new Date().toISOString(),
+  }).run();
+}
 
 // ── Tests ───────────────────────────────────────────────────────────
 
@@ -474,6 +666,107 @@ console.log('\n14. POST creates asset with minimal fields:');
   assertEqual(data.label, null, 'label is null');
   assertEqual(data.externalUrl, null, 'externalUrl is null');
   assertEqual(data.notes, null, 'notes is null');
+}
+
+// ── 15. POST upload: File > 5MB returns 400 with size message ────────────────
+
+console.log('\n15. POST upload returns 400 for file >5MB:');
+{
+  const oversizedFile = {
+    name: 'large-screenshot.png',
+    size: 6 * 1024 * 1024, // 6MB > 5MB limit
+    type: 'image/png',
+  };
+
+  const result = doPostUpload(tradeId1, oversizedFile, 'entry');
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.error, 'File too large', 'error message is File too large');
+  const details = data.details as Record<string, unknown>;
+  const fieldErrors = details.fieldErrors as Record<string, string[]>;
+  assertNotNull(fieldErrors.file, 'fieldErrors.file is present');
+  const fileMsg = fieldErrors.file[0];
+  assert(
+    fileMsg.includes('5MB') && fileMsg.includes('6.0MB'),
+    'file error message references size limit and uploaded size',
+  );
+}
+
+// ── 16. POST upload: 5 existing screenshots rejects 6th ────────────────────
+
+console.log('\n16. POST upload returns 400 when trade already has 5 screenshots:');
+{
+  // tradeId3 has 5 pre-seeded screenshots
+  const screenshotFile = {
+    name: 'sixth-screenshot.png',
+    size: 100 * 1024, // 100KB, well under 5MB
+    type: 'image/png',
+  };
+
+  const result = doPostUpload(tradeId3, screenshotFile, 'management');
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.error, 'Screenshot limit reached', 'error message is Screenshot limit reached');
+  const details = data.details as Record<string, unknown>;
+  const fieldErrors = details.fieldErrors as Record<string, string[]>;
+  assertNotNull(fieldErrors.file, 'fieldErrors.file is present');
+  assert(
+    fieldErrors.file[0].includes('Maximum of 5 screenshots'),
+    'file error message mentions 5 screenshot limit',
+  );
+}
+
+// ── 17. POST upload: 3 screenshots + 1 new succeeds (201) ─────────────────
+
+console.log('\n17. POST upload succeeds for 4th screenshot when trade has 3:');
+{
+  // tradeId5 has 3 pre-seeded screenshots
+  const screenshotFile = {
+    name: 'fourth-screenshot.png',
+    size: 200 * 1024, // 200KB
+    type: 'image/jpeg',
+  };
+
+  const result = doPostUpload(tradeId5, screenshotFile, 'review');
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.id, 'created asset has id');
+  assertEqual(data.assetType, 'screenshot', 'assetType is screenshot');
+  assertEqual(data.phase, 'review', 'phase is review');
+  assertNotNull(data.filePath, 'filePath is set');
+}
+
+// ── 18. POST upload: 4 links + 1 screenshot succeeds (grandfathering) ─────
+
+console.log('\n18. POST upload succeeds for screenshot when trade has 4 links (grandfathering):');
+{
+  // tradeId4 has 4 pre-seeded link assets — only screenshots count toward cap
+  const screenshotFile = {
+    name: 'new-screenshot.png',
+    size: 300 * 1024, // 300KB
+    type: 'image/webp',
+  };
+
+  const result = doPostUpload(tradeId4, screenshotFile, 'entry');
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.id, 'created asset has id');
+  assertEqual(data.assetType, 'screenshot', 'assetType is screenshot');
+  assertEqual(data.phase, 'entry', 'phase is entry');
+  assertNotNull(data.filePath, 'filePath is set');
+
+  // Verify the trade now has 1 screenshot (links don't count)
+  const screenshotCount = db
+    .select({ count: count() })
+    .from(schema.tradeAssets)
+    .where(
+      and(
+        eq(schema.tradeAssets.tradeId, tradeId4),
+        eq(schema.tradeAssets.assetType, 'screenshot'),
+      ),
+    )
+    .get();
+  assertEqual(screenshotCount?.count, 1, 'tradeId4 has exactly 1 screenshot (grandfathering confirmed)');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ImageIcon, LinkIcon, Trash2, Upload } from 'lucide-react';
+import { ImageIcon, LinkIcon, Trash2, Upload, X } from 'lucide-react';
+
+import { extractApiErrorMessage } from '@/lib/error-utils';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -42,6 +44,8 @@ export default function TradeAssetsCard({
   const [linkPhase, setLinkPhase] = useState<string>('pre_trade');
   const [linkLabel, setLinkLabel] = useState('');
 
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+
   const resetForm = () => {
     setUploadFile(null);
     setUploadPhase('pre_trade');
@@ -76,7 +80,7 @@ export default function TradeAssetsCard({
         const err = await res.json();
         setMessage({
           type: 'error',
-          text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Upload failed.'),
+          text: extractApiErrorMessage(err),
         });
         return;
       }
@@ -115,7 +119,7 @@ export default function TradeAssetsCard({
         const err = await res.json();
         setMessage({
           type: 'error',
-          text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Failed to add link.'),
+          text: extractApiErrorMessage(err),
         });
         return;
       }
@@ -357,7 +361,8 @@ export default function TradeAssetsCard({
                             <img
                               src={asset.filePath}
                               alt={asset.label ?? 'Screenshot'}
-                              className="mb-1 h-20 w-full rounded object-cover"
+                              className="mb-1 h-40 w-full rounded object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => setExpandedImage(asset.filePath ?? null)}
                             />
                             {asset.label && (
                               <p className="truncate text-xs text-zinc-700 dark:text-zinc-300">
@@ -394,6 +399,27 @@ export default function TradeAssetsCard({
           </div>
         )}
       </CardContent>
+
+      {expandedImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setExpandedImage(null)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpandedImage(null); }}
+            className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70 z-10"
+            aria-label="Close lightbox"
+          >
+            <X className="size-6" />
+          </button>
+          <img
+            src={expandedImage}
+            alt="Full-size screenshot"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </Card>
   );
 }
