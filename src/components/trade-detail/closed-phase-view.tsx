@@ -9,6 +9,7 @@ import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
 import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
+import TradeCheckResultsCard from './trade-check-results-card';
 import TradeGradeCard from './trade-grade-card';
 import type { GradeFormPayload } from './trade-grade-card';
 import TradeMistakesCard from './trade-mistakes-card';
@@ -163,6 +164,9 @@ export default function ClosedPhaseView({
         tradeId={trade.id}
         onAdjustmentAdded={onAdjustmentAdded}
       />
+
+      {/* Pre-Execution Checklist Audit */}
+      <TradeCheckResultsCard checkResults={checkResults} />
 
       {/* Trade Grade */}
       <TradeGradeCard

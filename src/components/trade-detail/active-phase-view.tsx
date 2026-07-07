@@ -11,6 +11,7 @@ import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
 import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
+import TradeCheckResultsCard from './trade-check-results-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import TradeAssetsCard from './trade-assets-card';
@@ -167,6 +168,9 @@ export default function ActivePhaseView({
         tradeId={trade.id}
         onAdjustmentAdded={onAdjustmentAdded}
       />
+
+      {/* Pre-Execution Checklist Audit */}
+      <TradeCheckResultsCard checkResults={checkResults} />
 
       {/* Assets — entry/management only */}
       <TradeAssetsCard
