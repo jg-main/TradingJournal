@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from 'react';
 import { ArrowLeft, Plus, Minus, TriangleAlert, RotateCcw } from 'lucide-react';
+import ChecklistManager from '@/components/checklist-manager';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -340,6 +341,13 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
           </div>
         </div>
       </div>
+
+      {/* Entry Checks for active accounts */}
+      {account.isActive && (
+        <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <ChecklistManager parentId={id} scope="account" />
+        </div>
+      )}
 
       {/* Performance Metrics card */}
       {account.kpis && (
