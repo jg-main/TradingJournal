@@ -192,3 +192,126 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     );
   }
 }
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: tradeId } = await params;
+    const { searchParams } = new URL(request.url);
+    const mistakeId = searchParams.get('id');
+
+    if (!mistakeId) {
+      return NextResponse.json(
+        { error: 'Mistake id query parameter is required' },
+        { status: 400 },
+      );
+    }
+
+    // Check trade exists
+    const trade = db
+      .select()
+      .from(trades)
+      .where(eq(trades.id, tradeId))
+      .get();
+
+    if (!trade) {
+      return NextResponse.json(
+        { error: 'Trade not found' },
+        { status: 404 },
+      );
+    }
+
+    // Check mistake exists
+    const existing = db
+      .select()
+      .from(tradeMistakes)
+      .where(eq(tradeMistakes.id, mistakeId))
+      .get();
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Mistake not found' },
+        { status: 404 },
+      );
+    }
+
+    const body = await request.json();
+
+    // Validate update fields
+    const updateSchema = z.object({
+      mistakeType: z.string().trim().min(1).optional(),
+      phase: z.enum(PHASE).optional(),
+      severity: z.enum(SEVERITY).optional(),
+      rootCause: z.string().trim().min(1).optional(),
+      correctiveAction: z.string().trim().min(1).optional(),
+      status: z.enum(STATUS).optional(),
+    });
+
+    const parsed = updateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Validation failed', details: { fieldErrors: parsed.error.flatten().fieldErrors } },
+        { status: 400 },
+      );
+    }
+
+    // If updating mistakeType, resolve the new lookup value
+    let newMistakeTypeId = existing.mistakeTypeId;
+    if (parsed.data.mistakeType) {
+      const lowerValue = parsed.data.mistakeType.toLowerCase();
+      const lookup = db
+        .select()
+        .from(lookupValues)
+        .where(and(eq(lookupValues.type, 'mistake_type'), like(lookupValues.value, lowerValue)))
+        .get();
+
+      if (!lookup) {
+        const validTypes = db
+          .select()
+          .from(lookupValues)
+          .where(and(eq(lookupValues.type, 'mistake_type'), eq(lookupValues.isActive, true)))
+          .all();
+        const typeList = validTypes.map(t => t.value).join(', ');
+        return NextResponse.json(
+          {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                mistakeType: [`Unknown mistake type "${parsed.data.mistakeType}". Valid types: ${typeList || '(none configured)'}`],
+              },
+            },
+          },
+          { status: 400 },
+        );
+      }
+      newMistakeTypeId = lookup.id;
+    }
+
+    const now = new Date().toISOString();
+    const updateData: Record<string, unknown> = { updatedAt: now };
+
+    if (newMistakeTypeId !== existing.mistakeTypeId) updateData.mistakeTypeId = newMistakeTypeId;
+    if (parsed.data.phase !== undefined) updateData.phase = parsed.data.phase;
+    if (parsed.data.severity !== undefined) updateData.severity = parsed.data.severity;
+    if (parsed.data.rootCause !== undefined) updateData.rootCause = parsed.data.rootCause;
+    if (parsed.data.correctiveAction !== undefined) updateData.correctiveAction = parsed.data.correctiveAction;
+    if (parsed.data.status !== undefined) updateData.status = parsed.data.status;
+
+    db.update(tradeMistakes)
+      .set(updateData)
+      .where(eq(tradeMistakes.id, mistakeId))
+      .run();
+
+    const updated = db
+      .select()
+      .from(tradeMistakes)
+      .where(eq(tradeMistakes.id, mistakeId))
+      .get();
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to update mistake', details: String(error) },
+      { status: 500 },
+    );
+  }
+}

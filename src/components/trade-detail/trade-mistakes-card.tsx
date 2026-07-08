@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertCircle, Trash2 } from 'lucide-react';
+import { AlertCircle, Pencil, Trash2 } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,8 +44,24 @@ export default function TradeMistakesCard({
   onMistakesChanged,
 }: TradeMistakesCardProps) {
   const [showForm, setShowForm] = useState(false);
+  const [editingMistake, setEditingMistake] = useState<TradeMistake | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [form, setForm] = useState({ ...defaultForm });
+
+  const handleEdit = (m: TradeMistake) => {
+    const typeInfo = mistakeTypes.find((mt) => mt.id === m.mistakeTypeId);
+    setForm({
+      mistakeType: typeInfo?.value ?? '',
+      phase: m.phase,
+      severity: m.severity,
+      rootCause: m.rootCause ?? '',
+      correctiveAction: m.correctiveAction ?? '',
+      status: m.status,
+    });
+    setEditingMistake(m);
+    setShowForm(true);
+    setMessage(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,9 +82,15 @@ export default function TradeMistakesCard({
       return;
     }
 
+    const isEditing = !!editingMistake;
+
     try {
-      const res = await fetch(`/api/trades/${tradeId}/mistakes`, {
-        method: 'POST',
+      const url = isEditing
+        ? `/api/trades/${tradeId}/mistakes?id=${editingMistake!.id}`
+        : `/api/trades/${tradeId}/mistakes`;
+
+      const res = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mistakeType: form.mistakeType,
@@ -92,8 +114,9 @@ export default function TradeMistakesCard({
         return;
       }
 
-      setMessage({ type: 'success', text: 'Mistake recorded.' });
+      setMessage({ type: 'success', text: isEditing ? 'Mistake updated.' : 'Mistake recorded.' });
       setForm({ ...defaultForm });
+      setEditingMistake(null);
       setShowForm(false);
       await onMistakesChanged();
     } catch {
@@ -128,7 +151,11 @@ export default function TradeMistakesCard({
             Mistakes
           </CardTitle>
           <button
-            onClick={() => setShowForm((v) => !v)}
+            onClick={() => {
+              setShowForm((v) => !v);
+              setEditingMistake(null);
+              setForm({ ...defaultForm });
+            }}
             className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             {showForm ? 'Cancel' : '+ Add Mistake'}
@@ -139,6 +166,9 @@ export default function TradeMistakesCard({
         {/* Collapsible form */}
         {showForm && (
           <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+              {editingMistake ? 'Edit Mistake' : 'Add Mistake'}
+            </div>
             {message && (
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
@@ -173,7 +203,7 @@ export default function TradeMistakesCard({
                     ) : (
                       mistakeTypes.map((mt) => (
                         <SelectItem key={mt.id} value={mt.value}>
-                          {mt.description ?? mt.value}
+                          {mt.value}
                         </SelectItem>
                       ))
                     )}
@@ -267,7 +297,7 @@ export default function TradeMistakesCard({
               type="submit"
               className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
-              Add Mistake
+              {editingMistake ? 'Update Mistake' : 'Add Mistake'}
             </button>
           </form>
         )}
@@ -297,7 +327,7 @@ export default function TradeMistakesCard({
                   return (
                     <tr key={m.id} className="border-b border-zinc-100 dark:border-zinc-800">
                       <td className="py-2.5 pr-4 text-zinc-900 dark:text-zinc-100">
-                        {typeInfo?.description ?? typeInfo?.value ?? m.mistakeTypeId ?? '-'}
+                        {typeInfo?.value ?? typeInfo?.description ?? m.mistakeTypeId ?? '-'}
                       </td>
                       <td className="py-2.5 pr-4 capitalize text-zinc-600 dark:text-zinc-400">
                         {m.phase.replace('_', ' ')}
@@ -323,13 +353,22 @@ export default function TradeMistakesCard({
                         </span>
                       </td>
                       <td className="py-2.5 text-right">
-                        <button
-                          onClick={() => handleDelete(m.id)}
-                          className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:text-red-400 dark:hover:bg-red-900/30"
-                          aria-label="Delete mistake"
-                        >
-                          <Trash2 className="size-3" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleEdit(m)}
+                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                            aria-label="Edit mistake"
+                          >
+                            <Pencil className="size-3" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(m.id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                            aria-label="Delete mistake"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
