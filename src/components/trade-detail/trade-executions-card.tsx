@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { formatAction, formatDate, formatPrice, formatCurrency } from './helpers';
@@ -7,13 +8,17 @@ import type { Execution } from './types';
 
 interface TradeExecutionsCardProps {
   executions: Execution[];
+  actions?: ReactNode;
 }
 
-export default function TradeExecutionsCard({ executions }: TradeExecutionsCardProps) {
+export default function TradeExecutionsCard({ executions, actions }: TradeExecutionsCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Executions</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>Executions</CardTitle>
+          {actions && <div>{actions}</div>}
+        </div>
       </CardHeader>
       <CardContent>
         {executions.length === 0 ? (

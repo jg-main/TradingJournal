@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { TrendingUp, TrendingDown, PlusCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { PlusCircle } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
-import { statusBadgeVariant, statusLabel } from './helpers';
+import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
@@ -58,37 +57,15 @@ export default function ClosedPhaseView({
   onExecutionAdded,
 }: ClosedPhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
-  const badgeInfo = statusBadgeVariant(trade.status);
 
   return (
     <>
-      {/* Header */}
-      <div className="mb-8 flex items-start justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              {trade.symbol}
-            </h1>
-            <Badge variant={badgeInfo.variant} className={badgeInfo.className}>
-              {statusLabel(trade.status)}
-            </Badge>
-            {trade.direction === 'long' ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                <TrendingUp className="size-3" />
-                Long
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                <TrendingDown className="size-3" />
-                Short
-              </span>
-            )}
-          </div>
-          <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-            {trade.tradeCode}
-          </p>
-        </div>
-      </div>
+      <TradeDetailHeader
+        symbol={trade.symbol}
+        status={trade.status}
+        direction={trade.direction}
+        tradeCode={trade.tradeCode}
+      />
 
       {/* Lifecycle Stepper */}
       <div className="mb-8">
@@ -103,43 +80,46 @@ export default function ClosedPhaseView({
 
       {/* Lifecycle Summary */}
       {derivedStatus && (
-        <TradeLifecycleSummaryCard
-          status={trade.status}
-          openedAt={derivedStatus.openedAt}
-          closedAt={derivedStatus.closedAt}
-          openQuantity={derivedStatus.openQuantity}
-        />
+        <div className="mb-8">
+          <TradeLifecycleSummaryCard
+            status={trade.status}
+            openedAt={derivedStatus.openedAt}
+            closedAt={derivedStatus.closedAt}
+            openQuantity={derivedStatus.openQuantity}
+          />
+        </div>
       )}
 
       {/* P&L-R Metrics */}
       {pnlResult && (
-        <TradePnlCard
-          realizedPnl={pnlResult.totalRealizedPnL}
-          rMultiple={rMultiple?.rMultiple ?? null}
-          avgEntryPrice={pnlResult.avgEntryPrice}
-          totalEntryQty={pnlResult.totalEntryQty}
-          totalExitQty={pnlResult.totalExitQty}
-        />
+        <div className="mb-8">
+          <TradePnlCard
+            realizedPnl={pnlResult.totalRealizedPnL}
+            rMultiple={rMultiple?.rMultiple ?? null}
+            avgEntryPrice={pnlResult.avgEntryPrice}
+            totalEntryQty={pnlResult.totalEntryQty}
+            totalExitQty={pnlResult.totalExitQty}
+          />
+        </div>
       )}
 
       {/* Executions */}
       <div className="mb-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-            Executions
-          </h3>
-          {onExecutionAdded && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setExitDialogOpen(true)}
-            >
-              <PlusCircle className="mr-1.5 size-3.5" />
-              Add Exit
-            </Button>
-          )}
-        </div>
-        <TradeExecutionsCard executions={executions} />
+        <TradeExecutionsCard
+          executions={executions}
+          actions={
+            onExecutionAdded ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExitDialogOpen(true)}
+              >
+                <PlusCircle className="mr-1.5 size-3.5" />
+                Add Exit
+              </Button>
+            ) : undefined
+          }
+        />
       </div>
 
       {/* Add Exit Dialog */}
@@ -159,42 +139,54 @@ export default function ClosedPhaseView({
       />
 
       {/* Stop Adjustments */}
-      <TradeStopAdjustmentsCard
-        stopAdjustments={stopAdjustments}
-        tradeId={trade.id}
-        onAdjustmentAdded={onAdjustmentAdded}
-      />
+      <div className="mb-8">
+        <TradeStopAdjustmentsCard
+          stopAdjustments={stopAdjustments}
+          tradeId={trade.id}
+          onAdjustmentAdded={onAdjustmentAdded}
+        />
+      </div>
 
       {/* Pre-Execution Checklist Audit */}
-      <TradeCheckResultsCard checkResults={checkResults} />
+      <div className="mb-8">
+        <TradeCheckResultsCard checkResults={checkResults} />
+      </div>
 
       {/* Trade Grade */}
-      <TradeGradeCard
-        grade={grade}
-        tradeStatus={trade.status}
-        onSave={onGradeSave}
-      />
+      <div className="mb-8">
+        <TradeGradeCard
+          grade={grade}
+          tradeStatus={trade.status}
+          onSave={onGradeSave}
+        />
+      </div>
 
       {/* Mistakes */}
-      <TradeMistakesCard
-        mistakes={mistakes}
-        mistakeTypes={mistakeTypes}
-        tradeId={trade.id}
-        onMistakesChanged={onMistakesChanged}
-      />
+      <div className="mb-8">
+        <TradeMistakesCard
+          mistakes={mistakes}
+          mistakeTypes={mistakeTypes}
+          tradeId={trade.id}
+          onMistakesChanged={onMistakesChanged}
+        />
+      </div>
 
       {/* Assets — all phases */}
-      <TradeAssetsCard
-        assets={assets}
-        tradeId={trade.id}
-        onAssetsChanged={onAssetsChanged}
-      />
+      <div className="mb-8">
+        <TradeAssetsCard
+          assets={assets}
+          tradeId={trade.id}
+          onAssetsChanged={onAssetsChanged}
+        />
+      </div>
 
       {/* Exit Notes + Lesson */}
-      <TradeExitNotesCard
-        exitNotes={trade.exitNotes}
-        lesson={trade.lesson}
-      />
+      <div className="mb-8">
+        <TradeExitNotesCard
+          exitNotes={trade.exitNotes}
+          lesson={trade.lesson}
+        />
+      </div>
     </>
   );
 }

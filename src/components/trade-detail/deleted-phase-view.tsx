@@ -1,12 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, ArrowLeft, AlertCircle } from 'lucide-react';
+import { ArrowLeft, AlertCircle } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import { EmptyState } from '@/components/empty-state';
-import { statusBadgeVariant, statusLabel } from './helpers';
+import TradeDetailHeader from './trade-detail-header';
 import type { Trade } from './types';
 
 interface DeletedPhaseViewProps {
@@ -14,37 +13,14 @@ interface DeletedPhaseViewProps {
 }
 
 export default function DeletedPhaseView({ trade }: DeletedPhaseViewProps) {
-  const badgeInfo = statusBadgeVariant(trade.status);
-
   return (
     <>
-      {/* Header */}
-      <div className="mb-8 flex items-start justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-400 line-through dark:text-zinc-500">
-              {trade.symbol}
-            </h1>
-            <Badge variant={badgeInfo.variant} className={badgeInfo.className}>
-              {statusLabel(trade.status)}
-            </Badge>
-            {trade.direction === 'long' ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                <TrendingUp className="size-3" />
-                Long
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                <TrendingDown className="size-3" />
-                Short
-              </span>
-            )}
-          </div>
-          <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400">
-            {trade.tradeCode}
-          </p>
-        </div>
-      </div>
+      <TradeDetailHeader
+        symbol={trade.symbol}
+        status={trade.status}
+        direction={trade.direction}
+        tradeCode={trade.tradeCode}
+      />
 
       {/* Scratched Lifecycle Stepper */}
       <div className="mb-8">
