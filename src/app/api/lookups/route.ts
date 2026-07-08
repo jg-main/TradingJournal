@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
     const typeFilter = request.nextUrl.searchParams.get('type') as typeof VALID_TYPES[number] | null;
 
     const rows = typeFilter && VALID_TYPES.includes(typeFilter)
-      ? db.select().from(lookupValues).where(eq(lookupValues.type, typeFilter)).orderBy(asc(lookupValues.sortOrder)).all()
-      : db.select().from(lookupValues).orderBy(asc(lookupValues.type), asc(lookupValues.sortOrder)).all();
+      ? db.select().from(lookupValues).where(and(eq(lookupValues.type, typeFilter), eq(lookupValues.isActive, true))).orderBy(asc(lookupValues.sortOrder)).all()
+      : db.select().from(lookupValues).where(eq(lookupValues.isActive, true)).orderBy(asc(lookupValues.type), asc(lookupValues.sortOrder)).all();
 
     if (!typeFilter) {
       const grouped: Record<string, typeof rows> = {};

@@ -10,6 +10,7 @@ import {
   CircleCheck,
   CircleDashed,
   Gamepad2,
+  List,
   Loader2,
   Play,
   ShieldCheck,
@@ -101,6 +102,12 @@ const cards: HubCard[] = [
     description: 'Manage your brokerage accounts, deposits, and withdrawals.',
     href: '/settings/accounts',
     icon: <Building2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+  },
+  {
+    title: 'Lookup Values',
+    description: 'Manage reference values: mistake types, sectors, market conditions, and more.',
+    href: '/lookups',
+    icon: <List className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Export & Backup',
