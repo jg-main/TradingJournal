@@ -111,6 +111,7 @@ export default function ActivePhaseView({
       <div className="mb-8">
         <TradeExecutionsCard
           executions={executions}
+          tradeId={trade.id}
           actions={
             trade.status === 'open' && onExecutionAdded ? (
               <Button
@@ -123,6 +124,7 @@ export default function ActivePhaseView({
               </Button>
             ) : undefined
           }
+          onComplete={onExecutionAdded ?? (() => {})}
         />
       </div>
 

@@ -109,6 +109,7 @@ export default function ClosedPhaseView({
       <div className="mb-8">
         <TradeExecutionsCard
           executions={executions}
+          tradeId={trade.id}
           actions={
             onExecutionAdded ? (
               <Button
@@ -121,6 +122,7 @@ export default function ClosedPhaseView({
               </Button>
             ) : undefined
           }
+          onComplete={onExecutionAdded ?? (() => {})}
         />
       </div>
 
