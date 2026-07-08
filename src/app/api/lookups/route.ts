@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     const existing = db
       .select()
       .from(lookupValues)
-      .where(and(eq(lookupValues.type, parsed.data.type), eq(lookupValues.value, parsed.data.value)))
+      .where(and(eq(lookupValues.type, parsed.data.type), eq(lookupValues.value, parsed.data.value.toLowerCase())))
       .get();
 
     if (existing) {
@@ -77,7 +77,9 @@ export async function POST(request: NextRequest) {
       .values({
         id,
         type: parsed.data.type,
-        value: parsed.data.value,
+        // Always lowercase to match case-insensitive lookup pattern used by
+        // trade mistakes API and setup resolver (lowercases input before querying)
+        value: parsed.data.value.toLowerCase(),
         description: parsed.data.description ?? null,
         sortOrder: parsed.data.sortOrder,
         isActive: true,
