@@ -75,6 +75,8 @@ export default function ClosedPhaseView({
           openedAt={trade.openedAt}
           exitNotes={trade.exitNotes}
           lesson={trade.lesson}
+          hasGrade={!!grade}
+          hasMistakes={mistakes.length > 0}
         />
       </div>
 

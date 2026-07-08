@@ -9,6 +9,8 @@ interface LifecycleStepperProps {
   openedAt?: string | null;
   exitNotes?: string | null;
   lesson?: string | null;
+  hasGrade?: boolean;
+  hasMistakes?: boolean;
 }
 
 interface Step {
@@ -30,6 +32,8 @@ export function getCurrentStep(
   openedAt?: string | null,
   exitNotes?: string | null,
   lesson?: string | null,
+  hasGrade?: boolean,
+  hasMistakes?: boolean,
 ): { currentStep: number; isScratched: boolean } {
   switch (status) {
     case 'planned':
@@ -41,7 +45,7 @@ export function getCurrentStep(
       };
     case 'closed':
       return {
-        currentStep: exitNotes || lesson ? 6 : 5,
+        currentStep: exitNotes || lesson || hasGrade || hasMistakes ? 6 : 5,
         isScratched: false,
       };
     case 'deleted':
@@ -55,8 +59,10 @@ export function LifecycleStepper({
   openedAt,
   exitNotes,
   lesson,
+  hasGrade,
+  hasMistakes,
 }: LifecycleStepperProps) {
-  const { currentStep, isScratched } = getCurrentStep(status, openedAt, exitNotes, lesson);
+  const { currentStep, isScratched } = getCurrentStep(status, openedAt, exitNotes, lesson, hasGrade, hasMistakes);
   const isLong = direction === 'long';
 
   return (
