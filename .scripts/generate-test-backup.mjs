@@ -447,13 +447,14 @@ const tableCounts = {
   trades: trades.length, trade_executions: executions.length,
   trade_risk_snapshots: riskSnapshots.length, trade_stop_adjustments: stopAdjustments.length,
   trade_assets: 0, trade_grades: grades.length, trade_mistakes: mistakes.length,
+  trade_check_results: 0, checklist_definitions: 0,
   watchlist_items: watchlistItems.length, account_transactions: accountTransactions.length,
   account_rollforward: accountRollforward.length, weekly_reviews: weeklyReviews.length,
   review_action_items: reviewActionItems.length,
 };
 
 const manifest = {
-  schemaVersion: 5, backupTimestamp: ts, appVersion: '0.1.0', tables: tableCounts,
+  schemaVersion: 6, backupTimestamp: ts, appVersion: '0.1.0', tables: tableCounts,
 };
 zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'));
 
@@ -462,12 +463,14 @@ const tableData = [
   { name: 'accounts', data: [{ id: ACCOUNT_ID, name: 'Paper.Main', broker: 'Schwab', currency: 'USD', isActive: true, maxRiskPerTradePct: 1, defaultCommission: null, startingBalance: 10000, createdAt: ts, updatedAt: ts }] },
   { name: 'settings', data: [{ id: SETTINGS_ID, defaultAccountId: ACCOUNT_ID, startingAccountValue: 10000, maxRiskPerTradePct: 1, defaultCommission: null, journalStartDate: '2026-05-26', currency: 'USD', createdAt: ts, updatedAt: ts }] },
   { name: 'lookup_values', data: lookupValues },
+  { name: 'checklist_definitions', data: [] },
   { name: 'setup_definitions', data: [{ id: SETUPS.breakdown, name: 'Breakdown', description: 'Breakdown below key support', howToPlay: null, entryRules: null, exitRules: null, tags: null, defaultRiskPct: null, positionSizingRules: null, chartPatterns: null, isActive: true, createdAt: ts, updatedAt: ts }] },
   { name: 'trades', data: trades },
   { name: 'trade_executions', data: executions },
   { name: 'trade_risk_snapshots', data: riskSnapshots },
   { name: 'trade_stop_adjustments', data: stopAdjustments },
   { name: 'trade_assets', data: [] },
+  { name: 'trade_check_results', data: [] },
   { name: 'trade_grades', data: grades },
   { name: 'trade_mistakes', data: mistakes },
   { name: 'watchlist_items', data: watchlistItems },
@@ -490,4 +493,4 @@ console.log(`${trades.length} trades across ${[...new Set(trades.map(t => t.symb
 console.log(`Executions: ${executions.length}, Grades: ${grades.length}, Mistakes: ${mistakes.length}`);
 console.log(`Weekly reviews: ${weeklyReviews.length}, Watchlist: ${watchlistItems.length}`);
 console.log(`Stop adjustments: ${stopAdjustments.length}`);
-console.log(`Schema version: 5 — restore via Settings > Restore from Backup`);
+console.log(`Schema version: 6 — restore via Settings > Restore from Backup`);
