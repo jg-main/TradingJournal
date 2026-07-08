@@ -3,9 +3,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
-  turbopack: {
-    root: resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."),
-  },
+  // Only enable turbopack config in dev — production (Docker) uses webpack
+  ...(process.env.NODE_ENV !== "production"
+    ? {
+        turbopack: {
+          root: resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+        },
+      }
+    : {}),
   async redirects() {
     return [
       {
