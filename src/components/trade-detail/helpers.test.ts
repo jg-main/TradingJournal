@@ -15,6 +15,7 @@ import {
   formatAction,
   toExecutionData,
   statusLabel,
+  formatDuration,
 } from './helpers';
 
 let passed = 0;
@@ -176,6 +177,30 @@ function assert(condition: boolean, msg: string) {
   assert(statusLabel('open') === 'Open', 'open capitalizes to Open');
   assert(statusLabel('closed') === 'Closed', 'closed capitalizes to Closed');
   assert(statusLabel('deleted') === 'Deleted', 'deleted capitalizes to Deleted');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// formatDuration
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## formatDuration');
+
+  assert(formatDuration(null) === '-', 'null returns dash');
+  assert(formatDuration(undefined) === '-', 'undefined returns dash');
+  assert(formatDuration(-1) === '-', 'negative returns dash');
+  assert(formatDuration(0) === '<1m', 'zero returns <1m');
+  assert(formatDuration(30000) === '<1m', '30 seconds returns <1m');
+  assert(formatDuration(60000) === '1m', '1 minute returns 1m');
+  assert(formatDuration(120000) === '2m', '2 minutes returns 2m');
+  assert(formatDuration(3600000) === '1h', '1 hour returns 1h');
+  assert(formatDuration(5400000) === '1h 30m', '1.5 hours returns 1h 30m');
+  assert(formatDuration(14400000) === '4h', '4 hours returns 4h');
+  assert(formatDuration(16200000) === '4h 30m', '4.5 hours returns 4h 30m');
+  assert(formatDuration(86400000) === '1d', '1 day returns 1d');
+  assert(formatDuration(90000000) === '1d 1h', '1 day 1 hour returns 1d 1h');
+  assert(formatDuration(95400000) === '1d 2h 30m', '1 day 2.5 hours returns 1d 2h 30m');
+  assert(formatDuration(259200000) === '3d', '3 days returns 3d');
+  assert(formatDuration(270000000) === '3d 3h', '3 days 3 hours returns 3d 3h');
 }
 
 // ────────────────────────────────────────────────────────────────────────

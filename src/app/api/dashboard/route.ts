@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts } from '@/db/schema';
 import { eq, inArray, desc } from 'drizzle-orm';
+import { type ExecutionData } from '@/lib/trade-calc';
 import {
   computeKpiMetrics,
   computeMonthlyPerformance,
@@ -27,6 +28,7 @@ import {
 import {
   computeEquityCurve,
   computeDrawdown,
+  computeTradeMarkers,
 } from '@/lib/equity';
 
 /**
@@ -276,6 +278,23 @@ export async function GET(request: NextRequest) {
     const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
     const processScoreDistribution = computeProcessScoreDistribution(closedKpiInputs);
 
+    // 10. Compute trade markers for equity curve chart
+    const dateFilteredClosedInputs: { id: string; direction: 'long' | 'short'; executions: ExecutionData[]; closedAt: string | null }[] =
+      dateFilteredClosedTrades.map((trade) => ({
+        id: trade.id,
+        direction: trade.direction as 'long' | 'short',
+        executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
+          action: ex.action,
+          quantity: ex.quantity,
+          price: ex.price,
+          fees: ex.fees ?? null,
+          executedAt: ex.executedAt ?? '',
+        })),
+        closedAt: trade.closedAt ?? null,
+      }));
+
+    const tradeMarkers = computeTradeMarkers(dateFilteredClosedInputs, rollforwardRowsForCharts);
+
     return NextResponse.json({
       kpis,
       equityCurve,
@@ -284,6 +303,7 @@ export async function GET(request: NextRequest) {
       rDistribution,
       directionalPerformance,
       processScoreDistribution,
+      tradeMarkers,
     });
   } catch (error) {
     return NextResponse.json(

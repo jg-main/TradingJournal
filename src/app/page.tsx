@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
+  BarChart3,
   NotebookPen,
   TrendingUp,
   Target,
@@ -17,15 +18,22 @@ import { EmptyState } from '@/components/empty-state';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { DashboardFilters } from '@/components/dashboard-filters';
-import type { EquityDataPoint, DrawdownDataPoint } from '@/lib/equity';
+import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
 import type { MonthlyPerformanceItem, RDistributionBin, DirectionalPerformanceResult, ProcessScoreBin } from '@/lib/dashboard';
 
 // ── Types ──────────────────────────────────────────────────────────────
+
+/** Minimal ECharts tooltip parameter shape used in dashboard charts. */
+interface EChartsTooltipParam {
+  seriesName?: string;
+  data: number[];
+  value: number[];
+  dataIndex: number;
+}
 
 interface KpiMetrics {
   totalTrades: number;
@@ -37,6 +45,9 @@ interface KpiMetrics {
   currentDrawdown: number | null;
   currentDrawdownPct: number | null;
   accountValue: number | null;
+  profitFactor: number | null;
+  avgWin: number | null;
+  avgLoss: number | null;
 }
 
 interface DashboardResponse {
@@ -47,6 +58,7 @@ interface DashboardResponse {
   rDistribution: RDistributionBin[];
   directionalPerformance?: DirectionalPerformanceResult;
   processScoreDistribution?: ProcessScoreBin[];
+  tradeMarkers?: TradeMarkerPoint[];
 }
 
 // ── Grade Rubric (matches reviews page) ────────────────────────────────
@@ -123,7 +135,10 @@ function KpiCard({ icon, iconBg, value, label, valueClassName }: KpiCardProps) {
             <p className="text-xs text-zinc-500 dark:text-zinc-400 underline decoration-dotted decoration-zinc-300 dark:decoration-zinc-600 underline-offset-2 cursor-help">{label}</p>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-64 text-xs">
-            {label === 'Avg R' ? 'Average risk multiple (R) per trade. R = |entry - stop| / risk per share. Higher is better.' :
+            {label === 'Profit Factor' ? 'Gross profit / gross loss. > 1.5 is excellent, < 1.0 means losses exceed profits.' :
+             label === 'Avg Win' ? 'Average P&L of winning trades. Higher is better.' :
+             label === 'Avg Loss' ? 'Average absolute P&L of losing trades. Lower (absolute) is better.' :
+             label === 'Avg R' ? 'Average risk multiple (R) per trade. R = |entry - stop| / risk per share. Higher is better.' :
              label === 'Avg Grade' ? 'Average process quality score. Grades range from A (54-60) to F (0-17).' :
              label === 'Current Drawdown' ? 'Peak-to-trough decline from your highest account value.' :
              label === 'Account Value' ? 'Current total value of your trading account.' :
@@ -160,6 +175,7 @@ function HomeContent() {
   const [rDistribution, setRDistribution] = useState<RDistributionBin[]>([]);
   const [directionalPerformance, setDirectionalPerformance] = useState<DirectionalPerformanceResult | null>(null);
   const [processScoreDistribution, setProcessScoreDistribution] = useState<ProcessScoreBin[] | null>(null);
+  const [tradeMarkers, setTradeMarkers] = useState<TradeMarkerPoint[]>([]);
   const [showMoreAnalytics, setShowMoreAnalytics] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -195,6 +211,7 @@ function HomeContent() {
       setRDistribution(data.rDistribution);
       setDirectionalPerformance(data.directionalPerformance ?? null);
       setProcessScoreDistribution(data.processScoreDistribution ?? null);
+      setTradeMarkers(data.tradeMarkers ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
       setKpis(null);
@@ -305,7 +322,7 @@ function HomeContent() {
       {/* Loading state — pulse-animated skeleton rectangles */}
       {loading && (
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 10 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
@@ -379,6 +396,41 @@ function HomeContent() {
             value={formatCurrency(kpis.accountValue)}
             label="Account Value"
           />
+
+          {/* 8. Profit Factor */}
+          <KpiCard
+            icon={<BarChart3 className="size-4 text-zinc-700 dark:text-zinc-300" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
+            value={formatDecimal(kpis.profitFactor)}
+            valueClassName={
+              kpis.profitFactor !== null
+                ? kpis.profitFactor > 1.5
+                  ? 'text-green-600 dark:text-green-400'
+                  : kpis.profitFactor >= 1.0
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-red-600 dark:text-red-400'
+                : ''
+            }
+            label="Profit Factor"
+          />
+
+          {/* 9. Avg Win */}
+          <KpiCard
+            icon={<TrendingUp className="size-4 text-green-600 dark:text-green-400" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
+            value={formatCurrency(kpis.avgWin)}
+            valueClassName={kpis.avgWin !== null ? 'text-green-600 dark:text-green-400' : ''}
+            label="Avg Win"
+          />
+
+          {/* 10. Avg Loss */}
+          <KpiCard
+            icon={<TrendingDown className="size-4 text-red-600 dark:text-red-400" />}
+            iconBg="bg-zinc-100 dark:bg-zinc-800"
+            value={formatCurrency(kpis.avgLoss)}
+            valueClassName={kpis.avgLoss !== null ? 'text-red-600 dark:text-red-400' : ''}
+            label="Avg Loss"
+          />
         </div>
       )}
 
@@ -446,10 +498,63 @@ function HomeContent() {
                         data: equityCurve.map(
                           (dp) => [Date.parse(dp.date), dp.equity] as [number, number],
                         ),
+                      },
+                      // Entry markers (green triangles pointing up)
+                      {
+                        name: 'Entry',
+                        type: 'scatter',
+                        symbol: 'triangle',
+                        symbolRotate: 0,
+                        symbolSize: 12,
+                        color: '#22c55e',
+                        data: tradeMarkers
+                          .filter((m) => m.markerType === 'entry')
+                          .map((m) => [Date.parse(m.date), m.equity]),
+                      },
+                      // Exit markers (red triangles pointing down)
+                      {
+                        name: 'Exit',
+                        type: 'scatter',
+                        symbol: 'triangle',
+                        symbolRotate: 180,
+                        symbolSize: 12,
+                        color: '#ef4444',
+                        data: tradeMarkers
+                          .filter((m) => m.markerType === 'exit')
+                          .map((m) => [Date.parse(m.date), m.equity]),
                       }],
                       tooltip: {
                         trigger: 'axis',
-                        valueFormatter: (v: number) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                        formatter: (params: EChartsTooltipParam[]) => {
+                          if (!Array.isArray(params) || params.length === 0) return '';
+                          // Check if the first series at this axis point has marker data
+                          const markerParam = params.find(
+                            (p: EChartsTooltipParam) => p.seriesName === 'Entry' || p.seriesName === 'Exit',
+                          );
+                          if (markerParam) {
+                            const marker = tradeMarkers.find(
+                              (m) => Date.parse(m.date) === markerParam.data[0] &&
+                                     m.equity === markerParam.data[1],
+                            );
+                            if (marker) {
+                              const dirLabel = marker.direction === 'long' ? 'Long' : 'Short';
+                              const typeLabel = marker.markerType === 'entry' ? 'Entry' : 'Exit';
+                              return [
+                                `<strong>${typeLabel} #${marker.tradeId}</strong>`,
+                                `Direction: ${dirLabel}`,
+                                `Price: $${marker.price.toFixed(2)}`,
+                                `P&amp;L: $${marker.pnl.toFixed(2)}`,
+                                `Equity: $${marker.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+                              ].join('<br/>');
+                            }
+                          }
+                          // Fallback to default equity value display for line series
+                          const lineParam = params.find((p: EChartsTooltipParam) => p.seriesName === undefined || p.seriesName === 'Equity Curve');
+                          if (lineParam) {
+                            return `$${lineParam.value[1]?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                          }
+                          return '';
+                        },
                       },
                       grid: { left: '10%', right: '5%', top: 20, bottom: 25 },
                     }}

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import TradeAssetsCard from './trade-assets-card';
 import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset, CheckResult } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
+import type { PerfMetrics } from '@/lib/perf-metrics';
 
 interface ActivePhaseViewProps {
   trade: Trade;
@@ -26,6 +27,7 @@ interface ActivePhaseViewProps {
   derivedStatus: DeriveStatusResult | null;
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
   rMultiple: { rMultiple: number | null } | null;
+  perfMetrics: PerfMetrics | null;
   checkResults: CheckResult[];
   onAdjustmentAdded: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
@@ -42,6 +44,7 @@ export default function ActivePhaseView({
   derivedStatus,
   pnlResult,
   rMultiple,
+  perfMetrics,
   checkResults,
   onAdjustmentAdded,
   onAssetsChanged,
@@ -103,6 +106,9 @@ export default function ActivePhaseView({
             avgEntryPrice={pnlResult.avgEntryPrice}
             totalEntryQty={pnlResult.totalEntryQty}
             totalExitQty={pnlResult.totalExitQty}
+            duration={perfMetrics?.duration ?? null}
+            returnPercent={perfMetrics?.returnPercent ?? null}
+            totalFees={perfMetrics?.totalFees ?? 0}
           />
         </div>
       )}

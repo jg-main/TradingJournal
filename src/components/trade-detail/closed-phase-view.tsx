@@ -18,6 +18,7 @@ import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
+import type { PerfMetrics } from '@/lib/perf-metrics';
 
 interface ClosedPhaseViewProps {
   trade: Trade;
@@ -29,6 +30,7 @@ interface ClosedPhaseViewProps {
   derivedStatus: DeriveStatusResult | null;
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
   rMultiple: { rMultiple: number | null } | null;
+  perfMetrics: PerfMetrics | null;
   stopAdjustments: StopAdjustment[];
   checkResults: CheckResult[];
   onAdjustmentAdded: () => Promise<void>;
@@ -48,6 +50,7 @@ export default function ClosedPhaseView({
   derivedStatus,
   pnlResult,
   rMultiple,
+  perfMetrics,
   stopAdjustments,
   checkResults,
   onAdjustmentAdded,
@@ -101,6 +104,9 @@ export default function ClosedPhaseView({
             avgEntryPrice={pnlResult.avgEntryPrice}
             totalEntryQty={pnlResult.totalEntryQty}
             totalExitQty={pnlResult.totalExitQty}
+            duration={perfMetrics?.duration ?? null}
+            returnPercent={perfMetrics?.returnPercent ?? null}
+            totalFees={perfMetrics?.totalFees ?? 0}
           />
         </div>
       )}

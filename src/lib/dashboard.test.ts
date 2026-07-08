@@ -17,6 +17,9 @@ import {
   computeRDistribution,
   computeDirectionalPerformance,
   computeProcessScoreDistribution,
+  computeProfitFactor,
+  computeAvgWin,
+  computeAvgLoss,
   type KpiTradeInput,
   type RollforwardRow,
 } from './dashboard';
@@ -894,6 +897,160 @@ test('computeProcessScoreDistribution — spread across multiple bins', () => {
   assertEqual(r[4].count, 1, 'F: 1');
   const total = r.reduce((s, b) => s + b.count, 0);
   assertEqual(total, 7, 'total = 7 (all trades counted)');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: computeProfitFactor
+// ────────────────────────────────────────────────────────────────────────
+
+test('computeProfitFactor — mixed wins and losses', () => {
+  const win1 = makeTrade('pf1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const win2 = makeTrade('pf2', 'long', 'closed', longTradeExecutions(100, 105, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +500
+  const loss = makeTrade('pf3', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -500
+  const pf = computeProfitFactor([win1, win2, loss]);
+  assertClose(pf, 1500 / 500, 'PF = 1500/500 = 3.0');
+});
+
+test('computeProfitFactor — all wins returns null', () => {
+  const win1 = makeTrade('pf4', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const win2 = makeTrade('pf5', 'long', 'closed', longTradeExecutions(100, 120, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +2000
+  assertNull(computeProfitFactor([win1, win2]), 'all wins => null');
+});
+
+test('computeProfitFactor — all losses returns 0', () => {
+  const loss1 = makeTrade('pf6', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // -500
+  const loss2 = makeTrade('pf7', 'long', 'closed', longTradeExecutions(100, 90, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // -1000
+  assertClose(computeProfitFactor([loss1, loss2])!, 0, 'all losses => PF = 0');
+});
+
+test('computeProfitFactor — empty trades returns null', () => {
+  assertNull(computeProfitFactor([]), 'empty => null');
+});
+
+test('computeProfitFactor — single win returns null', () => {
+  const win = makeTrade('pf8', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  assertNull(computeProfitFactor([win]), 'single win => null');
+});
+
+test('computeProfitFactor — single loss returns 0', () => {
+  const loss = makeTrade('pf9', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // -500
+  assertClose(computeProfitFactor([loss])!, 0, 'single loss => PF = 0');
+});
+
+test('computeProfitFactor — scratch treated as loss with zero magnitude', () => {
+  // Scratch mixed with wins: scratch has PnL=0, so totalLoss=0, PF=null
+  const win = makeTrade('pf10', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const scratch = makeTrade('pf11', 'long', 'closed', longTradeExecutions(100, 100, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // 0
+  assertNull(computeProfitFactor([win, scratch]), 'winner + scratch => null (no actual loss)');
+});
+
+test('computeProfitFactor — exact values', () => {
+  const win = makeTrade('pf12', 'long', 'closed', longTradeExecutions(100, 125, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +2500
+  const loss = makeTrade('pf13', 'long', 'closed', longTradeExecutions(100, 90, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -1000
+  assertClose(computeProfitFactor([win, loss])!, 2.5, 'PF = 2500/1000 = 2.5');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: computeAvgWin
+// ────────────────────────────────────────────────────────────────────────
+
+test('computeAvgWin — mixed wins and losses', () => {
+  const win1 = makeTrade('aw1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const win2 = makeTrade('aw2', 'long', 'closed', longTradeExecutions(100, 120, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +2000
+  const loss = makeTrade('aw3', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -500
+  assertClose(computeAvgWin([win1, win2, loss]), 1500, 'avgWin = (1000 + 2000) / 2 = 1500');
+});
+
+test('computeAvgWin — all wins', () => {
+  const win1 = makeTrade('aw4', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const win2 = makeTrade('aw5', 'long', 'closed', longTradeExecutions(100, 120, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +2000
+  assertClose(computeAvgWin([win1, win2]), 1500, 'avgWin = 1500');
+});
+
+test('computeAvgWin — all losses returns null', () => {
+  const loss1 = makeTrade('aw6', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // -500
+  const loss2 = makeTrade('aw7', 'long', 'closed', longTradeExecutions(100, 90, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // -1000
+  assertNull(computeAvgWin([loss1, loss2]), 'all losses => null');
+});
+
+test('computeAvgWin — empty trades returns null', () => {
+  assertNull(computeAvgWin([]), 'empty => null');
+});
+
+test('computeAvgWin — single win', () => {
+  const win = makeTrade('aw8', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  assertClose(computeAvgWin([win]), 1000, 'single win => 1000');
+});
+
+test('computeAvgWin — scratch not counted as win', () => {
+  const win = makeTrade('aw9', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const scratch = makeTrade('aw10', 'long', 'closed', longTradeExecutions(100, 100, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // 0
+  assertClose(computeAvgWin([win, scratch]), 1000, 'avgWin = 1000 (scratch not a win)');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: computeAvgLoss
+// ────────────────────────────────────────────────────────────────────────
+
+test('computeAvgLoss — mixed wins and losses', () => {
+  const win = makeTrade('al1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');   // +1000
+  const loss1 = makeTrade('al2', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -500
+  const loss2 = makeTrade('al3', 'long', 'closed', longTradeExecutions(100, 85, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -1500
+  assertClose(computeAvgLoss([win, loss1, loss2]), 1000, 'avgLoss = (500 + 1500) / 2 = 1000');
+});
+
+test('computeAvgLoss — all wins returns null', () => {
+  const win1 = makeTrade('al4', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const win2 = makeTrade('al5', 'long', 'closed', longTradeExecutions(100, 120, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +2000
+  assertNull(computeAvgLoss([win1, win2]), 'all wins => null');
+});
+
+test('computeAvgLoss — all losses', () => {
+  const loss1 = makeTrade('al6', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -500
+  const loss2 = makeTrade('al7', 'long', 'closed', longTradeExecutions(100, 85, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -1500
+  assertClose(computeAvgLoss([loss1, loss2]), 1000, 'avgLoss = (500 + 1500) / 2 = 1000');
+});
+
+test('computeAvgLoss — empty trades returns null', () => {
+  assertNull(computeAvgLoss([]), 'empty => null');
+});
+
+test('computeAvgLoss — single loss returns absolute magnitude', () => {
+  const loss = makeTrade('al8', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -500
+  assertClose(computeAvgLoss([loss]), 500, 'avgLoss = 500 (positive magnitude)');
+});
+
+test('computeAvgLoss — scratch included as loss with zero magnitude', () => {
+  const loss = makeTrade('al9', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -500
+  const scratch = makeTrade('al10', 'long', 'closed', longTradeExecutions(100, 100, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // 0
+  assertClose(computeAvgLoss([loss, scratch]), 250, 'avgLoss = (500 + 0) / 2 = 250');
+});
+
+test('computeAvgLoss — all scratches returns 0', () => {
+  const scratch1 = makeTrade('al11', 'long', 'closed', longTradeExecutions(100, 100, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // 0
+  const scratch2 = makeTrade('al12', 'long', 'closed', longTradeExecutions(100, 100, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // 0
+  assertClose(computeAvgLoss([scratch1, scratch2]), 0, 'all scratches => avgLoss = 0');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: computeKpiMetrics wiring for profitFactor, avgWin, avgLoss
+// ────────────────────────────────────────────────────────────────────────
+
+test('computeKpiMetrics — includes profitFactor, avgWin, avgLoss fields', () => {
+  const win = makeTrade('kw1', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const loss = makeTrade('kw2', 'long', 'closed', longTradeExecutions(100, 95, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');  // -500
+  const r = computeKpiMetrics([win, loss], [win, loss], null, null);
+  assertClose(r.profitFactor!, 1000 / 500, 'profitFactor = 2.0');
+  assertClose(r.avgWin!, 1000, 'avgWin = 1000');
+  assertClose(r.avgLoss!, 500, 'avgLoss = 500');
+});
+
+test('computeKpiMetrics — profitFactor null when no losses', () => {
+  const win = makeTrade('kw3', 'long', 'closed', longTradeExecutions(100, 110, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // +1000
+  const r = computeKpiMetrics([win], [win], null, null);
+  assertNull(r.profitFactor, 'profitFactor = null (no losses)');
+  assertClose(r.avgWin!, 1000, 'avgWin = 1000');
+  assertNull(r.avgLoss, 'avgLoss = null (no losses)');
 });
 
 // ────────────────────────────────────────────────────────────────────────

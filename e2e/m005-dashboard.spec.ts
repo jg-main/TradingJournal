@@ -52,6 +52,10 @@ test.describe('M005 Dashboard & Analytics', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
+    // Click to expand detailed analytics (collapsed by default)
+    await page.getByText('Show detailed analytics').click();
+    await page.waitForTimeout(300);
+
     // Directional Performance heading
     await expect(page.getByText('Directional Performance')).toBeVisible();
   });
@@ -59,6 +63,10 @@ test.describe('M005 Dashboard & Analytics', () => {
   test('Process Quality Score Distribution section renders', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
+
+    // Click to expand detailed analytics (collapsed by default)
+    await page.getByText('Show detailed analytics').click();
+    await page.waitForTimeout(300);
 
     // Use h2 heading for exact match
     await expect(page.getByRole('heading', { name: 'Process Quality Score Distribution' })).toBeVisible();

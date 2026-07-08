@@ -2,7 +2,7 @@
 
 import { DollarSign } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { formatCurrency, formatPrice } from './helpers';
+import { formatCurrency, formatPrice, formatDuration } from './helpers';
 
 interface TradePnlCardProps {
   realizedPnl: number;
@@ -10,6 +10,9 @@ interface TradePnlCardProps {
   avgEntryPrice: number | null;
   totalEntryQty: number;
   totalExitQty: number;
+  duration: number | null;
+  returnPercent: number | null;
+  totalFees: number;
 }
 
 export default function TradePnlCard({
@@ -18,6 +21,9 @@ export default function TradePnlCard({
   avgEntryPrice,
   totalEntryQty,
   totalExitQty,
+  duration,
+  returnPercent,
+  totalFees,
 }: TradePnlCardProps) {
   return (
     <Card className="mb-8">
@@ -51,6 +57,24 @@ export default function TradePnlCard({
             <div className="text-zinc-600 dark:text-zinc-300">Total Qty</div>
             <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
               {totalEntryQty.toLocaleString()} / {totalExitQty.toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div className="text-zinc-600 dark:text-zinc-300">Duration</div>
+            <div className="tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
+              {formatDuration(duration)}
+            </div>
+          </div>
+          <div>
+            <div className="text-zinc-600 dark:text-zinc-300">Return %</div>
+            <div className={`tabular-nums font-medium ${returnPercent != null ? (returnPercent >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : ''}`}>
+              {returnPercent != null ? `${returnPercent.toFixed(2)}%` : '-'}
+            </div>
+          </div>
+          <div>
+            <div className="text-zinc-600 dark:text-zinc-300">Total Fees</div>
+            <div className="tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
+              {formatCurrency(totalFees)}
             </div>
           </div>
         </div>

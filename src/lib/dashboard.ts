@@ -70,6 +70,9 @@ export interface KpiMetrics {
   currentDrawdown: number | null;
   currentDrawdownPct: number | null;
   accountValue: number | null;
+  profitFactor: number | null;
+  avgWin: number | null;
+  avgLoss: number | null;
 }
 
 /**
@@ -130,6 +133,71 @@ export interface ProcessScoreBin {
 export function computeWinRate(wins: number, decisions: number): number | null {
   if (decisions === 0) return null;
   return wins / decisions;
+}
+
+/**
+ * Profit factor: total realized profit divided by total absolute realized loss
+ * among all closed trades.
+ *
+ * Per D013: >0 P&L = win, <=0 = loss (including scratches).
+ * Returns null when there are no losing trades (totalLoss === 0).
+ */
+export function computeProfitFactor(closedTrades: KpiTradeInput[]): number | null {
+  let totalProfit = 0;
+  let totalLoss = 0;
+
+  for (const trade of closedTrades) {
+    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    if (totalRealizedPnL > 0) {
+      totalProfit += totalRealizedPnL;
+    } else {
+      totalLoss += Math.abs(totalRealizedPnL);
+    }
+  }
+
+  if (totalLoss === 0) return null;
+  return totalProfit / totalLoss;
+}
+
+/**
+ * Average win: average realized P&L among winning closed trades.
+ *
+ * Per D013: >0 P&L = win.
+ * Returns null when there are no winning trades.
+ */
+export function computeAvgWin(closedTrades: KpiTradeInput[]): number | null {
+  const winPnLs: number[] = [];
+
+  for (const trade of closedTrades) {
+    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    if (totalRealizedPnL > 0) {
+      winPnLs.push(totalRealizedPnL);
+    }
+  }
+
+  if (winPnLs.length === 0) return null;
+  return winPnLs.reduce((sum, v) => sum + v, 0) / winPnLs.length;
+}
+
+/**
+ * Average loss: average absolute realized P&L among losing closed trades.
+ *
+ * Per D013: <=0 P&L = loss (including scratches).
+ * Returns null when there are no losing trades.
+ * The result is always a positive number representing the average loss magnitude.
+ */
+export function computeAvgLoss(closedTrades: KpiTradeInput[]): number | null {
+  const lossMagnitudes: number[] = [];
+
+  for (const trade of closedTrades) {
+    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    if (totalRealizedPnL <= 0) {
+      lossMagnitudes.push(Math.abs(totalRealizedPnL));
+    }
+  }
+
+  if (lossMagnitudes.length === 0) return null;
+  return lossMagnitudes.reduce((sum, v) => sum + v, 0) / lossMagnitudes.length;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -372,6 +440,8 @@ export function computeKpiMetrics(
   let decisions = 0; // wins + losses (all trades, scratches counted as losses per D013)
   const rMultiples: number[] = [];
   const gradeScores: number[] = [];
+  const winPnLs: number[] = [];
+  const lossPnLs: number[] = [];
 
   for (const trade of closedTrades) {
     // P&L
@@ -381,6 +451,9 @@ export function computeKpiMetrics(
     // Win rate: >0 = win, <=0 = loss (D013: $0 counted as loss)
     if (totalRealizedPnL > 0) {
       wins++;
+      winPnLs.push(totalRealizedPnL);
+    } else {
+      lossPnLs.push(Math.abs(totalRealizedPnL));
     }
     decisions++;
 
@@ -415,6 +488,10 @@ export function computeKpiMetrics(
   const currentDrawdown = latestRollforward?.drawdownAmount ?? null;
   const currentDrawdownPct = latestRollforward?.drawdownPct ?? null;
 
+  const profitFactor = computeProfitFactor(closedTrades);
+  const avgWin = computeAvgWin(closedTrades);
+  const avgLoss = computeAvgLoss(closedTrades);
+
   return {
     totalTrades,
     openTrades,
@@ -425,5 +502,8 @@ export function computeKpiMetrics(
     currentDrawdown,
     currentDrawdownPct,
     accountValue,
+    profitFactor,
+    avgWin,
+    avgLoss,
   };
 }

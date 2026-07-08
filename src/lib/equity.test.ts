@@ -13,6 +13,7 @@
 import {
   computeEquityCurve,
   computeDrawdown,
+  computeTradeMarkers,
 } from './equity';
 import { type RollforwardRow } from './dashboard';
 
@@ -151,6 +152,64 @@ const NULL_DRAWDOWN_PCT_ROWS: RollforwardRow[] = [
     drawdownPct: null,
     cumulativePnl: -1000,
     highWaterMark: 50000,
+  },
+];
+
+// ── Trade Marker Fixtures ─────────────────────────────────────────────
+
+const ENTRY_EXECUTIONS = [
+  { action: 'buy', quantity: 100, price: 150.50, fees: 5, executedAt: '2026-01-10T09:30:00Z' },
+];
+
+const EXIT_EXECUTIONS = [
+  { action: 'sell', quantity: 100, price: 162.75, fees: 5, executedAt: '2026-01-15T14:00:00Z' },
+];
+
+const SHORT_ENTRY_EXECUTIONS = [
+  { action: 'sell_short', quantity: 50, price: 200.00, fees: 3, executedAt: '2026-01-05T10:00:00Z' },
+];
+
+const SHORT_EXIT_EXECUTIONS = [
+  { action: 'buy_to_cover', quantity: 50, price: 185.00, fees: 3, executedAt: '2026-01-12T11:00:00Z' },
+];
+
+const INCOMPLETE_TRADE_EXECUTIONS = [
+  { action: 'buy', quantity: 100, price: 100.00, fees: 2, executedAt: '2026-01-20T09:00:00Z' },
+  // No exit executions — should be filtered out
+];
+
+const TRADE_ROWS: RollforwardRow[] = [
+  {
+    date: '2026-01-01',
+    endingEquity: 50000,
+    drawdownAmount: 0,
+    drawdownPct: 0,
+    cumulativePnl: 0,
+    highWaterMark: 50000,
+  },
+  {
+    date: '2026-01-08',
+    endingEquity: 52500,
+    drawdownAmount: 0,
+    drawdownPct: 0,
+    cumulativePnl: 2500,
+    highWaterMark: 52500,
+  },
+  {
+    date: '2026-01-15',
+    endingEquity: 51000,
+    drawdownAmount: -1500,
+    drawdownPct: -0.0286,
+    cumulativePnl: 1000,
+    highWaterMark: 52500,
+  },
+  {
+    date: '2026-01-22',
+    endingEquity: 54000,
+    drawdownAmount: 0,
+    drawdownPct: 0,
+    cumulativePnl: 4000,
+    highWaterMark: 54000,
   },
 ];
 
@@ -331,6 +390,144 @@ test('computeDrawdown — all rows null drawdownPct returns empty', () => {
   ];
   const result = computeDrawdown(allNull);
   assertEqualLen(result, 0, 'all rows filtered out returns empty');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: computeTradeMarkers
+// ────────────────────────────────────────────────────────────────────────
+
+test('computeTradeMarkers — single long trade produces 2 markers (entry + exit)', () => {
+  const closedTrades = [
+    {
+      id: 'trade-001',
+      direction: 'long' as const,
+      executions: [...ENTRY_EXECUTIONS, ...EXIT_EXECUTIONS],
+      closedAt: '2026-01-15T14:00:00Z',
+    },
+  ];
+  const result = computeTradeMarkers(closedTrades, TRADE_ROWS);
+  assertEqualLen(result, 2, 'single trade produces 2 markers');
+
+  // Entry marker
+  const entry = result.find((m) => m.markerType === 'entry');
+  assertEqual(entry?.tradeId, 'trade-001', 'entry marker tradeId');
+  assertEqual(entry?.date, '2026-01-10', 'entry marker date');
+  assertEqual(entry?.direction, 'long', 'entry marker direction');
+  assertEqual(entry?.price, 150.50, 'entry marker price (avg entry)');
+
+  // Exit marker
+  const exit = result.find((m) => m.markerType === 'exit');
+  assertEqual(exit?.tradeId, 'trade-001', 'exit marker tradeId');
+  assertEqual(exit?.date, '2026-01-15', 'exit marker date');
+  assertEqual(exit?.direction, 'long', 'exit marker direction');
+  assertEqual(exit?.price, 162.75, 'exit marker price (avg exit)');
+
+  // Both markers share the same P&L
+  assertEqual(entry?.pnl, exit?.pnl, 'entry and exit share same P&L');
+  // Expected: (162.75 - 150.50) * 100 - 10 (fees) = 1215
+  assertEqual(entry?.pnl, 1215, 'P&L for 100 shares at $12.25/share minus $10 fees');
+});
+
+test('computeTradeMarkers — multiple trades produce multiple markers', () => {
+  const closedTrades = [
+    {
+      id: 'trade-001',
+      direction: 'long' as const,
+      executions: [...ENTRY_EXECUTIONS, ...EXIT_EXECUTIONS],
+      closedAt: '2026-01-15T14:00:00Z',
+    },
+    {
+      id: 'trade-002',
+      direction: 'short' as const,
+      executions: [...SHORT_ENTRY_EXECUTIONS, ...SHORT_EXIT_EXECUTIONS],
+      closedAt: '2026-01-12T11:00:00Z',
+    },
+  ];
+  const result = computeTradeMarkers(closedTrades, TRADE_ROWS);
+  assertEqualLen(result, 4, '2 trades produce 4 markers');
+
+  const trade1Markers = result.filter((m) => m.tradeId === 'trade-001');
+  assertEqualLen(trade1Markers, 2, 'trade-001 has 2 markers');
+
+  const trade2Markers = result.filter((m) => m.tradeId === 'trade-002');
+  assertEqualLen(trade2Markers, 2, 'trade-002 has 2 markers');
+
+  // Verify short trade direction
+  const shortEntry = trade2Markers.find((m) => m.markerType === 'entry');
+  assertEqual(shortEntry?.direction, 'short', 'short trade entry direction');
+  assertEqual(shortEntry?.price, 200.00, 'short trade avg entry price');
+
+  // Short trade P&L: (200 - 185) * 50 - 6 (fees) = 744
+  const shortExit = trade2Markers.find((m) => m.markerType === 'exit');
+  assertEqual(shortExit?.pnl, 744, 'short trade P&L');
+});
+
+test('computeTradeMarkers — trades with dates outside rollforward range use nearest fallback', () => {
+  // Trade dates before the first rollforward row
+  const preDateClosedTrades = [
+    {
+      id: 'trade-003',
+      direction: 'long' as const,
+      executions: [
+        { action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: '2025-12-20T09:00:00Z' },
+        { action: 'sell', quantity: 10, price: 110, fees: 0, executedAt: '2025-12-22T09:00:00Z' },
+      ],
+      closedAt: '2025-12-22T09:00:00Z',
+    },
+  ];
+  const result = computeTradeMarkers(preDateClosedTrades, TRADE_ROWS);
+  assertEqualLen(result, 2, '2 markers even when dates precede rollforward range');
+  // Both markers should use the first rollforward row as fallback
+  assertEqual(result[0].equity, 50000, 'entry marker uses first row fallback equity');
+  assertEqual(result[1].equity, 50000, 'exit marker uses first row fallback equity');
+});
+
+test('computeTradeMarkers — empty trades returns empty array', () => {
+  const result = computeTradeMarkers([], TRADE_ROWS);
+  assertEqualLen(result, 0, 'empty trades yields empty markers');
+});
+
+test('computeTradeMarkers — incomplete executions produce no markers', () => {
+  const closedTrades = [
+    {
+      id: 'trade-incomplete',
+      direction: 'long' as const,
+      executions: INCOMPLETE_TRADE_EXECUTIONS,
+      closedAt: null,
+    },
+  ];
+  const result = computeTradeMarkers(closedTrades, TRADE_ROWS);
+  assertEqualLen(result, 0, 'trade with no exit executions produces no markers');
+});
+
+test('computeTradeMarkers — empty rollforward rows still produces markers with null equity skipped', () => {
+  const closedTrades = [
+    {
+      id: 'trade-004',
+      direction: 'long' as const,
+      executions: [...ENTRY_EXECUTIONS, ...EXIT_EXECUTIONS],
+      closedAt: '2026-01-15T14:00:00Z',
+    },
+  ];
+  const result = computeTradeMarkers(closedTrades, []);
+  // Both entry and exit need equity lookups; with no rows, equity falls back to null
+  assertEqualLen(result, 0, 'no markers when equity lookup returns null for both dates');
+});
+
+test('computeTradeMarkers — rollforward with only null equities produces no markers', () => {
+  const closedTrades = [
+    {
+      id: 'trade-005',
+      direction: 'long' as const,
+      executions: [...ENTRY_EXECUTIONS, ...EXIT_EXECUTIONS],
+      closedAt: '2026-01-15T14:00:00Z',
+    },
+  ];
+  const nullRows: RollforwardRow[] = [
+    { date: '2026-01-01', endingEquity: null, drawdownAmount: null, drawdownPct: null, cumulativePnl: null, highWaterMark: null },
+  ];
+  const result = computeTradeMarkers(closedTrades, nullRows);
+  assertEqualLen(result, 0, 'no markers when all rollforward equities are null');
 });
 
 // ────────────────────────────────────────────────────────────────────────
