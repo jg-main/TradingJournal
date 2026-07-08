@@ -147,6 +147,7 @@ export default function ClosedPhaseView({
         <TradeStopAdjustmentsCard
           stopAdjustments={stopAdjustments}
           tradeId={trade.id}
+          tradeStatus={trade.status}
           onAdjustmentAdded={onAdjustmentAdded}
         />
       </div>

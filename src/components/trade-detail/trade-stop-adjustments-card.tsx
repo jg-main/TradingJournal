@@ -10,12 +10,14 @@ import type { StopAdjustment } from './types';
 interface TradeStopAdjustmentsCardProps {
   stopAdjustments: StopAdjustment[];
   tradeId: string;
+  tradeStatus: string;
   onAdjustmentAdded: () => Promise<void>;
 }
 
 export default function TradeStopAdjustmentsCard({
   stopAdjustments,
   tradeId,
+  tradeStatus,
   onAdjustmentAdded,
 }: TradeStopAdjustmentsCardProps) {
   const [showForm, setShowForm] = useState(false);
@@ -71,17 +73,19 @@ export default function TradeStopAdjustmentsCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Stop Adjustments</CardTitle>
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          >
-            {showForm ? 'Cancel' : '+ Add Adjustment'}
-          </button>
+          {tradeStatus === 'open' && (
+            <button
+              onClick={() => setShowForm((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              {showForm ? 'Cancel' : '+ Add Adjustment'}
+            </button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
-        {/* Collapsible form */}
-        {showForm && (
+        {/* Collapsible form — only on open trades */}
+        {tradeStatus === 'open' && showForm && (
           <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
             {message && (
               <div
