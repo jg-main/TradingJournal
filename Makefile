@@ -3,7 +3,8 @@
 # Run `make` or `make help` to see all targets.
 
 .PHONY: help dev dev-alt build start lint typecheck test test-watch playwright playwright-ui \
-        db-generate db-migrate db-studio seed setup reset-db clean
+        db-generate db-migrate db-studio seed setup reset-db clean \
+        docker-build docker-up docker-upgrade docker-logs
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -99,6 +100,25 @@ clean: ## Remove build artifacts and node_modules (keeps DB)
 	rm -rf .next
 	rm -rf node_modules
 	rm -rf playwright-report test-results
+
+# ─── Docker ────────────────────────────────────────────────────────────────
+
+HOMELAB_DIR := $(HOME)/Projects/HomeLab
+
+docker-build: ## Build the Docker image (trading-journal:latest)
+	docker build -t trading-journal:latest .
+
+docker-up: ## Build and start the trading-journal service in HomeLab
+	docker build -t trading-journal:latest .
+	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml up -d trading-journal
+
+docker-upgrade: ## Pull latest code, rebuild image, and restart
+	git pull
+	docker build -t trading-journal:latest .
+	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml up -d trading-journal
+
+docker-logs: ## Follow trading-journal container logs
+	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml logs -f trading-journal
 
 # ─── All-in-one ─────────────────────────────────────────────────────────────
 
