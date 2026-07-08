@@ -10,7 +10,7 @@
 
 import { db } from '@/db';
 import { lookupValues, setupDefinitions } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, like } from 'drizzle-orm';
 
 export interface ResolveSetupResult {
   id: string;
@@ -26,7 +26,7 @@ export function resolveSetup(setupName: string | null | undefined): ResolveSetup
   const existingLookup = db
     .select()
     .from(lookupValues)
-    .where(and(eq(lookupValues.type, 'setup'), eq(lookupValues.value, lowerValue)))
+    .where(and(eq(lookupValues.type, 'setup'), like(lookupValues.value, lowerValue)))
     .get();
 
   if (existingLookup) {

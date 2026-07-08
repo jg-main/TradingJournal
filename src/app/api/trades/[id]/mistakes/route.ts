@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, lookupValues, tradeMistakes } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, like } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 
@@ -85,16 +85,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const lookup = db
       .select()
       .from(lookupValues)
-      .where(and(eq(lookupValues.type, 'mistake_type'), eq(lookupValues.value, lowerValue)))
+      .where(and(eq(lookupValues.type, 'mistake_type'), like(lookupValues.value, lowerValue)))
       .get();
 
     if (!lookup) {
+      const validTypes = db
+        .select()
+        .from(lookupValues)
+        .where(and(eq(lookupValues.type, 'mistake_type'), eq(lookupValues.isActive, true)))
+        .all();
+      const typeList = validTypes.map(t => t.value).join(', ');
       return NextResponse.json(
         {
           error: 'Validation failed',
           details: {
             fieldErrors: {
-              mistakeType: [`Unknown mistake type "${parsed.data.mistakeType}". Valid types: fv_setup_selection, fv_risk_assessment, fv_entry_timing, fv_position_sizing, fv_stop_placement, fv_target_setting, fv_patience, fv_management, fv_exit_discipline, fv_psychology`],
+              mistakeType: [`Unknown mistake type "${parsed.data.mistakeType}". Valid types: ${typeList || '(none configured)'}`],
             },
           },
         },
