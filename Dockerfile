@@ -61,13 +61,17 @@ WORKDIR /app
 # Create the runtime data directory with correct ownership
 RUN mkdir -p /data && chown nextjs:nextjs /data
 
-# Copy production node_modules from builder (only runtime deps)
+# Copy production node_modules from deps stage, then prune dev deps
+# and remove non-essential cruft (test fixtures, type defs, etc.)
 RUN --mount=type=bind,from=deps,source=/app,target=/deps \
     cp -R /deps/node_modules ./node_modules && \
-    # Remove devDependencies to shrink image
     npm prune --omit=dev && \
-    # Also remove cache
-    rm -rf node_modules/.cache
+    rm -rf node_modules/.cache node_modules/.package-lock.json && \
+    # Remove TypeScript type definitions bundles (recreated at build time)
+    rm -rf node_modules/@types/react node_modules/@types/react-dom && \
+    # Remove test/dev-only packages that prune might have missed
+    rm -rf node_modules/vitest node_modules/@vitest node_modules/eslint && \
+    rm -rf node_modules/typescript node_modules/playwright node_modules/@playwright
 
 # Copy built application from builder stage
 COPY --from=builder /app/.next ./.next

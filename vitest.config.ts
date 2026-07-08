@@ -21,6 +21,7 @@ export default defineConfig({
       'src/app/api/checks/__tests__/reorder.test.ts',
       'src/app/api/trades/__tests__/execute.test.ts',
       'src/app/api/trades/__tests__/check-results.test.ts',
+      'src/app/api/health/__tests__/route.test.ts',
     ],
   },
 });
