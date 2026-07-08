@@ -13,6 +13,7 @@ import {
   Loader2,
   Play,
   ShieldCheck,
+  Sparkles,
   Upload,
   User,
   X,
@@ -95,6 +96,12 @@ const cards: HubCard[] = [
     description: 'Set max risk per trade, default commission, and starting account value.',
     href: '/settings/risk',
     icon: <ShieldCheck className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+  },
+  {
+    title: 'AI',
+    description: 'Configure AI provider for trade quality assessments.',
+    href: '/settings/ai',
+    icon: <Sparkles className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Accounts',

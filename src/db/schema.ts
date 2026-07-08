@@ -319,3 +319,58 @@ export const reviewActionItems = sqliteTable('review_action_items', {
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });
+
+// ── AI Trade Quality Assessment ────────────────────────────────────────
+
+export const aiSettings = sqliteTable('ai_settings', {
+  id: text('id').primaryKey().notNull(),
+  provider: text('provider', {
+    enum: ['openai', 'ollama', 'anthropic', 'google', 'custom'],
+  }).notNull(),
+  model: text('model').notNull(),
+  apiKey: text('api_key'),
+  baseUrl: text('base_url'),
+  timeoutMs: integer('timeout_ms').default(30000),
+  temperature: real('temperature').default(0.7),
+  maxTokens: integer('max_tokens').default(4096),
+  systemPrompt: text('system_prompt'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+});
+
+export const playEvaluationFields = sqliteTable('play_evaluation_fields', {
+  id: text('id').primaryKey().notNull(),
+  setupDefinitionId: text('setup_definition_id')
+    .references(() => setupDefinitions.id, { onDelete: 'cascade' })
+    .notNull(),
+  fieldKey: text('field_key').notNull(),
+  label: text('label').notNull(),
+  description: text('description'),
+  fieldType: text('field_type', {
+    enum: ['boolean', 'score_1_5', 'score_1_10', 'text'],
+  }).notNull(),
+  weight: real('weight').default(1.0),
+  sortOrder: integer('sort_order').default(0),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+}, (t) => [unique().on(t.setupDefinitionId, t.fieldKey)]);
+
+export const tradeAssessmentSnapshots = sqliteTable('trade_assessment_snapshots', {
+  id: text('id').primaryKey().notNull(),
+  tradeId: text('trade_id')
+    .references(() => trades.id, { onDelete: 'cascade' })
+    .notNull(),
+  assessedAt: text('assessed_at').default(sql`(current_timestamp)`),
+  assessmentType: text('assessment_type', {
+    enum: ['ai_quality', 'ai_review'],
+  }).notNull(),
+  overallScore: real('overall_score'),
+  scorecardJson: text('scorecard_json'),
+  modelUsed: text('model_used'),
+  promptTokens: integer('prompt_tokens'),
+  completionTokens: integer('completion_tokens'),
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+});

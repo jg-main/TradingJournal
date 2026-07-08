@@ -1,11 +1,48 @@
 'use client';
 
+import { useEffect, useState, useCallback } from 'react';
 import { Play } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
 import TradePlanCard from './trade-plan-card';
 import TradeAssetsCard from './trade-assets-card';
+import AssessmentCard from './assessment-card';
 import type { Trade, TradeAsset } from './types';
+import type { Scorecard } from '@/lib/scorecard';
+
+interface AssessmentResponse {
+  scorecard?: Scorecard;
+  snapshot?: {
+    scorecard: Scorecard | null;
+    id: string;
+    tradeId: string;
+    assessedAt: string | null;
+    assessmentType: string;
+    overallScore: number | null;
+    modelUsed: string | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    notes: string | null;
+    createdAt: string | null;
+    snapshotVersion: number;
+  };
+  warnings?: string[];
+  data?: Array<{
+    scorecard: Scorecard | null;
+    id: string;
+    tradeId: string;
+    assessedAt: string | null;
+    assessmentType: string;
+    overallScore: number | null;
+    modelUsed: string | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    notes: string | null;
+    createdAt: string | null;
+    snapshotVersion: number;
+  }>;
+  error?: string;
+}
 
 interface PlannedPhaseViewProps {
   trade: Trade;
@@ -21,6 +58,106 @@ export default function PlannedPhaseView({
   onExecute,
 }: PlannedPhaseViewProps) {
   const preTradeAssets = assets.filter((a) => a.phase === 'pre_trade');
+
+  // ── Assessment State ─────────────────────────────────────────
+  const [scorecard, setScorecard] = useState<Scorecard | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [requestLoading, setRequestLoading] = useState(false);
+
+  // ── Fetch latest assessment on mount ─────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchLatestAssessment() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await fetch(`/api/trades/${trade.id}/assessments`);
+
+        if (!res.ok) {
+          if (res.status === 404) {
+            // Trade not found — show empty state
+            if (!cancelled) {
+              setScorecard(null);
+              setWarnings([]);
+              setLoading(false);
+            }
+            return;
+          }
+          const body: AssessmentResponse = await res.json().catch(() => ({}));
+          throw new Error(body.error || 'Failed to load assessment');
+        }
+
+        const body: AssessmentResponse = await res.json();
+
+        if (!cancelled) {
+          const latest = body.data?.[0];
+          if (latest?.scorecard) {
+            setScorecard(latest.scorecard);
+            setWarnings([]);
+          } else {
+            setScorecard(null);
+            setWarnings([]);
+          }
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : 'Failed to load assessment',
+          );
+          setScorecard(null);
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchLatestAssessment();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trade.id]);
+
+  // ── Request new assessment ───────────────────────────────────
+  const handleRequestAssessment = useCallback(async () => {
+    setRequestLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/trades/${trade.id}/assessments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessmentType: 'ai_quality' }),
+      });
+
+      if (!res.ok) {
+        const body: AssessmentResponse = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Assessment request failed');
+      }
+
+      const body: AssessmentResponse = await res.json();
+
+      if (body.scorecard) {
+        setScorecard(body.scorecard);
+      } else if (body.snapshot?.scorecard) {
+        setScorecard(body.snapshot.scorecard);
+      }
+
+      if (body.warnings) {
+        setWarnings(body.warnings);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Assessment request failed',
+      );
+    } finally {
+      setRequestLoading(false);
+    }
+  }, [trade.id]);
 
   return (
     <>
@@ -49,6 +186,18 @@ export default function PlannedPhaseView({
           openedAt={trade.openedAt}
           exitNotes={trade.exitNotes}
           lesson={trade.lesson}
+        />
+      </div>
+
+      {/* AI Quality Assessment */}
+      <div className="mb-8">
+        <AssessmentCard
+          scorecard={scorecard}
+          warnings={warnings}
+          loading={loading}
+          error={error}
+          onRequestAssessment={handleRequestAssessment}
+          requestLoading={requestLoading}
         />
       </div>
 

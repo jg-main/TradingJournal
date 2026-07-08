@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PlusCircle } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
@@ -14,6 +14,9 @@ import type { GradeFormPayload } from './trade-grade-card';
 import TradeMistakesCard from './trade-mistakes-card';
 import TradeAssetsCard from './trade-assets-card';
 import TradeExitNotesCard from './trade-exit-notes-card';
+import AssessmentCard from './assessment-card';
+import AssessmentHistory from './assessment-history';
+import type { AssessmentSnapshot } from './assessment-history';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult } from './types';
@@ -60,6 +63,78 @@ export default function ClosedPhaseView({
   onExecutionAdded,
 }: ClosedPhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
+
+  // ── AI Assessment State ──────────────────────────────────────────────
+  const [assessments, setAssessments] = useState<AssessmentSnapshot[]>([]);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
+  const [assessmentsError, setAssessmentsError] = useState<string | null>(null);
+  const [requestLoading, setRequestLoading] = useState(false);
+
+  // Fetch assessments on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchAssessments() {
+      setAssessmentsLoading(true);
+      setAssessmentsError(null);
+      try {
+        const res = await fetch(`/api/trades/${trade.id}/assessments`);
+        if (cancelled) return;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setAssessmentsError(body.error ?? 'Failed to load assessments');
+          return;
+        }
+        const data: AssessmentSnapshot[] = await res.json();
+        if (!cancelled) setAssessments(data);
+      } catch (err) {
+        if (!cancelled) {
+          if (
+            (err instanceof DOMException && err.name === 'AbortError') ||
+            (err instanceof TypeError && /abort|cancelled/i.test(err.message))
+          ) {
+            return;
+          }
+          setAssessmentsError(String(err));
+        }
+      } finally {
+        if (!cancelled) setAssessmentsLoading(false);
+      }
+    }
+    fetchAssessments();
+    return () => {
+      cancelled = true;
+    };
+  }, [trade.id]);
+
+  // Handle requesting a new after-exit assessment
+  const handleRequestAssessment = async () => {
+    setRequestLoading(true);
+    setAssessmentsError(null);
+    try {
+      const res = await fetch(`/api/trades/${trade.id}/assessments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessmentType: 'ai_quality' }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setAssessmentsError(body.error ?? 'Failed to request assessment');
+        return;
+      }
+      // Re-fetch the full list after creation
+      const updatedRes = await fetch(`/api/trades/${trade.id}/assessments`);
+      if (updatedRes.ok) {
+        setAssessments(await updatedRes.json());
+      }
+    } catch (err) {
+      setAssessmentsError(String(err));
+    } finally {
+      setRequestLoading(false);
+    }
+  };
+
+  // Latest assessment is the first item (sorted by snapshotVersion DESC)
+  const latestAssessment = assessments.length > 0 ? assessments[0] : null;
 
   return (
     <>
@@ -188,6 +263,26 @@ export default function ClosedPhaseView({
           assets={assets}
           tradeId={trade.id}
           onAssetsChanged={onAssetsChanged}
+        />
+      </div>
+
+      {/* AI Assessment — latest scorecard */}
+      <div className="mb-8">
+        <AssessmentCard
+          scorecard={latestAssessment?.scorecard ?? null}
+          loading={assessmentsLoading}
+          error={assessmentsError}
+          onRequestAssessment={handleRequestAssessment}
+          requestLoading={requestLoading}
+        />
+      </div>
+
+      {/* AI Assessment History */}
+      <div className="mb-8">
+        <AssessmentHistory
+          assessments={assessments}
+          loading={assessmentsLoading}
+          error={assessmentsError}
         />
       </div>
 
