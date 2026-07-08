@@ -4,7 +4,7 @@
 
 .PHONY: help dev dev-alt build start lint typecheck test test-watch playwright playwright-ui \
         db-generate db-migrate db-studio seed setup reset-db clean \
-        docker-build docker-up docker-upgrade docker-logs
+        docker-build docker-up docker-upgrade docker-down docker-restart docker-logs
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -112,10 +112,15 @@ docker-up: ## Build and start the trading-journal service in HomeLab
 	docker build -t trading-journal:latest .
 	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml up -d trading-journal
 
-docker-upgrade: ## Pull latest code, rebuild image, and restart
-	git pull
+docker-upgrade: ## Rebuild image and restart the service
 	docker build -t trading-journal:latest .
 	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml up -d trading-journal
+
+docker-down: ## Stop and remove the trading-journal service
+	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml down trading-journal
+
+docker-restart: ## Restart the trading-journal service without rebuild
+	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml restart trading-journal
 
 docker-logs: ## Follow trading-journal container logs
 	docker compose -f $(HOMELAB_DIR)/docker-compose.yaml logs -f trading-journal
