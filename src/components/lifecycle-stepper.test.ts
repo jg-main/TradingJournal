@@ -72,6 +72,24 @@ function assert(condition: boolean, msg: string) {
     assert(r.currentStep === 6, 'closed with both notes → step 6 (Grade)');
   }
 
+  // 7b. closed WITHOUT notes but WITH hasGrade → Grade (step 6)
+  {
+    const r = getCurrentStep('closed', null, null, null, true, false);
+    assert(r.currentStep === 6, 'closed with hasGrade=true and no notes → step 6 (Grade)');
+  }
+
+  // 7c. closed WITHOUT notes but WITH hasMistakes → Grade (step 6)
+  {
+    const r = getCurrentStep('closed', null, null, null, false, true);
+    assert(r.currentStep === 6, 'closed with hasMistakes=true and no notes → step 6 (Grade)');
+  }
+
+  // 7d. closed WITHOUT notes but WITH both hasGrade and hasMistakes → Grade (step 6)
+  {
+    const r = getCurrentStep('closed', null, null, null, true, true);
+    assert(r.currentStep === 6, 'closed with both grade and mistakes → step 6 (Grade)');
+  }
+
   // 8. deleted → step 1, isScratched = true
   {
     const r = getCurrentStep('deleted');
@@ -114,6 +132,25 @@ function assert(condition: boolean, msg: string) {
   {
     const r = getCurrentStep('open', null);
     assert(r.currentStep === 3, 'open with null openedAt → step 3');
+  }
+
+  // 14. closed WITHOUT notes, grade, or mistakes → default to Exit (step 5)
+  {
+    const r = getCurrentStep('closed', null, null, null, false, false);
+    assert(r.currentStep === 5, 'closed with no notes, no grade, no mistakes → step 5 (Exit)');
+    assert(r.isScratched === false, 'closed with no signals → not scratched');
+  }
+
+  // 15. hasGrade and hasMistakes are ignored for non-closed status
+  {
+    const r = getCurrentStep('planned', null, null, null, true, true);
+    assert(r.currentStep === 1, 'planned ignores hasGrade/hasMistakes → step 1');
+  }
+
+  // 16. hasGrade and hasMistakes default to falsey when omitted
+  {
+    const r = getCurrentStep('closed', null, 'Has notes', null);
+    assert(r.currentStep === 6, 'closed with notes and omitted grade/mistakes → step 6');
   }
 }
 

@@ -73,8 +73,9 @@ export function LifecycleStepper({
       )}
     >
       {STEPS.map((step, index) => {
-        const isCompleted = step.number < currentStep;
-        const isActive = step.number === currentStep;
+        const isLastStep = index === STEPS.length - 1;
+        const isCompleted = step.number < currentStep || (isLastStep && step.number <= currentStep);
+        const isActive = step.number === currentStep && !isLastStep;
         const isFuture = step.number > currentStep;
 
         return (
