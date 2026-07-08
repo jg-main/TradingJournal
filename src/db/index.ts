@@ -2,6 +2,7 @@ import 'server-only';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as schema from './schema';
@@ -31,6 +32,37 @@ export function initializeDatabase() {
   sqlite.exec(`UPDATE trades SET status = 'planned' WHERE status = 'idea'`);
   sqlite.exec(`UPDATE trades SET status = 'open' WHERE status = 'partially_closed'`);
   sqlite.exec(`UPDATE trades SET status = 'deleted' WHERE status = 'scratched'`);
+
+  // Seed reference data if empty (idempotent — skips if lookup_values already has rows)
+  const existingLookups = sqlite.prepare('SELECT count(*) AS count FROM lookup_values').get() as { count: number } | undefined;
+  if (existingLookups && existingLookups.count === 0) {
+    const now = new Date().toISOString();
+    const mistakeTypes = [
+      { value: 'fomo_entry', description: 'FOMO — entry without proper analysis' },
+      { value: 'fv_setup_selection', description: 'Setup selection failure' },
+      { value: 'fv_risk_assessment', description: 'Risk assessment failure' },
+      { value: 'fv_entry_timing', description: 'Entry timing failure' },
+      { value: 'fv_position_sizing', description: 'Position sizing failure' },
+      { value: 'fv_stop_placement', description: 'Stop placement failure' },
+      { value: 'fv_patience', description: 'Patience failure' },
+      { value: 'fv_management', description: 'Trade management failure' },
+      { value: 'fv_exit_discipline', description: 'Exit discipline failure' },
+      { value: 'fv_psychology', description: 'Psychology failure' },
+    ];
+    for (const mt of mistakeTypes) {
+      dbInstance.insert(schema.lookupValues).values({
+        id: randomUUID(),
+        type: 'mistake_type',
+        value: mt.value,
+        description: mt.description,
+        sortOrder: 0,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      }).run();
+    }
+    console.log(`  Seeded ${mistakeTypes.length} mistake types on startup.`);
+  }
 
   return dbInstance;
 }
