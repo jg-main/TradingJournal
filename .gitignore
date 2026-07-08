@@ -64,6 +64,9 @@ test-results/
 playwright-report/
 coverage/
 
+# ── User uploads (created at runtime) ──
+public/uploads/
+
 # ── Stale docs ──
 docs/
 
