@@ -82,9 +82,12 @@ export default function TradeMistakesCard({
 
       if (!res.ok) {
         const err = await res.json();
+        // Extract a clean error message from the API response
+        const fieldMsg = err.details?.fieldErrors?.mistakeType?.[0];
+        const apiMsg = err.error;
         setMessage({
           type: 'error',
-          text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Failed to save mistake.'),
+          text: fieldMsg || apiMsg || 'Failed to save mistake.',
         });
         return;
       }
@@ -160,11 +163,20 @@ export default function TradeMistakesCard({
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mistakeTypes.map((mt) => (
-                      <SelectItem key={mt.id} value={mt.value}>
-                        {mt.description ?? mt.value}
-                      </SelectItem>
-                    ))}
+                    {mistakeTypes.length === 0 ? (
+                      <div className="px-3 py-4 text-xs text-zinc-500 dark:text-zinc-400">
+                        No mistake types configured.{' '}
+                        <a href="/settings/mistake-types" className="underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-200">
+                          Add some in Settings
+                        </a>
+                      </div>
+                    ) : (
+                      mistakeTypes.map((mt) => (
+                        <SelectItem key={mt.id} value={mt.value}>
+                          {mt.description ?? mt.value}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
