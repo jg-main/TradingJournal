@@ -10,7 +10,6 @@ import {
   CircleCheck,
   CircleDashed,
   Gamepad2,
-  List,
   Loader2,
   Play,
   ShieldCheck,
@@ -104,10 +103,10 @@ const cards: HubCard[] = [
     icon: <Building2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
-    title: 'Lookup Values',
-    description: 'Manage reference values: mistake types, sectors, market conditions, and more.',
-    href: '/lookups',
-    icon: <List className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+    title: 'Mistake Types',
+    description: 'Manage mistake categories for trade reviews.',
+    href: '/settings/mistake-types',
+    icon: <AlertTriangle className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Export & Backup',

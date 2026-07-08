@@ -3,10 +3,8 @@
 import { useEffect, useState } from 'react';
 
 const LOOKUP_TYPES = [
-  { key: 'setup', label: 'Setups' },
   { key: 'sector', label: 'Sectors' },
   { key: 'market_condition', label: 'Market Conditions' },
-  { key: 'mistake_type', label: 'Mistake Types' },
   { key: 'execution_reason', label: 'Execution Reasons' },
   { key: 'phase', label: 'Phases' },
 ] as const;
