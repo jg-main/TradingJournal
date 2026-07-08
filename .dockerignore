@@ -1,0 +1,71 @@
+# ── Version control ──
+.git
+.gitattributes
+.gitignore
+.gsd/
+.gsd-*/
+.gsd-worktrees/
+.gsd-backups/
+
+# ── OS artifacts ──
+.DS_Store
+Thumbs.db
+
+# ── Editors ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Environment ──
+.env
+.env.*
+!.env.example
+
+# ── Dependencies ──
+node_modules/
+node_modules.bak/
+node_modules.real/
+
+# ── Build output ──
+.next/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Test artifacts ──
+.test*db
+.test*-shm
+.test*-wal
+test-results/
+playwright-report/
+coverage/
+
+# ── Logs ──
+*.log
+
+# ── Runtime / data ──
+.trading-journal/
+.bg-shell/
+.impeccable/
+data/
+
+# ── Config files unused in Docker build ──
+components.json
+drizzle.config.ts
+eslint.config.mjs
+playwright.config.ts
+vitest.config.ts
+Makefile
+README.md
+AGENTS.md
+CLAUDE.md
+DESIGN.md
+PRODUCT.md
+skills-lock.json
+
+# ── Documentation / misc ──
+docs/
+*.md
