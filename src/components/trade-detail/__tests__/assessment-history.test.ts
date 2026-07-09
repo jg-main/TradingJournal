@@ -83,6 +83,8 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('createdAt: string | null'), 'snapshot has createdAt (string | null)');
   assert(source.includes('scorecard: Scorecard | null'), 'snapshot has scorecard (Scorecard | null)');
   assert(source.includes('snapshotVersion: number'), 'snapshot has snapshotVersion (number)');
+  assert(source.includes('promptText?: string | null'), 'snapshot has promptText (string | null | undefined)');
+  assert(source.includes('rawResponse?: string | null'), 'snapshot has rawResponse (string | null | undefined)');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -417,6 +419,8 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('scorecard={assessment.scorecard}'), 'HistoryRow passes scorecard to AssessmentCard');
   assert(source.includes('loading={false}'), 'HistoryRow passes loading=false to AssessmentCard');
   assert(source.includes('error={null}'), 'HistoryRow passes error=null to AssessmentCard');
+  assert(source.includes('promptText={assessment.promptText}'), 'HistoryRow passes promptText to AssessmentCard');
+  assert(source.includes('rawResponse={assessment.rawResponse}'), 'HistoryRow passes rawResponse to AssessmentCard');
 
   // No-scorecard fallback
   assert(source.includes('No scorecard data available'), 'HistoryRow shows fallback when scorecard is null');

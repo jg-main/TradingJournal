@@ -75,6 +75,8 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('error?: string | null'), 'accepts optional error prop');
   assert(source.includes('onRequestAssessment?: () => void'), 'accepts optional onRequestAssessment callback');
   assert(source.includes('requestLoading?: boolean'), 'accepts optional requestLoading prop');
+  assert(source.includes('promptText?: string | null'), 'accepts optional promptText prop');
+  assert(source.includes('rawResponse?: string | null'), 'accepts optional rawResponse prop');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -116,6 +118,10 @@ function assert(condition: boolean, msg: string) {
   assert(
     source.includes("@/lib/scorecard"),
     'imports Scorecard type from @/lib/scorecard'
+  );
+  assert(
+    source.includes("@/components/ui/collapsible"),
+    'imports Collapsible primitives from @/components/ui/collapsible'
   );
 }
 
@@ -201,6 +207,7 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('function ScorecardDisplay'), 'ScorecardDisplay sub-component is defined');
   assert(source.includes('function DimensionRow'), 'DimensionRow sub-component is defined');
   assert(source.includes('function WarningsList'), 'WarningsList sub-component is defined');
+  assert(source.includes('function CollapsibleSection'), 'CollapsibleSection sub-component is defined');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -305,6 +312,20 @@ function assert(condition: boolean, msg: string) {
   assert(
     source.includes("Reassess") && source.includes('onRequest'),
     'ScorecardDisplay includes a Reassess button when onRequest is provided'
+  );
+
+  // Collapsible prompt/response sections
+  assert(
+    source.includes('label="View Prompt"') && source.includes('content={promptText}'),
+    'renders collapsible View Prompt section with promptText content'
+  );
+  assert(
+    source.includes('label="View Raw Response"') && source.includes('content={rawResponse}'),
+    'renders collapsible View Raw Response section with rawResponse content'
+  );
+  assert(
+    source.includes('Not available'),
+    'renders Not available fallback in collapsible sections'
   );
 }
 
