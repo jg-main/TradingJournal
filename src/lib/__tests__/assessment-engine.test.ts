@@ -122,6 +122,7 @@ const testCtx = vi.hoisted(() => {
       weight REAL DEFAULT 1.0,
       sort_order INTEGER DEFAULT 0,
       is_active INTEGER DEFAULT 1,
+      min_lookback_days INTEGER,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp),
       UNIQUE(setup_definition_id, field_key)

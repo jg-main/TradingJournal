@@ -702,7 +702,7 @@ export async function performAssessment(
           throw new AssessmentError(
             AssessmentErrorCode.STALE_MARKET_DATA,
             tradeId,
-            `Market data is not current: latest available date is ${freshness.latestDate ?? 'unknown'}`,
+            `Market data is stale — latest available date is ${freshness.latestDate ?? 'unknown'}. Data must be no older than T-1 to assess.`,
           );
         }
         // For ai_review, stale data is a warning, not a blocker
