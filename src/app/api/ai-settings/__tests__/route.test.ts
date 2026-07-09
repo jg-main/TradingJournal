@@ -7,6 +7,7 @@
  * Run: npx vitest run --reporter verbose src/app/api/ai-settings/__tests__/route.test.ts
  */
 
+import { beforeEach, test, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -14,53 +15,9 @@ import { eq } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 
-let passed = 0;
-let failed = 0;
+// ── Setup: in-memory test DB ────────────────────────────────────────
 
-function assert(condition: boolean, msg: string) {
-  if (condition) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} (FAILED)`);
-  }
-}
-
-function assertEqual(actual: unknown, expected: unknown, msg: string) {
-  if (actual === expected) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)} (FAILED)`);
-  }
-}
-
-function assertNotNull(value: unknown, msg: string) {
-  if (value !== null && value !== undefined) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — value is null/undefined (FAILED)`);
-  }
-}
-
-function assertNotHasKey(obj: Record<string, unknown>, key: string, msg: string) {
-  if (!(key in obj)) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — key "${key}" present but should be absent (FAILED)`);
-  }
-}
-
-// ── Setup: test DB ──────────────────────────────────────────────────
-
-const DB_FILE = process.env.DB_FILE_NAME || './.test-ai-settings.db';
-const sqlite = new Database(DB_FILE);
+const sqlite = new Database(':memory:');
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 const db = drizzle(sqlite, { schema });
@@ -189,7 +146,6 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
     }
 
     const existing = db.select().from(schema.aiSettings).limit(1).get();
-    const now = new Date().toISOString();
 
     if (!existing) {
       const id = randomUUID();
@@ -264,13 +220,9 @@ function doTestConnection(): { status: number; data: unknown } {
       return { status: 400, data: { ok: false, error: 'No AI settings configured. Configure ClickHouse settings first.' } };
     }
 
-    // Simulate connection test — in tests we can't actually connect to ClickHouse,
-    // so we return ok based on whether the config looks valid
     const host = row.clickhouseHost || 'localhost';
     const port = row.clickhousePort ?? 8123;
 
-    // Treat connection to 'localhost:8123' as simulatable (return ok)
-    // An empty host or invalid port means the config is incomplete
     if (!host || port < 1 || port > 65535) {
       return { status: 200, data: { ok: false, error: 'Invalid ClickHouse configuration' } };
     }
@@ -282,10 +234,6 @@ function doTestConnection(): { status: number; data: unknown } {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-
-function cleanup() {
-  sqlite.exec('DELETE FROM ai_settings;');
-}
 
 function seedAiSettings(overrides: Record<string, unknown> = {}) {
   const id = randomUUID();
@@ -306,44 +254,34 @@ function seedAiSettings(overrides: Record<string, unknown> = {}) {
 
 // ── Tests ───────────────────────────────────────────────────────────
 
-console.log('\n--- AI Settings API Tests ---\n');
+beforeEach(() => {
+  sqlite.exec('DELETE FROM ai_settings;');
+});
 
-// ── 1. GET: Empty returns message ───────────────────────────────────
-
-console.log('\n1. GET returns message when no settings:');
-{
-  cleanup();
+test('1. GET returns message when no settings', () => {
   const result = doGetAiSettings();
-  assert(result.status === 200, 'returns 200');
-  assertEqual((result.data as { message: string }).message, 'No AI settings configured yet. Use PUT to create.', 'message matches');
-}
+  expect(result.status).toBe(200);
+  expect((result.data as { message: string }).message).toBe('No AI settings configured yet. Use PUT to create.');
+});
 
-// ── 2. GET: Returns settings after creation (apiKey stripped) ───────
-
-console.log('\n2. GET returns settings with apiKey stripped:');
-{
-  cleanup();
+test('2. GET returns settings with apiKey and clickhousePassword stripped', () => {
   seedAiSettings();
   const result = doGetAiSettings();
-  assert(result.status === 200, 'returns 200');
+  expect(result.status).toBe(200);
 
   const data = result.data as Record<string, unknown>;
-  assertNotNull(data.id, 'has id');
-  assertEqual(data.provider, 'openai', 'provider matches');
-  assertEqual(data.model, 'gpt-4', 'model matches');
+  expect(data).toHaveProperty('id');
+  expect(data.provider).toBe('openai');
+  expect(data.model).toBe('gpt-4');
 
   // 🔒 Secret-leak assertion: secrets must never appear in GET response
-  assertNotHasKey(data, 'apiKey', 'apiKey NOT in GET response');
-  assertNotHasKey(data, 'api_key', 'api_key NOT in GET response');
-  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword NOT in GET response');
-  assertNotHasKey(data, 'clickhouse_password', 'clickhouse_password NOT in GET response');
-}
+  expect(data).not.toHaveProperty('apiKey');
+  expect(data).not.toHaveProperty('api_key');
+  expect(data).not.toHaveProperty('clickhousePassword');
+  expect(data).not.toHaveProperty('clickhouse_password');
+});
 
-// ── 3. PUT: Create on first call with all fields ─────────────────────
-
-console.log('\n3. PUT creates AI settings with all fields:');
-{
-  cleanup();
+test('3. PUT creates AI settings with all fields', () => {
   const result = doPutAiSettings({
     provider: 'anthropic',
     model: 'claude-3-opus-20240229',
@@ -354,205 +292,154 @@ console.log('\n3. PUT creates AI settings with all fields:');
     isActive: true,
   });
 
-  assert(result.status === 201, 'returns 201');
+  expect(result.status).toBe(201);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.provider, 'anthropic', 'provider');
-  assertEqual(data.model, 'claude-3-opus-20240229', 'model');
-  assertNotHasKey(data, 'apiKey', 'apiKey stripped from create response');
-  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped from create response');
-  assertEqual(data.temperature, 1.0, 'temperature');
-  assertEqual(data.maxTokens, 8192, 'maxTokens');
-  assertEqual(data.systemPrompt, 'You are a trading assistant.', 'systemPrompt');
-  assertEqual(data.isActive, true, 'isActive');
-}
+  expect(data.provider).toBe('anthropic');
+  expect(data.model).toBe('claude-3-opus-20240229');
+  expect(data).not.toHaveProperty('apiKey');
+  expect(data).not.toHaveProperty('clickhousePassword');
+  expect(data.temperature).toBe(1.0);
+  expect(data.maxTokens).toBe(8192);
+  expect(data.systemPrompt).toBe('You are a trading assistant.');
+  expect(data.isActive).toBe(true);
+});
 
-// ── 4. PUT: Update existing settings ────────────────────────────────
-
-console.log('\n4. PUT updates existing AI settings:');
-{
-  cleanup();
+test('4. PUT updates existing AI settings', () => {
   doPutAiSettings({ provider: 'openai', model: 'gpt-4', apiKey: 'sk-old-key' });
   const result = doPutAiSettings({ model: 'gpt-4-turbo', temperature: 0.5 });
 
-  assert(result.status === 200, 'returns 200');
+  expect(result.status).toBe(200);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.model, 'gpt-4-turbo', 'model updated');
-  assertEqual(data.temperature, 0.5, 'temperature updated');
-  assertEqual(data.provider, 'openai', 'provider preserved');
-  assertNotHasKey(data, 'apiKey', 'apiKey stripped from update response');
-  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped from update response');
-}
+  expect(data.model).toBe('gpt-4-turbo');
+  expect(data.temperature).toBe(0.5);
+  expect(data.provider).toBe('openai');
+  expect(data).not.toHaveProperty('apiKey');
+  expect(data).not.toHaveProperty('clickhousePassword');
+});
 
-// ── 5. PUT: Validate provider enum ──────────────────────────────────
-
-console.log('\n5. PUT rejects invalid provider:');
-{
-  cleanup();
+test('5. PUT rejects invalid provider', () => {
   const result = doPutAiSettings({ provider: 'invalid-provider' });
-  assert(result.status === 400, 'returns 400 for invalid provider');
-}
+  expect(result.status).toBe(400);
+});
 
-// ── 6. PUT: Validate empty model ────────────────────────────────────
-
-console.log('\n6. PUT rejects empty model:');
-{
-  cleanup();
+test('6. PUT rejects empty model', () => {
   const result = doPutAiSettings({ model: '' });
-  assert(result.status === 400, 'returns 400 for empty model');
-}
+  expect(result.status).toBe(400);
+});
 
-// ── 7. PUT: Validate temperature range 0-2 ──────────────────────────
-
-console.log('\n7. PUT validates temperature range:');
-{
-  cleanup();
+test('7. PUT validates temperature range', () => {
   const under = doPutAiSettings({ temperature: -0.1 });
-  assert(under.status === 400, 'returns 400 for negative');
+  expect(under.status).toBe(400);
 
   const over = doPutAiSettings({ temperature: 2.1 });
-  assert(over.status === 400, 'returns 400 for > 2');
+  expect(over.status).toBe(400);
 
   const valid = doPutAiSettings({ temperature: 1.5 });
-  assert(valid.status === 201, 'returns 201 for valid temperature');
+  expect(valid.status).toBe(201);
   const data = valid.data as Record<string, unknown>;
-  assertEqual(data.temperature, 1.5, 'temperature set correctly');
-}
+  expect(data.temperature).toBe(1.5);
+});
 
-// ── 8. PUT: Validate maxTokens positive integer ─────────────────────
-
-console.log('\n8. PUT validates maxTokens:');
-{
-  cleanup();
+test('8. PUT validates maxTokens', () => {
   const zero = doPutAiSettings({ maxTokens: 0 });
-  assert(zero.status === 400, 'returns 400 for zero');
+  expect(zero.status).toBe(400);
 
   const neg = doPutAiSettings({ maxTokens: -100 });
-  assert(neg.status === 400, 'returns 400 for negative');
+  expect(neg.status).toBe(400);
 
   const float = doPutAiSettings({ maxTokens: 500.5 });
-  assert(float.status === 400, 'returns 400 for non-integer');
+  expect(float.status).toBe(400);
 
   const valid = doPutAiSettings({ maxTokens: 16000 });
-  assert(valid.status === 201, 'returns 201 for valid maxTokens');
+  expect(valid.status).toBe(201);
   const data = valid.data as Record<string, unknown>;
-  assertEqual(data.maxTokens, 16000, 'maxTokens set correctly');
-}
+  expect(data.maxTokens).toBe(16000);
+});
 
-// ── 9. PUT: Partial update preserves other fields ───────────────────
-
-console.log('\n9. PUT partial update preserves untouched fields:');
-{
-  cleanup();
+test('9. PUT partial update preserves untouched fields', () => {
   doPutAiSettings({ provider: 'google', model: 'gemini-pro', temperature: 0.3, maxTokens: 2048 });
   const result = doPutAiSettings({ temperature: 0.8 });
 
-  assert(result.status === 200, 'returns 200');
+  expect(result.status).toBe(200);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.provider, 'google', 'provider preserved');
-  assertEqual(data.model, 'gemini-pro', 'model preserved');
-  assertEqual(data.temperature, 0.8, 'temperature updated');
-  assertEqual(data.maxTokens, 2048, 'maxTokens preserved');
-}
+  expect(data.provider).toBe('google');
+  expect(data.model).toBe('gemini-pro');
+  expect(data.temperature).toBe(0.8);
+  expect(data.maxTokens).toBe(2048);
+});
 
-// ── 10. PUT: Create with minimal fields ─────────────────────────────
-
-console.log('\n10. PUT creates with minimal fields (defaults):');
-{
-  cleanup();
+test('10. PUT creates with minimal fields (defaults)', () => {
   const result = doPutAiSettings({ provider: 'openai', model: 'gpt-4' });
 
-  assert(result.status === 201, 'returns 201');
+  expect(result.status).toBe(201);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.provider, 'openai', 'provider');
-  assertEqual(data.model, 'gpt-4', 'model');
-  assertNotHasKey(data, 'apiKey', 'apiKey stripped');
-  assertNotNull(data.isActive, 'isActive has default');
-}
+  expect(data.provider).toBe('openai');
+  expect(data.model).toBe('gpt-4');
+  expect(data).not.toHaveProperty('apiKey');
+  expect(data).toHaveProperty('isActive');
+});
 
-// ── 11. PUT: Create with ollama provider and baseUrl ────────────────
-
-console.log('\n11. PUT creates with ollama provider and baseUrl:');
-{
-  cleanup();
+test('11. PUT creates with ollama provider and baseUrl', () => {
   const result = doPutAiSettings({
     provider: 'ollama',
     model: 'llama3.1:8b',
     baseUrl: 'http://localhost:11434/v1',
   });
 
-  assert(result.status === 201, 'returns 201');
+  expect(result.status).toBe(201);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.provider, 'ollama', 'provider is ollama');
-  assertEqual(data.model, 'llama3.1:8b', 'model matches');
-  assertEqual(data.baseUrl, 'http://localhost:11434/v1', 'baseUrl matches');
-  assertNotHasKey(data, 'apiKey', 'apiKey stripped');
-}
+  expect(data.provider).toBe('ollama');
+  expect(data.model).toBe('llama3.1:8b');
+  expect(data.baseUrl).toBe('http://localhost:11434/v1');
+  expect(data).not.toHaveProperty('apiKey');
+});
 
-// ── 12. PUT: Create with timeoutMs ──────────────────────────────────
-
-console.log('\n12. PUT creates with timeoutMs:');
-{
-  cleanup();
+test('12. PUT creates with timeoutMs', () => {
   const result = doPutAiSettings({
     provider: 'openai',
     model: 'gpt-4',
     timeoutMs: 60000,
   });
 
-  assert(result.status === 201, 'returns 201');
+  expect(result.status).toBe(201);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.provider, 'openai', 'provider');
-  assertEqual(data.timeoutMs, 60000, 'timeoutMs matches');
-  assertNotHasKey(data, 'apiKey', 'apiKey stripped');
-}
+  expect(data.provider).toBe('openai');
+  expect(data.timeoutMs).toBe(60000);
+  expect(data).not.toHaveProperty('apiKey');
+});
 
-// ── 13. PUT: Validate baseUrl format ────────────────────────────────
-
-console.log('\n13. PUT validates baseUrl format:');
-{
-  cleanup();
+test('13. PUT validates baseUrl format', () => {
   const notUrl = doPutAiSettings({ provider: 'ollama', model: 'llama3.1:8b', baseUrl: 'not-a-url' });
-  assert(notUrl.status === 400, 'rejects non-URL baseUrl');
+  expect(notUrl.status).toBe(400);
 
   const empty = doPutAiSettings({ provider: 'ollama', model: 'llama3.1:8b', baseUrl: '' });
-  assert(empty.status === 400, 'rejects empty baseUrl');
-}
+  expect(empty.status).toBe(400);
+});
 
-// ── 14. PUT: Validate timeoutMs constraints ─────────────────────────
-
-console.log('\n14. PUT validates timeoutMs constraints:');
-{
-  cleanup();
+test('14. PUT validates timeoutMs constraints', () => {
   const neg = doPutAiSettings({ provider: 'openai', model: 'gpt-4', timeoutMs: -1 });
-  assert(neg.status === 400, 'rejects negative timeoutMs');
+  expect(neg.status).toBe(400);
 
   const zero = doPutAiSettings({ provider: 'openai', model: 'gpt-4', timeoutMs: 0 });
-  assert(zero.status === 400, 'rejects zero timeoutMs');
+  expect(zero.status).toBe(400);
 
   const float = doPutAiSettings({ provider: 'openai', model: 'gpt-4', timeoutMs: 30.5 });
-  assert(float.status === 400, 'rejects non-integer timeoutMs');
-}
+  expect(float.status).toBe(400);
+});
 
-// ── 15. GET: Shows ClickHouse default values ───────────────────────
-
-console.log('\n15. GET shows ClickHouse default values:');
-{
-  cleanup();
+test('15. GET shows ClickHouse default values', () => {
   doPutAiSettings({ provider: 'openai', model: 'gpt-4' });
   const result = doGetAiSettings();
-  assert(result.status === 200, 'returns 200');
+
+  expect(result.status).toBe(200);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.clickhouseHost, 'localhost', 'clickhouseHost defaults to localhost');
-  assertEqual(data.clickhousePort, 8123, 'clickhousePort defaults to 8123');
-  assertEqual(data.clickhouseUser, 'default', 'clickhouseUser defaults to default');
-  assertEqual(data.clickhouseDatabase, 'market', 'clickhouseDatabase defaults to market');
-}
+  expect(data.clickhouseHost).toBe('localhost');
+  expect(data.clickhousePort).toBe(8123);
+  expect(data.clickhouseUser).toBe('default');
+  expect(data.clickhouseDatabase).toBe('market');
+});
 
-// ── 16. PUT: Create with ClickHouse fields ──────────────────────────
-
-console.log('\n16. PUT creates with ClickHouse fields:');
-{
-  cleanup();
+test('16. PUT creates with ClickHouse fields', () => {
   const result = doPutAiSettings({
     provider: 'openai',
     model: 'gpt-4',
@@ -563,21 +450,17 @@ console.log('\n16. PUT creates with ClickHouse fields:');
     clickhouseDatabase: 'analytics',
   });
 
-  assert(result.status === 201, 'returns 201');
+  expect(result.status).toBe(201);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.clickhouseHost, 'clickhouse.example.com', 'clickhouseHost set');
-  assertEqual(data.clickhousePort, 9440, 'clickhousePort set');
-  assertEqual(data.clickhouseUser, 'analyst', 'clickhouseUser set');
-  assertEqual(data.clickhouseDatabase, 'analytics', 'clickhouseDatabase set');
+  expect(data.clickhouseHost).toBe('clickhouse.example.com');
+  expect(data.clickhousePort).toBe(9440);
+  expect(data.clickhouseUser).toBe('analyst');
+  expect(data.clickhouseDatabase).toBe('analytics');
   // Password must be stripped even in create response
-  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped');
-}
+  expect(data).not.toHaveProperty('clickhousePassword');
+});
 
-// ── 17. PUT: Update ClickHouse fields ───────────────────────────────
-
-console.log('\n17. PUT updates ClickHouse fields:');
-{
-  cleanup();
+test('17. PUT updates ClickHouse fields', () => {
   doPutAiSettings({ provider: 'openai', model: 'gpt-4' });
   const result = doPutAiSettings({
     clickhouseHost: 'ch.internal:8443',
@@ -585,78 +468,50 @@ console.log('\n17. PUT updates ClickHouse fields:');
     clickhousePassword: 'new-password',
   });
 
-  assert(result.status === 200, 'returns 200');
+  expect(result.status).toBe(200);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.clickhouseHost, 'ch.internal:8443', 'clickhouseHost updated');
-  assertEqual(data.clickhousePort, 8443, 'clickhousePort updated');
-  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped');
+  expect(data.clickhouseHost).toBe('ch.internal:8443');
+  expect(data.clickhousePort).toBe(8443);
+  expect(data).not.toHaveProperty('clickhousePassword');
   // Untouched fields keep their defaults
-  assertEqual(data.clickhouseUser, 'default', 'clickhouseUser preserved');
-  assertEqual(data.clickhouseDatabase, 'market', 'clickhouseDatabase preserved');
-}
+  expect(data.clickhouseUser).toBe('default');
+  expect(data.clickhouseDatabase).toBe('market');
+});
 
-// ── 18. PUT: Validate clickhousePort range ──────────────────────────
-
-console.log('\n18. PUT validates clickhousePort range:');
-{
-  cleanup();
+test('18. PUT validates clickhousePort range', () => {
   const zero = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: 0 });
-  assert(zero.status === 400, 'rejects port 0');
+  expect(zero.status).toBe(400);
 
   const neg = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: -1 });
-  assert(neg.status === 400, 'rejects negative port');
+  expect(neg.status).toBe(400);
 
   const over = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: 65536 });
-  assert(over.status === 400, 'rejects port > 65535');
+  expect(over.status).toBe(400);
 
   const valid = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: 9000 });
-  assert(valid.status === 201, 'accepts valid port 9000');
+  expect(valid.status).toBe(201);
   const data = valid.data as Record<string, unknown>;
-  assertEqual(data.clickhousePort, 9000, 'clickhousePort set to 9000');
-}
+  expect(data.clickhousePort).toBe(9000);
+});
 
-// ── 19. PUT: Validate clickhouseHost non-empty ──────────────────────
-
-console.log('\n19. PUT validates clickhouseHost non-empty:');
-{
-  cleanup();
+test('19. PUT validates clickhouseHost non-empty', () => {
   const empty = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhouseHost: '' });
-  assert(empty.status === 400, 'rejects empty host');
-}
+  expect(empty.status).toBe(400);
+});
 
-// ── 20. Test-connection: Returns error when no settings ─────────────
-
-console.log('\n20. Test-connection returns error when no settings:');
-{
-  cleanup();
+test('20. Test-connection returns error when no settings', () => {
   const result = doTestConnection();
-  assert(result.status === 400, 'returns 400');
+  expect(result.status).toBe(400);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.ok, false, 'ok is false');
-  assertNotNull(data.error, 'has error message');
-}
+  expect(data.ok).toBe(false);
+  expect(data).toHaveProperty('error');
+});
 
-// ── 21. Test-connection: Returns ok when settings exist ─────────────
-
-console.log('\n21. Test-connection returns ok with valid settings:');
-{
-  cleanup();
+test('21. Test-connection returns ok when settings exist', () => {
   doPutAiSettings({ provider: 'openai', model: 'gpt-4' });
   const result = doTestConnection();
-  assert(result.status === 200, 'returns 200');
+  expect(result.status).toBe(200);
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.ok, true, 'ok is true');
-  assertEqual(Object.keys(data).length, 1, 'only ok key in response');
-}
-
-// ── Summary ──────────────────────────────────────────────────────────
-
-const total = passed + failed;
-console.log(`\n${'─'.repeat(40)}`);
-console.log(`Results: ${passed}/${total} passed`);
-if (failed > 0) {
-  console.error(`         ${failed}/${total} FAILED\n`);
-  process.exit(1);
-} else {
-  console.log('         All tests passed!\n');
-}
+  expect(data.ok).toBe(true);
+  expect(Object.keys(data)).toHaveLength(1);
+});
