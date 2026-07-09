@@ -34,6 +34,7 @@ import {
 import {
   createDefaultClickHouseClient,
   type MarketEvidence,
+  type FreshnessCheck,
 } from './clickhouse-client';
 import {
   createAiProvider,
@@ -51,6 +52,7 @@ export const AssessmentErrorCode = {
   AI_PROVIDER_ERROR: 'AI_PROVIDER_ERROR',
   SCORECARD_PARSE_ERROR: 'SCORECARD_PARSE_ERROR',
   MISSING_MARKET_DATA: 'MISSING_MARKET_DATA',
+  STALE_MARKET_DATA: 'STALE_MARKET_DATA',
 } as const;
 
 export type AssessmentErrorCode =
@@ -92,6 +94,7 @@ export interface AssessmentDeps {
       startDate: string;
       endDate: string;
     }): Promise<MarketEvidence>;
+    checkFreshness(thresholdDays?: number): Promise<FreshnessCheck>;
   };
   aiProvider?: AiProvider;
 }
@@ -664,6 +667,52 @@ export async function performAssessment(
     } else {
       warnings.push(
         'Trade has no date information - cannot determine market evidence date range',
+      );
+    }
+  }
+
+  // ── Step 2.5: Freshness check ───────────────────────────────────────
+  // Check whether ClickHouse market data is current enough for assessment.
+  // For plan-stage (ai_quality), stale data blocks the assessment.
+  // For after-exit (ai_review), stale data produces a warning only.
+  if (gathered.trade.symbol) {
+    try {
+      const freshness = await chClient.checkFreshness();
+
+      console.log(
+        JSON.stringify({
+          event: 'freshness_check',
+          tradeId,
+          status: freshness.status,
+          latestDate: freshness.latestDate ?? null,
+        }),
+      );
+
+      if (freshness.status === 'stale') {
+        if (assessmentType === 'ai_quality') {
+          console.log(
+            JSON.stringify({
+              event: 'freshness_blocked',
+              tradeId,
+              status: freshness.status,
+              latestDate: freshness.latestDate ?? null,
+              message: freshness.message,
+            }),
+          );
+          throw new AssessmentError(
+            AssessmentErrorCode.STALE_MARKET_DATA,
+            tradeId,
+            `Market data is not current: latest available date is ${freshness.latestDate ?? 'unknown'}`,
+          );
+        }
+        // For ai_review, stale data is a warning, not a blocker
+        warnings.push(`Market data freshness warning: ${freshness.message}`);
+      }
+    } catch (err) {
+      if (err instanceof AssessmentError) throw err;
+      // Connection error during freshness check — warn but don't block
+      warnings.push(
+        `Failed to check market data freshness: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

@@ -103,6 +103,11 @@ function mapAssessmentError(err: AssessmentError): {
       return { status: 200, safeMessage: err.message };
     case AssessmentErrorCode.MISSING_MARKET_DATA:
       return { status: 200, safeMessage: err.message };
+    case AssessmentErrorCode.STALE_MARKET_DATA:
+      return {
+        status: 409,
+        safeMessage: 'Market data is not current',
+      };
     default:
       return { status: 500, safeMessage: 'Assessment failed due to an unexpected error' };
   }
