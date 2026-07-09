@@ -98,6 +98,37 @@ export const MarketEvidenceQuerySchema = z.object({
 
 export type MarketEvidenceQuery = z.infer<typeof MarketEvidenceQuerySchema>;
 
+// ── Freshness Check Types ──────────────────────────────────────────────────
+
+/**
+ * Status of a freshness check.
+ * - 'fresh': The latest data date is within the threshold.
+ * - 'stale': The latest data date is older than the threshold.
+ * - 'error': A connection or query error occurred.
+ */
+export const FreshnessStatusSchema = z.enum(['fresh', 'stale', 'error']);
+
+export type FreshnessStatus = z.infer<typeof FreshnessStatusSchema>;
+
+/**
+ * Result of a market data freshness check.
+ *
+ * Provides the status, latest data date found in the database, the
+ * threshold used for comparison, and a human-readable message.
+ * When status is 'error', latestDate is omitted.
+ */
+export const FreshnessCheckSchema = z.object({
+  status: FreshnessStatusSchema,
+  /** Most recent tradedate found in the database (YYYY-MM-DD); undefined on error */
+  latestDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** Threshold date string (YYYY-MM-DD) used for the comparison */
+  threshold: z.string(),
+  /** Human-readable diagnostic message */
+  message: z.string(),
+});
+
+export type FreshnessCheck = z.infer<typeof FreshnessCheckSchema>;
+
 // ── Configuration ────────────────────────────────────────────────────────
 
 /**
@@ -356,6 +387,45 @@ export function createClickHouseClient(config: ClickHouseConfig) {
     return { bars, error: null };
   }
 
+  // ── Freshness Check ─────────────────────────────────────────────────
+
+  /**
+   * Query the most recent tradedate in the as_us_equity_ohlc_daily table.
+   *
+   * Returns the latest trading date found, or null if the table is empty.
+   * Returns an error string on connection failure.
+   */
+  async function getLatestDate(): Promise<{
+    latestDate: string | null;
+    error: string | null;
+  }> {
+    const sql = [
+      `SELECT max(tradedate) AS latest_date`,
+      `FROM ${config.database}.as_us_equity_ohlc_daily`,
+    ].join('\n');
+
+    const { rows, error } = await querySql(sql);
+
+    if (error) {
+      return { latestDate: null, error };
+    }
+
+    if (rows.length === 0 || rows[0].latest_date === null || rows[0].latest_date === '') {
+      return { latestDate: null, error: null };
+    }
+
+    const latestDate = rows[0].latest_date;
+    // Validate the date format (should be YYYY-MM-DD from ClickHouse)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(latestDate)) {
+      return {
+        latestDate: null,
+        error: `Unexpected date format from ClickHouse: '${latestDate}'`,
+      };
+    }
+
+    return { latestDate, error: null };
+  }
+
   // ── Public API ───────────────────────────────────────────────────────
 
   /**
@@ -425,7 +495,91 @@ export function createClickHouseClient(config: ClickHouseConfig) {
     };
   }
 
-  return { getMarketEvidence };
+  /**
+   * Check whether market data in ClickHouse is fresh (within threshold).
+   *
+   * Queries the most recent tradedate in the database and compares it
+   * against today minus `thresholdDays` (default: 1). Returns a typed
+   * FreshnessCheck with status, latestDate, threshold, and message.
+   *
+   * - 'fresh': The latest data date is >= the threshold date.
+   * - 'stale': The latest data date is < the threshold date (or null/empty).
+   * - 'error': A connection or query error occurred.
+   *
+   * Logs structured JSON for observability:
+   *   On success: { event: 'freshness_check', database, latestDate, status, thresholdDays }
+   *   On error:   { event: 'freshness_error', database, status: 'error', error: string }
+   *
+   * @param thresholdDays - Maximum allowed days since the latest data (default: 1)
+   */
+  async function checkFreshness(thresholdDays: number = 1): Promise<FreshnessCheck> {
+    const today = new Date();
+    const thresholdDate = new Date(today.getTime() - thresholdDays * 86_400_000);
+    const thresholdStr = thresholdDate.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const { latestDate, error } = await getLatestDate();
+
+    if (error) {
+      // Connection error during freshness query
+      const logEntry = {
+        event: 'freshness_error',
+        database: config.database,
+        status: 'error' as const,
+        error,
+      };
+      console.log(JSON.stringify(logEntry));
+
+      return {
+        status: 'error',
+        threshold: thresholdStr,
+        message: `Freshness check failed: ${error}`,
+      };
+    }
+
+    if (latestDate === null) {
+      // No data in the table
+      console.log(
+        JSON.stringify({
+          event: 'freshness_check',
+          database: config.database,
+          latestDate: null,
+          status: 'stale',
+          thresholdDays,
+        }),
+      );
+
+      return {
+        status: 'stale',
+        threshold: thresholdStr,
+        message: `No market data found in ${config.database}.as_us_equity_ohlc_daily`,
+      };
+    }
+
+    // Compare dates as strings (YYYY-MM-DD is lexicographically comparable)
+    const isFresh = latestDate >= thresholdStr;
+    const status: FreshnessStatus = isFresh ? 'fresh' : 'stale';
+
+    console.log(
+      JSON.stringify({
+        event: 'freshness_check',
+        database: config.database,
+        latestDate,
+        status,
+        thresholdDays,
+      }),
+    );
+
+    return {
+      status,
+      latestDate,
+      threshold: thresholdStr,
+      message: isFresh
+        ? `Data is fresh: latest tradedate ${latestDate} is within ${thresholdDays} day(s)`
+        : `Data is stale: latest tradedate ${latestDate} is older than ${thresholdDays} day(s) (threshold: ${thresholdStr})`,
+    };
+  }
+
+  return { getMarketEvidence, checkFreshness };
 }
 
 // ── Convenience Default Client ───────────────────────────────────────────
