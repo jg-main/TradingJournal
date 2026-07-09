@@ -31,7 +31,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     await expect(assessmentSection.first()).toBeVisible();
 
     // ── Verify TradeDetailHeader has the "Assess" button ──────────
-    const assessBtn = page.getByRole('button', { name: 'Assess' });
+    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
     await expect(assessBtn).toBeVisible();
 
     // ── Verify empty state shows "Request Assessment" button ──────
@@ -69,13 +69,13 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Verify initial state ──────────────────────────────────────
-    await expect(page.getByRole('button', { name: 'Assess' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
 
     // ── Click the Assess button ───────────────────────────────────
     // This will send a POST request to the API. The request may fail
     // because no AI provider is configured in test, but we verify the
     // UI reacts with proper loading state and error handling.
-    const assessBtn = page.getByRole('button', { name: 'Assess' });
+    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
 
     // Click and wait for the API call to resolve or reject
     await Promise.all([
@@ -90,7 +90,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
 
     // After the request completes (even with an error), the button
     // should return to its 'Assess' label (loading state finished)
-    await expect(page.getByRole('button', { name: 'Assess' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
 
     // Either an error message or the scorecard should be visible
     // (the API call will likely fail in test env without AI config)
@@ -121,7 +121,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Both buttons visible in the header area ───────────────────
-    await expect(page.getByRole('button', { name: 'Assess' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Execute' })).toBeVisible();
 
     // Verify no console errors on page load

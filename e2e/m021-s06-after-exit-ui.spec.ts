@@ -41,7 +41,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await expect(page.locator('h1')).toContainText(`M06AE${TS}`);
 
     // ── Verify the "Assess" button in the header ───────────────────
-    const assessBtn = page.getByRole('button', { name: 'Assess' });
+    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
     await expect(assessBtn).toBeVisible();
 
     // ── Verify AssessmentCard section is present ───────────────────
@@ -94,10 +94,10 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Verify Assess button is visible ────────────────────────────
-    await expect(page.getByRole('button', { name: 'Assess' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
 
     // ── Click Assess and wait for the POST to settle ───────────────
-    const assessBtn = page.getByRole('button', { name: 'Assess' });
+    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
     const responsePromise = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/trades') &&
@@ -108,7 +108,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await responsePromise;
 
     // ── After request completes, button returns to 'Assess' text ───
-    await expect(page.getByRole('button', { name: 'Assess' })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible({ timeout: 5000 });
 
     // ── Verify either error message OR assessment heading is shown ─
     const hasError = await page.getByText('AI not configured').isVisible().catch(() => false);
@@ -149,7 +149,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Verify P&L card is visible (key after-exit component) ─────
-    const pnlCard = page.getByText('Profit & Loss').first();
+    const pnlCard = page.getByText('P&L-R Metrics').first();
     await expect(pnlCard).toBeVisible();
 
     // ── Verify execution card with trade details ───────────────────
@@ -165,7 +165,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await expect(stopCard).toBeVisible();
 
     // ── Verify both Assess button and assessment sections ──────────
-    await expect(page.getByRole('button', { name: 'Assess' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
     await expect(page.getByText('AI Quality Assessment').first()).toBeVisible();
     await expect(page.getByText('Assessment History').first()).toBeVisible();
 
