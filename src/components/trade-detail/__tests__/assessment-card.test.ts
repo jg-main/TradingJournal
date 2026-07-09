@@ -173,19 +173,18 @@ function assert(condition: boolean, msg: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Helper function: formatTimestamp — verify input handling
+// Helper function: formatDuration — verify duration formatting
 // ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## Helper: formatTimestamp');
+  console.log('\n## Helper: formatDuration');
 
   const source = fs.readFileSync(compSourcePath, 'utf-8');
 
-  assert(source.includes('function formatTimestamp'), 'formatTimestamp function is defined');
-  assert(source.includes('ts: string | undefined | null'), 'formatTimestamp accepts string | undefined | null');
-  assert(source.includes("if (!ts) return ''"), 'returns empty string for null/undefined/empty input');
-  assert(source.includes('new Date(ts).toLocaleString'), 'formats valid timestamps via toLocaleString');
-  assert(source.includes('catch'), 'handles invalid dates with try/catch fallback');
-  assert(source.includes("return ts"), 'returns raw ts string in catch fallback');
+  assert(source.includes('function formatDuration'), 'formatDuration function is defined');
+  assert(source.includes('ms: number'), 'formatDuration accepts a number parameter');
+  assert(source.includes('ms < 1000'), 'formatDuration uses threshold at 1000ms');
+  assert(source.includes("${Math.round(ms)}ms"), 'formatDuration returns ms suffix for sub-second values');
+  assert(source.includes("${(ms / 1000).toFixed(1)}s"), 'formatDuration returns s suffix for second values');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -296,6 +295,10 @@ function assert(condition: boolean, msg: string) {
   assert(
     source.includes('scorecard.metadata?.completionTokens'),
     'renders completionTokens metadata'
+  );
+  assert(
+    source.includes('scorecard.metadata?.durationMs'),
+    'renders durationMs metadata'
   );
 
   // Reassess button

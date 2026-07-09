@@ -57,6 +57,13 @@ function dimensionColorClass(score: number): string {
   return 'text-red-600 dark:text-red-400';
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 // ── Sub-Components ────────────────────────────────────────────────────
 
 function LoadingState() {
@@ -266,6 +273,11 @@ function ScorecardDisplay({
           {scorecard.metadata?.completionTokens !== undefined && (
             <span>
               Completion: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-300">{scorecard.metadata.completionTokens}</span> tokens
+            </span>
+          )}
+          {scorecard.metadata?.durationMs !== undefined && (
+            <span>
+              Duration: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-300">{formatDuration(scorecard.metadata.durationMs)}</span>
             </span>
           )}
         </div>
