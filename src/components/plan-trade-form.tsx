@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { HelpTooltip } from '@/components/help-tooltip';
 
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -167,9 +168,12 @@ export default function PlanTradeForm({
           {/* Symbol + Direction */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Symbol
-              </label>
+              <div className="flex items-center gap-1">
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Symbol
+                </label>
+                <HelpTooltip content="Ticker symbol of the asset you plan to trade (e.g. AAPL, MSFT)" />
+              </div>
               <Input
                 placeholder="e.g. AAPL"
                 value={form.symbol}
@@ -179,9 +183,12 @@ export default function PlanTradeForm({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Direction
-              </label>
+              <div className="flex items-center gap-1">
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Direction
+                </label>
+                <HelpTooltip content="Long = buy expecting price increase. Short = sell expecting price decrease." />
+              </div>
               <Select
                 value={form.direction}
                 onValueChange={(v: 'long' | 'short') => updateField('direction', v)}
@@ -200,9 +207,12 @@ export default function PlanTradeForm({
 
           {/* Account */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Account
-            </label>
+            <div className="flex items-center gap-1">
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Account
+              </label>
+              <HelpTooltip content="The brokerage account this trade will be executed in" />
+            </div>
             <Select
               value={form.accountId}
               onValueChange={(v) => updateField('accountId', v)}
@@ -223,9 +233,12 @@ export default function PlanTradeForm({
 
           {/* Setup */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Setup
-            </label>
+            <div className="flex items-center gap-1">
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Setup
+              </label>
+              <HelpTooltip content="The trading setup or strategy pattern that triggered this trade idea" />
+            </div>
             <Select
               value={form.setup}
               onValueChange={(v) => updateField('setup', v)}
@@ -247,9 +260,12 @@ export default function PlanTradeForm({
           {/* Price fields in 2x2 grid */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Planned Entry
-              </label>
+              <div className="flex items-center gap-1">
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Planned Entry
+                </label>
+                <HelpTooltip content="Your intended entry price for this trade" />
+              </div>
               <Input
                 type="number"
                 step="any"
@@ -260,9 +276,12 @@ export default function PlanTradeForm({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Stop Loss
-              </label>
+              <div className="flex items-center gap-1">
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Stop Loss
+                </label>
+                <HelpTooltip content="Maximum acceptable loss level to limit downside risk" />
+              </div>
               <Input
                 type="number"
                 step="any"
@@ -273,9 +292,12 @@ export default function PlanTradeForm({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Target 1
-              </label>
+              <div className="flex items-center gap-1">
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Target 1
+                </label>
+                <HelpTooltip content="First profit-taking level for this trade" />
+              </div>
               <Input
                 type="number"
                 step="any"
@@ -286,9 +308,12 @@ export default function PlanTradeForm({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Qty
-              </label>
+              <div className="flex items-center gap-1">
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Qty
+                </label>
+                <HelpTooltip content="Number of shares or contracts to trade" />
+              </div>
               <Input
                 type="number"
                 step="any"
@@ -302,9 +327,12 @@ export default function PlanTradeForm({
 
           {/* Thesis */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Thesis
-            </label>
+            <div className="flex items-center gap-1">
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Thesis
+              </label>
+              <HelpTooltip content="Your reasoning and analysis supporting this trade idea" />
+            </div>
             <textarea
               rows={2}
               placeholder="Why are you taking this trade?"

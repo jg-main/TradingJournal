@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { HelpTooltip } from '@/components/help-tooltip';
 
 interface AiSettings {
   id: string;
@@ -242,9 +243,12 @@ export default function AiSettingsPage() {
         <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
           {/* Provider */}
           <div>
-            <label htmlFor="provider" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Provider
-            </label>
+            <div className="mb-1 flex items-center gap-1">
+              <label htmlFor="provider" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Provider
+              </label>
+              <HelpTooltip content="Which AI service to use for trade analysis and grading. Changes take effect on save." />
+            </div>
             <select
               id="provider"
               value={form.provider}
@@ -262,9 +266,12 @@ export default function AiSettingsPage() {
           {/* Endpoint URL (conditional) */}
           {showEndpointUrl && (
             <div>
-              <label htmlFor="baseUrl" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Endpoint URL
-              </label>
+              <div className="mb-1 flex items-center gap-1">
+                <label htmlFor="baseUrl" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Endpoint URL
+                </label>
+                <HelpTooltip content="Custom API endpoint URL for your LLM provider. Required for Ollama and custom providers." />
+              </div>
               <input
                 id="baseUrl"
                 type="url"
@@ -282,9 +289,12 @@ export default function AiSettingsPage() {
 
           {/* API Key */}
           <div>
-            <label htmlFor="apiKey" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              API Key <span className="text-xs text-zinc-400">(stored securely, never displayed)</span>
-            </label>
+            <div className="mb-1 flex items-center gap-1">
+              <label htmlFor="apiKey" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                API Key <span className="text-xs text-zinc-400">(stored securely, never displayed)</span>
+              </label>
+              <HelpTooltip content="Your API key is stored securely and never displayed after saving." />
+            </div>
             <div className="relative">
               <input
                 id="apiKey"
@@ -309,9 +319,12 @@ export default function AiSettingsPage() {
 
           {/* Model */}
           <div>
-            <label htmlFor="model" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Model
-            </label>
+            <div className="mb-1 flex items-center gap-1">
+              <label htmlFor="model" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Model
+              </label>
+              <HelpTooltip content="Model identifier for generating trade analysis (e.g. gpt-4, claude-3-opus, qwen2.5-coder:7b)" />
+            </div>
             <input
               id="model"
               type="text"
@@ -324,9 +337,12 @@ export default function AiSettingsPage() {
 
           {/* Timeout */}
           <div>
-            <label htmlFor="timeoutMs" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Timeout (ms)
-            </label>
+            <div className="mb-1 flex items-center gap-1">
+              <label htmlFor="timeoutMs" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Timeout (ms)
+              </label>
+              <HelpTooltip content="Maximum time to wait for an AI response before the request times out." />
+            </div>
             <input
               id="timeoutMs"
               type="number"
@@ -340,9 +356,12 @@ export default function AiSettingsPage() {
 
           {/* Temperature */}
           <div>
-            <label htmlFor="temperature" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Temperature: {form.temperature}
-            </label>
+            <div className="mb-1 flex items-center gap-1">
+              <label htmlFor="temperature" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Temperature: {form.temperature}
+              </label>
+              <HelpTooltip content="Controls output randomness. Lower values produce more deterministic, consistent results." />
+            </div>
             <input
               id="temperature"
               type="range"
@@ -357,9 +376,12 @@ export default function AiSettingsPage() {
 
           {/* Max Tokens */}
           <div>
-            <label htmlFor="maxTokens" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Max Tokens
-            </label>
+            <div className="mb-1 flex items-center gap-1">
+              <label htmlFor="maxTokens" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Max Tokens
+              </label>
+              <HelpTooltip content="Maximum length of the AI-generated response." />
+            </div>
             <input
               id="maxTokens"
               type="number"
@@ -373,9 +395,12 @@ export default function AiSettingsPage() {
 
           {/* System Prompt */}
           <div>
-            <label htmlFor="systemPrompt" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              System Prompt
-            </label>
+            <div className="mb-1 flex items-center gap-1">
+              <label htmlFor="systemPrompt" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                System Prompt
+              </label>
+              <HelpTooltip content="Base instructions that define the AI assistant's behavior and expertise context for trade analysis." />
+            </div>
             <textarea
               id="systemPrompt"
               rows={4}
