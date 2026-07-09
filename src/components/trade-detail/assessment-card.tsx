@@ -1,9 +1,11 @@
 'use client';
 
-import { Brain, Loader2, AlertCircle, ClipboardList } from 'lucide-react';
+import { useState } from 'react';
+import { Brain, Loader2, AlertCircle, ClipboardList, ChevronRight, ChevronDown } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import type { Scorecard } from '@/lib/scorecard';
 
@@ -22,6 +24,10 @@ export interface AssessmentCardProps {
   onRequestAssessment?: () => void;
   /** Whether an assessment request is in flight */
   requestLoading?: boolean;
+  /** The exact prompt text sent to the AI, or null for historical snapshots */
+  promptText?: string | null;
+  /** The raw JSON response from the AI, or null for historical snapshots */
+  rawResponse?: string | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -172,6 +178,28 @@ function DimensionRow({ label, score }: { label: string; score: number }) {
   );
 }
 
+// ── Collapsible Section ───────────────────────────────────────────────
+
+function CollapsibleSection({ label, content }: { label: string; content: string | null | undefined }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="border-t border-zinc-200 pt-3 dark:border-zinc-700">
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+          {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          {label}
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <pre className="mt-2 whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            {content ?? 'Not available'}
+          </pre>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
 // ── Scorecard Display ─────────────────────────────────────────────────
 
 function ScorecardDisplay({
@@ -179,11 +207,15 @@ function ScorecardDisplay({
   warnings,
   onRequest,
   requestLoading,
+  promptText,
+  rawResponse,
 }: {
   scorecard: Scorecard;
   warnings?: string[];
   onRequest?: () => void;
   requestLoading?: boolean;
+  promptText?: string | null;
+  rawResponse?: string | null;
 }) {
   return (
     <Card className="mb-8">
@@ -281,6 +313,10 @@ function ScorecardDisplay({
             </span>
           )}
         </div>
+
+        {/* ── Prompt & Raw Response Collapsible Sections ────────── */}
+        <CollapsibleSection label="View Prompt" content={promptText} />
+        <CollapsibleSection label="View Raw Response" content={rawResponse} />
       </CardContent>
     </Card>
   );
@@ -295,6 +331,8 @@ export default function AssessmentCard({
   error = null,
   onRequestAssessment,
   requestLoading = false,
+  promptText,
+  rawResponse,
 }: AssessmentCardProps) {
   // Loading takes highest priority
   if (loading) {
@@ -323,6 +361,8 @@ export default function AssessmentCard({
       warnings={warnings}
       onRequest={onRequestAssessment}
       requestLoading={requestLoading}
+      promptText={promptText}
+      rawResponse={rawResponse}
     />
   );
 }
