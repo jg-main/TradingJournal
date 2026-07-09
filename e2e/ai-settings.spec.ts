@@ -197,3 +197,96 @@ test.describe('AI Settings — Save and Persist', () => {
     expect(data).not.toHaveProperty('apiKey');
   });
 });
+
+// Prompt Preview tests must be serial — they depend on the DB having
+// valid AI settings saved by a prior step in the same test.
+test.describe('AI Settings — Prompt Preview', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  const seedSettings = async (page: import('@playwright/test').Page) => {
+    wipeAiSettings();
+    await page.goto('/settings/ai');
+    await page.waitForLoadState('networkidle');
+
+    await page.locator('#provider').selectOption('ollama');
+    await page.locator('#model').fill('llama3.1:8b');
+    await page.locator('#timeoutMs').fill('60000');
+
+    await page.getByRole('button', { name: /save ai settings/i }).click();
+    await expect(page.locator('text=AI settings saved')).toBeVisible({ timeout: 5000 });
+  };
+
+  test('initial state shows placeholder text and both tabs', async ({ page }) => {
+    await seedSettings(page);
+
+    // Prompt Preview section exists
+    await expect(page.locator('h2', { hasText: 'Prompt Preview' })).toBeVisible();
+
+    // Both tab buttons are visible
+    await expect(page.getByRole('button', { name: /Pre-Trade Assessment/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /After-Exit Assessment/i })).toBeVisible();
+
+    // Initial placeholder is shown before any tab is clicked
+    // (The page initializes with no preview fetched — click placeholder shows)
+    await expect(page.getByText('Click a tab above to generate a prompt preview.')).toBeVisible();
+  });
+
+  test('clicking Pre-Trade tab fetches and displays prompt preview', async ({ page }) => {
+    await seedSettings(page);
+
+    // Click Pre-Trade Assessment tab
+    await page.getByRole('button', { name: /Pre-Trade Assessment/i }).click();
+
+    // Loading state appears (may be fast, so check result instead)
+    await expect(page.getByText('Generating prompt preview...')).toBeVisible({ timeout: 3000 }).catch(() => {});
+
+    // Result appears: System Message section
+    await expect(page.locator('h3', { hasText: 'System Message' })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h3', { hasText: 'User Message' })).toBeVisible();
+
+    // Badges appear with section count and character count
+    await expect(page.getByText(/sections/)).toBeVisible();
+    await expect(page.getByText(/characters/)).toBeVisible();
+
+    // User message contains structured sections from the prompt
+    const userMsg = page.locator('h3:has-text("User Message") + pre');
+    await expect(userMsg).toContainText('TRADE DETAILS');
+  });
+
+  test('clicking After-Exit tab fetches and displays different prompt', async ({ page }) => {
+    await seedSettings(page);
+
+    // Click After-Exit Assessment tab
+    await page.getByRole('button', { name: /After-Exit Assessment/i }).click();
+
+    // Wait for result
+    await expect(page.locator('h3', { hasText: 'System Message' })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h3', { hasText: 'User Message' })).toBeVisible();
+
+    // After-Exit prompt includes execution record
+    const userMsg = page.locator('h3:has-text("User Message") + pre');
+    await expect(userMsg).toContainText('EXECUTION RECORD');
+  });
+
+  test('tabs toggle between Pre-Trade and After-Exit', async ({ page }) => {
+    await seedSettings(page);
+
+    // Load Pre-Trade first
+    await page.getByRole('button', { name: /Pre-Trade Assessment/i }).click();
+    await expect(page.locator('h3', { hasText: 'System Message' })).toBeVisible({ timeout: 10000 });
+
+    // Switch to After-Exit
+    await page.getByRole('button', { name: /After-Exit Assessment/i }).click();
+    await expect(page.locator('h3', { hasText: 'System Message' })).toBeVisible({ timeout: 10000 });
+
+    const afterExitMsg = page.locator('h3:has-text("User Message") + pre');
+    await expect(afterExitMsg).toContainText('EXECUTION RECORD');
+
+    // Switch back to Pre-Trade
+    await page.getByRole('button', { name: /Pre-Trade Assessment/i }).click();
+    await expect(page.locator('h3', { hasText: 'System Message' })).toBeVisible({ timeout: 10000 });
+
+    const preTradeMsg = page.locator('h3:has-text("User Message") + pre');
+    await expect(preTradeMsg).toContainText('TRADE DETAILS');
+  });
+});

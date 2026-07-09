@@ -21,7 +21,7 @@ import ActivePhaseView from '@/components/trade-detail/active-phase-view';
 import ClosedPhaseView from '@/components/trade-detail/closed-phase-view';
 import DeletedPhaseView from '@/components/trade-detail/deleted-phase-view';
 import { ExecuteDialog, type ExecuteTradeData } from '@/components/execute-dialog';
-import EditTradeDialog, { type EditableTrade } from '@/components/edit-trade-dialog';
+import EditTradeDialog from '@/components/edit-trade-dialog';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -361,6 +361,7 @@ export default function TradeDetailPage() {
       )}
 
       <EditTradeDialog
+        key={trade.id}
         open={editOpen}
         onOpenChange={setEditOpen}
         trade={{

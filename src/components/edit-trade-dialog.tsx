@@ -103,22 +103,6 @@ export default function EditTradeDialog({
     }
   }, [open]);
 
-  // Reset form when trade changes
-  useEffect(() => {
-    setSymbol(trade.symbol);
-    setDirection(trade.direction);
-    setSetup(setupName ?? '');
-    setThesis(trade.thesis ?? '');
-    setPlannedEntry(trade.plannedEntry?.toString() ?? '');
-    setPlannedStop(trade.plannedStop?.toString() ?? '');
-    setPlannedTarget1(trade.plannedTarget1?.toString() ?? '');
-    setPlannedTarget2(trade.plannedTarget2?.toString() ?? '');
-    setPlannedQuantity(trade.plannedQuantity?.toString() ?? '');
-    setInvalidationCondition(trade.invalidationCondition ?? '');
-    setPreTradePlan(trade.preTradePlan ?? '');
-    setError(null);
-  }, [trade, setupName]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
