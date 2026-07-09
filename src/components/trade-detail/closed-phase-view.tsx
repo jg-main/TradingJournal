@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { PlusCircle, Brain, Loader2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
@@ -23,42 +23,6 @@ import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsse
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 import type { Scorecard } from '@/lib/scorecard';
-
-interface AssessmentResponse {
-  scorecard?: Scorecard;
-  snapshot?: {
-    scorecard: Scorecard | null;
-    id: string;
-    tradeId: string;
-    assessedAt: string | null;
-    assessmentType: string;
-    overallScore: number | null;
-    modelUsed: string | null;
-    promptTokens: number | null;
-    completionTokens: number | null;
-    notes: string | null;
-    createdAt: string | null;
-    snapshotVersion: number;
-  };
-  warnings?: string[];
-  data?: Array<{
-    scorecard: Scorecard | null;
-    id: string;
-    tradeId: string;
-    assessedAt: string | null;
-    assessmentType: string;
-    overallScore: number | null;
-    modelUsed: string | null;
-    promptTokens: number | null;
-    completionTokens: number | null;
-    notes: string | null;
-    createdAt: string | null;
-    snapshotVersion: number;
-  }>;
-  error?: string;
-  /** Machine-readable error code from the API */
-  code?: string;
-}
 
 interface ClosedPhaseViewProps {
   trade: Trade;
