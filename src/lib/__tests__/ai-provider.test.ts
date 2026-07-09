@@ -22,6 +22,7 @@ import {
   AuthenticationError as MockAuthError,
   APIConnectionError,
   APIConnectionTimeoutError,
+  APIError,
 } from 'openai';
 
 // ── Shared mock function ────────────────────────────────────────────────
@@ -35,7 +36,7 @@ const mockCreate = vi.fn();
 vi.mock('openai', () => {
   class AuthError extends Error {
     status: number;
-    constructor(status: number, _error: any, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
       super(message);
       this.name = 'AuthenticationError';
       this.status = status;
@@ -58,7 +59,7 @@ vi.mock('openai', () => {
 
   class GenAPIError extends Error {
     status: number;
-    constructor(status: number, _error: any, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
       super(message);
       this.name = 'APIError';
       this.status = status;
@@ -265,7 +266,7 @@ describe('createAiProvider', () => {
   describe('error handling', () => {
     it('wraps AuthenticationError as AUTH_ERROR', async () => {
       mockCreate.mockRejectedValueOnce(
-        new (MockAuthError as any)(401, { code: 'invalid_api_key' }, 'Incorrect API key provided'),
+        new MockAuthError(401, { code: 'invalid_api_key' }, 'Incorrect API key provided', new Headers()),
       );
 
       const provider = createAiProvider({
@@ -321,6 +322,68 @@ describe('createAiProvider', () => {
       expect(err).toBeInstanceOf(AiProviderError);
       expect((err as AiProviderError).code).toBe('TIMEOUT');
       expect(err.message).toMatch(/timed out/);
+    });
+
+    it('wraps APIError as CONNECTION_ERROR with statusCode', async () => {
+      mockCreate.mockRejectedValueOnce(
+        new APIError(429, { code: 'rate_limit' }, 'Too many requests', undefined),
+      );
+
+      const provider = createAiProvider({
+        provider: 'openai',
+        model: 'gpt-4o',
+        apiKey: 'sk-test',
+      });
+
+      const err = await provider
+        .getCompletion([{ role: 'user', content: 'Hi' }])
+        .catch((e) => e);
+
+      expect(err).toBeInstanceOf(AiProviderError);
+      expect((err as AiProviderError).code).toBe('CONNECTION_ERROR');
+      expect((err as AiProviderError).statusCode).toBe(429);
+      expect(err.message).toMatch(/429/);
+    });
+
+    it('re-throws unknown errors as-is', async () => {
+      const nativeError = new Error('Unexpected failure');
+      mockCreate.mockRejectedValueOnce(nativeError);
+
+      const provider = createAiProvider({
+        provider: 'openai',
+        model: 'gpt-4o',
+        apiKey: 'sk-test',
+      });
+
+      const err = await provider
+        .getCompletion([{ role: 'user', content: 'Hi' }])
+        .catch((e) => e);
+
+      expect(err).not.toBeInstanceOf(AiProviderError);
+      expect(err.message).toBe('Unexpected failure');
+    });
+  });
+
+  describe('observability', () => {
+    it('never logs the apiKey in console output', () => {
+      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      try {
+        createAiProvider({
+          provider: 'openai',
+          model: 'gpt-4o',
+          apiKey: 'sk-secret-abc123',
+        });
+
+        const logCalls = spy.mock.calls
+          .map((args) => args.map(String).join(' '))
+          .join('\n');
+
+        expect(logCalls).not.toContain('sk-secret-abc123');
+        expect(logCalls).toContain('ai_provider_init');
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 

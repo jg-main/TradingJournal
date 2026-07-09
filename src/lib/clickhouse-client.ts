@@ -15,6 +15,8 @@
  */
 
 import { z } from 'zod';
+import { db } from '@/db';
+import { aiSettings } from '@/db/schema';
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────
 
@@ -97,6 +99,37 @@ export const MarketEvidenceQuerySchema = z.object({
 });
 
 export type MarketEvidenceQuery = z.infer<typeof MarketEvidenceQuerySchema>;
+
+// ── Freshness Check Types ──────────────────────────────────────────────────
+
+/**
+ * Status of a freshness check.
+ * - 'fresh': The latest data date is within the threshold.
+ * - 'stale': The latest data date is older than the threshold.
+ * - 'error': A connection or query error occurred.
+ */
+export const FreshnessStatusSchema = z.enum(['fresh', 'stale', 'error']);
+
+export type FreshnessStatus = z.infer<typeof FreshnessStatusSchema>;
+
+/**
+ * Result of a market data freshness check.
+ *
+ * Provides the status, latest data date found in the database, the
+ * threshold used for comparison, and a human-readable message.
+ * When status is 'error', latestDate is omitted.
+ */
+export const FreshnessCheckSchema = z.object({
+  status: FreshnessStatusSchema,
+  /** Most recent tradedate found in the database (YYYY-MM-DD); undefined on error */
+  latestDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** Threshold date string (YYYY-MM-DD) used for the comparison */
+  threshold: z.string(),
+  /** Human-readable diagnostic message */
+  message: z.string(),
+});
+
+export type FreshnessCheck = z.infer<typeof FreshnessCheckSchema>;
 
 // ── Configuration ────────────────────────────────────────────────────────
 
@@ -356,6 +389,45 @@ export function createClickHouseClient(config: ClickHouseConfig) {
     return { bars, error: null };
   }
 
+  // ── Freshness Check ─────────────────────────────────────────────────
+
+  /**
+   * Query the most recent tradedate in the as_us_equity_ohlc_daily table.
+   *
+   * Returns the latest trading date found, or null if the table is empty.
+   * Returns an error string on connection failure.
+   */
+  async function getLatestDate(): Promise<{
+    latestDate: string | null;
+    error: string | null;
+  }> {
+    const sql = [
+      `SELECT max(tradedate) AS latest_date`,
+      `FROM ${config.database}.as_us_equity_ohlc_daily`,
+    ].join('\n');
+
+    const { rows, error } = await querySql(sql);
+
+    if (error) {
+      return { latestDate: null, error };
+    }
+
+    if (rows.length === 0 || rows[0].latest_date === null || rows[0].latest_date === '') {
+      return { latestDate: null, error: null };
+    }
+
+    const latestDate = rows[0].latest_date;
+    // Validate the date format (should be YYYY-MM-DD from ClickHouse)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(latestDate)) {
+      return {
+        latestDate: null,
+        error: `Unexpected date format from ClickHouse: '${latestDate}'`,
+      };
+    }
+
+    return { latestDate, error: null };
+  }
+
   // ── Public API ───────────────────────────────────────────────────────
 
   /**
@@ -425,13 +497,104 @@ export function createClickHouseClient(config: ClickHouseConfig) {
     };
   }
 
-  return { getMarketEvidence };
+  /**
+   * Check whether market data in ClickHouse is fresh (within threshold).
+   *
+   * Queries the most recent tradedate in the database and compares it
+   * against today minus `thresholdDays` (default: 1). Returns a typed
+   * FreshnessCheck with status, latestDate, threshold, and message.
+   *
+   * - 'fresh': The latest data date is >= the threshold date.
+   * - 'stale': The latest data date is < the threshold date (or null/empty).
+   * - 'error': A connection or query error occurred.
+   *
+   * Logs structured JSON for observability:
+   *   On success: { event: 'freshness_check', database, latestDate, status, thresholdDays }
+   *   On error:   { event: 'freshness_error', database, status: 'error', error: string }
+   *
+   * @param thresholdDays - Maximum allowed days since the latest data (default: 1)
+   */
+  async function checkFreshness(thresholdDays: number = 1): Promise<FreshnessCheck> {
+    const today = new Date();
+    const thresholdDate = new Date(today.getTime() - thresholdDays * 86_400_000);
+    const thresholdStr = thresholdDate.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const { latestDate, error } = await getLatestDate();
+
+    if (error) {
+      // Connection error during freshness query
+      const logEntry = {
+        event: 'freshness_error',
+        database: config.database,
+        status: 'error' as const,
+        error,
+      };
+      console.log(JSON.stringify(logEntry));
+
+      return {
+        status: 'error',
+        threshold: thresholdStr,
+        message: `Freshness check failed: ${error}`,
+      };
+    }
+
+    if (latestDate === null) {
+      // No data in the table
+      console.log(
+        JSON.stringify({
+          event: 'freshness_check',
+          database: config.database,
+          latestDate: null,
+          status: 'stale',
+          thresholdDays,
+        }),
+      );
+
+      return {
+        status: 'stale',
+        threshold: thresholdStr,
+        message: `No market data found in ${config.database}.as_us_equity_ohlc_daily`,
+      };
+    }
+
+    // Compare dates as strings (YYYY-MM-DD is lexicographically comparable)
+    const isFresh = latestDate >= thresholdStr;
+    const status: FreshnessStatus = isFresh ? 'fresh' : 'stale';
+
+    console.log(
+      JSON.stringify({
+        event: 'freshness_check',
+        database: config.database,
+        latestDate,
+        status,
+        thresholdDays,
+      }),
+    );
+
+    return {
+      status,
+      latestDate,
+      threshold: thresholdStr,
+      message: isFresh
+        ? `Data is fresh: latest tradedate ${latestDate} is within ${thresholdDays} day(s)`
+        : `Data is stale: latest tradedate ${latestDate} is older than ${thresholdDays} day(s) (threshold: ${thresholdStr})`,
+    };
+  }
+
+  return { getMarketEvidence, checkFreshness };
 }
 
 // ── Convenience Default Client ───────────────────────────────────────────
 
 /**
- * Create a ClickHouse client using environment variables for configuration.
+ * Create a ClickHouse client using runtime config from ai_settings, env vars,
+ * and defaults — with configOverride for testing and injection.
+ *
+ * Precedence (highest to lowest):
+ *   1. configOverride parameter (when provided — for testing/injection)
+ *   2. ai_settings DB row (when values are non-null and non-empty)
+ *   3. Environment variables (CLICKHOUSE_HOST, CLICKHOUSE_PORT, etc.)
+ *   4. Hardcoded defaults
  *
  * Environment variables:
  *   CLICKHOUSE_HOST     (default: 'localhost')
@@ -440,23 +603,97 @@ export function createClickHouseClient(config: ClickHouseConfig) {
  *   CLICKHOUSE_PASSWORD (default: '')
  *   CLICKHOUSE_DATABASE (default: 'market')
  *
+ * Structured logging on config resolution:
+ *   { event: 'clickhouse_config_resolution', source, host, port, user, database, hasPassword }
+ *
+ * @param configOverride - Optional partial config that takes highest precedence (for tests)
  * @returns A ClickHouse client instance
  */
-export function createDefaultClickHouseClient(): ReturnType<typeof createClickHouseClient> {
-  const config: ClickHouseConfig = {
-    host: process.env.CLICKHOUSE_HOST || 'localhost',
-    port: parseInt(process.env.CLICKHOUSE_PORT || '8123', 10),
-    user: process.env.CLICKHOUSE_USER || 'default',
-    password: process.env.CLICKHOUSE_PASSWORD || '',
-    database: process.env.CLICKHOUSE_DATABASE || 'market',
-  };
+export function createDefaultClickHouseClient(
+  configOverride?: Partial<ClickHouseConfig>,
+): ReturnType<typeof createClickHouseClient> {
+  // Step 1: Read ClickHouse config from ai_settings DB row
+  let dbRow: Record<string, unknown> | undefined;
+  try {
+    const result = db.select().from(aiSettings).limit(1).get();
+    if (result) {
+      dbRow = result as unknown as Record<string, unknown>;
+    }
+  } catch {
+    // DB unavailable (e.g. first-time setup, test without mock) — fall through to env vars
+  }
+
+  // Helper to test whether a DB value is meaningfully "set"
+  const isSet = (val: unknown): boolean =>
+    val !== null && val !== undefined && val !== '';
+
+  // Step 2: Resolve each field with precedence chain
+  const resolvedHost =
+    configOverride?.host ??
+    (dbRow && isSet(dbRow.clickhouseHost) ? String(dbRow.clickhouseHost) : undefined) ??
+    (process.env.CLICKHOUSE_HOST || 'localhost');
+
+  const resolvedPort: number =
+    configOverride?.port ??
+    (dbRow && isSet(dbRow.clickhousePort) ? Number(dbRow.clickhousePort) : undefined) ??
+    parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
+
+  const resolvedUser =
+    configOverride?.user ??
+    (dbRow && isSet(dbRow.clickhouseUser) ? String(dbRow.clickhouseUser) : undefined) ??
+    (process.env.CLICKHOUSE_USER || 'default');
+
+  const resolvedPassword =
+    configOverride?.password ??
+    (dbRow && isSet(dbRow.clickhousePassword) ? String(dbRow.clickhousePassword) : undefined) ??
+    (process.env.CLICKHOUSE_PASSWORD || '');
+
+  const resolvedDatabase =
+    configOverride?.database ??
+    (dbRow && isSet(dbRow.clickhouseDatabase) ? String(dbRow.clickhouseDatabase) : undefined) ??
+    (process.env.CLICKHOUSE_DATABASE || 'market');
 
   // Validate port
-  if (Number.isNaN(config.port) || config.port < 1 || config.port > 65535) {
+  if (Number.isNaN(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+    const portSource =
+      configOverride?.port !== undefined
+        ? 'override'
+        : dbRow && isSet(dbRow.clickhousePort)
+          ? 'database'
+          : 'env';
     throw new Error(
-      `Invalid CLICKHOUSE_PORT: '${process.env.CLICKHOUSE_PORT}'. Must be a valid port number (1-65535).`,
+      `Invalid CLICKHOUSE_PORT: '${resolvedPort}'. Must be a valid port number (1-65535). Source: ${portSource}.`,
     );
   }
+
+  const config: ClickHouseConfig = {
+    host: resolvedHost,
+    port: resolvedPort,
+    user: resolvedUser,
+    password: resolvedPassword,
+    database: resolvedDatabase,
+  };
+
+  // Log structured config resolution for observability
+  const source = configOverride
+    ? 'override'
+    : dbRow && isSet(dbRow.clickhouseHost)
+      ? 'database'
+      : process.env.CLICKHOUSE_HOST
+        ? 'env'
+        : 'defaults';
+
+  console.log(
+    JSON.stringify({
+      event: 'clickhouse_config_resolution',
+      source,
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      database: config.database,
+      hasPassword: config.password.length > 0,
+    }),
+  );
 
   return createClickHouseClient(config);
 }

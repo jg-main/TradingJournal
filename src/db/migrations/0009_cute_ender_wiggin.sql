@@ -1,0 +1,1 @@
+ALTER TABLE `play_evaluation_fields` ADD `min_lookback_days` integer;

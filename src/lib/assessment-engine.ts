@@ -34,6 +34,7 @@ import {
 import {
   createDefaultClickHouseClient,
   type MarketEvidence,
+  type FreshnessCheck,
 } from './clickhouse-client';
 import {
   createAiProvider,
@@ -51,6 +52,7 @@ export const AssessmentErrorCode = {
   AI_PROVIDER_ERROR: 'AI_PROVIDER_ERROR',
   SCORECARD_PARSE_ERROR: 'SCORECARD_PARSE_ERROR',
   MISSING_MARKET_DATA: 'MISSING_MARKET_DATA',
+  STALE_MARKET_DATA: 'STALE_MARKET_DATA',
 } as const;
 
 export type AssessmentErrorCode =
@@ -92,6 +94,7 @@ export interface AssessmentDeps {
       startDate: string;
       endDate: string;
     }): Promise<MarketEvidence>;
+    checkFreshness(thresholdDays?: number): Promise<FreshnessCheck>;
   };
   aiProvider?: AiProvider;
 }
@@ -135,6 +138,7 @@ export interface GatheredTradeData {
     description: string | null;
     fieldType: string;
     weight: number | null;
+    minLookbackDays: number | null;
   }>;
   setupName: string | null;
   marketEvidence: MarketEvidence | null;
@@ -281,6 +285,7 @@ export async function gatherTradeData(
             description: f.description,
             fieldType: f.fieldType,
             weight: f.weight,
+            minLookbackDays: f.minLookbackDays,
           });
         }
       }
@@ -508,6 +513,7 @@ export function buildAssessmentPrompt(
  */
 function deriveDateRange(
   trade: typeof trades.$inferSelect,
+  lookbackDays?: number,
 ): { startDate: string; endDate: string } | null {
   const refDate = trade.openedAt ?? trade.createdAt;
   if (!refDate) return null;
@@ -517,8 +523,9 @@ function deriveDateRange(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(refDay)) return null;
 
   const ref = new Date(refDay);
+  const days = lookbackDays ?? 45;
   const start = new Date(ref);
-  start.setDate(start.getDate() - 45); // ~30 trading days
+  start.setDate(start.getDate() - days);
 
   const end = new Date(ref);
   end.setDate(end.getDate() + 5);
@@ -608,10 +615,29 @@ export async function performAssessment(
 
   warnings.push(...gathered.warnings);
 
+  // ── Step 1.5: Compute maxLookback from evaluation fields ─────────
+  let maxLookback: number | null = null;
+  if (gathered.evaluationFields.length > 0) {
+    const lookbacks = gathered.evaluationFields
+      .map(f => f.minLookbackDays)
+      .filter((d): d is number => d !== null && d !== undefined);
+    if (lookbacks.length > 0) {
+      maxLookback = Math.max(...lookbacks);
+      console.log(
+        JSON.stringify({
+          event: 'per_play_lookback',
+          tradeId,
+          fieldCount: gathered.evaluationFields.length,
+          maxLookback,
+        }),
+      );
+    }
+  }
+
   // ── Step 2: Market evidence (ClickHouse) ──────────────────────────
   let marketEvidence: MarketEvidence | null = null;
   if (gathered.trade.symbol) {
-    const dateRange = deriveDateRange(gathered.trade);
+    const dateRange = deriveDateRange(gathered.trade, maxLookback ?? undefined);
     if (dateRange) {
       try {
         marketEvidence = await chClient.getMarketEvidence({
@@ -634,6 +660,18 @@ export async function performAssessment(
         } else if (marketEvidence.ohlc.length === 0) {
           warnings.push(
             `No market data available for ${gathered.trade.symbol}`,
+          );
+        }
+
+        // Data sufficiency check: warn when bars < maxLookback
+        if (
+          maxLookback !== null &&
+          marketEvidence.ohlc.length > 0 &&
+          marketEvidence.ohlc.length < maxLookback
+        ) {
+          const playName = gathered.setupName ?? 'unknown';
+          warnings.push(
+            `Data sufficiency: only ${marketEvidence.ohlc.length}/${maxLookback} bars available for play ${playName}. Some evaluation criteria may be unreliable.`,
           );
         }
 
@@ -664,6 +702,52 @@ export async function performAssessment(
     } else {
       warnings.push(
         'Trade has no date information - cannot determine market evidence date range',
+      );
+    }
+  }
+
+  // ── Step 2.5: Freshness check ───────────────────────────────────────
+  // Check whether ClickHouse market data is current enough for assessment.
+  // For plan-stage (ai_quality), stale data blocks the assessment.
+  // For after-exit (ai_review), stale data produces a warning only.
+  if (gathered.trade.symbol) {
+    try {
+      const freshness = await chClient.checkFreshness();
+
+      console.log(
+        JSON.stringify({
+          event: 'freshness_check',
+          tradeId,
+          status: freshness.status,
+          latestDate: freshness.latestDate ?? null,
+        }),
+      );
+
+      if (freshness.status === 'stale') {
+        if (assessmentType === 'ai_quality') {
+          console.log(
+            JSON.stringify({
+              event: 'freshness_blocked',
+              tradeId,
+              status: freshness.status,
+              latestDate: freshness.latestDate ?? null,
+              message: freshness.message,
+            }),
+          );
+          throw new AssessmentError(
+            AssessmentErrorCode.STALE_MARKET_DATA,
+            tradeId,
+            `Market data is stale — latest available date is ${freshness.latestDate ?? 'unknown'}. Data must be no older than T-1 to assess.`,
+          );
+        }
+        // For ai_review, stale data is a warning, not a blocker
+        warnings.push(`Market data freshness warning: ${freshness.message}`);
+      }
+    } catch (err) {
+      if (err instanceof AssessmentError) throw err;
+      // Connection error during freshness check — warn but don't block
+      warnings.push(
+        `Failed to check market data freshness: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

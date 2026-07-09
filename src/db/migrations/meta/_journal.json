@@ -57,6 +57,20 @@
       "when": 1783547648487,
       "tag": "0007_polite_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1783606750932,
+      "tag": "0008_condemned_wolfpack",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783606904804,
+      "tag": "0009_cute_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }

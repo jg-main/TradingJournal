@@ -2,8 +2,11 @@
 // Initialize the database fully (run all migrations) before next build so that
 // when parallel route handlers query tables during page-data collection, the
 // tables actually exist and migrate() is a no-op.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Database = require('better-sqlite3');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { mkdirSync } = require('node:fs');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { join, dirname } = require('node:path');
 
 const dbPath = process.env.DB_FILE_NAME || '/tmp/build-journal.db';
@@ -15,6 +18,7 @@ sqlite.pragma('foreign_keys = ON');
 
 // Apply all migration files directly, sequentially (same order Drizzle does)
 const migrationsDir = join(__dirname, '..', 'src', 'db', 'migrations');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const meta = require(join(migrationsDir, 'meta', '_journal.json'));
 
 // Create drizzle tracking table
@@ -40,6 +44,7 @@ for (const entry of meta.entries) {
   }
 
   // Read the SQL file
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('node:fs');
   const sql = fs.readFileSync(join(migrationsDir, tag + '.sql'), 'utf8');
 

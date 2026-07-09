@@ -14,6 +14,7 @@ const createSchema = z.object({
   description: z.string().nullable().optional(),
   fieldType: z.enum(['boolean', 'score_1_5', 'score_1_10', 'text']),
   weight: z.number().min(0).max(1).optional(),
+  minLookbackDays: z.number().int().positive().max(3650).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
 });
@@ -29,6 +30,7 @@ const updateSchema = z.object({
   description: z.string().nullable().optional(),
   fieldType: z.enum(['boolean', 'score_1_5', 'score_1_10', 'text']).optional(),
   weight: z.number().min(0).max(1).optional(),
+  minLookbackDays: z.number().int().positive().max(3650).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
 });
@@ -165,6 +167,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         description: parsed.data.description ?? null,
         fieldType: parsed.data.fieldType,
         weight: parsed.data.weight ?? 1.0,
+        minLookbackDays: parsed.data.minLookbackDays ?? null,
         sortOrder: parsed.data.sortOrder ?? 0,
         isActive: parsed.data.isActive ?? true,
         createdAt: now,
@@ -290,6 +293,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (parsed.data.fieldType !== undefined)
       updateData.fieldType = parsed.data.fieldType;
     if (parsed.data.weight !== undefined) updateData.weight = parsed.data.weight;
+    if (parsed.data.minLookbackDays !== undefined)
+      updateData.minLookbackDays = parsed.data.minLookbackDays;
     if (parsed.data.sortOrder !== undefined)
       updateData.sortOrder = parsed.data.sortOrder;
     if (parsed.data.isActive !== undefined)

@@ -19,6 +19,7 @@ import { z } from 'zod';
 // Local source files are NOT required here.
 
 const testCtx = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Database = require('better-sqlite3');
 
   const sqlite = new Database(':memory:');
@@ -130,6 +131,11 @@ const testCtx = vi.hoisted(() => {
       temperature REAL DEFAULT 0.7,
       max_tokens INTEGER DEFAULT 4096,
       system_prompt TEXT,
+      clickhouse_host TEXT DEFAULT 'localhost',
+      clickhouse_port INTEGER DEFAULT 8123,
+      clickhouse_user TEXT DEFAULT 'default',
+      clickhouse_password TEXT,
+      clickhouse_database TEXT DEFAULT 'market',
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)
@@ -156,6 +162,7 @@ const testCtx = vi.hoisted(() => {
     aiProviderError: null as Error | null,
     chResponse: null as Record<string, unknown> | null,
     chError: null as Error | null,
+    chFreshnessResponse: null as Record<string, unknown> | null,
   };
 
   return { sqlite, mockState };
@@ -164,6 +171,7 @@ const testCtx = vi.hoisted(() => {
 // ── Module-level mocks ───────────────────────────────────────────────────
 
 vi.mock('@/db', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { drizzle } = require('drizzle-orm/better-sqlite3');
   const db = drizzle(testCtx.sqlite);
   return {
@@ -187,6 +195,14 @@ vi.mock('@/lib/clickhouse-client', () => {
             { date: '2024-01-03', open: 151.50, high: 153.00, low: 150.00, close: 152.75, volume: 45000000, vwap: 152.00 },
           ],
           notes: [],
+        };
+      },
+      checkFreshness: async () => {
+        return testCtx.mockState.chFreshnessResponse ?? {
+          status: 'fresh',
+          latestDate: '2024-01-31',
+          threshold: '2024-01-30',
+          message: 'Data is fresh: latest tradedate 2024-01-31 is within 1 day(s)',
         };
       },
     }),
@@ -307,6 +323,7 @@ function resetMockState() {
   testCtx.mockState.aiProviderError = null;
   testCtx.mockState.chResponse = null;
   testCtx.mockState.chError = null;
+  testCtx.mockState.chFreshnessResponse = null;
 }
 
 // Drizzle instance with schema mapping (for reading snapshots with camelCase mapping)
@@ -390,6 +407,11 @@ function mapAssessmentError(err: AssessmentError): { status: number; safeMessage
       return { status: 200, safeMessage: err.message };
     case AssessmentErrorCode.MISSING_MARKET_DATA:
       return { status: 200, safeMessage: err.message };
+    case AssessmentErrorCode.STALE_MARKET_DATA:
+      return {
+        status: 409,
+        safeMessage: 'Market data is not current',
+      };
     default:
       return { status: 500, safeMessage: 'Assessment failed due to an unexpected error' };
   }
@@ -602,8 +624,8 @@ console.log('\n1. POST with valid tradeId returns 201 with scorecard:');
   // Verify snapshot persisted to DB
   const dbRow = readDbAssessmentSnapshot(snapshot.id as string);
   assertNotNull(dbRow, 'snapshot persisted to DB');
-  assertEqual((dbRow as any).tradeId ?? (dbRow as any).trade_id, tradeId, 'DB snapshot tradeId matches');
-  assertEqual((dbRow as any).overallScore ?? (dbRow as any).overall_score, 72, 'DB snapshot overallScore matches');
+  assertEqual((dbRow as Record<string, unknown>).tradeId ?? (dbRow as Record<string, unknown>).trade_id, tradeId, 'DB snapshot tradeId matches');
+  assertEqual((dbRow as Record<string, unknown>).overallScore ?? (dbRow as Record<string, unknown>).overall_score, 72, 'DB snapshot overallScore matches');
 
   // Verify apiKey never present in response
   const responseJson = JSON.stringify(result.data);
@@ -662,7 +684,7 @@ console.log('\n3. POST verifies scorecardJson persisted correctly in DB:');
   assertNotNull(dbRow, 'snapshot in DB');
 
   // Parse scorecardJson from DB
-  const scorecardJson = (dbRow as any).scorecardJson ?? (dbRow as any).scorecard_json;
+  const scorecardJson = (dbRow as Record<string, unknown>).scorecardJson ?? (dbRow as Record<string, unknown>).scorecard_json;
   const storedScorecard = JSON.parse(scorecardJson as string);
   assertEqual(storedScorecard.overallScore, 72, 'DB scorecard overallScore matches');
   assertEqual(storedScorecard.gradeLabel, 'B', 'DB scorecard gradeLabel matches');
@@ -815,7 +837,7 @@ console.log('\n9. POST with assessmentType ai_review returns 201 with assessment
   // Verify DB
   const dbRow = readDbAssessmentSnapshot(snapshot.id as string);
   assertNotNull(dbRow, 'snapshot in DB');
-  const actualType = (dbRow as any).assessmentType ?? (dbRow as any).assessment_type;
+  const actualType = (dbRow as Record<string, unknown>).assessmentType ?? (dbRow as Record<string, unknown>).assessment_type;
   assertEqual(actualType, 'ai_review', 'assessmentType is ai_review in DB');
 }
 
@@ -1075,6 +1097,126 @@ console.log('\n19. POST with ClickHouse error returns 201 with warnings:');
   const row = dbRow as Record<string, unknown>;
   const notes = row.notes ?? row.note;
   assertNotNull(notes, 'notes field populated');
+
+  // Verify apiKey not in response
+  assert(!JSON.stringify(result.data).includes('sk-test-key'), 'apiKey not in response');
+}
+
+
+console.log('\n=== Freshness Gate Route Tests ===\n');
+
+// ── 20. POST with stale market data (ai_quality) returns 409 ─────────────
+
+console.log('\n20. POST with stale market data and ai_quality returns 409 STALE_MARKET_DATA:');
+{
+  cleanup();
+  resetMockState();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, { openedAt: '2024-01-15T10:00:00.000Z' });
+  seedAiSetting();
+
+  // Make checkFreshness return stale
+  testCtx.mockState.chFreshnessResponse = {
+    status: 'stale',
+    latestDate: '2024-01-15',
+    threshold: '2024-01-30',
+    message: 'Data is stale: latest tradedate 2024-01-15 is older than 1 day(s) (threshold: 2024-01-30)',
+  };
+
+  const result = await doPostAssessment(tradeId, { assessmentType: 'ai_quality' });
+  assertEqual(result.status, 409, 'returns 409 for stale market data');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(
+    data.error,
+    'Market data is not current',
+    'safe error message for stale market data',
+  );
+  assertEqual(data.code, 'STALE_MARKET_DATA', 'error code is STALE_MARKET_DATA');
+}
+
+// ── 21. POST with stale market data (ai_review) returns 201 with warnings ─
+
+console.log('\n21. POST with stale market data and ai_review returns 201 with warnings:');
+{
+  cleanup();
+  resetMockState();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, { openedAt: '2024-01-15T10:00:00.000Z' });
+  seedAiSetting();
+
+  // Make checkFreshness return stale
+  testCtx.mockState.chFreshnessResponse = {
+    status: 'stale',
+    latestDate: '2024-01-15',
+    threshold: '2024-01-30',
+    message: 'Data is stale: latest tradedate 2024-01-15 is older than 1 day(s) (threshold: 2024-01-30)',
+  };
+
+  // AI response matching ai_review
+  testCtx.mockState.aiProviderResponse = JSON.stringify({
+    dimensions: [
+      { key: 'setup', label: 'Setup Quality', score: 8 },
+      { key: 'risk', label: 'Risk Management', score: 7 },
+      { key: 'entry', label: 'Entry Execution', score: 6 },
+      { key: 'management', label: 'Trade Management', score: 9 },
+      { key: 'exit', label: 'Exit Execution', score: 5 },
+      { key: 'review', label: 'Review Quality', score: 7 },
+    ],
+    overallScore: 72,
+    gradeLabel: 'B',
+    assessmentType: 'ai_review',
+  });
+
+  const result = await doPostAssessment(tradeId, { assessmentType: 'ai_review' });
+  assertEqual(result.status, 201, 'returns 201 despite stale data for ai_review');
+  const data = result.data as Record<string, unknown>;
+
+  // Verify warnings in response
+  const warnings = data.warnings as string[];
+  assertNotNull(warnings, 'warnings array present');
+  assert(
+    warnings.some((w: string) => w.includes('data freshness') || w.includes('stale')),
+    'warnings contain market data freshness notice',
+  );
+
+  // Verify snapshot persisted
+  const snapshot = data.snapshot as Record<string, unknown>;
+  assertNotNull(snapshot.id, 'snapshot persisted despite stale data');
+  assertEqual(snapshot.assessmentType, 'ai_review', 'assessmentType is ai_review in response');
+  assertEqual(snapshot.overallScore, 72, 'overallScore matches');
+
+  // Verify apiKey not in response
+  assert(!JSON.stringify(result.data).includes('sk-test-key'), 'apiKey not in response');
+}
+
+// ── 22. POST with fresh market data returns 201 normally ──────────────────
+
+console.log('\n22. POST with fresh market data returns 201 normally:');
+{
+  cleanup();
+  resetMockState();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, { openedAt: '2024-01-15T10:00:00.000Z' });
+  seedAiSetting();
+
+  // Freshness is the default (chFreshnessResponse is null, mock returns 'fresh')
+  // No need to set anything explicitly
+
+  const result = await doPostAssessment(tradeId);
+  assertEqual(result.status, 201, 'returns 201 with fresh market data');
+  const data = result.data as Record<string, unknown>;
+  const snapshot = data.snapshot as Record<string, unknown>;
+
+  assertNotNull(snapshot.id, 'snapshot persisted');
+  assertEqual(snapshot.assessmentType, 'ai_quality', 'assessmentType is ai_quality');
+  assertEqual(snapshot.overallScore, 72, 'overallScore matches');
+
+  // Verify warnings are only about missing setup (not freshness)
+  const warnings = data.warnings as string[];
+  const freshnessWarnings = (warnings ?? []).filter(
+    (w: string) => w.includes('freshness') || w.includes('stale'),
+  );
+  assertEqual(freshnessWarnings.length, 0, 'no freshness warnings with fresh data');
 
   // Verify apiKey not in response
   assert(!JSON.stringify(result.data).includes('sk-test-key'), 'apiKey not in response');
