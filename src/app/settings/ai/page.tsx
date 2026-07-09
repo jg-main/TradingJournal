@@ -42,6 +42,7 @@ export default function AiSettingsPage() {
     temperature: '0.7',
     maxTokens: '4096',
     systemPrompt: '',
+    isActive: true,
   });
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export default function AiSettingsPage() {
             temperature: data.temperature?.toString() ?? '0.7',
             maxTokens: data.maxTokens?.toString() ?? '4096',
             systemPrompt: data.systemPrompt ?? '',
+            isActive: data.isActive === null || data.isActive === undefined ? true : Boolean(data.isActive),
           });
         } else {
           // No existing settings — apply provider defaults
@@ -105,6 +107,7 @@ export default function AiSettingsPage() {
 
     if (form.apiKey) payload.apiKey = form.apiKey;
     if (form.systemPrompt) payload.systemPrompt = form.systemPrompt;
+    payload.isActive = form.isActive;
 
     // Only send baseUrl if provider needs one (ollama/custom)
     if (form.provider === 'ollama' || form.provider === 'custom') {
@@ -139,6 +142,10 @@ export default function AiSettingsPage() {
 
   const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  };
+
+  const handleToggle = () => {
+    setForm((prev) => ({ ...prev, isActive: !prev.isActive }));
   };
 
   const showEndpointUrl = form.provider === 'ollama' || form.provider === 'custom';
@@ -323,6 +330,34 @@ export default function AiSettingsPage() {
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
               placeholder="You are a helpful trading assistant that analyzes trade quality..."
             />
+          </div>
+
+          {/* AI Provider Active Toggle */}
+          <div className="flex items-center justify-between border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Enable AI Provider</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                {form.isActive ? 'Provider is active and ready to accept requests.' : 'Provider is disabled — no AI features will function.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={form.isActive}
+              aria-label="Toggle AI provider"
+              onClick={handleToggle}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 ${
+                form.isActive
+                  ? 'bg-zinc-900 dark:bg-zinc-100'
+                  : 'bg-zinc-300 dark:bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`inline-block size-5 transform rounded-full bg-white shadow-sm ring-0 transition-transform ${
+                  form.isActive ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
         </div>
 
