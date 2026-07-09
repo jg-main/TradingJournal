@@ -11,6 +11,7 @@ import {
   Target,
   Star,
   Settings,
+  HelpCircle,
   Menu,
   type LucideIcon,
   X,
@@ -30,6 +31,7 @@ const navItems: NavItem[] = [
   { href: '/sizing', label: 'Position Sizing', icon: Target },
   { href: '/reviews', label: 'Reviews', icon: Star },
   { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/help', label: 'Help & Docs', icon: HelpCircle },
 ];
 
 export function Sidebar() {
