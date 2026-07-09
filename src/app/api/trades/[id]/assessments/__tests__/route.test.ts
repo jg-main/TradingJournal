@@ -131,6 +131,11 @@ const testCtx = vi.hoisted(() => {
       temperature REAL DEFAULT 0.7,
       max_tokens INTEGER DEFAULT 4096,
       system_prompt TEXT,
+      clickhouse_host TEXT DEFAULT 'localhost',
+      clickhouse_port INTEGER DEFAULT 8123,
+      clickhouse_user TEXT DEFAULT 'default',
+      clickhouse_password TEXT,
+      clickhouse_database TEXT DEFAULT 'market',
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)

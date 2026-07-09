@@ -334,6 +334,12 @@ export const aiSettings = sqliteTable('ai_settings', {
   temperature: real('temperature').default(0.7),
   maxTokens: integer('max_tokens').default(4096),
   systemPrompt: text('system_prompt'),
+  // ClickHouse connection config
+  clickhouseHost: text('clickhouse_host').default('localhost'),
+  clickhousePort: integer('clickhouse_port').default(8123),
+  clickhouseUser: text('clickhouse_user').default('default'),
+  clickhousePassword: text('clickhouse_password'),
+  clickhouseDatabase: text('clickhouse_database').default('market'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
