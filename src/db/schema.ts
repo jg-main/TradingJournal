@@ -357,6 +357,7 @@ export const playEvaluationFields = sqliteTable('play_evaluation_fields', {
     enum: ['boolean', 'score_1_5', 'score_1_10', 'text'],
   }).notNull(),
   weight: real('weight').default(1.0),
+  minLookbackDays: integer('min_lookback_days'),
   sortOrder: integer('sort_order').default(0),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
