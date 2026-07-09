@@ -21,6 +21,7 @@ import ActivePhaseView from '@/components/trade-detail/active-phase-view';
 import ClosedPhaseView from '@/components/trade-detail/closed-phase-view';
 import DeletedPhaseView from '@/components/trade-detail/deleted-phase-view';
 import { ExecuteDialog, type ExecuteTradeData } from '@/components/execute-dialog';
+import EditTradeDialog, { type EditableTrade } from '@/components/edit-trade-dialog';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ interface Trade {
   direction: 'long' | 'short';
   accountId: string;
   setupId: string | null;
+  setupName: string | null;
   marketConditionId: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
   plannedEntry: number | null;
@@ -184,6 +186,7 @@ export default function TradeDetailPage() {
   const [refetchTrigger, setRefetchTrigger] = useState(0);
   const [executeOpen, setExecuteOpen] = useState(false);
   const [executeData, setExecuteData] = useState<ExecuteTradeData | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -324,7 +327,24 @@ export default function TradeDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-10">
-      <Link href="/trades" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"><ArrowLeft className="size-4" />Back to Trade Log</Link>
+      <div className="mb-6 flex items-center justify-between">
+        <Link href="/trades" className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200">
+          <ArrowLeft className="size-4" />
+          Back to Trade Log
+        </Link>
+        {trade.status !== 'deleted' && (
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+            </svg>
+            Edit
+          </button>
+        )}
+      </div>
 
       {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} />}
       {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onRiskSnapshotSave={handleRiskSnapshotSave} onExecutionAdded={handleExecutionAdded} />}
@@ -339,6 +359,28 @@ export default function TradeDetailPage() {
           onComplete={handleExecutionAdded}
         />
       )}
+
+      <EditTradeDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        trade={{
+          id: trade.id,
+          symbol: trade.symbol,
+          direction: trade.direction,
+          accountId: trade.accountId,
+          setupId: trade.setupId,
+          thesis: trade.thesis,
+          plannedEntry: trade.plannedEntry,
+          plannedStop: trade.plannedStop,
+          plannedTarget1: trade.plannedTarget1,
+          plannedTarget2: null,
+          plannedQuantity: trade.plannedQuantity,
+          invalidationCondition: trade.invalidationCondition,
+          preTradePlan: trade.preTradePlan,
+        }}
+        onSaved={() => setRefetchTrigger((n) => n + 1)}
+        setupName={trade.setupName ?? null}
+      />
 
       <p className="mt-8 text-xs text-zinc-400 dark:text-zinc-600">Created {formatDate(trade.createdAt)}{trade.updatedAt && ` · Updated ${formatDate(trade.updatedAt)}`}</p>
     </div>

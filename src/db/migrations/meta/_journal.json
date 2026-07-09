@@ -71,6 +71,13 @@
       "when": 1783606904804,
       "tag": "0009_cute_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783628039803,
+      "tag": "0010_overjoyed_silver_samurai",
+      "breakpoints": true
     }
   ]
 }

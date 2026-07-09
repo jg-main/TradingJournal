@@ -11,6 +11,7 @@ export interface Trade {
   direction: 'long' | 'short';
   accountId: string;
   setupId: string | null;
+  setupName: string | null;
   marketConditionId: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
   plannedEntry: number | null;

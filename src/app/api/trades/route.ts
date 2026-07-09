@@ -139,28 +139,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Read per-account risk parameters and append to preTradePlan metadata
-    const account = db
-      .select()
-      .from(accounts)
-      .where(eq(accounts.id, accountId))
-      .get();
-
-    let preTradePlanValue = parsed.data.preTradePlan ?? null;
-    if (account) {
-      const riskParts: string[] = [];
-      if (account.name) riskParts.push(`Account: ${account.name}`);
-      if (account.maxRiskPerTradePct != null) riskParts.push(`Max Risk Per Trade: ${account.maxRiskPerTradePct}%`);
-      if (account.defaultCommission != null) riskParts.push(`Default Commission: $${account.defaultCommission}`);
-      if (account.startingBalance != null) riskParts.push(`Starting Balance: $${account.startingBalance}`);
-
-      if (riskParts.length > 0) {
-        const metadata = `--- Risk Parameters ---\n${riskParts.join('\n')}`;
-        preTradePlanValue = preTradePlanValue
-          ? `${preTradePlanValue}\n\n${metadata}`
-          : metadata;
-      }
-    }
+    const preTradePlanValue = parsed.data.preTradePlan ?? null;
 
     // Use setupId directly if provided, otherwise resolve setup name to UUID
     let resolvedSetupId: string | null = parsed.data.setupId ?? null;

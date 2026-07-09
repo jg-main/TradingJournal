@@ -56,6 +56,8 @@ interface TradeForm {
   plannedStop: string;
   plannedTarget1: string;
   plannedQuantity: string;
+  invalidationCondition: string;
+  preTradePlan: string;
 }
 
 const EMPTY_FORM: TradeForm = {
@@ -68,6 +70,8 @@ const EMPTY_FORM: TradeForm = {
   plannedStop: '',
   plannedTarget1: '',
   plannedQuantity: '',
+  invalidationCondition: '',
+  preTradePlan: '',
 };
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -122,6 +126,8 @@ export default function PlanTradeForm({
           plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
           plannedTarget1: form.plannedTarget1 ? parseFloat(form.plannedTarget1) : null,
           plannedQuantity: form.plannedQuantity ? parseFloat(form.plannedQuantity) : null,
+          invalidationCondition: form.invalidationCondition.trim() || null,
+          preTradePlan: form.preTradePlan.trim() || null,
         }),
       });
 
@@ -338,6 +344,42 @@ export default function PlanTradeForm({
               placeholder="Why are you taking this trade?"
               value={form.thesis}
               onChange={(e) => updateField('thesis', e.target.value)}
+              disabled={submitting}
+              className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
+            />
+          </div>
+
+          {/* Invalidation Condition */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1">
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Invalidation Condition
+              </label>
+              <HelpTooltip content="What market conditions or price levels would invalidate this trade idea" />
+            </div>
+            <textarea
+              rows={2}
+              placeholder="What would prove this trade idea wrong?"
+              value={form.invalidationCondition}
+              onChange={(e) => updateField('invalidationCondition', e.target.value)}
+              disabled={submitting}
+              className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
+            />
+          </div>
+
+          {/* Pre-Trade Plan */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1">
+              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Pre-Trade Plan
+              </label>
+              <HelpTooltip content="Your step-by-step plan: entry criteria, position sizing, risk management approach, and trade management rules" />
+            </div>
+            <textarea
+              rows={3}
+              placeholder="What is your execution plan for this trade?"
+              value={form.preTradePlan}
+              onChange={(e) => updateField('preTradePlan', e.target.value)}
               disabled={submitting}
               className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
             />

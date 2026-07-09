@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const aiSettingsSchema = z.object({
   provider: z.enum(['openai', 'ollama', 'anthropic', 'google', 'custom']).optional(),
-  model: z.string().min(1, 'Model name is required').optional(),
+  model: z.string().min(1, 'Model name is required').transform(s => s.trim()).optional(),
   apiKey: z.string().min(1, 'API key is required').optional(),
   baseUrl: z.string().url().optional(),
   timeoutMs: z.number().int().positive().optional(),

@@ -74,3 +74,6 @@ docs/
 .trading-journal/
 .bg-shell/
 .impeccable/
+
+# GSD compat bad files (generated on compat parse failure)
+.gsd/.compat.json.bad-*

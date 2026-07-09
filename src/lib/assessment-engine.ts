@@ -163,7 +163,7 @@ function readActiveAiConfig(): AiProviderConfig | null {
 
   return {
     provider: setting.provider,
-    model: setting.model,
+    model: (setting.model ?? '').trim(),
     apiKey: setting.apiKey ?? undefined,
     baseUrl: setting.baseUrl ?? undefined,
     timeoutMs: setting.timeoutMs ?? undefined,
@@ -255,16 +255,17 @@ export async function gatherTradeData(
       .get();
 
     if (lookupVal) {
-      setupName = lookupVal.value;
-
-      // 3b. Match to setupDefinitions by name to get the definition ID
+      // 3b. Match to setupDefinitions by ID (same UUID per the bridge pattern)
       const setupDef = db
         .select()
         .from(setupDefinitions)
-        .where(eq(setupDefinitions.name, lookupVal.value))
+        .where(eq(setupDefinitions.id, lookupVal.id))
         .get();
 
+      // Use setupDefinitions.name for display (original case); fall back to lookupValues.value
       if (setupDef) {
+        setupName = setupDef.name;
+
         // 3c. Query playEvaluationFields by setupDefinitionId
         const fields = db
           .select()
@@ -288,6 +289,9 @@ export async function gatherTradeData(
             minLookbackDays: f.minLookbackDays,
           });
         }
+      } else {
+        // No setupDefinition found — use lookupValues value as fallback
+        setupName = lookupVal.value;
       }
     }
   }

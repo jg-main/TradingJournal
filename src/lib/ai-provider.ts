@@ -108,7 +108,8 @@ export function createAiProvider(config: AiProviderConfig): AiProvider {
   if (!config.provider) {
     throw new AiProviderError('MISSING_CONFIG', 'provider is required.');
   }
-  if (!config.model) {
+  const model = (config.model ?? '').trim();
+  if (!model) {
     throw new AiProviderError('MISSING_CONFIG', 'model is required.');
   }
 
@@ -140,7 +141,7 @@ export function createAiProvider(config: AiProviderConfig): AiProvider {
 
       try {
         const response = await client.chat.completions.create({
-          model: config.model,
+          model,
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           temperature: config.temperature,
           max_tokens: config.maxTokens,

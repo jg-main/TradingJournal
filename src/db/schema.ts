@@ -378,6 +378,8 @@ export const tradeAssessmentSnapshots = sqliteTable('trade_assessment_snapshots'
   modelUsed: text('model_used'),
   promptTokens: integer('prompt_tokens'),
   completionTokens: integer('completion_tokens'),
+  promptText: text('prompt_text'),
+  rawResponse: text('raw_response'),
   notes: text('notes'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
 });

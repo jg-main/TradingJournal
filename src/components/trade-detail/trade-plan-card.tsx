@@ -5,7 +5,7 @@ import { formatPrice } from './helpers';
 import type { Trade } from './types';
 
 interface TradePlanCardProps {
-  trade: Pick<Trade, 'plannedEntry' | 'plannedStop' | 'plannedTarget1' | 'thesis' | 'invalidationCondition' | 'preTradePlan'>;
+  trade: Pick<Trade, 'plannedEntry' | 'plannedStop' | 'plannedTarget1' | 'plannedQuantity' | 'thesis' | 'invalidationCondition' | 'preTradePlan' | 'setupName'>;
 }
 
 export default function TradePlanCard({ trade }: TradePlanCardProps) {
@@ -16,6 +16,11 @@ export default function TradePlanCard({ trade }: TradePlanCardProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <div className="text-zinc-600 dark:text-zinc-300">Setup</div>
+          <div className="text-zinc-900 dark:text-zinc-100">
+            {trade.setupName ?? '-\u00a0'}
+          </div>
+
           <div className="text-zinc-600 dark:text-zinc-300">Planned Entry</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(trade.plannedEntry)}
@@ -29,6 +34,11 @@ export default function TradePlanCard({ trade }: TradePlanCardProps) {
           <div className="text-zinc-600 dark:text-zinc-300">Target 1</div>
           <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatPrice(trade.plannedTarget1)}
+          </div>
+
+          <div className="text-zinc-600 dark:text-zinc-300">Quantity</div>
+          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
+            {trade.plannedQuantity ?? '-\u00a0'}
           </div>
 
         </div>
