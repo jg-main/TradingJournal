@@ -620,6 +620,18 @@ console.log('\n1. POST with valid tradeId returns 201 with scorecard:');
   assertEqual(snapshot.assessmentType, 'ai_quality', 'assessmentType is ai_quality');
   assertNotNull(snapshot.assessedAt, 'snapshot has assessedAt');
 
+  // Verify promptText and rawResponse are present and non-null
+  assertNotNull(snapshot.promptText, 'snapshot promptText is non-null');
+  assertNotNull(snapshot.rawResponse, 'snapshot rawResponse is non-null');
+  assert(
+    (snapshot.promptText as string).includes('TRADE DETAILS'),
+    'snapshot promptText contains trade details section',
+  );
+  assert(
+    (snapshot.rawResponse as string).includes('overallScore'),
+    'snapshot rawResponse contains scorecard JSON',
+  );
+
   assertNotNull(scorecard, 'response has scorecard');
   assertEqual(scorecard.overallScore, 72, 'scorecard overallScore matches');
 
@@ -919,6 +931,18 @@ console.log('\n13. GET with one snapshot returns 200 with parsed scorecard and s
   assertNotNull(data.data[0].scorecard, 'scorecard parsed in response');
   const scorecard = data.data[0].scorecard as Record<string, unknown>;
   assertEqual(scorecard.overallScore, 72, 'scorecard overallScore matches');
+
+  // Verify promptText and rawResponse appear in GET response
+  assertNotNull(data.data[0].promptText, 'GET response includes promptText');
+  assertNotNull(data.data[0].rawResponse, 'GET response includes rawResponse');
+  assert(
+    (data.data[0].promptText as string).includes('TRADE DETAILS'),
+    'GET promptText contains trade details',
+  );
+  assert(
+    (data.data[0].rawResponse as string).includes('overallScore'),
+    'GET rawResponse contains scorecard JSON',
+  );
 
   // Verify apiKey not present
   assert(!JSON.stringify(result.data).includes('sk-test-key'), 'apiKey not in GET response');

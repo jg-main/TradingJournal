@@ -466,8 +466,14 @@ console.log('\n1. gatherTradeData resolves trade, executions, and evaluation fie
   });
 
   // Seed setup infrastructure for play evaluation fields
-  const lookupId = seedLookupSetup('Momentum Breakout');
+  // Use setupDefId as the lookup value ID so gatherTradeData can join
+  // lookupValues.id = setupDefinitions.id
   const setupDefId = seedSetupDefinition({ name: 'Momentum Breakout' });
+  const now = new Date().toISOString();
+  sqlite.exec(
+    `INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at) ` +
+    `VALUES ('${setupDefId}', 'setup', 'Momentum Breakout', 1, 1, '${now}', '${now}')`
+  );
   seedPlayEvaluationField(setupDefId, {
     fieldKey: 'followed_plan',
     label: 'Followed the Plan',
@@ -483,8 +489,8 @@ console.log('\n1. gatherTradeData resolves trade, executions, and evaluation fie
     sortOrder: 2,
   });
 
-  // Link trade to setup via lookup value
-  sqlite.exec(`UPDATE trades SET setup_id = '${lookupId}' WHERE id = '${tradeId}'`);
+  // Link trade to setup via lookup value (same ID as setup definition)
+  sqlite.exec(`UPDATE trades SET setup_id = '${setupDefId}' WHERE id = '${tradeId}'`);
 
   // Seed executions
   seedExecution(tradeId, { action: 'buy', quantity: 50, price: 150.25, executedAt: '2024-01-15T09:30:00.000Z' });
@@ -770,6 +776,22 @@ console.log('\n9. performAssessment happy path returns AssessmentResult with par
   assertNotNull(snapshot, 'snapshot persisted to DB');
   assertEqual(snapshot!.tradeId, tradeId, 'snapshot tradeId matches');
   assertEqual(snapshot!.overallScore, 72, 'snapshot overallScore matches');
+
+  // Verify promptText and rawResponse are persisted and non-null
+  assertNotNull(snapshot!.promptText, 'snapshot promptText persisted (non-null)');
+  assertNotNull(snapshot!.rawResponse, 'snapshot rawResponse persisted (non-null)');
+  assert(
+    (snapshot!.promptText as string).includes('TRADE DETAILS'),
+    'promptText contains trade details section',
+  );
+  assert(
+    (snapshot!.rawResponse as string).includes('overallScore'),
+    'rawResponse contains scorecard JSON',
+  );
+
+  // Verify result.snapshot also carries promptText and rawResponse
+  assertNotNull(result.snapshot.promptText, 'result.snapshot.promptText is non-null');
+  assertNotNull(result.snapshot.rawResponse, 'result.snapshot.rawResponse is non-null');
 }
 
 // ── performAssessment: with executions included in prompt ────────────────
@@ -1437,12 +1459,17 @@ console.log('\n28. performAssessment derives lookback from max of evaluation fie
   });
 
   // Seed setup with evaluation fields having different minLookbackDays
-  const lookupId = seedLookupSetup('Momentum Breakout');
+  // lookup ID must match setup definition ID for gatherTradeData join
   const setupDefId = seedSetupDefinition({ name: 'Momentum Breakout' });
+  const now = new Date().toISOString();
+  sqlite.exec(
+    `INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at) ` +
+    `VALUES ('${setupDefId}', 'setup', 'Momentum Breakout', 1, 1, '${now}', '${now}')`
+  );
   seedPlayEvaluationField(setupDefId, { fieldKey: 'f1', label: 'F1', fieldType: 'boolean', sortOrder: 1, minLookbackDays: 30 });
   seedPlayEvaluationField(setupDefId, { fieldKey: 'f2', label: 'F2', fieldType: 'score_1_5', sortOrder: 2, minLookbackDays: 90 });
   seedPlayEvaluationField(setupDefId, { fieldKey: 'f3', label: 'F3', fieldType: 'score_1_10', sortOrder: 3, minLookbackDays: 60 });
-  sqlite.exec(`UPDATE trades SET setup_id = '${lookupId}' WHERE id = '${tradeId}'`);
+  sqlite.exec(`UPDATE trades SET setup_id = '${setupDefId}' WHERE id = '${tradeId}'`);
   seedAiSetting();
 
   const refDate = new Date('2024-06-15');
@@ -1534,10 +1561,15 @@ console.log('\n30. performAssessment warns when OHLC bars are fewer than maxLook
   });
 
   // Seed evaluation field with high lookback (200 days), but only return 5 bars
-  const lookupId = seedLookupSetup('Momentum Breakout');
+  // lookup ID must match setup definition ID for gatherTradeData join
   const setupDefId = seedSetupDefinition({ name: 'Momentum Breakout' });
+  const now = new Date().toISOString();
+  sqlite.exec(
+    `INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at) ` +
+    `VALUES ('${setupDefId}', 'setup', 'Momentum Breakout', 1, 1, '${now}', '${now}')`
+  );
   seedPlayEvaluationField(setupDefId, { fieldKey: 'f1', label: 'High Lookback', fieldType: 'boolean', sortOrder: 1, minLookbackDays: 200 });
-  sqlite.exec(`UPDATE trades SET setup_id = '${lookupId}' WHERE id = '${tradeId}'`);
+  sqlite.exec(`UPDATE trades SET setup_id = '${setupDefId}' WHERE id = '${tradeId}'`);
   seedAiSetting();
 
   const mockCh = createMockClickHouseClient({
@@ -1582,10 +1614,15 @@ console.log('\n31. performAssessment does NOT warn when OHLC bars meet or exceed
   });
 
   // Seed evaluation field with low lookback (10 days), return 50 bars
-  const lookupId = seedLookupSetup('Momentum Breakout');
+  // lookup ID must match setup definition ID for gatherTradeData join
   const setupDefId = seedSetupDefinition({ name: 'Momentum Breakout' });
+  const now = new Date().toISOString();
+  sqlite.exec(
+    `INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at) ` +
+    `VALUES ('${setupDefId}', 'setup', 'Momentum Breakout', 1, 1, '${now}', '${now}')`
+  );
   seedPlayEvaluationField(setupDefId, { fieldKey: 'f1', label: 'Low Lookback', fieldType: 'boolean', sortOrder: 1, minLookbackDays: 10 });
-  sqlite.exec(`UPDATE trades SET setup_id = '${lookupId}' WHERE id = '${tradeId}'`);
+  sqlite.exec(`UPDATE trades SET setup_id = '${setupDefId}' WHERE id = '${tradeId}'`);
   seedAiSetting();
 
   const mockCh = createMockClickHouseClient({
