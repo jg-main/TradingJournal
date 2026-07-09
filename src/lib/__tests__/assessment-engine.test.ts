@@ -156,6 +156,8 @@ const testCtx = vi.hoisted(() => {
       overall_score REAL,
       scorecard_json TEXT,
       model_used TEXT,
+      prompt_text TEXT,
+      raw_response TEXT,
       prompt_tokens INTEGER,
       completion_tokens INTEGER,
       notes TEXT,

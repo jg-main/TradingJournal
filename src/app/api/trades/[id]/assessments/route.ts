@@ -64,6 +64,8 @@ function buildSnapshotResponse(row: typeof tradeAssessmentSnapshots.$inferSelect
     promptTokens: row.promptTokens,
     completionTokens: row.completionTokens,
     notes: row.notes,
+    promptText: row.promptText,
+    rawResponse: row.rawResponse,
     createdAt: row.createdAt,
     scorecard: parsedScorecard,
   };

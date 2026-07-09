@@ -114,6 +114,8 @@ export interface AssessmentResult {
     modelUsed?: string;
     promptTokens?: number;
     completionTokens?: number;
+    promptText?: string | null;
+    rawResponse?: string | null;
   };
   /** Non-fatal warnings gathered during the pipeline */
   warnings: string[];
@@ -879,6 +881,8 @@ export async function performAssessment(
       overallScore: scorecard.overallScore,
       scorecardJson: JSON.stringify(scorecard),
       modelUsed: modelUsed ?? null,
+      promptText: promptResult.systemMessage + '\n\n' + promptResult.userMessage,
+      rawResponse: completionResult.content,
       promptTokens: promptTokens ?? null,
       completionTokens: completionTokens ?? null,
       notes: warnings.length > 0 ? warnings.join('; ') : null,
@@ -902,6 +906,8 @@ export async function performAssessment(
       modelUsed,
       promptTokens,
       completionTokens,
+      promptText: promptResult.systemMessage + '\n\n' + promptResult.userMessage,
+      rawResponse: completionResult.content,
     },
     warnings,
   };

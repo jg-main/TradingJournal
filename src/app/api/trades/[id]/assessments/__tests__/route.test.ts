@@ -149,6 +149,8 @@ const testCtx = vi.hoisted(() => {
       overall_score REAL,
       scorecard_json TEXT,
       model_used TEXT,
+      prompt_text TEXT,
+      raw_response TEXT,
       prompt_tokens INTEGER,
       completion_tokens INTEGER,
       notes TEXT,
@@ -435,6 +437,8 @@ function buildSnapshotResponse(row: Record<string, unknown>) {
     promptTokens: row.promptTokens,
     completionTokens: row.completionTokens,
     notes: row.notes,
+    promptText: row.promptText,
+    rawResponse: row.rawResponse,
     createdAt: row.createdAt,
     scorecard: parsedScorecard,
   };
