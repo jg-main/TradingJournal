@@ -304,6 +304,8 @@ export default function ClosedPhaseView({
           error={assessmentsError}
           onRequestAssessment={handleRequestAssessment}
           requestLoading={requestLoading}
+          promptText={latestAssessment?.promptText}
+          rawResponse={latestAssessment?.rawResponse}
         />
       </div>
 

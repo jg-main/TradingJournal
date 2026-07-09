@@ -25,6 +25,8 @@ interface AssessmentResponse {
     notes: string | null;
     createdAt: string | null;
     snapshotVersion: number;
+    promptText?: string | null;
+    rawResponse?: string | null;
   };
   warnings?: string[];
   data?: Array<{
@@ -40,6 +42,8 @@ interface AssessmentResponse {
     notes: string | null;
     createdAt: string | null;
     snapshotVersion: number;
+    promptText?: string | null;
+    rawResponse?: string | null;
   }>;
   error?: string;
   /** Machine-readable error code from the API */
@@ -67,6 +71,8 @@ export default function PlannedPhaseView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
+  const [promptText, setPromptText] = useState<string | null | undefined>(undefined);
+  const [rawResponse, setRawResponse] = useState<string | null | undefined>(undefined);
 
   // ── Fetch latest assessment on mount ─────────────────────────
   useEffect(() => {
@@ -104,6 +110,8 @@ export default function PlannedPhaseView({
             setScorecard(null);
             setWarnings([]);
           }
+          setPromptText(latest?.promptText ?? undefined);
+          setRawResponse(latest?.rawResponse ?? undefined);
           setLoading(false);
         }
       } catch (err) {
@@ -159,6 +167,12 @@ export default function PlannedPhaseView({
         setScorecard(body.scorecard);
       } else if (body.snapshot?.scorecard) {
         setScorecard(body.snapshot.scorecard);
+      }
+
+      // Capture promptText/rawResponse from the posted snapshot
+      if (body.snapshot) {
+        setPromptText(body.snapshot.promptText ?? undefined);
+        setRawResponse(body.snapshot.rawResponse ?? undefined);
       }
 
       if (body.warnings) {
@@ -233,6 +247,8 @@ export default function PlannedPhaseView({
           error={error}
           onRequestAssessment={handleRequestAssessment}
           requestLoading={requestLoading}
+          promptText={promptText}
+          rawResponse={rawResponse}
         />
       </div>
 

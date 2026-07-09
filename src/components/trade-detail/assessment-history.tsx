@@ -25,6 +25,10 @@ export interface AssessmentSnapshot {
   createdAt: string | null;
   scorecard: Scorecard | null;
   snapshotVersion: number;
+  /** The exact prompt text sent to the AI, or null for historical snapshots */
+  promptText?: string | null;
+  /** The raw JSON response from the AI, or null for historical snapshots */
+  rawResponse?: string | null;
 }
 
 export interface AssessmentHistoryProps {
@@ -225,7 +229,13 @@ function HistoryRow({
       {isExpanded && (
         <div className="border-t border-zinc-100 px-4 py-4 dark:border-zinc-800">
           {assessment.scorecard ? (
-            <AssessmentCard scorecard={assessment.scorecard} loading={false} error={null} />
+            <AssessmentCard
+              scorecard={assessment.scorecard}
+              loading={false}
+              error={null}
+              promptText={assessment.promptText}
+              rawResponse={assessment.rawResponse}
+            />
           ) : (
             <div className="flex items-center gap-2 py-4 text-sm text-zinc-500 dark:text-zinc-400">
               <AlertCircle className="size-4" />
