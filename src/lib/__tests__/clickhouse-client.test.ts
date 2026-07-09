@@ -14,6 +14,8 @@ import {
   DateRangeSchema,
   MarketEvidenceSchema,
   MarketEvidenceQuerySchema,
+  FreshnessCheckSchema,
+  FreshnessStatusSchema,
   createClickHouseClient,
   createDefaultClickHouseClient,
 } from '../clickhouse-client';
@@ -688,5 +690,286 @@ describe('createDefaultClickHouseClient', () => {
 
     process.env.CLICKHOUSE_PORT = '65536';
     expect(() => createDefaultClickHouseClient()).toThrow('Invalid CLICKHOUSE_PORT');
+  });
+});
+
+// ── FreshnessStatus Schema ────────────────────────────────────────────────
+
+describe('FreshnessStatusSchema', () => {
+  it('accepts "fresh"', () => {
+    expect(FreshnessStatusSchema.parse('fresh')).toBe('fresh');
+  });
+
+  it('accepts "stale"', () => {
+    expect(FreshnessStatusSchema.parse('stale')).toBe('stale');
+  });
+
+  it('accepts "error"', () => {
+    expect(FreshnessStatusSchema.parse('error')).toBe('error');
+  });
+
+  it('rejects unknown status values', () => {
+    const result = FreshnessStatusSchema.safeParse('unknown');
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects empty string', () => {
+    const result = FreshnessStatusSchema.safeParse('');
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── FreshnessCheck Schema ─────────────────────────────────────────────────
+
+describe('FreshnessCheckSchema', () => {
+  it('validates a fresh check result', () => {
+    const result = FreshnessCheckSchema.safeParse({
+      status: 'fresh',
+      latestDate: '2024-01-03',
+      threshold: '2024-01-03',
+      message: 'Data is fresh',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates a stale check result', () => {
+    const result = FreshnessCheckSchema.safeParse({
+      status: 'stale',
+      latestDate: '2024-01-02',
+      threshold: '2024-01-03',
+      message: 'Data is stale',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates an error check result without latestDate', () => {
+    const result = FreshnessCheckSchema.safeParse({
+      status: 'error',
+      threshold: '2024-01-03',
+      message: 'Freshness check failed',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects check with missing threshold', () => {
+    const result = FreshnessCheckSchema.safeParse({
+      status: 'fresh',
+      latestDate: '2024-01-03',
+      message: 'Data is fresh',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects check with invalid status enum', () => {
+    const result = FreshnessCheckSchema.safeParse({
+      status: 'partial',
+      latestDate: '2024-01-03',
+      threshold: '2024-01-03',
+      message: 'Data is fresh',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects check with invalid latestDate format', () => {
+    const result = FreshnessCheckSchema.safeParse({
+      status: 'fresh',
+      latestDate: '01-03-2024',
+      threshold: '2024-01-03',
+      message: 'Data is fresh',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── Freshness Check (via client) ─────────────────────────────────────────
+
+describe('checkFreshness', () => {
+  let originalFetch: typeof global.fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    vi.useFakeTimers();
+    // Pin "today" to 2024-01-04T12:00:00Z so threshold comparison is deterministic
+    vi.setSystemTime(new Date('2024-01-04T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.useRealTimers();
+  });
+
+  it('returns fresh when latest data is within threshold', async () => {
+    // System time = 2024-01-04, thresholdDays=1 => threshold = '2024-01-03'
+    // latest_date = '2024-01-03', '2024-01-03' >= '2024-01-03' => fresh
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-03']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(1);
+
+    expect(result.status).toBe('fresh');
+    expect(result.latestDate).toBe('2024-01-03');
+    expect(result.threshold).toBe('2024-01-03');
+    expect(result.message).toContain('Data is fresh');
+    expect(result.message).toContain('2024-01-03');
+  });
+
+  it('returns stale when latest data is older than threshold', async () => {
+    // threshold = '2024-01-03', latest_date = '2024-01-02'
+    // '2024-01-02' < '2024-01-03' => stale
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-02']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(1);
+
+    expect(result.status).toBe('stale');
+    expect(result.latestDate).toBe('2024-01-02');
+    expect(result.threshold).toBe('2024-01-03');
+    expect(result.message).toContain('Data is stale');
+  });
+
+  it('returns stale when table is empty (no data rows)', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(1);
+
+    expect(result.status).toBe('stale');
+    expect(result.latestDate).toBeUndefined();
+    expect(result.threshold).toBe('2024-01-03');
+    expect(result.message).toContain('No market data found');
+  });
+
+  it('returns error on connection failure', async () => {
+    global.fetch = vi.fn().mockRejectedValue(
+      new Error('fetch failed: connect ECONNREFUSED localhost:8123'),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(1);
+
+    expect(result.status).toBe('error');
+    expect(result.latestDate).toBeUndefined();
+    expect(result.threshold).toBe('2024-01-03');
+    expect(result.message).toContain('Freshness check failed');
+    expect(result.message).toContain('ECONNREFUSED');
+  });
+
+  it('returns fresh with default threshold when not specified', async () => {
+    // No argument: thresholdDays defaults to 1 => threshold = '2024-01-03'
+    // latest_date = '2024-01-03' >= '2024-01-03' => fresh
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-03']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness();
+
+    expect(result.status).toBe('fresh');
+    expect(result.threshold).toBe('2024-01-03');
+  });
+
+  it('respects custom thresholdDays parameter', async () => {
+    // System time = 2024-01-10, thresholdDays=7 => threshold = '2024-01-03'
+    // latest_date = '2024-01-02' < '2024-01-03' => stale
+    vi.setSystemTime(new Date('2024-01-10T12:00:00Z'));
+
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-02']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(7);
+
+    expect(result.status).toBe('stale');
+    expect(result.latestDate).toBe('2024-01-02');
+    expect(result.threshold).toBe('2024-01-03');
+  });
+
+  it('considers exact boundary match as fresh', async () => {
+    // System time = 2024-01-04, thresholdDays=2 => threshold = '2024-01-02'
+    // latest_date = '2024-01-02' == '2024-01-02' => fresh (boundary match)
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-02']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(2);
+
+    expect(result.status).toBe('fresh');
+    expect(result.latestDate).toBe('2024-01-02');
+    expect(result.threshold).toBe('2024-01-02');
+  });
+
+  it('logs structured event on successful freshness check', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-03']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    await client.checkFreshness(1);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.event).toBe('freshness_check');
+    expect(logArg.database).toBe('market');
+    expect(logArg.latestDate).toBe('2024-01-03');
+    expect(logArg.status).toBe('fresh');
+    expect(logArg.thresholdDays).toBe(1);
+
+    consoleSpy.mockRestore();
+  });
+
+  it('logs error event on connection failure', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    global.fetch = vi.fn().mockRejectedValue(
+      new Error('fetch failed: connect ECONNREFUSED'),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    await client.checkFreshness(1);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.event).toBe('freshness_error');
+    expect(logArg.database).toBe('market');
+    expect(logArg.status).toBe('error');
+    expect(logArg.error).toContain('ECONNREFUSED');
+
+    consoleSpy.mockRestore();
+  });
+
+  it('returns stale for date just before threshold', async () => {
+    // threshold='2024-01-03', latest_date='2024-01-02' (1 day before)
+    // '2024-01-02' < '2024-01-03' => stale
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-02']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(1);
+
+    expect(result.status).toBe('stale');
+  });
+
+  it('returns fresh for data from same day as threshold', async () => {
+    // threshold='2024-01-03', latest_date='2024-01-03' (same day as threshold)
+    // '2024-01-03' >= '2024-01-03' => fresh
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(tabSeparatedBody(['latest_date'], [['2024-01-03']])),
+    );
+
+    const client = createClickHouseClient(DEFAULT_CONFIG);
+    const result = await client.checkFreshness(1);
+
+    expect(result.status).toBe('fresh');
   });
 });
