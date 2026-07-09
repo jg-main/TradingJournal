@@ -138,6 +138,7 @@ export interface GatheredTradeData {
     description: string | null;
     fieldType: string;
     weight: number | null;
+    minLookbackDays: number | null;
   }>;
   setupName: string | null;
   marketEvidence: MarketEvidence | null;
@@ -284,6 +285,7 @@ export async function gatherTradeData(
             description: f.description,
             fieldType: f.fieldType,
             weight: f.weight,
+            minLookbackDays: f.minLookbackDays,
           });
         }
       }
@@ -511,6 +513,7 @@ export function buildAssessmentPrompt(
  */
 function deriveDateRange(
   trade: typeof trades.$inferSelect,
+  lookbackDays?: number,
 ): { startDate: string; endDate: string } | null {
   const refDate = trade.openedAt ?? trade.createdAt;
   if (!refDate) return null;
@@ -520,8 +523,9 @@ function deriveDateRange(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(refDay)) return null;
 
   const ref = new Date(refDay);
+  const days = lookbackDays ?? 45;
   const start = new Date(ref);
-  start.setDate(start.getDate() - 45); // ~30 trading days
+  start.setDate(start.getDate() - days);
 
   const end = new Date(ref);
   end.setDate(end.getDate() + 5);
@@ -611,10 +615,29 @@ export async function performAssessment(
 
   warnings.push(...gathered.warnings);
 
+  // ── Step 1.5: Compute maxLookback from evaluation fields ─────────
+  let maxLookback: number | null = null;
+  if (gathered.evaluationFields.length > 0) {
+    const lookbacks = gathered.evaluationFields
+      .map(f => f.minLookbackDays)
+      .filter((d): d is number => d !== null && d !== undefined);
+    if (lookbacks.length > 0) {
+      maxLookback = Math.max(...lookbacks);
+      console.log(
+        JSON.stringify({
+          event: 'per_play_lookback',
+          tradeId,
+          fieldCount: gathered.evaluationFields.length,
+          maxLookback,
+        }),
+      );
+    }
+  }
+
   // ── Step 2: Market evidence (ClickHouse) ──────────────────────────
   let marketEvidence: MarketEvidence | null = null;
   if (gathered.trade.symbol) {
-    const dateRange = deriveDateRange(gathered.trade);
+    const dateRange = deriveDateRange(gathered.trade, maxLookback ?? undefined);
     if (dateRange) {
       try {
         marketEvidence = await chClient.getMarketEvidence({
@@ -637,6 +660,18 @@ export async function performAssessment(
         } else if (marketEvidence.ohlc.length === 0) {
           warnings.push(
             `No market data available for ${gathered.trade.symbol}`,
+          );
+        }
+
+        // Data sufficiency check: warn when bars < maxLookback
+        if (
+          maxLookback !== null &&
+          marketEvidence.ohlc.length > 0 &&
+          marketEvidence.ohlc.length < maxLookback
+        ) {
+          const playName = gathered.setupName ?? 'unknown';
+          warnings.push(
+            `Data sufficiency: only ${marketEvidence.ohlc.length}/${maxLookback} bars available for play ${playName}. Some evaluation criteria may be unreliable.`,
           );
         }
 
