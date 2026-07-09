@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, FileText, ScrollText } from 'lucide-react';
 import { HelpTooltip } from '@/components/help-tooltip';
 
 interface AiSettings {
@@ -39,6 +39,48 @@ export default function AiSettingsPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionResult, setConnectionResult] = useState<{ ok: boolean; error?: string } | null>(null);
+
+  // ── Prompt Preview ─────────────────────────────────────────────────
+  type PromptPreviewTab = 'pre-trade' | 'after-exit';
+  const [previewActiveTab, setPreviewActiveTab] = useState<PromptPreviewTab>('pre-trade');
+  const [previewResult, setPreviewResult] = useState<{
+    systemMessage: string;
+    userMessage: string;
+    sectionCount: number;
+    totalChars: number;
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const fetchPromptPreview = async (assessmentType: 'ai_quality' | 'ai_review') => {
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewResult(null);
+
+    try {
+      const res = await fetch('/api/ai-settings/prompt-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assessmentType,
+          systemPrompt: form.systemPrompt,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setPreviewError(err.error || err.details?.formErrors?.[0] || 'Failed to generate prompt preview');
+        return;
+      }
+
+      const data = await res.json();
+      setPreviewResult(data);
+    } catch {
+      setPreviewError('Failed to generate prompt preview — network error.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   const [form, setForm] = useState({
     provider: 'openai',
@@ -562,6 +604,108 @@ export default function AiSettingsPage() {
                   </>
                 )}
               </span>
+            )}
+          </div>
+        </div>
+
+        {/* ── Prompt Preview ── */}
+        <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Prompt Preview</h2>
+            <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+              Preview the full composed AI prompt using static sample trade data. System Prompt override
+              from the form above is reflected in the preview.
+            </p>
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewActiveTab('pre-trade');
+                fetchPromptPreview('ai_quality');
+              }}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                previewActiveTab === 'pre-trade'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              <FileText className="size-4" />
+              Pre-Trade Assessment
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewActiveTab('after-exit');
+                fetchPromptPreview('ai_review');
+              }}
+              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                previewActiveTab === 'after-exit'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              <ScrollText className="size-4" />
+              After-Exit Assessment
+            </button>
+          </div>
+
+          {/* Preview content */}
+          <div className="min-h-[200px]">
+            {previewLoading && (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">Generating prompt preview...</p>
+              </div>
+            )}
+
+            {previewError && !previewLoading && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+                {previewError}
+              </div>
+            )}
+
+            {previewResult && !previewLoading && !previewError && (
+              <div className="space-y-4">
+                {/* Metadata badges */}
+                <div className="flex gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                    {previewResult.sectionCount} sections
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                    {previewResult.totalChars.toLocaleString()} characters
+                  </span>
+                </div>
+
+                {/* System message */}
+                <div>
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    System Message
+                  </h3>
+                  <pre className="overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-4 font-mono text-xs leading-relaxed text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200">
+                    {previewResult.systemMessage}
+                  </pre>
+                </div>
+
+                {/* User message */}
+                <div>
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                    User Message
+                  </h3>
+                  <pre className="overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-4 font-mono text-xs leading-relaxed text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200">
+                    {previewResult.userMessage}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {!previewResult && !previewLoading && !previewError && (
+              <div className="flex items-center justify-center py-12">
+                <p className="text-sm text-zinc-400 dark:text-zinc-500">
+                  Click a tab above to generate a prompt preview.
+                </p>
+              </div>
             )}
           </div>
         </div>
