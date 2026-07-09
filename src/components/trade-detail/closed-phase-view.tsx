@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { PlusCircle } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { PlusCircle, Brain, Loader2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
@@ -22,6 +22,43 @@ import { Button } from '@/components/ui/button';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
+import type { Scorecard } from '@/lib/scorecard';
+
+interface AssessmentResponse {
+  scorecard?: Scorecard;
+  snapshot?: {
+    scorecard: Scorecard | null;
+    id: string;
+    tradeId: string;
+    assessedAt: string | null;
+    assessmentType: string;
+    overallScore: number | null;
+    modelUsed: string | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    notes: string | null;
+    createdAt: string | null;
+    snapshotVersion: number;
+  };
+  warnings?: string[];
+  data?: Array<{
+    scorecard: Scorecard | null;
+    id: string;
+    tradeId: string;
+    assessedAt: string | null;
+    assessmentType: string;
+    overallScore: number | null;
+    modelUsed: string | null;
+    promptTokens: number | null;
+    completionTokens: number | null;
+    notes: string | null;
+    createdAt: string | null;
+    snapshotVersion: number;
+  }>;
+  error?: string;
+  /** Machine-readable error code from the API */
+  code?: string;
+}
 
 interface ClosedPhaseViewProps {
   trade: Trade;
@@ -84,7 +121,8 @@ export default function ClosedPhaseView({
           setAssessmentsError(body.error ?? 'Failed to load assessments');
           return;
         }
-        const data: AssessmentSnapshot[] = await res.json();
+        const body = await res.json();
+        const data: AssessmentSnapshot[] = body.data ?? [];
         if (!cancelled) setAssessments(data);
       } catch (err) {
         if (!cancelled) {
@@ -94,6 +132,7 @@ export default function ClosedPhaseView({
           ) {
             return;
           }
+          console.error('Assessment fetch failed:', err);
           setAssessmentsError(String(err));
         }
       } finally {
@@ -114,17 +153,29 @@ export default function ClosedPhaseView({
       const res = await fetch(`/api/trades/${trade.id}/assessments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assessmentType: 'ai_quality' }),
+        body: JSON.stringify({ assessmentType: 'ai_review' }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setAssessmentsError(body.error ?? 'Failed to request assessment');
+        const rawMessage = body.error ?? 'Failed to request assessment';
+        const errorCode = body.code;
+        if (errorCode === 'STALE_MARKET_DATA') {
+          setAssessmentsError('Market data is not current — try again later');
+        } else if (errorCode === 'AI_NOT_CONFIGURED') {
+          setAssessmentsError('AI not configured — set up in Settings');
+        } else if (errorCode === 'AI_PROVIDER_ERROR') {
+          setAssessmentsError('AI provider error — check credentials');
+        } else {
+          setAssessmentsError(rawMessage);
+        }
+        console.error('Assessment POST failed:', { status: res.status, errorCode, rawMessage });
         return;
       }
       // Re-fetch the full list after creation
       const updatedRes = await fetch(`/api/trades/${trade.id}/assessments`);
       if (updatedRes.ok) {
-        setAssessments(await updatedRes.json());
+        const body = await updatedRes.json();
+        setAssessments(body.data ?? []);
       }
     } catch (err) {
       setAssessmentsError(String(err));
@@ -143,6 +194,23 @@ export default function ClosedPhaseView({
         status={trade.status}
         direction={trade.direction}
         tradeCode={trade.tradeCode}
+        rightContent={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRequestAssessment}
+              disabled={requestLoading}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {requestLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Brain className="size-4" />
+              )}
+              {requestLoading ? 'Assessing...' : 'Assess'}
+            </button>
+          </div>
+        }
       />
 
       {/* Lifecycle Stepper */}
