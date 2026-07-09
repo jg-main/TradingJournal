@@ -868,6 +868,14 @@ export async function performAssessment(
     }),
   );
 
+  // ── Inject metadata into scorecard before persistence ────────────
+  scorecard.metadata = {
+    modelUsed: modelUsed ?? undefined,
+    promptTokens: promptTokens ?? undefined,
+    completionTokens: completionTokens ?? undefined,
+    durationMs: aiCallDuration,
+  };
+
   // ── Step 7: Persist snapshot ──────────────────────────────────────
   const snapshotId = randomUUID();
   const now = new Date().toISOString();

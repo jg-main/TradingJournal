@@ -112,6 +112,7 @@ export const ScorecardMetadataSchema = z.object({
   modelUsed: z.string().optional(),
   promptTokens: z.number().int().nonnegative().optional(),
   completionTokens: z.number().int().nonnegative().optional(),
+  durationMs: z.number().int().nonnegative().optional(),
 });
 export type ScorecardMetadata = z.infer<typeof ScorecardMetadataSchema>;
 
