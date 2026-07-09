@@ -16,6 +16,7 @@ export default defineConfig({
       'src/lib/__tests__/scorecard.test.ts',
       'src/app/api/app-profile/__tests__/route.test.ts',
       'src/app/api/readiness/__tests__/route.test.ts',
+      'src/app/api/ai-settings/__tests__/route.test.ts',
       'src/app/api/trades/__tests__/execute.test.ts',
       'src/app/api/trades/__tests__/check-results.test.ts',
       'src/app/api/health/__tests__/route.test.ts',

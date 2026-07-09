@@ -112,8 +112,8 @@ function doGetAiSettings(): { status: number; data: unknown } {
     if (!row) {
       return { status: 200, data: { message: 'No AI settings configured yet. Use PUT to create.' } };
     }
-    // Strip apiKey from the response — never expose secrets
-    const { apiKey: _, ...safeRow } = row;
+    // Strip secrets from the response — never expose apiKey or clickhousePassword
+    const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
     return { status: 200, data: safeRow };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch AI settings', details: String(error) } };
@@ -173,6 +173,21 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
       }
     }
 
+    // Validate clickhouseHost is non-empty string when provided
+    if (body.clickhouseHost !== undefined) {
+      if (typeof body.clickhouseHost !== 'string' || body.clickhouseHost.length < 1) {
+        return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { clickhouseHost: ['Host is required'] } } } };
+      }
+    }
+
+    // Validate clickhousePort is integer 1-65535 when provided
+    if (body.clickhousePort !== undefined) {
+      const val = body.clickhousePort as number;
+      if (typeof val !== 'number' || !Number.isInteger(val) || val < 1 || val > 65535) {
+        return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { clickhousePort: ['Number must be greater than or equal to 1'] } } } };
+      }
+    }
+
     const existing = db.select().from(schema.aiSettings).limit(1).get();
     const now = new Date().toISOString();
 
@@ -190,6 +205,11 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
       if (body.maxTokens !== undefined) values.maxTokens = body.maxTokens;
       if (body.systemPrompt !== undefined) values.systemPrompt = body.systemPrompt;
       if (body.isActive !== undefined) values.isActive = body.isActive;
+      if (body.clickhouseHost !== undefined) values.clickhouseHost = body.clickhouseHost;
+      if (body.clickhousePort !== undefined) values.clickhousePort = body.clickhousePort;
+      if (body.clickhouseUser !== undefined) values.clickhouseUser = body.clickhouseUser;
+      if (body.clickhousePassword !== undefined) values.clickhousePassword = body.clickhousePassword;
+      if (body.clickhouseDatabase !== undefined) values.clickhouseDatabase = body.clickhouseDatabase;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       db.insert(schema.aiSettings).values(values as any).run();
@@ -198,7 +218,7 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
       if (!row) {
         return { status: 500, data: { error: 'Failed to create AI settings' } };
       }
-      const { apiKey: _, ...safeRow } = row;
+      const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
       return { status: 201, data: safeRow };
     }
 
@@ -212,6 +232,11 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
     if (body.maxTokens !== undefined) updateData.maxTokens = body.maxTokens;
     if (body.systemPrompt !== undefined) updateData.systemPrompt = body.systemPrompt;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
+    if (body.clickhouseHost !== undefined) updateData.clickhouseHost = body.clickhouseHost;
+    if (body.clickhousePort !== undefined) updateData.clickhousePort = body.clickhousePort;
+    if (body.clickhouseUser !== undefined) updateData.clickhouseUser = body.clickhouseUser;
+    if (body.clickhousePassword !== undefined) updateData.clickhousePassword = body.clickhousePassword;
+    if (body.clickhouseDatabase !== undefined) updateData.clickhouseDatabase = body.clickhouseDatabase;
 
     db.update(schema.aiSettings)
       .set(updateData)
@@ -222,10 +247,37 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
     if (!row) {
       return { status: 500, data: { error: 'Failed to fetch updated AI settings' } };
     }
-    const { apiKey: _, ...safeRow } = row;
+    const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
     return { status: 200, data: safeRow };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to update AI settings', details: String(error) } };
+  }
+}
+
+// ── Simulated test-connection logic ─────────────────────────────────
+
+function doTestConnection(): { status: number; data: unknown } {
+  try {
+    const row = db.select().from(schema.aiSettings).limit(1).get();
+
+    if (!row) {
+      return { status: 400, data: { ok: false, error: 'No AI settings configured. Configure ClickHouse settings first.' } };
+    }
+
+    // Simulate connection test — in tests we can't actually connect to ClickHouse,
+    // so we return ok based on whether the config looks valid
+    const host = row.clickhouseHost || 'localhost';
+    const port = row.clickhousePort ?? 8123;
+
+    // Treat connection to 'localhost:8123' as simulatable (return ok)
+    // An empty host or invalid port means the config is incomplete
+    if (!host || port < 1 || port > 65535) {
+      return { status: 200, data: { ok: false, error: 'Invalid ClickHouse configuration' } };
+    }
+
+    return { status: 200, data: { ok: true } };
+  } catch (error) {
+    return { status: 500, data: { ok: false, error: String(error) } };
   }
 }
 
@@ -280,9 +332,11 @@ console.log('\n2. GET returns settings with apiKey stripped:');
   assertEqual(data.provider, 'openai', 'provider matches');
   assertEqual(data.model, 'gpt-4', 'model matches');
 
-  // 🔒 Secret-leak assertion: apiKey must never appear in GET response
+  // 🔒 Secret-leak assertion: secrets must never appear in GET response
   assertNotHasKey(data, 'apiKey', 'apiKey NOT in GET response');
   assertNotHasKey(data, 'api_key', 'api_key NOT in GET response');
+  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword NOT in GET response');
+  assertNotHasKey(data, 'clickhouse_password', 'clickhouse_password NOT in GET response');
 }
 
 // ── 3. PUT: Create on first call with all fields ─────────────────────
@@ -305,6 +359,7 @@ console.log('\n3. PUT creates AI settings with all fields:');
   assertEqual(data.provider, 'anthropic', 'provider');
   assertEqual(data.model, 'claude-3-opus-20240229', 'model');
   assertNotHasKey(data, 'apiKey', 'apiKey stripped from create response');
+  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped from create response');
   assertEqual(data.temperature, 1.0, 'temperature');
   assertEqual(data.maxTokens, 8192, 'maxTokens');
   assertEqual(data.systemPrompt, 'You are a trading assistant.', 'systemPrompt');
@@ -325,6 +380,7 @@ console.log('\n4. PUT updates existing AI settings:');
   assertEqual(data.temperature, 0.5, 'temperature updated');
   assertEqual(data.provider, 'openai', 'provider preserved');
   assertNotHasKey(data, 'apiKey', 'apiKey stripped from update response');
+  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped from update response');
 }
 
 // ── 5. PUT: Validate provider enum ──────────────────────────────────
@@ -475,6 +531,122 @@ console.log('\n14. PUT validates timeoutMs constraints:');
 
   const float = doPutAiSettings({ provider: 'openai', model: 'gpt-4', timeoutMs: 30.5 });
   assert(float.status === 400, 'rejects non-integer timeoutMs');
+}
+
+// ── 15. GET: Shows ClickHouse default values ───────────────────────
+
+console.log('\n15. GET shows ClickHouse default values:');
+{
+  cleanup();
+  doPutAiSettings({ provider: 'openai', model: 'gpt-4' });
+  const result = doGetAiSettings();
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.clickhouseHost, 'localhost', 'clickhouseHost defaults to localhost');
+  assertEqual(data.clickhousePort, 8123, 'clickhousePort defaults to 8123');
+  assertEqual(data.clickhouseUser, 'default', 'clickhouseUser defaults to default');
+  assertEqual(data.clickhouseDatabase, 'market', 'clickhouseDatabase defaults to market');
+}
+
+// ── 16. PUT: Create with ClickHouse fields ──────────────────────────
+
+console.log('\n16. PUT creates with ClickHouse fields:');
+{
+  cleanup();
+  const result = doPutAiSettings({
+    provider: 'openai',
+    model: 'gpt-4',
+    clickhouseHost: 'clickhouse.example.com',
+    clickhousePort: 9440,
+    clickhouseUser: 'analyst',
+    clickhousePassword: 'ch-secret-password',
+    clickhouseDatabase: 'analytics',
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.clickhouseHost, 'clickhouse.example.com', 'clickhouseHost set');
+  assertEqual(data.clickhousePort, 9440, 'clickhousePort set');
+  assertEqual(data.clickhouseUser, 'analyst', 'clickhouseUser set');
+  assertEqual(data.clickhouseDatabase, 'analytics', 'clickhouseDatabase set');
+  // Password must be stripped even in create response
+  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped');
+}
+
+// ── 17. PUT: Update ClickHouse fields ───────────────────────────────
+
+console.log('\n17. PUT updates ClickHouse fields:');
+{
+  cleanup();
+  doPutAiSettings({ provider: 'openai', model: 'gpt-4' });
+  const result = doPutAiSettings({
+    clickhouseHost: 'ch.internal:8443',
+    clickhousePort: 8443,
+    clickhousePassword: 'new-password',
+  });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.clickhouseHost, 'ch.internal:8443', 'clickhouseHost updated');
+  assertEqual(data.clickhousePort, 8443, 'clickhousePort updated');
+  assertNotHasKey(data, 'clickhousePassword', 'clickhousePassword stripped');
+  // Untouched fields keep their defaults
+  assertEqual(data.clickhouseUser, 'default', 'clickhouseUser preserved');
+  assertEqual(data.clickhouseDatabase, 'market', 'clickhouseDatabase preserved');
+}
+
+// ── 18. PUT: Validate clickhousePort range ──────────────────────────
+
+console.log('\n18. PUT validates clickhousePort range:');
+{
+  cleanup();
+  const zero = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: 0 });
+  assert(zero.status === 400, 'rejects port 0');
+
+  const neg = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: -1 });
+  assert(neg.status === 400, 'rejects negative port');
+
+  const over = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: 65536 });
+  assert(over.status === 400, 'rejects port > 65535');
+
+  const valid = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhousePort: 9000 });
+  assert(valid.status === 201, 'accepts valid port 9000');
+  const data = valid.data as Record<string, unknown>;
+  assertEqual(data.clickhousePort, 9000, 'clickhousePort set to 9000');
+}
+
+// ── 19. PUT: Validate clickhouseHost non-empty ──────────────────────
+
+console.log('\n19. PUT validates clickhouseHost non-empty:');
+{
+  cleanup();
+  const empty = doPutAiSettings({ provider: 'openai', model: 'gpt-4', clickhouseHost: '' });
+  assert(empty.status === 400, 'rejects empty host');
+}
+
+// ── 20. Test-connection: Returns error when no settings ─────────────
+
+console.log('\n20. Test-connection returns error when no settings:');
+{
+  cleanup();
+  const result = doTestConnection();
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.ok, false, 'ok is false');
+  assertNotNull(data.error, 'has error message');
+}
+
+// ── 21. Test-connection: Returns ok when settings exist ─────────────
+
+console.log('\n21. Test-connection returns ok with valid settings:');
+{
+  cleanup();
+  doPutAiSettings({ provider: 'openai', model: 'gpt-4' });
+  const result = doTestConnection();
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.ok, true, 'ok is true');
+  assertEqual(Object.keys(data).length, 1, 'only ok key in response');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

@@ -64,6 +64,13 @@
       "when": 1783606750932,
       "tag": "0008_condemned_wolfpack",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783606904804,
+      "tag": "0009_cute_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }
