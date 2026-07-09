@@ -70,7 +70,8 @@ function doGetAiSettings(): { status: number; data: unknown } {
       return { status: 200, data: { message: 'No AI settings configured yet. Use PUT to create.' } };
     }
     // Strip secrets from the response — never expose apiKey or clickhousePassword
-    const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKey, clickhousePassword, ...safeRow } = row;
     return { status: 200, data: safeRow };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch AI settings', details: String(error) } };
@@ -174,7 +175,8 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
       if (!row) {
         return { status: 500, data: { error: 'Failed to create AI settings' } };
       }
-      const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { apiKey, clickhousePassword, ...safeRow } = row;
       return { status: 201, data: safeRow };
     }
 
@@ -203,7 +205,8 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
     if (!row) {
       return { status: 500, data: { error: 'Failed to fetch updated AI settings' } };
     }
-    const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKey, clickhousePassword, ...safeRow } = row;
     return { status: 200, data: safeRow };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to update AI settings', details: String(error) } };

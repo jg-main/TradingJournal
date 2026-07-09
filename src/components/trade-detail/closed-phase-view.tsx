@@ -22,8 +22,6 @@ import { Button } from '@/components/ui/button';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
-import type { Scorecard } from '@/lib/scorecard';
-
 interface ClosedPhaseViewProps {
   trade: Trade;
   executions: Execution[];

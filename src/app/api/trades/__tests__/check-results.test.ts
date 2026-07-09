@@ -368,13 +368,13 @@ console.log('\n1. GET /trades/:id/check-results returns check results:');
   const check1 = seedCheckDefinition({ accountId, description: 'Verify market data', sortOrder: 1 });
   const check2 = seedCheckDefinition({ accountId, description: 'Check support level', sortOrder: 2 });
 
-  const result1 = seedCheckResult({
+  seedCheckResult({
     tradeId,
     checklistDefinitionId: check1.id as string,
     passed: true,
     comment: null,
   });
-  const result2 = seedCheckResult({
+  seedCheckResult({
     tradeId,
     checklistDefinitionId: check2.id as string,
     passed: true,

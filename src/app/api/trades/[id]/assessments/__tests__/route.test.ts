@@ -248,7 +248,7 @@ vi.mock('@/lib/ai-provider', () => {
 
 // ── Module-level imports ─────────────────────────────────────────────────
 
-import { eq, desc, count } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from '@/db/schema';
 import {
@@ -256,8 +256,6 @@ import {
   AssessmentError,
   AssessmentErrorCode,
 } from '@/lib/assessment-engine';
-import type { AiProviderError } from '@/lib/ai-provider';
-
 // ── Assertion helpers (matching project pattern) ────────────────────────
 
 let passed = 0;
@@ -329,7 +327,7 @@ function resetMockState() {
 // Drizzle instance with schema mapping (for reading snapshots with camelCase mapping)
 const seedDb = drizzle(sqlite, { schema });
 
-function seedAccount(overrides: Record<string, unknown> = {}): string {
+function seedAccount(): string {
   const id = randomUUID();
   const now = new Date().toISOString();
   sqlite.exec(

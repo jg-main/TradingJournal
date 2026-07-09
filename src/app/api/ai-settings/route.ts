@@ -33,7 +33,8 @@ export async function GET() {
     }
 
     // Strip secrets from the response — never expose apiKey or clickhousePassword
-    const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKey, clickhousePassword, ...safeRow } = row;
     return NextResponse.json(safeRow);
   } catch (error) {
     return NextResponse.json(
@@ -86,7 +87,8 @@ export async function PUT(request: NextRequest) {
           { status: 500 }
         );
       }
-      const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { apiKey, clickhousePassword, ...safeRow } = row;
       return NextResponse.json(safeRow, { status: 201 });
     }
 
@@ -120,7 +122,8 @@ export async function PUT(request: NextRequest) {
         { status: 500 }
       );
     }
-    const { apiKey: _, clickhousePassword: _pw, ...safeRow } = row;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKey, clickhousePassword, ...safeRow } = row;
     return NextResponse.json(safeRow);
   } catch (error) {
     return NextResponse.json(

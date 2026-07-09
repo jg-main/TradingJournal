@@ -246,7 +246,7 @@ async function runTests() {
   {
     const testDir = mkdtempSync(join(tmpdir(), 'reset-route-test-'));
     const dbPath = join(testDir, '.trading-journal', 'journal.db');
-    const { sqlite, db: testDb } = createSchemaDb(dbPath);
+    const { sqlite } = createSchemaDb(dbPath);
 
     try {
       // Execute reset on empty schema DB
@@ -275,7 +275,7 @@ async function runTests() {
   {
     const testDir = mkdtempSync(join(tmpdir(), 'reset-route-test-'));
     const dbPath = join(testDir, '.trading-journal', 'journal.db');
-    const { sqlite, db: testDb } = createSchemaDb(dbPath);
+    const { sqlite } = createSchemaDb(dbPath);
 
     try {
       // Seed data across all tables
@@ -368,7 +368,7 @@ async function runTests() {
           }
         })();
         assert(false, 'Error path: should have thrown for closed connection');
-      } catch (err) {
+      } catch {
         assert(true, 'Error path: throws error on closed connection');
       }
     } finally {

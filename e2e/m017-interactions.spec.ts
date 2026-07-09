@@ -189,7 +189,7 @@ test.describe('M017 Interactions', () => {
       data: { name: `M017-Form-${TS}`, isActive: true, startingBalance: 50000 },
     });
     expect(accRes.ok()).toBeTruthy();
-    const account = await accRes.json();
+    await accRes.json();
 
     const uniqueSymbol = `M017FM${TS}`;
 

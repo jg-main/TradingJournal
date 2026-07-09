@@ -57,21 +57,6 @@ function dimensionColorClass(score: number): string {
   return 'text-red-600 dark:text-red-400';
 }
 
-function formatTimestamp(ts: string | undefined | null): string {
-  if (!ts) return '';
-  try {
-    return new Date(ts).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return ts;
-  }
-}
-
 // ── Sub-Components ────────────────────────────────────────────────────
 
 function LoadingState() {

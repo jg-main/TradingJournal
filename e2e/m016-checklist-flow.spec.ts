@@ -44,20 +44,20 @@ test.describe('M016 Checklist Flow', () => {
       data: { description: 'Market is open for trading' },
     });
     expect(check1Res.ok()).toBeTruthy();
-    const check1 = await check1Res.json();
+    await check1Res.json();
 
     const check2Res = await page.request.post(`/api/accounts/${account.id}/checks`, {
       data: { description: 'Sufficient buying power for this position' },
     });
     expect(check2Res.ok()).toBeTruthy();
-    const check2 = await check2Res.json();
+    await check2Res.json();
 
     // ── 4. Add 1 setup-specific check ─────────────────────────────────
     const check3Res = await page.request.post(`/api/setups/${setupId}/checks`, {
       data: { description: 'Setup pattern confirmed on daily chart' },
     });
     expect(check3Res.ok()).toBeTruthy();
-    const check3 = await check3Res.json();
+    await check3Res.json();
 
     // ── 5. Create a planned trade with both accountId and setupId ─────
     const tradeRes = await page.request.post('/api/trades', {

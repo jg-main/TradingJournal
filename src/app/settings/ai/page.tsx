@@ -182,7 +182,17 @@ export default function AiSettingsPage() {
     setConnectionResult(null);
 
     try {
-      const res = await fetch('/api/ai-settings/test-connection', { method: 'POST' });
+      const res = await fetch('/api/ai-settings/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clickhouseHost: form.clickhouseHost || undefined,
+          clickhousePort: form.clickhousePort ? parseInt(form.clickhousePort, 10) : undefined,
+          clickhouseUser: form.clickhouseUser || undefined,
+          clickhousePassword: form.clickhousePassword || undefined,
+          clickhouseDatabase: form.clickhouseDatabase || undefined,
+        }),
+      });
       const data = await res.json();
       setConnectionResult({ ok: data.ok, error: data.error });
     } catch {

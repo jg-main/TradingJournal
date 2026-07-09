@@ -21,8 +21,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '@/db/schema';
 import AdmZip from 'adm-zip';
-import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from '@/lib/backup-serializer';
-import type { BackupManifest } from '@/lib/backup-serializer';
+import { serializeBackup, TABLE_REGISTRY } from '@/lib/backup-serializer';
 
 let passed = 0;
 let failed = 0;

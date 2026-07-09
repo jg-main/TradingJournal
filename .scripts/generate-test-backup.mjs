@@ -10,7 +10,7 @@
  */
 
 import AdmZip from 'adm-zip';
-import { writeFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 // ── Existing reference data from the journal DB ─────────────────────────
@@ -66,10 +66,6 @@ const MISTAKE_TYPES = {
   fv_stop_placement: 'b198d103-1a58-4964-b513-d1980e7b9140',
   fv_exit_discipline: '92f78767-eaee-4d3c-a8b9-5be7c22a73c7',
   fv_psychology: 'fe241a90-e3a0-439d-a59d-1adbed3a7927',
-};
-
-const SOURCE_TYPES = {
-  weekly_review: '745ed39b-5c38-4855-85cb-10c44d47991d',
 };
 
 const ACTION_ITEM_STATUSES = {

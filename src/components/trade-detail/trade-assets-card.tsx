@@ -412,6 +412,7 @@ export default function TradeAssetsCard({
           >
             <X className="size-6" />
           </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={expandedImage}
             alt="Full-size screenshot"

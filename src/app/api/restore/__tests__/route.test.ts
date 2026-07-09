@@ -134,47 +134,7 @@ function createTestZip(overrides?: {
   return zip.toBuffer();
 }
 
-/**
- * Create a seed ZIP with some populated data for round-trip testing.
- */
-async function createSeedZip(sqlite: Database.Database): Promise<Buffer> {
-  // Seed a few rows
-  const accId = randomUUID();
-  const lookupId = randomUUID();
-  const tradeId = randomUUID();
 
-  sqlite.prepare(`INSERT INTO app_profile (id, display_name, timezone, default_currency, created_at)
-    VALUES (?, 'Restore Test Trader', 'America/New_York', 'USD', ?)`)
-    .run(randomUUID(), NOW);
-
-  sqlite.prepare(`INSERT INTO accounts (id, name, broker, currency, is_active, starting_balance, created_at, updated_at)
-    VALUES (?, 'Route Test Account', 'IBKR', 'USD', 1, 50000, ?, ?)`)
-    .run(accId, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at)
-    VALUES (?, 'sector', 'Technology', 1, 1, ?, ?)`)
-    .run(lookupId, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO settings (id, starting_account_value, max_risk_per_trade_pct, default_commission, currency, created_at, updated_at)
-    VALUES (?, 50000, 1.0, 0.005, 'USD', ?, ?)`)
-    .run(randomUUID(), NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, sector_id, status, opened_at, created_at, updated_at)
-    VALUES (?, 'RT-ROUTE', ?, 'AAPL', 'long', ?, 'closed', ?, ?, ?)`)
-    .run(tradeId, accId, lookupId, NOW, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO trade_executions (id, trade_id, executed_at, action, quantity, price, fees, created_at)
-    VALUES (?, ?, ?, 'buy', 100, 180.50, 1.99, ?)`)
-    .run(randomUUID(), tradeId, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO trade_risk_snapshots (id, trade_id, account_equity_at_open, initial_entry_price, initial_stop_price, initial_quantity, created_at)
-    VALUES (?, ?, 50000, 180.50, 175.00, 100, ?)`)
-    .run(randomUUID(), tradeId, NOW);
-
-  // Serialize and return as ZIP
-  const drizzleDb = drizzle(sqlite, { schema });
-  return await serializeBackupToZip(drizzleDb);
-}
 
 /**
  * Serialize current DB state to a backup ZIP buffer.

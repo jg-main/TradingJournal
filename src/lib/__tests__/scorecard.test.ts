@@ -14,7 +14,6 @@ import {
   validateScorecard,
   getScorecardErrorCode,
   ScorecardErrorCode,
-  ScorecardSchema,
   type Scorecard,
   type ScorecardDimension,
   type PlayEvaluation,

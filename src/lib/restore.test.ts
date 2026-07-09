@@ -15,13 +15,13 @@
  * Pattern: src/lib/backup-serializer.test.ts, src/lib/create-backup.test.ts
  */
 
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 
 // Mock server-only BEFORE any imports — vitest hoists vi.mock calls
 vi.mock('server-only', () => ({}));
 
-import { rmSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { rmSync, existsSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import AdmZip from 'adm-zip';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
@@ -43,8 +43,6 @@ beforeAll(async () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 const NOW = '2026-07-01T12:00:00.000Z';
-const DB_PATH = process.env.DB_FILE_NAME || './.test-restore-t03-db';
-const DB_DIR = dirname(DB_PATH);
 
 function getSqlite(): ReturnType<typeof getSqliteHandle> {
   try {
@@ -219,21 +217,6 @@ function seedRoundTripData(): void {
   sqlite.prepare(`INSERT INTO trade_risk_snapshots (id, trade_id, account_equity_at_open, initial_entry_price, initial_stop_price, initial_quantity, created_at)
     VALUES (?, ?, 100000, 180.50, 175.00, 100, ?)`)
     .run(randomUUID(), tradeId, NOW);
-}
-
-/**
- * Clean up test DB files.
- */
-function cleanupTestDb() {
-  try {
-    const sqlite = getSqlite();
-    sqlite.close();
-  } catch {
-    // ignore
-  }
-  for (const suffix of ['', '-wal', '-shm']) {
-    try { rmSync(DB_PATH + suffix, { force: true }); } catch { /* ignore */ }
-  }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────

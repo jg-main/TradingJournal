@@ -15,7 +15,7 @@
  */
 
 import AdmZip from 'adm-zip';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { db, getSqliteHandle } from '@/db/index';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
@@ -263,7 +263,6 @@ export function previewRestore(zipBuffer: Buffer): { manifest: BackupManifest } 
  */
 export async function executeRestore(
   zipBuffer: Buffer,
-  dbPath?: string,
 ): Promise<{
   success: true;
   snapshotPath: string;

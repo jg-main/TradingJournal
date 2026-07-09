@@ -186,7 +186,7 @@ vi.mock('@/db', () => {
 
 // ── Module-level imports (ESM imports work with vitest's alias resolver) ─
 
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import * as schema from '@/db/schema';
 import {
   gatherTradeData,

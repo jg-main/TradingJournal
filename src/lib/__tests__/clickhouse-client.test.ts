@@ -9,7 +9,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import Database from 'better-sqlite3';
 import {
   ClickHouseConfig,
   OhlcBarSchema,
@@ -455,7 +454,6 @@ describe('createClickHouseClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     // Verify the first call SQL contains the ticker lookup
-    const firstCallUrl = fetchMock.mock.calls[0][0];
     const firstCallBody = fetchMock.mock.calls[0][1]?.body;
     expect(firstCallBody).toContain('as_secmaster_ticker_history');
     expect(firstCallBody).toContain("ticker = 'MSFT'");

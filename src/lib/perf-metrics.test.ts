@@ -13,7 +13,6 @@ import {
   calculateReturnPercent,
   calculateTotalFees,
   computePerfMetrics,
-  type PerfMetrics,
 } from './perf-metrics';
 import type { ExecutionData } from './trade-calc';
 

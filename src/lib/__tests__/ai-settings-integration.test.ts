@@ -72,7 +72,7 @@ const mockCreate = vi.fn();
 vi.mock('openai', () => {
   class AuthError extends Error {
     status: number;
-    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string) {
       super(message);
       this.name = 'AuthenticationError';
       this.status = status;
@@ -95,7 +95,7 @@ vi.mock('openai', () => {
 
   class GenAPIError extends Error {
     status: number;
-    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string) {
       super(message);
       this.name = 'APIError';
       this.status = status;

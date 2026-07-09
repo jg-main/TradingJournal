@@ -61,38 +61,6 @@ function assertNull(value: unknown, msg: string) {
   }
 }
 
-function assertNotEqual(
-  actual: unknown,
-  notExpected: unknown,
-  msg: string,
-) {
-  if (actual !== notExpected) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(
-      `  ❌ ${msg} \u2014 expected not ${JSON.stringify(notExpected)} (FAILED)`,
-    );
-  }
-}
-
-function assertHasKey(
-  obj: Record<string, unknown>,
-  key: string,
-  msg: string,
-) {
-  if (key in obj) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(
-      `  ❌ ${msg} \u2014 key "${key}" missing (FAILED)`,
-    );
-  }
-}
-
 // ── Setup: test DB ──────────────────────────────────────────────────
 
 const DB_FILE =

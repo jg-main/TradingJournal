@@ -7,7 +7,7 @@
  * Run: npx vitest run src/app/api/health/__tests__/route.test.ts
  */
 
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { sql } from 'drizzle-orm';
