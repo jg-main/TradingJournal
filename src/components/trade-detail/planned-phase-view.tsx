@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Play } from 'lucide-react';
+import { Play, Brain, Loader2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
 import TradePlanCard from './trade-plan-card';
@@ -42,6 +42,8 @@ interface AssessmentResponse {
     snapshotVersion: number;
   }>;
   error?: string;
+  /** Machine-readable error code from the API */
+  code?: string;
 }
 
 interface PlannedPhaseViewProps {
@@ -136,7 +138,19 @@ export default function PlannedPhaseView({
 
       if (!res.ok) {
         const body: AssessmentResponse = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Assessment request failed');
+        const rawMessage = body.error || 'Assessment request failed';
+        const errorCode = (body as { code?: string }).code;
+        // Differentiate user-facing message based on API error code
+        if (errorCode === 'STALE_MARKET_DATA') {
+          throw new Error('Market data is not current — try again later');
+        }
+        if (errorCode === 'AI_NOT_CONFIGURED') {
+          throw new Error('AI not configured — set up in Settings');
+        }
+        if (errorCode === 'AI_PROVIDER_ERROR') {
+          throw new Error('AI provider error — check credentials');
+        }
+        throw new Error(rawMessage);
       }
 
       const body: AssessmentResponse = await res.json();
@@ -151,6 +165,7 @@ export default function PlannedPhaseView({
         setWarnings(body.warnings);
       }
     } catch (err) {
+      console.error('Assessment request failed:', err);
       setError(
         err instanceof Error ? err.message : 'Assessment request failed',
       );
@@ -167,14 +182,29 @@ export default function PlannedPhaseView({
         direction={trade.direction}
         tradeCode={trade.tradeCode}
         rightContent={
-          <button
-            type="button"
-            onClick={onExecute}
-            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            <Play className="size-4" />
-            Execute
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRequestAssessment}
+              disabled={requestLoading}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {requestLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Brain className="size-4" />
+              )}
+              {requestLoading ? 'Assessing...' : 'Assess'}
+            </button>
+            <button
+              type="button"
+              onClick={onExecute}
+              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              <Play className="size-4" />
+              Execute
+            </button>
+          </div>
         }
       />
 
@@ -189,7 +219,12 @@ export default function PlannedPhaseView({
         />
       </div>
 
-      {/* AI Quality Assessment */}
+      {/* Trade Plan Card */}
+      <div className="mb-8">
+        <TradePlanCard trade={trade} />
+      </div>
+
+      {/* AI Quality Assessment — shown after Trade Plan per design */}
       <div className="mb-8">
         <AssessmentCard
           scorecard={scorecard}
@@ -199,11 +234,6 @@ export default function PlannedPhaseView({
           onRequestAssessment={handleRequestAssessment}
           requestLoading={requestLoading}
         />
-      </div>
-
-      {/* Trade Plan Card */}
-      <div className="mb-8">
-        <TradePlanCard trade={trade} />
       </div>
 
       {/* Assets — pre_trade only */}
