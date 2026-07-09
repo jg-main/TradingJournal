@@ -141,13 +141,22 @@ function clearAllTables() {
     'review_action_items', 'weekly_reviews', 'account_rollforward',
     'account_transactions', 'watchlist_items', 'trade_mistakes',
     'trade_grades', 'trade_assets', 'trade_stop_adjustments',
-    'trade_risk_snapshots', 'trade_executions', 'trades',
-    'setup_definitions', 'lookup_values', 'accounts', 'settings', 'app_profile',
+    'trade_risk_snapshots', 'trade_assessment_snapshots',
+    'trade_check_results', 'trade_executions', 'trades',
+    'play_evaluation_fields', 'checklist_definitions',
+    'setup_definitions', 'lookup_values', 'accounts',
+    'ai_settings', 'settings', 'app_profile',
   ];
+  // Wrap in an explicit transaction so PRAGMA defer_foreign_keys takes effect
+  // across all DELETEs. With better-sqlite3, each exec() creates its own
+  // implicit transaction, but defer_foreign_keys only works inside explicit
+  // transactions.
+  sqlite.exec('BEGIN TRANSACTION');
   sqlite.exec('PRAGMA defer_foreign_keys = ON');
   for (const name of deleteOrder) {
     sqlite.exec(`DELETE FROM "${name}"`);
   }
+  sqlite.exec('COMMIT');
 }
 
 /**
