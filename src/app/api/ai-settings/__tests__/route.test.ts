@@ -186,7 +186,8 @@ function doPutAiSettings(body: Record<string, unknown>): { status: number; data:
       if (body.systemPrompt !== undefined) values.systemPrompt = body.systemPrompt;
       if (body.isActive !== undefined) values.isActive = body.isActive;
 
-      db.insert(schema.aiSettings).values(values as Record<string, unknown>).run();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      db.insert(schema.aiSettings).values(values as any).run();
 
       const row = db.select().from(schema.aiSettings).where(eq(schema.aiSettings.id, id)).get();
       if (!row) {

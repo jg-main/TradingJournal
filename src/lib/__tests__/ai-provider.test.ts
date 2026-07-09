@@ -266,7 +266,7 @@ describe('createAiProvider', () => {
   describe('error handling', () => {
     it('wraps AuthenticationError as AUTH_ERROR', async () => {
       mockCreate.mockRejectedValueOnce(
-        new (MockAuthError as unknown as typeof Error)(401, { code: 'invalid_api_key' }, 'Incorrect API key provided'),
+        new MockAuthError(401, { code: 'invalid_api_key' }, 'Incorrect API key provided', new Headers()),
       );
 
       const provider = createAiProvider({
@@ -326,7 +326,7 @@ describe('createAiProvider', () => {
 
     it('wraps APIError as CONNECTION_ERROR with statusCode', async () => {
       mockCreate.mockRejectedValueOnce(
-        new (APIError as unknown as typeof Error)(429, { code: 'rate_limit' }, 'Too many requests'),
+        new APIError(429, { code: 'rate_limit' }, 'Too many requests', undefined),
       );
 
       const provider = createAiProvider({
