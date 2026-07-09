@@ -15,6 +15,8 @@
  */
 
 import { z } from 'zod';
+import { db } from '@/db';
+import { aiSettings } from '@/db/schema';
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────
 
@@ -585,7 +587,14 @@ export function createClickHouseClient(config: ClickHouseConfig) {
 // ── Convenience Default Client ───────────────────────────────────────────
 
 /**
- * Create a ClickHouse client using environment variables for configuration.
+ * Create a ClickHouse client using runtime config from ai_settings, env vars,
+ * and defaults — with configOverride for testing and injection.
+ *
+ * Precedence (highest to lowest):
+ *   1. configOverride parameter (when provided — for testing/injection)
+ *   2. ai_settings DB row (when values are non-null and non-empty)
+ *   3. Environment variables (CLICKHOUSE_HOST, CLICKHOUSE_PORT, etc.)
+ *   4. Hardcoded defaults
  *
  * Environment variables:
  *   CLICKHOUSE_HOST     (default: 'localhost')
@@ -594,23 +603,97 @@ export function createClickHouseClient(config: ClickHouseConfig) {
  *   CLICKHOUSE_PASSWORD (default: '')
  *   CLICKHOUSE_DATABASE (default: 'market')
  *
+ * Structured logging on config resolution:
+ *   { event: 'clickhouse_config_resolution', source, host, port, user, database, hasPassword }
+ *
+ * @param configOverride - Optional partial config that takes highest precedence (for tests)
  * @returns A ClickHouse client instance
  */
-export function createDefaultClickHouseClient(): ReturnType<typeof createClickHouseClient> {
-  const config: ClickHouseConfig = {
-    host: process.env.CLICKHOUSE_HOST || 'localhost',
-    port: parseInt(process.env.CLICKHOUSE_PORT || '8123', 10),
-    user: process.env.CLICKHOUSE_USER || 'default',
-    password: process.env.CLICKHOUSE_PASSWORD || '',
-    database: process.env.CLICKHOUSE_DATABASE || 'market',
-  };
+export function createDefaultClickHouseClient(
+  configOverride?: Partial<ClickHouseConfig>,
+): ReturnType<typeof createClickHouseClient> {
+  // Step 1: Read ClickHouse config from ai_settings DB row
+  let dbRow: Record<string, unknown> | undefined;
+  try {
+    const result = db.select().from(aiSettings).limit(1).get();
+    if (result) {
+      dbRow = result as unknown as Record<string, unknown>;
+    }
+  } catch {
+    // DB unavailable (e.g. first-time setup, test without mock) — fall through to env vars
+  }
+
+  // Helper to test whether a DB value is meaningfully "set"
+  const isSet = (val: unknown): boolean =>
+    val !== null && val !== undefined && val !== '';
+
+  // Step 2: Resolve each field with precedence chain
+  const resolvedHost =
+    configOverride?.host ??
+    (dbRow && isSet(dbRow.clickhouseHost) ? String(dbRow.clickhouseHost) : undefined) ??
+    (process.env.CLICKHOUSE_HOST || 'localhost');
+
+  const resolvedPort: number =
+    configOverride?.port ??
+    (dbRow && isSet(dbRow.clickhousePort) ? Number(dbRow.clickhousePort) : undefined) ??
+    parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
+
+  const resolvedUser =
+    configOverride?.user ??
+    (dbRow && isSet(dbRow.clickhouseUser) ? String(dbRow.clickhouseUser) : undefined) ??
+    (process.env.CLICKHOUSE_USER || 'default');
+
+  const resolvedPassword =
+    configOverride?.password ??
+    (dbRow && isSet(dbRow.clickhousePassword) ? String(dbRow.clickhousePassword) : undefined) ??
+    (process.env.CLICKHOUSE_PASSWORD || '');
+
+  const resolvedDatabase =
+    configOverride?.database ??
+    (dbRow && isSet(dbRow.clickhouseDatabase) ? String(dbRow.clickhouseDatabase) : undefined) ??
+    (process.env.CLICKHOUSE_DATABASE || 'market');
 
   // Validate port
-  if (Number.isNaN(config.port) || config.port < 1 || config.port > 65535) {
+  if (Number.isNaN(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+    const portSource =
+      configOverride?.port !== undefined
+        ? 'override'
+        : dbRow && isSet(dbRow.clickhousePort)
+          ? 'database'
+          : 'env';
     throw new Error(
-      `Invalid CLICKHOUSE_PORT: '${process.env.CLICKHOUSE_PORT}'. Must be a valid port number (1-65535).`,
+      `Invalid CLICKHOUSE_PORT: '${resolvedPort}'. Must be a valid port number (1-65535). Source: ${portSource}.`,
     );
   }
+
+  const config: ClickHouseConfig = {
+    host: resolvedHost,
+    port: resolvedPort,
+    user: resolvedUser,
+    password: resolvedPassword,
+    database: resolvedDatabase,
+  };
+
+  // Log structured config resolution for observability
+  const source = configOverride
+    ? 'override'
+    : dbRow && isSet(dbRow.clickhouseHost)
+      ? 'database'
+      : process.env.CLICKHOUSE_HOST
+        ? 'env'
+        : 'defaults';
+
+  console.log(
+    JSON.stringify({
+      event: 'clickhouse_config_resolution',
+      source,
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      database: config.database,
+      hasPassword: config.password.length > 0,
+    }),
+  );
 
   return createClickHouseClient(config);
 }

@@ -168,6 +168,7 @@ sqlite.exec(`
     description TEXT,
     field_type TEXT NOT NULL CHECK(field_type IN ('boolean','score_1_5','score_1_10','text')),
     weight REAL DEFAULT 1.0,
+    min_lookback_days INTEGER,
     sort_order INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (current_timestamp),
@@ -293,6 +294,53 @@ function doPostField(
       };
     }
 
+    // Validate minLookbackDays if provided (must be positive integer <= 3650)
+    if (
+      body.minLookbackDays !== undefined &&
+      body.minLookbackDays !== null
+    ) {
+      if (!Number.isInteger(body.minLookbackDays)) {
+        return {
+          status: 400,
+          data: {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                minLookbackDays: ['minLookbackDays must be an integer'],
+              },
+            },
+          },
+        };
+      }
+      const mlb = body.minLookbackDays as number;
+      if (mlb <= 0) {
+        return {
+          status: 400,
+          data: {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                minLookbackDays: ['minLookbackDays must be positive'],
+              },
+            },
+          },
+        };
+      }
+      if (mlb > 3650) {
+        return {
+          status: 400,
+          data: {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                minLookbackDays: ['minLookbackDays must be at most 3650'],
+              },
+            },
+          },
+        };
+      }
+    }
+
     // Check unique fieldKey
     const existing = db
       .select()
@@ -337,6 +385,7 @@ function doPostField(
           | 'score_1_10'
           | 'text',
         weight: (body.weight as number) ?? 1.0,
+        minLookbackDays: (body.minLookbackDays as number | null) ?? null,
         sortOrder: (body.sortOrder as number) ?? 0,
         isActive: (body.isActive as boolean) ?? true,
         createdAt: now,
@@ -426,6 +475,53 @@ function doPutField(
       };
     }
 
+    // Validate minLookbackDays if provided (must be positive integer <= 3650)
+    if (
+      body.minLookbackDays !== undefined &&
+      body.minLookbackDays !== null
+    ) {
+      if (!Number.isInteger(body.minLookbackDays)) {
+        return {
+          status: 400,
+          data: {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                minLookbackDays: ['minLookbackDays must be an integer'],
+              },
+            },
+          },
+        };
+      }
+      const mlb = body.minLookbackDays as number;
+      if (mlb <= 0) {
+        return {
+          status: 400,
+          data: {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                minLookbackDays: ['minLookbackDays must be positive'],
+              },
+            },
+          },
+        };
+      }
+      if (mlb > 3650) {
+        return {
+          status: 400,
+          data: {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: {
+                minLookbackDays: ['minLookbackDays must be at most 3650'],
+              },
+            },
+          },
+        };
+      }
+    }
+
     // If changing fieldKey, check uniqueness
     if (
       body.fieldKey !== undefined &&
@@ -468,6 +564,8 @@ function doPutField(
       updateData.description = body.description;
     if (body.fieldType !== undefined) updateData.fieldType = body.fieldType;
     if (body.weight !== undefined) updateData.weight = body.weight;
+    if (body.minLookbackDays !== undefined)
+      updateData.minLookbackDays = body.minLookbackDays;
     if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
 
@@ -1192,6 +1290,197 @@ console.log('\n27. PUT toggles isActive:');
   assert(reactivate.status === 200, 'reactivate: returns 200');
   const reactData = reactivate.data as Record<string, unknown>;
   assertEqual(reactData.isActive, true, 'isActive set to true');
+}
+
+// ── 28. POST: Create field with minLookbackDays ──────────────────────
+
+console.log('\n28. POST creates field with minLookbackDays:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Lookback Play' });
+  const result = doPostField(setup.id as string, {
+    fieldKey: 'trend_alignment',
+    label: 'Trend Alignment',
+    fieldType: 'score_1_5',
+    minLookbackDays: 200,
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.fieldKey, 'trend_alignment', 'fieldKey matches');
+  assertEqual(data.minLookbackDays, 200, 'minLookbackDays set to 200');
+}
+
+// ── 29. GET: Returns minLookbackDays in response ─────────────────
+
+console.log('\n29. GET returns minLookbackDays in response:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Lookback GET Play' });
+  doPostField(setup.id as string, {
+    fieldKey: 'volatility_check',
+    label: 'Volatility Check',
+    fieldType: 'boolean',
+    minLookbackDays: 100,
+  });
+
+  const result = doGetFields(setup.id as string);
+  assert(result.status === 200, 'returns 200');
+  const body = result.data as { data: Record<string, unknown>[] };
+  assert(body.data.length > 0, 'has fields');
+  assertEqual(body.data[0].minLookbackDays, 100, 'minLookbackDays present in GET');
+}
+
+// ── 30. POST: MinLookbackDays defaults to null when omitted ─────
+
+console.log('\n30. POST minLookbackDays defaults to null when omitted:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'No Lookback Play' });
+  const result = doPostField(setup.id as string, {
+    fieldKey: 'simple_field',
+    label: 'Simple Field',
+    fieldType: 'score_1_5',
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertNull(data.minLookbackDays, 'minLookbackDays is null');
+}
+
+// ── 31. PUT: Update minLookbackDays ──────────────────────────────
+
+console.log('\n31. PUT updates minLookbackDays:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Update Lookback Play' });
+  const field = seedField(setup.id as string, {
+    fieldKey: 'update_lookback',
+    label: 'Update Lookback',
+    fieldType: 'score_1_5',
+  });
+
+  const result = doPutField(setup.id as string, field.id as string, {
+    minLookbackDays: 300,
+  });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.minLookbackDays, 300, 'minLookbackDays updated to 300');
+}
+
+// ── 32. PUT: Set minLookbackDays to null ─────────────────────────
+
+console.log('\n32. PUT sets minLookbackDays to null:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Clear Lookback Play' });
+  const field = seedField(setup.id as string, {
+    fieldKey: 'clear_lookback',
+    label: 'Clear Lookback',
+    fieldType: 'score_1_5',
+    minLookbackDays: 150,
+  });
+
+  const result = doPutField(setup.id as string, field.id as string, {
+    minLookbackDays: null,
+  });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertNull(data.minLookbackDays, 'minLookbackDays cleared to null');
+}
+
+// ── 33. POST: Rejects negative minLookbackDays ──────────────────
+
+console.log('\n33. POST rejects negative minLookbackDays:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Neg Lookback Play' });
+  const result = doPostField(setup.id as string, {
+    fieldKey: 'neg_lookback',
+    label: 'Negative Lookback',
+    fieldType: 'score_1_5',
+    minLookbackDays: -5,
+  });
+  assert(result.status === 400, 'returns 400 for negative');
+}
+
+// ── 34. POST: Rejects zero minLookbackDays ──────────────────────
+
+console.log('\n34. POST rejects zero minLookbackDays:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Zero Lookback Play' });
+  const result = doPostField(setup.id as string, {
+    fieldKey: 'zero_lookback',
+    label: 'Zero Lookback',
+    fieldType: 'score_1_5',
+    minLookbackDays: 0,
+  });
+  assert(result.status === 400, 'returns 400 for zero');
+}
+
+// ── 35. POST: Rejects minLookbackDays over 3650 ────────────────
+
+console.log('\n35. POST rejects minLookbackDays over 3650:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Over Lookback Play' });
+  const result = doPostField(setup.id as string, {
+    fieldKey: 'over_lookback',
+    label: 'Over Lookback',
+    fieldType: 'score_1_5',
+    minLookbackDays: 5000,
+  });
+  assert(result.status === 400, 'returns 400 for over 3650');
+}
+
+// ── 36. POST: Rejects non-integer minLookbackDays ──────────────
+
+console.log('\n36. POST rejects non-integer minLookbackDays:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Float Lookback Play' });
+  const result = doPostField(setup.id as string, {
+    fieldKey: 'float_lookback',
+    label: 'Float Lookback',
+    fieldType: 'score_1_5',
+    minLookbackDays: 100.5,
+  });
+  assert(result.status === 400, 'returns 400 for non-integer');
+}
+
+// ── 37. PUT: Rejects negative minLookbackDays on update ─────────
+
+console.log('\n37. PUT rejects negative minLookbackDays:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Neg Update Play' });
+  const field = seedField(setup.id as string, {
+    fieldKey: 'neg_update',
+    label: 'Neg Update',
+  });
+  const result = doPutField(setup.id as string, field.id as string, {
+    minLookbackDays: -1,
+  });
+  assert(result.status === 400, 'returns 400 for negative on update');
+}
+
+// ── 38. PUT: Rejects minLookbackDays over 3650 on update ───────
+
+console.log('\n38. PUT rejects minLookbackDays over 3650:');
+{
+  cleanup();
+  const setup = seedSetup({ name: 'Over Update Play' });
+  const field = seedField(setup.id as string, {
+    fieldKey: 'over_update',
+    label: 'Over Update',
+  });
+  const result = doPutField(setup.id as string, field.id as string, {
+    minLookbackDays: 4000,
+  });
+  assert(result.status === 400, 'returns 400 for over 3650 on update');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

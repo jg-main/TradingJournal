@@ -9,7 +9,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import {
+  ClickHouseConfig,
   OhlcBarSchema,
   DateRangeSchema,
   MarketEvidenceSchema,
@@ -19,6 +21,48 @@ import {
   createClickHouseClient,
   createDefaultClickHouseClient,
 } from '../clickhouse-client';
+
+// ── In-memory SQLite for createDefaultClickHouseClient DB queries ────────
+
+const mockSqlite = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Database = require('better-sqlite3');
+  const sqlite = new Database(':memory:');
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.exec(`
+    CREATE TABLE ai_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      api_key TEXT,
+      base_url TEXT,
+      timeout_ms INTEGER DEFAULT 30000,
+      temperature REAL DEFAULT 0.7,
+      max_tokens INTEGER DEFAULT 4096,
+      system_prompt TEXT,
+      clickhouse_host TEXT DEFAULT 'localhost',
+      clickhouse_port INTEGER DEFAULT 8123,
+      clickhouse_user TEXT DEFAULT 'default',
+      clickhouse_password TEXT,
+      clickhouse_database TEXT DEFAULT 'market',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (current_timestamp),
+      updated_at TEXT DEFAULT (current_timestamp)
+    );
+  `);
+  return { sqlite };
+});
+
+vi.mock('@/db', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { drizzle } = require('drizzle-orm/better-sqlite3');
+  const db = drizzle(mockSqlite.sqlite);
+  return {
+    db,
+    getSqliteHandle: () => mockSqlite.sqlite,
+    initializeDatabase: () => db,
+  };
+});
 
 // ── TabSeparatedWithNames response helpers ───────────────────────────────
 
@@ -629,6 +673,35 @@ describe('createClickHouseClient', () => {
   });
 });
 
+// ── DB Helpers ────────────────────────────────────────────────────────────
+
+let fakeIdCounter = 0;
+
+/**
+ * Seed the in-memory ai_settings table with ClickHouse config values.
+ * Clears any existing rows first.
+ */
+function seedClickHouseConfig(overrides: Record<string, unknown> = {}): void {
+  mockSqlite.sqlite.exec('DELETE FROM ai_settings;');
+  fakeIdCounter++;
+  const id = `test-ai-${fakeIdCounter}`;
+  const host = (overrides.host as string) ?? 'db-host.example.com';
+  const port = overrides.port !== undefined ? Number(overrides.port) : 9000;
+  const user = (overrides.user as string) ?? 'db_user';
+  const password = (overrides.password as string) ?? 'db_secret';
+  const database = (overrides.database as string) ?? 'db_market';
+
+  mockSqlite.sqlite.exec(
+    `INSERT INTO ai_settings (id, provider, model, clickhouse_host, clickhouse_port, clickhouse_user, clickhouse_password, clickhouse_database) ` +
+    `VALUES ('${id}', 'openai', 'gpt-4', '${host}', ${port}, '${user}', '${password}', '${database}')`
+  );
+}
+
+/** Clear all ai_settings rows */
+function clearClickHouseConfig(): void {
+  mockSqlite.sqlite.exec('DELETE FROM ai_settings;');
+}
+
 // ── createDefaultClickHouseClient ────────────────────────────────────────
 
 describe('createDefaultClickHouseClient', () => {
@@ -642,42 +715,234 @@ describe('createDefaultClickHouseClient', () => {
     delete process.env.CLICKHOUSE_USER;
     delete process.env.CLICKHOUSE_PASSWORD;
     delete process.env.CLICKHOUSE_DATABASE;
+    // Clear DB rows between tests
+    clearClickHouseConfig();
   });
 
   afterEach(() => {
     process.env = { ...OLD_ENV };
   });
 
-  it('uses defaults when env vars are absent', () => {
+  // ── All-defaults (no DB, no env) ──────────────────────────────────────
+
+  it('uses defaults when env vars and DB are absent', () => {
     const client = createDefaultClickHouseClient();
     expect(client).toBeDefined();
-    // The client should have a getMarketEvidence function
     expect(client.getMarketEvidence).toBeInstanceOf(Function);
   });
 
-  it('reads CLICKHOUSE_HOST from env var', () => {
+  // ── DB-only config (no env vars) ─────────────────────────────────────
+
+  it('reads host from DB when no env vars are set', () => {
+    seedClickHouseConfig({ host: 'db-clickhouse.local' });
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const client = createDefaultClickHouseClient();
+    expect(client).toBeDefined();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.event).toBe('clickhouse_config_resolution');
+    expect(logArg.source).toBe('database');
+    expect(logArg.host).toBe('db-clickhouse.local');
+    expect(logArg.port).toBe(9000);
+    expect(logArg.user).toBe('db_user');
+    expect(logArg.database).toBe('db_market');
+    expect(logArg.hasPassword).toBe(true);
+    consoleSpy.mockRestore();
+  });
+
+  it('reads all ClickHouse fields from DB', () => {
+    seedClickHouseConfig({
+      host: 'ch-db.internal',
+      port: 8443,
+      user: 'analyst',
+      password: 'analyst_pass',
+      database: 'analytics',
+    });
+
+    // The only way to verify the config was used is to create the client
+    // and check that the created client can do its job. We capture config
+    // via the structured log emitted by createDefaultClickHouseClient.
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.host).toBe('ch-db.internal');
+    expect(logArg.port).toBe(8443);
+    expect(logArg.user).toBe('analyst');
+    expect(logArg.database).toBe('analytics');
+    expect(logArg.hasPassword).toBe(true);
+    consoleSpy.mockRestore();
+  });
+
+  it('uses DB password when set to empty string in DB', () => {
+    seedClickHouseConfig({ password: '' });
+    // Empty password in DB means isSet returns false → falls through to env ''
+    // which is also empty — so password resolves to ''. Verify via log.
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.hasPassword).toBe(false);
+    consoleSpy.mockRestore();
+  });
+
+  it('falls back to env when DB field is empty string', () => {
+    // Seed DB with empty host → isSet returns false
+    seedClickHouseConfig({ host: '' });
+    process.env.CLICKHOUSE_HOST = 'env-host.example.com';
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    // DB has empty host, env has the value → env wins
+    expect(logArg.host).toBe('env-host.example.com');
+    consoleSpy.mockRestore();
+  });
+
+  // ── Env-only config (no DB row) ──────────────────────────────────────
+
+  it('reads CLICKHOUSE_HOST from env var when DB is empty', () => {
     process.env.CLICKHOUSE_HOST = 'clickhouse.example.com';
     const client = createDefaultClickHouseClient();
     expect(client).toBeDefined();
   });
 
-  it('reads CLICKHOUSE_PORT from env var', () => {
+  it('reads CLICKHOUSE_PORT from env var when DB is empty', () => {
     process.env.CLICKHOUSE_PORT = '9000';
     const client = createDefaultClickHouseClient();
     expect(client).toBeDefined();
   });
 
-  it('reads CLICKHOUSE_USER from env var', () => {
+  it('reads CLICKHOUSE_USER from env var when DB is empty', () => {
     process.env.CLICKHOUSE_USER = 'analyst';
     const client = createDefaultClickHouseClient();
     expect(client).toBeDefined();
   });
 
-  it('reads CLICKHOUSE_DATABASE from env var', () => {
+  it('reads CLICKHOUSE_DATABASE from env var when DB is empty', () => {
     process.env.CLICKHOUSE_DATABASE = 'analytics';
     const client = createDefaultClickHouseClient();
     expect(client).toBeDefined();
   });
+
+  it('reports env as configuration source in structured log', () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    process.env.CLICKHOUSE_HOST = 'env-only.example.com';
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.source).toBe('env');
+    expect(logArg.host).toBe('env-only.example.com');
+    consoleSpy.mockRestore();
+  });
+
+  it('reports defaults as configuration source when nothing is configured', () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.source).toBe('defaults');
+    expect(logArg.host).toBe('localhost');
+    expect(logArg.port).toBe(8123);
+    expect(logArg.user).toBe('default');
+    expect(logArg.database).toBe('market');
+    consoleSpy.mockRestore();
+  });
+
+  // ── Mixed: DB wins over env vars ─────────────────────────────────────
+
+  it('DB value takes precedence over env var (host)', () => {
+    seedClickHouseConfig({ host: 'db-host.example.com' });
+    process.env.CLICKHOUSE_HOST = 'env-host.example.com';
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.source).toBe('database');
+    expect(logArg.host).toBe('db-host.example.com');
+    consoleSpy.mockRestore();
+  });
+
+  it('DB value takes precedence over env var (port)', () => {
+    seedClickHouseConfig({ port: 8443 });
+    process.env.CLICKHOUSE_PORT = '9999';
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.port).toBe(8443);
+    consoleSpy.mockRestore();
+  });
+
+  it('DB value takes precedence over env var (password)', () => {
+    seedClickHouseConfig({ password: 'db_pass_123' });
+    process.env.CLICKHOUSE_PASSWORD = 'env_pass_456';
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient();
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.hasPassword).toBe(true);
+    consoleSpy.mockRestore();
+  });
+
+  // ── Override takes precedence over everything ─────────────────────────
+
+  it('configOverride host takes precedence over DB', () => {
+    seedClickHouseConfig({ host: 'db-host.example.com' });
+    const override: Partial<ClickHouseConfig> = { host: 'override-host.example.com' };
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient(override);
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.source).toBe('override');
+    expect(logArg.host).toBe('override-host.example.com');
+    consoleSpy.mockRestore();
+  });
+
+  it('partial configOverride only overrides specified fields', () => {
+    seedClickHouseConfig({
+      host: 'db-host.example.com',
+      port: 8443,
+      user: 'db_user',
+      password: 'db_pass',
+      database: 'db_market',
+    });
+    // Only override host — port, user, password, database should come from DB
+    const override: Partial<ClickHouseConfig> = { host: 'override-host.com' };
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient(override);
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.source).toBe('override');
+    expect(logArg.host).toBe('override-host.com');
+    expect(logArg.port).toBe(8443);
+    expect(logArg.user).toBe('db_user');
+    expect(logArg.database).toBe('db_market');
+    expect(logArg.hasPassword).toBe(true);
+    consoleSpy.mockRestore();
+  });
+
+  it('configOverride takes precedence over env vars when no DB row exists', () => {
+    process.env.CLICKHOUSE_HOST = 'env-host.example.com';
+    const override: Partial<ClickHouseConfig> = { host: 'override-host.com', port: 3000 };
+
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createDefaultClickHouseClient(override);
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const logArg = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(logArg.source).toBe('override');
+    expect(logArg.host).toBe('override-host.com');
+    expect(logArg.port).toBe(3000);
+    consoleSpy.mockRestore();
+  });
+
+  // ── Error cases ───────────────────────────────────────────────────────
 
   it('throws for invalid CLICKHOUSE_PORT', () => {
     process.env.CLICKHOUSE_PORT = 'not-a-number';
@@ -690,6 +955,15 @@ describe('createDefaultClickHouseClient', () => {
 
     process.env.CLICKHOUSE_PORT = '65536';
     expect(() => createDefaultClickHouseClient()).toThrow('Invalid CLICKHOUSE_PORT');
+  });
+
+  it('throws for invalid port from DB with source annotation', () => {
+    seedClickHouseConfig({ port: -1 });
+    expect(() => createDefaultClickHouseClient()).toThrow('Source: database');
+  });
+
+  it('throws for invalid port from override with source annotation', () => {
+    expect(() => createDefaultClickHouseClient({ port: 0 })).toThrow('Source: override');
   });
 });
 
