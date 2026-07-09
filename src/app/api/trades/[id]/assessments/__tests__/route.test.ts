@@ -641,10 +641,48 @@ console.log('\n1. POST with valid tradeId returns 201 with scorecard:');
   assertEqual((dbRow as Record<string, unknown>).tradeId ?? (dbRow as Record<string, unknown>).trade_id, tradeId, 'DB snapshot tradeId matches');
   assertEqual((dbRow as Record<string, unknown>).overallScore ?? (dbRow as Record<string, unknown>).overall_score, 72, 'DB snapshot overallScore matches');
 
+  // ── Metadata injection assertions ───────────────────────────────────
+
+  // Response snapshot should carry modelUsed, promptTokens, completionTokens
+  assertNotNull(snapshot.modelUsed, 'snapshot.modelUsed is present');
+  assertEqual(snapshot.modelUsed, 'gpt-4o', 'snapshot.modelUsed is gpt-4o (from seedAiSetting)');
+  assertEqual(snapshot.promptTokens, 120, 'snapshot.promptTokens is 120 (from mock usage)');
+  assertEqual(snapshot.completionTokens, 340, 'snapshot.completionTokens is 340 (from mock usage)');
+
+  // The scorecard in the response should have metadata injected
+  assertNotNull(scorecard.metadata, 'response scorecard has metadata');
+  const meta = scorecard.metadata as Record<string, unknown>;
+  assertEqual(meta.modelUsed, 'gpt-4o', 'response scorecard metadata.modelUsed is gpt-4o');
+  assertEqual(meta.promptTokens, 120, 'response scorecard metadata.promptTokens is 120');
+  assertEqual(meta.completionTokens, 340, 'response scorecard metadata.completionTokens is 340');
+  assert(
+    typeof meta.durationMs === 'number' && (meta.durationMs as number) >= 0,
+    `response scorecard metadata.durationMs is a non-negative integer (got ${meta.durationMs})`,
+  );
+
+  // DB row should have modelUsed, promptTokens, completionTokens preserved
+  const dbModelUsed = (dbRow as Record<string, unknown>).modelUsed ?? (dbRow as Record<string, unknown>).model_used;
+  assertEqual(dbModelUsed, 'gpt-4o', 'DB snapshot modelUsed is gpt-4o');
+  const dbPromptTokens = (dbRow as Record<string, unknown>).promptTokens ?? (dbRow as Record<string, unknown>).prompt_tokens;
+  assertEqual(dbPromptTokens, 120, 'DB snapshot promptTokens is 120');
+  const dbCompletionTokens = (dbRow as Record<string, unknown>).completionTokens ?? (dbRow as Record<string, unknown>).completion_tokens;
+  assertEqual(dbCompletionTokens, 340, 'DB snapshot completionTokens is 340');
+
+  // The scorecardJson in DB should contain the metadata fields
+  const scorecardJsonRaw = (dbRow as Record<string, unknown>).scorecardJson ?? (dbRow as Record<string, unknown>).scorecard_json;
+  assertNotNull(scorecardJsonRaw, 'scorecardJson persisted in DB');
+  const persistedJson = JSON.parse(scorecardJsonRaw as string);
+  assertNotNull(persistedJson.metadata, 'persisted scorecard has metadata');
+  assertEqual(persistedJson.metadata.modelUsed, 'gpt-4o', 'persisted scorecard metadata.modelUsed is gpt-4o');
+  assertEqual(persistedJson.metadata.promptTokens, 120, 'persisted scorecard metadata.promptTokens is 120');
+  assertEqual(persistedJson.metadata.completionTokens, 340, 'persisted scorecard metadata.completionTokens is 340');
+  assert(persistedJson.metadata.durationMs >= 0, 'persisted scorecard metadata.durationMs is a non-negative integer');
+
   // Verify apiKey never present in response
   const responseJson = JSON.stringify(result.data);
   assert(!responseJson.includes('sk-test-key'), 'apiKey not in response');
 }
+
 
 // ── 2. POST: Snapshot version increments ────────────────────────────────
 

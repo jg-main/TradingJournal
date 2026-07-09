@@ -792,7 +792,46 @@ console.log('\n9. performAssessment happy path returns AssessmentResult with par
   // Verify result.snapshot also carries promptText and rawResponse
   assertNotNull(result.snapshot.promptText, 'result.snapshot.promptText is non-null');
   assertNotNull(result.snapshot.rawResponse, 'result.snapshot.rawResponse is non-null');
+
+  // ── Metadata injection assertions ───────────────────────────────────
+
+  // scorecard.metadata should be injected by performAssessment
+  assertNotNull(result.scorecard.metadata, 'scorecard.metadata is populated (not undefined)');
+  assertEqual(result.scorecard.metadata!.modelUsed, 'gpt-4o', 'scorecard.metadata.modelUsed is gpt-4o (from seedAiSetting)');
+  assertEqual(result.scorecard.metadata!.promptTokens, 120, 'scorecard.metadata.promptTokens is 120 (from mock usage)');
+  assertEqual(result.scorecard.metadata!.completionTokens, 340, 'scorecard.metadata.completionTokens is 340 (from mock usage)');
+  assert(
+    typeof result.scorecard.metadata!.durationMs === 'number' && result.scorecard.metadata!.durationMs >= 0,
+    `scorecard.metadata.durationMs is a non-negative integer (got ${result.scorecard.metadata!.durationMs})`,
+  );
+
+  // result.snapshot should carry modelUsed, promptTokens, completionTokens
+  assertEqual(result.snapshot.modelUsed, 'gpt-4o', 'result.snapshot.modelUsed is gpt-4o');
+  assertEqual(result.snapshot.promptTokens, 120, 'result.snapshot.promptTokens is 120');
+  assertEqual(result.snapshot.completionTokens, 340, 'result.snapshot.completionTokens is 340');
+
+  // DB row should have modelUsed, promptTokens, completionTokens
+  assertEqual(
+    (snapshot as Record<string, unknown>).modelUsed ?? (snapshot as Record<string, unknown>).model_used,
+    'gpt-4o',
+    'DB snapshot modelUsed is gpt-4o',
+  );
+  const dbPromptTokens = (snapshot as Record<string, unknown>).promptTokens ?? (snapshot as Record<string, unknown>).prompt_tokens;
+  assertEqual(dbPromptTokens, 120, 'DB snapshot promptTokens is 120');
+  const dbCompletionTokens = (snapshot as Record<string, unknown>).completionTokens ?? (snapshot as Record<string, unknown>).completion_tokens;
+  assertEqual(dbCompletionTokens, 340, 'DB snapshot completionTokens is 340');
+
+  // The scorecardJson persisted in DB should contain the metadata fields
+  const scorecardJsonRaw = (snapshot as Record<string, unknown>).scorecardJson ?? (snapshot as Record<string, unknown>).scorecard_json;
+  assertNotNull(scorecardJsonRaw, 'scorecardJson persisted in DB');
+  const persistedScorecard = JSON.parse(scorecardJsonRaw as string);
+  assertNotNull(persistedScorecard.metadata, 'persisted scorecard has metadata');
+  assertEqual(persistedScorecard.metadata.modelUsed, 'gpt-4o', 'persisted scorecard metadata.modelUsed is gpt-4o');
+  assertEqual(persistedScorecard.metadata.promptTokens, 120, 'persisted scorecard metadata.promptTokens is 120');
+  assertEqual(persistedScorecard.metadata.completionTokens, 340, 'persisted scorecard metadata.completionTokens is 340');
+  assert(persistedScorecard.metadata.durationMs >= 0, 'persisted scorecard metadata.durationMs is a non-negative integer');
 }
+
 
 // ── performAssessment: with executions included in prompt ────────────────
 
