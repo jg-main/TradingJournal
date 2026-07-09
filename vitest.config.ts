@@ -25,6 +25,7 @@ export default defineConfig({
       'src/app/api/health/__tests__/route.test.ts',
       'src/lib/__tests__/clickhouse-client.test.ts',
       'src/lib/__tests__/ai-provider.test.ts',
+      'src/lib/__tests__/ai-settings-integration.test.ts',
       'src/lib/__tests__/assessment-engine.test.ts',
       'src/app/api/trades/[id]/assessments/__tests__/route.test.ts',
     ],
