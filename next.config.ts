@@ -3,6 +3,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
+  // Allow large ZIP uploads for backup restore (common ZIPs exceed 200MB)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "200mb",
+    },
+  },
   // Only enable turbopack config in dev — production (Docker) uses webpack
   ...(process.env.NODE_ENV !== "production"
     ? {
