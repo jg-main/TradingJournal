@@ -402,11 +402,20 @@ function makeValidScorecard(overrides?: Partial<Scorecard>): string {
 
 function createMockClickHouseClient(
   returnValue: Partial<MarketEvidence> | Error,
+  freshnessOverride?: { status: string; latestDate?: string; threshold: string; message: string },
 ) {
   return {
     getMarketEvidence: vi.fn().mockImplementation(async () => {
       if (returnValue instanceof Error) throw returnValue;
       return returnValue;
+    }),
+    checkFreshness: vi.fn().mockImplementation(async () => {
+      return freshnessOverride ?? {
+        status: 'fresh',
+        latestDate: '2024-01-31',
+        threshold: '2024-01-30',
+        message: 'Data is fresh: latest tradedate 2024-01-31 is within 1 day(s)',
+      };
     }),
   };
 }
@@ -1200,6 +1209,200 @@ console.log('\n23. buildAssessmentPrompt passes assessmentType to output format 
 
   const prompt = buildAssessmentPrompt(gathered, { assessmentType: 'ai_review' });
   assert(prompt.userMessage.includes('ai_review'), 'prompt includes ai_review assessment type');
+}
+
+
+console.log('\n=== Freshness Gate Tests ===\n');
+
+// ── 24. STALE_MARKET_DATA blocks ai_quality assessment ──────────────────
+
+console.log('\n24. performAssessment with stale market data (ai_quality) throws STALE_MARKET_DATA:');
+{
+  cleanup();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, {
+    openedAt: '2024-01-15T10:00:00.000Z',
+  });
+  seedAiSetting();
+
+  const mockCh = createMockClickHouseClient(
+    {
+      symbol: 'AAPL',
+      secid: 12345,
+      dataDateRange: { start: '2024-01-01', end: '2024-01-15' },
+      ohlc: [{ date: '2024-01-02', open: 150.25, high: 152.80, low: 149.90, close: 151.50, volume: 50000000, vwap: 151.25 }],
+      notes: [],
+    },
+    {
+      status: 'stale',
+      latestDate: '2024-01-15',
+      threshold: '2024-01-30',
+      message: 'Data is stale: latest tradedate 2024-01-15 is older than 1 day(s) (threshold: 2024-01-30)',
+    },
+  );
+
+  const mockAi = createMockAiProvider(makeValidScorecard());
+
+  try {
+    await performAssessment(tradeId, {
+      clickhouseClient: mockCh,
+      aiProvider: mockAi,
+    });
+    failed++;
+    console.error('  \u274c Expected AssessmentError but no exception thrown (FAILED)');
+  } catch (err) {
+    if (err instanceof AssessmentError && err.code === AssessmentErrorCode.STALE_MARKET_DATA) {
+      passed++;
+      console.log('  \u2705 Throws AssessmentError with STALE_MARKET_DATA');
+      assertIncludes(err.message, '2024-01-15', 'error message includes latest available date');
+      assertEqual(err.tradeId, tradeId, 'error carries tradeId');
+    } else {
+      failed++;
+      console.error(`  \u274c Expected AssessmentError with STALE_MARKET_DATA, got ${err instanceof Error ? err.constructor.name + ': ' + err.message : String(err)} (FAILED)`);
+    }
+  }
+
+  // Verify checkFreshness was called exactly once
+  assertEqual(
+    (mockCh.checkFreshness as ReturnType<typeof vi.fn>).mock.calls.length,
+    1,
+    'checkFreshness called exactly once',
+  );
+}
+
+// ── 25. Stale data warns but does not block ai_review ───────────────────
+
+console.log('\n25. performAssessment with stale market data (ai_review) returns with warnings:');
+{
+  cleanup();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, {
+    openedAt: '2024-01-15T10:00:00.000Z',
+  });
+  seedAiSetting();
+
+  const mockCh = createMockClickHouseClient(
+    {
+      symbol: 'AAPL',
+      secid: 12345,
+      dataDateRange: { start: '2024-01-01', end: '2024-01-15' },
+      ohlc: [{ date: '2024-01-02', open: 150.25, high: 152.80, low: 149.90, close: 151.50, volume: 50000000, vwap: 151.25 }],
+      notes: [],
+    },
+    {
+      status: 'stale',
+      latestDate: '2024-01-15',
+      threshold: '2024-01-30',
+      message: 'Data is stale: latest tradedate 2024-01-15 is older than 1 day(s) (threshold: 2024-01-30)',
+    },
+  );
+
+  const mockAi = createMockAiProvider(makeValidScorecard({ assessmentType: 'ai_review' }));
+
+  const result = await performAssessment(tradeId, {
+    clickhouseClient: mockCh,
+    aiProvider: mockAi,
+  }, { assessmentType: 'ai_review' });
+
+  assertNotNull(result, 'result returned despite stale data for ai_review');
+  assertEqual(result.scorecard.overallScore, 72, 'scorecard parsed correctly');
+  assert(result.warnings.length > 0, 'has warnings');
+  const warningsText = result.warnings.join(' ');
+  assertIncludes(warningsText, 'data freshness', 'warning mentions data freshness');
+
+  // Verify checkFreshness was called
+  assertEqual(
+    (mockCh.checkFreshness as ReturnType<typeof vi.fn>).mock.calls.length,
+    1,
+    'checkFreshness called exactly once',
+  );
+}
+
+// ── 26. Fresh data passes through normally for ai_quality ────────────────
+
+console.log('\n26. performAssessment with fresh market data (ai_quality) passes through:');
+{
+  cleanup();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, {
+    openedAt: '2024-01-15T10:00:00.000Z',
+  });
+  seedAiSetting();
+
+  const mockCh = createMockClickHouseClient(
+    {
+      symbol: 'AAPL',
+      secid: 12345,
+      dataDateRange: { start: '2024-01-01', end: '2024-01-31' },
+      ohlc: [{ date: '2024-01-02', open: 150.25, high: 152.80, low: 149.90, close: 151.50, volume: 50000000, vwap: 151.25 }],
+      notes: [],
+    },
+    {
+      status: 'fresh',
+      latestDate: '2024-01-31',
+      threshold: '2024-01-30',
+      message: 'Data is fresh: latest tradedate 2024-01-31 is within 1 day(s)',
+    },
+  );
+
+  const mockAi = createMockAiProvider(makeValidScorecard());
+
+  const result = await performAssessment(tradeId, {
+    clickhouseClient: mockCh,
+    aiProvider: mockAi,
+  });
+
+  assertNotNull(result, 'result returned');
+  assertEqual(result.scorecard.overallScore, 72, 'scorecard parsed correctly');
+  assertEqual(result.scorecard.assessmentType, 'ai_quality', 'assessment type is ai_quality');
+
+  // Verify no freshness warnings in result
+  const freshnessWarnings = result.warnings.filter(w => w.includes('freshness') || w.includes('stale'));
+  assertEqual(freshnessWarnings.length, 0, 'no freshness warnings for fresh data');
+
+  // Verify checkFreshness was called
+  assertEqual(
+    (mockCh.checkFreshness as ReturnType<typeof vi.fn>).mock.calls.length,
+    1,
+    'checkFreshness called exactly once',
+  );
+}
+
+// ── 27. Freshness check connection error produces warning ───────────────
+
+console.log('\n27. performAssessment with checkFreshness error produces warning:');
+{
+  cleanup();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, {
+    openedAt: '2024-01-15T10:00:00.000Z',
+  });
+  seedAiSetting();
+
+  const mockCh = {
+    getMarketEvidence: vi.fn().mockImplementation(async () => ({
+      symbol: 'AAPL',
+      secid: 12345,
+      dataDateRange: { start: '2024-01-01', end: '2024-01-31' },
+      ohlc: [{ date: '2024-01-02', open: 150.25, high: 152.80, low: 149.90, close: 151.50, volume: 50000000, vwap: 151.25 }],
+      notes: [],
+    })),
+    checkFreshness: vi.fn().mockRejectedValue(new Error('ClickHouse connection refused')),
+  };
+
+  const mockAi = createMockAiProvider(makeValidScorecard());
+
+  const result = await performAssessment(tradeId, {
+    clickhouseClient: mockCh,
+    aiProvider: mockAi,
+  });
+
+  assertNotNull(result, 'result returned despite freshness check error');
+  assertEqual(result.scorecard.overallScore, 72, 'scorecard still parsed');
+
+  // Warning contains the connection error info
+  const hasFreshnessWarning = result.warnings.some(w => w.includes('check') || w.includes('ClickHouse'));
+  assert(hasFreshnessWarning, 'contains warning about freshness check failure');
 }
 
 
