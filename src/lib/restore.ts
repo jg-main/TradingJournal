@@ -40,19 +40,22 @@ function getSnapshotDir(): string {
 // Parents first, children last — guarantees FK satisfaction at INSERT time
 // when PRAGMA foreign_keys = ON.
 
-const INSERT_ORDER: string[] = [
+export const INSERT_ORDER: string[] = [
   'app_profile',
+  'ai_settings',
   'accounts',
   'settings',
   'lookup_values',
   'setup_definitions',
   'checklist_definitions',
+  'play_evaluation_fields',
   'trades',
   'trade_executions',
   'trade_risk_snapshots',
   'trade_stop_adjustments',
   'trade_assets',
   'trade_grades',
+  'trade_assessment_snapshots',
   'trade_mistakes',
   'trade_check_results',
   'watchlist_items',

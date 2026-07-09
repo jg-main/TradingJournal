@@ -25,6 +25,7 @@ import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import AdmZip from 'adm-zip';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
+import { INSERT_ORDER, DELETE_ORDER } from './restore';
 import type { BackupManifest } from './backup-serializer';
 import { db, getSqliteHandle, initializeDatabase } from '@/db/index';
 
@@ -556,5 +557,29 @@ describe('executeRestore', () => {
 
     // Clean up
     rmSync(dirname(restoreResult.snapshotPath), { recursive: true, force: true });
+  });
+});
+
+describe('INSERT_ORDER and DELETE_ORDER', () => {
+  it('contains every table name from TABLE_REGISTRY', () => {
+    for (const { name } of TABLE_REGISTRY) {
+      expect(INSERT_ORDER).toContain(name);
+    }
+  });
+
+  it('has exactly TABLE_REGISTRY.length entries', () => {
+    expect(INSERT_ORDER.length).toBe(TABLE_REGISTRY.length);
+  });
+
+  it('has no duplicate entries', () => {
+    const seen = new Set<string>();
+    for (const name of INSERT_ORDER) {
+      expect(seen.has(name)).toBe(false);
+      seen.add(name);
+    }
+  });
+
+  it('DELETE_ORDER is the reverse of INSERT_ORDER', () => {
+    expect(DELETE_ORDER).toEqual([...INSERT_ORDER].reverse());
   });
 });
