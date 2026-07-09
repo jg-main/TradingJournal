@@ -20,6 +20,7 @@ import { NextRequest } from 'next/server';
 // ── Hoisted: in-memory SQLite DB + table creation ───────────────────
 
 const testCtx = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Database = require('better-sqlite3');
 
   const sqlite = new Database(':memory:');
@@ -49,6 +50,7 @@ const testCtx = vi.hoisted(() => {
 // ── Module-level mocks ──────────────────────────────────────────────
 // Mock @/db to use the in-memory SQLite database.
 vi.mock('@/db', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { drizzle } = require('drizzle-orm/better-sqlite3');
   const db = drizzle(testCtx.sqlite);
   return {
@@ -65,7 +67,7 @@ const mockCreate = vi.fn();
 vi.mock('openai', () => {
   class AuthError extends Error {
     status: number;
-    constructor(status: number, _error: any, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
       super(message);
       this.name = 'AuthenticationError';
       this.status = status;
@@ -88,7 +90,7 @@ vi.mock('openai', () => {
 
   class GenAPIError extends Error {
     status: number;
-    constructor(status: number, _error: any, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
       super(message);
       this.name = 'APIError';
       this.status = status;

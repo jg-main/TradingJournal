@@ -19,6 +19,7 @@ import { z } from 'zod';
 // Local source files are NOT required here.
 
 const testCtx = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Database = require('better-sqlite3');
 
   const sqlite = new Database(':memory:');
@@ -165,6 +166,7 @@ const testCtx = vi.hoisted(() => {
 // ── Module-level mocks ───────────────────────────────────────────────────
 
 vi.mock('@/db', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { drizzle } = require('drizzle-orm/better-sqlite3');
   const db = drizzle(testCtx.sqlite);
   return {
@@ -617,8 +619,8 @@ console.log('\n1. POST with valid tradeId returns 201 with scorecard:');
   // Verify snapshot persisted to DB
   const dbRow = readDbAssessmentSnapshot(snapshot.id as string);
   assertNotNull(dbRow, 'snapshot persisted to DB');
-  assertEqual((dbRow as any).tradeId ?? (dbRow as any).trade_id, tradeId, 'DB snapshot tradeId matches');
-  assertEqual((dbRow as any).overallScore ?? (dbRow as any).overall_score, 72, 'DB snapshot overallScore matches');
+  assertEqual((dbRow as Record<string, unknown>).tradeId ?? (dbRow as Record<string, unknown>).trade_id, tradeId, 'DB snapshot tradeId matches');
+  assertEqual((dbRow as Record<string, unknown>).overallScore ?? (dbRow as Record<string, unknown>).overall_score, 72, 'DB snapshot overallScore matches');
 
   // Verify apiKey never present in response
   const responseJson = JSON.stringify(result.data);
@@ -677,7 +679,7 @@ console.log('\n3. POST verifies scorecardJson persisted correctly in DB:');
   assertNotNull(dbRow, 'snapshot in DB');
 
   // Parse scorecardJson from DB
-  const scorecardJson = (dbRow as any).scorecardJson ?? (dbRow as any).scorecard_json;
+  const scorecardJson = (dbRow as Record<string, unknown>).scorecardJson ?? (dbRow as Record<string, unknown>).scorecard_json;
   const storedScorecard = JSON.parse(scorecardJson as string);
   assertEqual(storedScorecard.overallScore, 72, 'DB scorecard overallScore matches');
   assertEqual(storedScorecard.gradeLabel, 'B', 'DB scorecard gradeLabel matches');
@@ -830,7 +832,7 @@ console.log('\n9. POST with assessmentType ai_review returns 201 with assessment
   // Verify DB
   const dbRow = readDbAssessmentSnapshot(snapshot.id as string);
   assertNotNull(dbRow, 'snapshot in DB');
-  const actualType = (dbRow as any).assessmentType ?? (dbRow as any).assessment_type;
+  const actualType = (dbRow as Record<string, unknown>).assessmentType ?? (dbRow as Record<string, unknown>).assessment_type;
   assertEqual(actualType, 'ai_review', 'assessmentType is ai_review in DB');
 }
 

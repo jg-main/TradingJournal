@@ -24,6 +24,7 @@ import { randomUUID } from 'node:crypto';
 // fine at hoist time. Local source files are NOT required here.
 
 const testCtx = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Database = require('better-sqlite3');
 
   const sqlite = new Database(':memory:');
@@ -167,6 +168,7 @@ const testCtx = vi.hoisted(() => {
 // so this schema-less instance works with all engine queries.
 
 vi.mock('@/db', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { drizzle } = require('drizzle-orm/better-sqlite3');
   const db = drizzle(testCtx.sqlite);
   return {
@@ -269,6 +271,7 @@ function seedAccount(overrides: Record<string, unknown> = {}): string {
     createdAt: now,
     updatedAt: now,
     ...overrides,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).run();
   return id;
 }
@@ -284,6 +287,7 @@ function seedLookupSetup(value: string): string {
     isActive: true,
     createdAt: now,
     updatedAt: now,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).run();
   return id;
 }
@@ -299,6 +303,7 @@ function seedSetupDefinition(overrides: Record<string, unknown> = {}): string {
     createdAt: now,
     updatedAt: now,
     ...overrides,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).run();
   return id;
 }
@@ -323,6 +328,7 @@ function seedTrade(accountId: string, overrides: Record<string, unknown> = {}): 
     createdAt: now,
     updatedAt: now,
     ...overrides,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).run();
   return id;
 }
@@ -340,6 +346,7 @@ function seedExecution(tradeId: string, overrides: Record<string, unknown> = {})
     executedAt: '2024-01-15T09:30:00.000Z',
     createdAt: now,
     ...overrides,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).run();
   return id;
 }
@@ -360,6 +367,7 @@ function seedPlayEvaluationField(setupDefId: string, overrides: Record<string, u
     createdAt: now,
     updatedAt: now,
     ...overrides,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).run();
   return id;
 }
@@ -376,6 +384,7 @@ function seedAiSetting(overrides: Record<string, unknown> = {}) {
     createdAt: now,
     updatedAt: now,
     ...overrides,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).run();
   return id;
 }
@@ -635,8 +644,8 @@ console.log('\n7. buildAssessmentPrompt handles trade with no symbol:');
       createdAt: '2024-01-15T00:00:00.000Z',
       updatedAt: '2024-01-15T00:00:00.000Z',
     },
-    executions: [] as Array<any>,
-    evaluationFields: [] as Array<any>,
+    executions: [] as never[],
+    evaluationFields: [] as never[],
     setupName: null,
     marketEvidence: null,
     warnings: ['Trade has no symbol'],
@@ -679,8 +688,8 @@ console.log('\n8. buildAssessmentPrompt handles trade with no setupId:');
       createdAt: '2024-01-15T00:00:00.000Z',
       updatedAt: '2024-01-15T00:00:00.000Z',
     },
-    executions: [] as Array<any>,
-    evaluationFields: [] as Array<any>,
+    executions: [] as never[],
+    evaluationFields: [] as never[],
     setupName: null,
     marketEvidence: null,
     warnings: ['Trade has no setup'],

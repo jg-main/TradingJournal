@@ -36,7 +36,7 @@ const mockCreate = vi.fn();
 vi.mock('openai', () => {
   class AuthError extends Error {
     status: number;
-    constructor(status: number, _error: any, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
       super(message);
       this.name = 'AuthenticationError';
       this.status = status;
@@ -59,7 +59,7 @@ vi.mock('openai', () => {
 
   class GenAPIError extends Error {
     status: number;
-    constructor(status: number, _error: any, message: string, _headers?: Headers) {
+    constructor(status: number, _error: unknown, message: string, _headers?: Headers) {
       super(message);
       this.name = 'APIError';
       this.status = status;
@@ -266,7 +266,7 @@ describe('createAiProvider', () => {
   describe('error handling', () => {
     it('wraps AuthenticationError as AUTH_ERROR', async () => {
       mockCreate.mockRejectedValueOnce(
-        new (MockAuthError as any)(401, { code: 'invalid_api_key' }, 'Incorrect API key provided'),
+        new (MockAuthError as unknown as typeof Error)(401, { code: 'invalid_api_key' }, 'Incorrect API key provided'),
       );
 
       const provider = createAiProvider({
@@ -326,7 +326,7 @@ describe('createAiProvider', () => {
 
     it('wraps APIError as CONNECTION_ERROR with statusCode', async () => {
       mockCreate.mockRejectedValueOnce(
-        new (APIError as any)(429, { code: 'rate_limit' }, 'Too many requests'),
+        new (APIError as unknown as typeof Error)(429, { code: 'rate_limit' }, 'Too many requests'),
       );
 
       const provider = createAiProvider({
