@@ -49,7 +49,9 @@ export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualVa
   const actualEntry = actualValues?.avgEntryPrice ?? riskSnapshot.initialEntryPrice;
   const actualExit = actualValues?.avgExitPrice;
   const actualQty = riskSnapshot.initialQuantity;
-  const actualStop = actualExit != null ? Math.min(actualExit, actualEntry ?? Infinity) : riskSnapshot.initialStopPrice;
+  // Actual stop is always the initial stop from the risk snapshot (the risk that was actually taken).
+  // Do NOT derive stop from exit price — that breaks risk calculation for winning trades.
+  const actualStop = riskSnapshot.initialStopPrice ?? plannedValues?.plannedStop ?? null;
 
   const actualRiskShare = actualEntry != null && actualStop != null
     ? Math.abs(actualEntry - actualStop) : null;
