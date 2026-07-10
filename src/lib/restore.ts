@@ -55,6 +55,7 @@ export const INSERT_ORDER: string[] = [
   'trade_stop_adjustments',
   'trade_assets',
   'trade_grades',
+  'position_price_snapshots',
   'trade_assessment_snapshots',
   'trade_mistakes',
   'trade_check_results',

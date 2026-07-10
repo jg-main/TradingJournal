@@ -106,6 +106,7 @@ export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'trade_grades', ref: tables.tradeGrades },
   { name: 'trade_mistakes', ref: tables.tradeMistakes },
   { name: 'trade_check_results', ref: tables.tradeCheckResults },
+  { name: 'position_price_snapshots', ref: tables.positionPriceSnapshots },
   { name: 'trade_assessment_snapshots', ref: tables.tradeAssessmentSnapshots },
   { name: 'watchlist_items', ref: tables.watchlistItems },
   { name: 'account_transactions', ref: tables.accountTransactions },

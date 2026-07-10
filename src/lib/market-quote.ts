@@ -23,6 +23,9 @@ type YahooRawQuote = Record<string, unknown> & {
   symbol?: string;
   regularMarketPrice?: number | null;
   marketState?: string;
+  shortName?: string;
+  longName?: string;
+  quoteType?: string;
 };
 
 // ── Quote Result Shape ───────────────────────────────────────────────────
@@ -38,6 +41,14 @@ export interface QuoteResult {
   fetchedAt: string;
   /** Source identifier for provenance tracking */
   source: "yahoo" | "mock";
+  /** Company short name from the provider (e.g. "Apple Inc.") */
+  shortName?: string;
+  /** Quote type from the provider (e.g. "EQUITY", "ETF") */
+  quoteType?: string;
+  /** Sector from the provider (e.g. "Technology") */
+  sector?: string;
+  /** Industry from the provider (e.g. "Consumer Electronics") */
+  industry?: string;
   /** Human-readable error message when the quote could not be resolved */
   error?: string;
 }
@@ -84,7 +95,6 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
     try {
       results = (await this.client.quote(symbols)) as YahooRawQuote[];
     } catch (err: unknown) {
-      // Network error or unexpected API failure — every symbol gets an error result
       const message = err instanceof Error ? err.message : String(err);
       const now = new Date().toISOString();
       return symbols.map((symbol) => ({
@@ -98,7 +108,7 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
     }
 
     const now = new Date().toISOString();
-    return symbols.map((symbol) => {
+    const parsed = symbols.map((symbol) => {
       const match = results.find(
         (r) => r?.symbol?.toUpperCase() === symbol.toUpperCase(),
       );
@@ -114,6 +124,46 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
       }
       return this.parseQuote(match);
     });
+
+    // ── Fetch asset profiles (sector/industry) ──
+    const uniqueSymbols = [...new Set(parsed.filter(q => q.price != null).map(q => q.symbol))];
+    const profiles = await this.fetchProfiles(uniqueSymbols);
+    for (const quote of parsed) {
+      const profile = profiles.get(quote.symbol);
+      if (profile) {
+        quote.sector = profile.sector;
+        quote.industry = profile.industry;
+      }
+    }
+
+    return parsed;
+  }
+
+  /**
+   * Fetch asset profiles for symbols. Non-fatal — failures are logged but quotes still return.
+   */
+  private async fetchProfiles(symbols: string[]): Promise<Map<string, { sector?: string; industry?: string }>> {
+    const map = new Map<string, { sector?: string; industry?: string }>();
+    if (symbols.length === 0) return map;
+
+    const results = await Promise.allSettled(
+      symbols.map(async (symbol) => {
+        const summary = await this.client.quoteSummary(symbol, { modules: ['assetProfile'] });
+        const p = (summary as any)?.assetProfile;
+        return {
+          symbol,
+          sector: typeof p?.sector === 'string' ? p.sector : undefined,
+          industry: typeof p?.industry === 'string' ? p.industry : undefined,
+        };
+      }),
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        map.set(r.value.symbol, { sector: r.value.sector, industry: r.value.industry });
+      }
+    }
+    return map;
   }
 
   /**
@@ -132,6 +182,8 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
       marketState: raw.marketState ?? "UNKNOWN",
       fetchedAt: now,
       source: "yahoo",
+      shortName: typeof raw.shortName === 'string' ? raw.shortName : undefined,
+      quoteType: typeof raw.quoteType === 'string' ? raw.quoteType : undefined,
     };
   }
 }
@@ -201,6 +253,10 @@ export function createMockQuoteResult(
     symbol,
     price,
     marketState,
+    shortName: symbol,
+    quoteType: 'EQUITY',
+    sector: 'Technology',
+    industry: 'Software',
     fetchedAt: new Date().toISOString(),
     source: "mock",
   };
