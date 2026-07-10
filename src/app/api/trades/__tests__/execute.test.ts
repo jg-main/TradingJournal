@@ -108,6 +108,7 @@ sqlite.exec(`
     default_risk_pct REAL,
     position_sizing_rules TEXT,
     chart_patterns TEXT,
+    analysis_config TEXT,
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
@@ -147,6 +148,8 @@ sqlite.exec(`
     closed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );

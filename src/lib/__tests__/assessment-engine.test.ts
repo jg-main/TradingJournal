@@ -68,6 +68,7 @@ const testCtx = vi.hoisted(() => {
       default_risk_pct REAL,
       position_sizing_rules TEXT,
       chart_patterns TEXT,
+      analysis_config TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)
@@ -95,6 +96,8 @@ const testCtx = vi.hoisted(() => {
       closed_at TEXT,
       exit_notes TEXT,
       lesson TEXT,
+      current_price REAL,
+      current_price_fetched_at TEXT,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)
     );
@@ -161,6 +164,28 @@ const testCtx = vi.hoisted(() => {
       prompt_tokens INTEGER,
       completion_tokens INTEGER,
       notes TEXT,
+      created_at TEXT DEFAULT (current_timestamp)
+    );
+
+    CREATE TABLE checklist_definitions (
+      id TEXT PRIMARY KEY NOT NULL,
+      account_id TEXT REFERENCES accounts(id),
+      setup_id TEXT REFERENCES setup_definitions(id),
+      description TEXT NOT NULL,
+      sort_order INTEGER,
+      is_active INTEGER DEFAULT 1,
+      deleted_at TEXT,
+      created_at TEXT DEFAULT (current_timestamp),
+      updated_at TEXT DEFAULT (current_timestamp)
+    );
+
+    CREATE TABLE trade_check_results (
+      id TEXT PRIMARY KEY NOT NULL,
+      trade_id TEXT REFERENCES trades(id) ON DELETE CASCADE NOT NULL,
+      checklist_definition_id TEXT REFERENCES checklist_definitions(id) NOT NULL,
+      passed INTEGER NOT NULL,
+      comment TEXT,
+      checked_at TEXT DEFAULT (current_timestamp),
       created_at TEXT DEFAULT (current_timestamp)
     );
   `);
@@ -1567,7 +1592,7 @@ console.log('\n28. performAssessment derives lookback from max of evaluation fie
 
 // ── 29. No evaluation fields (fallback to 45-day default) ────────────────
 
-console.log('\n29. performAssessment uses 45-day default lookback when no evaluation fields:');
+console.log('\n29. performAssessment uses 365-day default lookback when no evaluation fields:');
 {
   cleanup();
   const accountId = seedAccount();
@@ -1580,7 +1605,7 @@ console.log('\n29. performAssessment uses 45-day default lookback when no evalua
 
   const refDate = new Date('2024-06-15');
   const expectedStart = new Date(refDate);
-  expectedStart.setDate(expectedStart.getDate() - 45);
+  expectedStart.setDate(expectedStart.getDate() - 365);
   const expectedStartStr = expectedStart.toISOString().slice(0, 10);
 
   const mockCh = createMockClickHouseClient({
@@ -1602,7 +1627,7 @@ console.log('\n29. performAssessment uses 45-day default lookback when no evalua
   });
 
   const queryArg = (mockCh.getMarketEvidence as ReturnType<typeof vi.fn>).mock.calls[0][0];
-  assertEqual(queryArg.startDate, expectedStartStr, `lookback window falls back to 45 days (startDate: ${expectedStartStr})`);
+  assertEqual(queryArg.startDate, expectedStartStr, `lookback window falls back to 365 days (startDate: ${expectedStartStr})`);
   assertNotNull(result, 'result returned');
   assertEqual(result.scorecard.overallScore, 72, 'scorecard parsed correctly');
 }

@@ -68,6 +68,7 @@ sqlite.exec(`
     default_risk_pct REAL,
     position_sizing_rules TEXT,
     chart_patterns TEXT,
+    analysis_config TEXT,
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
