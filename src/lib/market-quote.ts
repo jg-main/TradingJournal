@@ -135,3 +135,73 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
     };
   }
 }
+
+// ── Mock Provider (for testing) ──────────────────────────────────────────
+
+/**
+ * MockMarketQuoteProvider returns pre-configured quotes from a Map.
+ * Symbols not in the map get an error result with price=null.
+ * Use this in unit tests to avoid real network calls.
+ *
+ * @example
+ * ```ts
+ * const quotes = new Map([
+ *   ['AAPL', createMockQuoteResult('AAPL', 178.5, 'REGULAR')],
+ * ]);
+ * const provider = new MockMarketQuoteProvider(quotes);
+ * const results = await provider.getQuote(['AAPL']);
+ * ```
+ */
+export class MockMarketQuoteProvider implements MarketQuoteProvider {
+  private quotes: Map<string, QuoteResult>;
+
+  constructor(quotes: Map<string, QuoteResult>) {
+    this.quotes = quotes;
+  }
+
+  async getQuote(symbols: string[]): Promise<QuoteResult[]> {
+    if (symbols.length === 0) {
+      return [];
+    }
+
+    return symbols.map((symbol) => {
+      const upper = symbol.toUpperCase();
+      const q = this.quotes.get(upper);
+      if (q) {
+        return q;
+      }
+      return {
+        symbol: upper,
+        price: null,
+        marketState: "UNKNOWN",
+        fetchedAt: new Date().toISOString(),
+        source: "mock" as const,
+        error: `No mock quote configured for symbol: ${symbol}`,
+      };
+    });
+  }
+}
+
+// ── Mock Quote Factory ───────────────────────────────────────────────────
+
+/**
+ * Factory function that creates a QuoteResult with source='mock'.
+ * Useful in tests to build expected results with minimal boilerplate.
+ *
+ * @param symbol - Ticker symbol
+ * @param price - Price value (or null for unavailable)
+ * @param marketState - Market state string (defaults to "UNKNOWN")
+ */
+export function createMockQuoteResult(
+  symbol: string,
+  price: number | null,
+  marketState: string = "UNKNOWN",
+): QuoteResult {
+  return {
+    symbol,
+    price,
+    marketState,
+    fetchedAt: new Date().toISOString(),
+    source: "mock",
+  };
+}
