@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, unique } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, unique, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // ── Profile & Settings ──────────────────────────────────────────────────
@@ -103,6 +103,8 @@ export const trades = sqliteTable('trades', {
   closedAt: text('closed_at'),
   exitNotes: text('exit_notes'),
   lesson: text('lesson'),
+  currentPrice: real('current_price'),
+  currentPriceFetchedAt: text('current_price_fetched_at'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });
@@ -121,6 +123,20 @@ export const tradeExecutions = sqliteTable('trade_executions', {
   notes: text('notes'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
 });
+
+export const positionPriceSnapshots = sqliteTable('position_price_snapshots', {
+  id: text('id').primaryKey().notNull(),
+  tradeId: text('trade_id')
+    .references(() => trades.id, { onDelete: 'cascade' })
+    .notNull(),
+  price: real('price').notNull(),
+  source: text('source').notNull().default('yahoo'),
+  marketState: text('market_state'),
+  fetchedAt: text('fetched_at').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_position_price_snapshots_trade_id_fetched_at').on(t.tradeId, t.fetchedAt),
+]);
 
 export const tradeRiskSnapshots = sqliteTable('trade_risk_snapshots', {
   id: text('id').primaryKey().notNull(),
