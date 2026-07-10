@@ -1,9 +1,9 @@
 'use client';
 
-import { Target } from 'lucide-react';
+import { Target, TrendingUp, Loader2 } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { computeRiskReward } from './helpers';
+import { computeRiskReward, formatPrice, formatCurrency, formatDate } from './helpers';
 import type { RiskSnapshot, Trade, MtmData } from './types';
 
 interface RiskSnapshotCardProps {
@@ -67,6 +67,24 @@ export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualVa
     ? computeRiskReward(dir, actualEntry, actualExit, actualQty) : null;
   const actualRR = actualReturn != null && actualRiskPct != null && actualRiskPct > 0
     ? (actualReturn.pct / actualRiskPct).toFixed(2) : null;
+
+  // ── MTM computations ──
+  const unrealizedPnl =
+    mtmData?.price != null && actualEntry != null
+      ? dir === 'long'
+        ? mtmData.price - actualEntry
+        : actualEntry - mtmData.price
+      : null;
+  const unrealizedPnlPct =
+    unrealizedPnl != null && actualEntry != null && actualEntry > 0
+      ? (unrealizedPnl / actualEntry) * 100
+      : null;
+  const mtmRR =
+    mtmData?.price != null && planEntry != null && planStop != null
+      ? dir === 'long'
+        ? ((mtmData.price - planStop) / (planEntry - planStop)).toFixed(2)
+        : ((planStop - mtmData.price) / (planStop - planEntry)).toFixed(2)
+      : null;
 
   const showSideBySide = !!plannedValues;
 
@@ -169,6 +187,74 @@ export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualVa
               {riskSnapshot.accountRiskPct != null ? riskSnapshot.accountRiskPct.toFixed(2) + '%' : '-'}
             </div>
           </div>
+        )}
+
+        {/* ── MTM Section ── */}
+        {mtmData != null && (
+          <>
+            <div className="border-t border-zinc-200 dark:border-zinc-700 my-4" />
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="size-4 text-zinc-500" />
+              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Mark to Market</span>
+            </div>
+            {mtmData.price == null && !mtmData.loading && !mtmData.error ? (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">No current price data</p>
+            ) : mtmData.loading && mtmData.price == null ? (
+              <div className="animate-pulse space-y-2">
+                <div className="h-4 bg-zinc-200 dark:bg-zinc-700 rounded w-24" />
+                <div className="h-4 bg-zinc-200 dark:bg-zinc-700 rounded w-32" />
+                <div className="h-4 bg-zinc-200 dark:bg-zinc-700 rounded w-28" />
+              </div>
+            ) : mtmData.error && mtmData.price == null ? (
+              <p className="text-xs text-red-500">{mtmData.error}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                {mtmData.loading && (
+                  <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    <Loader2 className="size-3 animate-spin" />
+                    Refreshing...
+                  </div>
+                )}
+                {mtmData.error && mtmData.price != null && (
+                  <p className="mb-2 text-xs text-amber-500">{mtmData.error}</p>
+                )}
+                <table className="w-full text-sm">
+                  <tbody>
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className={'py-2 ' + T}>Current Price</td>
+                      <td className={'py-2 text-right ' + V}>{formatPrice(mtmData.price)}</td>
+                    </tr>
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className={'py-2 ' + T}>Unrealized P&L $</td>
+                      <td className={'py-2 text-right tabular-nums ' + (unrealizedPnl != null ? (unrealizedPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : V)}>
+                        {unrealizedPnl != null ? formatCurrency(unrealizedPnl) : '-'}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className={'py-2 ' + T}>Unrealized P&L %</td>
+                      <td className={'py-2 text-right tabular-nums ' + (unrealizedPnlPct != null ? (unrealizedPnlPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : V)}>
+                        {unrealizedPnlPct != null ? unrealizedPnlPct.toFixed(1) + '%' : '-'}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className={'py-2 ' + T}>MTM R:R</td>
+                      <td className={'py-2 text-right ' + V}>
+                        {mtmRR != null ? '1:' + mtmRR : '-'}
+                      </td>
+                    </tr>
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className={'py-2 ' + T}>Source</td>
+                      <td className={'py-2 text-right text-xs ' + V}>{mtmData.source ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className={'py-2 ' + T}>Last Updated</td>
+                      <td className={'py-2 text-right text-xs ' + V}>{formatDate(mtmData.fetchedAt)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
