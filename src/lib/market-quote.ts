@@ -10,6 +10,21 @@
  * Pure types and functions — no DB dependency.
  */
 
+import YahooFinance from "yahoo-finance2";
+
+// ── Yahoo Finance Raw Quote Shape ────────────────────────────────────────
+
+/**
+ * Minimum subset of fields we consume from Yahoo Finance's quote() response.
+ * We use a string-indexed inline type to remain compatible with all Quote
+ * union variants (QuoteBase defines [key: string]: any).
+ */
+type YahooRawQuote = Record<string, unknown> & {
+  symbol?: string;
+  regularMarketPrice?: number | null;
+  marketState?: string;
+};
+
 // ── Quote Result Shape ───────────────────────────────────────────────────
 
 export interface QuoteResult {
@@ -45,4 +60,78 @@ export interface MarketQuoteProvider {
  */
 export function hasPrice(quote: QuoteResult): quote is QuoteResult & { price: number } {
   return quote.price !== null && quote.price !== undefined;
+}
+
+// ── Yahoo Finance Provider ───────────────────────────────────────────────
+
+export class YahooFinanceProvider implements MarketQuoteProvider {
+  private client: InstanceType<typeof YahooFinance>;
+
+  constructor() {
+    this.client = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
+  }
+
+  /**
+   * Fetch current quotes for the given symbols from Yahoo Finance.
+   * Preserves input order; missing/unresolved symbols get price=null + error.
+   */
+  async getQuote(symbols: string[]): Promise<QuoteResult[]> {
+    if (symbols.length === 0) {
+      return [];
+    }
+
+    let results: YahooRawQuote[];
+    try {
+      results = (await this.client.quote(symbols)) as YahooRawQuote[];
+    } catch (err: unknown) {
+      // Network error or unexpected API failure — every symbol gets an error result
+      const message = err instanceof Error ? err.message : String(err);
+      const now = new Date().toISOString();
+      return symbols.map((symbol) => ({
+        symbol,
+        price: null,
+        marketState: "UNKNOWN",
+        fetchedAt: now,
+        source: "yahoo" as const,
+        error: `Yahoo Finance API error: ${message}`,
+      }));
+    }
+
+    const now = new Date().toISOString();
+    return symbols.map((symbol) => {
+      const match = results.find(
+        (r) => r?.symbol?.toUpperCase() === symbol.toUpperCase(),
+      );
+      if (!match) {
+        return {
+          symbol,
+          price: null,
+          marketState: "UNKNOWN",
+          fetchedAt: now,
+          source: "yahoo" as const,
+          error: `No quote data available for symbol: ${symbol}`,
+        };
+      }
+      return this.parseQuote(match);
+    });
+  }
+
+  /**
+   * Map a single Yahoo Finance quote response to our canonical QuoteResult.
+   */
+  private parseQuote(raw: YahooRawQuote): QuoteResult {
+    const now = new Date().toISOString();
+
+    // Note: regularMarketPrice may be undefined for delisted/pre-market symbols
+    const price =
+      raw.regularMarketPrice != null ? Number(raw.regularMarketPrice) : null;
+
+    return {
+      symbol: raw.symbol ?? "UNKNOWN",
+      price,
+      marketState: raw.marketState ?? "UNKNOWN",
+      fetchedAt: now,
+      source: "yahoo",
+    };
+  }
 }
