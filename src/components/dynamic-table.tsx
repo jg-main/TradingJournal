@@ -168,18 +168,17 @@ export default function DynamicTable<TData>({
 
   return (
     <div className={cn('overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800', className)}>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={table.getState().columnOrder} strategy={horizontalListSortingStrategy}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <table className="w-full text-sm">
+          <SortableContext items={table.getState().columnOrder} strategy={horizontalListSortingStrategy}>
+            <thead>
+              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
                 {table.getFlatHeaders().map(header => (
                   <DraggableHeader key={header.id} header={header} />
                 ))}
-              </SortableContext>
-            </DndContext>
-          </tr>
-        </thead>
+              </tr>
+            </thead>
+          </SortableContext>
         <tbody>
           {table.getRowModel().rows.map(row => (
             <tr
@@ -203,6 +202,7 @@ export default function DynamicTable<TData>({
           ))}
         </tbody>
       </table>
+      </DndContext>
     </div>
   );
 }
