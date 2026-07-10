@@ -103,5 +103,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV DB_FILE_NAME=/data/journal.db
 
 CMD ["node", "node_modules/next/dist/bin/next", "start"]
