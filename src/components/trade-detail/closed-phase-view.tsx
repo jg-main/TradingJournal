@@ -331,6 +331,7 @@ export default function ClosedPhaseView({
           assets={assets}
           tradeId={trade.id}
           onAssetsChanged={onAssetsChanged}
+          defaultPhase="review"
         />
       </div>
 

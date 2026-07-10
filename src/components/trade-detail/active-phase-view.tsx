@@ -183,6 +183,7 @@ export default function ActivePhaseView({
           assets={entryManagementAssets}
           tradeId={trade.id}
           onAssetsChanged={onAssetsChanged}
+          defaultPhase="entry"
         />
       </div>
     </>

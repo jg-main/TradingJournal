@@ -13,6 +13,8 @@ interface TradeAssetsCardProps {
   assets: TradeAsset[];
   tradeId: string;
   onAssetsChanged: () => Promise<void>;
+  /** Default phase for paste/drop uploads — changes based on trade lifecycle stage */
+  defaultPhase?: string;
 }
 
 const phases = ['pre_trade', 'entry', 'management', 'exit', 'review'] as const;
@@ -29,6 +31,7 @@ export default function TradeAssetsCard({
   assets,
   tradeId,
   onAssetsChanged,
+  defaultPhase = 'pre_trade',
 }: TradeAssetsCardProps) {
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<'upload' | 'link'>('upload');
@@ -40,7 +43,7 @@ export default function TradeAssetsCard({
 
   // Upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadPhase, setUploadPhase] = useState<string>('pre_trade');
+  const [uploadPhase, setUploadPhase] = useState<string>(defaultPhase ?? 'pre_trade');
   const [uploadLabel, setUploadLabel] = useState('');
 
   // Link state
@@ -52,7 +55,7 @@ export default function TradeAssetsCard({
 
   const resetForm = () => {
     setUploadFile(null);
-    setUploadPhase('pre_trade');
+    setUploadPhase(defaultPhase ?? 'pre_trade');
     setUploadLabel('');
     setLinkUrl('');
     setLinkPhase('pre_trade');
@@ -274,6 +277,25 @@ export default function TradeAssetsCard({
         </div>
       </CardHeader>
       <CardContent>
+        {/* Paste / Drop zone — always visible */}
+        <div
+          onPaste={handlePaste}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className={`mb-4 flex cursor-default flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors ${
+            dragOver
+              ? 'border-zinc-900 bg-zinc-100 dark:border-zinc-100 dark:bg-zinc-800'
+              : 'border-zinc-300 bg-white hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500'
+          }`}
+        >
+          <ClipboardPaste className="mb-1 size-5 text-zinc-400" />
+          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            {dragOver ? 'Drop here' : 'Paste screenshot (Ctrl+V) or drag & drop'}
+          </p>
+        </div>
+
         {/* Asset form — collapsible */}
         {showForm && (
           <div className="mb-6 space-y-4 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -318,32 +340,7 @@ export default function TradeAssetsCard({
             </div>
 
             {formMode === 'upload' ? (
-              <form
-                onSubmit={handleUpload}
-                className="space-y-3"
-                onPaste={handlePaste}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-              >
-                {/* Paste / Drop zone */}
-                <div
-                  className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-colors ${
-                    dragOver
-                      ? 'border-zinc-900 bg-zinc-100 dark:border-zinc-100 dark:bg-zinc-800'
-                      : 'border-zinc-300 bg-white hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500'
-                  }`}
-                >
-                  <ClipboardPaste className="mb-2 size-6 text-zinc-400" />
-                  <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-                    {dragOver ? 'Drop screenshot here' : 'Paste screenshot (Ctrl+V) or drag & drop'}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                    Or click below to pick a file
-                  </p>
-                </div>
-
+              <form onSubmit={handleUpload} className="space-y-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Screenshot File
