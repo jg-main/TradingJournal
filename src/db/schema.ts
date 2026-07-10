@@ -71,6 +71,7 @@ export const setupDefinitions = sqliteTable('setup_definitions', {
   defaultRiskPct: real('default_risk_pct'),
   positionSizingRules: text('position_sizing_rules'),
   chartPatterns: text('chart_patterns'),
+  analysisConfig: text('analysis_config'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),

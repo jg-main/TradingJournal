@@ -1,0 +1,1 @@
+ALTER TABLE `setup_definitions` ADD `analysis_config` text;
