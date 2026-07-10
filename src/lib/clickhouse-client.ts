@@ -100,6 +100,30 @@ export const MarketEvidenceQuerySchema = z.object({
 
 export type MarketEvidenceQuery = z.infer<typeof MarketEvidenceQuerySchema>;
 
+// ── Feature Time-Series Types ─────────────────────────────────────────────
+
+/**
+ * A single snapshot of a feature value on a given date.
+ */
+export interface FeatureDataPoint {
+  date: string;
+  value: number;
+}
+
+/**
+ * Full time series for a single feature.
+ */
+export interface FeatureTimeSeries {
+  /** Feature identifier (column name) */
+  id: string;
+  /** Human-readable label */
+  label: string;
+  /** Time series sorted by date ASC */
+  data: FeatureDataPoint[];
+  /** Error message if the query failed */
+  error?: string;
+}
+
 // ── Freshness Check Types ──────────────────────────────────────────────────
 
 /**
@@ -401,9 +425,17 @@ export function createClickHouseClient(config: ClickHouseConfig) {
     latestDate: string | null;
     error: string | null;
   }> {
+    // Check the most recent date across both OHLC and features tables.
+    // The features table can lag behind OHLC by several trading days,
+    // so we take the EARLIER of the two to ensure both are fresh.
     const sql = [
-      `SELECT max(tradedate) AS latest_date`,
-      `FROM ${config.database}.as_us_equity_ohlc_daily`,
+      `SELECT min(max_date) AS latest_date FROM (`,
+      `  SELECT max(tradedate) AS max_date`,
+      `  FROM ${config.database}.as_us_equity_ohlc_daily`,
+      `  UNION ALL`,
+      `  SELECT max(date) AS max_date`,
+      `  FROM ${config.database}.features_equity_indicators_daily`,
+      `)`,
     ].join('\n');
 
     const { rows, error } = await querySql(sql);
@@ -581,7 +613,99 @@ export function createClickHouseClient(config: ClickHouseConfig) {
     };
   }
 
-  return { getMarketEvidence, checkFreshness };
+  /**
+   * Retrieve time-series data for one or more feature columns for a symbol.
+   *
+   * Queries the features_equity_indicators_daily table by secid and date range,
+   * returning a time series for each requested column. Columns that do not
+   * exist in the table are returned with an error message.
+   *
+   * Always returns one entry per requested column — never throws.
+   */
+  async function getFeatureTimeSeries(
+    symbol: string,
+    features: Array<{ id: string; label: string }>,
+    startDate: string,
+    endDate: string,
+  ): Promise<FeatureTimeSeries[]> {
+    // Step 1: Resolve symbol
+    const { secid, note: resolveNote } = await resolveSecid(symbol);
+    if (resolveNote && !secid) {
+      return features.map((f) => ({
+        id: f.id,
+        label: f.label,
+        data: [],
+        error: resolveNote,
+      }));
+    }
+
+    // Step 2: Query each feature column
+    const results: FeatureTimeSeries[] = [];
+    for (const feat of features) {
+      const escapedStart = escapeSqlString(startDate);
+      const escapedEnd = escapeSqlString(endDate);
+
+      // Validate column name — only allow alphanumeric + underscore
+      if (!/^[a-zA-Z_]\w*$/.test(feat.id)) {
+        results.push({ id: feat.id, label: feat.label, data: [], error: `Invalid column name: ${feat.id}` });
+        continue;
+      }
+
+      const sql = [
+        'SELECT date,',
+        `  \`${feat.id}\``,
+        `FROM ${config.database}.features_equity_indicators_daily`,
+        secid !== undefined ? `WHERE secid = ${secid}` : '',
+        `  AND date BETWEEN '${escapedStart}' AND '${escapedEnd}'`,
+        'ORDER BY date',
+      ].filter(Boolean).join('\n');
+
+      const { rows, error } = await querySql(sql);
+
+      if (error) {
+        results.push({ id: feat.id, label: feat.label, data: [], error });
+        continue;
+      }
+
+      const data: FeatureDataPoint[] = [];
+      for (const row of rows) {
+        const val = parseNumeric(row[feat.id]);
+        if (!Number.isNaN(val)) {
+          data.push({ date: row.date, value: val });
+        }
+      }
+
+      results.push({ id: feat.id, label: feat.label, data });
+    }
+
+    return results;
+  }
+
+  /**
+   * Discover all available feature column names from the indicators table,
+   * excluding metadata columns (date, secid, computed_at).
+   *
+   * Returns the column names with auto-generated human labels.
+   */
+  async function getAllFeatureColumns(): Promise<Array<{ id: string; label: string }>> {
+    const sql = `DESCRIBE ${config.database}.features_equity_indicators_daily`;
+    const { rows, error } = await querySql(sql);
+
+    if (error) {
+      console.log(JSON.stringify({ event: 'describe_features_error', error }));
+      return [];
+    }
+
+    const exclude = new Set(['date', 'secid', 'computed_at']);
+    return rows
+      .filter((r) => !exclude.has(r.name))
+      .map((r) => ({
+        id: r.name,
+        label: r.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      }));
+  }
+
+  return { getMarketEvidence, checkFreshness, getFeatureTimeSeries, getAllFeatureColumns };
 }
 
 // ── Convenience Default Client ───────────────────────────────────────────
