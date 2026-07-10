@@ -65,7 +65,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // Build update data from allowed fields
     const updateData: Record<string, unknown> = { updatedAt: now };
 
-    const stringFields = ['name', 'description', 'howToPlay', 'entryRules', 'exitRules', 'tags', 'positionSizingRules', 'chartPatterns'] as const;
+    const stringFields = ['name', 'description', 'howToPlay', 'entryRules', 'exitRules', 'tags', 'positionSizingRules', 'chartPatterns', 'analysisConfig'] as const;
     for (const field of stringFields) {
       if (body[field] !== undefined) {
         updateData[field] = body[field];

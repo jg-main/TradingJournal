@@ -14,6 +14,7 @@ const createSchema = z.object({
   defaultRiskPct: z.number().min(0).max(100).nullable().optional(),
   positionSizingRules: z.string().nullable().optional(),
   chartPatterns: z.string().nullable().optional(),
+  analysisConfig: z.string().nullable().optional(),
 });
 
 export async function GET(request: NextRequest) {
