@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
-import type { CheckResult } from '@/components/trade-detail/types';
+import type { CheckResult, MtmData } from '@/components/trade-detail/types';
 import { EmptyState } from '@/components/empty-state';
 
 import {
@@ -167,6 +167,47 @@ function toExecutionData(executions: Execution[]): ExecutionData[] {
   }));
 }
 
+/**
+ * Fetch MTM (mark-to-market) data for a single trade from the API.
+ * Used on mount and after manual price refresh.
+ */
+async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): Promise<void> {
+  setter({ price: null, marketState: null, fetchedAt: null, source: null, loading: true, error: null });
+  try {
+    const res = await fetch(`/api/trades/${tradeId}/mtm`);
+    if (!res.ok) {
+      const errorBody = await res.json().catch(() => ({}));
+      setter({
+        price: null,
+        marketState: null,
+        fetchedAt: null,
+        source: null,
+        loading: false,
+        error: errorBody.error ?? 'Failed to fetch MTM data',
+      });
+      return;
+    }
+    const data = await res.json();
+    setter({
+      price: data.price ?? null,
+      marketState: data.marketState ?? null,
+      fetchedAt: data.fetchedAt ?? null,
+      source: data.source ?? null,
+      loading: false,
+      error: null,
+    });
+  } catch (err) {
+    setter({
+      price: null,
+      marketState: null,
+      fetchedAt: null,
+      source: null,
+      loading: false,
+      error: String(err),
+    });
+  }
+}
+
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function TradeDetailPage() {
@@ -179,6 +220,14 @@ export default function TradeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stopAdjustments, setStopAdjustments] = useState<StopAdjustment[]>([]);
+  const [mtmData, setMtmData] = useState<MtmData>({
+    price: null,
+    marketState: null,
+    fetchedAt: null,
+    source: null,
+    loading: false,
+    error: null,
+  });
   const [assets, setAssets] = useState<TradeAsset[]>([]);
   const [grade, setGrade] = useState<TradeGrade | null>(null);
   const [mistakes, setMistakes] = useState<TradeMistake[]>([]);
@@ -199,6 +248,11 @@ export default function TradeDetailPage() {
           fetch(`/api/trades/${id}`), fetch(`/api/trades/${id}/executions`),
           fetch(`/api/trades/${id}/risk-snapshot`), fetch(`/api/trades/${id}/stop-adjustments`),
         ]);
+
+        // Fetch MTM data in parallel (non-blocking for trade detail)
+        if (!cancelled) {
+          fetchMtmData(id, setMtmData);
+        }
         if (cancelled) return;
         if (!tradeRes.ok) {
           setError(tradeRes.status === 404 ? 'Trade not found.' : (await tradeRes.json().catch(() => ({}))).error ?? 'Failed to load trade.');
@@ -312,6 +366,31 @@ export default function TradeDetailPage() {
     setExecuteOpen(open);
   }, []);
 
+  const handleRefreshPrice = useCallback(async () => {
+    setMtmData((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const refreshRes = await fetch('/api/trades/mtm/refresh', { method: 'POST' });
+      if (!refreshRes.ok) {
+        if (refreshRes.status === 429) {
+          const body = await refreshRes.json().catch(() => ({}));
+          const retryAfter = body.retryAfter ?? 10;
+          setMtmData((prev) => ({
+            ...prev,
+            loading: false,
+            error: `Rate limited — try again in ${retryAfter}s`,
+          }));
+          return;
+        }
+        setMtmData((prev) => ({ ...prev, loading: false, error: 'Failed to refresh price' }));
+        return;
+      }
+      // After successful batch refresh, refetch MTM data for this trade
+      await fetchMtmData(id, setMtmData);
+    } catch (err) {
+      setMtmData((prev) => ({ ...prev, loading: false, error: String(err) }));
+    }
+  }, [id]);
+
   if (loading) return (
     <div className="mx-auto flex max-w-4xl items-center justify-center px-8 py-20">
       <Loader2 className="mr-2 size-5 animate-spin text-zinc-400" />
@@ -348,8 +427,8 @@ export default function TradeDetailPage() {
       </div>
 
       {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} />}
-      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} />}
-      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} />}
+      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} />}
+      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
 
       {executeData && (

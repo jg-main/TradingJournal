@@ -112,6 +112,20 @@ export interface TradeMistake {
   updatedAt: string | null;
 }
 
+export interface MtmData {
+  price: number | null;
+  marketState: string | null;
+  fetchedAt: string | null;
+  source: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export interface MtmDataProps {
+  mtmData: MtmData;
+  onRefreshPrice: () => void;
+}
+
 export interface CheckResult {
   id: string;
   tradeId: string;

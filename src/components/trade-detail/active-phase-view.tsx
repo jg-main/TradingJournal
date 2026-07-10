@@ -14,7 +14,7 @@ import TradeCheckResultsCard from './trade-check-results-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import TradeAssetsCard from './trade-assets-card';
-import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset, CheckResult } from './types';
+import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset, CheckResult, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 
@@ -29,6 +29,8 @@ interface ActivePhaseViewProps {
   rMultiple: { rMultiple: number | null } | null;
   perfMetrics: PerfMetrics | null;
   checkResults: CheckResult[];
+  mtmData: MtmData;
+  onRefreshPrice: () => void;
   onAdjustmentAdded: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onExecutionAdded?: () => void;
@@ -45,6 +47,8 @@ export default function ActivePhaseView({
   rMultiple,
   perfMetrics,
   checkResults,
+  mtmData,
+  onRefreshPrice,
   onAdjustmentAdded,
   onAssetsChanged,
   onExecutionAdded,
@@ -94,6 +98,8 @@ export default function ActivePhaseView({
         <RiskSnapshotCard
           riskSnapshot={riskSnapshot}
           plannedValues={trade}
+          mtmData={mtmData}
+          onRefreshPrice={onRefreshPrice}
         />
       </div>
 

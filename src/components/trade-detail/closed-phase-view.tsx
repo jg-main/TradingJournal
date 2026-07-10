@@ -21,7 +21,7 @@ import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
-import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult, RiskSnapshot } from './types';
+import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 interface ClosedPhaseViewProps {
@@ -36,6 +36,8 @@ interface ClosedPhaseViewProps {
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
   rMultiple: { rMultiple: number | null } | null;
   perfMetrics: PerfMetrics | null;
+  mtmData: MtmData;
+  onRefreshPrice: () => void;
   stopAdjustments: StopAdjustment[];
   checkResults: CheckResult[];
   onAdjustmentAdded: () => Promise<void>;
@@ -57,6 +59,8 @@ export default function ClosedPhaseView({
   pnlResult,
   rMultiple,
   perfMetrics,
+  mtmData,
+  onRefreshPrice,
   stopAdjustments,
   checkResults,
   onAdjustmentAdded,
@@ -235,6 +239,8 @@ export default function ClosedPhaseView({
           riskSnapshot={riskSnapshot}
           plannedValues={trade}
           actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
+          mtmData={mtmData}
+          onRefreshPrice={onRefreshPrice}
         />
       </div>
 

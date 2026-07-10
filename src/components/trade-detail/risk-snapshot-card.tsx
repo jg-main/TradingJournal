@@ -4,16 +4,20 @@ import { Target } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { computeRiskReward } from './helpers';
-import type { RiskSnapshot, Trade } from './types';
+import type { RiskSnapshot, Trade, MtmData } from './types';
 
 interface RiskSnapshotCardProps {
   riskSnapshot: RiskSnapshot | null;
   plannedValues?: Pick<Trade, 'direction' | 'plannedEntry' | 'plannedStop' | 'plannedQuantity' | 'plannedTarget1'> | null;
   /** Actual execution prices — when provided, the Actual column uses real trade data instead of risk snapshot initial values */
   actualValues?: { avgEntryPrice: number | null; avgExitPrice: number | null } | null;
+  /** MTM (mark-to-market) data for open trades */
+  mtmData?: MtmData;
+  /** Callback to refresh the current price */
+  onRefreshPrice?: () => void;
 }
 
-export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualValues }: RiskSnapshotCardProps) {
+export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualValues, mtmData, onRefreshPrice }: RiskSnapshotCardProps) {
   if (!riskSnapshot) {
     return (
       <Card>
