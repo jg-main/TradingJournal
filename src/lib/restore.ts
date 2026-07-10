@@ -311,7 +311,10 @@ export async function executeRestore(
   }
 
   // Step 2: Extract uploaded screenshot files before DB transaction
-  const uploadsDir = join(dirname(getDbFilePath()), '..', 'public', 'uploads', 'trades');
+  // Use cwd (project root) which works in both dev and Docker environments.
+  // Previously derived from DB path, which breaks in Docker where DB
+  // lives at /data/journal.db but public/ is at /app/public.
+  const uploadsDir = join(process.cwd(), 'public', 'uploads', 'trades');
   const zipAll = new AdmZip(zipBuffer);
   const uploadEntries = zipAll.getEntries().filter((e) => e.entryName.startsWith('uploads/'));
   if (uploadEntries.length > 0) {

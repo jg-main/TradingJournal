@@ -86,6 +86,9 @@ COPY --from=builder /app/src/db/migrations ./src/db/migrations
 # Copy schema file (needed by drizzle at import time)
 COPY --from=builder /app/src/db ./src/db
 
+# Ensure uploads directory exists and is writable by the non-root user
+RUN mkdir -p public/uploads/trades && chown -R nextjs:nextjs public/uploads
+
 # Switch to non-root user
 USER nextjs
 

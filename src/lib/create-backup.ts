@@ -22,7 +22,7 @@ import type * as schema from '@/db/schema';
 import { sql } from 'drizzle-orm';
 import { ZipArchive } from 'archiver';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { serializeBackup, TABLE_REGISTRY } from './backup-serializer';
 
@@ -33,14 +33,11 @@ function getDbFilePath(): string {
 }
 
 /**
- * Derive the uploads directory from the DB file path.
- * The DB lives at <project-root>/.trading-journal/journal.db and uploads
- * live at <project-root>/public/uploads/trades; going up two levels from
- * the DB file lands at the project root.
+ * Derive the uploads directory from the project root (process.cwd()).
+ * Works in both dev and Docker environments.
  */
 function getUploadsDir(): string {
-  const dbPath = getDbFilePath();
-  return join(dirname(dbPath), '..', 'public', 'uploads', 'trades');
+  return join(process.cwd(), 'public', 'uploads', 'trades');
 }
 
 // ── Stream conversion ───────────────────────────────────────────────────
