@@ -101,12 +101,36 @@ export default function PlanTradeForm({
     if (error) setError(null);
   };
 
+  /** Count sentences by splitting on sentence-ending punctuation followed by space/end */
+  const countSentences = (text: string): number => {
+    if (!text.trim()) return 0;
+    return text.trim().split(/[.!?]+\s*/).filter(Boolean).length;
+  };
+
+  /** Validate sentence limit for narrative fields */
+  const validateSentenceLimit = (field: string, text: string): string | null => {
+    const count = countSentences(text);
+    if (count > 2) {
+      return `${field} must be max 2 sentences (${count} written)`;
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (!form.symbol.trim()) {
       setError('Symbol is required.');
+      return;
+    }
+
+    // Validate sentence limits for narrative fields
+    const thesisErr = form.thesis.trim() ? validateSentenceLimit('Thesis', form.thesis) : null;
+    const invalidationErr = form.invalidationCondition.trim() ? validateSentenceLimit('Invalidation Condition', form.invalidationCondition) : null;
+    const planErr = form.preTradePlan.trim() ? validateSentenceLimit('Pre-Trade Plan', form.preTradePlan) : null;
+    if (thesisErr || invalidationErr || planErr) {
+      setError([thesisErr, invalidationErr, planErr].filter(Boolean).join('. '));
       return;
     }
 
@@ -331,21 +355,112 @@ export default function PlanTradeForm({
             </div>
           </div>
 
+          {/* ── Risk / Reward Preview ── */}
+          {(() => {
+            const entry = parseFloat(form.plannedEntry);
+            const stop = parseFloat(form.plannedStop);
+            const target = parseFloat(form.plannedTarget1);
+            const qty = parseFloat(form.plannedQuantity);
+            const isLong = form.direction === 'long';
+
+            if (!entry || entry <= 0) return null;
+
+            const canCalcRisk = stop && stop > 0;
+            const canCalcReward = target && target > 0;
+
+            let riskPct: number | null = null;
+            let riskDollar: number | null = null;
+            let rewardPct: number | null = null;
+            let rewardDollar: number | null = null;
+
+            if (canCalcRisk) {
+              if (isLong) {
+                riskPct = ((entry - stop) / entry) * 100;
+              } else {
+                riskPct = ((stop - entry) / entry) * 100;
+              }
+              riskDollar = riskPct / 100 * entry * (qty || 0);
+            }
+
+            if (canCalcReward) {
+              if (isLong) {
+                rewardPct = ((target - entry) / entry) * 100;
+              } else {
+                rewardPct = ((entry - target) / entry) * 100;
+              }
+              rewardDollar = rewardPct / 100 * entry * (qty || 0);
+            }
+
+            const rr = canCalcRisk && canCalcReward && riskPct && riskPct > 0
+              ? (rewardPct! / riskPct).toFixed(2)
+              : null;
+
+            return (
+              <div className="grid grid-cols-3 gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                {/* Risk */}
+                <div>
+                  <p className="mb-0.5 text-xs font-medium text-red-600 dark:text-red-400">Max Risk</p>
+                  {canCalcRisk ? (
+                    <>
+                      <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                        {riskPct!.toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {qty ? `\$${riskDollar!.toFixed(2)}` : '—'}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-400 dark:text-zinc-500">—</p>
+                  )}
+                </div>
+
+                {/* Reward */}
+                <div>
+                  <p className="mb-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">Max Reward</p>
+                  {canCalcReward ? (
+                    <>
+                      <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                        {rewardPct!.toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {qty ? `\$${rewardDollar!.toFixed(2)}` : '—'}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-400 dark:text-zinc-500">—</p>
+                  )}
+                </div>
+
+                {/* R:R Ratio */}
+                <div>
+                  <p className="mb-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">R:R Ratio</p>
+                  {rr ? (
+                    <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                      1:{rr}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-zinc-400 dark:text-zinc-500">—</p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Thesis */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
               <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Thesis
               </label>
-              <HelpTooltip content="Your reasoning and analysis supporting this trade idea" />
+              <HelpTooltip content="Your reasoning and analysis supporting this trade idea. Max 2 sentences." />
             </div>
             <textarea
-              rows={2}
+              rows={3}
               placeholder="Why are you taking this trade?"
               value={form.thesis}
               onChange={(e) => updateField('thesis', e.target.value)}
               disabled={submitting}
-              className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
+              className="min-h-[4.5rem] w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
             />
           </div>
 
@@ -355,15 +470,15 @@ export default function PlanTradeForm({
               <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Invalidation Condition
               </label>
-              <HelpTooltip content="What market conditions or price levels would invalidate this trade idea" />
+              <HelpTooltip content="What market conditions or price levels would invalidate this trade idea. Max 2 sentences." />
             </div>
             <textarea
-              rows={2}
+              rows={3}
               placeholder="What would prove this trade idea wrong?"
               value={form.invalidationCondition}
               onChange={(e) => updateField('invalidationCondition', e.target.value)}
               disabled={submitting}
-              className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
+              className="min-h-[4.5rem] w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
             />
           </div>
 
@@ -373,15 +488,15 @@ export default function PlanTradeForm({
               <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Pre-Trade Plan
               </label>
-              <HelpTooltip content="Your step-by-step plan: entry criteria, position sizing, risk management approach, and trade management rules" />
+              <HelpTooltip content="Your step-by-step plan: entry criteria, position sizing, risk management approach, and trade management rules. Max 2 sentences." />
             </div>
             <textarea
-              rows={3}
+              rows={4}
               placeholder="What is your execution plan for this trade?"
               value={form.preTradePlan}
               onChange={(e) => updateField('preTradePlan', e.target.value)}
               disabled={submitting}
-              className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
+              className="min-h-[6rem] w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
             />
           </div>
         </CardContent>

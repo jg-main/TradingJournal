@@ -112,7 +112,10 @@ function buildSampleTradeData(
     executions: sampleExecutions,
     evaluationFields,
     setupName: 'Momentum Breakout',
+    analysisConfig: null,
+    checklistItems: null,
     marketEvidence: null,
+    featureTimeSeries: null,
     warnings: ['Static sample trade for prompt preview'],
   };
 }
