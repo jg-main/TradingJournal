@@ -143,3 +143,44 @@ export function computeRiskReward(
   const dollar = quantity ? (pct / 100) * entry * quantity : 0;
   return { pct, dollar };
 }
+
+/**
+ * Build a staleness label for MTM price data based on market state and fetch time.
+ *
+ * - REGULAR / PRE / POST market hours → "Delayed 15min"
+ * - CLOSED market + fetchedAt exists → "Last close: MMM DD"
+ * - No price / no data yet → "Awaiting market data"
+ */
+export function getStalenessLabel(
+  marketState: string | null,
+  fetchedAt: string | null,
+): string {
+  if (!marketState && !fetchedAt) return 'Awaiting market data';
+
+  const upper = (marketState ?? '').toUpperCase();
+
+  if (
+    upper === 'REGULAR' ||
+    upper === 'PRE'  ||
+    upper === 'POST' ||
+    upper === 'PREPRE' ||
+    upper === 'POSTPOST'
+  ) {
+    return 'Delayed 15min';
+  }
+
+  if (fetchedAt) {
+    try {
+      const date = new Date(fetchedAt);
+      const formatted = date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      });
+      return `Last close: ${formatted}`;
+    } catch {
+      return 'Last close: --';
+    }
+  }
+
+  return 'Awaiting market data';
+}

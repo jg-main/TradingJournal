@@ -1,9 +1,9 @@
 'use client';
 
-import { Target, TrendingUp, Loader2 } from 'lucide-react';
+import { Target, TrendingUp, Loader2, RefreshCw, Clock } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { computeRiskReward, formatPrice, formatCurrency, formatDate } from './helpers';
+import { computeRiskReward, formatPrice, formatCurrency, formatDate, getStalenessLabel } from './helpers';
 import type { RiskSnapshot, Trade, MtmData } from './types';
 
 interface RiskSnapshotCardProps {
@@ -196,6 +196,23 @@ export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualVa
             <div className="flex items-center gap-2 mb-3">
               <TrendingUp className="size-4 text-zinc-500" />
               <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Mark to Market</span>
+              {onRefreshPrice && (
+                <button
+                  type="button"
+                  onClick={onRefreshPrice}
+                  disabled={mtmData.loading || (mtmData.error?.includes('Rate limited') ?? false)}
+                  className="ml-auto inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  title={
+                    mtmData.error?.includes('Rate limited')
+                      ? 'Please wait before refreshing again'
+                      : 'Refresh current price from market data'
+                  }
+                >
+                  <RefreshCw className={`size-3.5 ${mtmData.loading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{mtmData.loading ? 'Refreshing...' : 'Refresh Price'}</span>
+                  <span className="sm:hidden">{mtmData.loading ? '...' : 'Refresh'}</span>
+                </button>
+              )}
             </div>
             {mtmData.price == null && !mtmData.loading && !mtmData.error ? (
               <p className="text-xs text-zinc-500 dark:text-zinc-400">No current price data</p>
@@ -223,6 +240,16 @@ export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualVa
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
                       <td className={'py-2 ' + T}>Current Price</td>
                       <td className={'py-2 text-right ' + V}>{formatPrice(mtmData.price)}</td>
+                    </tr>
+                    {/* Staleness label below current price */}
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className="py-0"></td>
+                      <td className="py-0 pb-2 text-right">
+                        <span className="inline-flex items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500">
+                          <Clock className="size-3" />
+                          {getStalenessLabel(mtmData.marketState, mtmData.fetchedAt)}
+                        </span>
+                      </td>
                     </tr>
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
                       <td className={'py-2 ' + T}>Unrealized P&L $</td>
