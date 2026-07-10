@@ -120,6 +120,10 @@ export async function POST(_request: NextRequest) {
             price: quote.price,
             source: quote.source,
             marketState: quote.marketState,
+            shortName: quote.shortName ?? null,
+            quoteType: quote.quoteType ?? null,
+            sector: quote.sector ?? null,
+            industry: quote.industry ?? null,
             fetchedAt: nowISO,
             createdAt: nowISO,
           })

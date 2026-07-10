@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, settings, accounts, lookupValues, setupDefinitions } from '@/db/schema';
+import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions } from '@/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -70,6 +70,19 @@ export async function GET(request: NextRequest) {
         invalidationCondition: trades.invalidationCondition,
         preTradePlan: trades.preTradePlan,
         openedAt: trades.openedAt,
+        closedAt: trades.closedAt,
+        currentPrice: trades.currentPrice,
+        actualEntry: sql<number | null>`(
+          SELECT AVG(te.price) FROM ${tradeExecutions} te
+          WHERE te.trade_id = ${trades.id}
+          AND te.action IN (CASE WHEN ${trades.direction} = 'short' THEN 'sell_short' ELSE 'buy' END)
+        )`,
+        avgExitPrice: sql<number | null>`(
+          SELECT CASE WHEN ${trades.direction} = 'short'
+            THEN (SELECT AVG(te.price) FROM ${tradeExecutions} te WHERE te.trade_id = ${trades.id} AND te.action = 'buy_to_cover')
+            ELSE (SELECT AVG(te.price) FROM ${tradeExecutions} te WHERE te.trade_id = ${trades.id} AND te.action IN ('sell', 'reduce'))
+          END
+        )`,
         exitNotes: trades.exitNotes,
         lesson: trades.lesson,
         createdAt: trades.createdAt,
@@ -78,8 +91,9 @@ export async function GET(request: NextRequest) {
       .from(trades)
       .leftJoin(setupDefinitions, eq(trades.setupId, setupDefinitions.id))
       .leftJoin(lookupValues, eq(trades.setupId, lookupValues.id))
+      .leftJoin(tradeRiskSnapshots, eq(trades.id, tradeRiskSnapshots.tradeId))
       .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
-      .orderBy(desc(trades.createdAt))
+      .orderBy(desc(trades.openedAt), desc(trades.createdAt))
       .limit(limit)
       .offset(offset)
       .all();
