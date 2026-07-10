@@ -434,6 +434,12 @@ function createMockClickHouseClient(
         message: 'Data is fresh: latest tradedate 2024-01-31 is within 1 day(s)',
       };
     }),
+    getFeatureTimeSeries: vi.fn().mockImplementation(async () => {
+      return [];
+    }),
+    getAllFeatureColumns: vi.fn().mockImplementation(async () => {
+      return [{ id: 'sma_20', label: 'SMA(20)' }];
+    }),
   };
 }
 
@@ -661,7 +667,10 @@ console.log('\n7. buildAssessmentPrompt handles trade with no symbol:');
     executions: [] as never[],
     evaluationFields: [] as never[],
     setupName: null,
+    analysisConfig: null,
+    checklistItems: null,
     marketEvidence: null,
+    featureTimeSeries: null,
     warnings: ['Trade has no symbol'],
   };
 
@@ -705,7 +714,10 @@ console.log('\n8. buildAssessmentPrompt handles trade with no setupId:');
     executions: [] as never[],
     evaluationFields: [] as never[],
     setupName: null,
+    analysisConfig: null,
+    checklistItems: null,
     marketEvidence: null,
+    featureTimeSeries: null,
     warnings: ['Trade has no setup'],
   };
 
@@ -1466,6 +1478,8 @@ console.log('\n27. performAssessment with checkFreshness error produces warning:
       notes: [],
     })),
     checkFreshness: vi.fn().mockRejectedValue(new Error('ClickHouse connection refused')),
+    getFeatureTimeSeries: vi.fn().mockResolvedValue([]),
+    getAllFeatureColumns: vi.fn().mockResolvedValue([]),
   };
 
   const mockAi = createMockAiProvider(makeValidScorecard());
