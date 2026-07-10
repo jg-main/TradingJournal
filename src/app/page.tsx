@@ -11,6 +11,7 @@ import {
   TrendingDown,
   Wallet,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -189,6 +190,9 @@ function HomeContent() {
   const [showMoreAnalytics, setShowMoreAnalytics] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   // Filter state — persisted to URL search params
   const searchParams = useSearchParams();
@@ -252,6 +256,46 @@ function HomeContent() {
   useEffect(() => {
     syncFilters();
   }, [syncFilters]);
+
+  // Cooldown countdown timer for Refresh Prices
+  const isCooldownActive = cooldownSeconds > 0;
+  useEffect(() => {
+    if (!isCooldownActive) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => {
+        if (prev <= 1) return 0;
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isCooldownActive]);
+
+  // Refresh Prices handler — calls POST /api/trades/mtm/refresh then refetches dashboard
+  const handleRefreshPrices = async () => {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const res = await fetch('/api/trades/mtm/refresh', { method: 'POST' });
+      if (!res.ok) {
+        if (res.status === 429) {
+          const retryAfter = parseInt(res.headers.get('Retry-After') ?? '10', 10);
+          setCooldownSeconds(retryAfter);
+          setRefreshError(null);
+          return;
+        }
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `Refresh failed (${res.status})`);
+      }
+      // Success — refetch dashboard to get updated MTM values
+      await fetchDashboard();
+      // Client-side cooldown to prevent rapid re-clicks
+      setCooldownSeconds(10);
+    } catch (err) {
+      setRefreshError(err instanceof Error ? err.message : 'Failed to refresh prices');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Detect empty state: all measurable fields are at empty/null baseline
   const isEmpty =
@@ -444,29 +488,62 @@ function HomeContent() {
           />
 
           {/* 11. Unrealized P&L */}
-          <KpiCard
-            icon={<TrendingUp className="size-4 text-zinc-700 dark:text-zinc-300" />}
-            iconBg="bg-amber-100 dark:bg-amber-900/30"
-            value={
-              mtm === null
-                ? '--'
-                : mtm.netUnrealizedPnl !== null && mtm.netUnrealizedPnl !== undefined
-                  ? formatCurrency(mtm.netUnrealizedPnl)
-                  : mtm.openTradeCount > 0
-                    ? <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">Awaiting prices</span>
-                    : <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">No open positions</span>
-            }
-            valueClassName={
-              mtm?.netUnrealizedPnl !== null && mtm?.netUnrealizedPnl !== undefined
-                ? mtm.netUnrealizedPnl > 0
-                  ? 'text-green-600 dark:text-green-400'
-                  : mtm.netUnrealizedPnl < 0
-                    ? 'text-red-600 dark:text-red-400'
+          <Card size="sm">
+            <CardContent className="flex flex-col gap-0 p-5">
+              <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                <TrendingUp className="size-4 text-zinc-700 dark:text-zinc-300" />
+              </div>
+              <p
+                className={`text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100 ${
+                  mtm?.netUnrealizedPnl !== null && mtm?.netUnrealizedPnl !== undefined
+                    ? mtm.netUnrealizedPnl > 0
+                      ? 'text-green-600 dark:text-green-400'
+                      : mtm.netUnrealizedPnl < 0
+                        ? 'text-red-600 dark:text-red-400'
+                        : ''
                     : ''
-                : ''
-            }
-            label="Unrealized P&L"
-          />
+                }`}
+              >
+                {mtm === null
+                  ? '--'
+                  : mtm.netUnrealizedPnl !== null && mtm.netUnrealizedPnl !== undefined
+                    ? formatCurrency(mtm.netUnrealizedPnl)
+                    : mtm.openTradeCount > 0
+                      ? <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">Awaiting prices</span>
+                      : <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">No open positions</span>}
+              </p>
+              <div className="flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 underline decoration-dotted decoration-zinc-300 dark:decoration-zinc-600 underline-offset-2 cursor-help">
+                      Unrealized P&amp;L
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-64 text-xs">
+                    Total unrealized profit/loss across all open positions based on current market prices.
+                  </TooltipContent>
+                </Tooltip>
+                <button
+                  onClick={handleRefreshPrices}
+                  disabled={refreshing || cooldownSeconds > 0}
+                  className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                  title={
+                    refreshing
+                      ? 'Refreshing...'
+                      : cooldownSeconds > 0
+                        ? `Try again in ${cooldownSeconds}s`
+                        : 'Refresh prices from market data'
+                  }
+                >
+                  <RefreshCw className={`size-3 ${refreshing ? 'animate-spin' : ''}`} />
+                  {refreshing ? 'Refreshing...' : cooldownSeconds > 0 ? `${cooldownSeconds}s` : ''}
+                </button>
+              </div>
+              {refreshError && (
+                <p className="mt-1 text-[10px] text-red-500 dark:text-red-400">{refreshError}</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 
