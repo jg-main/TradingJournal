@@ -34,6 +34,7 @@ import {
   type DirectionalPerformanceResult,
   type ProcessScoreBin,
 } from '@/lib/dashboard';
+import { calculateAvgCost } from '@/lib/trade-calc';
 import {
   computeEquityCurve,
   computeDrawdown,
@@ -160,6 +161,8 @@ sqlite.exec(`
     lesson TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp),
+    current_price REAL,
+    current_price_fetched_at TEXT,
     FOREIGN KEY (account_id) REFERENCES accounts(id)
   );
 
@@ -244,9 +247,16 @@ sqlite.exec(`
 
 // ── Replica of the route logic ─────────────────────────────────────────
 
+interface MtmResult {
+  netUnrealizedPnl: number | null;
+  openTradeCount: number;
+  tradesWithPrices: number;
+  tradesAwaitingData: number;
+}
+
 interface DashboardRouteResult {
   status: number;
-  body: { kpis?: KpiMetrics; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; processScoreDistribution?: ProcessScoreBin[]; error?: string; details?: unknown };
+  body: { kpis?: KpiMetrics; mtm?: MtmResult; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; processScoreDistribution?: ProcessScoreBin[]; error?: string; details?: unknown };
 }
 
 function doGetDashboard(
@@ -417,7 +427,84 @@ function doGetDashboard(
       closedAt: trade.closedAt ?? null,
     }));
 
-    // 5. Fetch latest rollforward
+    // 5. Compute MTM (mark-to-market) aggregate from open trades with current prices
+    const openTrades = allTrades.filter((t) => t.status === 'open');
+    const openTradeCount = openTrades.length;
+    let netUnrealizedPnl: number | null = null;
+    let tradesWithPrices = 0;
+    let tradesAwaitingData = 0;
+
+    if (openTradeCount > 0) {
+      let totalUnrealizedPnl = 0;
+      let anyWithPrices = false;
+
+      for (const trade of openTrades) {
+        const execs = executionsMap.get(trade.id) ?? [];
+        const direction = trade.direction as 'long' | 'short';
+        const currentPrice = trade.currentPrice;
+
+        if (currentPrice === null || currentPrice === undefined) {
+          tradesAwaitingData++;
+          continue;
+        }
+
+        tradesWithPrices++;
+        anyWithPrices = true;
+
+        // Filter entry actions based on direction
+        const entryActions = execs.filter((e) => {
+          if (direction === 'long') return e.action === 'buy' || e.action === 'add';
+          return e.action === 'sell_short';
+        });
+
+        // Compute avg entry price using existing pattern
+        const { avgEntryPrice, totalEntryQty } = calculateAvgCost(
+          entryActions.map((e) => ({
+            action: e.action,
+            quantity: e.quantity,
+            price: e.price,
+            fees: e.fees ?? null,
+            executedAt: e.executedAt ?? '',
+          })),
+        );
+
+        if (avgEntryPrice === null || totalEntryQty === 0) continue;
+
+        // Compute open quantity (total entries minus partial exits)
+        const exitActions = execs.filter((e) => {
+          if (direction === 'long') return e.action === 'sell' || e.action === 'reduce';
+          return e.action === 'buy_to_cover';
+        });
+        const totalExitQty = exitActions.reduce((s, e) => s + e.quantity, 0);
+        const openQuantity = Math.max(0, totalEntryQty - totalExitQty);
+
+        if (openQuantity === 0) continue;
+
+        // Compute unrealized P&L: (currentPrice - avgEntryPrice) * openQuantity for long
+        if (direction === 'long') {
+          totalUnrealizedPnl += (currentPrice - avgEntryPrice) * openQuantity;
+        } else {
+          totalUnrealizedPnl += (avgEntryPrice - currentPrice) * openQuantity;
+        }
+
+        // Subtract entry fees (known costs already incurred)
+        const totalEntryFees = entryActions.reduce((s, e) => s + (e.fees ?? 0), 0);
+        totalUnrealizedPnl -= totalEntryFees;
+      }
+
+      if (anyWithPrices) {
+        netUnrealizedPnl = totalUnrealizedPnl;
+      }
+    }
+
+    const mtm = {
+      netUnrealizedPnl,
+      openTradeCount,
+      tradesWithPrices,
+      tradesAwaitingData,
+    };
+
+    // 6. Fetch latest rollforward
     const rf = db
       .select()
       .from(schema.accountRollforward)
@@ -480,7 +567,7 @@ function doGetDashboard(
     const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
     const processScoreDistribution = computeProcessScoreDistribution(closedKpiInputs);
 
-    return { status: 200, body: { kpis, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution } };
+    return { status: 200, body: { kpis, mtm, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution } };
   } catch (error) {
     return {
       status: 500,
@@ -525,6 +612,8 @@ function seedTrade(
   overrides?: Partial<typeof schema.trades.$inferInsert>,
 ): string {
   const id = overrides?.id ?? randomUUID();
+  const currentPrice = overrides?.currentPrice ?? null;
+  const currentPriceFetchedAt = overrides?.currentPriceFetchedAt ?? null;
   db.insert(schema.trades).values({
     id,
     tradeCode: overrides?.tradeCode ?? `T-${id.slice(0, 4)}`,
@@ -533,6 +622,8 @@ function seedTrade(
     direction: overrides?.direction ?? 'long',
     status: overrides?.status ?? 'closed',
     closedAt: overrides?.closedAt ?? null,
+    currentPrice,
+    currentPriceFetchedAt,
     createdAt: NOW,
     updatedAt: NOW,
   }).run();
@@ -1859,6 +1950,158 @@ cleanup();
   assert(result.body.processScoreDistribution![0].count === 1, 'A: 1 trade (June, within filter)');
   const total = result.body.processScoreDistribution!.reduce((s, b) => s + b.count, 0);
   assert(total === 1, 'total = 1 (May trade filtered out)');
+}
+
+// ── MTM Tests ──────────────────────────────────────────────────────────
+
+console.log('\n▶ MTM (Mark-to-Market)');
+
+// ── Test NN: No open trades → mtm shows openTradeCount=0, netUnrealizedPnl=null ──
+cleanup();
+{
+  const accountId = seedAccount();
+  // All closed trades, no open trades
+  const t1 = seedTrade(accountId, { symbol: 'CLOSED', direction: 'long', status: 'closed' });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.mtm !== undefined, 'mtm field present in response');
+  assert(result.body.mtm!.openTradeCount === 0, 'openTradeCount = 0 when no open trades');
+  assert(result.body.mtm!.netUnrealizedPnl === null, 'netUnrealizedPnl = null when no open trades');
+  assert(result.body.mtm!.tradesWithPrices === 0, 'tradesWithPrices = 0 when no open trades');
+  assert(result.body.mtm!.tradesAwaitingData === 0, 'tradesAwaitingData = 0 when no open trades');
+}
+
+// ── Test NN: Open trade without currentPrice → netUnrealizedPnl=null, tradesAwaitingData=1 ──
+cleanup();
+{
+  const accountId = seedAccount();
+  const t1 = seedTrade(accountId, { symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: null });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.mtm!.openTradeCount === 1, 'openTradeCount = 1');
+  assert(result.body.mtm!.netUnrealizedPnl === null, 'netUnrealizedPnl = null when prices not fetched');
+  assert(result.body.mtm!.tradesWithPrices === 0, 'tradesWithPrices = 0');
+  assert(result.body.mtm!.tradesAwaitingData === 1, 'tradesAwaitingData = 1');
+}
+
+// ── Test NN: Open long trade with currentPrice → netUnrealizedPnl computed ──
+cleanup();
+{
+  const accountId = seedAccount();
+  // Long AAPL: buy 10 @ 100, currentPrice = 120 → unrealized P&L = (120-100)*10 = 200
+  const t1 = seedTrade(accountId, { symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 120 });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100, fees: 5 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.mtm!.openTradeCount === 1, 'openTradeCount = 1');
+  assert(result.body.mtm!.tradesWithPrices === 1, 'tradesWithPrices = 1');
+  assert(result.body.mtm!.tradesAwaitingData === 0, 'tradesAwaitingData = 0');
+  assertClose(result.body.mtm!.netUnrealizedPnl, 195, 'netUnrealizedPnl = (120-100)*10 - 5 = 195');
+}
+
+// ── Test NN: Open short trade with currentPrice → unrealized P&L inverted ──
+cleanup();
+{
+  const accountId = seedAccount();
+  // Short MSFT: sell_short 20 @ 200, currentPrice = 180 → unrealized P&L = (200-180)*20 = 400
+  const t1 = seedTrade(accountId, { symbol: 'MSFT', direction: 'short', status: 'open', currentPrice: 180 });
+  seedExecution(t1, { action: 'sell_short', quantity: 20, price: 200 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.mtm!.openTradeCount === 1, 'openTradeCount = 1');
+  assert(result.body.mtm!.tradesWithPrices === 1, 'tradesWithPrices = 1');
+  assertClose(result.body.mtm!.netUnrealizedPnl, 400, 'netUnrealizedPnl = (200-180)*20 = 400 for short');
+}
+
+// ── Test NN: Negative unrealized P&L for losing position ──
+cleanup();
+{
+  const accountId = seedAccount();
+  // Long AAPL: buy 10 @ 100, currentPrice = 80 → unrealized P&L = (80-100)*10 = -200
+  const t1 = seedTrade(accountId, { symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 80 });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.mtm!.openTradeCount === 1, 'openTradeCount = 1');
+  assert(result.body.mtm!.tradesWithPrices === 1, 'tradesWithPrices = 1');
+  assert(result.body.mtm!.netUnrealizedPnl! < 0, 'netUnrealizedPnl < 0 for losing position');
+  assertClose(result.body.mtm!.netUnrealizedPnl, -200, 'netUnrealizedPnl = (80-100)*10 = -200');
+}
+
+// ── Test NN: Mixed open/closed trades → only open trades contribute ──
+cleanup();
+{
+  const accountId = seedAccount();
+  // Open trade with price
+  const t1 = seedTrade(accountId, { symbol: 'OPEN1', direction: 'long', status: 'open', currentPrice: 120 });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100, fees: 10 });
+
+  // Open trade without price
+  const t2 = seedTrade(accountId, { symbol: 'OPEN2', direction: 'long', status: 'open' });
+  seedExecution(t2, { action: 'buy', quantity: 5, price: 200 });
+
+  // Closed trade (should not contribute)
+  const t3 = seedTrade(accountId, { symbol: 'CLOSED', direction: 'long', status: 'closed' });
+  seedExecution(t3, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t3, { action: 'sell', quantity: 10, price: 110 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.mtm!.openTradeCount === 2, 'openTradeCount = 2');
+  assert(result.body.mtm!.tradesWithPrices === 1, 'tradesWithPrices = 1');
+  assert(result.body.mtm!.tradesAwaitingData === 1, 'tradesAwaitingData = 1');
+  assertClose(result.body.mtm!.netUnrealizedPnl, 190, 'netUnrealizedPnl = (120-100)*10 - 10 = 190');
+}
+
+// ── Test NN: Partial exits on open trade → openQuantity correctly computed ──
+cleanup();
+{
+  const accountId = seedAccount();
+  // Open trade: buy 100 @ 50, reduce 40 @ 55, currentPrice = 60
+  // openQuantity = 100 - 40 = 60
+  // unrealized P&L = (60-50)*60 = 600
+  const t1 = seedTrade(accountId, { symbol: 'PARTIAL', direction: 'long', status: 'open', currentPrice: 60 });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 50 });
+  seedExecution(t1, { action: 'reduce', quantity: 40, price: 55 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.mtm!.openTradeCount === 1, 'openTradeCount = 1');
+  assertClose(result.body.mtm!.netUnrealizedPnl, 600, 'netUnrealizedPnl = (60-50)*(100-40) = 600');
+}
+
+// ── Test NN: MTM field is additive, does not break existing KPI shape ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, { symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 125 });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+
+  const t2 = seedTrade(accountId, { symbol: 'MSFT', direction: 'long', status: 'closed' });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 200 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 210 });
+
+  seedRollforward(accountId, { endingEquity: 50250 });
+
+  const result = doGetDashboard(accountId);
+
+  // Existing KPIs still present and correct
+  assert(result.body.kpis !== undefined, 'kpis present alongside mtm');
+  assert(result.body.kpis!.totalTrades === 2, 'totalTrades = 2');
+  assertClose(result.body.kpis!.netPnl, 100, 'netPnl still correct');
+  assertClose(result.body.kpis!.accountValue, 50250, 'accountValue still correct');
+
+  // mtm present and correct
+  assert(result.body.mtm !== undefined, 'mtm present');
+  assert(result.body.mtm!.openTradeCount === 1, 'mtm openTradeCount = 1');
+  assertClose(result.body.mtm!.netUnrealizedPnl, 250, 'mtm netUnrealizedPnl = (125-100)*10 = 250');
+
+  // Other fields still present
+  assert(Array.isArray(result.body.equityCurve), 'equityCurve present');
+  assert(Array.isArray(result.body.monthlyPerformance), 'monthlyPerformance present');
 }
 
 // ── Summary ────────────────────────────────────────────────────────────
