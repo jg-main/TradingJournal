@@ -38,6 +38,7 @@ interface Trade {
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
+  plannedTarget2: number | null;
   plannedQuantity: number | null;
   thesis: string | null;
   invalidationCondition: string | null;
@@ -347,8 +348,8 @@ export default function TradeDetailPage() {
       </div>
 
       {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} />}
-      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onRiskSnapshotSave={handleRiskSnapshotSave} onExecutionAdded={handleExecutionAdded} />}
-      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} />}
+      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} />}
+      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
 
       {executeData && (
@@ -374,7 +375,7 @@ export default function TradeDetailPage() {
           plannedEntry: trade.plannedEntry,
           plannedStop: trade.plannedStop,
           plannedTarget1: trade.plannedTarget1,
-          plannedTarget2: null,
+          plannedTarget2: trade.plannedTarget2,
           plannedQuantity: trade.plannedQuantity,
           invalidationCondition: trade.invalidationCondition,
           preTradePlan: trade.preTradePlan,

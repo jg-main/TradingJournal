@@ -45,7 +45,9 @@ export function getCurrentStep(
       };
     case 'closed':
       return {
-        currentStep: exitNotes || lesson || hasGrade || hasMistakes ? 6 : 5,
+        // Steps 1-5 are complete for closed trades. Step 6 (Grade) is current.
+        // When grade/review data exists, use 7 so all 6 steps show as complete.
+        currentStep: exitNotes || lesson || hasGrade || hasMistakes ? 7 : 6,
         isScratched: false,
       };
     case 'deleted':
@@ -74,8 +76,8 @@ export function LifecycleStepper({
     >
       {STEPS.map((step, index) => {
         const isLastStep = index === STEPS.length - 1;
-        const isCompleted = step.number < currentStep || (isLastStep && step.number <= currentStep);
-        const isActive = step.number === currentStep && !isLastStep;
+        const isCompleted = step.number < currentStep;
+        const isActive = step.number === currentStep;
         const isFuture = step.number > currentStep;
 
         return (

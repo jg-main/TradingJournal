@@ -1,81 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Target, Pencil } from 'lucide-react';
+import { Target } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { formatPrice, formatCurrency } from './helpers';
-import type { RiskSnapshot } from './types';
+import { computeRiskReward } from './helpers';
+import type { RiskSnapshot, Trade } from './types';
 
 interface RiskSnapshotCardProps {
   riskSnapshot: RiskSnapshot | null;
-  onSave: (payload: Record<string, number | null>) => Promise<void>;
+  plannedValues?: Pick<Trade, 'direction' | 'plannedEntry' | 'plannedStop' | 'plannedQuantity' | 'plannedTarget1'> | null;
+  /** Actual execution prices — when provided, the Actual column uses real trade data instead of risk snapshot initial values */
+  actualValues?: { avgEntryPrice: number | null; avgExitPrice: number | null } | null;
 }
 
-const defaultForm: Record<string, string> = {
-  accountEquityAtOpen: '',
-  initialEntryPrice: '',
-  initialStopPrice: '',
-  initialQuantity: '',
-  riskPerShare: '',
-  initialRiskAmount: '',
-  accountRiskPct: '',
-  plannedRewardRisk: '',
-};
-
-export default function RiskSnapshotCard({ riskSnapshot, onSave }: RiskSnapshotCardProps) {
-  const [editMode, setEditMode] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({ ...defaultForm });
-
-  useEffect(() => {
-    if (!editMode && riskSnapshot) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setForm({
-        accountEquityAtOpen: riskSnapshot.accountEquityAtOpen?.toString() ?? '',
-        initialEntryPrice: riskSnapshot.initialEntryPrice?.toString() ?? '',
-        initialStopPrice: riskSnapshot.initialStopPrice?.toString() ?? '',
-        initialQuantity: riskSnapshot.initialQuantity?.toString() ?? '',
-        riskPerShare: riskSnapshot.riskPerShare?.toString() ?? '',
-        initialRiskAmount: riskSnapshot.initialRiskAmount?.toString() ?? '',
-        accountRiskPct: riskSnapshot.accountRiskPct?.toString() ?? '',
-        plannedRewardRisk: riskSnapshot.plannedRewardRisk?.toString() ?? '',
-      });
-    }
-  }, [riskSnapshot, editMode]);
-
-  const handleSave = async () => {
-    const payload: Record<string, number | null> = {};
-    const fields: string[] = [
-      'accountEquityAtOpen',
-      'initialEntryPrice',
-      'initialStopPrice',
-      'initialQuantity',
-      'riskPerShare',
-      'initialRiskAmount',
-      'accountRiskPct',
-      'plannedRewardRisk',
-    ];
-
-    for (const field of fields) {
-      const val = form[field];
-      payload[field] = val === '' ? null : parseFloat(val);
-    }
-
-    try {
-      await onSave(payload);
-      setEditMode(false);
-    } catch {
-      // Stay in edit mode on error
-    }
-  };
-
-  const updateField = (field: string, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  // ── Empty State ─────────────────────────────────────────────────
-
-  if (!riskSnapshot && !editMode) {
+export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualValues }: RiskSnapshotCardProps) {
+  if (!riskSnapshot) {
     return (
       <Card>
         <CardHeader>
@@ -85,215 +24,146 @@ export default function RiskSnapshotCard({ riskSnapshot, onSave }: RiskSnapshotC
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            No risk snapshot recorded.
-          </p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">No risk snapshot recorded.</p>
         </CardContent>
       </Card>
     );
   }
 
-  // ── Edit Mode ───────────────────────────────────────────────────
+  const dir = plannedValues?.direction ?? 'long';
+  const planEntry = plannedValues?.plannedEntry;
+  const planStop = plannedValues?.plannedStop;
+  const planQty = plannedValues?.plannedQuantity;
+  const planTarget = plannedValues?.plannedTarget1 ?? null;
 
-  if (editMode && riskSnapshot) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="size-4 text-zinc-500" />
-            Risk Snapshot
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Equity at Open
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.accountEquityAtOpen}
-                  onChange={(e) => updateField('accountEquityAtOpen', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Initial Entry
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.initialEntryPrice}
-                  onChange={(e) => updateField('initialEntryPrice', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Initial Stop
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.initialStopPrice}
-                  onChange={(e) => updateField('initialStopPrice', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Initial Qty
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.initialQuantity}
-                  onChange={(e) => updateField('initialQuantity', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Risk/Share
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.riskPerShare}
-                  onChange={(e) => updateField('riskPerShare', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Risk Amount
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.initialRiskAmount}
-                  onChange={(e) => updateField('initialRiskAmount', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Account Risk %
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.accountRiskPct}
-                  onChange={(e) => updateField('accountRiskPct', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                  Planned R:R
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={form.plannedRewardRisk}
-                  onChange={(e) => updateField('plannedRewardRisk', e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={handleSave}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setEditMode(false)}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  // ── Plan side ──
+  const planRiskShare = planEntry != null && planStop != null ? Math.abs(planEntry - planStop) : null;
+  const planRiskPct = planRiskShare != null && planEntry != null && planEntry > 0 ? (planRiskShare / planEntry) * 100 : null;
+  const planRiskDollar = planRiskShare != null && planQty != null ? planRiskShare * planQty : null;
+  const planReturn = planEntry != null && planTarget != null && planTarget > 0
+    ? computeRiskReward(dir, planEntry, planTarget, planQty ?? null) : null;
+  const planRR = planReturn != null && planRiskPct != null && planRiskPct > 0
+    ? (planReturn.pct / planRiskPct).toFixed(2) : null;
 
-  // ── Read Mode ───────────────────────────────────────────────────
+  // ── Actual side (use real execution data when available) ──
+  const actualEntry = actualValues?.avgEntryPrice ?? riskSnapshot.initialEntryPrice;
+  const actualExit = actualValues?.avgExitPrice;
+  const actualQty = riskSnapshot.initialQuantity;
+  const actualStop = actualExit != null ? Math.min(actualExit, actualEntry ?? Infinity) : riskSnapshot.initialStopPrice;
+
+  const actualRiskShare = actualEntry != null && actualStop != null
+    ? Math.abs(actualEntry - actualStop) : null;
+  const actualRiskPct = actualRiskShare != null && actualEntry != null && actualEntry > 0
+    ? (actualRiskShare / actualEntry) * 100 : null;
+  const actualRiskDollar = actualRiskShare != null && actualQty != null
+    ? actualRiskShare * actualQty : null;
+  const actualReturn = actualEntry != null && actualExit != null && actualExit > 0 && actualQty != null
+    ? computeRiskReward(dir, actualEntry, actualExit, actualQty) : null;
+  const actualRR = actualReturn != null && actualRiskPct != null && actualRiskPct > 0
+    ? (actualReturn.pct / actualRiskPct).toFixed(2) : null;
+
+  const showSideBySide = !!plannedValues;
+
+  const T = 'text-zinc-600 dark:text-zinc-400'; // label class
+  const V = 'tabular-nums text-zinc-900 dark:text-zinc-100';  // value class
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Target className="size-4 text-zinc-500" />
-            Risk Snapshot
-          </CardTitle>
-          <button
-            onClick={() => setEditMode(true)}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          >
-            <Pencil className="size-3" />
-            Edit
-          </button>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <Target className="size-4 text-zinc-500" />
+          Risk Snapshot
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <div className="text-zinc-600 dark:text-zinc-300">Initial Entry</div>
-          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-            {formatPrice(riskSnapshot!.initialEntryPrice)}
+        {showSideBySide ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                  <th className="pb-2 text-left font-medium text-zinc-600 dark:text-zinc-400"></th>
+                  <th className="pb-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Plan</th>
+                  <th className="pb-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Actual</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  <td className={'py-2 ' + T}>Risk %</td>
+                  <td className={'py-2 text-right tabular-nums text-red-600 dark:text-red-400'}>
+                    {planRiskPct != null ? planRiskPct.toFixed(2) + '%' : '-'}
+                  </td>
+                  <td className={'py-2 text-right tabular-nums text-red-600 dark:text-red-400'}>
+                    {actualRiskPct != null ? actualRiskPct.toFixed(2) + '%' : '-'}
+                  </td>
+                </tr>
+                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  <td className={'py-2 ' + T}>Risk $</td>
+                  <td className={'py-2 text-right tabular-nums text-red-600 dark:text-red-400'}>
+                    {planRiskDollar != null ? '$' + planRiskDollar.toFixed(2) : '-'}
+                  </td>
+                  <td className={'py-2 text-right tabular-nums text-red-600 dark:text-red-400'}>
+                    {actualRiskDollar != null ? '$' + actualRiskDollar.toFixed(2) : '-'}
+                  </td>
+                </tr>
+                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  <td className={'py-2 ' + T}>Return %</td>
+                  <td className={'py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400'}>
+                    {planReturn != null ? planReturn.pct.toFixed(1) + '%' : '-'}
+                  </td>
+                  <td className={'py-2 text-right tabular-nums ' + (actualReturn != null ? 'text-emerald-600 dark:text-emerald-400' : V)}>
+                    {actualReturn != null ? actualReturn.pct.toFixed(1) + '%' : (actualRR != null ? '1:' + actualRR : '-')}
+                  </td>
+                </tr>
+                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  <td className={'py-2 ' + T}>Return $</td>
+                  <td className={'py-2 text-right tabular-nums text-emerald-600 dark:text-emerald-400'}>
+                    {planReturn != null ? '$' + planReturn.dollar.toFixed(2) : '-'}
+                  </td>
+                  <td className={'py-2 text-right tabular-nums ' + (actualReturn != null ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500')}>
+                    {actualReturn != null ? '$' + actualReturn.dollar.toFixed(2) : '-'}
+                  </td>
+                </tr>
+                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  <td className={'py-2 ' + T}>R:R</td>
+                  <td className={'py-2 text-right tabular-nums ' + V}>
+                    {planRR != null ? '1:' + planRR : '-'}
+                  </td>
+                  <td className={'py-2 text-right tabular-nums ' + V}>
+                    {actualRR != null ? '1:' + actualRR : (actualReturn != null ? '1:0' : '-')}
+                  </td>
+                </tr>
+                <tr>
+                  <td className={'py-2 ' + T}>Account Risk %</td>
+                  <td className={'py-2 text-right tabular-nums text-zinc-500'}>-</td>
+                  <td className={'py-2 text-right tabular-nums ' + V}>
+                    {riskSnapshot.accountRiskPct != null ? riskSnapshot.accountRiskPct.toFixed(2) + '%' : '-'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-
-          <div className="text-zinc-600 dark:text-zinc-300">Initial Stop</div>
-          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-            {formatPrice(riskSnapshot!.initialStopPrice)}
+        ) : (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <div className={T}>Risk %</div>
+            <div className="tabular-nums text-red-600 dark:text-red-400">
+              {actualRiskPct != null ? actualRiskPct.toFixed(2) + '%' : '-'}
+            </div>
+            <div className={T}>Risk $</div>
+            <div className="tabular-nums text-red-600 dark:text-red-400">
+              {actualRiskDollar != null ? '$' + actualRiskDollar.toFixed(2) : '-'}
+            </div>
+            <div className={T}>Return %</div>
+            <div className={V}>
+              {riskSnapshot.plannedRewardRisk != null ? '1:' + riskSnapshot.plannedRewardRisk.toFixed(2) : '-'}
+            </div>
+            <div className={T}>Return $</div>
+            <div className="tabular-nums text-zinc-500">-</div>
+            <div className={T}>Account Risk %</div>
+            <div className={V}>
+              {riskSnapshot.accountRiskPct != null ? riskSnapshot.accountRiskPct.toFixed(2) + '%' : '-'}
+            </div>
           </div>
-
-          <div className="text-zinc-600 dark:text-zinc-300">Initial Qty</div>
-          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-            {riskSnapshot!.initialQuantity?.toLocaleString() ?? '-'}
-          </div>
-
-          <div className="text-zinc-600 dark:text-zinc-300">Risk/Share</div>
-          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-            {formatPrice(riskSnapshot!.riskPerShare)}
-          </div>
-
-          <div className="text-zinc-600 dark:text-zinc-300">Risk Amount</div>
-          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-            {formatCurrency(riskSnapshot!.initialRiskAmount)}
-          </div>
-
-          <div className="text-zinc-600 dark:text-zinc-300">Account Risk</div>
-          <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-            {riskSnapshot!.accountRiskPct != null
-              ? `${riskSnapshot!.accountRiskPct.toFixed(2)}%`
-              : '-'}
-          </div>
-
-          {riskSnapshot!.plannedRewardRisk != null && (
-            <>
-              <div className="text-zinc-600 dark:text-zinc-300">Planned R:R</div>
-              <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
-                {riskSnapshot!.plannedRewardRisk.toFixed(2)}
-              </div>
-            </>
-          )}
-        </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -31,7 +31,6 @@ interface ActivePhaseViewProps {
   checkResults: CheckResult[];
   onAdjustmentAdded: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
-  onRiskSnapshotSave: (payload: Record<string, number | null>) => Promise<void>;
   onExecutionAdded?: () => void;
 }
 
@@ -48,7 +47,6 @@ export default function ActivePhaseView({
   checkResults,
   onAdjustmentAdded,
   onAssetsChanged,
-  onRiskSnapshotSave,
   onExecutionAdded,
 }: ActivePhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
@@ -76,12 +74,26 @@ export default function ActivePhaseView({
         />
       </div>
 
+      {/* Ticker & Setup header */}
+      <div className="mb-4 flex items-baseline gap-4 text-sm">
+        <div>
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Ticker</span>
+          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{trade.symbol}</p>
+        </div>
+        {trade.setupName && (
+          <div>
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Setup</span>
+            <p className="text-base text-zinc-900 dark:text-zinc-100">{trade.setupName}</p>
+          </div>
+        )}
+      </div>
+
       {/* Grid: Trade Plan + Risk Snapshot */}
       <div className="mb-8 grid gap-6 md:grid-cols-2">
-        <TradePlanCard trade={trade} />
+        <TradePlanCard trade={trade} executedValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice: null }} />
         <RiskSnapshotCard
           riskSnapshot={riskSnapshot}
-          onSave={onRiskSnapshotSave}
+          plannedValues={trade}
         />
       </div>
 

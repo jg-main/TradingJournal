@@ -126,3 +126,20 @@ export function formatDuration(ms: number | null | undefined): string {
 
   return parts.join(' ');
 }
+
+/**
+ * Compute risk/reward metrics from trade parameters.
+ * Shared between TradePlanCard and RiskSnapshotCard.
+ */
+export function computeRiskReward(
+  direction: 'long' | 'short',
+  entry: number,
+  exit: number,
+  quantity: number | null,
+): { pct: number; dollar: number } | null {
+  if (!entry || !exit) return null;
+  const isLong = direction === 'long';
+  const pct = isLong ? ((exit - entry) / entry) * 100 : ((entry - exit) / entry) * 100;
+  const dollar = quantity ? (pct / 100) * entry * quantity : 0;
+  return { pct, dollar };
+}

@@ -5,6 +5,8 @@ import { PlusCircle, Brain, Loader2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
+import TradePlanCard from './trade-plan-card';
+import RiskSnapshotCard from './risk-snapshot-card';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
 import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
@@ -19,12 +21,13 @@ import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
-import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult } from './types';
+import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult, RiskSnapshot } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 interface ClosedPhaseViewProps {
   trade: Trade;
   executions: Execution[];
+  riskSnapshot: RiskSnapshot | null;
   grade: TradeGrade | null;
   mistakes: TradeMistake[];
   mistakeTypes: LookupValue[];
@@ -45,6 +48,7 @@ interface ClosedPhaseViewProps {
 export default function ClosedPhaseView({
   trade,
   executions,
+  riskSnapshot,
   grade,
   mistakes,
   mistakeTypes,
@@ -62,6 +66,16 @@ export default function ClosedPhaseView({
   onExecutionAdded,
 }: ClosedPhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
+
+  // Compute average exit price from executions
+  const exitExecs = executions.filter((e) =>
+    trade.direction === 'long'
+      ? e.action === 'sell' || e.action === 'reduce'
+      : e.action === 'buy_to_cover'
+  );
+  const avgExitPrice = exitExecs.length > 0
+    ? exitExecs.reduce((sum, e) => sum + e.price * e.quantity, 0) / exitExecs.reduce((sum, e) => sum + e.quantity, 0)
+    : null;
 
   // ── AI Assessment State ──────────────────────────────────────────────
   const [assessments, setAssessments] = useState<AssessmentSnapshot[]>([]);
@@ -199,6 +213,30 @@ export default function ClosedPhaseView({
           />
         </div>
       )}
+
+      {/* Ticker & Setup header */}
+      <div className="mb-4 flex items-baseline gap-4 text-sm">
+        <div>
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Ticker</span>
+          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{trade.symbol}</p>
+        </div>
+        {trade.setupName && (
+          <div>
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Setup</span>
+            <p className="text-base text-zinc-900 dark:text-zinc-100">{trade.setupName}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Grid: Trade Definition + Risk Snapshot */}
+      <div className="mb-8 grid gap-6 md:grid-cols-2">
+        <TradePlanCard trade={trade} executedValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }} />
+        <RiskSnapshotCard
+          riskSnapshot={riskSnapshot}
+          plannedValues={trade}
+          actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
+        />
+      </div>
 
       {/* P&L-R Metrics */}
       {pnlResult && (
