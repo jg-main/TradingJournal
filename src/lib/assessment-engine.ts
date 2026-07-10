@@ -23,8 +23,11 @@ import {
   playEvaluationFields,
   aiSettings,
   tradeAssessmentSnapshots,
+  checklistDefinitions,
+  tradeCheckResults,
 } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { asc, isNull } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import {
   parseScorecard,
@@ -35,7 +38,14 @@ import {
   createDefaultClickHouseClient,
   type MarketEvidence,
   type FreshnessCheck,
+  type OhlcBar,
+  type FeatureTimeSeries,
 } from './clickhouse-client';
+import {
+  parseAnalysisConfig,
+  type AnalysisConfig,
+  type FeatureConfig,
+} from './analysis-config';
 import {
   createAiProvider,
   AiProviderError,
@@ -95,6 +105,13 @@ export interface AssessmentDeps {
       endDate: string;
     }): Promise<MarketEvidence>;
     checkFreshness(thresholdDays?: number): Promise<FreshnessCheck>;
+    getFeatureTimeSeries(
+      symbol: string,
+      features: Array<{ id: string; label: string }>,
+      startDate: string,
+      endDate: string,
+    ): Promise<FeatureTimeSeries[]>;
+    getAllFeatureColumns(): Promise<Array<{ id: string; label: string }>>;
   };
   aiProvider?: AiProvider;
 }
@@ -143,7 +160,19 @@ export interface GatheredTradeData {
     minLookbackDays: number | null;
   }>;
   setupName: string | null;
+  /** The parsed analysis config from the trade's setup definition, if any */
+  analysisConfig: AnalysisConfig | null;
+  /** Checklist items relevant to this trade's setup/account, with the user's
+   *  submission status (passed/not_checked). Null when no setup is configured. */
+  checklistItems: Array<{
+    id: string;
+    description: string;
+    sortOrder: number;
+    passed: boolean | null; // null = not yet checked, true = passed, false = failed
+  }> | null;
   marketEvidence: MarketEvidence | null;
+  /** Pre-computed indicator time series (from ClickHouse or server-computed) */
+  featureTimeSeries: FeatureTimeSeries[] | null;
   warnings: string[];
 }
 
@@ -241,6 +270,7 @@ export async function gatherTradeData(
 
   // Step 3: Resolve evaluation fields via setupId bridge
   let setupName: string | null = null;
+  let analysisConfig: AnalysisConfig | null = null;
   const evaluationFields: GatheredTradeData['evaluationFields'] = [];
 
   if (trade.setupId) {
@@ -268,7 +298,10 @@ export async function gatherTradeData(
       if (setupDef) {
         setupName = setupDef.name;
 
-        // 3c. Query playEvaluationFields by setupDefinitionId
+        // 3c. Parse the setup's analysis configuration
+        analysisConfig = parseAnalysisConfig(setupDef.analysisConfig);
+
+        // 3d. Query playEvaluationFields by setupDefinitionId
         const fields = db
           .select()
           .from(playEvaluationFields)
@@ -298,7 +331,71 @@ export async function gatherTradeData(
     }
   }
 
-  // Step 4: Build warnings for missing sections
+  // Step 4: Gather checklist definitions and trade check results
+  let checklistItems: GatheredTradeData['checklistItems'] = null;
+  if (trade.setupId) {
+    // Resolve setup definition ID for checklist filtering
+    const lookupVal = db
+      .select()
+      .from(lookupValues)
+      .where(and(eq(lookupValues.id, trade.setupId), eq(lookupValues.type, 'setup')))
+      .get();
+
+    let resolvedSetupDefId: string | null = null;
+    if (lookupVal) {
+      const setupDef = db
+        .select()
+        .from(setupDefinitions)
+        .where(eq(setupDefinitions.id, lookupVal.id))
+        .get();
+      if (setupDef) resolvedSetupDefId = setupDef.id;
+    }
+
+    // Fetch checklist definitions for this setup
+    const defs = db
+      .select()
+      .from(checklistDefinitions)
+      .where(
+        and(
+          or(
+            eq(checklistDefinitions.accountId, trade.accountId),
+            ...(resolvedSetupDefId
+              ? [eq(checklistDefinitions.setupId, resolvedSetupDefId)]
+              : [] as any[]),
+          ),
+          isNull(checklistDefinitions.deletedAt),
+        ),
+      )
+      .orderBy(asc(checklistDefinitions.sortOrder), asc(checklistDefinitions.createdAt))
+      .all();
+
+    // Fetch the user's check results for this trade
+    const chkResults = db
+      .select()
+      .from(tradeCheckResults)
+      .where(eq(tradeCheckResults.tradeId, tradeId))
+      .all();
+    const resultMap = new Map(chkResults.map((r) => [r.checklistDefinitionId, r.passed]));
+
+    checklistItems = defs.map((d) => ({
+      id: d.id,
+      description: d.description,
+      sortOrder: d.sortOrder ?? 0,
+      passed: resultMap.get(d.id) ?? null,
+    }));
+
+    console.log(
+      JSON.stringify({
+        event: 'gather_checklist',
+        tradeId,
+        setupId: trade.setupId,
+        checklistItemCount: checklistItems.length,
+        checkedCount: chkResults.length,
+      }),
+    );
+  }
+
+  // Step 5: Build warnings for missing sections
   const warnings: string[] = [];
   if (!trade.symbol) {
     warnings.push('Trade has no symbol - market evidence will be unavailable');
@@ -322,7 +419,10 @@ export async function gatherTradeData(
     executions,
     evaluationFields,
     setupName,
+    analysisConfig,
+    checklistItems,
     marketEvidence: null,
+    featureTimeSeries: null,
     warnings,
   };
 }
@@ -332,8 +432,16 @@ export async function gatherTradeData(
 /**
  * Build a structured assessment prompt from gathered trade data.
  *
- * Constructs sections: TRADE DETAILS, EXECUTION RECORD, PLAY/SETUP CONTEXT,
- * MARKET EVIDENCE, OUTPUT FORMAT INSTRUCTIONS.
+ * Sections:
+ *   1. TRADE DETAILS        — trade metadata, thesis, plan
+ *   2. EXECUTION RECORD     — executions (empty for planned trades)
+ *   3. PLAY/SETUP CONTEXT   — setup name + evaluation fields
+ *   4. MARKET EVIDENCE      — OHLC bars from ClickHouse with server-side computed indicators,
+ *                           pre-computed feature time series from ClickHouse (all or custom
+ *                           subset, controlled by the setup's analysis_config.featureMode),
+ *                           and raw OHLCV time series for pattern recognition
+ *   5. CHECKLIST READINESS  — (ai_quality only) per-setup checklist + user's answers
+ *   6. OUTPUT FORMAT        — status-aware dimension list + JSON schema
  *
  * The system message is read from the active ai_settings.systemPrompt in the
  * database, or a sensible default is used. The user message is built from
@@ -423,18 +531,88 @@ export function buildAssessmentPrompt(
     const lines: string[] = ['## MARKET EVIDENCE', ''];
     if (data.marketEvidence && data.marketEvidence.ohlc.length > 0) {
       const ev = data.marketEvidence;
-      const firstBar = ev.ohlc[0];
-      const lastBar = ev.ohlc[ev.ohlc.length - 1];
       lines.push(`Symbol: ${ev.symbol}`);
-      lines.push(`Bars: ${ev.ohlc.length}`);
-      lines.push(`Date Range: ${firstBar.date} to ${lastBar.date}`);
-      lines.push(`First Close: ${firstBar.close}`);
-      lines.push(`Last Close: ${lastBar.close}`);
-      const high = Math.max(...ev.ohlc.map((b) => b.high));
-      const low = Math.min(...ev.ohlc.map((b) => b.low));
-      lines.push(`High: ${high}`);
-      lines.push(`Low: ${low}`);
-      lines.push(`Range: ${(high - low).toFixed(2)}`);
+      lines.push(`Period: ${ev.ohlc[0].date} to ${ev.ohlc[ev.ohlc.length - 1].date}`);
+      lines.push(`Trading Days: ${ev.ohlc.length}`);
+      lines.push('');
+
+      // ── Summary Stats (quick reference) ─────────────────────────────
+      const indicators = computeMarketIndicators(ev.ohlc);
+      if (indicators) {
+        lines.push('─ Summary ─');
+        lines.push(`Latest Close: ${indicators.latestClose} (${indicators.latestDate})`);
+        lines.push(`Total Return: ${((indicators.latestClose - ev.ohlc[0].close) / ev.ohlc[0].close * 100).toFixed(1)}%`);
+        lines.push(`52w High: ${indicators.highClose}  Low: ${indicators.lowClose}`);
+        lines.push(`% from 52w High: ${indicators.highClose > 0 ? (((indicators.latestClose - indicators.highClose) / indicators.highClose) * 100).toFixed(1) : 'N/A'}%`);
+        lines.push('');
+      }
+
+      // ── Unified Time-Series Matrix ─────────────────────────────────
+      // A single compact table with OHLCV + all feature columns per row.
+      // This is far more token-efficient than per-feature blocks.
+
+      // Build the column headers
+      const columns: Array<{ id: string; label: string }> = [
+        { id: 'date', label: 'date' },
+        { id: 'openadj', label: 'open' },
+        { id: 'highadj', label: 'high' },
+        { id: 'lowadj', label: 'low' },
+        { id: 'closeadj', label: 'close' },
+        { id: 'dailyvolumeadj', label: 'volume' },
+      ];
+
+      // Add feature columns (from ClickHouse or computed)
+      const featCols = data.featureTimeSeries ?? [];
+      for (const ts of featCols) {
+        if (!ts.error && ts.data.length > 0) {
+          columns.push({ id: ts.id, label: ts.label });
+        }
+      }
+
+      // Build the data rows: iterate over OHLC bars, look up feature values
+      const bars = ev.ohlc;
+      // Sample to ~252 rows max
+      const rowStep = Math.max(1, Math.floor(bars.length / 252));
+
+      lines.push('─ Time-Series Table ─');
+      // Header
+      const headerRow = columns.map((c) => c.label).join('\t');
+      lines.push(headerRow);
+
+      // Data rows (sampled)
+      for (let i = 0; i < bars.length; i += rowStep) {
+        const b = bars[i];
+        const dateStr = b.date;
+        const openStr = b.open.toFixed(2);
+        const highStr = b.high.toFixed(2);
+        const lowStr = b.low.toFixed(2);
+        const closeStr = b.close.toFixed(2);
+        const volStr = b.volume.toFixed(0);
+
+        const rowParts: string[] = [dateStr, openStr, highStr, lowStr, closeStr, volStr];
+
+        // Add feature values for this date (if available)
+        for (const ts of featCols) {
+          if (ts.error || ts.data.length === 0) {
+            rowParts.push('');
+            continue;
+          }
+          // Find the feature value closest to this bar's date
+          const feat = ts.data.find((d) => d.date === dateStr);
+          if (feat !== undefined) {
+            rowParts.push(feat.value.toFixed(4));
+          } else {
+            rowParts.push('');
+          }
+        }
+
+        lines.push(rowParts.join('\t'));
+      }
+
+      lines.push('');
+      lines.push('Format: tab-separated columns. First row = headers. Empty cell = no data for that date.');
+      lines.push('');
+
       if (ev.notes.length > 0) {
         lines.push(`Notes: ${ev.notes.join('; ')}`);
       }
@@ -447,7 +625,42 @@ export function buildAssessmentPrompt(
     sectionCount++;
   }
 
-  // ── Section 5: OUTPUT FORMAT INSTRUCTIONS ──────────────────────────
+  // ── Section 5: CHECKLIST READINESS — INDEPENDENT VERIFICATION ────
+  // (planned trades only)
+  //
+  // The AI should independently verify each checklist criterion against the
+  // available market evidence and trade plan. This is NOT a report of what
+  // the user checked — it is a second-opinion validation of the trade's
+  // readiness, using the OHLC data, trade details, and setup rules.
+  if (assessmentType === 'ai_quality' && data.checklistItems && data.checklistItems.length > 0) {
+    const lines: string[] = ['## CHECKLIST READINESS — INDEPENDENT VERIFICATION', ''];
+    lines.push(
+      'Below are the required pre-execution criteria for this setup. ' +
+      'For EACH criterion, independently verify whether it IS SATISFIED using ' +
+      'the MARKET EVIDENCE (OHLC data), TRADE DETAILS (entry, stop, targets), ' +
+      'and SETUP RULES provided above. ' +
+      'Do NOT rely on whether the trader checked a box — evaluate the actual data.',
+    );
+    lines.push('');
+    lines.push(`Setup: ${data.setupName ?? 'Unknown'}`);
+    lines.push('');
+
+    for (const item of data.checklistItems) {
+      lines.push(`Criterion: ${item.description}`);
+      lines.push('  Independently verified status: [PASS / FAIL / CANNOT_VERIFY]');
+      lines.push('  Evidence: <cite specific data points from market evidence or trade plan>');
+      lines.push('');
+    }
+
+    const total = data.checklistItems.length;
+    lines.push(`---`);
+    lines.push('After evaluating each criterion above, produce an independent checklist_readiness dimension in your scorecard.');
+
+    parts.push(lines.join('\n'));
+    sectionCount++;
+  }
+
+  // ── Section 6: OUTPUT FORMAT INSTRUCTIONS ──────────────────────────
   {
     const lines: string[] = ['## OUTPUT FORMAT INSTRUCTIONS', ''];
     lines.push(
@@ -479,9 +692,38 @@ export function buildAssessmentPrompt(
     lines.push('');
     lines.push(`Assessment type for this request: ${assessmentType}`);
     lines.push('');
-    lines.push(
-      'Evaluate the quality of the trade based on the provided data. Consider: setup quality, risk management, entry execution, trade management, exit execution, and overall process discipline.',
-    );
+
+    if (assessmentType === 'ai_quality') {
+      // Pre-execution assessment — only evaluate what CAN be assessed
+      lines.push(
+        'Evaluate the quality of the PLANNED trade based on the provided data. ' +
+        'Only score dimensions that can be assessed before execution. ' +
+        'Use these dimensions:',
+      );
+      lines.push('  - setup_quality: Quality of the setup selection (thesis, invalidation)');
+      lines.push('  - risk_management_plan: Quality of stop placement, position sizing plan, R:R ratio');
+      lines.push('  - entry_plan: Clarity and discipline of the entry criteria');
+      lines.push('  - checklist_readiness: Independent verification of each pre-execution criterion against actual market data and trade plan — NOT a report of what the user checked');
+      lines.push('  - process_discipline: Overall structure of the pre-trade plan');
+      lines.push('');
+      lines.push(
+        'Do NOT create dimensions for trade_management or exit_execution. ' +
+        'This trade has no executions yet — those cannot be assessed at this stage.',
+      );
+    } else {
+      // After-exit assessment — full evaluation with execution data
+      lines.push(
+        'Evaluate the quality of the EXECUTED trade based on the provided data. ' +
+        'Use these dimensions:',
+      );
+      lines.push('  - setup_quality: Quality of the setup selection');
+      lines.push('  - risk_management: How well risk was managed (stop placement, adjustments)');
+      lines.push('  - entry_execution: Quality and discipline of the actual entry');
+      lines.push('  - trade_management: In-trade decisions (scaling, trailing stops, partial exits)');
+      lines.push('  - exit_execution: Quality and timing of the exit(s)');
+      lines.push('  - process_discipline: Overall adherence to the trading plan');
+    }
+
     parts.push(lines.join('\n'));
     sectionCount++;
   }
@@ -506,13 +748,146 @@ export function buildAssessmentPrompt(
   return { systemMessage, userMessage, sectionCount, totalChars };
 }
 
+// ── Computed Market Indicators ────────────────────────────────────────
+
+/**
+ * Computed market indicators derived from OHLC bars.
+ *
+ * These are pre-computed server-side so the AI receives quantitative
+ * context rather than having to estimate from raw OHLC text.
+ */
+export interface MarketIndicators {
+  /** Total return % from first bar close to last bar close */
+  totalReturnPct: number;
+  /** Highest close over the full period */
+  highClose: number;
+  /** Date of the highest close */
+  highCloseDate: string;
+  /** Lowest close over the full period */
+  lowClose: number;
+  /** Date of the lowest close */
+  lowCloseDate: string;
+  /** Return % over each lookback window (keyed by window label) */
+  returns: Record<string, number | null>;
+  /** Simple moving averages at standard periods (keyed by period label, e.g. '20d', '50d', '200d') */
+  sma: Record<string, number | null>;
+  /** 14-period Average True Range as % of price */
+  atr14Pct: number | null;
+  /** Average Daily Range % over the full window */
+  adrPct: number | null;
+  /** Average volume over the last 20 bars */
+  recentAvgVolume: number | null;
+  /** Average volume over the full period */
+  fullAvgVolume: number | null;
+  /** Latest close price */
+  latestClose: number;
+  /** Latest date */
+  latestDate: string;
+  /** Total number of bars */
+  barCount: number;
+}
+
+/**
+ * Compute market indicators from a sorted array of OHLC bars.
+ *
+ * Accepts a sorted (ascending by date) array of OhlcBar and computes
+ * returns, SMAs, ATR, ADR, and volume statistics.
+ * Returns null if there are fewer than 2 bars.
+ */
+export function computeMarketIndicators(bars: OhlcBar[]): MarketIndicators | null {
+  if (bars.length < 2) return null;
+
+  const first = bars[0];
+  const last = bars[bars.length - 1];
+
+  // ── Returns over fixed windows ────────────────────────────────────
+  function returnOverBars(lookback: number): number | null {
+    if (bars.length < lookback + 1) return null;
+    const idx = bars.length - 1 - lookback;
+    const prevClose = bars[idx].close;
+    return ((last.close - prevClose) / prevClose) * 100;
+  }
+
+  // ── SMA ───────────────────────────────────────────────────────────
+  function sma(period: number): number | null {
+    if (bars.length < period) return null;
+    const slice = bars.slice(bars.length - period);
+    const sum = slice.reduce((s, b) => s + b.close, 0);
+    return sum / period;
+  }
+
+  // ── ATR(14) as % of close ─────────────────────────────────────────
+  function atr14(): number | null {
+    if (bars.length < 15) return null;
+    let sum = 0;
+    for (let i = bars.length - 14; i < bars.length; i++) {
+      const highLow = bars[i].high - bars[i].low;
+      const highPrevClose = Math.abs(bars[i].high - bars[i - 1].close);
+      const lowPrevClose = Math.abs(bars[i].low - bars[i - 1].close);
+      sum += Math.max(highLow, highPrevClose, lowPrevClose);
+    }
+    return (sum / 14 / last.close) * 100;
+  }
+
+  // ── ADR (average daily range %) ───────────────────────────────────
+  function adr(): number | null {
+    const sum = bars.reduce((s, b) => s + (b.high - b.low) / b.close, 0);
+    return (sum / bars.length) * 100;
+  }
+
+  // ── Highest/lowest close ──────────────────────────────────────────
+  let highClose = -Infinity;
+  let highCloseDate = '';
+  let lowClose = Infinity;
+  let lowCloseDate = '';
+  for (const b of bars) {
+    if (b.close > highClose) { highClose = b.close; highCloseDate = b.date; }
+    if (b.close < lowClose) { lowClose = b.close; lowCloseDate = b.date; }
+  }
+
+  const recent20 = bars.slice(Math.max(0, bars.length - 20));
+  const recentAvgVolume =
+    recent20.length > 0
+      ? recent20.reduce((s, b) => s + b.volume, 0) / recent20.length
+      : null;
+
+  return {
+    totalReturnPct: ((last.close - first.close) / first.close) * 100,
+    highClose,
+    highCloseDate,
+    lowClose,
+    lowCloseDate,
+    returns: {
+      '1m (21d)': returnOverBars(21),
+      '3m (63d)': returnOverBars(63),
+      '6m (126d)': returnOverBars(126),
+      '1y (252d)': returnOverBars(252),
+    },
+    sma: {
+      '20d': sma(20),
+      '50d': sma(50),
+      '200d': sma(200),
+    },
+    atr14Pct: atr14(),
+    adrPct: adr(),
+    recentAvgVolume,
+    fullAvgVolume: bars.reduce((s, b) => s + b.volume, 0) / bars.length,
+    latestClose: last.close,
+    latestDate: last.date,
+    barCount: bars.length,
+  };
+}
+
 // ── Date Range Derivation ───────────────────────────────────────────────
 
 /**
  * Derive a market evidence date range from a trade's open/created dates.
  *
  * Uses openedAt (or createdAt if not yet opened) and expands to a reasonable
- * window: ~30 trading days before the reference date to 5 days after.
+ * window. Uses 365 days by default to capture full-year context including
+ * multi-month trends, prior moves, and long-term moving averages.
+ * Evaluation fields' minLookbackDays can override when longer lookback
+ * is needed for specific play criteria.
  *
  * Returns { startDate, endDate } in YYYY-MM-DD format, or null if the trade
  * has no usable date.
@@ -529,7 +904,9 @@ function deriveDateRange(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(refDay)) return null;
 
   const ref = new Date(refDay);
-  const days = lookbackDays ?? 45;
+  // Use 365 days as default to provide full annual context. If evaluation
+  // fields specify a longer minLookbackDays, that takes precedence.
+  const days = lookbackDays ?? 365;
   const start = new Date(ref);
   start.setDate(start.getDate() - days);
 
@@ -758,10 +1135,88 @@ export async function performAssessment(
     }
   }
 
-  // ── Step 3: Build prompt ──────────────────────────────────────────
+  // ── Step 3: Fetch pre-computed feature time series ──────────────
+  let featureTimeSeries: FeatureTimeSeries[] | null = null;
+  if (gathered.analysisConfig && gathered.trade.symbol && gathered.marketEvidence?.dataDateRange) {
+    const cfg = gathered.analysisConfig;
+    const dr = gathered.marketEvidence.dataDateRange;
+
+    // Determine which features to fetch based on featureMode
+    let featuresToFetch: Array<{ id: string; label: string }> = [];
+
+    if (cfg.featureMode === 'all') {
+      // Mode A: Discover ALL columns from the feature table and fetch everything
+      try {
+        const allCols = await chClient.getAllFeatureColumns();
+        featuresToFetch = allCols;
+        console.log(
+          JSON.stringify({
+            event: 'feature_mode_all',
+            tradeId,
+            featureCount: allCols.length,
+          }),
+        );
+      } catch (err) {
+        warnings.push(
+          `Failed to discover feature columns: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      // Mode B: Custom — only fetch features listed in the config
+      featuresToFetch = cfg.features
+        .filter((f) => f.source === 'clickhouse')
+        .map((f) => ({ id: f.id, label: f.label }));
+    }
+
+    // Fetch the resolved features from ClickHouse
+    if (featuresToFetch.length > 0) {
+      try {
+        const results = await chClient.getFeatureTimeSeries(
+          gathered.trade.symbol,
+          featuresToFetch,
+          dr.start,
+          dr.end,
+        );
+        featureTimeSeries = results;
+
+        for (const r of results) {
+          if (r.error) {
+            warnings.push(`Feature query error for ${r.id}: ${r.error}`);
+          }
+        }
+      } catch (err) {
+        warnings.push(
+          `Failed to fetch feature time series: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // Compute server-side features (future expansion)
+    if (cfg.featureMode === 'custom') {
+      const computeFeatures = cfg.features.filter((f) => f.source === 'compute');
+      if (computeFeatures.length > 0 && gathered.marketEvidence?.ohlc?.length) {
+        for (const feat of computeFeatures) {
+          console.log(
+            JSON.stringify({
+              event: 'compute_feature',
+              featureId: feat.id,
+              barCount: gathered.marketEvidence?.ohlc?.length,
+              status: 'not_implemented',
+            }),
+          );
+        }
+      }
+    }
+
+    if (featureTimeSeries) {
+      gathered = { ...gathered, featureTimeSeries };
+    }
+  }
+
+  // ── Step 4: Build prompt ──────────────────────────────────────────
   const promptResult = buildAssessmentPrompt(gathered, { assessmentType });
 
-  // ── Step 4: AI call ───────────────────────────────────────────────
+  // ── Step 5: AI call ───────────────────────────────────────────────
   const aiCallStart = Date.now();
   let completionResult: Awaited<ReturnType<AiProvider['getCompletion']>>;
 
