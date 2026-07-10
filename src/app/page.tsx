@@ -50,8 +50,16 @@ interface KpiMetrics {
   avgLoss: number | null;
 }
 
+interface MtmData {
+  netUnrealizedPnl: number | null;
+  openTradeCount: number;
+  tradesWithPrices: number;
+  tradesAwaitingData: number;
+}
+
 interface DashboardResponse {
   kpis: KpiMetrics;
+  mtm: MtmData;
   equityCurve: EquityDataPoint[];
   drawdown: DrawdownDataPoint[];
   monthlyPerformance: MonthlyPerformanceItem[];
@@ -145,6 +153,7 @@ function KpiCard({ icon, iconBg, value, label, valueClassName }: KpiCardProps) {
              label === 'Net P&L' ? 'Total realized profit and loss across all closed trades.' :
              label === 'Win Rate' ? 'Percentage of closed trades that were profitable.' :
              label === 'Total Trades' ? 'Total number of trades in your journal.' :
+             label === 'Unrealized P&L' ? 'Total unrealized profit/loss across all open positions based on current market prices.' :
              label === 'Open Trades' ? 'Trades currently in an open position.' : label}
           </TooltipContent>
         </Tooltip>
@@ -169,6 +178,7 @@ function SkeletonCard() {
 
 function HomeContent() {
   const [kpis, setKpis] = useState<KpiMetrics | null>(null);
+  const [mtm, setMtm] = useState<MtmData | null>(null);
   const [equityCurve, setEquityCurve] = useState<EquityDataPoint[]>([]);
   const [drawdown, setDrawdown] = useState<DrawdownDataPoint[]>([]);
   const [monthlyPerformance, setMonthlyPerformance] = useState<MonthlyPerformanceItem[]>([]);
@@ -205,6 +215,7 @@ function HomeContent() {
       }
       const data: DashboardResponse = await res.json();
       setKpis(data.kpis);
+      setMtm(data.mtm);
       setEquityCurve(data.equityCurve);
       setDrawdown(data.drawdown);
       setMonthlyPerformance(data.monthlyPerformance);
@@ -322,7 +333,7 @@ function HomeContent() {
       {/* Loading state — pulse-animated skeleton rectangles */}
       {loading && (
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-          {Array.from({ length: 10 }).map((_, i) => (
+          {Array.from({ length: 11 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
@@ -430,6 +441,31 @@ function HomeContent() {
             value={formatCurrency(kpis.avgLoss)}
             valueClassName={kpis.avgLoss !== null ? 'text-red-600 dark:text-red-400' : ''}
             label="Avg Loss"
+          />
+
+          {/* 11. Unrealized P&L */}
+          <KpiCard
+            icon={<TrendingUp className="size-4 text-zinc-700 dark:text-zinc-300" />}
+            iconBg="bg-amber-100 dark:bg-amber-900/30"
+            value={
+              mtm === null
+                ? '--'
+                : mtm.netUnrealizedPnl !== null && mtm.netUnrealizedPnl !== undefined
+                  ? formatCurrency(mtm.netUnrealizedPnl)
+                  : mtm.openTradeCount > 0
+                    ? <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">Awaiting prices</span>
+                    : <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">No open positions</span>
+            }
+            valueClassName={
+              mtm?.netUnrealizedPnl !== null && mtm?.netUnrealizedPnl !== undefined
+                ? mtm.netUnrealizedPnl > 0
+                  ? 'text-green-600 dark:text-green-400'
+                  : mtm.netUnrealizedPnl < 0
+                    ? 'text-red-600 dark:text-red-400'
+                    : ''
+                : ''
+            }
+            label="Unrealized P&L"
           />
         </div>
       )}
