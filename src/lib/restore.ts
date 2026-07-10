@@ -15,7 +15,7 @@
  */
 
 import AdmZip from 'adm-zip';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { db, getSqliteHandle } from '@/db/index';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
@@ -310,7 +310,29 @@ export async function executeRestore(
     };
   }
 
-  // Step 2–6: Transactional wipe-and-replace
+  // Step 2: Extract uploaded screenshot files before DB transaction
+  const uploadsDir = join(dirname(getDbFilePath()), '..', 'public', 'uploads', 'trades');
+  const zipAll = new AdmZip(zipBuffer);
+  const uploadEntries = zipAll.getEntries().filter((e) => e.entryName.startsWith('uploads/'));
+  if (uploadEntries.length > 0) {
+    mkdirSync(uploadsDir, { recursive: true });
+    for (const entry of uploadEntries) {
+      const filename = entry.entryName.replace('uploads/', '');
+      if (!filename || filename === '.gitkeep') continue;
+      const targetPath = join(uploadsDir, filename);
+      const data = entry.getData();
+      writeFileSync(targetPath, data);
+    }
+    console.log(
+      JSON.stringify({
+        event: 'restore_uploads',
+        fileCount: uploadEntries.length,
+        uploadsDir,
+      }),
+    );
+  }
+
+  // Step 3–6: Transactional wipe-and-replace
   const sqlite = getSqliteHandle();
   const zip = new AdmZip(zipBuffer);
 
