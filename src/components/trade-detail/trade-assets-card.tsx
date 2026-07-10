@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { ImageIcon, LinkIcon, Trash2, Upload, X } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { ImageIcon, LinkIcon, Trash2, Upload, X, ClipboardPaste } from 'lucide-react';
 
 import { extractApiErrorMessage } from '@/lib/error-utils';
 
@@ -34,6 +34,10 @@ export default function TradeAssetsCard({
   const [formMode, setFormMode] = useState<'upload' | 'link'>('upload');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Drag state
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
+
   // Upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPhase, setUploadPhase] = useState<string>('pre_trade');
@@ -54,6 +58,105 @@ export default function TradeAssetsCard({
     setLinkPhase('pre_trade');
     setLinkLabel('');
     setMessage(null);
+  };
+
+  /** Upload a file via the API — shared by file input, paste, and drop */
+  const uploadFileToTrade = async (file: File, phase: string, label?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('phase', phase);
+    if (label?.trim()) formData.append('label', label.trim());
+
+    const res = await fetch(`/api/trades/${tradeId}/assets`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(extractApiErrorMessage(err));
+    }
+
+    setUploadFile(null);
+    setUploadLabel('');
+    await onAssetsChanged();
+  };
+
+  /** Handle paste from clipboard */
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    const files = e.clipboardData.files;
+
+    // Image from clipboard (screenshot)
+    if (files.length > 0 && files[0].type.startsWith('image/')) {
+      e.preventDefault();
+      setMessage(null);
+      try {
+        await uploadFileToTrade(files[0], uploadPhase, uploadLabel || 'Pasted screenshot');
+        setMessage({ type: 'success', text: 'Screenshot pasted.' });
+      } catch (err) {
+        setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Paste failed.' });
+      }
+      return;
+    }
+
+    // Text from clipboard — save as .txt
+    const text = e.clipboardData.getData('text/plain');
+    if (text) {
+      e.preventDefault();
+      const blob = new Blob([text], { type: 'text/plain' });
+      const file = new File([blob], `note-${Date.now()}.txt`, { type: 'text/plain' });
+      setMessage(null);
+      try {
+        await uploadFileToTrade(file, uploadPhase, uploadLabel || 'Pasted note');
+        setMessage({ type: 'success', text: 'Note pasted.' });
+      } catch (err) {
+        setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Paste failed.' });
+      }
+    }
+  };
+
+  /** Handle drag events */
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) setDragOver(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    dragCounter.current = 0;
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setMessage({ type: 'error', text: 'Only image files are supported.' });
+      return;
+    }
+
+    setMessage(null);
+    try {
+      await uploadFileToTrade(file, uploadPhase, uploadLabel || 'Dropped screenshot');
+      setMessage({ type: 'success', text: 'Screenshot uploaded.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Upload failed.' });
+    }
   };
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -215,7 +318,32 @@ export default function TradeAssetsCard({
             </div>
 
             {formMode === 'upload' ? (
-              <form onSubmit={handleUpload} className="space-y-3">
+              <form
+                onSubmit={handleUpload}
+                className="space-y-3"
+                onPaste={handlePaste}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+              >
+                {/* Paste / Drop zone */}
+                <div
+                  className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-colors ${
+                    dragOver
+                      ? 'border-zinc-900 bg-zinc-100 dark:border-zinc-100 dark:bg-zinc-800'
+                      : 'border-zinc-300 bg-white hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500'
+                  }`}
+                >
+                  <ClipboardPaste className="mb-2 size-6 text-zinc-400" />
+                  <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+                    {dragOver ? 'Drop screenshot here' : 'Paste screenshot (Ctrl+V) or drag & drop'}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                    Or click below to pick a file
+                  </p>
+                </div>
+
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Screenshot File
@@ -262,6 +390,7 @@ export default function TradeAssetsCard({
                 <button
                   type="submit"
                   className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  disabled={!uploadFile}
                 >
                   Upload
                 </button>
