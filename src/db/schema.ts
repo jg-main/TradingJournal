@@ -132,6 +132,10 @@ export const positionPriceSnapshots = sqliteTable('position_price_snapshots', {
   price: real('price').notNull(),
   source: text('source').notNull().default('yahoo'),
   marketState: text('market_state'),
+  shortName: text('short_name'),
+  quoteType: text('quote_type'),
+  sector: text('sector'),
+  industry: text('industry'),
   fetchedAt: text('fetched_at').notNull(),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
 }, (t) => [
