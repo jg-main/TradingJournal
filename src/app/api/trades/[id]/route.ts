@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, watchlistItems, lookupValues, setupDefinitions } from '@/db/schema';
+import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
+import { calculatePnL } from '@/lib/trade-calc';
+import type { ExecutionData, Direction } from '@/lib/trade-calc';
 
 const updateTradeSchema = z.object({
   symbol: z.string().min(1).max(20).optional(),
@@ -54,6 +56,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         lesson: trades.lesson,
         createdAt: trades.createdAt,
         updatedAt: trades.updatedAt,
+        currentPrice: trades.currentPrice,
+        currentPriceFetchedAt: trades.currentPriceFetchedAt,
         setupName: sql<string | null>`COALESCE(${setupDefinitions.name}, ${lookupValues.value})`,
       })
       .from(trades)
@@ -69,7 +73,44 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    return NextResponse.json(row);
+    // Compute unrealized PnL for non-closed trades with a current price
+    let unrealizedPnl: number | null = null;
+    if (row.status !== 'closed' && row.currentPrice !== null && row.currentPrice !== undefined) {
+      const executions = db
+        .select({
+          action: tradeExecutions.action,
+          quantity: tradeExecutions.quantity,
+          price: tradeExecutions.price,
+          fees: tradeExecutions.fees,
+          executedAt: tradeExecutions.executedAt,
+        })
+        .from(tradeExecutions)
+        .where(eq(tradeExecutions.tradeId, id))
+        .all();
+
+      if (executions.length > 0) {
+        const executionData: ExecutionData[] = executions.map((e) => ({
+          action: e.action,
+          quantity: e.quantity,
+          price: e.price,
+          fees: e.fees,
+          executedAt: e.executedAt ?? '',
+        }));
+
+        const direction = row.direction as Direction;
+        const pnl = calculatePnL(executionData, direction);
+
+        if (pnl.avgEntryPrice !== null && pnl.openQuantity > 0) {
+          if (direction === 'long') {
+            unrealizedPnl = (row.currentPrice - pnl.avgEntryPrice) * pnl.openQuantity;
+          } else {
+            unrealizedPnl = (pnl.avgEntryPrice - row.currentPrice) * pnl.openQuantity;
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({ ...row, unrealizedPnl });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch trade', details: String(error) },

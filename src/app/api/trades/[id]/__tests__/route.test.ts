@@ -12,6 +12,8 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, and } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
+import { calculatePnL } from '@/lib/trade-calc';
+import type { ExecutionData, Direction } from '@/lib/trade-calc';
 
 let passed = 0;
 let failed = 0;
@@ -133,8 +135,22 @@ sqlite.exec(`
     closed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS trade_executions (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_id TEXT NOT NULL,
+    executed_at TEXT,
+    action TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    price REAL NOT NULL,
+    fees REAL DEFAULT 0,
+    reason_id TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp)
   );
   CREATE TABLE IF NOT EXISTS watchlist_items (
     id TEXT PRIMARY KEY NOT NULL,
@@ -161,7 +177,38 @@ function doGetTrade(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
-    return { status: 200, data: row };
+    // Compute unrealized PnL for non-closed trades with a current price
+    let unrealizedPnl: number | null = null;
+    if (row.status !== 'closed' && row.currentPrice !== null && row.currentPrice !== undefined) {
+      const executions = db
+        .select()
+        .from(schema.tradeExecutions)
+        .where(eq(schema.tradeExecutions.tradeId, id))
+        .all();
+
+      if (executions.length > 0) {
+        const executionData: ExecutionData[] = executions.map((e: Record<string, unknown>) => ({
+          action: e.action as string,
+          quantity: e.quantity as number,
+          price: e.price as number,
+          fees: (e.fees as number) ?? null,
+          executedAt: e.executedAt as string,
+        }));
+
+        const direction = row.direction as Direction;
+        const pnl = calculatePnL(executionData, direction);
+
+        if (pnl.avgEntryPrice !== null && pnl.openQuantity > 0) {
+          if (direction === 'long') {
+            unrealizedPnl = (row.currentPrice - pnl.avgEntryPrice) * pnl.openQuantity;
+          } else {
+            unrealizedPnl = (pnl.avgEntryPrice - row.currentPrice) * pnl.openQuantity;
+          }
+        }
+      }
+    }
+
+    return { status: 200, data: { ...row, unrealizedPnl } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch trade', details: String(error) } };
   }
@@ -504,6 +551,133 @@ console.log('\n11. PUT clears plannedQuantity when sent null:');
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.plannedQuantity, null, 'plannedQuantity is cleared to null');
+}
+
+// ── 12. GET: Returns currentPrice and currentPriceFetchedAt ──────────
+
+console.log('\n12. GET returns currentPrice and currentPriceFetchedAt fields:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const now = new Date().toISOString();
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    currentPrice: 155.50,
+    currentPriceFetchedAt: now,
+  });
+
+  const result = doGetTrade(trade.id as string);
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.currentPrice, 155.50, 'currentPrice matches seed');
+  assertEqual(data.currentPriceFetchedAt, now, 'currentPriceFetchedAt matches seed');
+}
+
+// ── 13. GET: Returns null currentPrice fields when not set ──────────
+
+console.log('\n13. GET returns null when no current_price set:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id' });
+
+  const result = doGetTrade(trade.id as string);
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.currentPrice, null, 'currentPrice is null');
+  assertEqual(data.currentPriceFetchedAt, null, 'currentPriceFetchedAt is null');
+  assertEqual(data.unrealizedPnl, null, 'unrealizedPnl is null when no current_price');
+}
+
+// ── 14. GET: Returns unrealizedPnl for open trade with executions ──
+
+console.log('\n14. GET computes unrealizedPnl for open trade with executions:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'open',
+    currentPrice: 160.00,
+    currentPriceFetchedAt: new Date().toISOString(),
+  });
+  const tradeId = trade.id as string;
+
+  db.insert(schema.tradeExecutions).values({
+    id: randomUUID(),
+    tradeId,
+    action: 'buy',
+    quantity: 100,
+    price: 150.00,
+    fees: 10,
+    executedAt: new Date().toISOString(),
+  }).run();
+
+  const result = doGetTrade(tradeId);
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.unrealizedPnl, 'unrealizedPnl is not null');
+  assertEqual(data.currentPrice, 160.00, 'currentPrice is 160');
+  // unrealizedPnl = (160 - 150) * 100 = 1000 (fees subtracted from realized only)
+  assertEqual(Math.round(data.unrealizedPnl as number), 1000, 'unrealizedPnl = (160-150)*100 = 1000');
+}
+
+// ── 15. GET: Returns null unrealizedPnl for closed trade with currentPrice ──
+
+console.log('\n15. GET returns null unrealizedPnl for closed trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'closed',
+    currentPrice: 170.00,
+  });
+
+  const result = doGetTrade(trade.id as string);
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.currentPrice, 170.00, 'currentPrice is still returned');
+  assertEqual(data.unrealizedPnl, null, 'unrealizedPnl is null for closed trade');
+}
+
+// ── 16. GET: Computes unrealizedPnl for short trade ─────────────────
+
+console.log('\n16. GET computes unrealizedPnl for short trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'TSLA',
+    direction: 'short',
+    status: 'open',
+    currentPrice: 250.00,
+    currentPriceFetchedAt: new Date().toISOString(),
+  });
+  const tradeId = trade.id as string;
+
+  db.insert(schema.tradeExecutions).values({
+    id: randomUUID(),
+    tradeId,
+    action: 'sell_short',
+    quantity: 50,
+    price: 280.00,
+    fees: 5,
+    executedAt: new Date().toISOString(),
+  }).run();
+
+  const result = doGetTrade(tradeId);
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.unrealizedPnl, 'unrealizedPnl is not null for short trade');
+  // short: unrealizedPnl = (avgEntryPrice - currentPrice) * openQuantity = (280 - 250) * 50 = 1500
+  assertEqual(Math.round(data.unrealizedPnl as number), 1500, 'short unrealizedPnl = (280-250)*50 = 1500');
+  assertEqual(data.currentPrice, 250.00, 'currentPrice is 250');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
