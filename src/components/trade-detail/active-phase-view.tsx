@@ -100,6 +100,7 @@ export default function ActivePhaseView({
           plannedValues={trade}
           mtmData={mtmData}
           onRefreshPrice={onRefreshPrice}
+          tradeStatus={trade.status}
         />
       </div>
 

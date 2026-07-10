@@ -241,6 +241,7 @@ export default function ClosedPhaseView({
           actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
           mtmData={mtmData}
           onRefreshPrice={onRefreshPrice}
+          tradeStatus={trade.status}
         />
       </div>
 

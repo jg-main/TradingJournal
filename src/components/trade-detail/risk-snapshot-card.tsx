@@ -15,9 +15,11 @@ interface RiskSnapshotCardProps {
   mtmData?: MtmData;
   /** Callback to refresh the current price */
   onRefreshPrice?: () => void;
+  /** Trade status — used to gate MTM section visibility */
+  tradeStatus?: Trade['status'];
 }
 
-export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualValues, mtmData, onRefreshPrice }: RiskSnapshotCardProps) {
+export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualValues, mtmData, onRefreshPrice, tradeStatus }: RiskSnapshotCardProps) {
   if (!riskSnapshot) {
     return (
       <Card>
@@ -190,7 +192,7 @@ export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualVa
         )}
 
         {/* ── MTM Section ── */}
-        {mtmData != null && (
+        {mtmData != null && tradeStatus === 'open' && (
           <>
             <div className="border-t border-zinc-200 dark:border-zinc-700 my-4" />
             <div className="flex items-center gap-2 mb-3">
@@ -251,18 +253,28 @@ export default function RiskSnapshotCard({ riskSnapshot, plannedValues, actualVa
                         </span>
                       </td>
                     </tr>
-                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                      <td className={'py-2 ' + T}>Unrealized P&L $</td>
-                      <td className={'py-2 text-right tabular-nums ' + (unrealizedPnl != null ? (unrealizedPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : V)}>
-                        {unrealizedPnl != null ? formatCurrency(unrealizedPnl) : '-'}
-                      </td>
-                    </tr>
-                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                      <td className={'py-2 ' + T}>Unrealized P&L %</td>
-                      <td className={'py-2 text-right tabular-nums ' + (unrealizedPnlPct != null ? (unrealizedPnlPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : V)}>
-                        {unrealizedPnlPct != null ? unrealizedPnlPct.toFixed(1) + '%' : '-'}
-                      </td>
-                    </tr>
+                    {actualEntry == null ? (
+                      <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                        <td colSpan={2} className={'py-2 text-xs text-zinc-400 dark:text-zinc-500 italic'}>
+                          No entry price — execute first
+                        </td>
+                      </tr>
+                    ) : (
+                      <>
+                        <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                          <td className={'py-2 ' + T}>Unrealized P&L $</td>
+                          <td className={'py-2 text-right tabular-nums ' + (unrealizedPnl != null ? (unrealizedPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : V)}>
+                            {unrealizedPnl != null ? formatCurrency(unrealizedPnl) : '-'}
+                          </td>
+                        </tr>
+                        <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                          <td className={'py-2 ' + T}>Unrealized P&L %</td>
+                          <td className={'py-2 text-right tabular-nums ' + (unrealizedPnlPct != null ? (unrealizedPnlPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : V)}>
+                            {unrealizedPnlPct != null ? unrealizedPnlPct.toFixed(1) + '%' : '-'}
+                          </td>
+                        </tr>
+                      </>
+                    )}
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
                       <td className={'py-2 ' + T}>MTM R:R</td>
                       <td className={'py-2 text-right ' + V}>
