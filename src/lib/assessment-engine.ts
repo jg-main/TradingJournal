@@ -361,6 +361,7 @@ export async function gatherTradeData(
             eq(checklistDefinitions.accountId, trade.accountId),
             ...(resolvedSetupDefId
               ? [eq(checklistDefinitions.setupId, resolvedSetupDefId)]
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               : [] as any[]),
           ),
           isNull(checklistDefinitions.deletedAt),

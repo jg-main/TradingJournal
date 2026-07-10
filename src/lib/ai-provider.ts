@@ -180,6 +180,7 @@ function createAnthropicProvider(config: AiProviderConfig): AiProvider {
         // Temperature is NOT sent for Anthropic.
 
         const response = await client.messages.create(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           anthropicParams as any,
         );
 
@@ -243,10 +244,11 @@ function createAnthropicProvider(config: AiProviderConfig): AiProvider {
         }
 
         if (err instanceof AnthropicBadRequest || err instanceof AnthropicApiError) {
+          const status = err.status;
           console.log(
-            JSON.stringify({ event: 'ai_error', errorType: 'API_ERROR', statusCode: (err as any).status, model: config.model, durationMs }),
+            JSON.stringify({ event: 'ai_error', errorType: 'API_ERROR', statusCode: status, model: config.model, durationMs }),
           );
-          throw new AiProviderError('CONNECTION_ERROR', `API error (${(err as any).status}): ${err.message}`, (err as any).status);
+          throw new AiProviderError('CONNECTION_ERROR', `API error (${status}): ${err.message}`, status);
         }
 
         console.log(

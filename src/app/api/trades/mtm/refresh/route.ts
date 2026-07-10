@@ -28,14 +28,14 @@ let lastRefreshTimestampMs = 0;
 /**
  * Reset the rate-limit cooldown timer (for testability).
  */
-export function _resetRateLimit(): void {
+function _resetRateLimit(): void {
   lastRefreshTimestampMs = 0;
 }
 
 /**
  * Get the current rate-limit state (for testability).
  */
-export function _getRateLimitMs(): number {
+function _getRateLimitMs(): number {
   return RATE_LIMIT_MS;
 }
 
@@ -43,7 +43,7 @@ export function _getRateLimitMs(): number {
  * Get the remaining cooldown milliseconds (for testability).
  * Returns 0 when no cooldown is active.
  */
-export function _getRemainingCooldownMs(): number {
+function _getRemainingCooldownMs(): number {
   const elapsed = Date.now() - lastRefreshTimestampMs;
   return elapsed < RATE_LIMIT_MS ? RATE_LIMIT_MS - elapsed : 0;
 }

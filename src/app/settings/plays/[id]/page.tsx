@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import { ArrowLeft, Save, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+
 import { Button } from '@/components/ui/button';
 import ChecklistManager from '@/components/checklist-manager';
 
@@ -24,7 +24,6 @@ interface SetupDetail {
 
 export default function PlayDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const router = useRouter();
   const [setup, setSetup] = useState<SetupDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,7 +75,11 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
     } catch { /* ignore */ } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchSetup(); }, [id]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchSetup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   // ── Save ─────────────────────────────────────────────────────────
   const handleSave = async () => {

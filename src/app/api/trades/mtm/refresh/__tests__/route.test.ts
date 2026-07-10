@@ -365,8 +365,8 @@ async function main() {
     cleanup();
     resetRateLimit();
     seedAccount({ id: 'test-account-id' });
-    const trade1 = seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' });
-    const trade2 = seedOpenTrade({ accountId: 'test-account-id', symbol: 'BAD' });
+    seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' });
+    const _trade2 = seedOpenTrade({ accountId: 'test-account-id', symbol: 'BAD' });
 
     // Only provide a quote for AAPL — BAD will fail
     const quotes = new Map([
@@ -386,7 +386,7 @@ async function main() {
     assertEqual(snapshots.cnt, 1, 'only 1 snapshot persisted');
 
     // BAD trade should still have null currentPrice
-    const t2 = db.select({ cp: schema.trades.currentPrice }).from(schema.trades).where(eq(schema.trades.id, trade2.id as string)).get() as { cp: number | null };
+    const t2 = db.select({ cp: schema.trades.currentPrice }).from(schema.trades).where(eq(schema.trades.id, _trade2.id as string)).get() as { cp: number | null };
     assertEqual(t2.cp, null, 'BAD trade currentPrice remains null');
   }
 
@@ -397,7 +397,7 @@ async function main() {
     cleanup();
     resetRateLimit();
     seedAccount({ id: 'test-account-id' });
-    const trade = seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' });
+    seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' });
 
     const quotes = new Map([
       ['AAPL', createMockQuoteResult('AAPL', 178.5, 'REGULAR')],
@@ -428,7 +428,7 @@ async function main() {
 
     // A mock provider that throws on getQuote
     const throwingProvider = {
-      async getQuote(_symbols: string[]): Promise<never> {
+      async getQuote(): Promise<never> {
         throw new Error('Network failure');
       },
     } as unknown as MockMarketQuoteProvider;
@@ -450,8 +450,8 @@ async function main() {
     cleanup();
     resetRateLimit();
     seedAccount({ id: 'test-account-id' });
-    const tradeA = seedOpenTrade({ accountId: 'test-account-id', symbol: 'A' });
-    const tradeB = seedOpenTrade({ accountId: 'test-account-id', symbol: 'B' });
+    seedOpenTrade({ accountId: 'test-account-id', symbol: 'A' });
+    seedOpenTrade({ accountId: 'test-account-id', symbol: 'B' });
 
     // Empty quotes map — all symbols fail
     const quotes = new Map();
@@ -477,8 +477,8 @@ async function main() {
     cleanup();
     resetRateLimit();
     seedAccount({ id: 'test-account-id' });
-    const trade1 = seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' });
-    const trade2 = seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' }); // Same symbol, different trade
+    seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' });
+    seedOpenTrade({ accountId: 'test-account-id', symbol: 'AAPL' }); // Same symbol, different trade
 
     const quotes = new Map([
       ['AAPL', createMockQuoteResult('AAPL', 180.0, 'REGULAR')],
