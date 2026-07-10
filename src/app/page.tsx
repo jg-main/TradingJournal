@@ -81,11 +81,12 @@ const GRADE_RUBRIC: { min: number; label: string }[] = [
 
 // ── Formatting Helpers (follow reviews page patterns) ──────────────────
 
-function formatCurrency(v: number | null | undefined): string {
+function formatCurrency(v: number | null | undefined, opts?: { sign?: boolean }): string {
   if (v === null || v === undefined) return '--';
   return v.toLocaleString(undefined, {
     style: 'currency',
     currency: 'USD',
+    signDisplay: opts?.sign ? 'exceptZero' : 'auto',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -406,7 +407,7 @@ function HomeContent() {
           <KpiCard
             icon={<Target className="size-4 text-zinc-700 dark:text-zinc-300" />}
             iconBg="bg-zinc-100 dark:bg-zinc-800"
-            value={formatCurrency(kpis.netPnl)}
+            value={formatCurrency(kpis.netPnl, { sign: true })}
             valueClassName={pnlColorClass(kpis.netPnl)}
             label="Net P&amp;L"
           />
@@ -507,7 +508,7 @@ function HomeContent() {
                 {mtm === null
                   ? '--'
                   : mtm.netUnrealizedPnl !== null && mtm.netUnrealizedPnl !== undefined
-                    ? formatCurrency(mtm.netUnrealizedPnl)
+                    ? formatCurrency(mtm.netUnrealizedPnl, { sign: true })
                     : mtm.openTradeCount > 0
                       ? <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">Awaiting prices</span>
                       : <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">No open positions</span>}
@@ -764,7 +765,7 @@ function HomeContent() {
                           if (!item) return '';
                           return [
                             `<strong>${item.month}</strong>`,
-                            `P&amp;L: ${formatCurrency(item.netPnl)}`,
+                            `P&amp;L: ${formatCurrency(item.netPnl, { sign: true })}`,
                             `Win Rate: ${formatPercent(item.winRate)}`,
                             `Trades: ${item.tradeCount}`,
                           ].join('<br/>');
@@ -901,7 +902,7 @@ function HomeContent() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <p className={`text-xl font-bold tabular-nums ${pnlColorClass(directionalPerformance.long.netPnl)}`}>
-                      {formatCurrency(directionalPerformance.long.netPnl)}
+                      {formatCurrency(directionalPerformance.long.netPnl, { sign: true })}
                     </p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
                   </div>
@@ -930,7 +931,7 @@ function HomeContent() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <p className={`text-xl font-bold tabular-nums ${pnlColorClass(directionalPerformance.short.netPnl)}`}>
-                      {formatCurrency(directionalPerformance.short.netPnl)}
+                      {formatCurrency(directionalPerformance.short.netPnl, { sign: true })}
                     </p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
                   </div>
