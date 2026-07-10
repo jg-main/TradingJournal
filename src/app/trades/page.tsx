@@ -197,6 +197,20 @@ export default function TradesPage() {
       }
       return <span className="tabular-nums text-zinc-500">{risk.toFixed(2)}%</span>;
     }},
+    { id: 'returnPct', header: 'Return %', cell: ({ row }) => {
+      const t = row.original;
+      if (t.status === 'planned') return <span className="tabular-nums text-zinc-400">—</span>;
+      const entry = t.actualEntry ?? t.plannedEntry;
+      if (entry == null || entry <= 0) return <span className="tabular-nums text-zinc-400">—</span>;
+      let ret: number | null = null;
+      if (t.status === 'open' && t.currentPrice != null) {
+        ret = t.direction === 'long' ? (t.currentPrice - entry) / entry * 100 : (entry - t.currentPrice) / entry * 100;
+      } else if (t.status === 'closed' && t.avgExitPrice != null) {
+        ret = t.direction === 'long' ? (t.avgExitPrice - entry) / entry * 100 : (entry - t.avgExitPrice) / entry * 100;
+      }
+      if (ret == null) return <span className="tabular-nums text-zinc-400">—</span>;
+      return <span className={`tabular-nums text-xs font-medium ${ret >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{ret >= 0 ? '+' : ''}{ret.toFixed(2)}%</span>;
+    }},
   ], [handleDelete]);
 
   // ── Render ──────────────────────────────────────────────────────────
@@ -284,7 +298,7 @@ export default function TradesPage() {
           data={data}
           columns={columns}
           storageKey="trades"
-          initialVisibility={{ qty: false, target2: false, thesis: false, account: false, pnl: false, riskPct: false }}
+          initialVisibility={{ qty: false, target2: false, thesis: false, account: false, pnl: false, riskPct: false, returnPct: false }}
           onRowClick={row => router.push('/trades/' + row.original.id)}
         />
       )}
