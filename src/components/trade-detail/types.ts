@@ -117,6 +117,10 @@ export interface MtmData {
   marketState: string | null;
   fetchedAt: string | null;
   source: string | null;
+  shortName?: string | null;
+  quoteType?: string | null;
+  sector?: string | null;
+  industry?: string | null;
   loading: boolean;
   error: string | null;
 }

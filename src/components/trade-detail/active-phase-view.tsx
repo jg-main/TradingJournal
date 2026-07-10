@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { PlusCircle } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
-import TradePlanCard from './trade-plan-card';
 import RiskSnapshotCard from './risk-snapshot-card';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import TradePnlCard from './trade-pnl-card';
@@ -26,7 +25,7 @@ interface ActivePhaseViewProps {
   assets: TradeAsset[];
   derivedStatus: DeriveStatusResult | null;
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
-  rMultiple: { rMultiple: number | null } | null;
+  rMultiple: { rMultiple: number | null; initialRiskUsed: boolean } | null;
   perfMetrics: PerfMetrics | null;
   checkResults: CheckResult[];
   mtmData: MtmData;
@@ -58,16 +57,47 @@ export default function ActivePhaseView({
     (a) => a.phase === 'entry' || a.phase === 'management',
   );
 
+  // ── Compute MTM unrealized values for the top P&L card ──
+  const hasMtmPrice = mtmData?.price != null;
+  const dir = trade.direction;
+  const entryPrice = pnlResult?.avgEntryPrice ?? null;
+  const entryQty = pnlResult?.totalEntryQty ?? 0;
+  const derivedRiskAmount =
+    riskSnapshot?.initialRiskAmount ??
+    (riskSnapshot?.initialEntryPrice != null &&
+     riskSnapshot?.initialStopPrice != null &&
+     riskSnapshot?.initialQuantity != null
+      ? Math.abs(riskSnapshot.initialEntryPrice - riskSnapshot.initialStopPrice) * riskSnapshot.initialQuantity
+      : null);
+
+  const unrealizedPnl =
+    hasMtmPrice && entryPrice != null && entryQty > 0
+      ? dir === 'long'
+        ? (mtmData!.price! - entryPrice) * entryQty
+        : (entryPrice - mtmData!.price!) * entryQty
+      : null;
+  const unrealizedReturnPct =
+    unrealizedPnl != null && entryPrice != null && entryQty > 0
+      ? (unrealizedPnl / (entryPrice * entryQty)) * 100
+      : null;
+  const unrealizedRMultiple =
+    unrealizedPnl != null && derivedRiskAmount != null && derivedRiskAmount > 0
+      ? unrealizedPnl / derivedRiskAmount
+      : null;
+
   return (
     <>
+      {/* ── Compact header ── */}
       <TradeDetailHeader
         symbol={trade.symbol}
         status={trade.status}
         direction={trade.direction}
         tradeCode={trade.tradeCode}
+        openedAt={trade.openedAt}
+        setupName={trade.setupName}
       />
 
-      {/* Lifecycle Stepper */}
+      {/* ── Lifecycle Stepper (useful during active trade) ── */}
       <div className="mb-8">
         <LifecycleStepper
           status={trade.status}
@@ -78,33 +108,50 @@ export default function ActivePhaseView({
         />
       </div>
 
-      {/* Ticker & Setup header */}
-      <div className="mb-4 flex items-baseline gap-4 text-sm">
-        <div>
-          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Ticker</span>
-          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{trade.symbol}</p>
-        </div>
-        {trade.setupName && (
-          <div>
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Setup</span>
-            <p className="text-base text-zinc-900 dark:text-zinc-100">{trade.setupName}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Grid: Trade Plan + Risk Snapshot */}
-      <div className="mb-8 grid gap-6 md:grid-cols-2">
-        <TradePlanCard trade={trade} executedValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice: null }} />
-        <RiskSnapshotCard
-          riskSnapshot={riskSnapshot}
-          plannedValues={trade}
-          mtmData={mtmData}
-          onRefreshPrice={onRefreshPrice}
-          tradeStatus={trade.status}
+      {/* ── P&L-R Metrics first (the most important outcome) ── */}
+      <div className="mb-8">
+        <TradePnlCard
+          realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
+          rMultiple={rMultiple?.rMultiple ?? null}
+          avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
+          totalEntryQty={pnlResult?.totalEntryQty ?? 0}
+          totalExitQty={pnlResult?.totalExitQty ?? 0}
+          duration={perfMetrics?.duration ?? null}
+          returnPercent={perfMetrics?.returnPercent ?? null}
+          totalFees={perfMetrics?.totalFees ?? 0}
+          unrealizedPnl={unrealizedPnl}
+          unrealizedReturnPct={unrealizedReturnPct}
+          unrealizedRMultiple={unrealizedRMultiple}
+          symbol={trade.symbol}
+          shortName={mtmData?.shortName}
+          sector={mtmData?.sector}
+          industry={mtmData?.industry}
+          currentPrice={mtmData?.price}
+          priceChangePct={unrealizedReturnPct}
+          marketState={mtmData?.marketState}
+          priceSource={mtmData?.source}
+          priceFetchedAt={mtmData?.fetchedAt}
+          priceLoading={mtmData?.loading}
+          setupName={trade.setupName}
         />
       </div>
 
-      {/* Lifecycle Summary */}
+      {/* ── Unified Plan vs Actual (single card) ── */}
+      <div className="mb-8">
+        <RiskSnapshotCard
+          riskSnapshot={riskSnapshot}
+          plannedValues={trade}
+          actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice: null }}
+          mtmData={mtmData}
+          onRefreshPrice={onRefreshPrice}
+          tradeStatus={trade.status}
+          thesis={trade.thesis}
+          invalidationCondition={trade.invalidationCondition}
+          preTradePlan={trade.preTradePlan}
+        />
+      </div>
+
+      {/* ── Lifecycle Summary ── */}
       {derivedStatus && (
         <div className="mb-8">
           <TradeLifecycleSummaryCard
@@ -116,34 +163,14 @@ export default function ActivePhaseView({
         </div>
       )}
 
-      {/* P&L-R Metrics */}
-      {pnlResult && (
-        <div className="mb-8">
-          <TradePnlCard
-            realizedPnl={pnlResult.totalRealizedPnL}
-            rMultiple={rMultiple?.rMultiple ?? null}
-            avgEntryPrice={pnlResult.avgEntryPrice}
-            totalEntryQty={pnlResult.totalEntryQty}
-            totalExitQty={pnlResult.totalExitQty}
-            duration={perfMetrics?.duration ?? null}
-            returnPercent={perfMetrics?.returnPercent ?? null}
-            totalFees={perfMetrics?.totalFees ?? 0}
-          />
-        </div>
-      )}
-
-      {/* Executions */}
+      {/* ── Executions ── */}
       <div className="mb-8">
         <TradeExecutionsCard
           executions={executions}
           tradeId={trade.id}
           actions={
             trade.status === 'open' && onExecutionAdded ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setExitDialogOpen(true)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setExitDialogOpen(true)}>
                 <PlusCircle className="mr-1.5 size-3.5" />
                 Add Exit
               </Button>
@@ -153,7 +180,6 @@ export default function ActivePhaseView({
         />
       </div>
 
-      {/* Add Exit Dialog */}
       <AddExitDialog
         trade={{
           id: trade.id,
@@ -169,7 +195,7 @@ export default function ActivePhaseView({
         }}
       />
 
-      {/* Stop Adjustments */}
+      {/* ── Stop Adjustments ── */}
       <div className="mb-8">
         <TradeStopAdjustmentsCard
           stopAdjustments={stopAdjustments}
@@ -179,12 +205,12 @@ export default function ActivePhaseView({
         />
       </div>
 
-      {/* Pre-Execution Checklist Audit */}
+      {/* ── Checklist ── */}
       <div className="mb-8">
         <TradeCheckResultsCard checkResults={checkResults} />
       </div>
 
-      {/* Assets — entry/management only */}
+      {/* ── Assets ── */}
       <div className="mb-8">
         <TradeAssetsCard
           assets={entryManagementAssets}

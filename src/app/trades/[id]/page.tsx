@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle, RefreshCw, Brain } from 'lucide-react';
 import type { CheckResult, MtmData } from '@/components/trade-detail/types';
 import { EmptyState } from '@/components/empty-state';
 
@@ -172,7 +172,7 @@ function toExecutionData(executions: Execution[]): ExecutionData[] {
  * Used on mount and after manual price refresh.
  */
 async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): Promise<void> {
-  setter({ price: null, marketState: null, fetchedAt: null, source: null, loading: true, error: null });
+  setter({ price: null, marketState: null, shortName: null, quoteType: null, sector: null, industry: null, fetchedAt: null, source: null, loading: true, error: null });
   try {
     const res = await fetch(`/api/trades/${tradeId}/mtm`);
     if (!res.ok) {
@@ -180,6 +180,8 @@ async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): P
       setter({
         price: null,
         marketState: null,
+        shortName: null,
+        quoteType: null,
         fetchedAt: null,
         source: null,
         loading: false,
@@ -191,6 +193,10 @@ async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): P
     setter({
       price: data.price ?? null,
       marketState: data.marketState ?? null,
+      shortName: data.shortName ?? null,
+      sector: data.sector ?? null,
+      industry: data.industry ?? null,
+      quoteType: data.quoteType ?? null,
       fetchedAt: data.fetchedAt ?? null,
       source: data.source ?? null,
       loading: false,
@@ -200,6 +206,8 @@ async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): P
     setter({
       price: null,
       marketState: null,
+      shortName: null,
+      quoteType: null,
       fetchedAt: null,
       source: null,
       loading: false,
@@ -223,6 +231,8 @@ export default function TradeDetailPage() {
   const [mtmData, setMtmData] = useState<MtmData>({
     price: null,
     marketState: null,
+    shortName: null,
+    quoteType: null,
     fetchedAt: null,
     source: null,
     loading: false,
@@ -237,6 +247,7 @@ export default function TradeDetailPage() {
   const [executeOpen, setExecuteOpen] = useState(false);
   const [executeData, setExecuteData] = useState<ExecuteTradeData | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [assessLoading, setAssessLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,10 +310,29 @@ export default function TradeDetailPage() {
     return () => { cancelled = true; };
   }, [id, refetchTrigger]);
 
+  // Auto-refresh MTM prices when first opening an open trade page
+  const autoRefreshedRef = useRef(false);
+  useEffect(() => {
+    if (trade?.status === 'open' && !autoRefreshedRef.current) {
+      autoRefreshedRef.current = true;
+      fetch('/api/trades/mtm/refresh', { method: 'POST' })
+        .then(() => fetchMtmData(id, setMtmData))
+        .catch(() => {}); // silently ignore — user can manually refresh
+    }
+  }, [trade?.status, id]);
+
   const execData = trade ? toExecutionData(executions) : [];
   const pnlResult = trade && executions.length > 0 ? calculatePnL(execData, trade.direction) : null;
-  const rMultiple = pnlResult && riskSnapshot?.initialRiskAmount
-    ? calculateRMultiple(pnlResult.totalRealizedPnL, riskSnapshot.initialRiskAmount)
+  // Derive initialRiskAmount from raw fields when the computed column is null
+  const derivedRiskAmount =
+    riskSnapshot?.initialRiskAmount ??
+    (riskSnapshot?.initialEntryPrice != null &&
+     riskSnapshot?.initialStopPrice != null &&
+     riskSnapshot?.initialQuantity != null
+      ? Math.abs(riskSnapshot.initialEntryPrice - riskSnapshot.initialStopPrice) * riskSnapshot.initialQuantity
+      : null);
+  const rMultiple = pnlResult && derivedRiskAmount
+    ? calculateRMultiple(pnlResult.totalRealizedPnL, derivedRiskAmount)
     : null;
   const derivedStatus = trade && executions.length > 0
     ? deriveTradeStatus(execData, trade.direction)
@@ -391,6 +421,21 @@ export default function TradeDetailPage() {
     }
   }, [id]);
 
+  const handleAssess = useCallback(async () => {
+    if (!trade) return;
+    setAssessLoading(true);
+    try {
+      await fetch(`/api/trades/${trade.id}/assessments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assessmentType: "ai_review" }),
+      });
+    } catch {
+    } finally {
+      setAssessLoading(false);
+    }
+  }, [trade]);
+
   if (loading) return (
     <div className="mx-auto flex max-w-4xl items-center justify-center px-8 py-20">
       <Loader2 className="mr-2 size-5 animate-spin text-zinc-400" />
@@ -413,16 +458,40 @@ export default function TradeDetailPage() {
           Back to Trade Log
         </Link>
         {trade.status !== 'deleted' && (
-          <button
-            type="button"
-            onClick={() => setEditOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-            </svg>
-            Edit
-          </button>
+          <div className="flex items-center gap-2">
+            {trade.status === 'open' && (
+              <button
+                type="button"
+                onClick={handleRefreshPrice}
+                disabled={mtmData?.loading || (mtmData?.error?.includes('Rate limited') ?? false)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <RefreshCw className={`size-4 ${mtmData?.loading ? 'animate-spin' : ''}`} />
+                {mtmData?.loading ? 'Refreshing...' : 'Refresh'}
+              </button>
+            )}
+            {trade.status === 'closed' && (
+              <button
+                type="button"
+                onClick={handleAssess}
+                disabled={assessLoading}
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                {assessLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
+                {assessLoading ? 'Assessing...' : 'Assess'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setEditOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+              </svg>
+              Edit
+            </button>
+          </div>
         )}
       </div>
 
@@ -459,7 +528,13 @@ export default function TradeDetailPage() {
           invalidationCondition: trade.invalidationCondition,
           preTradePlan: trade.preTradePlan,
         }}
-        onSaved={() => setRefetchTrigger((n) => n + 1)}
+        onSaved={() => {
+          setRefetchTrigger((n) => n + 1);
+          // Refresh profile data for the (possibly changed) ticker
+          fetch(`/api/trades/${id}/mtm`, { method: 'POST' })
+            .then(() => fetchMtmData(id, setMtmData))
+            .catch(() => {});
+        }}
         setupName={trade.setupName ?? null}
       />
 

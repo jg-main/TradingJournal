@@ -5,7 +5,6 @@ import { PlusCircle, Brain, Loader2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
-import TradePlanCard from './trade-plan-card';
 import RiskSnapshotCard from './risk-snapshot-card';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
@@ -24,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
+
 interface ClosedPhaseViewProps {
   trade: Trade;
   executions: Execution[];
@@ -34,7 +34,7 @@ interface ClosedPhaseViewProps {
   assets: TradeAsset[];
   derivedStatus: DeriveStatusResult | null;
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
-  rMultiple: { rMultiple: number | null } | null;
+  rMultiple: { rMultiple: number | null; initialRiskUsed: boolean } | null;
   perfMetrics: PerfMetrics | null;
   mtmData: MtmData;
   onRefreshPrice: () => void;
@@ -45,7 +45,11 @@ interface ClosedPhaseViewProps {
   onMistakesChanged: () => Promise<void>;
   onGradeSave: (payload: GradeFormPayload) => Promise<void>;
   onExecutionAdded?: () => void;
+  /** Callback for assessment — called by parent button */
+  onAssess?: () => void;
+  assessing?: boolean;
 }
+
 
 export default function ClosedPhaseView({
   trade,
@@ -68,10 +72,11 @@ export default function ClosedPhaseView({
   onMistakesChanged,
   onGradeSave,
   onExecutionAdded,
+  onAssess,
+  assessing,
 }: ClosedPhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
 
-  // Compute average exit price from executions
   const exitExecs = executions.filter((e) =>
     trade.direction === 'long'
       ? e.action === 'sell' || e.action === 'reduce'
@@ -81,13 +86,12 @@ export default function ClosedPhaseView({
     ? exitExecs.reduce((sum, e) => sum + e.price * e.quantity, 0) / exitExecs.reduce((sum, e) => sum + e.quantity, 0)
     : null;
 
-  // ── AI Assessment State ──────────────────────────────────────────────
+  // ── AI Assessment State ──
   const [assessments, setAssessments] = useState<AssessmentSnapshot[]>([]);
   const [assessmentsLoading, setAssessmentsLoading] = useState(true);
   const [assessmentsError, setAssessmentsError] = useState<string | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
 
-  // Fetch assessments on mount
   useEffect(() => {
     let cancelled = false;
     async function fetchAssessments() {
@@ -109,10 +113,7 @@ export default function ClosedPhaseView({
           if (
             (err instanceof DOMException && err.name === 'AbortError') ||
             (err instanceof TypeError && /abort|cancelled/i.test(err.message))
-          ) {
-            return;
-          }
-          console.error('Assessment fetch failed:', err);
+          ) return;
           setAssessmentsError(String(err));
         }
       } finally {
@@ -120,13 +121,11 @@ export default function ClosedPhaseView({
       }
     }
     fetchAssessments();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [trade.id]);
 
-  // Handle requesting a new after-exit assessment
   const handleRequestAssessment = async () => {
+  // Expose assess handler to parent for the top-bar button
     setRequestLoading(true);
     setAssessmentsError(null);
     try {
@@ -139,19 +138,12 @@ export default function ClosedPhaseView({
         const body = await res.json().catch(() => ({}));
         const rawMessage = body.error ?? 'Failed to request assessment';
         const errorCode = body.code;
-        if (errorCode === 'STALE_MARKET_DATA') {
-          setAssessmentsError('Market data is not current — try again later');
-        } else if (errorCode === 'AI_NOT_CONFIGURED') {
-          setAssessmentsError('AI not configured — set up in Settings');
-        } else if (errorCode === 'AI_PROVIDER_ERROR') {
-          setAssessmentsError('AI provider error — check credentials');
-        } else {
-          setAssessmentsError(rawMessage);
-        }
-        console.error('Assessment POST failed:', { status: res.status, errorCode, rawMessage });
+        if (errorCode === 'STALE_MARKET_DATA') setAssessmentsError('Market data is not current — try again later');
+        else if (errorCode === 'AI_NOT_CONFIGURED') setAssessmentsError('AI not configured — set up in Settings');
+        else if (errorCode === 'AI_PROVIDER_ERROR') setAssessmentsError('AI provider error — check credentials');
+        else setAssessmentsError(rawMessage);
         return;
       }
-      // Re-fetch the full list after creation
       const updatedRes = await fetch(`/api/trades/${trade.id}/assessments`);
       if (updatedRes.ok) {
         const body = await updatedRes.json();
@@ -164,36 +156,22 @@ export default function ClosedPhaseView({
     }
   };
 
-  // Latest assessment is the first item (sorted by snapshotVersion DESC)
   const latestAssessment = assessments.length > 0 ? assessments[0] : null;
 
   return (
     <>
+      {/* ── Compact header with grade ── */}
       <TradeDetailHeader
         symbol={trade.symbol}
         status={trade.status}
         direction={trade.direction}
         tradeCode={trade.tradeCode}
-        rightContent={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRequestAssessment}
-              disabled={requestLoading}
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              {requestLoading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Brain className="size-4" />
-              )}
-              {requestLoading ? 'Assessing...' : 'Assess'}
-            </button>
-          </div>
-        }
+        openedAt={trade.openedAt}
+        setupName={trade.setupName}
+        gradeLabel={grade?.gradeLabel ?? null}
       />
 
-      {/* Lifecycle Stepper */}
+      {/* ── Lifecycle Stepper ── */}
       <div className="mb-8">
         <LifecycleStepper
           status={trade.status}
@@ -206,7 +184,39 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* Lifecycle Summary */}
+      {/* ── P&L-R Metrics first ── */}
+      <div className="mb-8">
+        <TradePnlCard
+          realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
+          rMultiple={rMultiple?.rMultiple ?? null}
+          avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
+          totalEntryQty={pnlResult?.totalEntryQty ?? 0}
+          totalExitQty={pnlResult?.totalExitQty ?? 0}
+          duration={perfMetrics?.duration ?? null}
+          returnPercent={perfMetrics?.returnPercent ?? null}
+          totalFees={perfMetrics?.totalFees ?? 0}
+          symbol={trade.symbol}
+          shortName={mtmData?.shortName}
+          sector={mtmData?.sector}
+          setupName={trade.setupName}
+          industry={mtmData?.industry}
+        />
+      </div>
+
+      {/* ── Unified Plan vs Actual ── */}
+      <div className="mb-8">
+        <RiskSnapshotCard
+          riskSnapshot={riskSnapshot}
+          plannedValues={trade}
+          actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
+          tradeStatus={trade.status}
+          thesis={trade.thesis}
+          invalidationCondition={trade.invalidationCondition}
+          preTradePlan={trade.preTradePlan}
+        />
+      </div>
+
+      {/* ── Lifecycle Summary ── */}
       {derivedStatus && (
         <div className="mb-8">
           <TradeLifecycleSummaryCard
@@ -218,61 +228,14 @@ export default function ClosedPhaseView({
         </div>
       )}
 
-      {/* Ticker & Setup header */}
-      <div className="mb-4 flex items-baseline gap-4 text-sm">
-        <div>
-          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Ticker</span>
-          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{trade.symbol}</p>
-        </div>
-        {trade.setupName && (
-          <div>
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Setup</span>
-            <p className="text-base text-zinc-900 dark:text-zinc-100">{trade.setupName}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Grid: Trade Definition + Risk Snapshot */}
-      <div className="mb-8 grid gap-6 md:grid-cols-2">
-        <TradePlanCard trade={trade} executedValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }} />
-        <RiskSnapshotCard
-          riskSnapshot={riskSnapshot}
-          plannedValues={trade}
-          actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
-          mtmData={mtmData}
-          onRefreshPrice={onRefreshPrice}
-          tradeStatus={trade.status}
-        />
-      </div>
-
-      {/* P&L-R Metrics */}
-      {pnlResult && (
-        <div className="mb-8">
-          <TradePnlCard
-            realizedPnl={pnlResult.totalRealizedPnL}
-            rMultiple={rMultiple?.rMultiple ?? null}
-            avgEntryPrice={pnlResult.avgEntryPrice}
-            totalEntryQty={pnlResult.totalEntryQty}
-            totalExitQty={pnlResult.totalExitQty}
-            duration={perfMetrics?.duration ?? null}
-            returnPercent={perfMetrics?.returnPercent ?? null}
-            totalFees={perfMetrics?.totalFees ?? 0}
-          />
-        </div>
-      )}
-
-      {/* Executions */}
+      {/* ── Executions ── */}
       <div className="mb-8">
         <TradeExecutionsCard
           executions={executions}
           tradeId={trade.id}
           actions={
             onExecutionAdded ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setExitDialogOpen(true)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setExitDialogOpen(true)}>
                 <PlusCircle className="mr-1.5 size-3.5" />
                 Add Exit
               </Button>
@@ -282,7 +245,6 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* Add Exit Dialog */}
       <AddExitDialog
         trade={{
           id: trade.id,
@@ -298,7 +260,7 @@ export default function ClosedPhaseView({
         }}
       />
 
-      {/* Stop Adjustments */}
+      {/* ── Stop Adjustments ── */}
       <div className="mb-8">
         <TradeStopAdjustmentsCard
           stopAdjustments={stopAdjustments}
@@ -308,21 +270,17 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* Pre-Execution Checklist Audit */}
+      {/* ── Checklist ── */}
       <div className="mb-8">
         <TradeCheckResultsCard checkResults={checkResults} />
       </div>
 
-      {/* Trade Grade */}
+      {/* ── Trade Grade ── */}
       <div className="mb-8">
-        <TradeGradeCard
-          grade={grade}
-          tradeStatus={trade.status}
-          onSave={onGradeSave}
-        />
+        <TradeGradeCard grade={grade} tradeStatus={trade.status} onSave={onGradeSave} />
       </div>
 
-      {/* Mistakes */}
+      {/* ── Mistakes ── */}
       <div className="mb-8">
         <TradeMistakesCard
           mistakes={mistakes}
@@ -332,7 +290,7 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* Assets — all phases */}
+      {/* ── Assets ── */}
       <div className="mb-8">
         <TradeAssetsCard
           assets={assets}
@@ -342,7 +300,7 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* AI Assessment — latest scorecard */}
+      {/* ── AI Assessment ── */}
       <div className="mb-8">
         <AssessmentCard
           scorecard={latestAssessment?.scorecard ?? null}
@@ -355,7 +313,6 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* AI Assessment History */}
       <div className="mb-8">
         <AssessmentHistory
           assessments={assessments}
@@ -364,12 +321,9 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* Exit Notes + Lesson */}
+      {/* ── Exit Notes ── */}
       <div className="mb-8">
-        <TradeExitNotesCard
-          exitNotes={trade.exitNotes}
-          lesson={trade.lesson}
-        />
+        <TradeExitNotesCard exitNotes={trade.exitNotes} lesson={trade.lesson} />
       </div>
     </>
   );

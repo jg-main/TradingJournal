@@ -39,11 +39,13 @@ export function formatPrice(v: number | null | undefined): string {
  * Formats a number as USD currency with sign prefix.
  * Returns '-' for null/undefined.
  */
-export function formatCurrency(v: number | null | undefined): string {
+export function formatCurrency(v: number | null | undefined, { showSign = false }: { showSign?: boolean } = {}): string {
   if (v === null || v === undefined) return '-';
   const abs = Math.abs(v);
   const formatted = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return v >= 0 ? `$${formatted}` : `-$${formatted}`;
+  if (v > 0 && showSign) return `+$${formatted}`;
+  if (v < 0) return `-$${formatted}`;
+  return `$${formatted}`;
 }
 
 /**
