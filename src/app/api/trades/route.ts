@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions } from '@/db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
+import { calculatePnL } from '@/lib/trade-calc';
+import { calculateUnrealizedPnL } from '@/lib/mark-to-market';
+import type { ExecutionData, Direction } from '@/lib/trade-calc';
 
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
@@ -87,6 +90,7 @@ export async function GET(request: NextRequest) {
         lesson: trades.lesson,
         createdAt: trades.createdAt,
         updatedAt: trades.updatedAt,
+        riskPct: tradeRiskSnapshots.accountRiskPct,
       })
       .from(trades)
       .leftJoin(setupDefinitions, eq(trades.setupId, setupDefinitions.id))
@@ -97,7 +101,74 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .offset(offset)
       .all();
-    return NextResponse.json({ data: rows, total, page, limit });
+
+    // Batch-fetch executions for all returned trades
+    const tradeIds = rows.map((r) => r.id);
+    const execRows =
+      tradeIds.length > 0
+        ? db
+            .select()
+            .from(tradeExecutions)
+            .where(inArray(tradeExecutions.tradeId, tradeIds))
+            .all()
+        : [];
+
+    // Group executions by trade ID
+    const execMap = new Map<string, ExecutionData[]>();
+    for (const ex of execRows) {
+      const list = execMap.get(ex.tradeId) ?? [];
+      list.push({
+        action: ex.action,
+        quantity: ex.quantity,
+        price: ex.price,
+        fees: ex.fees ?? 0,
+        executedAt: ex.executedAt ?? new Date().toISOString(),
+      });
+      execMap.set(ex.tradeId, list);
+    }
+
+    // Compute enhanced rows with server-computed fields
+    const enhancedRows = rows.map((row) => {
+      const exs = execMap.get(row.id) ?? [];
+      const direction = row.direction as Direction;
+
+      let realizedPnl: number | null = null;
+      let unrealizedPnl: number | null = null;
+      let returnPct: number | null = null;
+      const riskPct = row.riskPct;
+
+      if (exs.length > 0) {
+        const pnl = calculatePnL(exs, direction);
+
+        if (row.status === 'closed') {
+          realizedPnl = pnl.totalRealizedPnL;
+          if (pnl.avgEntryPrice != null && pnl.totalEntryQty > 0) {
+            returnPct = (realizedPnl / (pnl.avgEntryPrice * pnl.totalEntryQty)) * 100;
+          }
+        } else if (row.status === 'open' && row.currentPrice != null) {
+          const unrealized = calculateUnrealizedPnL({
+            executions: exs,
+            direction,
+            currentPrice: row.currentPrice,
+            feePolicy: 'exclude_entry_fees',
+          });
+          unrealizedPnl = unrealized;
+          if (unrealized != null && pnl.avgEntryPrice != null && pnl.totalEntryQty > 0) {
+            returnPct = (unrealized / (pnl.avgEntryPrice * pnl.totalEntryQty)) * 100;
+          }
+        }
+      }
+
+      return {
+        ...row,
+        realizedPnl,
+        unrealizedPnl,
+        returnPct,
+        riskPct,
+      };
+    });
+
+    return NextResponse.json({ data: enhancedRows, total, page, limit });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch trades', details: String(error) },
