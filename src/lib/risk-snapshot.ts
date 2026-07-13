@@ -73,6 +73,22 @@ export interface RiskSnapshotValues {
   accountRiskPct: number | null;
 }
 
+/**
+ * Input for the initial-risk-amount derivation.
+ * Mirrors the shape of a trade_risk_snapshots row from the database.
+ * All fields are nullable because the caller may have a partial or null snapshot.
+ */
+export interface InitialRiskAmountInput {
+  /** The computed initialRiskAmount, or null when not yet computed */
+  initialRiskAmount: number | null;
+  /** The entry price at trade open, or null when not available */
+  initialEntryPrice: number | null;
+  /** The stop price at trade open, or null when not set */
+  initialStopPrice: number | null;
+  /** The quantity at trade open, or null when not available */
+  initialQuantity: number | null;
+}
+
 // ── Equity-at-open computation ─────────────────────────────────────────
 
 /**
@@ -106,6 +122,32 @@ export function computeEquityAtOpen(input: EquityAtOpenInput): number | null {
   }
 
   return null;
+}
+
+// ── Initial risk amount derivation ─────────────────────────────────────
+
+/**
+ * Derive the initial risk amount for a trade, falling back to a raw
+ * computation when the stored (computed) value is null.
+ *
+ * When `snapshot.initialRiskAmount` is non-null, returns it directly.
+ * Otherwise, computes `|entryPrice - stopPrice| * quantity` from the
+ * raw fields, returning `null` when any of the three raw fields is null.
+ *
+ * Pure function — no side effects, no database access.
+ */
+export function deriveInitialRiskAmount(
+  snapshot: InitialRiskAmountInput,
+): number | null {
+  return (
+    snapshot.initialRiskAmount ??
+    (snapshot.initialEntryPrice != null &&
+     snapshot.initialStopPrice != null &&
+     snapshot.initialQuantity != null
+      ? Math.abs(snapshot.initialEntryPrice - snapshot.initialStopPrice) *
+        snapshot.initialQuantity
+      : null)
+  );
 }
 
 // ── Realized P&L aggregation ───────────────────────────────────────────

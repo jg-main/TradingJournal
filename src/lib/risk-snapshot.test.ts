@@ -11,7 +11,9 @@ import {
   computeEquityAtOpen,
   computeRealizedPnLFromClosedTrades,
   computeRiskSnapshotValues,
+  deriveInitialRiskAmount,
   type EquityAtOpenInput,
+  type InitialRiskAmountInput,
   type PriorClosedTradeData,
   type RiskSnapshotInput,
 } from './risk-snapshot';
@@ -625,6 +627,164 @@ function assertNotNull(v: unknown, msg: string) {
     assert(r.riskPerShare === 1, 'large values: riskPerShare → 1');
     assert(r.initialRiskAmount === 100000, 'large values: initialRiskAmount → 100000');
     assertApprox(r.accountRiskPct!, 0.1, 'large values: accountRiskPct → 0.1%');
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: deriveInitialRiskAmount
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## deriveInitialRiskAmount');
+
+  // --- Positive: has computed value ---
+
+  // 1. Computed initialRiskAmount exists → returns it directly
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: 500,
+      initialEntryPrice: 50,
+      initialStopPrice: 45,
+      initialQuantity: 100,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assert(r === 500, 'computed value exists → returns computed value 500');
+  }
+
+  // 2. Computed initialRiskAmount is 0 → returns 0 (0 is not null, ?? keeps it)
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: 0,
+      initialEntryPrice: 50,
+      initialStopPrice: 45,
+      initialQuantity: 100,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assert(r === 0, 'computed value is 0 → returns 0');
+  }
+
+  // 3. Computed initialRiskAmount with fractional value
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: 75.375,
+      initialEntryPrice: 150.50,
+      initialStopPrice: 148.25,
+      initialQuantity: 33.5,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assertApprox(r!, 75.375, 'computed fractional value → 75.375');
+  }
+
+  // --- Fallback: computed value is null, raw fields present ---
+
+  // 4. No computed value, all raw fields present (long) → |50 - 45| * 100 = 500
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: 50,
+      initialStopPrice: 45,
+      initialQuantity: 100,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assert(r === 500, 'null computed + raw fields long → |50-45|*100 = 500');
+  }
+
+  // 5. No computed value, all raw fields present (short) → |100 - 110| * 200 = 2000
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: 100,
+      initialStopPrice: 110,
+      initialQuantity: 200,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assert(r === 2000, 'null computed + raw fields short → |100-110|*200 = 2000');
+  }
+
+  // 6. No computed value, zero quantity → |50 - 45| * 0 = 0
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: 50,
+      initialStopPrice: 45,
+      initialQuantity: 0,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assert(r === 0, 'null computed + zero quantity → 0');
+  }
+
+  // 7. No computed value, fractional prices and quantity
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: 150.50,
+      initialStopPrice: 148.25,
+      initialQuantity: 33.5,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    // |150.50 - 148.25| * 33.5 = 2.25 * 33.5 = 75.375
+    assertApprox(r!, 75.375, 'null computed + fractional → 75.375');
+  }
+
+  // --- Negative: null fields ---
+
+  // 8. No computed value, null entryPrice → null
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: null,
+      initialStopPrice: 45,
+      initialQuantity: 100,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assertNull(r, 'null computed + null entryPrice → null');
+  }
+
+  // 9. No computed value, null stopPrice → null
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: 50,
+      initialStopPrice: null,
+      initialQuantity: 100,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assertNull(r, 'null computed + null stopPrice → null');
+  }
+
+  // 10. No computed value, null quantity → null
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: 50,
+      initialStopPrice: 45,
+      initialQuantity: null,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assertNull(r, 'null computed + null quantity → null');
+  }
+
+  // 11. No computed value, all raw fields null → null
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: null,
+      initialStopPrice: null,
+      initialQuantity: null,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assertNull(r, 'null computed + all raw fields null → null');
+  }
+
+  // 12. Entire snapshot null-like (all fields null) → null
+  {
+    const snapshot: InitialRiskAmountInput = {
+      initialRiskAmount: null,
+      initialEntryPrice: null,
+      initialStopPrice: null,
+      initialQuantity: null,
+    };
+    const r = deriveInitialRiskAmount(snapshot);
+    assertNull(r, 'all-null snapshot → null');
   }
 }
 
