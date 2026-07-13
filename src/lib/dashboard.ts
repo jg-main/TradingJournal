@@ -10,6 +10,7 @@
  */
 
 import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { classifyPnlDecision, computeWinRate as computeMetricsWinRate, averageRMultiples, averageProcessScore } from './metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -222,7 +223,7 @@ export function computeMonthlyPerformance(
     (t) => t.status === 'closed' && t.closedAt !== null && t.closedAt !== undefined,
   );
 
-  const groups = new Map<string, { netPnl: number; wins: number; decisions: number }>();
+  const groups = new Map<string, { netPnl: number; pnls: number[] }>();
 
   for (const trade of closed) {
     const month = (trade.closedAt as string).substring(0, 7); // YYYY-MM
@@ -230,17 +231,12 @@ export function computeMonthlyPerformance(
 
     let g = groups.get(month);
     if (!g) {
-      g = { netPnl: 0, wins: 0, decisions: 0 };
+      g = { netPnl: 0, pnls: [] };
       groups.set(month, g);
     }
 
     g.netPnl += totalRealizedPnL;
-
-    // Per D013: >0 P&L = win, <=0 = loss
-    if (totalRealizedPnL > 0) {
-      g.wins++;
-    }
-    g.decisions++;
+    g.pnls.push(totalRealizedPnL);
   }
 
   const months = Array.from(groups.keys()).sort();
@@ -250,8 +246,8 @@ export function computeMonthlyPerformance(
     return {
       month,
       netPnl: g.netPnl,
-      winRate: computeWinRate(g.wins, g.decisions),
-      tradeCount: g.decisions,
+      winRate: computeMetricsWinRate(g.pnls, 'includeZeroAsLoss'),
+      tradeCount: g.pnls.length,
     };
   });
 }
@@ -322,9 +318,9 @@ export function computeRDistribution(
 export function computeDirectionalPerformance(
   closedTrades: KpiTradeInput[],
 ): DirectionalPerformanceResult {
-  const buckets: Record<string, { netPnl: number; wins: number; decisions: number }> = {
-    long: { netPnl: 0, wins: 0, decisions: 0 },
-    short: { netPnl: 0, wins: 0, decisions: 0 },
+  const buckets: Record<string, { netPnl: number; pnls: number[] }> = {
+    long: { netPnl: 0, pnls: [] },
+    short: { netPnl: 0, pnls: [] },
   };
 
   for (const trade of closedTrades) {
@@ -333,24 +329,19 @@ export function computeDirectionalPerformance(
 
     const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
     buckets[dir].netPnl += totalRealizedPnL;
-
-    // Per D013: >0 P&L = win, <=0 = loss
-    if (totalRealizedPnL > 0) {
-      buckets[dir].wins++;
-    }
-    buckets[dir].decisions++;
+    buckets[dir].pnls.push(totalRealizedPnL);
   }
 
   return {
     long: {
       netPnl: buckets.long.netPnl,
-      winRate: computeWinRate(buckets.long.wins, buckets.long.decisions),
-      tradeCount: buckets.long.decisions,
+      winRate: computeMetricsWinRate(buckets.long.pnls, 'includeZeroAsLoss'),
+      tradeCount: buckets.long.pnls.length,
     },
     short: {
       netPnl: buckets.short.netPnl,
-      winRate: computeWinRate(buckets.short.wins, buckets.short.decisions),
-      tradeCount: buckets.short.decisions,
+      winRate: computeMetricsWinRate(buckets.short.pnls, 'includeZeroAsLoss'),
+      tradeCount: buckets.short.pnls.length,
     },
   };
 }
@@ -436,8 +427,7 @@ export function computeKpiMetrics(
 
   // ── Closed trade metrics ─────────────────────────────────────────
   let netPnl = 0;
-  let wins = 0;
-  let decisions = 0; // wins + losses (all trades, scratches counted as losses per D013)
+  const pnls: number[] = [];
   const rMultiples: number[] = [];
   const gradeScores: number[] = [];
   const winPnLs: number[] = [];
@@ -447,15 +437,15 @@ export function computeKpiMetrics(
     // P&L
     const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
     netPnl += totalRealizedPnL;
+    pnls.push(totalRealizedPnL);
 
     // Win rate: >0 = win, <=0 = loss (D013: $0 counted as loss)
-    if (totalRealizedPnL > 0) {
-      wins++;
+    const decision = classifyPnlDecision(totalRealizedPnL, 'includeZeroAsLoss');
+    if (decision === 'win') {
       winPnLs.push(totalRealizedPnL);
     } else {
       lossPnLs.push(Math.abs(totalRealizedPnL));
     }
-    decisions++;
 
     // R-multiple
     const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
@@ -471,15 +461,9 @@ export function computeKpiMetrics(
   }
 
   // ── Averages ─────────────────────────────────────────────────────
-  const winRate = computeWinRate(wins, decisions);
-  const avgR =
-    rMultiples.length > 0
-      ? rMultiples.reduce((sum, r) => sum + r, 0) / rMultiples.length
-      : null;
-  const avgGrade =
-    gradeScores.length > 0
-      ? gradeScores.reduce((sum, s) => sum + s, 0) / gradeScores.length
-      : null;
+  const winRate = computeMetricsWinRate(pnls, 'includeZeroAsLoss');
+  const avgR = averageRMultiples(rMultiples);
+  const avgGrade = averageProcessScore(gradeScores);
 
   // ── Account value ────────────────────────────────────────────────
   const accountValue = latestRollforward?.endingEquity ?? startingAccountValue ?? null;

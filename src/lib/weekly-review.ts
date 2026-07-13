@@ -10,6 +10,7 @@
  */
 
 import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { computeWinRate, averageRMultiples, averageProcessScore } from './metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ export function computeWeeklyMetrics(trades: WeekReviewTradeInput[]): Aggregated
   const closedTrades = trades.length;
 
   let netPnl = 0;
-  let wins = 0;
+  const pnls: number[] = [];
   const rMultiples: number[] = [];
   const processScores: number[] = [];
   let ungradedCount = 0;
@@ -77,11 +78,7 @@ export function computeWeeklyMetrics(trades: WeekReviewTradeInput[]): Aggregated
     // ── P&L ──────────────────────────────────────────────────────────
     const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
     netPnl += totalRealizedPnL;
-
-    // ── Win rate ─────────────────────────────────────────────────────
-    if (totalRealizedPnL > 0) {
-      wins++;
-    }
+    pnls.push(totalRealizedPnL);
 
     // ── R-multiple ───────────────────────────────────────────────────
     const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
@@ -102,17 +99,9 @@ export function computeWeeklyMetrics(trades: WeekReviewTradeInput[]): Aggregated
   }
 
   // ── Averages ─────────────────────────────────────────────────────
-  const avgR =
-    rMultiples.length > 0
-      ? rMultiples.reduce((sum, r) => sum + r, 0) / rMultiples.length
-      : null;
-
-  const avgProcessScore =
-    processScores.length > 0
-      ? processScores.reduce((sum, s) => sum + s, 0) / processScores.length
-      : null;
-
-  const winRate = closedTrades > 0 ? wins / closedTrades : 0;
+  const avgR = averageRMultiples(rMultiples);
+  const avgProcessScore = averageProcessScore(processScores);
+  const winRate = computeWinRate(pnls, 'allDecisions') ?? 0;
 
   return {
     closedTrades,

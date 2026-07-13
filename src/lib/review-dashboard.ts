@@ -10,6 +10,7 @@
  */
 
 import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { computeWinRate, averageRMultiples, averageProcessScore } from './metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -141,22 +142,15 @@ export function computeSetupPerformance(
     }
 
     const tradeCount = groupTrades.length;
-    let wins = 0;
-    let decisions = 0; // wins + losses (excl. scratches)
+    const pnls: number[] = [];
     const rMultiples: number[] = [];
     const processScores: number[] = [];
 
     for (const trade of groupTrades) {
       const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
 
-      // Win rate: scratches (PnL === 0) excluded from denominator
-      if (totalRealizedPnL > 0) {
-        wins++;
-        decisions++;
-      } else if (totalRealizedPnL < 0) {
-        decisions++;
-      }
-      // PnL === 0 → scratch, skip from win rate
+      // Collect PnL for policy-based win rate computation (excludeScratches handles scratches)
+      pnls.push(totalRealizedPnL);
 
       // R-multiple
       const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
@@ -171,15 +165,9 @@ export function computeSetupPerformance(
       }
     }
 
-    const winRate = decisions > 0 ? wins / decisions : null;
-    const avgR =
-      rMultiples.length > 0
-        ? rMultiples.reduce((sum, r) => sum + r, 0) / rMultiples.length
-        : null;
-    const avgProcessScore =
-      processScores.length > 0
-        ? processScores.reduce((sum, s) => sum + s, 0) / processScores.length
-        : null;
+    const winRate = computeWinRate(pnls, 'excludeScratches');
+    const avgR = averageRMultiples(rMultiples);
+    const avgProcessScore = averageProcessScore(processScores);
 
     const setupId = isNullGroup ? null : key;
     const setupName = isNullGroup
