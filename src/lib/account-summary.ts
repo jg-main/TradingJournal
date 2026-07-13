@@ -12,6 +12,7 @@
  */
 
 import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+export { type ExecutionData };
 
 // ── Types ────────────────────────────────────────────────────────────────
 
