@@ -87,7 +87,9 @@ function section(name: string): void {
   currentSection = name;
 }
 
-function assert(label: string, condition: boolean, detail?: string): void {
+function assert(first: string | boolean, second: string | boolean, detail?: string): void {
+  const label = typeof first === 'string' ? first : typeof second === 'string' ? second : '';
+  const condition = typeof first === 'boolean' ? first : typeof second === 'boolean' ? second : false;
   if (condition) {
     passed++;
   } else {
@@ -142,13 +144,20 @@ function assertField(obj: Record<string, unknown>, key: string, expectedType: st
   );
 }
 
+function assertFieldConcrete<T>(obj: T, key: keyof T, expectedType: string): void {
+  const actual = typeof (obj as Record<string, unknown>)[key as string];
+  assert(
+    `  Field "${String(key)}" is ${expectedType}`,
+    actual === expectedType,
+    `expected ${expectedType}, got ${actual}`,
+  );
+}
+
 function assertFieldPresent(obj: Record<string, unknown>, key: string): void {
   assert(`  Field "${key}" is present`, key in obj, `${key} not found in object`);
 }
 
-function hasField<T>(obj: T, key: keyof T): boolean {
-  return key in obj;
-}
+
 
 function makeExec(action: string, qty: number, price: number, fees = 0, date?: string): ExecutionData {
   return {
@@ -392,22 +401,22 @@ section('API 2: Account Detail');
   };
 
   // Verify account fields
-  assertField(response, 'id', 'string');
-  assertField(response, 'name', 'string');
+  assertFieldConcrete(response, 'id', 'string');
+  assertFieldConcrete(response, 'name', 'string');
   assert('  broker is string or null', typeof response.broker === 'string' || response.broker === null);
-  assertField(response, 'currency', 'string');
+  assertFieldConcrete(response, 'currency', 'string');
   assert('  isActive is boolean', typeof response.isActive === 'boolean');
   assert('  maxRiskPerTradePct is number or null', typeof response.maxRiskPerTradePct === 'number' || response.maxRiskPerTradePct === null);
   assert('  defaultCommission is number or null', typeof response.defaultCommission === 'number' || response.defaultCommission === null);
   assert('  startingBalance is number or null', typeof response.startingBalance === 'number' || response.startingBalance === null);
-  assertField(response, 'createdAt', 'string');
-  assertField(response, 'updatedAt', 'string');
+  assertFieldConcrete(response, 'createdAt', 'string');
+  assertFieldConcrete(response, 'updatedAt', 'string');
 
   // Verify balance fields
-  assertField(response, 'currentBalance', 'number');
-  assertField(response, 'netDeposits', 'number');
-  assertField(response, 'netWithdrawals', 'number');
-  assertField(response, 'realizedPnl', 'number');
+  assertFieldConcrete(response, 'currentBalance', 'number');
+  assertFieldConcrete(response, 'netDeposits', 'number');
+  assertFieldConcrete(response, 'netWithdrawals', 'number');
+  assertFieldConcrete(response, 'realizedPnl', 'number');
 
   // Verify KPI fields
   assert('  kpis is object', typeof response.kpis === 'object');
@@ -484,17 +493,17 @@ section('API 3: Account Close');
   };
 
   // Verify all fields
-  assertField(response, 'accountId', 'string');
-  assertField(response, 'accountName', 'string');
-  assertField(response, 'startingBalance', 'number');
-  assertField(response, 'depositsTotal', 'number');
-  assertField(response, 'withdrawalsTotal', 'number');
-  assertField(response, 'realizedPnl', 'number');
-  assertField(response, 'finalBalance', 'number');
+  assertFieldConcrete(response, 'accountId', 'string');
+  assertFieldConcrete(response, 'accountName', 'string');
+  assertFieldConcrete(response, 'startingBalance', 'number');
+  assertFieldConcrete(response, 'depositsTotal', 'number');
+  assertFieldConcrete(response, 'withdrawalsTotal', 'number');
+  assertFieldConcrete(response, 'realizedPnl', 'number');
+  assertFieldConcrete(response, 'finalBalance', 'number');
   assert('  netReturn is number or null', response.netReturn === null || typeof response.netReturn === 'number');
   assert('  kpis is object', typeof response.kpis === 'object');
   assert('  datesActive is object', typeof response.datesActive === 'object');
-  assertField(response, 'closedAt', 'string');
+  assertFieldConcrete(response, 'closedAt', 'string');
 
   // Representative values
   assertClose('  finalBalance = 11984', response.finalBalance, 10000 + 2000 - 500 + 484);
@@ -685,9 +694,9 @@ section('API 5: Trade List');
   // Verify pagination envelope
   const listResponse = { data: [tradeRow], total: 1, page: 1, limit: 50 };
   assert('  data is array', Array.isArray(listResponse.data));
-  assertField(listResponse, 'total', 'number');
-  assertField(listResponse, 'page', 'number');
-  assertField(listResponse, 'limit', 'number');
+  assertFieldConcrete(listResponse, 'total', 'number');
+  assertFieldConcrete(listResponse, 'page', 'number');
+  assertFieldConcrete(listResponse, 'limit', 'number');
   assert(listResponse.total >= 0, '  total >= 0');
   assert(listResponse.page >= 1, '  page >= 1');
   assert(listResponse.limit >= 1 && listResponse.limit <= 100, '  limit between 1-100');
@@ -874,10 +883,10 @@ section('API 7: Review Dashboard');
     direction: 'long',
     closedAt: '2025-06-20T10:00:00.000Z',
   };
-  assertField(ungradedTrade, 'id', 'string');
-  assertField(ungradedTrade, 'tradeCode', 'string');
-  assertField(ungradedTrade, 'symbol', 'string');
-  assertField(ungradedTrade, 'direction', 'string');
+  assertFieldConcrete(ungradedTrade, 'id', 'string');
+  assertFieldConcrete(ungradedTrade, 'tradeCode', 'string');
+  assertFieldConcrete(ungradedTrade, 'symbol', 'string');
+  assertFieldConcrete(ungradedTrade, 'direction', 'string');
   assert('  closedAt is string or null', ungradedTrade.closedAt === null || typeof ungradedTrade.closedAt === 'string');
 
   // Mistake frequency shape (contract test — representative value)
@@ -889,12 +898,12 @@ section('API 7: Review Dashboard');
     critical: 0,
     total: 4,
   };
-  assertField(mistake, 'mistakeType', 'string');
-  assertField(mistake, 'minor', 'number');
-  assertField(mistake, 'moderate', 'number');
-  assertField(mistake, 'major', 'number');
-  assertField(mistake, 'critical', 'number');
-  assertField(mistake, 'total', 'number');
+  assertFieldConcrete(mistake, 'mistakeType', 'string');
+  assertFieldConcrete(mistake, 'minor', 'number');
+  assertFieldConcrete(mistake, 'moderate', 'number');
+  assertFieldConcrete(mistake, 'major', 'number');
+  assertFieldConcrete(mistake, 'critical', 'number');
+  assertFieldConcrete(mistake, 'total', 'number');
 })();
 
 /* ════════════════════════════════════════════════════════════════════════ */

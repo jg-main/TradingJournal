@@ -68,6 +68,48 @@ the change touches shared contracts, database schema, or cross-page workflows.
 - For UI-only work, verify with lint/typecheck and a targeted Playwright test or
   manual dev-server inspection when a browser behavior could regress.
 
+## Computation Ownership
+
+The milestone M026 (vfox76) consolidated 6 pure computation libraries under `src/lib/`
+that were previously duplicated across API route handlers.  Every library follows the
+same pattern: **pure functions only, no database imports, no NextResponse**, taking
+all data as plain function arguments.
+
+### Library Map
+
+| Library | Responsibility | Depends On | API Callers |
+|---------|---------------|------------|-------------|
+| `trade-calc.ts` | Foundation: P&L, R-multiple, trade status derivation, average cost, realized P&L | — | All downstream libs |
+| `risk-snapshot.ts` | Equity-at-open computation, initial risk amount derivation, risk snapshot values | `trade-calc` | `POST /api/trades/[id]/executions`, `POST /api/trades/[id]/execute` |
+| `account-summary.ts` | Account KPIs (trade count, net P&L, win rate, avg R, avg grade), balance rollforward, dates active | `trade-calc` | `GET /api/accounts/[id]`, `POST /api/accounts/[id]/close` |
+| `metrics.ts` | Win-rate policy engine (includeZeroAsLoss, excludeScratches, allDecisions), averages, process scores | — | `dashboard.ts`, `weekly-review.ts`, `review-dashboard.ts` |
+| `mark-to-market.ts` | MTM unrealized P&L, open position computation, aggregate summary with FeePolicy parameter | `trade-calc` | `GET /api/dashboard`, `GET /api/trades/[id]` |
+| `position-sizing.ts` | Position size, risk/reward preview, plan-trade risk calculator | — | Plan Trade form (`plan-trade-form.tsx`) |
+
+### Naming Convention
+
+- **File**: `snake-case.ts` matching the domain concept (e.g. `risk-snapshot.ts`, `position-sizing.ts`)
+- **Exported types**: PascalCase interfaces (e.g. `EquityAtOpenInput`, `PositionSizingParams`)
+- **Exported functions**: `camelCase` verbs prefixed with `compute`, `calculate`, `derive`, or `classify`
+- **Test file**: `src/lib/<name>.test.ts` alongside the library (vitest) or standalone tsx entry
+- Each library declares its own input/output types rather than importing Drizzle schema types — this keeps tests database-free
+
+### Key Domain Invariants
+
+1. **Fee policy divergence**: `mark-to-market.ts` exposes a `FeePolicy` parameter (`include_entry_fees` vs `exclude_entry_fees`) preserving the existing discrepancy between the dashboard route (subtracts entry fees) and the trade detail route (no subtraction).
+2. **Win rate policy**: `metrics.ts` defines 3 named policies (`includeZeroAsLoss`, `excludeScratches`, `allDecisions`) matching the distinct denominator semantics of Dashboard, Review Dashboard, and Weekly Review.
+3. **Account equity cascade**: `risk-snapshot.ts`'s `computeEquityAtOpen` uses: effective equity > 0 → global fallback setting → null. This cascade is used by both execution creation routes.
+4. **R-multiple guard**: All R-multiple computation guards against `initialRiskAmount <= 0` (returns `null`), preventing division-by-zero errors.
+5. **Validation guards**: `position-sizing.ts` validates all numeric inputs pre-computation, throwing descriptive `Position sizing error:` messages for invalid parameters.
+
+### Test Registration
+
+- Vitest runs via `make test` (includes unit tests listed in `vitest.config.ts`)
+- Standalone tsx tests run via `make test-all` (orchestrated by `scripts/run-all-tests.ts`)
+- Cross-library consistency verified by `src/lib/__fixtures__/golden-scenarios.test.tsx`
+- API response shape regression detected by `src/lib/__fixtures__/response-contracts.test.ts`
+- Full quality gate: `make lint && make typecheck && make build && make test-all`
+
 ## Repo Hygiene
 
 - Keep edits scoped to the requested feature or fix. Do not rewrite generated
