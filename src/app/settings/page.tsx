@@ -38,7 +38,14 @@ interface BackupManifest {
   tables: Record<string, number>;
 }
 
-type RestoreStep = 'upload' | 'preview' | 'confirm' | 'restoring' | 'success' | 'error';
+type RestoreStep = 'upload' | 'browse' | 'preview' | 'confirm' | 'restoring' | 'success' | 'error';
+
+interface BackupFileEntry {
+  filename: string;
+  isoDate: string;
+  sizeBytes: number;
+  sizeHuman: string;
+}
 type ResetStep = 'warning' | 'confirm' | 'resetting' | 'success' | 'error';
 
 // ── Constants ───────────────────────────────────────────────────────────
@@ -252,6 +259,12 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<RestoreStep>('upload');
   const [previewData, setPreviewData] = useState<{ manifest: BackupManifest } | null>(null);
   const [backupFile, setBackupFile] = useState<File | null>(null);
+  const [mode, setMode] = useState<'upload' | 'server'>('upload');
+  const [serverFiles, setServerFiles] = useState<BackupFileEntry[]>([]);
+  const [serverFilesLoading, setServerFilesLoading] = useState(false);
+  const [serverFilesError, setServerFilesError] = useState('');
+  const [selectedServerFile, setSelectedServerFile] = useState<BackupFileEntry | null>(null);
+
   const [errorMessage, setErrorMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -268,6 +281,35 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
     if (step === 'confirm' && confirmInputRef.current) {
       confirmInputRef.current.focus();
     }
+  }, [step]);
+
+  // Fetch server-side backup files when entering the browse step
+  useEffect(() => {
+    if (step !== 'browse') return;
+
+    let cancelled = false;
+
+    fetch('/api/backup/files')
+      .then((res) => {
+        if (cancelled) return;
+        if (!res.ok) throw new Error('Failed to fetch backup files');
+        return res.json() as Promise<BackupFileEntry[]>;
+      })
+      .then((files) => {
+        if (cancelled) return;
+        if (!files) return;
+        setServerFiles(files);
+        setServerFilesLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setServerFilesError(err instanceof Error ? err.message : 'Failed to load backup files');
+        setServerFilesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [step]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
@@ -322,52 +364,109 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
   };
 
   const handleRestore = async () => {
-    if (!backupFile) return;
+    if (mode === 'upload') {
+      if (!backupFile) return;
 
-    setStep('restoring');
-    setErrorMessage('');
+      setStep('restoring');
+      setErrorMessage('');
 
-    const formData = new FormData();
-    formData.append('backup', backupFile);
+      const formData = new FormData();
+      formData.append('backup', backupFile);
 
-    try {
-      const res = await fetch('/api/restore', {
-        method: 'POST',
-        body: formData,
-      });
+      try {
+        const res = await fetch('/api/restore', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!res.ok) {
-        setErrorMessage(data.error || 'Restore failed');
+        if (!res.ok) {
+          setErrorMessage(data.error || 'Restore failed');
+          setStep('error');
+          return;
+        }
+
+        setStep('success');
+
+        // Redirect to dashboard after a brief pause to show success state
+        setTimeout(() => {
+          router.push('/');
+        }, 2000);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Network error during restore');
         setStep('error');
-        return;
       }
+    } else {
+      if (!selectedServerFile) return;
 
-      setStep('success');
+      setStep('restoring');
+      setErrorMessage('');
 
-      // Redirect to dashboard after a brief pause to show success state
-      setTimeout(() => {
-        router.push('/');
-      }, 2000);
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Network error during restore');
-      setStep('error');
+      try {
+        const res = await fetch(`/api/backup/restore/${encodeURIComponent(selectedServerFile.filename)}`, {
+          method: 'POST',
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          setErrorMessage(data.error || 'Restore failed');
+          setStep('error');
+          return;
+        }
+
+        setStep('success');
+
+        // Redirect to dashboard after a brief pause to show success state
+        setTimeout(() => {
+          router.push('/');
+        }, 2000);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Network error during restore');
+        setStep('error');
+      }
     }
   };
 
-  const handleRetry = () => {
-    setStep('upload');
+  const handleSwitchMode = (newMode: 'upload' | 'server') => {
+    if (newMode === mode) return;
+    setMode(newMode);
+    if (newMode === 'server') {
+      setStep('browse');
+      setServerFilesLoading(true);
+      setServerFilesError('');
+    } else {
+      setStep('upload');
+    }
     setErrorMessage('');
-    setPreviewData(null);
-    setBackupFile(null);
+    setSelectedServerFile(null);
     setConfirmText('');
   };
 
+  const handleRetry = () => {
+    if (mode === 'server') {
+      setStep('browse');
+      setErrorMessage('');
+      setSelectedServerFile(null);
+      setConfirmText('');
+    } else {
+      setStep('upload');
+      setErrorMessage('');
+      setPreviewData(null);
+      setBackupFile(null);
+      setConfirmText('');
+    }
+  };
+
   const handleGoBack = () => {
-    if (step === 'confirm') {
+    if (step === 'confirm' && mode === 'upload') {
       setStep('preview');
       setConfirmText('');
+    } else if (step === 'confirm' && mode === 'server') {
+      setStep('browse');
+      setConfirmText('');
+      setSelectedServerFile(null);
     } else if (step === 'error') {
       handleRetry();
     }
@@ -390,6 +489,129 @@ function RestoreModal({ onClose }: { onClose: () => void }) {
         >
           <X className="size-5" />
         </button>
+
+        {/* ── Tab bar ────────────────────────────── */}
+        {(step === 'upload' || step === 'browse') && (
+          <div className="mb-5 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+            <button
+              onClick={() => handleSwitchMode('upload')}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                mode === 'upload'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              Upload a backup file
+            </button>
+            <button
+              onClick={() => handleSwitchMode('server')}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                mode === 'server'
+                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}
+            >
+              Browse scheduled backups
+            </button>
+          </div>
+        )}
+
+        {/* ── Browse Step (server-side files) ──────── */}
+        {step === 'browse' && (
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              Browse Scheduled Backups
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+              Select a server-side backup file to restore. Files created by scheduled backups are
+              stored on the server.
+            </p>
+
+            {serverFilesLoading ? (
+              <div className="mt-6 flex flex-col items-center gap-3 py-8">
+                <Loader2 className="size-8 animate-spin text-zinc-400" />
+                <p className="text-sm text-zinc-600 dark:text-zinc-300">Loading backup files...</p>
+              </div>
+            ) : serverFilesError ? (
+              <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span className="flex-1">{serverFilesError}</span>
+              </div>
+            ) : serverFiles.length === 0 ? (
+              <div className="mt-6 flex flex-col items-center gap-2 py-8">
+                <Clock className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1.5} />
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  No scheduled backups found.
+                </p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                  Set up scheduled backups in the Scheduled Backups page to create them automatically.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 max-h-64 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                        Backup Date
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                        Size
+                      </th>
+                      <th className="w-20 px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {serverFiles.map((file) => (
+                      <tr
+                        key={file.filename}
+                        className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/30 ${
+                          selectedServerFile?.filename === file.filename
+                            ? 'bg-blue-50 dark:bg-blue-900/20'
+                            : ''
+                        }`}
+                      >
+                        <td className="px-3 py-2.5 text-zinc-700 dark:text-zinc-300">
+                          <div className="flex items-center gap-2">
+                            <Clock className="size-3.5 shrink-0 text-zinc-400" strokeWidth={1.5} />
+                            <span>{formatBackupDate(file.isoDate)}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-zinc-500 dark:text-zinc-400">
+                          {file.sizeHuman}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <button
+                            onClick={() => {
+                              setSelectedServerFile(file);
+                              setStep('confirm');
+                              setConfirmText('');
+                            }}
+                            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                          >
+                            Restore
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Cancel button at bottom for browse step */}
+            <div className="mt-5 flex items-center justify-end">
+              <button
+                onClick={handleClose}
+                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── Upload Step ─────────────────────────── */}
         {step === 'upload' && (

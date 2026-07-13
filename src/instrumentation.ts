@@ -12,15 +12,16 @@
  * Guarded by try/catch so any scheduler failure does not block server
  * startup. Registers SIGTERM/SIGINT handlers for graceful shutdown.
  *
+ * Uses dynamic imports for scheduler and backup-job dependencies to avoid
+ * Turbopack eagerly resolving native modules (node-cron, archiver,
+ * better-sqlite3) for the client bundle.
+ *
  * Next.js App Router convention: `src/instrumentation.ts` with a named
  * `register` export is automatically invoked on server start.
  *
  * Pattern: Next.js instrumentation hook, src/lib/scheduler.ts,
  * src/lib/backup-job.ts
  */
-
-import { startScheduler, stopScheduler } from './lib/scheduler';
-import { runBackupJob } from './lib/backup-job';
 
 /** Default daily cron: 2:00 AM server-local time */
 const DEFAULT_CRON_EXPRESSION = '0 2 * * *';
@@ -41,13 +42,16 @@ export function register(): void {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
   // Graceful shutdown: stop the scheduler on SIGTERM/SIGINT
-  process.on('SIGTERM', () => {
+  // Dynamic import avoids Turbopack resolving native modules for the client
+  process.on('SIGTERM', async () => {
     console.log('[instrumentation] Received SIGTERM — stopping scheduler');
+    const { stopScheduler } = await import('./lib/scheduler');
     stopScheduler();
   });
 
-  process.on('SIGINT', () => {
+  process.on('SIGINT', async () => {
     console.log('[instrumentation] Received SIGINT — stopping scheduler');
+    const { stopScheduler } = await import('./lib/scheduler');
     stopScheduler();
   });
 
@@ -55,7 +59,7 @@ export function register(): void {
   // The scheduler itself has a NODE_ENV === 'production' guard, so this
   // is harmless in dev — we gate on settings too so the instrumentation
   // signal is accurate.
-  startSchedulerIfEnabled().catch((err) => {
+  startSchedulerIfEnabled(DEFAULT_CRON_EXPRESSION).catch((err) => {
     console.error(
       '[instrumentation] Failed to start backup scheduler:',
       err instanceof Error ? err.message : String(err),
@@ -69,7 +73,7 @@ export function register(): void {
  * Separated from `register()` so the async import does not make `register()`
  * return a Promise — Next.js calls it synchronously and the catch is handled.
  */
-async function startSchedulerIfEnabled(): Promise<void> {
+async function startSchedulerIfEnabled(cronExpression: string): Promise<void> {
   try {
     const { db } = await import('@/db/index');
     const { settings } = await import('@/db/schema');
@@ -81,7 +85,9 @@ async function startSchedulerIfEnabled(): Promise<void> {
       console.log(
         '[instrumentation] Backups are enabled in settings — starting scheduler...',
       );
-      startScheduler(DEFAULT_CRON_EXPRESSION, runBackupJob);
+      const { startScheduler } = await import('./lib/scheduler');
+      const { runBackupJob } = await import('./lib/backup-job');
+      startScheduler(cronExpression, runBackupJob);
     } else {
       console.log(
         '[instrumentation] Backups are not enabled in settings — scheduler not started',
