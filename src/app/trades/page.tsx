@@ -128,7 +128,7 @@ export default function TradesPage() {
       const v = getValue<string>();
       return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${directionBadgeClass(v as 'long' | 'short')}`}>{v === 'long' ? 'Long' : 'Short'}</span>;
     }},
-    { id: 'setup', header: 'Setup', accessorKey: 'setup', cell: ({ getValue }) => <span className="text-zinc-600 dark:text-zinc-400">{getValue<string>() || '—'}</span> },
+    { id: 'setup', header: 'Setup', accessorKey: 'setupName', cell: ({ getValue }) => <span className="text-zinc-600 dark:text-zinc-400">{getValue<string>() || '—'}</span> },
     { id: 'entry', header: 'Entry', cell: ({ row }) => {
       const t = row.original;
       const val = t.status !== 'planned' && t.actualEntry != null ? t.actualEntry : t.plannedEntry;
