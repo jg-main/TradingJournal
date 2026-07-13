@@ -2,7 +2,7 @@
 # Convenience commands for common dev tasks.
 # Run `make` or `make help` to see all targets.
 
-.PHONY: help dev dev-alt build start lint typecheck test test-watch playwright playwright-ui \
+.PHONY: help dev dev-alt build start lint typecheck test test-all test-watch playwright playwright-ui \
         db-generate db-migrate db-studio seed setup reset-db clean \
         docker-build docker-up docker-upgrade docker-down docker-restart docker-logs
 
@@ -48,6 +48,9 @@ typecheck: ## Run TypeScript type checking (no emit)
 
 test: ## Run unit tests (vitest)
 	$(NPX) vitest run --reporter verbose
+
+test-all: ## Run all test suites (vitest + consolidation tsx tests)
+	$(NPX) tsx scripts/run-all-tests.ts
 
 test-watch: ## Run unit tests in watch mode
 	$(NPX) vitest --reporter verbose
