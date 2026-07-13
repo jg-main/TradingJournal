@@ -1,0 +1,327 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { ArrowLeft, CircleCheck, CircleX, HelpCircle } from 'lucide-react';
+import type { JSX } from 'react';
+
+// ── Types ───────────────────────────────────────────────────────────────
+
+interface Settings {
+  id: string;
+  backupEnabled: boolean | null;
+  backupRetentionCount: number | null;
+  backupLastRunAt: string | null;
+  backupLastRunStatus: 'success' | 'error' | null;
+}
+
+interface BackupStatus {
+  lastRunAt: string | null;
+  lastRunStatus: 'success' | 'error' | null;
+  nextScheduledAt: string | null;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+function formatTimestamp(iso: string | null): string {
+  if (!iso) return 'Never';
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function StatusDot({ status }: { status: 'success' | 'error' | null }): JSX.Element {
+  if (status === 'success') {
+    return <CircleCheck className="size-5 text-emerald-500" aria-hidden />;
+  }
+  if (status === 'error') {
+    return <CircleX className="size-5 text-red-500" aria-hidden />;
+  }
+  return <HelpCircle className="size-5 text-zinc-300 dark:text-zinc-600" aria-hidden />;
+}
+
+// ── Page ────────────────────────────────────────────────────────────────
+
+export default function BackupsSettingsPage() {
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const [backupEnabled, setBackupEnabled] = useState(false);
+  const [retentionCount, setRetentionCount] = useState(7);
+
+  // ── Data loading ────────────────────────────────────────────────────
+
+  const loadData = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setLoading(true);
+      setMessage(null);
+
+      const [settingsRes, statusRes] = await Promise.all([
+        fetch('/api/settings', { signal }),
+        fetch('/api/backup/status', { signal }),
+      ]);
+
+      if (settingsRes.ok) {
+        const settingsData = (await settingsRes.json()) as Settings;
+        if (settingsData && settingsData.id) {
+          setSettings(settingsData);
+          setBackupEnabled(settingsData.backupEnabled ?? false);
+          setRetentionCount(settingsData.backupRetentionCount ?? 7);
+        }
+      }
+
+      if (statusRes.ok) {
+        const statusData = (await statusRes.json()) as BackupStatus;
+        setBackupStatus(statusData);
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setMessage({ type: 'error', text: 'Failed to load backup settings.' });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadData(controller.signal);
+
+    const handleFocus = () => void loadData();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void loadData();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      controller.abort();
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [loadData]);
+
+  // ── Toggle change (immediate save) ──────────────────────────────────
+
+  const handleToggle = async () => {
+    const next = !backupEnabled;
+    setBackupEnabled(next);
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backupEnabled: next }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setBackupEnabled(!next); // revert on failure
+        setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : err.error });
+        return;
+      }
+
+      const data = (await res.json()) as Settings;
+      setSettings(data);
+      setMessage({ type: 'success', text: 'Backup schedule updated.' });
+
+      // Refresh status since scheduler state may have changed
+      const statusRes = await fetch('/api/backup/status');
+      if (statusRes.ok) {
+        const statusData = (await statusRes.json()) as BackupStatus;
+        setBackupStatus(statusData);
+      }
+    } catch {
+      setBackupEnabled(!next); // revert on network error
+      setMessage({ type: 'error', text: 'Failed to update backup setting.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Retention count save ────────────────────────────────────────────
+
+  const handleRetentionSave = async () => {
+    setSaving(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backupRetentionCount: retentionCount }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : err.error });
+        return;
+      }
+
+      const data = (await res.json()) as Settings;
+      setSettings(data);
+      setMessage({ type: 'success', text: 'Retention count saved.' });
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save retention count.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────
+
+  if (loading && !settings) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-8">
+        <Link
+          href="/settings"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        >
+          <ArrowLeft className="size-4" />
+          Back to Settings
+        </Link>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading backup settings...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl px-6 py-8">
+      <Link
+        href="/settings"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+      >
+        <ArrowLeft className="size-4" />
+        Back to Settings
+      </Link>
+
+      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        Scheduled Backups
+      </h1>
+
+      {message && (
+        <div
+          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+            message.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {/* ── Status Indicator ─────────────────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Status</h2>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">Last Run</span>
+              <div className="flex items-center gap-2">
+                <StatusDot status={backupStatus?.lastRunStatus ?? settings?.backupLastRunStatus ?? null} />
+                <span className="text-sm text-zinc-900 dark:text-zinc-100">
+                  {formatTimestamp(backupStatus?.lastRunAt ?? settings?.backupLastRunAt ?? null)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">Next Scheduled Run</span>
+              <span className="text-sm text-zinc-900 dark:text-zinc-100">
+                {backupStatus?.nextScheduledAt
+                  ? formatTimestamp(backupStatus.nextScheduledAt)
+                  : backupEnabled
+                    ? 'Schedule pending (production only)'
+                    : '—'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Enable/Disable Toggle ─────────────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Automatic Backups
+              </h2>
+              <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+                {backupEnabled
+                  ? 'Backups will run daily at 2 AM.'
+                  : 'Scheduled backups are currently disabled.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={backupEnabled}
+              onClick={handleToggle}
+              disabled={saving}
+              className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
+                backupEnabled
+                  ? 'bg-zinc-900 dark:bg-zinc-100'
+                  : 'bg-zinc-300 dark:bg-zinc-600'
+              }`}
+            >
+              <span
+                className={`inline-block size-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out dark:bg-zinc-900 ${
+                  backupEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Retention Count ───────────────────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Retention Count
+          </h2>
+          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+            Number of backup files to keep before removing the oldest. Minimum 1, maximum 30.
+          </p>
+
+          <div className="flex items-center gap-3">
+            <select
+              id="retentionCount"
+              value={retentionCount}
+              onChange={(e) => setRetentionCount(Number(e.target.value))}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            >
+              {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleRetentionSave}
+              disabled={saving}
+              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
