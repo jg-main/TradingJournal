@@ -4,7 +4,7 @@ import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
-import { calculatePnL } from '@/lib/trade-calc';
+import { calculateUnrealizedPnL } from '@/lib/mark-to-market';
 import type { ExecutionData, Direction } from '@/lib/trade-calc';
 
 const updateTradeSchema = z.object({
@@ -74,6 +74,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     }
 
     // Compute unrealized PnL for non-closed trades with a current price
+    // Uses exclude_entry_fees to match existing behavior — entry fees are not
+    // subtracted from unrealized P&L in the trade detail view.
     let unrealizedPnl: number | null = null;
     if (row.status !== 'closed' && row.currentPrice !== null && row.currentPrice !== undefined) {
       const executions = db
@@ -97,16 +99,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           executedAt: e.executedAt ?? '',
         }));
 
-        const direction = row.direction as Direction;
-        const pnl = calculatePnL(executionData, direction);
-
-        if (pnl.avgEntryPrice !== null && pnl.openQuantity > 0) {
-          if (direction === 'long') {
-            unrealizedPnl = (row.currentPrice - pnl.avgEntryPrice) * pnl.openQuantity;
-          } else {
-            unrealizedPnl = (pnl.avgEntryPrice - row.currentPrice) * pnl.openQuantity;
-          }
-        }
+        unrealizedPnl = calculateUnrealizedPnL({
+          executions: executionData,
+          direction: row.direction as Direction,
+          currentPrice: row.currentPrice,
+          feePolicy: 'exclude_entry_fees',
+        });
       }
     }
 
