@@ -37,6 +37,10 @@ interface Trade {
   actualEntry: number | null;
   currentPrice: number | null;
   avgExitPrice: number | null;
+  realizedPnl: number | null;
+  unrealizedPnl: number | null;
+  returnPct: number | null;
+  riskPct: number | null;
   setupId: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
@@ -167,49 +171,24 @@ export default function TradesPage() {
     // ── Computed columns (hidden by default) ──
     { id: 'pnl', header: 'P&L', cell: ({ row }) => {
       const t = row.original;
-      const entry = t.status !== 'planned' && t.actualEntry != null ? t.actualEntry : t.plannedEntry;
-      const qty = t.plannedQuantity ?? 0;
       let pnl: number | null = null;
-      if (t.status === 'open' && t.currentPrice != null && entry != null) {
-        pnl = t.direction === 'long' ? (t.currentPrice - entry) * qty : (entry - t.currentPrice) * qty;
-      } else if (t.status === 'closed' && t.avgExitPrice != null && entry != null) {
-        pnl = t.direction === 'long' ? (t.avgExitPrice - entry) * qty : (entry - t.avgExitPrice) * qty;
+      if (t.status === 'closed' && t.realizedPnl != null) {
+        pnl = t.realizedPnl;
+      } else if (t.status === 'open' && t.unrealizedPnl != null) {
+        pnl = t.unrealizedPnl;
       }
       if (pnl == null) return <span className="tabular-nums text-zinc-400">—</span>;
       return <span className={`tabular-nums text-xs font-medium ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}</span>;
     }},
     { id: 'riskPct', header: 'Risk %', cell: ({ row }) => {
-      const t = row.original;
-      const entry = t.status !== 'planned' && t.actualEntry != null ? t.actualEntry : t.plannedEntry;
-      const stop = t.plannedStop;
-      const exit = t.avgExitPrice;
-      if (entry == null || entry <= 0) return <span className="tabular-nums text-zinc-400">—</span>;
-      let risk: number;
-      const isLoss = t.status === 'closed' && exit != null && (
-        (t.direction === 'long' && exit < entry) || (t.direction === 'short' && exit > entry)
-      );
-      if (isLoss) {
-        risk = (Math.abs(entry - exit!) / entry) * 100;
-      } else if (stop != null) {
-        risk = (Math.abs(entry - stop) / entry) * 100;
-      } else {
-        return <span className="tabular-nums text-zinc-400">—</span>;
-      }
-      return <span className="tabular-nums text-zinc-500">{risk.toFixed(2)}%</span>;
+      const v = row.original.riskPct;
+      if (v == null) return <span className="tabular-nums text-zinc-400">—</span>;
+      return <span className="tabular-nums text-zinc-500">{v.toFixed(2)}%</span>;
     }},
     { id: 'returnPct', header: 'Return %', cell: ({ row }) => {
-      const t = row.original;
-      if (t.status === 'planned') return <span className="tabular-nums text-zinc-400">—</span>;
-      const entry = t.actualEntry ?? t.plannedEntry;
-      if (entry == null || entry <= 0) return <span className="tabular-nums text-zinc-400">—</span>;
-      let ret: number | null = null;
-      if (t.status === 'open' && t.currentPrice != null) {
-        ret = t.direction === 'long' ? (t.currentPrice - entry) / entry * 100 : (entry - t.currentPrice) / entry * 100;
-      } else if (t.status === 'closed' && t.avgExitPrice != null) {
-        ret = t.direction === 'long' ? (t.avgExitPrice - entry) / entry * 100 : (entry - t.avgExitPrice) / entry * 100;
-      }
-      if (ret == null) return <span className="tabular-nums text-zinc-400">—</span>;
-      return <span className={`tabular-nums text-xs font-medium ${ret >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{ret >= 0 ? '+' : ''}{ret.toFixed(2)}%</span>;
+      const v = row.original.returnPct;
+      if (v == null) return <span className="tabular-nums text-zinc-400">—</span>;
+      return <span className={`tabular-nums text-xs font-medium ${v >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{v >= 0 ? '+' : ''}{v.toFixed(2)}%</span>;
     }},
   ], [handleDelete]);
 
