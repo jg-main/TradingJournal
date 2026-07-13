@@ -31,6 +31,7 @@ const TSX_TESTS: string[] = [
   'src/lib/risk-snapshot.test.ts',
   'src/lib/trade-calc.test.ts',
   'src/lib/weekly-review.test.ts',
+  'src/lib/__fixtures__/golden-scenarios.test.tsx',
 ];
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
