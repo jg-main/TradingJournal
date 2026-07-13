@@ -9,6 +9,7 @@ import {
   ChartNoAxesCombined,
   CircleCheck,
   CircleDashed,
+  Clock,
   Gamepad2,
   Loader2,
   Play,
@@ -114,6 +115,12 @@ const cards: HubCard[] = [
     description: 'Manage mistake categories for trade reviews.',
     href: '/settings/mistake-types',
     icon: <AlertTriangle className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+  },
+  {
+    title: 'Scheduled Backups',
+    description: 'Configure automated backup schedule and retention.',
+    href: '/settings/backup',
+    icon: <Clock className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Export & Backup',
