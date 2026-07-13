@@ -23,7 +23,7 @@ import { sql } from 'drizzle-orm';
 import { ZipArchive } from 'archiver';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 import { serializeBackup, TABLE_REGISTRY } from './backup-serializer';
 
 // ── Configuration ───────────────────────────────────────────────────────
@@ -67,10 +67,59 @@ function nodeStreamToWeb(nodeStream: Readable): ReadableStream<Uint8Array> {
   });
 }
 
-// ── Backup archive creation ─────────────────────────────────────────────
+// ── Archiver-to-Buffer helper ───────────────────────────────────────────
 
 /**
- * Create a full backup ZIP archive as a Web ReadableStream.
+ * Pipe an archiver instance to a Writable stream that collects all chunks
+ * and resolves with a single Buffer.
+ *
+ * The archive must be finalized (via `archive.finalize()`) before or after
+ * calling this function — the promise settles when the 'finish' event fires
+ * on the writable side.
+ */
+function archiveToBuffer(archive: ZipArchive): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const writable = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        chunks.push(chunk);
+        callback();
+      },
+    });
+    archive.on('error', reject);
+    writable.on('finish', () => resolve(Buffer.concat(chunks)));
+    archive.pipe(writable);
+  });
+}
+
+// ── Buffer-to-Web-Stream conversion ─────────────────────────────────────
+
+/**
+ * Convert a single Buffer into a Web ReadableStream<Uint8Array>.
+ *
+ * Unlike nodeStreamToWeb which bridges an active Node.js stream, this
+ * helper creates a stream that immediately delivers the full buffer and
+ * closes — suitable for streaming an already-materialised ZIP buffer to
+ * an HTTP Response body.
+ */
+function bufferToWebStream(buffer: Buffer): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(buffer));
+      controller.close();
+    },
+  });
+}
+
+// ── Shared ZIP buffer creation (extracted) ──────────────────────────────
+
+/**
+ * Create a full backup ZIP archive as an in-memory Buffer.
+ *
+ * This is the shared core of both the HTTP download path and the scheduled
+ * backup path. It performs all the same work as createBackupArchive but
+ * returns a Buffer that can be written to disk (scheduled backups) or
+ * converted to a stream (manual download).
  *
  * Steps:
  * 1. Checkpoint the SQLite WAL to flush recent writes into the main DB file
@@ -78,14 +127,14 @@ function nodeStreamToWeb(nodeStream: Readable): ReadableStream<Uint8Array> {
  * 3. Write manifest.json to the archive root
  * 4. Write data/<tableName>.json for each table in TABLE_REGISTRY order
  * 5. Include uploads/ screenshot assets (skip .gitkeep, no crash if missing)
- * 6. Return a ReadableStream<Uint8Array> for the Response body
+ * 6. Finalize the archive and collect the ZIP bytes into a Buffer
  *
- * @returns A ReadableStream<Uint8Array> of the ZIP archive bytes
+ * @returns A Promise resolving to the ZIP archive as a Buffer
  * @throws Error if serialization or ZIP creation fails
  */
-export async function createBackupArchive(
+export async function createBackupBuffer(
   dbParam?: ReturnType<typeof drizzle<typeof schema>>
-): Promise<ReadableStream<Uint8Array>> {
+): Promise<Buffer> {
   // Step 1: WAL checkpoint — flush pending writes into the main DB file
   const database = dbParam ?? (await import('@/db/index')).db;
   database.run(sql.raw('PRAGMA wal_checkpoint(TRUNCATE)'));
@@ -96,21 +145,16 @@ export async function createBackupArchive(
   // Step 3: Create the archiver ZIP instance
   const archive = new ZipArchive({ zlib: { level: 9 } });
 
-  // Step 4: Wire the web stream BEFORE finalizing — data must flow as archiver
-  //         produces it. The web stream consumer connects to the archiver's
-  //         Node.js Readable stream via nodeStreamToWeb.
-  const webStream = nodeStreamToWeb(archive);
-
-  // Step 5: Write manifest.json to the archive root
+  // Step 4: Write manifest.json to the archive root
   archive.append(JSON.stringify(backupData.manifest, null, 2), { name: 'manifest.json' });
 
-  // Step 6: Write per-table JSON files under data/
+  // Step 5: Write per-table JSON files under data/
   for (const { name } of TABLE_REGISTRY) {
     const rows = backupData.tables[name] ?? [];
     archive.append(JSON.stringify(rows, null, 2), { name: `data/${name}.json` });
   }
 
-  // Step 7: Add uploaded screenshot assets
+  // Step 6: Add uploaded screenshot assets
   const uploadsDir = getUploadsDir();
   if (existsSync(uploadsDir)) {
     const files = readdirSync(uploadsDir);
@@ -126,12 +170,30 @@ export async function createBackupArchive(
   }
   // If uploads directory does not exist, skip gracefully — no uploads to back up
 
-  // Step 8: Finalize the archive (no more files can be added) —
-  //         finalize() triggers the data flow through the stream.
-  //         The Node.js stream pushes to the Web ReadableStream's
-  //         controller as chunks are produced.
+  // Step 7: Finalize the archive and collect into a Buffer.
+  //         Pipe must be set up before finalize() so data flows through.
+  const bufferPromise = archiveToBuffer(archive);
   archive.finalize();
 
-  // Step 9: Return the web ReadableStream for the Response body
-  return webStream;
+  // Step 8: Wait for all data to be collected and return the Buffer
+  return bufferPromise;
+}
+
+// ── Backup archive creation (HTTP path) ─────────────────────────────────
+
+/**
+ * Create a full backup ZIP archive as a Web ReadableStream.
+ *
+ * This function is a thin wrapper around createBackupBuffer that converts
+ * the resulting Buffer into a ReadableStream<Uint8Array> suitable for use
+ * as a Response body in Next.js App Router route handlers.
+ *
+ * @returns A ReadableStream<Uint8Array> of the ZIP archive bytes
+ * @throws Error if serialization or ZIP creation fails
+ */
+export async function createBackupArchive(
+  dbParam?: ReturnType<typeof drizzle<typeof schema>>
+): Promise<ReadableStream<Uint8Array>> {
+  const buffer = await createBackupBuffer(dbParam);
+  return bufferToWebStream(buffer);
 }
