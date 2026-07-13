@@ -43,7 +43,7 @@ test.describe('Backup Settings UI', () => {
     await page.waitForLoadState('networkidle');
 
     // Verify heading
-    await expect(page.getByRole('heading', { name: 'Scheduled Backups' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
 
     // Verify back link points to hub
     const backLink = page.getByRole('link', { name: /back to settings/i });
@@ -177,13 +177,13 @@ test.describe('Backup Settings UI', () => {
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
-    // Click the Scheduled Backups card
+    // Click the Backup card
     await page.getByRole('link', { name: /scheduled backups/i }).click();
     await page.waitForLoadState('networkidle');
 
     // Verify we landed on the backup page
     await expect(page).toHaveURL(/\/settings\/backup$/);
-    await expect(page.getByRole('heading', { name: 'Scheduled Backups' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
   });
 
   test('toggle reverts on API failure', async ({ page, request }) => {
@@ -231,7 +231,7 @@ test.describe('Backup Settings UI', () => {
     await page.waitForLoadState('networkidle');
 
     // The status section should appear even without settings data
-    await expect(page.getByRole('heading', { name: 'Scheduled Backups' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
     await expect(page.getByText('Status')).toBeVisible();
     await expect(page.getByText('Automatic Backups')).toBeVisible();
 

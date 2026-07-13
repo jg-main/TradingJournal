@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CircleCheck, CircleX, HelpCircle } from 'lucide-react';
+import { ArrowLeft, CircleCheck, CircleX, HelpCircle, Loader2, Play, Upload } from 'lucide-react';
 import type { JSX } from 'react';
+import RestoreModal, { type BackupFileEntry, formatBackupDate } from '@/components/restore-modal';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -55,6 +56,10 @@ export default function BackupsSettingsPage() {
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<BackupFileEntry | undefined>(undefined);
+  const [serverFiles, setServerFiles] = useState<BackupFileEntry[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [backupEnabled, setBackupEnabled] = useState(false);
@@ -67,9 +72,10 @@ export default function BackupsSettingsPage() {
       setLoading(true);
       setMessage(null);
 
-      const [settingsRes, statusRes] = await Promise.all([
+      const [settingsRes, statusRes, filesRes] = await Promise.all([
         fetch('/api/settings', { signal }),
         fetch('/api/backup/status', { signal }),
+        fetch('/api/backup/files', { signal }),
       ]);
 
       if (settingsRes.ok) {
@@ -84,6 +90,11 @@ export default function BackupsSettingsPage() {
       if (statusRes.ok) {
         const statusData = (await statusRes.json()) as BackupStatus;
         setBackupStatus(statusData);
+      }
+
+      if (filesRes.ok) {
+        const files = (await filesRes.json()) as BackupFileEntry[];
+        setServerFiles(files ?? []);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -154,6 +165,35 @@ export default function BackupsSettingsPage() {
     }
   };
 
+  // ── Backup Now ────────────────────────────────────────────────────
+
+  const handleBackupNow = async () => {
+    setBackingUp(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch('/api/backup/now', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMessage({ type: 'error', text: data.error || 'Backup failed.' });
+      } else {
+        setMessage({ type: 'success', text: 'Backup completed successfully.' });
+      }
+
+      // Refresh status to show updated last-run
+      const statusRes = await fetch('/api/backup/status');
+      if (statusRes.ok) {
+        const statusData = (await statusRes.json()) as BackupStatus;
+        setBackupStatus(statusData);
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to trigger backup.' });
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
   // ── Retention count save ────────────────────────────────────────────
 
   const handleRetentionSave = async () => {
@@ -211,7 +251,7 @@ export default function BackupsSettingsPage() {
       </Link>
 
       <h1 className="mb-8 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-        Scheduled Backups
+        Backup
       </h1>
 
       {message && (
@@ -251,6 +291,28 @@ export default function BackupsSettingsPage() {
                     ? 'Schedule pending (production only)'
                     : '—'}
               </span>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">Backup Now</span>
+              <button
+                type="button"
+                onClick={handleBackupNow}
+                disabled={backingUp}
+                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {backingUp ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Backing up...
+                  </>
+                ) : (
+                  <>
+                    <Play className="size-3.5" />
+                    Backup Now
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -321,7 +383,88 @@ export default function BackupsSettingsPage() {
             </button>
           </div>
         </div>
+
+        {/* ── Scheduled Backups ────────────────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Scheduled Backups
+          </h2>
+          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+            Backup files created by the scheduler. Click Restore to recover data from any file.
+          </p>
+
+          {serverFiles.length === 0 ? (
+            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+              No backup files yet. Enable automatic backups above or use Backup Now to create one.
+            </p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-zinc-600 dark:text-zinc-300">Backup Date</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Size</th>
+                    <th className="w-20 px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {serverFiles.map((file) => (
+                    <tr key={file.filename} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                      <td className="px-3 py-2.5 text-zinc-700 dark:text-zinc-300">{formatBackupDate(file.isoDate)}</td>
+                      <td className="px-3 py-2.5 text-right text-zinc-500 dark:text-zinc-400">{file.sizeHuman}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => { setRestoreFile(file); setShowRestoreModal(true); }}
+                          className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                          Restore
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── Manual: Download & Upload ──────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Manual Backup &amp; Restore
+          </h2>
+          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+            Download a backup to your computer or upload one to restore.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                const a = document.createElement('a');
+                a.href = '/api/backup';
+                a.download = `trading-journal-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Download Backup
+            </button>
+            <button
+              type="button"
+              onClick={() => { setRestoreFile(undefined); setShowRestoreModal(true); }}
+              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              <Upload className="size-3.5" />
+              Upload Backup
+            </button>
+          </div>
+        </div>
       </div>
+
+      {showRestoreModal && <RestoreModal onClose={() => setShowRestoreModal(false)} initialFile={restoreFile} />}
     </div>
   );
 }
