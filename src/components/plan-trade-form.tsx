@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { calculatePlanRiskRewardPreview } from '@/lib/position-sizing';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -361,38 +362,21 @@ export default function PlanTradeForm({
             const stop = parseFloat(form.plannedStop);
             const target = parseFloat(form.plannedTarget1);
             const qty = parseFloat(form.plannedQuantity);
-            const isLong = form.direction === 'long';
 
             if (!entry || entry <= 0) return null;
 
-            const canCalcRisk = stop && stop > 0;
-            const canCalcReward = target && target > 0;
+            const preview = calculatePlanRiskRewardPreview({
+              entryPrice: entry,
+              direction: form.direction,
+              stopPrice: stop > 0 ? stop : undefined,
+              targetPrice: target > 0 ? target : undefined,
+              quantity: qty || undefined,
+            });
 
-            let riskPct: number | null = null;
-            let riskDollar: number | null = null;
-            let rewardPct: number | null = null;
-            let rewardDollar: number | null = null;
-
-            if (canCalcRisk) {
-              if (isLong) {
-                riskPct = ((entry - stop) / entry) * 100;
-              } else {
-                riskPct = ((stop - entry) / entry) * 100;
-              }
-              riskDollar = riskPct / 100 * entry * (qty || 0);
-            }
-
-            if (canCalcReward) {
-              if (isLong) {
-                rewardPct = ((target - entry) / entry) * 100;
-              } else {
-                rewardPct = ((entry - target) / entry) * 100;
-              }
-              rewardDollar = rewardPct / 100 * entry * (qty || 0);
-            }
-
-            const rr = canCalcRisk && canCalcReward && riskPct && riskPct > 0
-              ? (rewardPct! / riskPct).toFixed(2)
+            const canCalcRisk = preview.riskPct != null;
+            const canCalcReward = preview.rewardPct != null;
+            const rr = preview.riskRewardRatio != null
+              ? preview.riskRewardRatio.toFixed(2)
               : null;
 
             return (
@@ -403,10 +387,10 @@ export default function PlanTradeForm({
                   {canCalcRisk ? (
                     <>
                       <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                        {riskPct!.toFixed(1)}%
+                        {preview.riskPct!.toFixed(1)}%
                       </p>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {qty ? `\$${riskDollar!.toFixed(2)}` : '—'}
+                        {qty ? `\$${preview.riskDollar!.toFixed(2)}` : '—'}
                       </p>
                     </>
                   ) : (
@@ -420,10 +404,10 @@ export default function PlanTradeForm({
                   {canCalcReward ? (
                     <>
                       <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                        {rewardPct!.toFixed(1)}%
+                        {preview.rewardPct!.toFixed(1)}%
                       </p>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {qty ? `\$${rewardDollar!.toFixed(2)}` : '—'}
+                        {qty ? `\$${preview.rewardDollar!.toFixed(2)}` : '—'}
                       </p>
                     </>
                   ) : (
