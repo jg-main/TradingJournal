@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Download, NotebookPen, Trash2, Columns3 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -91,7 +91,7 @@ export default function TradesPage() {
     catch { return {}; }
   });
 
-  const fetchItems = async (targetPage: number, status: string) => {
+  const fetchItems = useCallback(async (targetPage: number, status: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -104,18 +104,19 @@ export default function TradesPage() {
       else setMessage({ type: 'error', text: result.error ?? 'Failed to fetch trades.' });
     } catch { setMessage({ type: 'error', text: 'Network error.' }); }
     finally { setLoading(false); }
-  };
+  }, []);
 
-  useEffect(() => { fetchItems(1, statusFilter); }, [statusFilter]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { fetchItems(1, statusFilter); }, [fetchItems, statusFilter]);
 
-  const handleDelete = async (id: string, tradeCode: string) => {
+  const handleDelete = useCallback(async (id: string, tradeCode: string) => {
     if (!confirm(`Delete trade ${tradeCode}?`)) return;
     try {
       const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
       if (res.ok) { setMessage({ type: 'success', text: `Deleted ${tradeCode}.` }); fetchItems(page, statusFilter); }
       else { const err = await res.json().catch(() => ({})); setMessage({ type: 'error', text: err.error ?? 'Failed to delete.' }); }
     } catch { setMessage({ type: 'error', text: 'Network error.' }); }
-  };
+  }, [fetchItems, page, statusFilter]);
 
   const formatDate = (d: string | null) => {
     if (!d) return '—';
