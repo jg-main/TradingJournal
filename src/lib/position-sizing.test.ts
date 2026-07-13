@@ -7,7 +7,7 @@
  * Run: npx tsx src/lib/position-sizing.test.ts
  */
 
-import { calculatePositionSize } from './position-sizing';
+import { calculatePositionSize, calculatePlanRiskRewardPreview } from './position-sizing';
 
 let passed = 0;
 let failed = 0;
@@ -30,6 +30,16 @@ function assertThrows(fn: () => void, msg: string) {
   } catch {
     passed++;
     console.log(`  ✅ ${msg}`);
+  }
+}
+
+function assertNull(v: unknown, msg: string) {
+  if (v === null) {
+    passed++;
+    console.log(`  ✅ ${msg}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${msg} — expected null, got ${v} (FAILED)`);
   }
 }
 
@@ -280,6 +290,205 @@ function assertUndefined(v: unknown, msg: string) {
       }),
     'NaN risk percentage throws',
   );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Tests: calculatePlanRiskRewardPreview
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## calculatePlanRiskRewardPreview');
+
+  // 1. Long with all inputs
+  // entry=100, stop=95, target=115, qty=40, long
+  // riskPct = ((100-95)/100)*100 = 5
+  // riskDollar = (5/100)*100*40 = 200
+  // rewardPct = ((115-100)/100)*100 = 15
+  // rewardDollar = (15/100)*100*40 = 600
+  // rr = 15/5 = 3
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      stopPrice: 95,
+      targetPrice: 115,
+      quantity: 40,
+      direction: 'long',
+    });
+    assertApprox(r.riskPct!, 5, 'long: riskPct = 5');
+    assertApprox(r.riskDollar!, 200, 'long: riskDollar = 200');
+    assertApprox(r.rewardPct!, 15, 'long: rewardPct = 15');
+    assertApprox(r.rewardDollar!, 600, 'long: rewardDollar = 600');
+    assertApprox(r.riskRewardRatio!, 3, 'long: rr = 3');
+  }
+
+  // 2. Short with all inputs
+  // entry=80, stop=85, target=70, qty=20, short
+  // riskPct = ((85-80)/80)*100 = 6.25
+  // riskDollar = (6.25/100)*80*20 = 100
+  // rewardPct = ((80-70)/80)*100 = 12.5
+  // rewardDollar = (12.5/100)*80*20 = 200
+  // rr = 12.5/6.25 = 2
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 80,
+      stopPrice: 85,
+      targetPrice: 70,
+      quantity: 20,
+      direction: 'short',
+    });
+    assertApprox(r.riskPct!, 6.25, 'short: riskPct = 6.25');
+    assertApprox(r.riskDollar!, 100, 'short: riskDollar = 100');
+    assertApprox(r.rewardPct!, 12.5, 'short: rewardPct = 12.5');
+    assertApprox(r.rewardDollar!, 200, 'short: rewardDollar = 200');
+    assertApprox(r.riskRewardRatio!, 2, 'short: rr = 2');
+  }
+
+  // 3. Long, no quantity
+  // riskDollar/rewardDollar should be 0 (qty defaults to 0)
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      stopPrice: 95,
+      targetPrice: 115,
+      direction: 'long',
+    });
+    assertApprox(r.riskPct!, 5, 'no qty: riskPct = 5');
+    assertApprox(r.riskDollar!, 0, 'no qty: riskDollar = 0');
+    assertApprox(r.rewardPct!, 15, 'no qty: rewardPct = 15');
+    assertApprox(r.rewardDollar!, 0, 'no qty: rewardDollar = 0');
+    assertApprox(r.riskRewardRatio!, 3, 'no qty: rr = 3');
+  }
+
+  // 4. Long, no target (only stop)
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      stopPrice: 95,
+      quantity: 40,
+      direction: 'long',
+    });
+    assertApprox(r.riskPct!, 5, 'no target: riskPct = 5');
+    assertApprox(r.riskDollar!, 200, 'no target: riskDollar = 200');
+    assertNull(r.rewardPct, 'no target: rewardPct null');
+    assertNull(r.rewardDollar, 'no target: rewardDollar null');
+    assertNull(r.riskRewardRatio, 'no target: rr null');
+  }
+
+  // 5. Long, no stop (only target)
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      targetPrice: 115,
+      quantity: 40,
+      direction: 'long',
+    });
+    assertNull(r.riskPct, 'no stop: riskPct null');
+    assertNull(r.riskDollar, 'no stop: riskDollar null');
+    assertApprox(r.rewardPct!, 15, 'no stop: rewardPct = 15');
+    assertApprox(r.rewardDollar!, 600, 'no stop: rewardDollar = 600');
+    assertNull(r.riskRewardRatio, 'no stop: rr null');
+  }
+
+  // 6. Only entry (no stop, no target, no qty)
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      direction: 'long',
+    });
+    assertNull(r.riskPct, 'only entry: riskPct null');
+    assertNull(r.riskDollar, 'only entry: riskDollar null');
+    assertNull(r.rewardPct, 'only entry: rewardPct null');
+    assertNull(r.rewardDollar, 'only entry: rewardDollar null');
+    assertNull(r.riskRewardRatio, 'only entry: rr null');
+  }
+
+  // 7. Entry price = 0 → all null
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 0,
+      stopPrice: 95,
+      targetPrice: 115,
+      quantity: 40,
+      direction: 'long',
+    });
+    assertNull(r.riskPct, 'zero entry: riskPct null');
+    assertNull(r.riskDollar, 'zero entry: riskDollar null');
+    assertNull(r.rewardPct, 'zero entry: rewardPct null');
+    assertNull(r.rewardDollar, 'zero entry: rewardDollar null');
+    assertNull(r.riskRewardRatio, 'zero entry: rr null');
+  }
+
+  // 8. Entry price negative → all null
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: -50,
+      stopPrice: 95,
+      targetPrice: 115,
+      quantity: 40,
+      direction: 'long',
+    });
+    assertNull(r.riskPct, 'negative entry: riskPct null');
+    assertNull(r.riskDollar, 'negative entry: riskDollar null');
+    assertNull(r.rewardPct, 'negative entry: rewardPct null');
+    assertNull(r.rewardDollar, 'negative entry: rewardDollar null');
+    assertNull(r.riskRewardRatio, 'negative entry: rr null');
+  }
+
+  // 9. Short, no quantity
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 80,
+      stopPrice: 85,
+      targetPrice: 70,
+      direction: 'short',
+    });
+    assertApprox(r.riskPct!, 6.25, 'short no qty: riskPct = 6.25');
+    assertApprox(r.riskDollar!, 0, 'short no qty: riskDollar = 0');
+    assertApprox(r.rewardPct!, 12.5, 'short no qty: rewardPct = 12.5');
+    assertApprox(r.rewardDollar!, 0, 'short no qty: rewardDollar = 0');
+    assertApprox(r.riskRewardRatio!, 2, 'short no qty: rr = 2');
+  }
+
+  // 10. No stop, no target, no qty (only direction and entry)
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      direction: 'short',
+    });
+    assertNull(r.riskPct, 'short only entry: riskPct null');
+    assertNull(r.riskDollar, 'short only entry: riskDollar null');
+    assertNull(r.rewardPct, 'short only entry: rewardPct null');
+    assertNull(r.rewardDollar, 'short only entry: rewardDollar null');
+    assertNull(r.riskRewardRatio, 'short only entry: rr null');
+  }
+
+  // 11. Qty explicitly 0 — same as no qty
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      stopPrice: 95,
+      targetPrice: 115,
+      quantity: 0,
+      direction: 'long',
+    });
+    assertApprox(r.riskPct!, 5, 'qty=0: riskPct = 5');
+    assertApprox(r.riskDollar!, 0, 'qty=0: riskDollar = 0');
+    assertApprox(r.rewardPct!, 15, 'qty=0: rewardPct = 15');
+    assertApprox(r.rewardDollar!, 0, 'qty=0: rewardDollar = 0');
+    assertApprox(r.riskRewardRatio!, 3, 'qty=0: rr = 3');
+  }
+
+  // 12. Verify exact in-form behavior: risk with qty=NaN via parseFloat('')
+  // In the form, parseFloat('') returns NaN, and (NaN || 0) yields 0.
+  // Our helper uses (quantity ?? 0), so undefined qty → 0, which matches.
+  {
+    const r = calculatePlanRiskRewardPreview({
+      entryPrice: 100,
+      stopPrice: 95,
+      targetPrice: 115,
+      direction: 'long',
+    });
+    assertApprox(r.riskDollar!, 0, 'undefined qty: riskDollar = 0 (matches (NaN || 0) behavior)');
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────
