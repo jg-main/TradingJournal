@@ -7,9 +7,15 @@ import { randomUUID } from 'node:crypto';
 import {
   deriveTradeStatus,
   calculateAvgCost,
-  calculatePnL,
   type ExecutionData,
+  type Direction,
 } from '@/lib/trade-calc';
+import {
+  computeEquityAtOpen,
+  computeRealizedPnLFromClosedTrades,
+  computeRiskSnapshotValues,
+  type PriorClosedTradeData,
+} from '@/lib/risk-snapshot';
 
 const executeTradeSchema = z.object({
   entryPrice: z.number().positive(),
@@ -411,11 +417,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                     .all();
 
                   const sumDeposits = allTxns
-                    .filter((tx) => tx.type === 'deposit')
-                    .reduce((s, tx) => s + tx.amount, 0);
+                    .filter((txn) => txn.type === 'deposit')
+                    .reduce((s, txn) => s + txn.amount, 0);
                   const sumWithdrawals = allTxns
-                    .filter((tx) => tx.type === 'withdrawal')
-                    .reduce((s, tx) => s + tx.amount, 0);
+                    .filter((txn) => txn.type === 'withdrawal')
+                    .reduce((s, txn) => s + txn.amount, 0);
 
                   const priorClosedTrades = tx
                     .select()
@@ -426,8 +432,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                       (t) => t.closedAt != null && t.closedAt <= execTimestamp,
                     );
 
-                  let realizedPnL = 0;
-                  for (const ct of priorClosedTrades) {
+                  const priorTradeData: PriorClosedTradeData[] = priorClosedTrades.map((ct) => {
                     const execs = tx
                       .select()
                       .from(tradeExecutions)
@@ -437,39 +442,47 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                         tradeExecutions.createdAt,
                       )
                       .all();
-                    const pnlResult = calculatePnL(
-                      toExecutionData(execs),
-                      ct.direction as 'long' | 'short',
-                    );
-                    realizedPnL += pnlResult.totalRealizedPnL;
+                    return {
+                      direction: ct.direction as Direction,
+                      executions: toExecutionData(execs),
+                    };
+                  });
+
+                  const realizedPnL = computeRealizedPnLFromClosedTrades(priorTradeData);
+
+                  const globalSettings = tx
+                    .select()
+                    .from(settingsTable)
+                    .get();
+
+                  const equityAtOpen = computeEquityAtOpen({
+                    startingBalance: account.startingBalance ?? 0,
+                    deposits: sumDeposits,
+                    withdrawals: sumWithdrawals,
+                    realizedPnL,
+                    hasNoAccountData:
+                      account.startingBalance == null &&
+                      allTxns.length === 0 &&
+                      priorClosedTrades.length === 0,
+                    fallbackValue: globalSettings?.startingAccountValue ?? null,
+                  });
+
+                  if (equityAtOpen != null) {
+                    snapshotValues.accountEquityAtOpen = equityAtOpen;
                   }
 
-                  const startingBalance = account.startingBalance ?? 0;
-                  const effectiveEquity =
-                    startingBalance +
-                    sumDeposits -
-                    sumWithdrawals +
-                    realizedPnL;
+                  // Compute derived risk snapshot values
+                  const riskValues = computeRiskSnapshotValues({
+                    avgEntryPrice,
+                    initialQuantity: derived.totalEntryQty,
+                    initialStopPrice: effectiveStopPrice ?? null,
+                    direction: trade.direction as Direction,
+                    accountEquityAtOpen: equityAtOpen,
+                  });
 
-                  if (effectiveEquity > 0) {
-                    snapshotValues.accountEquityAtOpen = effectiveEquity;
-                  } else if (
-                    account.startingBalance == null &&
-                    allTxns.length === 0 &&
-                    priorClosedTrades.length === 0
-                  ) {
-                    const globalSettings = tx
-                      .select()
-                      .from(settingsTable)
-                      .get();
-                    if (
-                      globalSettings?.startingAccountValue != null &&
-                      globalSettings.startingAccountValue > 0
-                    ) {
-                      snapshotValues.accountEquityAtOpen =
-                        globalSettings.startingAccountValue;
-                    }
-                  }
+                  snapshotValues.riskPerShare = riskValues.riskPerShare;
+                  snapshotValues.initialRiskAmount = riskValues.initialRiskAmount;
+                  snapshotValues.accountRiskPct = riskValues.accountRiskPct;
                 }
               }
 
