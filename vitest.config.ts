@@ -26,6 +26,7 @@ export default defineConfig({
       'src/lib/__tests__/assessment-engine.test.ts',
       'src/app/api/trades/[id]/assessments/__tests__/route.test.ts',
       'src/lib/__tests__/market-quote.test.ts',
+      'src/lib/__tests__/scheduler.test.ts',
     ],
   },
 });
