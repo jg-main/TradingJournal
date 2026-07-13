@@ -15,7 +15,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts } from '@/db/schema';
 import { eq, inArray, desc } from 'drizzle-orm';
-import { calculateAvgCost, type ExecutionData } from '@/lib/trade-calc';
+import { type ExecutionData } from '@/lib/trade-calc';
+import { computeMarkToMarketSummary } from '@/lib/mark-to-market';
 import {
   computeKpiMetrics,
   computeMonthlyPerformance,
@@ -211,81 +212,21 @@ export async function GET(request: NextRequest) {
     }));
 
     // 5. Compute MTM (mark-to-market) aggregate from open trades with current prices
-    const openTrades = allTrades.filter((t) => t.status === 'open');
-    const openTradeCount = openTrades.length;
-    let netUnrealizedPnl: number | null = null;
-    let tradesWithPrices = 0;
-    let tradesAwaitingData = 0;
+    const openTrades = allTrades
+      .filter((t) => t.status === 'open')
+      .map((trade) => ({
+        executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
+          action: ex.action,
+          quantity: ex.quantity,
+          price: ex.price,
+          fees: ex.fees ?? null,
+          executedAt: ex.executedAt ?? '',
+        })),
+        direction: trade.direction as 'long' | 'short',
+        currentPrice: trade.currentPrice ?? null,
+      }));
 
-    if (openTradeCount > 0) {
-      let totalUnrealizedPnl = 0;
-      let anyWithPrices = false;
-
-      for (const trade of openTrades) {
-        const execs = executionsMap.get(trade.id) ?? [];
-        const direction = trade.direction as 'long' | 'short';
-        const currentPrice = trade.currentPrice;
-
-        if (currentPrice === null || currentPrice === undefined) {
-          tradesAwaitingData++;
-          continue;
-        }
-
-        tradesWithPrices++;
-        anyWithPrices = true;
-
-        // Filter entry actions based on direction
-        const entryActions = execs.filter((e) => {
-          if (direction === 'long') return e.action === 'buy' || e.action === 'add';
-          return e.action === 'sell_short';
-        });
-
-        // Compute avg entry price using existing pattern
-        const { avgEntryPrice, totalEntryQty } = calculateAvgCost(
-          entryActions.map((e) => ({
-            action: e.action,
-            quantity: e.quantity,
-            price: e.price,
-            fees: e.fees ?? null,
-            executedAt: e.executedAt ?? '',
-          })),
-        );
-
-        if (avgEntryPrice === null || totalEntryQty === 0) continue;
-
-        // Compute open quantity (total entries minus partial exits)
-        const exitActions = execs.filter((e) => {
-          if (direction === 'long') return e.action === 'sell' || e.action === 'reduce';
-          return e.action === 'buy_to_cover';
-        });
-        const totalExitQty = exitActions.reduce((s, e) => s + e.quantity, 0);
-        const openQuantity = Math.max(0, totalEntryQty - totalExitQty);
-
-        if (openQuantity === 0) continue;
-
-        // Compute unrealized P&L: (currentPrice - avgEntryPrice) * openQuantity for long
-        if (direction === 'long') {
-          totalUnrealizedPnl += (currentPrice - avgEntryPrice) * openQuantity;
-        } else {
-          totalUnrealizedPnl += (avgEntryPrice - currentPrice) * openQuantity;
-        }
-
-        // Subtract entry fees (known costs already incurred)
-        const totalEntryFees = entryActions.reduce((s, e) => s + (e.fees ?? 0), 0);
-        totalUnrealizedPnl -= totalEntryFees;
-      }
-
-      if (anyWithPrices) {
-        netUnrealizedPnl = totalUnrealizedPnl;
-      }
-    }
-
-    const mtm = {
-      netUnrealizedPnl,
-      openTradeCount,
-      tradesWithPrices,
-      tradesAwaitingData,
-    };
+    const mtm = computeMarkToMarketSummary(openTrades, 'include_entry_fees');
 
     // 6. Fetch latest account_rollforward row for this account
     const rollforwardRow = db
