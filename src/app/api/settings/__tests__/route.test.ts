@@ -78,6 +78,10 @@ sqlite.exec(`
     default_commission REAL,
     journal_start_date TEXT,
     currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -134,6 +138,11 @@ function doPutSettings(body: Record<string, unknown>): { status: number; data: u
       }
     }
 
+    // Validate backupRetentionCount >= 1
+    if (body.backupRetentionCount !== undefined && (typeof body.backupRetentionCount !== 'number' || body.backupRetentionCount < 1 || !Number.isInteger(body.backupRetentionCount))) {
+      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { backupRetentionCount: ['Number must be greater than or equal to 1'] } } } };
+    }
+
     const existing = db.select().from(schema.settings).limit(1).get();
     const now = new Date().toISOString();
 
@@ -150,6 +159,10 @@ function doPutSettings(body: Record<string, unknown>): { status: number; data: u
       if (body.defaultCommission !== undefined) values.defaultCommission = body.defaultCommission as number | null | undefined;
       if (body.defaultAccountId !== undefined) values.defaultAccountId = body.defaultAccountId as string | null | undefined;
       if (body.journalStartDate !== undefined) values.journalStartDate = body.journalStartDate as string | null | undefined;
+      if (body.backupEnabled !== undefined) values.backupEnabled = body.backupEnabled as boolean | null | undefined;
+      if (body.backupRetentionCount !== undefined) values.backupRetentionCount = body.backupRetentionCount as number | null | undefined;
+      if (body.backupLastRunAt !== undefined) values.backupLastRunAt = body.backupLastRunAt as string | null | undefined;
+      if (body.backupLastRunStatus !== undefined) values.backupLastRunStatus = body.backupLastRunStatus as string | null | undefined;
 
       db.insert(schema.settings).values(values as typeof schema.settings.$inferInsert).run();
 
@@ -164,6 +177,10 @@ function doPutSettings(body: Record<string, unknown>): { status: number; data: u
     if (body.defaultAccountId !== undefined) updateData.defaultAccountId = body.defaultAccountId as string | null | undefined;
     if (body.currency !== undefined) updateData.currency = body.currency as string | null | undefined;
     if (body.journalStartDate !== undefined) updateData.journalStartDate = body.journalStartDate as string | null | undefined;
+    if (body.backupEnabled !== undefined) updateData.backupEnabled = body.backupEnabled as boolean | null | undefined;
+    if (body.backupRetentionCount !== undefined) updateData.backupRetentionCount = body.backupRetentionCount as number | null | undefined;
+    if (body.backupLastRunAt !== undefined) updateData.backupLastRunAt = body.backupLastRunAt as string | null | undefined;
+    if (body.backupLastRunStatus !== undefined) updateData.backupLastRunStatus = body.backupLastRunStatus as string | null | undefined;
 
     db.update(schema.settings)
       .set(updateData)
@@ -335,6 +352,93 @@ console.log('\n9. PUT partial update preserves untouched fields:');
   assertEqual(data.startingAccountValue, 30000, 'startingAccountValue preserved');
   assertEqual(data.maxRiskPerTradePct, 1.5, 'maxRiskPerTradePct preserved');
   assertEqual(data.defaultCommission, 3, 'defaultCommission updated');
+}
+
+// ── 10. PUT: Backup config fields on create ──────────────────────────
+
+console.log('\n10. PUT creates settings with backup config fields:');
+{
+  cleanup();
+  const result = doPutSettings({
+    backupEnabled: true,
+    backupRetentionCount: 7,
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.backupEnabled, true, 'backupEnabled set to true');
+  assertEqual(data.backupRetentionCount, 7, 'backupRetentionCount set to 7');
+  assertEqual(data.backupLastRunAt, null, 'backupLastRunAt defaults to null');
+  assertEqual(data.backupLastRunStatus, null, 'backupLastRunStatus defaults to null');
+}
+
+// ── 11. PUT: Backup config defaults on minimal create ────────────────
+
+console.log('\n11. PUT backup config defaults on minimal create:');
+{
+  cleanup();
+  const result = doPutSettings({ startingAccountValue: 10000 });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.backupEnabled, false, 'backupEnabled defaults to false');
+  assertEqual(data.backupRetentionCount, 3, 'backupRetentionCount defaults to 3');
+  assertEqual(data.backupLastRunAt, null, 'backupLastRunAt defaults to null');
+  assertEqual(data.backupLastRunStatus, null, 'backupLastRunStatus defaults to null');
+}
+
+// ── 12. PUT: Update backup config fields ─────────────────────────────
+
+console.log('\n12. PUT updates backup config fields:');
+{
+  cleanup();
+  doPutSettings({ backupEnabled: true, backupRetentionCount: 5 });
+  const result = doPutSettings({
+    backupEnabled: false,
+    backupRetentionCount: 10,
+    backupLastRunAt: '2026-07-10T12:00:00.000Z',
+    backupLastRunStatus: 'success',
+  });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.backupEnabled, false, 'backupEnabled updated');
+  assertEqual(data.backupRetentionCount, 10, 'backupRetentionCount updated');
+  assertEqual(data.backupLastRunAt, '2026-07-10T12:00:00.000Z', 'backupLastRunAt updated');
+  assertEqual(data.backupLastRunStatus, 'success', 'backupLastRunStatus updated');
+}
+
+// ── 13. PUT: Backup last run status error value ──────────────────────
+
+console.log('\n13. PUT backupLastRunStatus accepts error value:');
+{
+  cleanup();
+  const result = doPutSettings({
+    backupEnabled: true,
+    backupLastRunAt: '2026-07-10T13:00:00.000Z',
+    backupLastRunStatus: 'error',
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.backupLastRunStatus, 'error', 'backupLastRunStatus set to error');
+}
+
+// ── 14. PUT: Negative test — backupRetentionCount < 1 ───────────────
+
+console.log('\n14. PUT rejects backupRetentionCount < 1:');
+{
+  cleanup();
+  const zero = doPutSettings({ backupRetentionCount: 0 });
+  assert(zero.status === 400, 'returns 400 for zero');
+
+  const negative = doPutSettings({ backupRetentionCount: -1 });
+  assert(negative.status === 400, 'returns 400 for negative');
+
+  const valid = doPutSettings({ backupRetentionCount: 1 });
+  assert(valid.status === 201, 'returns 201 for minimum valid value');
+  const data = valid.data as Record<string, unknown>;
+  assertEqual(data.backupRetentionCount, 1, 'backupRetentionCount set to 1');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

@@ -11,6 +11,10 @@ const settingsSchema = z.object({
   defaultAccountId: z.string().uuid().nullable().optional(),
   currency: z.string().min(1).max(3).optional(),
   journalStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional(),
+  backupEnabled: z.boolean().optional(),
+  backupRetentionCount: z.number().int().min(1).optional(),
+  backupLastRunAt: z.string().nullable().optional(),
+  backupLastRunStatus: z.enum(['success', 'error']).nullable().optional(),
 });
 
 export async function GET() {
