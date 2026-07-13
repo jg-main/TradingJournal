@@ -3,6 +3,8 @@ import { db } from '@/db';
 import { settings } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { startScheduler, stopScheduler } from '@/lib/scheduler';
+import { runBackupJob } from '@/lib/backup-job';
 
 const settingsSchema = z.object({
   startingAccountValue: z.number().positive('Must be positive').optional(),
@@ -66,6 +68,22 @@ export async function PUT(request: NextRequest) {
       .run();
 
     const row = db.select().from(settings).where(eq(settings.id, existing.id)).get();
+
+    // ── Scheduler lifecycle ──────────────────────────────────────────
+    // If backupEnabled was explicitly provided and differs from the
+    // previous value, start or stop the scheduler accordingly.
+    if (parsed.data.backupEnabled !== undefined) {
+      const wasEnabled = existing.backupEnabled ?? false;
+      const nowEnabled = parsed.data.backupEnabled;
+      if (nowEnabled && !wasEnabled) {
+        // Backup was disabled, now enabled → start scheduler
+        startScheduler('0 2 * * *', runBackupJob);
+      } else if (!nowEnabled && wasEnabled) {
+        // Backup was enabled, now disabled → stop scheduler
+        stopScheduler();
+      }
+    }
+
     return NextResponse.json(row);
   } catch (error) {
     return NextResponse.json(
