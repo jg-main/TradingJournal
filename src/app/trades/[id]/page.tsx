@@ -14,6 +14,7 @@ import {
   type ExecutionData,
 } from '@/lib/trade-calc';
 import { computePerfMetrics, type PerfMetrics } from '@/lib/perf-metrics';
+import { deriveInitialRiskAmount } from '@/lib/risk-snapshot';
 import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
 
 import PlannedPhaseView from '@/components/trade-detail/planned-phase-view';
@@ -323,14 +324,9 @@ export default function TradeDetailPage() {
 
   const execData = trade ? toExecutionData(executions) : [];
   const pnlResult = trade && executions.length > 0 ? calculatePnL(execData, trade.direction) : null;
-  // Derive initialRiskAmount from raw fields when the computed column is null
-  const derivedRiskAmount =
-    riskSnapshot?.initialRiskAmount ??
-    (riskSnapshot?.initialEntryPrice != null &&
-     riskSnapshot?.initialStopPrice != null &&
-     riskSnapshot?.initialQuantity != null
-      ? Math.abs(riskSnapshot.initialEntryPrice - riskSnapshot.initialStopPrice) * riskSnapshot.initialQuantity
-      : null);
+  const derivedRiskAmount = riskSnapshot
+    ? deriveInitialRiskAmount(riskSnapshot)
+    : null;
   const rMultiple = pnlResult && derivedRiskAmount
     ? calculateRMultiple(pnlResult.totalRealizedPnL, derivedRiskAmount)
     : null;
