@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `backup_cron_time` text DEFAULT '02:00';

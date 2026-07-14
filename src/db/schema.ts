@@ -24,6 +24,7 @@ export const settings = sqliteTable('settings', {
   backupRetentionCount: integer('backup_retention_count').default(3),
   backupLastRunAt: text('backup_last_run_at'),
   backupLastRunStatus: text('backup_last_run_status'),
+  backupCronTime: text('backup_cron_time').default('02:00'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });
