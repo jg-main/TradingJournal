@@ -400,20 +400,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                   <span className="flex-1">{errorMessage}</span>
                 </div>
-                {errorMessage.includes('Schema version mismatch') && (
-                  <div className="mt-2 ml-6 text-xs text-red-600 dark:text-red-400">
-                    The database schema has changed since this backup was created.
-                    Create a new backup from the current app (Backup Now) or upload a newer backup file.
-                    Run <code className="rounded bg-red-100 px-1 dark:bg-red-900/50">make seed-settings</code> to regenerate the seed file.
-                  </div>
-                )}
                 <button onClick={handleRetry} className="mt-2 ml-6 text-xs font-medium text-red-600 underline underline-offset-2 hover:text-red-500 dark:text-red-300">Retry</button>
-              </div>
-            )}
-            {errorMessage != null && errorMessage.includes('Cannot restore while trades are open') && (
-              <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                <span>Close all open trades in the Trade Log first, then try restoring again.</span>
               </div>
             )}
             {isUploading ? (
