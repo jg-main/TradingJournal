@@ -297,6 +297,88 @@ test.describe('Settings', () => {
       // Verify success state
       await expect(restoreDialog.getByText('Restore Complete')).toBeVisible({ timeout: 10000 });
     });
+
+    test('showOpenFilePicker success path', async ({ page, browserName }) => {
+      test.skip(browserName !== 'chromium', 'showOpenFilePicker is Chromium-only');
+
+      // Seed prerequisite data so the backup API returns content
+      resetReadinessState();
+
+      const profileRes = await page.request.put('/api/app-profile', {
+        data: {
+          displayName: 'Test Trader',
+          timezone: 'America/New_York',
+          defaultCurrency: 'USD',
+        },
+      });
+      expect(profileRes.ok()).toBeTruthy();
+
+      const settingsRes = await page.request.put('/api/settings', {
+        data: {
+          startingAccountValue: 10000,
+          journalStartDate: '2024-01-01',
+          defaultCommission: 0.5,
+          maxRiskPerTradePct: 2,
+        },
+      });
+      expect(settingsRes.ok()).toBeTruthy();
+
+      const accountRes = await page.request.post('/api/accounts', {
+        data: {
+          name: 'Test Account',
+          broker: 'Test Broker',
+          currency: 'USD',
+          isActive: true,
+        },
+      });
+      expect(accountRes.ok()).toBeTruthy();
+
+      const setupRes = await page.request.post('/api/setup-definitions', {
+        data: {
+          name: 'Breakout',
+          description: 'Breakout trade setup',
+        },
+      });
+      expect(setupRes.ok()).toBeTruthy();
+
+      // Navigate to /settings/backup to access the Upload Backup button
+      await page.goto('/settings/backup');
+      await page.waitForLoadState('networkidle');
+
+      // Download a fresh backup ZIP to provide as mock file data
+      const response = await page.request.get('/api/backup');
+      expect(response.ok()).toBeTruthy();
+      const zipBuffer = Buffer.from(await response.body());
+      const base64Zip = zipBuffer.toString('base64');
+
+      // Click Upload Backup to open the restore dialog
+      await page.getByRole('button', { name: 'Upload Backup' }).click();
+
+      // Scope to the dialog
+      const restoreDialog = page.getByRole('dialog', { name: 'Restore backup' });
+      await expect(restoreDialog).toBeVisible();
+
+      // Mock showOpenFilePicker to return a valid File wrapping the backup ZIP data
+      await page.evaluate(async (b64) => {
+        const binaryStr = atob(b64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        (window as any).showOpenFilePicker = async () => {
+          const file = new File([bytes], 'test-backup.zip', { type: 'application/zip' });
+          return [{ getFile: async () => file }];
+        };
+      }, base64Zip);
+
+      // Click the upload area — handleChooseFile will call the mocked showOpenFilePicker
+      // Use getByRole('button') instead of getByText to avoid ambiguity with the
+      // description paragraph that also contains "choose a backup ZIP file"
+      await restoreDialog.getByRole('button', { name: /choose/i }).click();
+
+      // The modal should advance to the confirm step (preview API succeeded)
+      await expect(restoreDialog.getByPlaceholder('Type RESTORE to confirm')).toBeVisible({ timeout: 10000 });
+    });
   });
 
   test.describe('Backup download', () => {
