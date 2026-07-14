@@ -33,6 +33,9 @@ export default defineConfig({
       'src/lib/__tests__/clickhouse-client-config.test.ts',
       'src/lib/__tests__/token-encryption.test.ts',
       'src/lib/__tests__/schwab-tokens-migration.test.ts',
+      'src/lib/__tests__/schwab-auth.test.ts',
+      'src/app/api/schwab/auth-url/__tests__/route.test.ts',
+      'src/app/api/schwab/callback/__tests__/route.test.ts',
     ],
   },
 });
