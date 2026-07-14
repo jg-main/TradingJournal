@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Loader2, Plus, X, Check, ArrowLeft } from 'lucide-react';
+import { useAppTimezone } from '@/lib/timezone-context';
 import {
   Dialog,
   DialogContent,
@@ -84,7 +85,7 @@ function getInitialStep(trade: ExecuteTradeData): DialogStep {
   return 'loading';
 }
 
-function buildInitialState(trade: ExecuteTradeData): FormState {
+function buildInitialState(trade: ExecuteTradeData, executedAt: string): FormState {
   return {
     entryPrice: trade.plannedEntry?.toString() ?? '',
     stopPrice: trade.plannedStop?.toString() ?? '',
@@ -94,7 +95,7 @@ function buildInitialState(trade: ExecuteTradeData): FormState {
     showExit2: false,
     exit2Price: '',
     exit2Quantity: '',
-    executedAt: new Date().toISOString().slice(0, 16),
+    executedAt,
     fees: '0',
   };
 }
@@ -107,8 +108,9 @@ export function ExecuteDialog({
   onOpenChange,
   onComplete,
 }: ExecuteDialogProps) {
+  const { nowDatetimeLocal } = useAppTimezone();
   // ── Form state (entry form step) ───────────────────────────────────
-  const [form, setForm] = useState<FormState>(() => buildInitialState(trade));
+  const [form, setForm] = useState<FormState>(() => buildInitialState(trade, nowDatetimeLocal()));
   const [submitting, setSubmitting] = useState(false);
 
   // ── Step state ─────────────────────────────────────────────────────
@@ -382,7 +384,7 @@ export function ExecuteDialog({
 
       onComplete();
       handleOpenChange(false);
-      setForm(buildInitialState(trade));
+      setForm(buildInitialState(trade, nowDatetimeLocal()));
       setError(null);
     } catch {
       setError('Failed to execute trade. Please check your connection.');
@@ -401,7 +403,7 @@ export function ExecuteDialog({
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
-      setForm(buildInitialState(trade));
+      setForm(buildInitialState(trade, nowDatetimeLocal()));
       setError(null);
       setStep('loading');
       setChecklist([]);

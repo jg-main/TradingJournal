@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { Pencil, Trash2, Loader2 } from 'lucide-react';
+import { useAppTimezone } from '@/lib/timezone-context';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import {
@@ -71,15 +72,35 @@ interface FieldErrors {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-function toDatetimeLocal(iso: string | null): string {
-  if (!iso) return new Date().toISOString().slice(0, 16);
+/**
+ * Convert a UTC ISO timestamp to a local datetime string suitable
+ * for an <input type="datetime-local"> value, in the given timezone.
+ */
+function toDatetimeLocal(iso: string | null, timezone: string): string {
+  if (!iso) return toLocalDatetimeString(new Date(), timezone);
   try {
     const d = new Date(iso);
-    if (isNaN(d.getTime())) return new Date().toISOString().slice(0, 16);
-    return d.toISOString().slice(0, 16);
+    if (isNaN(d.getTime())) return toLocalDatetimeString(new Date(), timezone);
+    return toLocalDatetimeString(d, timezone);
   } catch {
-    return new Date().toISOString().slice(0, 16);
+    return toLocalDatetimeString(new Date(), timezone);
   }
+}
+
+/**
+ * Convert a Date object to a local datetime string in the format
+ * expected by <input type="datetime-local">: YYYY-MM-DDTHH:MM,
+ * using the given IANA timezone.
+ */
+function toLocalDatetimeString(d: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const m: Record<string, string> = {};
+  for (const p of parts) m[p.type] = p.value;
+  return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}`;
 }
 
 // ── Component ──────────────────────────────────────────────────────────
@@ -90,6 +111,7 @@ export default function TradeExecutionsCard({
   actions,
   onComplete,
 }: TradeExecutionsCardProps) {
+  const { timezone, nowDatetimeLocal, formatDateTime } = useAppTimezone();
   // ── Edit dialog state ──────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingExecution, setEditingExecution] = useState<Execution | null>(null);
@@ -98,7 +120,7 @@ export default function TradeExecutionsCard({
     quantity: '',
     price: '',
     fees: '0',
-    executedAt: new Date().toISOString().slice(0, 16),
+    executedAt: nowDatetimeLocal(),
     notes: '',
   });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -139,7 +161,7 @@ export default function TradeExecutionsCard({
       quantity: String(exec.quantity),
       price: String(exec.price),
       fees: exec.fees != null ? String(exec.fees) : '0',
-      executedAt: toDatetimeLocal(exec.executedAt),
+      executedAt: toDatetimeLocal(exec.executedAt, timezone),
       notes: exec.notes ?? '',
     });
     setFieldErrors({});
@@ -304,7 +326,7 @@ export default function TradeExecutionsCard({
                   return (
                     <TableRow key={exec.id}>
                       <TableCell className="tabular-nums text-zinc-600 dark:text-zinc-300">
-                        {formatDate(exec.executedAt)}
+                        {formatDateTime(exec.executedAt)}
                       </TableCell>
                       <TableCell>
                         <span

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
+import { useAppTimezone } from '@/lib/timezone-context';
 import {
   Dialog,
   DialogContent,
@@ -57,6 +58,18 @@ interface FieldErrors {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toLocalDatetime = (d: Date, timezone: string) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const m: Record<string, string> = {};
+  for (const p of parts) m[p.type] = p.value;
+  return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}`;
+};
+
 function getExitActions(direction: 'long' | 'short'): ExitAction[] {
   return direction === 'long' ? ['sell', 'reduce'] : ['buy_to_cover'];
 }
@@ -75,11 +88,13 @@ export function AddExitDialog({
   onOpenChange,
   onComplete,
 }: AddExitDialogProps) {
+  const { nowDatetimeLocal } = useAppTimezone();
+  const initiallyExecutedAt = nowDatetimeLocal();
   const [form, setForm] = useState<FormState>({
     action: '',
     quantity: '',
     price: '',
-    executedAt: new Date().toISOString().slice(0, 16),
+    executedAt: initiallyExecutedAt,
     fees: '0',
     notes: '',
   });
@@ -173,7 +188,7 @@ export function AddExitDialog({
         action: '',
         quantity: '',
         price: '',
-        executedAt: new Date().toISOString().slice(0, 16),
+        executedAt: nowDatetimeLocal(),
         fees: '0',
         notes: '',
       });
@@ -205,7 +220,7 @@ export function AddExitDialog({
         action: '',
         quantity: '',
         price: '',
-        executedAt: new Date().toISOString().slice(0, 16),
+        executedAt: nowDatetimeLocal(),
         fees: '0',
         notes: '',
       });

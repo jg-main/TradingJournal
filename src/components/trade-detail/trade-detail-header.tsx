@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { TrendingUp, TrendingDown, Calendar, Tag } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { statusBadgeVariant, statusLabel } from './helpers';
+import { useAppTimezone } from '@/lib/timezone-context';
 import type { Trade } from './types';
 
 interface TradeDetailHeaderProps {
@@ -27,6 +28,7 @@ export default function TradeDetailHeader({
   gradeLabel,
   rightContent,
 }: TradeDetailHeaderProps) {
+  const { timezone } = useAppTimezone();
   const isDeleted = status === 'deleted';
 
   const symbolClasses = isDeleted
@@ -36,7 +38,7 @@ export default function TradeDetailHeader({
   const DirectionIcon = direction === 'long' ? TrendingUp : TrendingDown;
 
   const openedDate = openedAt
-    ? new Date(openedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    ? new Date(openedAt).toLocaleDateString(undefined, { timeZone: timezone, month: 'short', day: 'numeric' })
     : null;
 
   return (

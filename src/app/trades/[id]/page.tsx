@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useAppTimezone } from '@/lib/timezone-context';
 import { ArrowLeft, Loader2, AlertCircle, RefreshCw, Brain } from 'lucide-react';
 import type { CheckResult, MtmData } from '@/components/trade-detail/types';
 import { EmptyState } from '@/components/empty-state';
@@ -143,10 +144,10 @@ interface LookupValue {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-function formatDate(d: string | null): string {
+function formatDate(d: string | null, timezone?: string): string {
   if (!d) return '-';
   try {
-    return new Date(d).toLocaleDateString(undefined, {
+    return new Date(d).toLocaleDateString(undefined, { ...(timezone ? { timeZone: timezone } : {}),
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -220,6 +221,7 @@ async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): P
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function TradeDetailPage() {
+  const { timezone } = useAppTimezone();
   const params = useParams();
   const id = params?.id as string;
 
@@ -534,7 +536,7 @@ export default function TradeDetailPage() {
         setupName={trade.setupName ?? null}
       />
 
-      <p className="mt-8 text-xs text-zinc-400 dark:text-zinc-600">Created {formatDate(trade.createdAt)}{trade.updatedAt && ` · Updated ${formatDate(trade.updatedAt)}`}</p>
+      <p className="mt-8 text-xs text-zinc-400 dark:text-zinc-600">Created {formatDate(trade.createdAt, timezone)}{trade.updatedAt && ` · Updated ${formatDate(trade.updatedAt, timezone)}`}</p>
     </div>
   );
 }

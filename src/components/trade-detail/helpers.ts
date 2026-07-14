@@ -53,7 +53,7 @@ export function formatCurrency(v: number | null | undefined, { showSign = false 
  * Returns '-' for null/undefined input, and falls back to the raw string
  * if Date parsing throws.
  */
-export function formatDate(d: string | null): string {
+export function formatDate(d: string | null, timezone?: string): string {
   if (!d) return '-';
   try {
     return new Date(d).toLocaleDateString(undefined, {
@@ -62,6 +62,7 @@ export function formatDate(d: string | null): string {
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      ...(timezone ? { timeZone: timezone } : {}),
     });
   } catch {
     return d;
