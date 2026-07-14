@@ -135,7 +135,46 @@ export default function BackupsSettingsPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadData(controller.signal);
+
+    // Inline the initial data fetch to avoid synchronous setState in the effect body
+    // (loading is already true from initial state, so no setLoading(true) needed here)
+    const initialLoad = async () => {
+      try {
+        const [settingsRes, statusRes, filesRes] = await Promise.all([
+          fetch('/api/settings', { signal: controller.signal }),
+          fetch('/api/backup/status', { signal: controller.signal }),
+          fetch('/api/backup/files', { signal: controller.signal }),
+        ]);
+
+        if (settingsRes.ok) {
+          const settingsData = (await settingsRes.json()) as Settings;
+          if (settingsData && settingsData.id) {
+            setSettings(settingsData);
+            setBackupEnabled(settingsData.backupEnabled ?? false);
+            setBackupCronTime(settingsData.backupCronTime ?? '02:00');
+            setRetentionCount(settingsData.backupRetentionCount ?? 7);
+          }
+        }
+
+        if (statusRes.ok) {
+          const statusData = (await statusRes.json()) as BackupStatus;
+          setBackupStatus(statusData);
+          if (statusData.appTimezone) setAppTimezone(statusData.appTimezone);
+        }
+
+        if (filesRes.ok) {
+          const files = (await filesRes.json()) as BackupFileEntry[];
+          setServerFiles(files ?? []);
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setMessage({ type: 'error', text: 'Failed to load backup settings.' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initialLoad();
 
     const handleFocus = () => void loadData();
     const handleVisibility = () => {

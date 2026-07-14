@@ -49,9 +49,10 @@ function run(cmd: string, cwd: string, label: string): SuiteResult {
   try {
     const stdout = execSync(cmd, { cwd, timeout: 120_000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
     return { name: label, passed: true, durationMs: Date.now() - start, output: stdout.trim() };
-  } catch (e: any) {
-    const stderr = e.stderr?.toString()?.trim() || '';
-    const stdout = e.stdout?.toString()?.trim() || '';
+  } catch (e: unknown) {
+    const execErr = e as { stderr?: Buffer | string; stdout?: Buffer | string };
+    const stderr = execErr.stderr?.toString()?.trim() || '';
+    const stdout = execErr.stdout?.toString()?.trim() || '';
     return {
       name: label,
       passed: false,

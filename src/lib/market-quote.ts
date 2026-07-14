@@ -149,7 +149,7 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
     const results = await Promise.allSettled(
       symbols.map(async (symbol) => {
         const summary = await this.client.quoteSummary(symbol, { modules: ['assetProfile'] });
-        const p = (summary as any)?.assetProfile;
+        const p = (summary as { assetProfile?: { sector?: string; industry?: string } })?.assetProfile;
         return {
           symbol,
           sector: typeof p?.sector === 'string' ? p.sector : undefined,
