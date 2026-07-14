@@ -37,6 +37,9 @@ export default defineConfig({
       'src/app/api/schwab/auth-url/__tests__/route.test.ts',
       'src/app/api/schwab/callback/__tests__/route.test.ts',
       'src/lib/__tests__/schwab-provider.test.ts',
+      'src/lib/__tests__/analysis-config.test.ts',
+      'src/app/api/schwab/status/__tests__/route.test.ts',
+      'src/app/api/schwab/disconnect/__tests__/route.test.ts',
     ],
   },
 });

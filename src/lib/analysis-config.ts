@@ -24,6 +24,16 @@ import { z } from 'zod';
 export const FeatureSourceEnum = z.enum(['clickhouse', 'compute']);
 export type FeatureSource = z.infer<typeof FeatureSourceEnum>;
 
+// ── Market Data Provider ─────────────────────────────────────────────────
+
+/**
+ * Market data provider that the assessment engine should use.
+ * - 'clickhouse': ClickHouse (primary, recommended, has full feature support)
+ * - 'schwab': Schwab API (OHLC + quotes via SchwabProvider, limited features)
+ */
+export const DataProviderEnum = z.enum(['clickhouse', 'schwab']);
+export type DataProvider = z.infer<typeof DataProviderEnum>;
+
 /**
  * A single feature to include in the assessment prompt.
  *
@@ -78,6 +88,16 @@ export const AnalysisConfigSchema = z.object({
    * The AI uses this for pattern recognition beyond what features cover.
    */
   includeRawOhlcv: z.boolean().default(true),
+
+  /**
+   * Market data provider to use for fetching OHLC data and quotes.
+   * - 'clickhouse': Primary provider (recommended, full feature support)
+   * - 'schwab': Schwab API (OHLC + quotes via SchwabProvider, limited indicator support)
+   *
+   * The assessment engine uses this to select the correct provider
+   * when calling getOhlc(), getQuote(), and getFeatureTimeSeries().
+   */
+  dataProvider: DataProviderEnum.default('clickhouse'),
 });
 
 export type AnalysisConfig = z.infer<typeof AnalysisConfigSchema>;
@@ -96,6 +116,7 @@ export const QULLAMAGGIE_ANALYSIS_CONFIG: AnalysisConfig = {
   featureMode: 'all',
   includeRawOhlcv: true,
   features: [],
+  dataProvider: 'clickhouse',
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -105,10 +126,22 @@ export const QULLAMAGGIE_ANALYSIS_CONFIG: AnalysisConfig = {
  * Returns the parsed config on success, or the default Qullamaggie config
  * if parsing fails (graceful fallback for unconfigured setups).
  */
+/**
+ * Return the default analysis config used as a fallback.
+ */
+export function defaultAnalysisConfig(): AnalysisConfig {
+  return {
+    ohlcYears: 1,
+    featureMode: 'all',
+    includeRawOhlcv: true,
+    features: [],
+    dataProvider: 'clickhouse',
+  };
+}
+
 export function parseAnalysisConfig(json: string | null | undefined): AnalysisConfig {
   if (!json) {
-    // No config configured — return default (all features + OHLCV)
-    return { ohlcYears: 1, featureMode: 'all', includeRawOhlcv: true, features: [] };
+    return defaultAnalysisConfig();
   }
 
   try {
@@ -116,9 +149,9 @@ export function parseAnalysisConfig(json: string | null | undefined): AnalysisCo
     const result = AnalysisConfigSchema.safeParse(parsed);
     if (result.success) return result.data;
     console.warn('Failed to parse analysis_config:', result.error.message);
-    return { ohlcYears: 1, featureMode: 'all', includeRawOhlcv: true, features: [] };
+    return defaultAnalysisConfig();
   } catch {
     console.warn('Failed to parse analysis_config JSON');
-    return { ohlcYears: 1, featureMode: 'all', includeRawOhlcv: true, features: [] };
+    return defaultAnalysisConfig();
   }
 }
