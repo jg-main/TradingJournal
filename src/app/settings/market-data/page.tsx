@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CircleCheck, CircleX, HelpCircle, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CircleCheck, CircleX, HelpCircle, Loader2, Plug, Unplug } from 'lucide-react';
 import type { JSX } from 'react';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -20,6 +20,16 @@ interface ProviderConfig {
   database?: string;
 }
 
+// ── Types ───────────────────────────────────────────────────────────────
+
+interface SchwabTokenStatus {
+  connected: boolean;
+  expiresAt: string | null;
+  errorType?: 'not_configured' | 'token_expired';
+}
+
+type SchwabDotStatus = 'connected' | 'expiring' | 'disconnected' | 'unknown';
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function StatusDot({ status }: { status: 'success' | 'error' | null }): JSX.Element {
@@ -30,6 +40,58 @@ function StatusDot({ status }: { status: 'success' | 'error' | null }): JSX.Elem
     return <CircleX className="size-5 text-red-500" aria-hidden />;
   }
   return <HelpCircle className="size-5 text-zinc-300 dark:text-zinc-600" aria-hidden />;
+}
+
+/**
+ * Derive a 3-state dot status from a SchwabTokenStatus.
+ * - 'connected': Token valid and >7 days from expiry (green)
+ * - 'expiring':  Token valid but expires within 7 days (amber)
+ * - 'disconnected': No valid tokens, expired, or not configured (red)
+ * - 'unknown':   Status not yet loaded
+ */
+function getSchwabDotStatus(status: SchwabTokenStatus | null): SchwabDotStatus {
+  if (!status) return 'unknown';
+  if (!status.connected) return 'disconnected';
+
+  if (status.expiresAt) {
+    const expiresMs = new Date(status.expiresAt).getTime();
+    const daysUntilExpiry = (expiresMs - Date.now()) / (1000 * 60 * 60 * 24);
+    if (daysUntilExpiry < 7) return 'expiring';
+  }
+
+  return 'connected';
+}
+
+/**
+ * Time until expiry formatted as a human-readable string.
+ */
+function formatExpiryCountdown(expiresAt: string): string {
+  const expiresMs = new Date(expiresAt).getTime();
+  const diffMs = expiresMs - Date.now();
+
+  if (diffMs <= 0) return 'Expired';
+
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+  if (days > 0) {
+    return `${days}d ${hours}h remaining`;
+  }
+  return `${hours}h remaining`;
+}
+
+function SchwabStatusDot({ status }: { status: SchwabDotStatus }): JSX.Element {
+  if (status === 'connected') {
+    return <CircleCheck className="size-5 text-emerald-500" aria-hidden />;
+  }
+  if (status === 'expiring') {
+    return <AlertTriangle className="size-5 text-amber-500" aria-hidden />;
+  }
+  if (status === 'unknown') {
+    return <HelpCircle className="size-5 text-zinc-300 dark:text-zinc-600" aria-hidden />;
+  }
+  // disconnected / red
+  return <CircleX className="size-5 text-red-500" aria-hidden />;
 }
 
 // ── Page ────────────────────────────────────────────────────────────────
@@ -50,6 +112,13 @@ export default function MarketDataSettingsPage() {
   const [chUser, setChUser] = useState('');
   const [chPassword, setChPassword] = useState('');
   const [chDatabase, setChDatabase] = useState('');
+
+  // ── Schwab State ────────────────────────────────────────────────────
+
+  const [schwabStatus, setSchwabStatus] = useState<SchwabTokenStatus | null>(null);
+  const [schwabLoading, setSchwabLoading] = useState(false);
+  const [schwabConnecting, setSchwabConnecting] = useState(false);
+  const [schwabMessage, setSchwabMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // ── Data Loading ────────────────────────────────────────────────────
 
@@ -85,13 +154,62 @@ export default function MarketDataSettingsPage() {
     }
   }, []);
 
+  // ── Schwab Status Loading ───────────────────────────────────────────
+
+  const loadSchwabStatus = useCallback(async () => {
+    try {
+      setSchwabLoading(true);
+      const res = await fetch('/api/schwab/status');
+      if (!res.ok) {
+        // If 500, just set disconnected rather than blocking the page
+        setSchwabStatus({ connected: false, expiresAt: null });
+        return;
+      }
+      const data = (await res.json()) as SchwabTokenStatus;
+      setSchwabStatus(data);
+    } catch {
+      setSchwabStatus({ connected: false, expiresAt: null });
+    } finally {
+      setSchwabLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     void loadSettings(controller.signal);
+    void loadSchwabStatus();
 
-    const handleFocus = () => void loadSettings();
+    // Parse OAuth callback redirect params from URL
+    const params = new URLSearchParams(window.location.search);
+    const schwabParam = params.get('schwab');
+    if (schwabParam === 'connected') {
+      setSchwabMessage({ type: 'success', text: 'Successfully connected to Schwab.' });
+      // Clean the URL so reload doesn't re-show the message
+      window.history.replaceState({}, '', '/settings/market-data');
+    } else if (schwabParam === 'error') {
+      const reason = params.get('reason') || 'unknown';
+      const reasonLabels: Record<string, string> = {
+        missing_code: 'No authorization code received from Schwab.',
+        state_mismatch: 'CSRF validation failed. Please try connecting again.',
+        connection_failed: 'Could not reach Schwab servers. Please try again.',
+        exchange_failed: 'Failed to exchange authorization code for tokens.',
+        not_configured: 'Schwab API credentials are missing.',
+      };
+      const label =
+        reasonLabels[reason] || `Connection failed: ${reason.replace(/_/g, ' ')}`;
+      setSchwabMessage({ type: 'error', text: label });
+      window.history.replaceState({}, '', '/settings/market-data');
+    }
+
+    const handleFocus = () => {
+      void loadSettings();
+      void loadSchwabStatus();
+    };
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void loadSettings();
+      if (document.visibilityState === 'visible') {
+        void loadSettings();
+        void loadSchwabStatus();
+      }
     };
 
     window.addEventListener('focus', handleFocus);
@@ -104,7 +222,7 @@ export default function MarketDataSettingsPage() {
       window.removeEventListener('pageshow', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [loadSettings]);
+  }, [loadSettings, loadSchwabStatus]);
 
   // ── Save ────────────────────────────────────────────────────────────
 
@@ -176,6 +294,63 @@ export default function MarketDataSettingsPage() {
       setConnectionResult({ ok: false, error: 'Failed to reach test-connection endpoint.' });
     } finally {
       setTesting(false);
+    }
+  };
+
+  // ── Schwab Connect ──────────────────────────────────────────────────
+
+  const handleConnectSchwab = async () => {
+    setSchwabConnecting(true);
+    setSchwabMessage(null);
+
+    try {
+      const res = await fetch('/api/schwab/auth-url');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'unknown' }));
+        if (err.error === 'not_configured') {
+          setSchwabMessage({
+            type: 'error',
+            text: 'Schwab API credentials are not configured. Set SCHWAB_CLIENT_ID, SCHWAB_CLIENT_SECRET, and SCHWAB_REDIRECT_URI in your environment.',
+          });
+        } else {
+          setSchwabMessage({
+            type: 'error',
+            text: err.message || 'Failed to generate authorization URL.',
+          });
+        }
+        setSchwabConnecting(false);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        setSchwabMessage({ type: 'error', text: 'Failed to get authorization URL from Schwab.' });
+        setSchwabConnecting(false);
+      }
+    } catch {
+      setSchwabMessage({ type: 'error', text: 'Failed to reach Schwab auth endpoint.' });
+      setSchwabConnecting(false);
+    }
+  };
+
+  // ── Schwab Disconnect ───────────────────────────────────────────────
+
+  const handleDisconnectSchwab = async () => {
+    setSchwabMessage(null);
+
+    try {
+      const res = await fetch('/api/schwab/disconnect', { method: 'POST' });
+      if (!res.ok) {
+        setSchwabMessage({ type: 'error', text: 'Failed to disconnect from Schwab.' });
+        return;
+      }
+
+      setSchwabStatus({ connected: false, expiresAt: null });
+      setSchwabMessage({ type: 'success', text: 'Disconnected from Schwab.' });
+    } catch {
+      setSchwabMessage({ type: 'error', text: 'Failed to reach disconnect endpoint.' });
     }
   };
 
@@ -372,6 +547,112 @@ export default function MarketDataSettingsPage() {
               >
                 {testing ? 'Testing...' : 'Test Connection'}
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Schwab Connection ──────────────────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Schwab Connection
+          </h2>
+          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+            Connect your Schwab account to use Schwab as a market data provider for OHLC data and quotes.
+          </p>
+
+          {schwabMessage && (
+            <div
+              className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+                schwabMessage.type === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              }`}
+            >
+              {schwabMessage.text}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {/* Status row */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">Status</span>
+              <div className="flex items-center gap-2">
+                {schwabLoading ? (
+                  <Loader2 className="size-4 animate-spin text-zinc-400" aria-hidden />
+                ) : (
+                  <>
+                    <SchwabStatusDot status={getSchwabDotStatus(schwabStatus)} />
+                    <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                      {schwabStatus === null
+                        ? '...'
+                        : schwabStatus.errorType === 'not_configured'
+                          ? 'Not Configured'
+                          : schwabStatus.errorType === 'token_expired'
+                            ? 'Token Expired'
+                            : schwabStatus.connected
+                              ? 'Connected'
+                              : 'Not Connected'}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Expiry countdown */}
+            {schwabStatus?.connected && schwabStatus.expiresAt && (
+              <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">Token Expiry</span>
+                <span className={`text-sm font-medium ${
+                  getSchwabDotStatus(schwabStatus) === 'expiring'
+                    ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-zinc-700 dark:text-zinc-300'
+                }`}>
+                  {formatExpiryCountdown(schwabStatus.expiresAt)}
+                </span>
+              </div>
+            )}
+
+            {/* Configured but not connected message */}
+            {schwabStatus?.errorType === 'not_configured' && (
+              <div className="border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                Set <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800">SCHWAB_CLIENT_ID</code>,{' '}
+                <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800">SCHWAB_CLIENT_SECRET</code>, and{' '}
+                <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800">SCHWAB_REDIRECT_URI</code>{' '}
+                environment variables to enable Schwab market data.
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              {schwabStatus?.connected ? (
+                <button
+                  type="button"
+                  onClick={handleDisconnectSchwab}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:bg-zinc-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  <Unplug className="size-4" />
+                  Disconnect
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleConnectSchwab}
+                  disabled={schwabConnecting || schwabStatus?.errorType === 'not_configured'}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                  {schwabConnecting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <Plug className="size-4" />
+                      Connect Schwab
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
