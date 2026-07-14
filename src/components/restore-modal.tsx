@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAppTimezone } from '@/lib/timezone-context';
 import { AlertTriangle, CircleCheck, Clock, Loader2, Upload, X } from 'lucide-react';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ const TABLE_LABELS: Record<string, string> = {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-export function formatBackupDate(iso: string): string {
+export function formatBackupDate(iso: string, timezone?: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
       year: 'numeric',
@@ -54,6 +55,7 @@ export function formatBackupDate(iso: string): string {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      ...(timezone ? { timeZone: timezone } : {}),
     });
   } catch {
     return iso;
@@ -64,6 +66,7 @@ export function formatBackupDate(iso: string): string {
 
 export default function RestoreModal({ onClose, initialFile }: { onClose: () => void; initialFile?: BackupFileEntry }) {
   const router = useRouter();
+  const { timezone } = useAppTimezone();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const confirmInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -255,7 +258,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                     {serverFiles.map((file) => (
                       <tr key={file.filename} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/30 ${selectedServerFile?.filename === file.filename ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                        <td className="px-3 py-2.5 text-zinc-700 dark:text-zinc-300"><div className="flex items-center gap-2"><Clock className="size-3.5 shrink-0 text-zinc-400" strokeWidth={1.5} /><span>{formatBackupDate(file.isoDate)}</span></div></td>
+                        <td className="px-3 py-2.5 text-zinc-700 dark:text-zinc-300"><div className="flex items-center gap-2"><Clock className="size-3.5 shrink-0 text-zinc-400" strokeWidth={1.5} /><span>{formatBackupDate(file.isoDate, timezone)}</span></div></td>
                         <td className="px-3 py-2.5 text-right text-zinc-500 dark:text-zinc-400">{file.sizeHuman}</td>
                         <td className="px-3 py-2.5 text-right">
                           <button onClick={() => { setSelectedServerFile(file); setStep('confirm'); setConfirmText(''); }} className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Restore</button>
@@ -300,7 +303,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Backup Preview</h2>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Review the backup contents before restoring.</p>
             <div className="mt-4 space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-              <div className="flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Backup Date</span><span className="text-sm text-zinc-900 dark:text-zinc-100">{formatBackupDate(previewData.manifest.backupTimestamp)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Backup Date</span><span className="text-sm text-zinc-900 dark:text-zinc-100">{formatBackupDate(previewData.manifest.backupTimestamp, timezone)}</span></div>
               <div className="flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Schema Version</span><span className="text-sm text-zinc-900 dark:text-zinc-100">v{previewData.manifest.schemaVersion}</span></div>
               <div className="flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">App Version</span><span className="text-sm text-zinc-900 dark:text-zinc-100">{previewData.manifest.appVersion}</span></div>
             </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, use } from 'react';
+import { useAppTimezone } from '@/lib/timezone-context';
 import { ArrowLeft, Plus, Minus, TriangleAlert, RotateCcw } from 'lucide-react';
 import ChecklistManager from '@/components/checklist-manager';
 import Link from 'next/link';
@@ -94,6 +95,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
   const [isClosing, setIsClosing] = useState(false);
   const [closureSummary] = useState<ClosureSummary | null>(null);
   const [actionPending, setActionPending] = useState<'deactivate' | 'reactivate' | 'delete' | null>(null);
+  const { formatDate } = useAppTimezone();
 
   const fetchData = async () => {
     try {
@@ -232,18 +234,6 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
 
   const formatCurrency = (v: number) => {
     return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  const formatDate = (d: string) => {
-    try {
-      return new Date(d).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return d;
-    }
   };
 
   if (loading) {
