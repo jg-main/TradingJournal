@@ -72,7 +72,7 @@ const EMPTY_FORM: WatchlistForm = {
 function statusBadgeClass(status: WatchlistItem['status']): string {
   switch (status) {
     case 'pending':
-      return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400';
+      return 'bg-muted text-muted-foreground';
     case 'watching':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'triggered':
@@ -80,7 +80,7 @@ function statusBadgeClass(status: WatchlistItem['status']): string {
     case 'skipped':
       return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
     case 'expired':
-      return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
+      return 'bg-muted text-muted-foreground';
   }
 }
 
@@ -220,7 +220,7 @@ export default function WatchlistPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl px-8 py-10">
-        <p className="text-sm text-zinc-500">Loading watchlist...</p>
+        <p className="text-sm text-muted-foreground">Loading watchlist...</p>
       </div>
     );
   }
@@ -229,13 +229,13 @@ export default function WatchlistPage() {
     <div className="mx-auto max-w-4xl px-8 py-10">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Watchlist
         </h1>
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <button
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <Plus className="size-4" />
               Add Symbol
@@ -265,7 +265,7 @@ export default function WatchlistPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label htmlFor="symbol" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="symbol" className="mb-1 block text-sm font-medium text-muted-foreground">
                   Symbol *
                 </label>
                 <input
@@ -273,21 +273,21 @@ export default function WatchlistPage() {
                   type="text"
                   value={form.symbol}
                   onChange={(e) => setForm((f) => ({ ...f, symbol: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="e.g. AAPL"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="watchlist-direction" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="watchlist-direction" className="mb-1 block text-sm font-medium text-muted-foreground">
                     Direction
                   </label>
                   <select
                     id="watchlist-direction"
                     value={form.direction}
                     onChange={(e) => setForm((f) => ({ ...f, direction: e.target.value as 'long' | 'short' }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   >
                     <option value="long">Long</option>
                     <option value="short">Short</option>
@@ -295,14 +295,14 @@ export default function WatchlistPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="watchlist-status" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="watchlist-status" className="mb-1 block text-sm font-medium text-muted-foreground">
                     Status
                   </label>
                   <select
                     id="watchlist-status"
                     value={form.status}
                     onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as WatchlistItem['status'] }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   >
                     <option value="pending">Pending</option>
                     <option value="watching">Watching</option>
@@ -314,7 +314,7 @@ export default function WatchlistPage() {
               </div>
 
               <div>
-                <label htmlFor="setup" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="setup" className="mb-1 block text-sm font-medium text-muted-foreground">
                   Setup
                 </label>
                 <input
@@ -322,14 +322,14 @@ export default function WatchlistPage() {
                   type="text"
                   value={form.setup}
                   onChange={(e) => setForm((f) => ({ ...f, setup: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="e.g. Breakout, Pullback"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="keyLevel" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="keyLevel" className="mb-1 block text-sm font-medium text-muted-foreground">
                     Key Level
                   </label>
                   <input
@@ -338,13 +338,13 @@ export default function WatchlistPage() {
                     step="any"
                     value={form.keyLevel}
                     onChange={(e) => setForm((f) => ({ ...f, keyLevel: e.target.value }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="0.00"
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="triggerPrice" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="triggerPrice" className="mb-1 block text-sm font-medium text-muted-foreground">
                     Trigger Price
                   </label>
                   <input
@@ -353,25 +353,25 @@ export default function WatchlistPage() {
                     step="any"
                     value={form.triggerPrice}
                     onChange={(e) => setForm((f) => ({ ...f, triggerPrice: e.target.value }))}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="0.00"
                   />
                 </div>
               </div>
 
-              <DialogFooter className="border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <DialogFooter className="border-t pt-4">
                 <div className="flex w-full justify-end gap-2">
                   <DialogClose asChild>
                     <button
                       type="button"
-                      className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                      className="rounded-md border bg-background px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                     >
                       Cancel
                     </button>
                   </DialogClose>
                   <button
                     type="submit"
-                    className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                    className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
                   >
                     {editingId ? 'Update' : 'Add'}
                   </button>
@@ -392,7 +392,7 @@ export default function WatchlistPage() {
       {/* Filter */}
       {items.length > 0 && (
         <div className="mb-6 flex items-center gap-2">
-          <label htmlFor="watchlist-filter" className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Filter:</label>
+          <label htmlFor="watchlist-filter" className="text-sm font-medium text-muted-foreground">Filter:</label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger id="watchlist-filter" className="w-36">
               <SelectValue placeholder="All Status" />
@@ -405,7 +405,7 @@ export default function WatchlistPage() {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="text-xs text-muted-foreground">
             {filteredItems.length} of {items.length}
           </span>
         </div>
@@ -414,7 +414,7 @@ export default function WatchlistPage() {
       {/* Empty state */}
       {filteredItems.length === 0 ? (
         <EmptyState
-          icon={<Eye className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+          icon={<Eye className="size-12 text-muted-foreground" strokeWidth={1} />}
           title="No stocks on watch"
           description={
             statusFilter !== 'all'
@@ -425,7 +425,7 @@ export default function WatchlistPage() {
             statusFilter !== 'all' ? undefined : (
               <button
                 onClick={() => setDialogOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 <Plus className="size-4" />
                 Add Symbol
@@ -434,24 +434,24 @@ export default function WatchlistPage() {
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="overflow-hidden rounded-lg border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Symbol</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Direction</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Setup</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Key Level</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Trigger Price</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Added</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Actions</th>
+              <tr className="border-b bg-muted">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Symbol</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Direction</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Setup</th>
+                <th className="px-4 py-3 text-right text-muted-foreground">Key Level</th>
+                <th className="px-4 py-3 text-right text-muted-foreground">Trigger Price</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Added</th>
+                <th className="px-4 py-3 text-right text-muted-foreground">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y">
               {filteredItems.map((item) => (
-                <tr key={item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                  <td className="px-4 py-3 font-semibold text-zinc-900 dark:text-zinc-100">
+                <tr key={item.id} className="hover:bg-muted/50">
+                  <td className="px-4 py-3 font-semibold text-foreground">
                     {item.symbol}
                   </td>
                   <td className="px-4 py-3">
@@ -461,13 +461,13 @@ export default function WatchlistPage() {
                       {item.direction === 'long' ? 'Long' : 'Short'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 text-muted-foreground">
                     {item.setup ?? '-'}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {formatPrice(item.keyLevel)}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {formatPrice(item.triggerPrice)}
                   </td>
                   <td className="px-4 py-3">
@@ -477,19 +477,19 @@ export default function WatchlistPage() {
                       {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
+                  <td className="px-4 py-3 text-muted-foreground">
                     {formatDate(item.dateAdded)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => openEdit(item)}
-                      className="mr-2 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      className="mr-2 text-sm text-muted-foreground hover:text-foreground"
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(item.id, item.symbol)}
-                      className="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                      className="text-sm text-destructive hover:text-destructive/80"
                     >
                       Remove
                     </button>

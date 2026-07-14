@@ -73,15 +73,15 @@ function DraggableHeader<TData>({ header }: { header: Header<TData, unknown> }) 
       colSpan={header.colSpan}
       aria-sort={ariaSortValue}
       className={cn(
-        'px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 select-none dark:text-zinc-400',
-        canSort && 'cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-300',
+        'px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground select-none',
+        canSort && 'cursor-pointer hover:text-foreground',
       )}
       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
     >
       <div className="flex items-center gap-1">
         <button
           type="button"
-          className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400"
+          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
           aria-label={`Drag to reorder ${header.column.id} column`}
           {...attributes}
           {...listeners}
@@ -92,7 +92,7 @@ function DraggableHeader<TData>({ header }: { header: Header<TData, unknown> }) 
           {flexRender(header.column.columnDef.header, header.getContext())}
           {sortDir === 'asc' && <ArrowUp className="size-3" />}
           {sortDir === 'desc' && <ArrowDown className="size-3" />}
-          {canSort && !sortDir && <ArrowUpDown className="size-3 text-zinc-300 dark:text-zinc-600" />}
+          {canSort && !sortDir && <ArrowUpDown className="size-3 text-muted-foreground" />}
         </span>
       </div>
     </th>
@@ -176,12 +176,12 @@ export default function DynamicTable<TData>({
   }
 
   return (
-    <div className={cn('overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800', className)}>
+    <div className={cn('overflow-x-auto rounded-lg border', className)}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table className="w-full text-sm">
           <SortableContext items={table.getState().columnOrder} strategy={horizontalListSortingStrategy}>
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+              <tr className="border-b bg-muted">
                 {table.getFlatHeaders().map(header => (
                   <DraggableHeader key={header.id} header={header} />
                 ))}
@@ -197,8 +197,8 @@ export default function DynamicTable<TData>({
               tabIndex={onRowClick ? 0 : undefined}
               role={onRowClick ? 'link' : undefined}
               className={cn(
-                'border-b border-zinc-100 transition-colors dark:border-zinc-800',
-                onRowClick && 'cursor-pointer hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-400 dark:hover:bg-zinc-900/50 dark:focus-visible:ring-zinc-500',
+                'border-b transition-colors',
+                onRowClick && 'cursor-pointer hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                 rowClassName?.(row),
               )}
             >

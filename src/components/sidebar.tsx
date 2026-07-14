@@ -42,7 +42,7 @@ export function Sidebar() {
     <>
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed left-3 top-3 z-40 flex min-w-11 min-h-11 items-center justify-center rounded-lg border border-zinc-200 bg-white shadow-sm md:hidden dark:border-zinc-700 dark:bg-zinc-900"
+        className="fixed left-3 top-3 z-40 flex min-w-11 min-h-11 items-center justify-center rounded-lg border bg-background shadow-sm md:hidden"
         aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
       >
         {sidebarOpen ? <X className="size-4" /> : <Menu className="size-4" />}
@@ -53,15 +53,15 @@ export function Sidebar() {
       )}
 
       <aside className={
-        'fixed inset-y-0 left-0 z-30 flex w-56 flex-col border-r border-zinc-200 bg-white transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-950 md:static md:translate-x-0 ' +
+        'fixed inset-y-0 left-0 z-30 flex w-56 flex-col border-r bg-background transition-transform duration-200 md:static md:translate-x-0 ' +
         (sidebarOpen ? 'translate-x-0' : '-translate-x-full')
       }>
       {/* Brand */}
-      <div className="flex h-14 items-center gap-2 border-b border-zinc-200 px-5 dark:border-zinc-800">
-        <div className="flex size-7 items-center justify-center rounded-lg bg-zinc-900 text-xs font-bold text-white dark:bg-zinc-100 dark:text-zinc-900">
+      <div className="flex h-14 items-center gap-2 border-b px-5">
+        <div className="flex size-7 items-center justify-center rounded-lg bg-foreground text-xs font-bold text-background dark:bg-secondary dark:text-secondary-foreground">
           TJ
         </div>
-        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <span className="text-sm font-semibold text-foreground">
           Trading Journal
         </span>
       </div>
@@ -82,8 +82,8 @@ export function Sidebar() {
               className={cn(
                 'flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                  : 'text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200'
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               )}
             >
               <Icon className="size-4 shrink-0" />
@@ -94,9 +94,9 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-zinc-200 p-2 dark:border-zinc-800">
+      <div className="border-t p-2">
         <ThemeToggle />
-        <p className="mt-1 text-center text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-center text-xs text-muted-foreground">
           v0.1.0
         </p>
       </div>

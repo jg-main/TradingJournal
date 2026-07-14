@@ -64,8 +64,8 @@ function statusBadgeClass(status: Trade['status']): string {
   switch (status) {
     case 'planned': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
     case 'open': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
-    case 'closed': return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
-    case 'deleted': return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
+    case 'closed': return 'bg-muted text-muted-foreground';
+    case 'deleted': return 'bg-muted text-muted-foreground';
   }
 }
 
@@ -126,47 +126,47 @@ export default function TradesPage() {
   // ── Column definitions ─────────────────────────────────────────────
 
   const columns = useMemo<ColumnDef<Trade>[]>(() => [
-    { id: 'symbol', header: 'Symbol', accessorKey: 'symbol', cell: ({ getValue }) => <span className="font-semibold text-zinc-900 dark:text-zinc-100">{getValue<string>()}</span> },
+    { id: 'symbol', header: 'Symbol', accessorKey: 'symbol', cell: ({ getValue }) => <span className="font-semibold text-foreground">{getValue<string>()}</span> },
     { id: 'direction', header: 'Direction', accessorKey: 'direction', cell: ({ getValue }) => {
       const v = getValue<string>();
       return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${directionBadgeClass(v as 'long' | 'short')}`}>{v === 'long' ? 'Long' : 'Short'}</span>;
     }},
-    { id: 'setup', header: 'Setup', accessorKey: 'setupName', cell: ({ getValue }) => <span className="text-zinc-600 dark:text-zinc-400">{getValue<string>() || '—'}</span> },
+    { id: 'setup', header: 'Setup', accessorKey: 'setupName', cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>() || '—'}</span> },
     { id: 'entry', header: 'Entry', cell: ({ row }) => {
       const t = row.original;
       const val = t.status !== 'planned' && t.actualEntry != null ? t.actualEntry : t.plannedEntry;
-      return <span className="tabular-nums text-zinc-600 dark:text-zinc-400">{formatPrice(val)}</span>;
+      return <span className="tabular-nums text-muted-foreground">{formatPrice(val)}</span>;
     }},
-    { id: 'stop', header: 'Stop', accessorKey: 'plannedStop', cell: ({ getValue }) => <span className="tabular-nums text-zinc-600 dark:text-zinc-400">{formatPrice(getValue<number | null>())}</span> },
-    { id: 'target', header: 'Target', accessorKey: 'plannedTarget1', cell: ({ getValue }) => <span className="tabular-nums text-zinc-600 dark:text-zinc-400">{formatPrice(getValue<number | null>())}</span> },
+    { id: 'stop', header: 'Stop', accessorKey: 'plannedStop', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
+    { id: 'target', header: 'Target', accessorKey: 'plannedTarget1', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
     { id: 'exit', header: 'Exit', cell: ({ row }) => {
       const t = row.original;
-      if (t.status === 'closed' && t.avgExitPrice != null) return <span className="tabular-nums font-medium text-zinc-800 dark:text-zinc-200">{formatPrice(t.avgExitPrice)}</span>;
-      if (t.currentPrice != null) return <span className="tabular-nums text-zinc-600 dark:text-zinc-400">{formatPrice(t.currentPrice)}</span>;
-      return <span className="tabular-nums text-zinc-400">—</span>;
+      if (t.status === 'closed' && t.avgExitPrice != null) return <span className="tabular-nums font-medium text-foreground">{formatPrice(t.avgExitPrice)}</span>;
+      if (t.currentPrice != null) return <span className="tabular-nums text-muted-foreground">{formatPrice(t.currentPrice)}</span>;
+      return <span className="tabular-nums text-muted-foreground">—</span>;
     }},
     { id: 'status', header: 'Status', accessorKey: 'status', cell: ({ getValue }) => {
       const s = getValue<string>();
       return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(s as Trade['status'])}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>;
     }},
-    { id: 'entryDate', header: 'Entry Date', accessorKey: 'openedAt', cell: ({ getValue }) => <span className="text-xs text-zinc-500 dark:text-zinc-400">{formatDate(getValue<string | null>())}</span> },
+    { id: 'entryDate', header: 'Entry Date', accessorKey: 'openedAt', cell: ({ getValue }) => <span className="text-xs text-muted-foreground">{formatDate(getValue<string | null>())}</span> },
     { id: 'exitDate', header: 'Exit Date', cell: ({ row }) => {
       const t = row.original;
-      return <span className="text-xs text-zinc-500 dark:text-zinc-400">{t.status === 'closed' ? formatDate(t.closedAt) : '—'}</span>;
+      return <span className="text-xs text-muted-foreground">{t.status === 'closed' ? formatDate(t.closedAt) : '—'}</span>;
     }},
     { id: 'actions', header: 'Actions', enableSorting: false, cell: ({ row }) => (
       <div className="flex items-center justify-center gap-0.5" onClick={e => e.stopPropagation()}>
-        <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(row.original.id, row.original.tradeCode)} aria-label="Remove trade" className="min-w-11 min-h-11 text-zinc-400 hover:text-red-600"><Trash2 className="size-3.5" /></Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(row.original.id, row.original.tradeCode)} aria-label="Remove trade" className="min-w-11 min-h-11 text-muted-foreground hover:text-red-600"><Trash2 className="size-3.5" /></Button>
       </div>
     )},
     // ── Extra columns (hidden by default) ──
-    { id: 'qty', header: 'Qty', accessorKey: 'plannedQuantity', cell: ({ getValue }) => <span className="tabular-nums text-zinc-500 dark:text-zinc-400">{getValue<number | null>() ?? '—'}</span> },
-    { id: 'target2', header: 'Target 2', accessorKey: 'plannedTarget2', cell: ({ getValue }) => <span className="tabular-nums text-zinc-500 dark:text-zinc-400">{formatPrice(getValue<number | null>())}</span> },
+    { id: 'qty', header: 'Qty', accessorKey: 'plannedQuantity', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{getValue<number | null>() ?? '—'}</span> },
+    { id: 'target2', header: 'Target 2', accessorKey: 'plannedTarget2', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
     { id: 'thesis', header: 'Thesis', accessorKey: 'thesis', cell: ({ getValue }) => {
       const v = getValue<string | null>();
-      return v ? <span className="block max-w-[200px] truncate text-xs text-zinc-500 dark:text-zinc-400" title={v}>{v}</span> : <span className="text-zinc-400">—</span>;
+      return v ? <span className="block max-w-[200px] truncate text-xs text-muted-foreground" title={v}>{v}</span> : <span className="text-muted-foreground">—</span>;
     }},
-    { id: 'account', header: 'Account', accessorKey: 'accountId', cell: () => <span className="text-zinc-400">—</span> },
+    { id: 'account', header: 'Account', accessorKey: 'accountId', cell: () => <span className="text-muted-foreground">—</span> },
     // ── Computed columns (hidden by default) ──
     { id: 'pnl', header: 'P&L', cell: ({ row }) => {
       const t = row.original;
@@ -176,17 +176,17 @@ export default function TradesPage() {
       } else if (t.status === 'open' && t.unrealizedPnl != null) {
         pnl = t.unrealizedPnl;
       }
-      if (pnl == null) return <span className="tabular-nums text-zinc-400">—</span>;
+      if (pnl == null) return <span className="tabular-nums text-muted-foreground">—</span>;
       return <span className={`tabular-nums text-xs font-medium ${pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}</span>;
     }},
     { id: 'riskPct', header: 'Risk %', cell: ({ row }) => {
       const v = row.original.riskPct;
-      if (v == null) return <span className="tabular-nums text-zinc-400">—</span>;
-      return <span className="tabular-nums text-zinc-500">{v.toFixed(2)}%</span>;
+      if (v == null) return <span className="tabular-nums text-muted-foreground">—</span>;
+      return <span className="tabular-nums text-muted-foreground">{v.toFixed(2)}%</span>;
     }},
     { id: 'returnPct', header: 'Return %', cell: ({ row }) => {
       const v = row.original.returnPct;
-      if (v == null) return <span className="tabular-nums text-zinc-400">—</span>;
+      if (v == null) return <span className="tabular-nums text-muted-foreground">—</span>;
       return <span className={`tabular-nums text-xs font-medium ${v >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{v >= 0 ? '+' : ''}{v.toFixed(2)}%</span>;
     }},
   ], [handleDelete, formatDate]);
@@ -196,7 +196,7 @@ export default function TradesPage() {
   if (loading && data.length === 0) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
-        <p className="text-sm text-zinc-500">Loading trades...</p>
+        <p className="text-sm text-muted-foreground">Loading trades...</p>
       </div>
     );
   }
@@ -207,32 +207,32 @@ export default function TradesPage() {
     <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Trade Log</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trade Log</h1>
         <div className="flex items-center gap-2">
           <div className="relative">
             <button type="button" onClick={() => setShowColumns(!showColumns)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+              className="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
               <Columns3 className="size-4" />Columns
             </button>
             {showColumns && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border bg-popover p-2 shadow-lg">
                 {columns.map(col => (
-                  <label key={col.id!} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                  <label key={col.id!} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
                     <input type="checkbox" checked={colVisibility[col.id!] !== false}
                       onChange={e => { const n = { ...colVisibility, [col.id!]: e.target.checked }; setColVisibility(n); localStorage.setItem('trades:visibility', JSON.stringify(n)); }}
                       className="size-3.5 rounded" />
-                    <span className="text-zinc-700 dark:text-zinc-300">{typeof col.header === 'string' ? col.header : col.id}</span>
+                    <span className="text-foreground">{typeof col.header === 'string' ? col.header : col.id}</span>
                   </label>
                 ))}
               </div>
             )}
           </div>
           <Link href="/trades/new"
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+            className="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
             <NotebookPen className="size-4" />Plan Trade
           </Link>
           <button onClick={() => { window.location.href = '/api/trades/export'; }}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+            className="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
             <Download className="size-4" />Export CSV
           </button>
         </div>
@@ -249,7 +249,7 @@ export default function TradesPage() {
       {/* Filters */}
       {data.length > 0 && (
         <div className="mb-4 flex items-center gap-2">
-          <label htmlFor="trades-filter" className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Filter:</label>
+          <label htmlFor="trades-filter" className="text-sm font-medium text-muted-foreground">Filter:</label>
           <Select value={statusFilter} onValueChange={v => setStatusFilter(v)}>
             <SelectTrigger id="trades-filter" className="h-8 w-36 text-xs">
               <SelectValue />
@@ -260,14 +260,14 @@ export default function TradesPage() {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">{data.length} of {total.toLocaleString()}</span>
+          <span className="text-xs text-muted-foreground">{data.length} of {total.toLocaleString()}</span>
         </div>
       )}
 
       {/* Table */}
       {data.length === 0 ? (
         <EmptyState
-          icon={<NotebookPen className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+          icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
           title="No trades yet"
           description={statusFilter !== 'all' ? 'No trades match the selected status filter.' : 'Your first trade is the hardest — once logged, this page will show your full trade history with entry and exit details.'}
         />
@@ -283,13 +283,13 @@ export default function TradesPage() {
 
       {/* Pagination */}
       {total > PAGE_SIZE && (
-        <div className="mt-4 flex items-center justify-between text-sm text-zinc-500">
+        <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <span>Page {page} of {totalPages.toLocaleString()} ({total.toLocaleString()} total trades)</span>
           <div className="flex gap-2">
             <button onClick={() => fetchItems(page - 1, statusFilter)} disabled={page <= 1}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1 text-sm disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800">Previous</button>
+              className="rounded-md border bg-background px-3 py-1 text-sm disabled:opacity-40">Previous</button>
             <button onClick={() => fetchItems(page + 1, statusFilter)} disabled={page >= totalPages}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1 text-sm disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800">Next</button>
+              className="rounded-md border bg-background px-3 py-1 text-sm disabled:opacity-40">Next</button>
           </div>
         </div>
       )}

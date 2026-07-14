@@ -200,7 +200,7 @@ export default function PlanTradeForm({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label htmlFor="plan-symbol" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-symbol" className="text-xs font-medium text-muted-foreground">
                   Symbol
                 </label>
                 <HelpTooltip content="Ticker symbol of the asset you plan to trade (e.g. AAPL, MSFT)" />
@@ -216,7 +216,7 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label htmlFor="plan-direction" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-direction" className="text-xs font-medium text-muted-foreground">
                   Direction
                 </label>
                 <HelpTooltip content="Long = buy expecting price increase. Short = sell expecting price decrease." />
@@ -240,7 +240,7 @@ export default function PlanTradeForm({
           {/* Account */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label htmlFor="plan-account" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-account" className="text-xs font-medium text-muted-foreground">
                 Account
               </label>
               <HelpTooltip content="The brokerage account this trade will be executed in" />
@@ -266,7 +266,7 @@ export default function PlanTradeForm({
           {/* Setup */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label htmlFor="plan-setup" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-setup" className="text-xs font-medium text-muted-foreground">
                 Setup
               </label>
               <HelpTooltip content="The trading setup or strategy pattern that triggered this trade idea" />
@@ -293,7 +293,7 @@ export default function PlanTradeForm({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label htmlFor="plan-plannedEntry" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-plannedEntry" className="text-xs font-medium text-muted-foreground">
                   Planned Entry
                 </label>
                 <HelpTooltip content="Your intended entry price for this trade" />
@@ -310,7 +310,7 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label htmlFor="plan-plannedStop" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-plannedStop" className="text-xs font-medium text-muted-foreground">
                   Stop Loss
                 </label>
                 <HelpTooltip content="Maximum acceptable loss level to limit downside risk" />
@@ -327,7 +327,7 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label htmlFor="plan-target1" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-target1" className="text-xs font-medium text-muted-foreground">
                   Target 1
                 </label>
                 <HelpTooltip content="First profit-taking level for this trade" />
@@ -344,7 +344,7 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label htmlFor="plan-qty" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-qty" className="text-xs font-medium text-muted-foreground">
                   Qty
                 </label>
                 <HelpTooltip content="Number of shares or contracts to trade" />
@@ -385,21 +385,21 @@ export default function PlanTradeForm({
               : null;
 
             return (
-              <div className="grid grid-cols-3 gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+              <div className="grid grid-cols-3 gap-3 rounded-lg border bg-muted p-3">
                 {/* Risk */}
                 <div>
                   <p className="mb-0.5 text-xs font-medium text-red-600 dark:text-red-400">Max Risk</p>
                   {canCalcRisk ? (
                     <>
-                      <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                      <p className="text-lg font-semibold text-foreground">
                         {preview.riskPct!.toFixed(1)}%
                       </p>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      <p className="text-xs text-muted-foreground">
                         {qty ? `\$${preview.riskDollar!.toFixed(2)}` : '—'}
                       </p>
                     </>
                   ) : (
-                    <p className="text-sm text-zinc-400 dark:text-zinc-500">—</p>
+                    <p className="text-sm text-muted-foreground">—</p>
                   )}
                 </div>
 
@@ -408,27 +408,27 @@ export default function PlanTradeForm({
                   <p className="mb-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">Max Reward</p>
                   {canCalcReward ? (
                     <>
-                      <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                      <p className="text-lg font-semibold text-foreground">
                         {preview.rewardPct!.toFixed(1)}%
                       </p>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      <p className="text-xs text-muted-foreground">
                         {qty ? `\$${preview.rewardDollar!.toFixed(2)}` : '—'}
                       </p>
                     </>
                   ) : (
-                    <p className="text-sm text-zinc-400 dark:text-zinc-500">—</p>
+                    <p className="text-sm text-muted-foreground">—</p>
                   )}
                 </div>
 
                 {/* R:R Ratio */}
                 <div>
-                  <p className="mb-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">R:R Ratio</p>
+                  <p className="mb-0.5 text-xs font-medium text-muted-foreground">R:R Ratio</p>
                   {rr ? (
-                    <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                    <p className="text-lg font-semibold text-foreground">
                       1:{rr}
                     </p>
                   ) : (
-                    <p className="text-sm text-zinc-400 dark:text-zinc-500">—</p>
+                    <p className="text-sm text-muted-foreground">—</p>
                   )}
                 </div>
               </div>
@@ -438,7 +438,7 @@ export default function PlanTradeForm({
           {/* Thesis */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label htmlFor="plan-thesis" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-thesis" className="text-xs font-medium text-muted-foreground">
                 Thesis
               </label>
               <HelpTooltip content="Your reasoning and analysis supporting this trade idea. Max 2 sentences." />
@@ -457,7 +457,7 @@ export default function PlanTradeForm({
           {/* Invalidation Condition */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label htmlFor="plan-invalidation" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-invalidation" className="text-xs font-medium text-muted-foreground">
                 Invalidation Condition
               </label>
               <HelpTooltip content="What market conditions or price levels would invalidate this trade idea. Max 2 sentences." />
@@ -476,7 +476,7 @@ export default function PlanTradeForm({
           {/* Pre-Trade Plan */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label htmlFor="plan-preTradePlan" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-preTradePlan" className="text-xs font-medium text-muted-foreground">
                 Pre-Trade Plan
               </label>
               <HelpTooltip content="Your step-by-step plan: entry criteria, position sizing, risk management approach, and trade management rules. Max 2 sentences." />

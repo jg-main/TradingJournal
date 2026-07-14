@@ -300,8 +300,8 @@ export default function SizingPage() {
   if (settingsLoading) {
     return (
       <div className="mx-auto flex max-w-4xl items-center justify-center px-8 py-20">
-        <Loader2 className="mr-2 size-5 animate-spin text-zinc-400" />
-        <p className="text-sm text-zinc-500">Loading position sizing...</p>
+        <Loader2 className="mr-2 size-5 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading position sizing...</p>
       </div>
     );
   }
@@ -310,7 +310,7 @@ export default function SizingPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-8 py-10">
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-foreground">
         Position Sizing
       </h1>
 
@@ -318,7 +318,7 @@ export default function SizingPage() {
       <Card className="mb-8">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Calculator className="size-4 text-zinc-500" />
+            <Calculator className="size-4 text-muted-foreground" />
             Position Size Calculator
           </CardTitle>
         </CardHeader>
@@ -326,7 +326,7 @@ export default function SizingPage() {
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Account Equity */}
             <div className="space-y-1.5">
-              <label htmlFor="sizing-accountEquity" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-accountEquity" className="text-xs font-medium text-muted-foreground">
                 Account Equity ($)
               </label>
               <Input
@@ -342,7 +342,7 @@ export default function SizingPage() {
 
             {/* Risk Per Trade (%) */}
             <div className="space-y-1.5">
-              <label htmlFor="sizing-riskPerTrade" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-riskPerTrade" className="text-xs font-medium text-muted-foreground">
                 Risk Per Trade (%)
               </label>
               <Input
@@ -359,7 +359,7 @@ export default function SizingPage() {
 
             {/* Entry Price */}
             <div className="space-y-1.5">
-              <label htmlFor="sizing-entryPrice" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-entryPrice" className="text-xs font-medium text-muted-foreground">
                 Entry Price ($)
               </label>
               <Input
@@ -375,7 +375,7 @@ export default function SizingPage() {
 
             {/* Stop Price */}
             <div className="space-y-1.5">
-              <label htmlFor="sizing-stopPrice" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-stopPrice" className="text-xs font-medium text-muted-foreground">
                 Stop Price ($)
               </label>
               <Input
@@ -391,7 +391,7 @@ export default function SizingPage() {
 
             {/* Direction */}
             <div className="space-y-1.5">
-              <label htmlFor="sizing-direction" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-direction" className="text-xs font-medium text-muted-foreground">
                 Direction
               </label>
               <Select
@@ -420,8 +420,8 @@ export default function SizingPage() {
 
             {/* Target Price (optional) */}
             <div className="space-y-1.5">
-              <label htmlFor="sizing-targetPrice" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                Target Price ($) <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
+              <label htmlFor="sizing-targetPrice" className="text-xs font-medium text-muted-foreground">
+                Target Price ($) <span className="text-muted-foreground">(optional)</span>
               </label>
               <Input
                 id="sizing-targetPrice"
@@ -437,7 +437,7 @@ export default function SizingPage() {
 
           {/* Account selector */}
           <div className="mt-4 space-y-1.5">
-            <label htmlFor="sizing-account" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="sizing-account" className="text-xs font-medium text-muted-foreground">
               Account
             </label>
             <Select
@@ -467,7 +467,7 @@ export default function SizingPage() {
               </p>
             )}
             {!selectedAccountId && (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="text-xs text-muted-foreground">
                 Using global defaults from settings
               </p>
             )}
@@ -475,7 +475,7 @@ export default function SizingPage() {
 
           {/* Settings context */}
           {settings && !selectedAccountId && (
-            <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-4 text-xs text-muted-foreground">
               Defaults from settings: equity={formatCurrency(settings.startingAccountValue)},
               risk={settings.maxRiskPerTradePct ?? '-'}%
             </p>
@@ -516,27 +516,27 @@ export default function SizingPage() {
           <CardContent>
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
               <div>
-                <div className="text-zinc-600 dark:text-zinc-300">Risk Per Share</div>
-                <div className="tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
+                <div className="text-muted-foreground">Risk Per Share</div>
+                <div className="tabular-nums font-medium text-foreground">
                   {formatPrice(result.riskPerShare)}
                 </div>
               </div>
               <div>
-                <div className="text-zinc-600 dark:text-zinc-300">Position Size</div>
-                <div className="tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
+                <div className="text-muted-foreground">Position Size</div>
+                <div className="tabular-nums font-medium text-foreground">
                   {result.positionSize.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
-                  <span className="text-xs text-zinc-400">shares</span>
+                  <span className="text-xs text-muted-foreground">shares</span>
                 </div>
               </div>
               <div>
-                <div className="text-zinc-600 dark:text-zinc-300">Risk Amount</div>
-                <div className="tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
+                <div className="text-muted-foreground">Risk Amount</div>
+                <div className="tabular-nums font-medium text-foreground">
                   {formatCurrency(result.riskAmount)}
                 </div>
               </div>
               <div>
-                <div className="text-zinc-600 dark:text-zinc-300">Reward:Risk</div>
-                <div className="tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
+                <div className="text-muted-foreground">Reward:Risk</div>
+                <div className="tabular-nums font-medium text-foreground">
                   {result.rewardRiskRatio != null ? (
                     <span>
                       {result.rewardRiskRatio.toFixed(2)}
@@ -557,7 +557,7 @@ export default function SizingPage() {
                       )}
                     </span>
                   ) : (
-                    <span className="text-zinc-400">N/A (no target)</span>
+                    <span className="text-muted-foreground">N/A (no target)</span>
                   )}
                 </div>
               </div>
@@ -596,10 +596,10 @@ export default function SizingPage() {
           <CardContent className="flex items-center gap-3 pt-4">
             <CheckCircle className="size-5 text-emerald-500" />
             <div className="flex-1 text-sm">
-              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+              <span className="font-medium text-foreground">
                 {createdTrade.tradeCode}
               </span>{' '}
-              <span className="text-zinc-600 dark:text-zinc-300">
+              <span className="text-muted-foreground">
                 created successfully.
               </span>
             </div>

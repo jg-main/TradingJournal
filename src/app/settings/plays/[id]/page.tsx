@@ -131,7 +131,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-sm text-zinc-500">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     );
   }
@@ -139,8 +139,8 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
   if (!setup) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-sm text-red-500">Play not found.</p>
-        <Link href="/settings/plays" className="mt-2 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800">
+        <p className="text-sm text-destructive">Play not found.</p>
+        <Link href="/settings/plays" className="mt-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" /> Back to Plays
         </Link>
       </div>
@@ -150,21 +150,21 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       {/* ── Header ─────────────────────────────────────────────── */}
-      <Link href="/settings/plays" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200">
+      <Link href="/settings/plays" className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" />
         Back to Plays
       </Link>
 
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{setup.name}</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Configure trading setup rules, risk parameters, and AI assessment data.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">{setup.name}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Configure trading setup rules, risk parameters, and AI assessment data.</p>
         </div>
         <div className="flex items-center gap-2">
           {setup.isActive ? (
             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Active</span>
           ) : (
-            <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">Inactive</span>
+            <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">Inactive</span>
           )}
         </div>
       </div>
@@ -181,88 +181,88 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
 
       <div className="space-y-6">
         {/* ── Description & Rules ──────────────────────────────────── */}
-        <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">Description &amp; Rules</h2>
+        <section className="rounded-lg border bg-card p-6">
+          <h2 className="mb-4 text-base font-semibold text-card-foreground">Description &amp; Rules</h2>
           <div className="space-y-4">
             <div>
-              <label htmlFor="play-name" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name</label>
+              <label htmlFor="play-name" className="mb-1 block text-sm font-medium text-muted-foreground">Name</label>
               <input id="play-name" type="text" value={name} onChange={e => setName(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
             <div>
-              <label htmlFor="play-description" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description</label>
+              <label htmlFor="play-description" className="mb-1 block text-sm font-medium text-muted-foreground">Description</label>
               <textarea id="play-description" rows={2} value={description} onChange={e => setDescription(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="play-entryRules" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Entry Rules</label>
+                <label htmlFor="play-entryRules" className="mb-1 block text-sm font-medium text-muted-foreground">Entry Rules</label>
                 <textarea id="play-entryRules" rows={4} value={entryRules} onChange={e => setEntryRules(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
               </div>
               <div>
-                <label htmlFor="play-exitRules" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Exit Rules</label>
+                <label htmlFor="play-exitRules" className="mb-1 block text-sm font-medium text-muted-foreground">Exit Rules</label>
                 <textarea id="play-exitRules" rows={4} value={exitRules} onChange={e => setExitRules(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
               </div>
             </div>
             <div>
-              <label htmlFor="play-howToPlay" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">How to Play</label>
+              <label htmlFor="play-howToPlay" className="mb-1 block text-sm font-medium text-muted-foreground">How to Play</label>
               <textarea id="play-howToPlay" rows={3} value={howToPlay} onChange={e => setHowToPlay(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
           </div>
         </section>
 
         {/* ── Tags & Patterns ──────────────────────────────────────── */}
-        <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">Tags &amp; Patterns</h2>
+        <section className="rounded-lg border bg-card p-6">
+          <h2 className="mb-4 text-base font-semibold text-card-foreground">Tags &amp; Patterns</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="play-tags" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Tags (JSON)</label>
+              <label htmlFor="play-tags" className="mb-1 block text-sm font-medium text-muted-foreground">Tags (JSON)</label>
               <input id="play-tags" type="text" value={tags} onChange={e => setTags(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder='["breakout","trend"]' />
             </div>
             <div>
-              <label htmlFor="play-chartPatterns" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Chart Patterns</label>
+              <label htmlFor="play-chartPatterns" className="mb-1 block text-sm font-medium text-muted-foreground">Chart Patterns</label>
               <input id="play-chartPatterns" type="text" value={chartPatterns} onChange={e => setChartPatterns(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder="Flag, Pennant, Cup & Handle" />
             </div>
           </div>
         </section>
 
         {/* ── Risk & Sizing ────────────────────────────────────────── */}
-        <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">Risk &amp; Sizing</h2>
+        <section className="rounded-lg border bg-card p-6">
+          <h2 className="mb-4 text-base font-semibold text-card-foreground">Risk &amp; Sizing</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="play-defaultRiskPct" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Default Risk %</label>
+              <label htmlFor="play-defaultRiskPct" className="mb-1 block text-sm font-medium text-muted-foreground">Default Risk %</label>
               <input id="play-defaultRiskPct" type="number" step="0.1" min="0" max="100" value={defaultRiskPct} onChange={e => setDefaultRiskPct(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
             </div>
           </div>
           <div className="mt-4">
-            <label htmlFor="play-positionSizingRules" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Position Sizing Rules</label>
+            <label htmlFor="play-positionSizingRules" className="mb-1 block text-sm font-medium text-muted-foreground">Position Sizing Rules</label>
             <textarea id="play-positionSizingRules" rows={3} value={positionSizingRules} onChange={e => setPositionSizingRules(e.target.value)}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
         </section>
 
         {/* ── AI Assessment Data ───────────────────────────────────── */}
-        <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <section className="rounded-lg border bg-card p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">AI Assessment Data</h2>
-              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+              <h2 className="text-base font-semibold text-card-foreground">AI Assessment Data</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Controls what market data is sent to the AI when assessing trades using this setup.
               </p>
             </div>
             <button
               type="button"
               onClick={() => setShowRawConfig(!showRawConfig)}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
             >
               {showRawConfig ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
               {showRawConfig ? 'Hide' : 'Show'} raw config
@@ -275,8 +275,8 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
               onClick={() => setFeatureMode('all')}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 featureMode === 'all'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                  ? 'bg-foreground text-background dark:bg-secondary dark:text-secondary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
               }`}
             >
               All Features (~114K tok)
@@ -286,8 +286,8 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
               onClick={() => setFeatureMode('custom')}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 featureMode === 'custom'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                  ? 'bg-foreground text-background dark:bg-secondary dark:text-secondary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
               }`}
             >
               Custom Subset
@@ -296,16 +296,16 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
 
           {featureMode === 'custom' && (
             <div>
-              <label htmlFor="play-customFeatures" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Feature IDs (JSON array)</label>
+              <label htmlFor="play-customFeatures" className="mb-1 block text-xs font-medium text-muted-foreground">Feature IDs (JSON array)</label>
               <textarea id="play-customFeatures" rows={4} value={customFeatures} onChange={e => setCustomFeatures(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-mono text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border bg-background px-3 py-2 text-xs font-mono text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder='[{"id":"sma_20","label":"SMA(20)","source":"clickhouse"}]' />
             </div>
           )}
 
           {showRawConfig && (
-            <div className="mt-3 rounded-md bg-zinc-50 p-3 dark:bg-zinc-800/50">
-              <pre className="overflow-auto text-xs text-zinc-600 dark:text-zinc-400">
+            <div className="mt-3 rounded-md bg-muted p-3">
+              <pre className="overflow-auto text-xs text-muted-foreground">
                 {JSON.stringify({
                   ohlcYears: 1,
                   featureMode,
@@ -320,16 +320,16 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
         </section>
 
         {/* ── Checklist ────────────────────────────────────────────── */}
-        <section className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">Entry Checks</h2>
-          <p className="mb-4 text-xs text-zinc-400 dark:text-zinc-500">
+        <section className="rounded-lg border bg-card p-6">
+          <h2 className="mb-4 text-base font-semibold text-card-foreground">Entry Checks</h2>
+          <p className="mb-4 text-xs text-muted-foreground">
             Checklist items that must be verified before executing a trade with this setup.
           </p>
           <ChecklistManager parentId={id} scope="setup" />
         </section>
 
         {/* ── Save ─────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-3 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+        <div className="flex items-center gap-3 border-t pt-6">
           <Button onClick={handleSave} disabled={saving || !name.trim()}>
             <Save className="mr-1.5 size-4" />
             {saving ? 'Saving...' : 'Save Changes'}
