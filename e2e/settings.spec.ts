@@ -464,6 +464,98 @@ test.describe('Settings', () => {
       // to /api/restore/preview. On success the modal advances to confirm.
       await expect(restoreDialog.getByPlaceholder('Type RESTORE to confirm')).toBeVisible({ timeout: 10000 });
     });
+
+    test('preview API error shows error step with role=alert', async ({ page }) => {
+      // This test works in ALL browsers. We mock showOpenFilePicker to throw
+      // so the component falls through to the hidden input fallback
+      // (fileInputRef.current.click()) regardless of whether the real
+      // showOpenFilePicker exists in the browser.
+
+      // Seed prerequisite data so the app is in a valid state
+      resetReadinessState();
+
+      const profileRes = await page.request.put('/api/app-profile', {
+        data: {
+          displayName: 'Test Trader',
+          timezone: 'America/New_York',
+          defaultCurrency: 'USD',
+        },
+      });
+      expect(profileRes.ok()).toBeTruthy();
+
+      const settingsRes = await page.request.put('/api/settings', {
+        data: {
+          startingAccountValue: 10000,
+          journalStartDate: '2024-01-01',
+          defaultCommission: 0.5,
+          maxRiskPerTradePct: 2,
+        },
+      });
+      expect(settingsRes.ok()).toBeTruthy();
+
+      const accountRes = await page.request.post('/api/accounts', {
+        data: {
+          name: 'Test Account',
+          broker: 'Test Broker',
+          currency: 'USD',
+          isActive: true,
+        },
+      });
+      expect(accountRes.ok()).toBeTruthy();
+
+      const setupRes = await page.request.post('/api/setup-definitions', {
+        data: {
+          name: 'Breakout',
+          description: 'Breakout trade setup',
+        },
+      });
+      expect(setupRes.ok()).toBeTruthy();
+
+      // Navigate to /settings/backup to access the Upload Backup button
+      await page.goto('/settings/backup');
+      await page.waitForLoadState('networkidle');
+
+      // Click Upload Backup to open the restore dialog
+      await page.getByRole('button', { name: 'Upload Backup' }).click();
+
+      // Scope to the dialog
+      const restoreDialog = page.getByRole('dialog', { name: 'Restore backup' });
+      await expect(restoreDialog).toBeVisible();
+
+      // Mock showOpenFilePicker to throw so we always hit the hidden input
+      // fallback (fileInputRef.current.click()) regardless of browser.
+      await page.evaluate(() => {
+        (window as any).showOpenFilePicker = async () => {
+          throw new Error('Browser blocked the File System Access API');
+        };
+      });
+
+      // Click the upload button to trigger handleChooseFile.
+      // The mocked showOpenFilePicker throws, handleChooseFile catches it,
+      // and falls through to fileInputRef.current.click(), which triggers
+      // the filechooser event.
+      const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 5000 });
+      await restoreDialog.getByRole('button', { name: /choose/i }).click();
+      const fileChooser = await fileChooserPromise;
+
+      // Upload an invalid file (plain text, not a valid ZIP) to trigger
+      // a 400 rejection from POST /api/restore/preview.
+      await fileChooser.setFiles({
+        name: 'invalid-backup.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('This is not a valid ZIP file'),
+      });
+
+      // Wait for the error step with role='alert' to appear.
+      // The component calls setStep('error') when the preview API returns
+      // a non-OK response, which renders a <div role="alert">.</div>
+      await expect(restoreDialog.locator('[role="alert"]')).toBeVisible({ timeout: 10000 });
+
+      // Verify the error message mentions the invalid backup
+      // Use .first() because both <h2>Restore Failed</h2> and <span>Invalid backup file</span>
+      // match the regex, causing Playwright's strict mode violation.
+      await expect(restoreDialog.getByText(/invalid|failed/i).first()).toBeVisible();
+    });
   });
 
   test.describe('Backup download', () => {
