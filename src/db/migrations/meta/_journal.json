@@ -120,6 +120,13 @@
       "when": 1783987169362,
       "tag": "0016_many_roughhouse",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1783990000000,
+      "tag": "0017_market_data_settings",
+      "breakpoints": true
     }
   ]
 }

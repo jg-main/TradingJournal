@@ -346,6 +346,16 @@ export const reviewActionItems = sqliteTable('review_action_items', {
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });
 
+// ── Market Data Settings ────────────────────────────────────────────────
+
+export const marketDataSettings = sqliteTable('market_data_settings', {
+  id: text('id').primaryKey().notNull(),
+  activeProvider: text('active_provider').default('clickhouse').notNull(),
+  providers: text('providers').default('{}').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+});
+
 // ── AI Trade Quality Assessment ────────────────────────────────────────
 
 export const aiSettings = sqliteTable('ai_settings', {

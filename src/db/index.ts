@@ -64,6 +64,48 @@ export function initializeDatabase() {
     console.log(`  Seeded ${mistakeTypes.length} mistake types on startup.`);
   }
 
+  // Data migration: copy ClickHouse config from ai_settings to market_data_settings
+  // (idempotent — skips if market_data_settings already has rows)
+  const existingMds = sqlite.prepare('SELECT count(*) AS count FROM market_data_settings').get() as { count: number } | undefined;
+  if (existingMds && existingMds.count === 0) {
+    const aiRow = sqlite.prepare(`
+      SELECT clickhouse_host, clickhouse_port, clickhouse_user, clickhouse_password, clickhouse_database
+      FROM ai_settings LIMIT 1
+    `).get() as Record<string, unknown> | undefined;
+
+    if (aiRow) {
+      const providers = {
+        clickhouse: {
+          host: aiRow.clickhouse_host || 'localhost',
+          port: aiRow.clickhouse_port || 8123,
+          user: aiRow.clickhouse_user || 'default',
+          password: aiRow.clickhouse_password || '',
+          database: aiRow.clickhouse_database || 'market',
+        },
+      };
+      const now = new Date().toISOString();
+      sqlite.prepare(
+        `INSERT INTO market_data_settings (id, active_provider, providers, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
+      ).run(crypto.randomUUID(), 'clickhouse', JSON.stringify(providers), now, now);
+      console.log('  Migrated ClickHouse config from ai_settings to market_data_settings.');
+    } else {
+      // No ai_settings row exists — create default market_data_settings row
+      const now = new Date().toISOString();
+      sqlite.prepare(
+        `INSERT INTO market_data_settings (id, active_provider, providers, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
+      ).run(crypto.randomUUID(), 'clickhouse', JSON.stringify({
+        clickhouse: {
+          host: 'localhost',
+          port: 8123,
+          user: 'default',
+          password: '',
+          database: 'market',
+        },
+      }), now, now);
+      console.log('  Created default market_data_settings row.');
+    }
+  }
+
   return dbInstance;
 }
 
