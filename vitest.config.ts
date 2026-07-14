@@ -28,6 +28,7 @@ export default defineConfig({
       'src/lib/__tests__/market-quote.test.ts',
       'src/lib/__tests__/scheduler.test.ts',
       'src/lib/__tests__/market-data-settings-migration.test.ts',
+      'src/lib/__tests__/clickhouse-provider.test.ts',
     ],
   },
 });
