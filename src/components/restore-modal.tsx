@@ -152,6 +152,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
       if (!res.ok) {
         const message = data.error || 'Failed to preview backup';
         setErrorMessage(message);
+        setStep('error');
         return;
       }
       setPreviewData(data);
@@ -161,6 +162,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
       const message = err instanceof Error ? err.message : 'Network error during upload';
       console.error('RestoreModal preview error', message);
       setErrorMessage(message);
+      setStep('error');
     } finally {
       setIsUploading(false);
       abortRef.current = null;
