@@ -20,6 +20,12 @@
  * their Zod schemas for validation.  We re-export them here so interface
  * consumers do not need to import from a concrete provider.
  */
+import type {
+  MarketEvidence,
+  FeatureTimeSeries,
+  FreshnessCheck,
+} from './clickhouse-client';
+
 export type {
   MarketEvidence,
   OhlcBar,

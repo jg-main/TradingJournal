@@ -48,6 +48,13 @@ const mockSqlite = vi.hoisted(() => {
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)
     );
+    CREATE TABLE market_data_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      active_provider TEXT NOT NULL DEFAULT 'clickhouse',
+      providers TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT DEFAULT (current_timestamp),
+      updated_at TEXT DEFAULT (current_timestamp)
+    );
   `);
   return { sqlite };
 });
@@ -676,28 +683,32 @@ describe('createClickHouseClient', () => {
 let fakeIdCounter = 0;
 
 /**
- * Seed the in-memory ai_settings table with ClickHouse config values.
+ * Seed the in-memory market_data_settings table with ClickHouse config values.
  * Clears any existing rows first.
  */
 function seedClickHouseConfig(overrides: Record<string, unknown> = {}): void {
-  mockSqlite.sqlite.exec('DELETE FROM ai_settings;');
+  mockSqlite.sqlite.exec('DELETE FROM market_data_settings;');
   fakeIdCounter++;
-  const id = `test-ai-${fakeIdCounter}`;
+  const id = `test-mds-${fakeIdCounter}`;
   const host = (overrides.host as string) ?? 'db-host.example.com';
   const port = overrides.port !== undefined ? Number(overrides.port) : 9000;
   const user = (overrides.user as string) ?? 'db_user';
   const password = (overrides.password as string) ?? 'db_secret';
   const database = (overrides.database as string) ?? 'db_market';
 
-  mockSqlite.sqlite.exec(
-    `INSERT INTO ai_settings (id, provider, model, clickhouse_host, clickhouse_port, clickhouse_user, clickhouse_password, clickhouse_database) ` +
-    `VALUES ('${id}', 'openai', 'gpt-4', '${host}', ${port}, '${user}', '${password}', '${database}')`
+  const providers = JSON.stringify({
+    clickhouse: { host, port, user, password, database },
+  });
+
+  const stmt = mockSqlite.sqlite.prepare(
+    'INSERT INTO market_data_settings (id, active_provider, providers) VALUES (?, ?, ?)'
   );
+  stmt.run(id, 'clickhouse', providers);
 }
 
-/** Clear all ai_settings rows */
+/** Clear all market_data_settings rows */
 function clearClickHouseConfig(): void {
-  mockSqlite.sqlite.exec('DELETE FROM ai_settings;');
+  mockSqlite.sqlite.exec('DELETE FROM market_data_settings;');
 }
 
 // ── createDefaultClickHouseClient ────────────────────────────────────────

@@ -111,7 +111,7 @@ describe('ClickHouseProvider interface contract', () => {
     const provider = new ClickHouseProvider(client);
 
     // Structural interface check — all required methods exist
-    const providerAny = provider as Record<string, unknown>;
+    const providerAny = provider as unknown as Record<string, unknown>;
     expect(typeof providerAny.name).toBe('string');
     expect(typeof providerAny.getOhlc).toBe('function');
     expect(typeof providerAny.getFeatureTimeSeries).toBe('function');
