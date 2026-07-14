@@ -14,12 +14,6 @@ const aiSettingsSchema = z.object({
   maxTokens: z.number().int().positive('Must be positive').optional(),
   systemPrompt: z.string().optional(),
   isActive: z.boolean().optional(),
-  // ClickHouse connection config
-  clickhouseHost: z.string().min(1, 'Host is required').optional(),
-  clickhousePort: z.number().int().min(1).max(65535).optional(),
-  clickhouseUser: z.string().min(1, 'User is required').optional(),
-  clickhousePassword: z.string().optional(),
-  clickhouseDatabase: z.string().min(1, 'Database is required').optional(),
 });
 
 export async function GET() {
@@ -32,9 +26,9 @@ export async function GET() {
       );
     }
 
-    // Strip secrets from the response — never expose apiKey or clickhousePassword
+    // Strip secrets from the response — never expose apiKey
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { apiKey, clickhousePassword, ...safeRow } = row;
+    const { apiKey, ...safeRow } = row;
     return NextResponse.json(safeRow);
   } catch (error) {
     return NextResponse.json(
@@ -72,11 +66,6 @@ export async function PUT(request: NextRequest) {
           ...(parsed.data.maxTokens !== undefined && { maxTokens: parsed.data.maxTokens }),
           ...(parsed.data.systemPrompt !== undefined && { systemPrompt: parsed.data.systemPrompt }),
           ...(parsed.data.isActive !== undefined && { isActive: parsed.data.isActive }),
-          ...(parsed.data.clickhouseHost !== undefined && { clickhouseHost: parsed.data.clickhouseHost }),
-          ...(parsed.data.clickhousePort !== undefined && { clickhousePort: parsed.data.clickhousePort }),
-          ...(parsed.data.clickhouseUser !== undefined && { clickhouseUser: parsed.data.clickhouseUser }),
-          ...(parsed.data.clickhousePassword !== undefined && { clickhousePassword: parsed.data.clickhousePassword }),
-          ...(parsed.data.clickhouseDatabase !== undefined && { clickhouseDatabase: parsed.data.clickhouseDatabase }),
         })
         .run();
 
@@ -88,7 +77,7 @@ export async function PUT(request: NextRequest) {
         );
       }
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { apiKey, clickhousePassword, ...safeRow } = row;
+      const { apiKey, ...safeRow } = row;
       return NextResponse.json(safeRow, { status: 201 });
     }
 
@@ -102,11 +91,6 @@ export async function PUT(request: NextRequest) {
     if (parsed.data.maxTokens !== undefined) updateData.maxTokens = parsed.data.maxTokens;
     if (parsed.data.systemPrompt !== undefined) updateData.systemPrompt = parsed.data.systemPrompt;
     if (parsed.data.isActive !== undefined) updateData.isActive = parsed.data.isActive;
-    if (parsed.data.clickhouseHost !== undefined) updateData.clickhouseHost = parsed.data.clickhouseHost;
-    if (parsed.data.clickhousePort !== undefined) updateData.clickhousePort = parsed.data.clickhousePort;
-    if (parsed.data.clickhouseUser !== undefined) updateData.clickhouseUser = parsed.data.clickhouseUser;
-    if (parsed.data.clickhousePassword !== undefined) updateData.clickhousePassword = parsed.data.clickhousePassword;
-    if (parsed.data.clickhouseDatabase !== undefined) updateData.clickhouseDatabase = parsed.data.clickhouseDatabase;
 
     if (Object.keys(updateData).length > 0) {
       db.update(aiSettings)
@@ -123,7 +107,7 @@ export async function PUT(request: NextRequest) {
       );
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { apiKey, clickhousePassword, ...safeRow } = row;
+    const { apiKey, ...safeRow } = row;
     return NextResponse.json(safeRow);
   } catch (error) {
     return NextResponse.json(

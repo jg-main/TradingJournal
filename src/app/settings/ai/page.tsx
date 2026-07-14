@@ -16,10 +16,6 @@ interface AiSettings {
   maxTokens: number | null;
   systemPrompt: string | null;
   isActive: number | null;
-  clickhouseHost: string | null;
-  clickhousePort: number | null;
-  clickhouseUser: string | null;
-  clickhouseDatabase: string | null;
 }
 
 const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string }> = {
@@ -37,8 +33,6 @@ export default function AiSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionResult, setConnectionResult] = useState<{ ok: boolean; error?: string } | null>(null);
 
   // ── Prompt Preview ─────────────────────────────────────────────────
   type PromptPreviewTab = 'pre-trade' | 'after-exit';
@@ -92,11 +86,6 @@ export default function AiSettingsPage() {
     maxTokens: '4096',
     systemPrompt: '',
     isActive: true,
-    clickhouseHost: 'localhost',
-    clickhousePort: '8123',
-    clickhouseUser: 'default',
-    clickhousePassword: '',
-    clickhouseDatabase: 'market',
   });
 
   useEffect(() => {
@@ -119,11 +108,6 @@ export default function AiSettingsPage() {
             maxTokens: data.maxTokens?.toString() ?? '4096',
             systemPrompt: data.systemPrompt ?? '',
             isActive: data.isActive === null || data.isActive === undefined ? true : Boolean(data.isActive),
-            clickhouseHost: data.clickhouseHost ?? 'localhost',
-            clickhousePort: data.clickhousePort?.toString() ?? '8123',
-            clickhouseUser: data.clickhouseUser ?? 'default',
-            clickhousePassword: '',
-            clickhouseDatabase: data.clickhouseDatabase ?? 'market',
           });
         } else {
           // No existing settings — apply provider defaults
@@ -168,15 +152,6 @@ export default function AiSettingsPage() {
     if (form.systemPrompt) payload.systemPrompt = form.systemPrompt;
     payload.isActive = form.isActive;
 
-    // ClickHouse config — always send if settings exist
-    payload.clickhouseHost = form.clickhouseHost || 'localhost';
-    payload.clickhousePort = parseInt(form.clickhousePort, 10) || 8123;
-    payload.clickhouseUser = form.clickhouseUser || 'default';
-    payload.clickhouseDatabase = form.clickhouseDatabase || 'market';
-    if (form.clickhousePassword) {
-      payload.clickhousePassword = form.clickhousePassword;
-    }
-
     // Only send baseUrl if provider needs one (ollama/custom)
     if (form.provider === 'ollama' || form.provider === 'custom') {
       if (form.baseUrl) payload.baseUrl = form.baseUrl;
@@ -210,39 +185,10 @@ export default function AiSettingsPage() {
 
   const handleChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
-    // Clear connection result when any ClickHouse field changes
-    if (field.startsWith('clickhouse')) {
-      setConnectionResult(null);
-    }
   };
 
   const handleToggle = () => {
     setForm((prev) => ({ ...prev, isActive: !prev.isActive }));
-  };
-
-  const handleTestConnection = async () => {
-    setTestingConnection(true);
-    setConnectionResult(null);
-
-    try {
-      const res = await fetch('/api/ai-settings/test-connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clickhouseHost: form.clickhouseHost || undefined,
-          clickhousePort: form.clickhousePort ? parseInt(form.clickhousePort, 10) : undefined,
-          clickhouseUser: form.clickhouseUser || undefined,
-          clickhousePassword: form.clickhousePassword || undefined,
-          clickhouseDatabase: form.clickhouseDatabase || undefined,
-        }),
-      });
-      const data = await res.json();
-      setConnectionResult({ ok: data.ok, error: data.error });
-    } catch {
-      setConnectionResult({ ok: false, error: 'Failed to reach test-connection endpoint.' });
-    } finally {
-      setTestingConnection(false);
-    }
   };
 
   const showEndpointUrl = form.provider === 'ollama' || form.provider === 'custom';
@@ -479,132 +425,6 @@ export default function AiSettingsPage() {
                 }`}
               />
             </button>
-          </div>
-        </div>
-
-        {/* ── ClickHouse Configuration ── */}
-        <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">ClickHouse Configuration</h2>
-            <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-              Connection settings for market data database. Password is never displayed — re-enter when changing other fields.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* Host */}
-            <div>
-              <label htmlFor="clickhouseHost" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Host
-              </label>
-              <input
-                id="clickhouseHost"
-                type="text"
-                value={form.clickhouseHost}
-                onChange={handleChange('clickhouseHost')}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-                placeholder="localhost"
-              />
-            </div>
-
-            {/* Port */}
-            <div>
-              <label htmlFor="clickhousePort" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Port
-              </label>
-              <input
-                id="clickhousePort"
-                type="number"
-                min="1"
-                max="65535"
-                value={form.clickhousePort}
-                onChange={handleChange('clickhousePort')}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-                placeholder="8123"
-              />
-            </div>
-
-            {/* User */}
-            <div>
-              <label htmlFor="clickhouseUser" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                User
-              </label>
-              <input
-                id="clickhouseUser"
-                type="text"
-                value={form.clickhouseUser}
-                onChange={handleChange('clickhouseUser')}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-                placeholder="default"
-              />
-            </div>
-
-            {/* Database */}
-            <div>
-              <label htmlFor="clickhouseDatabase" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Database
-              </label>
-              <input
-                id="clickhouseDatabase"
-                type="text"
-                value={form.clickhouseDatabase}
-                onChange={handleChange('clickhouseDatabase')}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-                placeholder="market"
-              />
-            </div>
-          </div>
-
-          {/* Password */}
-          <div>
-            <label htmlFor="clickhousePassword" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Password <span className="text-xs text-zinc-400">(stored securely, never displayed)</span>
-            </label>
-            <input
-              id="clickhousePassword"
-              type="password"
-              value={form.clickhousePassword}
-              onChange={handleChange('clickhousePassword')}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-              placeholder="(unchanged)"
-              autoComplete="new-password"
-            />
-          </div>
-
-          {/* Test Connection */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              disabled={testingConnection}
-              onClick={handleTestConnection}
-              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-            >
-              {testingConnection ? 'Testing...' : 'Test Connection'}
-            </button>
-
-            {connectionResult && (
-              <span className={`inline-flex items-center gap-1.5 text-sm ${
-                connectionResult.ok
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-red-600 dark:text-red-400'
-              }`}>
-                {connectionResult.ok ? (
-                  <>
-                    <svg className="size-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                    </svg>
-                    Connected
-                  </>
-                ) : (
-                  <>
-                    <svg className="size-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
-                    </svg>
-                    {connectionResult.error || 'Connection failed'}
-                  </>
-                )}
-              </span>
-            )}
           </div>
         </div>
 
