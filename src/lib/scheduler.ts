@@ -207,23 +207,36 @@ export function startScheduler(
     `| next run at: ${getNextScheduledAt()}`,
   );
 
-  // Schedule an immediate first backup after a 10-second readiness delay
-  console.log('[scheduler] Scheduling immediate first backup in 10s readiness delay');
-  immediateTimeout = setTimeout(async () => {
-    const timestamp = new Date().toISOString();
-    console.log(`[scheduler] Immediate first backup triggered at ${timestamp}`);
-    try {
-      await job();
-      console.log(
-        `[scheduler] Immediate first backup completed successfully at ${timestamp}`,
-      );
-    } catch (error) {
-      console.error(
-        `[scheduler] Immediate first backup failed at ${timestamp}:`,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  }, 10_000);
+  // Schedule an immediate first backup after a 10-second readiness delay,
+  // but only if the next cron run is more than 60 seconds away to prevent
+  // a double-fire when the scheduler starts/restarts near the cron schedule.
+  const nextCronAt = cronTask.getNextRun();
+  const secondsUntilNextCron = nextCronAt
+    ? ((nextCronAt.getTime() - Date.now()) / 1000)
+    : Infinity;
+
+  if (secondsUntilNextCron > 60) {
+    console.log('[scheduler] Scheduling immediate first backup in 10s readiness delay');
+    immediateTimeout = setTimeout(async () => {
+      const timestamp = new Date().toISOString();
+      console.log(`[scheduler] Immediate first backup triggered at ${timestamp}`);
+      try {
+        await job();
+        console.log(
+          `[scheduler] Immediate first backup completed successfully at ${timestamp}`,
+        );
+      } catch (error) {
+        console.error(
+          `[scheduler] Immediate first backup failed at ${timestamp}:`,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }, 10_000);
+  } else {
+    console.log(
+      `[scheduler] Skipping immediate backup — next cron run in ${Math.round(secondsUntilNextCron)}s`,
+    );
+  }
 }
 
 /**
