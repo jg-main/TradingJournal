@@ -24,7 +24,8 @@ export async function DELETE(
 
     // Validate filename pattern for safety — backup filenames use
     // safe timestamps: backup-YYYY-MM-DDTHH-mm-ss-SSSZ.zip
-    if (!filename.match(/^backup-\d{4}-\d{2}-\d{2}T[\d\-Z]+\.zip$/)) {
+    // Also allow imported backups: backup-imported-<timestamp>-originalname.zip
+    if (!filename.match(/^backup(-imported)?-\d{4}-\d{2}-\d{2}T[\d\-Za-z_]+\.zip$/)) {
       return NextResponse.json(
         { error: 'Invalid backup filename pattern.' },
         { status: 400 },

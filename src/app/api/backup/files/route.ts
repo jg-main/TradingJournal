@@ -42,14 +42,24 @@ function formatFileSize(bytes: number): string {
  * Example: "backup-2026-07-01T12-00-00-000Z.zip" ->
  *          "2026-07-01T12:00:00.000Z"
  *
+ * Imported backups use the format `backup-imported-<ISO_TIMESTAMP>-<originalname>.zip`.
+ * The ISO portion is the same dash-replacement format.
+ *
  * Returns the original timestamp portion if parsing fails.
  */
 function parseBackupTimestamp(filename: string): string {
-  // Extract the timestamp between "backup-" and ".zip"
-  const match = filename.match(/^backup-(.+)\.zip$/);
+  // Match both backup-<timestamp>.zip and backup-imported-<timestamp>-<originalname>.zip
+  const match = filename.match(/^backup(?:-imported)?-(.+)\.zip$/);
   if (!match) return filename;
 
-  const rawTimestamp = match[1];
+  let rawTimestamp = match[1];
+
+  // For imported backups, extract only the ISO timestamp prefix (before any extra dashes)
+  // Format: YYYY-MM-DDTHH-mm-ss-SSSZ-<originalname>
+  const importedMatch = filename.match(/^backup-imported-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)/);
+  if (importedMatch) {
+    rawTimestamp = importedMatch[1];
+  }
 
   // The safe filename format replaces colons (:) with dashes (-) and
   // periods (.) with dashes (-). However, periods in the timezone

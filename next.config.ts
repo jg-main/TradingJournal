@@ -11,14 +11,10 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "200mb",
     },
   },
-  // Only enable turbopack config in dev — production (Docker) uses webpack
-  ...(process.env.NODE_ENV !== "production"
-    ? {
-        turbopack: {
-          root: resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."),
-        },
-      }
-    : {}),
+  // Next.js 16 requires turbopack config whenever webpack config is present
+  turbopack: {
+    root: resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+  },
   webpack(config, { dev, nextRuntime, webpack }) {
     if (dev && nextRuntime === 'edge') {
       config.plugins.push(

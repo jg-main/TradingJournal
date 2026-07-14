@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppTimezone } from '@/lib/timezone-context';
-import { useRestoreUploadBridge } from './restore-upload-bridge';
 import { AlertTriangle, CircleCheck, Clock, Loader2, Upload, X } from 'lucide-react';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -74,7 +73,6 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const confirmInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const processedUploadSignatureRef = useRef<string | null>(null);
 
   const [step, setStep] = useState<RestoreStep>(initialFile ? 'confirm' : 'upload');
   const [previewData, setPreviewData] = useState<{ manifest: BackupManifest } | null>(null);
@@ -87,7 +85,6 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
   const [errorMessage, setErrorMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [localBackupPath, setLocalBackupPath] = useState('settings_init.zip');
   const [confirmText, setConfirmText] = useState('');
 
   useEffect(() => {
@@ -169,81 +166,10 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
     }
   }, []);
 
-  // Callback refs run whenever Brave swaps the native input node. Bind native
-  // handlers to that exact node instead of relying on React event delegation.
-  const handleChooseFile = useCallback(async () => {
-    const browserWindow = window as Window & {
-      showOpenFilePicker?: (options: {
-        multiple: boolean;
-        types: Array<{ description: string; accept: Record<string, string[]> }>;
-      }) => Promise<Array<{ getFile: () => Promise<File> }>>;
-    };
-
-    // Try the File System Access API if available.  If it throws for any
-    // reason other than user cancellation (AbortError) — e.g. Brave Shields
-    // blocking the permission — fall through to the hidden input fallback.
-    if (browserWindow.showOpenFilePicker) {
-      try {
-        const [handle] = await browserWindow.showOpenFilePicker({
-          multiple: false,
-          types: [{ description: 'Trading Journal backup', accept: { 'application/zip': ['.zip'] } }],
-        });
-        if (!handle) return;
-        const file = await handle.getFile();
-        await previewSelectedFile(file);
-        return;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          return;
-        }
-        // Fall through to the hidden-input fallback below.
-        console.warn('showOpenFilePicker threw, falling back to hidden input:', error);
-      }
-    }
-
-    // Standards-based fallback for browsers without File System Access API,
-    // or when the API exists but the permission was blocked (e.g. Brave Shields).
-    // Clear before opening so picking the same ZIP still emits a change event.
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      processedUploadSignatureRef.current = null;
-      fileInputRef.current.click();
-    }
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void previewSelectedFile(file);
   }, [previewSelectedFile]);
-
-  const handleBridgeFile = useCallback((file: File) => {
-    const signature = `${file.name}:${file.size}:${file.lastModified}`;
-    if (processedUploadSignatureRef.current === signature) return;
-    processedUploadSignatureRef.current = signature;
-    void previewSelectedFile(file);
-  }, [previewSelectedFile]);
-
-  useRestoreUploadBridge(handleBridgeFile);
-
-  const handleImportLocalBackup = async () => {
-    setErrorMessage('');
-    setIsUploading(true);
-    try {
-      const response = await fetch('/api/backup/import-local', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: localBackupPath }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setErrorMessage(data.error || 'Could not import the local backup.');
-        return;
-      }
-      setSelectedServerFile(data.file as BackupFileEntry);
-      setMode('server');
-      setConfirmText('');
-      setStep('confirm');
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Could not import the local backup.');
-    } finally {
-      setIsUploading(false);
-    }
-  };
 
   const handleRestore = async () => {
     if (mode === 'upload') {
@@ -309,27 +235,27 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
           <X className="size-5" />
         </button>
 
-        {/* Button-driven file input: label triggers hidden (but sized) input, native 'change' listener fires */}
+        {/* File input overlaid on the visual button — native click hits input directly,
+            preserving user gesture in all browsers including Brave. No programmatic .click() needed. */}
         <div className="mb-4" style={{ display: step === 'upload' ? 'block' : 'none' }}>
-          <input
-            ref={fileInputRef}
-            id="backup-upload-file"
-            type="file"
-            accept=".zip"
-            className="fixed left-[-9999px] top-0"
-            aria-label="Select backup ZIP file"
-          />
-          <button
-            type="button"
-            onClick={() => { void handleChooseFile(); }}
-            className="flex w-full cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-6 py-8 text-center hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500"
-          >
-            <Upload className="size-10 text-zinc-400" strokeWidth={1.5} />
-            <div>
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Choose a backup ZIP file</p>
-              <p className="mt-1 text-xs text-zinc-400">Only .zip files exported from this journal are supported</p>
+          <div className="relative">
+            <input
+              ref={fileInputRef}
+              id="backup-upload-file"
+              type="file"
+              accept=".zip"
+              className="absolute inset-0 z-10 cursor-pointer opacity-0"
+              aria-label="Select backup ZIP file"
+              onChange={handleFileChange}
+            />
+            <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-6 py-8 text-center hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500">
+              <Upload className="size-10 text-zinc-400" strokeWidth={1.5} />
+              <div>
+                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Choose a backup ZIP file</p>
+                <p className="mt-1 text-xs text-zinc-400">Only .zip files exported from this journal are supported</p>
+              </div>
             </div>
-          </button>
+          </div>
         </div>
 
 
@@ -384,16 +310,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
           <div>
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Restore from Backup</h2>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Upload a backup ZIP file to restore your journal data. This will replace all existing data.</p>
-            {process.env.NODE_ENV === 'development' && !isUploading && (
-              <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                <label htmlFor="local-backup-path" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Import project backup path</label>
-                <div className="mt-2 flex gap-2">
-                  <input id="local-backup-path" value={localBackupPath} onChange={(event) => setLocalBackupPath(event.target.value)} className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100" />
-                  <button type="button" onClick={() => { void handleImportLocalBackup(); }} className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900">Import</button>
-                </div>
-                <p className="mt-1 text-xs text-zinc-500">Development only. Paths are limited to the project&apos;s data/ directory.</p>
-              </div>
-            )}
+
             {errorMessage && (
               <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
                 <div className="flex items-start gap-2">

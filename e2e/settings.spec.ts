@@ -365,6 +365,7 @@ test.describe('Settings', () => {
         for (let i = 0; i < binaryStr.length; i++) {
           bytes[i] = binaryStr.charCodeAt(i);
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).showOpenFilePicker = async () => {
           const file = new File([bytes], 'test-backup.zip', { type: 'application/zip' });
           return [{ getFile: async () => file }];
@@ -443,6 +444,7 @@ test.describe('Settings', () => {
       // handleChooseFile catches non-AbortError exceptions and falls through to the
       // hidden input fallback (fileInputRef.current.click()).
       await page.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).showOpenFilePicker = async () => {
           throw new Error('Browser blocked the File System Access API');
         };
@@ -525,6 +527,7 @@ test.describe('Settings', () => {
       // Mock showOpenFilePicker to throw so we always hit the hidden input
       // fallback (fileInputRef.current.click()) regardless of browser.
       await page.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).showOpenFilePicker = async () => {
           throw new Error('Browser blocked the File System Access API');
         };
