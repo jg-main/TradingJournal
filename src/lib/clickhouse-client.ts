@@ -16,7 +16,7 @@
 
 import { z } from 'zod';
 import { db } from '@/db';
-import { aiSettings } from '@/db/schema';
+import { marketDataSettings } from '@/db/schema';
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────
 
@@ -736,45 +736,58 @@ export function createClickHouseClient(config: ClickHouseConfig) {
 export function createDefaultClickHouseClient(
   configOverride?: Partial<ClickHouseConfig>,
 ): ReturnType<typeof createClickHouseClient> {
-  // Step 1: Read ClickHouse config from ai_settings DB row
-  let dbRow: Record<string, unknown> | undefined;
+  // Step 1: Read ClickHouse config from market_data_settings DB row
+  // The providers column stores a JSON blob like:
+  //   {"clickhouse": {"host": "...", "port": 8123, "user": "...", "password": "...", "database": "..."}}
+  let clickhouseConfig: Partial<ClickHouseConfig> | undefined;
+  let hasDbRow = false;
   try {
-    const result = db.select().from(aiSettings).limit(1).get();
-    if (result) {
-      dbRow = result as unknown as Record<string, unknown>;
+    const result = db.select().from(marketDataSettings).limit(1).get();
+    if (result && result.providers) {
+      const providers = JSON.parse(result.providers);
+      if (providers && typeof providers === 'object' && providers.clickhouse) {
+        clickhouseConfig = {
+          host: providers.clickhouse.host,
+          port: providers.clickhouse.port !== undefined ? Number(providers.clickhouse.port) : undefined,
+          user: providers.clickhouse.user,
+          password: providers.clickhouse.password,
+          database: providers.clickhouse.database,
+        };
+        hasDbRow = true;
+      }
     }
   } catch {
     // DB unavailable (e.g. first-time setup, test without mock) — fall through to env vars
   }
 
-  // Helper to test whether a DB value is meaningfully "set"
+  // Helper to test whether a value is meaningfully "set"
   const isSet = (val: unknown): boolean =>
     val !== null && val !== undefined && val !== '';
 
   // Step 2: Resolve each field with precedence chain
   const resolvedHost =
     configOverride?.host ??
-    (dbRow && isSet(dbRow.clickhouseHost) ? String(dbRow.clickhouseHost) : undefined) ??
+    (clickhouseConfig && isSet(clickhouseConfig.host) ? clickhouseConfig.host : undefined) ??
     (process.env.CLICKHOUSE_HOST || 'localhost');
 
   const resolvedPort: number =
     configOverride?.port ??
-    (dbRow && isSet(dbRow.clickhousePort) ? Number(dbRow.clickhousePort) : undefined) ??
+    (clickhouseConfig && isSet(clickhouseConfig.port) ? Number(clickhouseConfig.port) : undefined) ??
     parseInt(process.env.CLICKHOUSE_PORT || '8123', 10);
 
   const resolvedUser =
     configOverride?.user ??
-    (dbRow && isSet(dbRow.clickhouseUser) ? String(dbRow.clickhouseUser) : undefined) ??
+    (clickhouseConfig && isSet(clickhouseConfig.user) ? clickhouseConfig.user : undefined) ??
     (process.env.CLICKHOUSE_USER || 'default');
 
   const resolvedPassword =
     configOverride?.password ??
-    (dbRow && isSet(dbRow.clickhousePassword) ? String(dbRow.clickhousePassword) : undefined) ??
+    (clickhouseConfig && isSet(clickhouseConfig.password) ? clickhouseConfig.password : undefined) ??
     (process.env.CLICKHOUSE_PASSWORD || '');
 
   const resolvedDatabase =
     configOverride?.database ??
-    (dbRow && isSet(dbRow.clickhouseDatabase) ? String(dbRow.clickhouseDatabase) : undefined) ??
+    (clickhouseConfig && isSet(clickhouseConfig.database) ? clickhouseConfig.database : undefined) ??
     (process.env.CLICKHOUSE_DATABASE || 'market');
 
   // Validate port
@@ -782,7 +795,7 @@ export function createDefaultClickHouseClient(
     const portSource =
       configOverride?.port !== undefined
         ? 'override'
-        : dbRow && isSet(dbRow.clickhousePort)
+        : clickhouseConfig && isSet(clickhouseConfig.port)
           ? 'database'
           : 'env';
     throw new Error(
@@ -801,7 +814,7 @@ export function createDefaultClickHouseClient(
   // Log structured config resolution for observability
   const source = configOverride
     ? 'override'
-    : dbRow && isSet(dbRow.clickhouseHost)
+    : hasDbRow
       ? 'database'
       : process.env.CLICKHOUSE_HOST
         ? 'env'
