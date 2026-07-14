@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Eye } from 'lucide-react';
 
+import { useAppTimezone } from '@/lib/timezone-context';
 import { EmptyState } from '@/components/empty-state';
 import {
   Dialog,
@@ -207,18 +208,7 @@ export default function WatchlistPage() {
     }
   };
 
-  const formatDate = (d: string | null) => {
-    if (!d) return '-';
-    try {
-      return new Date(d).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return d;
-    }
-  };
+  const { formatDate } = useAppTimezone();
 
   const formatPrice = (v: number | null) => {
     if (v === null || v === undefined) return '-';

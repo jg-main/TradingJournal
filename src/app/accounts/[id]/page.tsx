@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import { ArrowLeft, Plus, Minus } from 'lucide-react';
 import Link from 'next/link';
+import { useAppTimezone } from '@/lib/timezone-context';
 
 interface Transaction {
   id: string;
@@ -121,17 +122,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
     return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
-  const formatDate = (d: string) => {
-    try {
-      return new Date(d).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return d;
-    }
-  };
+  const { formatDate } = useAppTimezone();
 
   if (loading) {
     return (
