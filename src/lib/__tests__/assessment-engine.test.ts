@@ -211,6 +211,34 @@ vi.mock('@/db', () => {
   };
 });
 
+// ── Mock @/lib/market-data-resolver ────────────────────────────────────
+// When deps.clickhouseClient is NOT provided, performAssessment calls
+// resolveOhlcProvider() from the market-data-resolver module. We mock it
+// here to return a controllable MarketOhlcProvider that returns fake OHLC
+// data instead of connecting to a real ClickHouse server.
+
+vi.mock('../market-data-resolver', () => ({
+  resolveOhlcProvider: (providerName: string) => ({
+    name: providerName === 'schwab' ? 'schwab' : 'clickhouse',
+    getOhlc: async () => ({
+      symbol: 'AAPL',
+      secid: 12345,
+      dataDateRange: { start: '2024-01-01', end: '2024-01-31' },
+      ohlc: [
+        { date: '2024-01-02', open: 150.25, high: 152.80, low: 149.90, close: 151.50, volume: 50000000, vwap: 151.25 },
+      ],
+      notes: [],
+    }),
+    getFeatureTimeSeries: async () => [],
+    checkFreshness: async () => ({
+      status: 'fresh',
+      latestDate: '2024-01-31',
+      threshold: 'N/A',
+      message: 'Mocked freshness check',
+    }),
+  }),
+}));
+
 // ── Module-level imports (ESM imports work with vitest's alias resolver) ─
 
 import { eq } from 'drizzle-orm';
@@ -222,6 +250,9 @@ import {
   AssessmentError,
   AssessmentErrorCode,
 } from '../assessment-engine';
+import {
+  resolveOhlcProvider,
+} from '../market-data-resolver';
 import {
   AiProviderError,
 } from '../ai-provider';
@@ -1731,6 +1762,108 @@ console.log('\n31. performAssessment does NOT warn when OHLC bars meet or exceed
   // Check that no data sufficiency warning was added
   const hasSufficiencyWarning = result.warnings.some(w => w.includes('Data sufficiency'));
   assert(!hasSufficiencyWarning, 'no data sufficiency warning when bars >= maxLookback');
+}
+
+// ── 32. No deps.clickhouseClient → resolves via resolveOhlcProvider(analysisConfig.dataProvider) ──
+
+console.log('\n32. performAssessment without deps.clickhouseClient resolves provider from analysisConfig.dataProvider:');
+{
+  cleanup();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, {
+    openedAt: '2024-01-15T10:00:00.000Z',
+  });
+
+  // Seed setup with dataProvider explicitly set to 'clickhouse' in analysisConfig
+  const setupDefId = seedSetupDefinition({
+    name: 'Provider Test Setup',
+    analysisConfig: JSON.stringify({
+      ohlcYears: 1,
+      featureMode: 'custom',
+      features: [],
+      includeRawOhlcv: true,
+      dataProvider: 'clickhouse',
+    }),
+  });
+  const now = new Date().toISOString();
+  sqlite.exec(
+    `INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at) ` +
+    `VALUES ('${setupDefId}', 'setup', 'Provider Test Setup', 1, 1, '${now}', '${now}')`
+  );
+  sqlite.exec(`UPDATE trades SET setup_id = '${setupDefId}' WHERE id = '${tradeId}'`);
+  seedAiSetting();
+
+  // No clickhouseClient in deps — engine uses resolveOhlcProvider via mock
+  const mockAi = createMockAiProvider(makeValidScorecard());
+
+  const result = await performAssessment(tradeId, {
+    aiProvider: mockAi,
+  });
+
+  assertNotNull(result, 'result returned without deps.clickhouseClient');
+  assertEqual(result.scorecard.overallScore, 72, 'scorecard parsed correctly');
+}
+
+// ── 33. dataProvider='schwab' resolves via mock ─────────────────────────
+
+console.log('\n33. performAssessment resolves schwab provider from analysisConfig.dataProvider:');
+{
+  cleanup();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, {
+    openedAt: '2024-01-15T10:00:00.000Z',
+  });
+
+  const setupDefId = seedSetupDefinition({
+    name: 'Schwab Setup',
+    analysisConfig: JSON.stringify({
+      ohlcYears: 1,
+      featureMode: 'custom',
+      features: [],
+      includeRawOhlcv: true,
+      dataProvider: 'schwab',
+    }),
+  });
+  const now = new Date().toISOString();
+  sqlite.exec(
+    `INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at) ` +
+    `VALUES ('${setupDefId}', 'setup', 'Schwab Setup', 1, 1, '${now}', '${now}')`
+  );
+  sqlite.exec(`UPDATE trades SET setup_id = '${setupDefId}' WHERE id = '${tradeId}'`);
+  seedAiSetting();
+
+  const mockAi = createMockAiProvider(makeValidScorecard());
+
+  const result = await performAssessment(tradeId, {
+    aiProvider: mockAi,
+  });
+
+  assertNotNull(result, 'result returned with schwab provider');
+  assertEqual(result.scorecard.overallScore, 72, 'scorecard parsed correctly');
+}
+
+// ── 34. No analysisConfig → defaults to clickhouse ──────────────────────
+
+console.log('\n34. performAssessment defaults to clickhouse when no analysisConfig:');
+{
+  cleanup();
+  const accountId = seedAccount();
+  const tradeId = seedTrade(accountId, {
+    openedAt: '2024-01-15T10:00:00.000Z',
+  });
+
+  // No setupId — no analysisConfig will be resolved
+  // Engine defaults analysisConfig.dataProvider to 'clickhouse'
+  seedAiSetting();
+
+  const mockAi = createMockAiProvider(makeValidScorecard());
+
+  const result = await performAssessment(tradeId, {
+    aiProvider: mockAi,
+  });
+
+  assertNotNull(result, 'result returned with default clickhouse provider');
+  assertEqual(result.scorecard.overallScore, 72, 'scorecard parsed correctly');
 }
 
 

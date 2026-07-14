@@ -35,7 +35,6 @@ import {
   type AssessmentType,
 } from './scorecard';
 import {
-  createDefaultClickHouseClient,
   type MarketEvidence,
   type FreshnessCheck,
   type OhlcBar,
@@ -46,6 +45,8 @@ import {
   type AnalysisConfig,
   type FeatureConfig,
 } from './analysis-config';
+import { resolveOhlcProvider } from './market-data-resolver';
+import type { MarketOhlcProvider } from './market-ohlc-provider';
 import {
   createAiProvider,
   AiProviderError,
@@ -96,6 +97,10 @@ export class AssessmentError extends Error {
  * When omitted, the engine instantiates default clients (real ClickHouse
  * connection via env vars, real AI provider via the active ai_settings row).
  * Tests provide mocked implementations.
+ *
+ * When clickhouseClient is omitted, the engine resolves the market data
+ * provider from the per-setup analysisConfig.dataProvider field using
+ * resolveOhlcProvider() with a default of 'clickhouse'.
  */
 export interface AssessmentDeps {
   clickhouseClient?: {
@@ -174,6 +179,58 @@ export interface GatheredTradeData {
   /** Pre-computed indicator time series (from ClickHouse or server-computed) */
   featureTimeSeries: FeatureTimeSeries[] | null;
   warnings: string[];
+}
+
+// ── OHLC Provider Adapter ────────────────────────────────────────────────
+
+/**
+ * Adapt a MarketOhlcProvider to the internal clickhouse-client interface
+ * used by the assessment engine.
+ *
+ * Maps the param-object-style interface (getOhlc, getFeatureTimeSeries(params))
+ * to the positional/method-style interface expected internally
+ * (getMarketEvidence(query), getFeatureTimeSeries(symbol, features, start, end)).
+ */
+function createClientFromAnalysisConfig(
+  analysisConfig: AnalysisConfig | null,
+): NonNullable<AssessmentDeps['clickhouseClient']> {
+  const dataProvider: string = analysisConfig?.dataProvider ?? 'clickhouse';
+  const provider: MarketOhlcProvider = resolveOhlcProvider(dataProvider);
+
+  console.log(
+    JSON.stringify({
+      event: 'assessment_provider_resolution',
+      provider: dataProvider,
+      resolved: provider.name,
+    }),
+  );
+
+  return {
+    getMarketEvidence: async (query) =>
+      provider.getOhlc({
+        symbol: query.symbol,
+        startDate: query.startDate,
+        endDate: query.endDate,
+      }),
+    checkFreshness: async (thresholdDays?) =>
+      provider.checkFreshness(
+        thresholdDays !== undefined ? { thresholdDays } : undefined,
+      ),
+    getFeatureTimeSeries: async (symbol, features, startDate, endDate) =>
+      provider.getFeatureTimeSeries({
+        symbol,
+        features,
+        startDate,
+        endDate,
+      }),
+    getAllFeatureColumns: async () => {
+      // MarketOhlcProvider does not expose getAllFeatureColumns.
+      // When featureMode is 'all', returning [] means the assessment
+      // falls back to no pre-computed features — the ClickHouse path
+      // requires the direct client for column discovery.
+      return [];
+    },
+  };
 }
 
 // ── AI Config Resolver ────────────────────────────────────────────────────
@@ -982,7 +1039,8 @@ export async function performAssessment(
     aiProvider = createAiProvider(aiConfig);
   }
 
-  const chClient = deps?.clickhouseClient ?? createDefaultClickHouseClient();
+  // chClient is resolved after Step 1 when analysisConfig is available
+  // deps?.clickhouseClient path uses the test-provided mock directly
 
   // ── Step 1: Gather trade data ─────────────────────────────────────
   let gathered: GatheredTradeData;
@@ -1017,6 +1075,11 @@ export async function performAssessment(
       );
     }
   }
+
+  // ── Step 1.8: Resolve market data client from analysis config ────
+  const chClient =
+    deps?.clickhouseClient ??
+    createClientFromAnalysisConfig(gathered.analysisConfig);
 
   // ── Step 2: Market evidence (ClickHouse) ──────────────────────────
   let marketEvidence: MarketEvidence | null = null;
