@@ -379,6 +379,91 @@ test.describe('Settings', () => {
       // The modal should advance to the confirm step (preview API succeeded)
       await expect(restoreDialog.getByPlaceholder('Type RESTORE to confirm')).toBeVisible({ timeout: 10000 });
     });
+
+    test('showOpenFilePicker exception via hidden input fallback', async ({ page, browserName }) => {
+      test.skip(browserName !== 'chromium', 'showOpenFilePicker is Chromium-only');
+
+      // Seed prerequisite data so the backup API returns content
+      resetReadinessState();
+
+      const profileRes = await page.request.put('/api/app-profile', {
+        data: {
+          displayName: 'Test Trader',
+          timezone: 'America/New_York',
+          defaultCurrency: 'USD',
+        },
+      });
+      expect(profileRes.ok()).toBeTruthy();
+
+      const settingsRes = await page.request.put('/api/settings', {
+        data: {
+          startingAccountValue: 10000,
+          journalStartDate: '2024-01-01',
+          defaultCommission: 0.5,
+          maxRiskPerTradePct: 2,
+        },
+      });
+      expect(settingsRes.ok()).toBeTruthy();
+
+      const accountRes = await page.request.post('/api/accounts', {
+        data: {
+          name: 'Test Account',
+          broker: 'Test Broker',
+          currency: 'USD',
+          isActive: true,
+        },
+      });
+      expect(accountRes.ok()).toBeTruthy();
+
+      const setupRes = await page.request.post('/api/setup-definitions', {
+        data: {
+          name: 'Breakout',
+          description: 'Breakout trade setup',
+        },
+      });
+      expect(setupRes.ok()).toBeTruthy();
+
+      // Navigate to /settings/backup to access the Upload Backup button
+      await page.goto('/settings/backup');
+      await page.waitForLoadState('networkidle');
+
+      // Download a fresh backup ZIP to provide as the file via the hidden input fallback
+      const response = await page.request.get('/api/backup');
+      expect(response.ok()).toBeTruthy();
+      const zipBuffer = Buffer.from(await response.body());
+
+      // Click Upload Backup to open the restore dialog
+      await page.getByRole('button', { name: 'Upload Backup' }).click();
+
+      // Scope to the dialog
+      const restoreDialog = page.getByRole('dialog', { name: 'Restore backup' });
+      await expect(restoreDialog).toBeVisible();
+
+      // Mock showOpenFilePicker to throw (simulating Brave Shields blocking the permission).
+      // handleChooseFile catches non-AbortError exceptions and falls through to the
+      // hidden input fallback (fileInputRef.current.click()).
+      await page.evaluate(() => {
+        (window as any).showOpenFilePicker = async () => {
+          throw new Error('Browser blocked the File System Access API');
+        };
+      });
+
+      // Click the upload area — handleChooseFile will call the mocked showOpenFilePicker,
+      // it throws, then falls through to fileInputRef.current.click() which opens
+      // the native file picker.
+      const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 5000 });
+      await restoreDialog.getByRole('button', { name: /choose/i }).click();
+      const fileChooser = await fileChooserPromise;
+      await fileChooser.setFiles({
+        name: 'test-backup.zip',
+        mimeType: 'application/zip',
+        buffer: zipBuffer,
+      });
+
+      // The bridge picks up the file and calls previewSelectedFile which uploads
+      // to /api/restore/preview. On success the modal advances to confirm.
+      await expect(restoreDialog.getByPlaceholder('Type RESTORE to confirm')).toBeVisible({ timeout: 10000 });
+    });
   });
 
   test.describe('Backup download', () => {
