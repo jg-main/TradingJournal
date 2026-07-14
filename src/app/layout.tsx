@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/sidebar";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
+import { TimezoneProvider } from "@/lib/timezone-context";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -38,12 +39,14 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: '(function(){try{var t=localStorage.getItem("theme");if(!t)t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";if(t==="dark")document.documentElement.classList.add("dark")}catch(e){}})()' }} />
       </head>
       <body className="min-h-full flex">
-        <TooltipProvider>
-          <KeyboardShortcutsProvider>
-            <Sidebar />
-            <main className="flex-1 overflow-auto">{children}</main>
-          </KeyboardShortcutsProvider>
-        </TooltipProvider>
+        <TimezoneProvider>
+          <TooltipProvider>
+            <KeyboardShortcutsProvider>
+              <Sidebar />
+              <main className="flex-1 overflow-auto">{children}</main>
+            </KeyboardShortcutsProvider>
+          </TooltipProvider>
+        </TimezoneProvider>
       </body>
     </html>
   );
