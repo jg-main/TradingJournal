@@ -120,6 +120,11 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
    * Convenience factory: creates a SchwabProvider using the existing auth
    * client singleton from schwab-auth.ts.
    *
+   * Applies rate-limit and retry middleware to the API client:
+   *   - Rate limit: SCHWAB_RATE_LIMIT_RPM env var (default 120 req/min)
+   *   - Retry attempts: SCHWAB_RETRY_MAX_ATTEMPTS env var (default 3)
+   *   - Retry base delay: SCHWAB_RETRY_BASE_DELAY_MS env var (default 1000ms)
+   *
    * Returns null when Schwab is not configured (env vars missing).
    * Use the constructor directly for tests with a mock API client.
    */
@@ -129,8 +134,29 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
     const authClient = getAuthClient();
     if (!authClient) return null;
 
-    const client = createApiClient({ auth: authClient });
+    const rpm = SchwabProvider.readEnvInt('SCHWAB_RATE_LIMIT_RPM', 120);
+    const retryAttempts = SchwabProvider.readEnvInt('SCHWAB_RETRY_MAX_ATTEMPTS', 3);
+    const retryBaseDelayMs = SchwabProvider.readEnvInt('SCHWAB_RETRY_BASE_DELAY_MS', 1_000);
+
+    const client = createApiClient({
+      auth: authClient,
+      middleware: {
+        rateLimit: { maxRequests: rpm, windowMs: 60_000 },
+        retry: { maxAttempts: retryAttempts, baseDelayMs: retryBaseDelayMs },
+      },
+    });
     return new SchwabProvider(client);
+  }
+
+  /**
+   * Read an integer env var with a fallback default.
+   * Returns the default if the env var is unset, empty, or not a valid integer.
+   */
+  private static readEnvInt(key: string, fallback: number): number {
+    const raw = process.env[key];
+    if (!raw) return fallback;
+    const parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
   // ── MarketQuoteProvider Implementation ────────────────────────────────

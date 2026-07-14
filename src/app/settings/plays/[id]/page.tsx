@@ -32,6 +32,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
 
   const [featureMode, setFeatureMode] = useState<'all' | 'custom'>('all');
   const [customFeatures, setCustomFeatures] = useState('');
+  const [dataProvider, setDataProvider] = useState<'clickhouse' | 'schwab'>('clickhouse');
 
   // ── Form fields ──────────────────────────────────────────────────
   const [name, setName] = useState('');
@@ -62,7 +63,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
       setChartPatterns(data.chartPatterns ?? '');
 
       // Parse analysis config
-      let parsedConfig: { featureMode?: string; features?: Array<{ id: string }> } | null = null;
+      let parsedConfig: { featureMode?: string; features?: Array<{ id: string }>; dataProvider?: string } | null = null;
       try {
         if (data.analysisConfig) parsedConfig = JSON.parse(data.analysisConfig);
       } catch { /* ignore */ }
@@ -72,6 +73,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
       } else {
         setCustomFeatures('[]');
       }
+      setDataProvider(parsedConfig?.dataProvider === 'schwab' ? 'schwab' : 'clickhouse');
     } catch { /* ignore */ } finally { setLoading(false); }
   };
 
@@ -93,6 +95,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
       features: featureMode === 'custom' ? (() => {
         try { return JSON.parse(customFeatures); } catch { return []; }
       })() : [],
+      dataProvider,
     });
 
     // Only send fields that have content — null values would overwrite
@@ -303,6 +306,24 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
 
+          <div className="mt-4">
+            <label htmlFor="play-dataProvider" className="mb-1 block text-xs font-medium text-muted-foreground">Market Data Provider</label>
+            <select
+              id="play-dataProvider"
+              value={dataProvider}
+              onChange={e => setDataProvider(e.target.value as 'clickhouse' | 'schwab')}
+              className="w-full max-w-xs rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="clickhouse">ClickHouse (EOD, full indicator support)</option>
+              <option value="schwab">Schwab (intraday 10m, limited indicators)</option>
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {dataProvider === 'schwab'
+                ? 'Schwab supplies 10min OHLC data for intraday precision. Feature indicators are limited compared to ClickHouse.'
+                : 'ClickHouse is recommended — full indicator support with pre-computed feature columns.'}
+            </p>
+          </div>
+
           {showRawConfig && (
             <div className="mt-3 rounded-md bg-muted p-3">
               <pre className="overflow-auto text-xs text-muted-foreground">
@@ -313,6 +334,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
                   features: featureMode === 'custom' ? (() => {
                     try { return JSON.parse(customFeatures); } catch { return []; }
                   })() : [],
+                  dataProvider,
                 }, null, 2)}
               </pre>
             </div>
