@@ -40,6 +40,7 @@ export default defineConfig({
       'src/lib/__tests__/analysis-config.test.ts',
       'src/app/api/schwab/status/__tests__/route.test.ts',
       'src/app/api/schwab/disconnect/__tests__/route.test.ts',
+      'src/lib/__tests__/market-data-resolver.test.ts',
     ],
   },
 });
