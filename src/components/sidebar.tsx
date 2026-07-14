@@ -42,7 +42,7 @@ export function Sidebar() {
     <>
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed left-3 top-3 z-40 flex size-8 items-center justify-center rounded-lg border border-zinc-200 bg-white shadow-sm md:hidden dark:border-zinc-700 dark:bg-zinc-900"
+        className="fixed left-3 top-3 z-40 flex min-w-11 min-h-11 items-center justify-center rounded-lg border border-zinc-200 bg-white shadow-sm md:hidden dark:border-zinc-700 dark:bg-zinc-900"
         aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
       >
         {sidebarOpen ? <X className="size-4" /> : <Menu className="size-4" />}

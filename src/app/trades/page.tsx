@@ -156,7 +156,7 @@ export default function TradesPage() {
     }},
     { id: 'actions', header: 'Actions', enableSorting: false, cell: ({ row }) => (
       <div className="flex items-center justify-center gap-0.5" onClick={e => e.stopPropagation()}>
-        <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(row.original.id, row.original.tradeCode)} title="Remove" className="text-zinc-400 hover:text-red-600"><Trash2 className="size-3.5" /></Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(row.original.id, row.original.tradeCode)} aria-label="Remove trade" className="min-w-11 min-h-11 text-zinc-400 hover:text-red-600"><Trash2 className="size-3.5" /></Button>
       </div>
     )},
     // ── Extra columns (hidden by default) ──

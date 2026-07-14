@@ -358,14 +358,14 @@ export default function TradeMistakesCard({
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => handleEdit(m)}
-                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 min-w-11 min-h-11 justify-center"
                             aria-label="Edit mistake"
                           >
                             <Pencil className="size-3" />
                           </button>
                           <button
                             onClick={() => handleDelete(m.id)}
-                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:text-red-400 dark:hover:bg-red-900/30 min-w-11 min-h-11 justify-center"
                             aria-label="Delete mistake"
                           >
                             <Trash2 className="size-3" />

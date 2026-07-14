@@ -540,8 +540,9 @@ export default function ChecksPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
                     <button
-                      className="mt-0.5 shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                      className="mt-0.5 shrink-0 min-w-11 min-h-11 flex items-center justify-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                       onClick={(e) => { e.stopPropagation(); handleExpand(tpl.id); }}
+                      aria-label={isExpanded ? 'Collapse checklist' : 'Expand checklist'}
                     >
                       {isExpanded ? (
                         <ChevronDown className="size-4" />
@@ -564,14 +565,16 @@ export default function ChecksPage() {
                             }}
                           />
                           <button
-                            className="rounded p-0.5 text-emerald-500 hover:text-emerald-600"
+                            className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-emerald-500 hover:text-emerald-600"
                             onClick={handleRenameConfirm}
+                            aria-label="Confirm rename"
                           >
                             <Check className="size-3.5" />
                           </button>
                           <button
-                            className="rounded p-0.5 text-zinc-400 hover:text-zinc-600"
+                            className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-zinc-400 hover:text-zinc-600"
                             onClick={() => setRenamingTemplate(null)}
+                            aria-label="Cancel rename"
                           >
                             <X className="size-3.5" />
                           </button>
@@ -580,8 +583,9 @@ export default function ChecksPage() {
                         <CardTitle className="flex items-center gap-2">
                           {tpl.name}
                           <button
-                            className="opacity-0 text-zinc-400 hover:text-zinc-600 group-hover/card:opacity-100 dark:hover:text-zinc-300"
+                            className="opacity-0 text-zinc-400 hover:text-zinc-600 group-hover/card:opacity-100 dark:hover:text-zinc-300 min-w-11 min-h-11 flex items-center justify-center"
                             onClick={(e) => { e.stopPropagation(); handleRenameStart(tpl); }}
+                            aria-label="Rename checklist"
                           >
                             <Pencil className="size-3" />
                           </button>
@@ -609,8 +613,9 @@ export default function ChecksPage() {
 
                     {/* Delete */}
                     <button
-                      className="shrink-0 text-zinc-400 hover:text-red-500 dark:hover:text-red-400"
+                      className="shrink-0 min-w-11 min-h-11 flex items-center justify-center text-zinc-400 hover:text-red-500 dark:hover:text-red-400"
                       onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(tpl.id); }}
+                      aria-label="Delete checklist"
                     >
                       <Trash2 className="size-4" />
                     </button>
@@ -662,14 +667,16 @@ export default function ChecksPage() {
                                 }}
                               />
                               <button
-                                className="rounded p-0.5 text-emerald-500 hover:text-emerald-600"
+                                className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-emerald-500 hover:text-emerald-600"
                                 onClick={handleEditItemConfirm}
+                                aria-label="Confirm edit"
                               >
                                 <Check className="size-3.5" />
                               </button>
                               <button
-                                className="rounded p-0.5 text-zinc-400 hover:text-zinc-600"
+                                className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-zinc-400 hover:text-zinc-600"
                                 onClick={() => setEditingItem(null)}
+                                aria-label="Cancel edit"
                               >
                                 <X className="size-3.5" />
                               </button>
@@ -699,14 +706,16 @@ export default function ChecksPage() {
                         {/* Actions */}
                         <div className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
                           <button
-                            className="rounded p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                            className="rounded p-1 min-w-11 min-h-11 flex items-center justify-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
                             onClick={() => handleEditItemStart(tpl.id, item)}
+                            aria-label="Edit item"
                           >
                             <Pencil className="size-3" />
                           </button>
                           <button
-                            className="rounded p-1 text-zinc-400 hover:text-red-500 dark:hover:text-red-400"
+                            className="rounded p-1 min-w-11 min-h-11 flex items-center justify-center text-zinc-400 hover:text-red-500 dark:hover:text-red-400"
                             onClick={() => handleDeleteItem(tpl.id, item.id)}
+                            aria-label="Delete item"
                           >
                             <Trash2 className="size-3" />
                           </button>
