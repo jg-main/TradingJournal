@@ -14,8 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@/db';
 import { trades, positionPriceSnapshots } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { YahooFinanceProvider } from '@/lib/market-quote';
-import type { MarketQuoteProvider } from '@/lib/market-quote';
+import { resolveQuoteProvider } from '@/lib/market-data-resolver';
 
 // ── Rate-limit state (in-memory, per-process) ──────────────────────────
 // Resets on server restart / cold start. This is intentional — the cooldown
@@ -28,14 +27,14 @@ let lastRefreshTimestampMs = 0;
 /**
  * Reset the rate-limit cooldown timer (for testability).
  */
-function _resetRateLimit(): void {
+export function _resetRateLimit(): void {
   lastRefreshTimestampMs = 0;
 }
 
 /**
  * Get the current rate-limit state (for testability).
  */
-function _getRateLimitMs(): number {
+export function _getRateLimitMs(): number {
   return RATE_LIMIT_MS;
 }
 
@@ -43,7 +42,7 @@ function _getRateLimitMs(): number {
  * Get the remaining cooldown milliseconds (for testability).
  * Returns 0 when no cooldown is active.
  */
-function _getRemainingCooldownMs(): number {
+export function _getRemainingCooldownMs(): number {
   const elapsed = Date.now() - lastRefreshTimestampMs;
   return elapsed < RATE_LIMIT_MS ? RATE_LIMIT_MS - elapsed : 0;
 }
@@ -87,7 +86,7 @@ export async function POST(_request: NextRequest) {
 
     // ── Fetch quotes ──────────────────────────────────────────────
     const symbols = [...new Set(openTrades.map((t) => t.symbol))];
-    const provider: MarketQuoteProvider = new YahooFinanceProvider();
+    const provider = resolveQuoteProvider();
     const quotes = await provider.getQuote(symbols);
 
     // ── Persist snapshots & update trade prices ───────────────────
