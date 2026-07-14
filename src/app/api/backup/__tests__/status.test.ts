@@ -75,10 +75,24 @@ function doGetStatus(overrides: {
     const lastRunAt = row?.backupLastRunAt ?? null;
     const lastRunStatus = row?.backupLastRunStatus ?? null;
     const nextScheduledAt = null; // In test env, scheduler is disabled
+    const schedulerActive = false;
+    const schedulerStatus = 'stopped';
+    const schedulerNodeEnv = 'test';
+    const backupCronTime = row?.backupCronTime ?? '02:00';
+    const cronExpression = '(scheduler not started)';
 
     return {
       status: 200,
-      body: { lastRunAt, lastRunStatus, nextScheduledAt },
+      body: {
+        lastRunAt,
+        lastRunStatus,
+        nextScheduledAt,
+        schedulerActive,
+        schedulerStatus,
+        schedulerNodeEnv,
+        backupCronTime,
+        cronExpression,
+      },
     };
   } catch (error) {
     return {
@@ -239,8 +253,19 @@ async function runTests() {
 
       // Verify exact field set
       const keys = Object.keys(body).sort();
-      assertEqual(JSON.stringify(keys), JSON.stringify(['lastRunAt', 'lastRunStatus', 'nextScheduledAt']),
-        'Response has exactly 3 fields: lastRunAt, lastRunStatus, nextScheduledAt');
+      const expectedKeys = [
+        'lastRunAt',
+        'lastRunStatus',
+        'nextScheduledAt',
+        'schedulerActive',
+        'schedulerStatus',
+        'schedulerNodeEnv',
+        'backupCronTime',
+        'cronExpression',
+      ].sort();
+
+      assertEqual(JSON.stringify(keys), JSON.stringify(expectedKeys),
+        'Response has exactly 8 fields: lastRunAt, lastRunStatus, nextScheduledAt, schedulerActive, schedulerStatus, schedulerNodeEnv, backupCronTime, cronExpression');
 
       // Verify types
       assert(
@@ -254,6 +279,26 @@ async function runTests() {
       assert(
         body['nextScheduledAt'] === null || typeof body['nextScheduledAt'] === 'string',
         'nextScheduledAt is null or string',
+      );
+      assert(
+        typeof body['schedulerActive'] === 'boolean',
+        'schedulerActive is a boolean',
+      );
+      assert(
+        typeof body['schedulerStatus'] === 'string',
+        'schedulerStatus is a string',
+      );
+      assert(
+        typeof body['schedulerNodeEnv'] === 'string',
+        'schedulerNodeEnv is a string',
+      );
+      assert(
+        typeof body['backupCronTime'] === 'string',
+        'backupCronTime is a string',
+      );
+      assert(
+        typeof body['cronExpression'] === 'string',
+        'cronExpression is a string',
       );
     } finally {
       sqlite.close();

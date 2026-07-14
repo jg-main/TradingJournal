@@ -21,9 +21,38 @@ sqlite.exec(`
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
+
+  CREATE TABLE settings (
+    id TEXT PRIMARY KEY NOT NULL,
+    default_account_id TEXT,
+    starting_account_value REAL,
+    max_risk_per_trade_pct REAL,
+    default_commission REAL,
+    journal_start_date TEXT,
+    currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
 `);
 
 vi.mock('@/db', () => ({ db }));
+vi.mock('node-cron', () => ({ default: { schedule: vi.fn() } }));
+vi.mock('@/lib/scheduler', () => ({
+  reschedule: vi.fn(),
+  cronTimeToUTCExpression: vi.fn((time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    return `${m} ${h} * * *`;
+  }),
+  isSchedulerActive: vi.fn(() => false),
+}));
+vi.mock('@/lib/backup-job', () => ({
+  runBackupJob: vi.fn(),
+}));
 
 async function loadRoute() {
   return import('../route');
