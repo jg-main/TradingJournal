@@ -18,6 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+import { useAppTimezone } from '@/lib/timezone-context';
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface Trade {
@@ -118,11 +120,7 @@ export default function TradesPage() {
     } catch { setMessage({ type: 'error', text: 'Network error.' }); }
   }, [fetchItems, page, statusFilter]);
 
-  const formatDate = (d: string | null) => {
-    if (!d) return '—';
-    try { return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
-    catch { return d; }
-  };
+  const { formatDate } = useAppTimezone();
   const formatPrice = (v: number | null) => v != null ? v.toFixed(2) : '—';
 
   // ── Column definitions ─────────────────────────────────────────────
@@ -191,7 +189,7 @@ export default function TradesPage() {
       if (v == null) return <span className="tabular-nums text-zinc-400">—</span>;
       return <span className={`tabular-nums text-xs font-medium ${v >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{v >= 0 ? '+' : ''}{v.toFixed(2)}%</span>;
     }},
-  ], [handleDelete]);
+  ], [handleDelete, formatDate]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
