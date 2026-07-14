@@ -28,11 +28,11 @@ import { createBackupBuffer } from './create-backup';
  * Derive the backup storage directory from environment or database path.
  *
  * Priority:
- * 1. BACKUP_DIR environment variable (e.g. /mnt/backups/journal)
+ * 1. TJ_BACKUP_DIR environment variable (e.g. /mnt/backups/journal)
  * 2. Derived from DB_FILE_NAME: dirname(DB_FILE_NAME)/backups
  */
 export function getBackupDir(): string {
-  if (process.env.BACKUP_DIR) return process.env.BACKUP_DIR;
+  if (process.env.TJ_BACKUP_DIR) return process.env.TJ_BACKUP_DIR;
   const dbFile = process.env.DB_FILE_NAME || './.trading-journal/journal.db';
   const dbDir = dirname(dbFile);
   return join(dbDir, 'backups');
