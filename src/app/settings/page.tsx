@@ -8,6 +8,7 @@ import {
   Building2,
   CircleCheck,
   CircleDashed,
+  Database,
   Gamepad2,
   HardDrive,
   Loader2,
@@ -69,6 +70,12 @@ const cards: HubCard[] = [
     description: 'Manage mistake categories for trade reviews.',
     href: '/settings/mistake-types',
     icon: <AlertTriangle className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+  },
+  {
+    title: 'Market Data',
+    description: 'Configure market data providers and connection settings.',
+    href: '/settings/market-data',
+    icon: <Database className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Backup',
