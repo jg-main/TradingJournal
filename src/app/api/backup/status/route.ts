@@ -22,6 +22,7 @@ import {
   getSchedulerStatus,
   getCurrentCronExpression,
 } from '@/lib/scheduler';
+import { getBackupDir } from '@/lib/backup-job';
 
 export async function GET() {
   try {
@@ -37,6 +38,7 @@ export async function GET() {
     const backupCronTime = row?.backupCronTime ?? '02:00';
     const cronExpression = getCurrentCronExpression() || '(scheduler not started)';
     const appTimezone = profileRow?.timezone ?? 'America/Bogota';
+    const backupDir = getBackupDir();
 
     return NextResponse.json({
       lastRunAt,
@@ -48,6 +50,7 @@ export async function GET() {
       backupCronTime,
       cronExpression,
       appTimezone,
+      backupDir,
     });
   } catch (error) {
     return NextResponse.json(

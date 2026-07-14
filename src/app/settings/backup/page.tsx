@@ -36,6 +36,7 @@ interface BackupStatus {
   backupCronTime: string;
   cronExpression: string;
   appTimezone: string;
+  backupDir: string;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -561,6 +562,11 @@ export default function BackupsSettingsPage() {
           <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
             Backup files created by the scheduler. Click Restore to recover data from any file.
           </p>
+          {backupStatus?.backupDir && (
+            <p className="mb-4 text-xs text-zinc-400 dark:text-zinc-500">
+              Storage path: <code className="rounded bg-zinc-100 px-1 text-xs dark:bg-zinc-800">{backupStatus.backupDir}</code>
+            </p>
+          )}
 
           {serverFiles.length === 0 ? (
             <p className="text-xs text-zinc-400 dark:text-zinc-500">

@@ -25,13 +25,14 @@ import { createBackupBuffer } from './create-backup';
 // ── Backup directory resolution ─────────────────────────────────────────
 
 /**
- * Derive the backup storage directory from the database file path.
+ * Derive the backup storage directory from environment or database path.
  *
- * Uses the same TJ_DATA_DIR convention as the DB file location.
- * If the DB lives at `./.trading-journal/journal.db`, backups go to
- * `./.trading-journal/backups/`.
+ * Priority:
+ * 1. BACKUP_DIR environment variable (e.g. /mnt/backups/journal)
+ * 2. Derived from DB_FILE_NAME: dirname(DB_FILE_NAME)/backups
  */
 export function getBackupDir(): string {
+  if (process.env.BACKUP_DIR) return process.env.BACKUP_DIR;
   const dbFile = process.env.DB_FILE_NAME || './.trading-journal/journal.db';
   const dbDir = dirname(dbFile);
   return join(dbDir, 'backups');
