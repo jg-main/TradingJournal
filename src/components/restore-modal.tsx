@@ -151,6 +151,10 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
     } finally {
       setIsUploading(false);
       abortRef.current = null;
+      // Reset the file input so the same file can be re-selected after a failed attempt
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -207,6 +211,15 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Restore backup">
+      <input
+        ref={fileInputRef}
+        id="backup-upload-file"
+        type="file"
+        accept=".zip"
+        onChange={handleFileChange}
+        className="absolute h-0 w-0 opacity-0"
+        aria-label="Select backup ZIP file"
+      />
       <div className="relative w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <button onClick={handleClose} className="absolute right-4 top-4 rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" aria-label="Close restore modal">
           <X className="size-5" />
@@ -270,10 +283,12 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
               <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-zinc-400" /><p className="text-sm text-zinc-600 dark:text-zinc-300">Uploading and validating backup...</p></div>
             ) : (
               <div className="mt-6">
-                <label className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-6 py-8 text-center hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500">
+                <label
+                  htmlFor="backup-upload-file"
+                  className="flex w-full cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-6 py-8 text-center hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500"
+                >
                   <Upload className="size-10 text-zinc-400" strokeWidth={1.5} />
                   <div><p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Choose a backup ZIP file</p><p className="mt-1 text-xs text-zinc-400">Only .zip files exported from this journal are supported</p></div>
-                  <input ref={fileInputRef} type="file" accept=".zip" onChange={handleFileChange} className="sr-only" aria-label="Select backup ZIP file" />
                 </label>
               </div>
             )}
