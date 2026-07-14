@@ -280,10 +280,11 @@ export default function WatchlistPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="watchlist-direction" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                     Direction
                   </label>
                   <select
+                    id="watchlist-direction"
                     value={form.direction}
                     onChange={(e) => setForm((f) => ({ ...f, direction: e.target.value as 'long' | 'short' }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
@@ -294,10 +295,11 @@ export default function WatchlistPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label htmlFor="watchlist-status" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                     Status
                   </label>
                   <select
+                    id="watchlist-status"
                     value={form.status}
                     onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as WatchlistItem['status'] }))}
                     className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
@@ -390,9 +392,9 @@ export default function WatchlistPage() {
       {/* Filter */}
       {items.length > 0 && (
         <div className="mb-6 flex items-center gap-2">
-          <label className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Filter:</label>
+          <label htmlFor="watchlist-filter" className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Filter:</label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger id="watchlist-filter" className="w-36">
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
             <SelectContent>

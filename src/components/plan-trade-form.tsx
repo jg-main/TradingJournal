@@ -200,12 +200,13 @@ export default function PlanTradeForm({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-symbol" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Symbol
                 </label>
                 <HelpTooltip content="Ticker symbol of the asset you plan to trade (e.g. AAPL, MSFT)" />
               </div>
               <Input
+                id="plan-symbol"
                 placeholder="e.g. AAPL"
                 value={form.symbol}
                 onChange={(e) => updateField('symbol', e.target.value)}
@@ -215,7 +216,7 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-direction" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Direction
                 </label>
                 <HelpTooltip content="Long = buy expecting price increase. Short = sell expecting price decrease." />
@@ -225,7 +226,7 @@ export default function PlanTradeForm({
                 onValueChange={(v: 'long' | 'short') => updateField('direction', v)}
                 disabled={submitting}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="plan-direction" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -239,7 +240,7 @@ export default function PlanTradeForm({
           {/* Account */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-account" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Account
               </label>
               <HelpTooltip content="The brokerage account this trade will be executed in" />
@@ -249,7 +250,7 @@ export default function PlanTradeForm({
               onValueChange={(v) => updateField('accountId', v)}
               disabled={submitting}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="plan-account" className="w-full">
                 <SelectValue placeholder="Select account" />
               </SelectTrigger>
               <SelectContent>
@@ -265,7 +266,7 @@ export default function PlanTradeForm({
           {/* Setup */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-setup" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Setup
               </label>
               <HelpTooltip content="The trading setup or strategy pattern that triggered this trade idea" />
@@ -275,7 +276,7 @@ export default function PlanTradeForm({
               onValueChange={(v) => updateField('setup', v)}
               disabled={submitting}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="plan-setup" className="w-full">
                 <SelectValue placeholder="Select setup" />
               </SelectTrigger>
               <SelectContent>
@@ -292,12 +293,13 @@ export default function PlanTradeForm({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-plannedEntry" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Planned Entry
                 </label>
                 <HelpTooltip content="Your intended entry price for this trade" />
               </div>
               <Input
+                id="plan-plannedEntry"
                 type="number"
                 step="any"
                 placeholder="0.00"
@@ -308,12 +310,13 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-plannedStop" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Stop Loss
                 </label>
                 <HelpTooltip content="Maximum acceptable loss level to limit downside risk" />
               </div>
               <Input
+                id="plan-plannedStop"
                 type="number"
                 step="any"
                 placeholder="0.00"
@@ -324,12 +327,13 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-target1" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Target 1
                 </label>
                 <HelpTooltip content="First profit-taking level for this trade" />
               </div>
               <Input
+                id="plan-target1"
                 type="number"
                 step="any"
                 placeholder="0.00"
@@ -340,12 +344,13 @@ export default function PlanTradeForm({
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="plan-qty" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Qty
                 </label>
                 <HelpTooltip content="Number of shares or contracts to trade" />
               </div>
               <Input
+                id="plan-qty"
                 type="number"
                 step="any"
                 placeholder="0"
@@ -433,12 +438,13 @@ export default function PlanTradeForm({
           {/* Thesis */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-thesis" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Thesis
               </label>
               <HelpTooltip content="Your reasoning and analysis supporting this trade idea. Max 2 sentences." />
             </div>
             <textarea
+              id="plan-thesis"
               rows={3}
               placeholder="Why are you taking this trade?"
               value={form.thesis}
@@ -451,12 +457,13 @@ export default function PlanTradeForm({
           {/* Invalidation Condition */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-invalidation" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Invalidation Condition
               </label>
               <HelpTooltip content="What market conditions or price levels would invalidate this trade idea. Max 2 sentences." />
             </div>
             <textarea
+              id="plan-invalidation"
               rows={3}
               placeholder="What would prove this trade idea wrong?"
               value={form.invalidationCondition}
@@ -469,12 +476,13 @@ export default function PlanTradeForm({
           {/* Pre-Trade Plan */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="plan-preTradePlan" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Pre-Trade Plan
               </label>
               <HelpTooltip content="Your step-by-step plan: entry criteria, position sizing, risk management approach, and trade management rules. Max 2 sentences." />
             </div>
             <textarea
+              id="plan-preTradePlan"
               rows={4}
               placeholder="What is your execution plan for this trade?"
               value={form.preTradePlan}

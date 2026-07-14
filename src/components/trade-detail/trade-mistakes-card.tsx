@@ -182,14 +182,14 @@ export default function TradeMistakesCard({
             )}
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-type" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Mistake Type *
                 </label>
                 <Select
                   value={form.mistakeType}
                   onValueChange={(v) => setForm((f) => ({ ...f, mistakeType: v }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="mistake-type">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -211,14 +211,14 @@ export default function TradeMistakesCard({
                 </Select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-phase" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Phase *
                 </label>
                 <Select
                   value={form.phase}
                   onValueChange={(v) => setForm((f) => ({ ...f, phase: v }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="mistake-phase">
                     <SelectValue placeholder="Select phase" />
                   </SelectTrigger>
                   <SelectContent>
@@ -231,14 +231,14 @@ export default function TradeMistakesCard({
                 </Select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-severity" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Severity *
                 </label>
                 <Select
                   value={form.severity}
                   onValueChange={(v) => setForm((f) => ({ ...f, severity: v }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="mistake-severity">
                     <SelectValue placeholder="Select severity" />
                   </SelectTrigger>
                   <SelectContent>
@@ -250,14 +250,14 @@ export default function TradeMistakesCard({
                 </Select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-status" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Status *
                 </label>
                 <Select
                   value={form.status}
                   onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="mistake-status">
                     <SelectValue placeholder="Select status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -270,10 +270,11 @@ export default function TradeMistakesCard({
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="mistake-rootCause" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Root Cause *
               </label>
               <input
+                id="mistake-rootCause"
                 type="text"
                 value={form.rootCause}
                 onChange={(e) => setForm((f) => ({ ...f, rootCause: e.target.value }))}
@@ -282,10 +283,11 @@ export default function TradeMistakesCard({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="mistake-correctiveAction" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Corrective Action *
               </label>
               <input
+                id="mistake-correctiveAction"
                 type="text"
                 value={form.correctiveAction}
                 onChange={(e) => setForm((f) => ({ ...f, correctiveAction: e.target.value }))}

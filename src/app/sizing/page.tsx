@@ -326,10 +326,11 @@ export default function SizingPage() {
           <div className="grid gap-6 sm:grid-cols-2">
             {/* Account Equity */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-accountEquity" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
                 Account Equity ($)
               </label>
               <Input
+                id="sizing-accountEquity"
                 type="number"
                 step="any"
                 min="0"
@@ -341,10 +342,11 @@ export default function SizingPage() {
 
             {/* Risk Per Trade (%) */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-riskPerTrade" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
                 Risk Per Trade (%)
               </label>
               <Input
+                id="sizing-riskPerTrade"
                 type="number"
                 step="any"
                 min="0"
@@ -357,10 +359,11 @@ export default function SizingPage() {
 
             {/* Entry Price */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-entryPrice" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
                 Entry Price ($)
               </label>
               <Input
+                id="sizing-entryPrice"
                 type="number"
                 step="any"
                 min="0"
@@ -372,10 +375,11 @@ export default function SizingPage() {
 
             {/* Stop Price */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-stopPrice" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
                 Stop Price ($)
               </label>
               <Input
+                id="sizing-stopPrice"
                 type="number"
                 step="any"
                 min="0"
@@ -387,14 +391,14 @@ export default function SizingPage() {
 
             {/* Direction */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-direction" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
                 Direction
               </label>
               <Select
                 value={direction}
                 onValueChange={(v: Direction) => { setDirection(v); setResult(null); setCreatedTrade(null); }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="sizing-direction" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -416,10 +420,11 @@ export default function SizingPage() {
 
             {/* Target Price (optional) */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+              <label htmlFor="sizing-targetPrice" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
                 Target Price ($) <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
               </label>
               <Input
+                id="sizing-targetPrice"
                 type="number"
                 step="any"
                 min="0"
@@ -432,14 +437,14 @@ export default function SizingPage() {
 
           {/* Account selector */}
           <div className="mt-4 space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            <label htmlFor="sizing-account" className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Account
             </label>
             <Select
               value={selectedAccountId}
               onValueChange={handleAccountChange}
             >
-              <SelectTrigger className="w-full sm:w-72">
+              <SelectTrigger id="sizing-account" className="w-full sm:w-72">
                 <SelectValue placeholder="Using global defaults" />
               </SelectTrigger>
               <SelectContent>

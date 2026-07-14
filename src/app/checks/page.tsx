@@ -730,10 +730,11 @@ export default function ChecksPage() {
                       />
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <label className="text-xs text-zinc-600 dark:text-zinc-300">
+                          <label htmlFor="ci-importance" className="text-xs text-zinc-600 dark:text-zinc-300">
                             Importance:
                           </label>
                           <select
+                            id="ci-importance"
                             value={newItemWeight}
                             onChange={(e) => setNewItemWeight(Number(e.target.value))}
                             className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"

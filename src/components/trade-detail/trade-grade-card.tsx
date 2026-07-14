@@ -111,10 +111,11 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-setupScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Setup Score
                 </label>
                 <input
+                  id="grade-setupScore"
                   type="number"
                   min={1}
                   max={10}
@@ -126,10 +127,11 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-riskScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Risk Score
                 </label>
                 <input
+                  id="grade-riskScore"
                   type="number"
                   min={1}
                   max={10}
@@ -141,10 +143,11 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-entryScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Entry Score
                 </label>
                 <input
+                  id="grade-entryScore"
                   type="number"
                   min={1}
                   max={10}
@@ -156,10 +159,11 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-managementScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Management Score
                 </label>
                 <input
+                  id="grade-managementScore"
                   type="number"
                   min={1}
                   max={10}
@@ -171,10 +175,11 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-exitScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Exit Score
                 </label>
                 <input
+                  id="grade-exitScore"
                   type="number"
                   min={1}
                   max={10}
@@ -186,10 +191,11 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-reviewScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Review Score
                 </label>
                 <input
+                  id="grade-reviewScore"
                   type="number"
                   min={1}
                   max={10}

@@ -100,10 +100,11 @@ export default function TradeStopAdjustmentsCard({
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="stop-previous" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   Previous Stop *
                 </label>
                 <input
+                  id="stop-previous"
                   type="number"
                   step="any"
                   value={form.previousStop}
@@ -113,10 +114,11 @@ export default function TradeStopAdjustmentsCard({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="stop-new" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                   New Stop *
                 </label>
                 <input
+                  id="stop-new"
                   type="number"
                   step="any"
                   value={form.newStop}
@@ -127,10 +129,11 @@ export default function TradeStopAdjustmentsCard({
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="stop-reason" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Reason
               </label>
               <textarea
+                id="stop-reason"
                 value={form.reason}
                 onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
                 rows={2}

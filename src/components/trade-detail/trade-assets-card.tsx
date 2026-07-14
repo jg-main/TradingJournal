@@ -342,10 +342,11 @@ export default function TradeAssetsCard({
             {formMode === 'upload' ? (
               <form onSubmit={handleUpload} className="space-y-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-screenshot" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Screenshot File
                   </label>
                   <input
+                    id="ta-screenshot"
                     type="file"
                     accept="image/*"
                     onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
@@ -353,12 +354,12 @@ export default function TradeAssetsCard({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-uploadPhase" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Phase
                   </label>
                   <div className="inline-block">
                     <Select value={uploadPhase} onValueChange={setUploadPhase}>
-                      <SelectTrigger className="w-36">
+                      <SelectTrigger id="ta-uploadPhase" className="w-36">
                         <SelectValue placeholder="Select phase" />
                       </SelectTrigger>
                       <SelectContent>
@@ -372,11 +373,12 @@ export default function TradeAssetsCard({
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-uploadLabel" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Label{' '}
                     <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
                   </label>
                   <input
+                    id="ta-uploadLabel"
                     type="text"
                     value={uploadLabel}
                     onChange={(e) => setUploadLabel(e.target.value)}
@@ -395,10 +397,11 @@ export default function TradeAssetsCard({
             ) : (
               <form onSubmit={handleAddLink} className="space-y-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-linkUrl" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     URL *
                   </label>
                   <input
+                    id="ta-linkUrl"
                     type="url"
                     value={linkUrl}
                     onChange={(e) => setLinkUrl(e.target.value)}
@@ -407,12 +410,12 @@ export default function TradeAssetsCard({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-linkPhase" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Phase
                   </label>
                   <div className="inline-block">
                     <Select value={linkPhase} onValueChange={setLinkPhase}>
-                      <SelectTrigger className="w-36">
+                      <SelectTrigger id="ta-linkPhase" className="w-36">
                         <SelectValue placeholder="Select phase" />
                       </SelectTrigger>
                       <SelectContent>
@@ -426,11 +429,12 @@ export default function TradeAssetsCard({
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-linkLabel" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                     Label{' '}
                     <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
                   </label>
                   <input
+                    id="ta-linkLabel"
                     type="text"
                     value={linkLabel}
                     onChange={(e) => setLinkLabel(e.target.value)}

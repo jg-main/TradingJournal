@@ -249,9 +249,9 @@ export default function TradesPage() {
       {/* Filters */}
       {data.length > 0 && (
         <div className="mb-4 flex items-center gap-2">
-          <label className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Filter:</label>
+          <label htmlFor="trades-filter" className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Filter:</label>
           <Select value={statusFilter} onValueChange={v => setStatusFilter(v)}>
-            <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectTrigger id="trades-filter" className="h-8 w-36 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

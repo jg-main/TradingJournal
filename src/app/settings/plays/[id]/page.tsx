@@ -185,30 +185,30 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
           <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">Description &amp; Rules</h2>
           <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name</label>
-              <input type="text" value={name} onChange={e => setName(e.target.value)}
+              <label htmlFor="play-name" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Name</label>
+              <input id="play-name" type="text" value={name} onChange={e => setName(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description</label>
-              <textarea rows={2} value={description} onChange={e => setDescription(e.target.value)}
+              <label htmlFor="play-description" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description</label>
+              <textarea id="play-description" rows={2} value={description} onChange={e => setDescription(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Entry Rules</label>
-                <textarea rows={4} value={entryRules} onChange={e => setEntryRules(e.target.value)}
+                <label htmlFor="play-entryRules" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Entry Rules</label>
+                <textarea id="play-entryRules" rows={4} value={entryRules} onChange={e => setEntryRules(e.target.value)}
                   className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Exit Rules</label>
-                <textarea rows={4} value={exitRules} onChange={e => setExitRules(e.target.value)}
+                <label htmlFor="play-exitRules" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Exit Rules</label>
+                <textarea id="play-exitRules" rows={4} value={exitRules} onChange={e => setExitRules(e.target.value)}
                   className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">How to Play</label>
-              <textarea rows={3} value={howToPlay} onChange={e => setHowToPlay(e.target.value)}
+              <label htmlFor="play-howToPlay" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">How to Play</label>
+              <textarea id="play-howToPlay" rows={3} value={howToPlay} onChange={e => setHowToPlay(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
             </div>
           </div>
@@ -219,14 +219,14 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
           <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">Tags &amp; Patterns</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Tags (JSON)</label>
-              <input type="text" value={tags} onChange={e => setTags(e.target.value)}
+              <label htmlFor="play-tags" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Tags (JSON)</label>
+              <input id="play-tags" type="text" value={tags} onChange={e => setTags(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 placeholder='["breakout","trend"]' />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Chart Patterns</label>
-              <input type="text" value={chartPatterns} onChange={e => setChartPatterns(e.target.value)}
+              <label htmlFor="play-chartPatterns" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Chart Patterns</label>
+              <input id="play-chartPatterns" type="text" value={chartPatterns} onChange={e => setChartPatterns(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 placeholder="Flag, Pennant, Cup & Handle" />
             </div>
@@ -238,14 +238,14 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
           <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">Risk &amp; Sizing</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Default Risk %</label>
-              <input type="number" step="0.1" min="0" max="100" value={defaultRiskPct} onChange={e => setDefaultRiskPct(e.target.value)}
+              <label htmlFor="play-defaultRiskPct" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Default Risk %</label>
+              <input id="play-defaultRiskPct" type="number" step="0.1" min="0" max="100" value={defaultRiskPct} onChange={e => setDefaultRiskPct(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
             </div>
           </div>
           <div className="mt-4">
-            <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Position Sizing Rules</label>
-            <textarea rows={3} value={positionSizingRules} onChange={e => setPositionSizingRules(e.target.value)}
+            <label htmlFor="play-positionSizingRules" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Position Sizing Rules</label>
+            <textarea id="play-positionSizingRules" rows={3} value={positionSizingRules} onChange={e => setPositionSizingRules(e.target.value)}
               className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
           </div>
         </section>
@@ -296,8 +296,8 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
 
           {featureMode === 'custom' && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Feature IDs (JSON array)</label>
-              <textarea rows={4} value={customFeatures} onChange={e => setCustomFeatures(e.target.value)}
+              <label htmlFor="play-customFeatures" className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Feature IDs (JSON array)</label>
+              <textarea id="play-customFeatures" rows={4} value={customFeatures} onChange={e => setCustomFeatures(e.target.value)}
                 className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-mono text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 placeholder='[{"id":"sma_20","label":"SMA(20)","source":"clickhouse"}]' />
             </div>
