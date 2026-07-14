@@ -1,8 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PlusCircle, Brain, Loader2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Brain, Loader2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import RiskSnapshotCard from './risk-snapshot-card';
@@ -18,8 +24,6 @@ import TradeExitNotesCard from './trade-exit-notes-card';
 import AssessmentCard from './assessment-card';
 import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
-import { AddExitDialog } from '@/components/add-exit-dialog';
-import { Button } from '@/components/ui/button';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-calc';
 import type { PerfMetrics } from '@/lib/perf-metrics';
@@ -45,9 +49,7 @@ interface ClosedPhaseViewProps {
   onMistakesChanged: () => Promise<void>;
   onGradeSave: (payload: GradeFormPayload) => Promise<void>;
   onExecutionAdded?: () => void;
-  /** Callback for assessment — called by parent button */
-  onAssess?: () => void;
-  assessing?: boolean;
+  onEdit?: () => void;
 }
 
 
@@ -72,10 +74,8 @@ export default function ClosedPhaseView({
   onMistakesChanged,
   onGradeSave,
   onExecutionAdded,
-  onAssess,
-  assessing,
+  onEdit,
 }: ClosedPhaseViewProps) {
-  const [exitDialogOpen, setExitDialogOpen] = useState(false);
 
   const exitExecs = executions.filter((e) =>
     trade.direction === 'long'
@@ -169,6 +169,29 @@ export default function ClosedPhaseView({
         openedAt={trade.openedAt}
         setupName={trade.setupName}
         gradeLabel={grade?.gradeLabel ?? null}
+        rightContent={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-zinc-300 p-2 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit?.()}>
+                <Pencil className="size-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
+                {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
+                {requestLoading ? 'Assessing...' : 'Assess'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
       />
 
       {/* ── Lifecycle Stepper ── */}
@@ -233,32 +256,9 @@ export default function ClosedPhaseView({
         <TradeExecutionsCard
           executions={executions}
           tradeId={trade.id}
-          actions={
-            onExecutionAdded ? (
-              <Button variant="outline" size="sm" onClick={() => setExitDialogOpen(true)}>
-                <PlusCircle className="mr-1.5 size-3.5" />
-                Add Exit
-              </Button>
-            ) : undefined
-          }
           onComplete={onExecutionAdded ?? (() => {})}
         />
       </div>
-
-      <AddExitDialog
-        trade={{
-          id: trade.id,
-          symbol: trade.symbol,
-          direction: trade.direction,
-          plannedQuantity: trade.plannedQuantity,
-        }}
-        open={exitDialogOpen}
-        onOpenChange={setExitDialogOpen}
-        onComplete={() => {
-          onExecutionAdded?.();
-          setExitDialogOpen(false);
-        }}
-      />
 
       {/* ── Stop Adjustments ── */}
       <div className="mb-8">

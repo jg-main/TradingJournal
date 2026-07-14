@@ -1,8 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Play, Brain, Loader2 } from 'lucide-react';
+import { Play, Brain, Loader2, MoreHorizontal, Pencil } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import TradeDetailHeader from './trade-detail-header';
 import TradePlanCard from './trade-plan-card';
 import TradeAssetsCard from './trade-assets-card';
@@ -55,6 +61,7 @@ interface PlannedPhaseViewProps {
   assets: TradeAsset[];
   onAssetsChanged: () => Promise<void>;
   onExecute: () => void;
+  onEdit?: () => void;
 }
 
 export default function PlannedPhaseView({
@@ -62,6 +69,7 @@ export default function PlannedPhaseView({
   assets,
   onAssetsChanged,
   onExecute,
+  onEdit,
 }: PlannedPhaseViewProps) {
   const preTradeAssets = assets.filter((a) => a.phase === 'pre_trade');
 
@@ -196,20 +204,7 @@ export default function PlannedPhaseView({
         direction={trade.direction}
         tradeCode={trade.tradeCode}
         rightContent={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRequestAssessment}
-              disabled={requestLoading}
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              {requestLoading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Brain className="size-4" />
-              )}
-              {requestLoading ? 'Assessing...' : 'Assess'}
-            </button>
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={onExecute}
@@ -218,6 +213,27 @@ export default function PlannedPhaseView({
               <Play className="size-4" />
               Execute
             </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-md border border-zinc-300 p-2 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  aria-label="More actions"
+                >
+                  <MoreHorizontal className="size-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onEdit?.()}>
+                  <Pencil className="size-4" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
+                  {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
+                  {requestLoading ? 'Assessing...' : 'Assess'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />

@@ -1,8 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, MoreHorizontal, Pencil, RefreshCw } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import TradeDetailHeader from './trade-detail-header';
 import RiskSnapshotCard from './risk-snapshot-card';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
@@ -33,6 +39,7 @@ interface ActivePhaseViewProps {
   onAdjustmentAdded: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onExecutionAdded?: () => void;
+  onEdit?: () => void;
 }
 
 export default function ActivePhaseView({
@@ -51,6 +58,7 @@ export default function ActivePhaseView({
   onAdjustmentAdded,
   onAssetsChanged,
   onExecutionAdded,
+  onEdit,
 }: ActivePhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const entryManagementAssets = assets.filter(
@@ -95,6 +103,31 @@ export default function ActivePhaseView({
         tradeCode={trade.tradeCode}
         openedAt={trade.openedAt}
         setupName={trade.setupName}
+        rightContent={
+          <div className="flex items-center gap-1">
+            <Button variant="default" size="sm" onClick={() => setExitDialogOpen(true)}>
+              <PlusCircle className="mr-1.5 size-3.5" />
+              Add Exit
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="size-8" aria-label="More actions">
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onEdit?.()}>
+                  <Pencil className="size-4" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onRefreshPrice} disabled={mtmData?.loading}>
+                  <RefreshCw className={`size-4 ${mtmData?.loading ? 'animate-spin' : ''}`} />
+                  {mtmData?.loading ? 'Refreshing...' : 'Refresh'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
       />
 
       {/* ── Lifecycle Stepper (useful during active trade) ── */}
@@ -168,14 +201,6 @@ export default function ActivePhaseView({
         <TradeExecutionsCard
           executions={executions}
           tradeId={trade.id}
-          actions={
-            trade.status === 'open' && onExecutionAdded ? (
-              <Button variant="outline" size="sm" onClick={() => setExitDialogOpen(true)}>
-                <PlusCircle className="mr-1.5 size-3.5" />
-                Add Exit
-              </Button>
-            ) : undefined
-          }
           onComplete={onExecutionAdded ?? (() => {})}
         />
       </div>
