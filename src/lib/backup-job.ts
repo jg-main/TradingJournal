@@ -25,17 +25,22 @@ import { createBackupBuffer } from './create-backup';
 // ── Backup directory resolution ─────────────────────────────────────────
 
 /**
- * Derive the backup storage directory from environment or database path.
+ * Derive the backup storage directory, following the same convention
+ * as the database path:
+ *
+ *   DB:       {TJ_DATA_DIR}/data/journal.db  (or DB_FILE_NAME)
+ *   Backups:  {TJ_DATA_DIR}/backups          (or TJ_BACKUP_DIR override)
  *
  * Priority:
- * 1. TJ_BACKUP_DIR environment variable (e.g. /mnt/backups/journal)
- * 2. Derived from DB_FILE_NAME: dirname(DB_FILE_NAME)/backups
+ * 1. TJ_BACKUP_DIR environment variable (explicit override)
+ * 2. {TJ_DATA_DIR}/backups (when TJ_DATA_DIR is set)
+ * 3. dirname(DB_FILE_NAME)/backups (fallback, e.g. ./trading-journal/backups)
  */
 export function getBackupDir(): string {
   if (process.env.TJ_BACKUP_DIR) return process.env.TJ_BACKUP_DIR;
+  if (process.env.TJ_DATA_DIR) return join(process.env.TJ_DATA_DIR, 'backups');
   const dbFile = process.env.DB_FILE_NAME || './.trading-journal/journal.db';
-  const dbDir = dirname(dbFile);
-  return join(dbDir, 'backups');
+  return join(dirname(dbFile), 'backups');
 }
 
 // ── Retention cleanup ───────────────────────────────────────────────────
