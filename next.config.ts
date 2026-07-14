@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
   // Prevent bundlers from tracing native Node.js modules used by better-sqlite3
-  serverExternalPackages: ["better-sqlite3", "bindings", "file-uri-to-path"],
+  serverExternalPackages: ["better-sqlite3", "bindings", "file-uri-to-path", "archiver", "node-cron"],
   // Allow large ZIP uploads for backup restore (common ZIPs exceed 200MB)
   experimental: {
     serverActions: {
