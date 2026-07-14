@@ -280,7 +280,19 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Restore from Backup</h2>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Upload a backup ZIP file to restore your journal data. This will replace all existing data.</p>
             {errorMessage && (
-              <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{errorMessage}</span><button onClick={handleRetry} className="shrink-0 text-xs font-medium text-red-600 underline underline-offset-2 hover:text-red-500 dark:text-red-300">Retry</button></div>
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                  <span className="flex-1">{errorMessage}</span>
+                </div>
+                <button onClick={handleRetry} className="mt-2 ml-6 text-xs font-medium text-red-600 underline underline-offset-2 hover:text-red-500 dark:text-red-300">Retry</button>
+              </div>
+            )}
+            {errorMessage != null && errorMessage.includes('Cannot restore while trades are open') && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span>Close all open trades in the Trade Log first, then try restoring again.</span>
+              </div>
             )}
             {isUploading ? (
               <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-zinc-400" /><p className="text-sm text-zinc-600 dark:text-zinc-300">Uploading and validating backup...</p></div>
@@ -343,6 +355,12 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
           <div>
             <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Restore Failed</h2>
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>{errorMessage || 'An unexpected error occurred during restore.'}</span></div>
+            {errorMessage != null && errorMessage.includes('Cannot restore while trades are open') && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span>Close all open trades in the Trade Log first, then try restoring again.</span>
+              </div>
+            )}
             <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleClose} className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">Close</button><button onClick={handleRetry} className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Try Again</button></div>
           </div>
         )}

@@ -54,8 +54,18 @@ export default function RiskSnapshotCard({
   const planRiskDollar = planRiskShare != null && planQty != null ? planRiskShare * planQty : null;
   const planReturn = planEntry != null && planTarget1 != null && planTarget1 > 0
     ? computeRiskReward(dir, planEntry, planTarget1, planQty ?? null) : null;
-  const planRR = planReturn != null && planRiskPct != null && planRiskPct > 0
-    ? (planReturn.pct / planRiskPct).toFixed(2) : null;
+  function computeRR(
+    returnPct: number | null | undefined,
+    riskPct: number | null | undefined,
+  ): string | null {
+    if (returnPct == null || riskPct == null) return null;
+    if (riskPct === 0) {
+      return returnPct > 0 ? '∞' : returnPct < 0 ? '—' : null;
+    }
+    return (returnPct / riskPct).toFixed(2);
+  }
+
+  const planRR = computeRR(planReturn?.pct, planRiskPct);
 
   const actualEntry = actualValues?.avgEntryPrice ?? riskSnapshot!.initialEntryPrice;
   const actualExit = actualValues?.avgExitPrice;
@@ -67,8 +77,7 @@ export default function RiskSnapshotCard({
   const actualRiskDollar = actualRiskShare != null && actualQty != null ? actualRiskShare * actualQty : null;
   const actualReturn = actualEntry != null && actualExit != null && actualExit > 0 && actualQty != null
     ? computeRiskReward(dir, actualEntry, actualExit, actualQty) : null;
-  const actualRR = actualReturn != null && actualRiskPct != null && actualRiskPct > 0
-    ? (actualReturn.pct / actualRiskPct).toFixed(2) : null;
+  const actualRR = computeRR(actualReturn?.pct, actualRiskPct);
 
   const hasMtm = mtmData?.price != null && tradeStatus === 'open';
   const mtmReturnPct = hasMtm && actualEntry != null
@@ -189,9 +198,9 @@ export default function RiskSnapshotCard({
                 </tr>
                 <tr className="border-b border-zinc-100 dark:border-zinc-800">
                   <td className={'py-1.5 ' + T}>R:R</td>
-                  {hasPlan && <td className={'py-1.5 text-right ' + V}>{planRR != null ? '1:' + planRR : '—'}</td>}
+                  {hasPlan && <td className={'py-1.5 text-right ' + V}>{planRR != null ? (planRR === '∞' ? '∞' : '1:' + planRR) : '—'}</td>}
                   <td className={'py-1.5 text-right ' + (hasMtm && mtmRR != null ? mtmPositiveClass : V)}>
-                    {hasMtm && mtmRR != null ? (<span>1:{mtmRR}{mtmBadge}</span>) : actualRR != null ? '1:' + actualRR : (actualReturn != null ? '1:0' : '—')}
+                    {hasMtm && mtmRR != null ? (<span>1:{mtmRR}{mtmBadge}</span>) : actualRR != null ? (actualRR === '∞' ? <span className="text-emerald-500">∞</span> : '1:' + actualRR) : (actualReturn != null ? '1:0' : '—')}
                   </td>
                 </tr>
                 <tr>
