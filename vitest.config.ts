@@ -29,6 +29,7 @@ export default defineConfig({
       'src/lib/__tests__/scheduler.test.ts',
       'src/lib/__tests__/market-data-settings-migration.test.ts',
       'src/lib/__tests__/clickhouse-provider.test.ts',
+      'src/app/api/market-data/settings/__tests__/route.test.ts',
     ],
   },
 });
