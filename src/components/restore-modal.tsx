@@ -351,7 +351,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
             {serverFilesLoading ? (
               <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-zinc-400" /><p className="text-sm text-zinc-600 dark:text-zinc-300">Loading backup files...</p></div>
             ) : serverFilesError ? (
-              <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{serverFilesError}</span></div>
+              <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{serverFilesError}</span></div>
             ) : serverFiles.length === 0 ? (
               <div className="mt-6 flex flex-col items-center gap-2 py-8"><Clock className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1.5} /><p className="text-sm text-zinc-500 dark:text-zinc-400">No scheduled backups found.</p></div>
             ) : (
@@ -395,7 +395,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
               </div>
             )}
             {errorMessage && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+              <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                   <span className="flex-1">{errorMessage}</span>
@@ -411,7 +411,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
               </div>
             )}
             {errorMessage != null && errorMessage.includes('Cannot restore while trades are open') && (
-              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>Close all open trades in the Trade Log first, then try restoring again.</span>
               </div>
@@ -480,16 +480,16 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
         {step === 'error' && (
           <div>
             <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Restore Failed</h2>
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>{errorMessage || 'An unexpected error occurred during restore.'}</span></div>
+            <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>{errorMessage || 'An unexpected error occurred during restore.'}</span></div>
             {errorMessage != null && errorMessage.includes('Schema version mismatch') && (
-              <div className="mt-2 ml-6 text-xs text-red-600 dark:text-red-400">
+              <div role="alert" className="mt-2 ml-6 text-xs text-red-600 dark:text-red-400">
                 The database schema has changed since this backup was created.
                 Create a new backup from the current app (Backup Now) or upload a newer backup file.
                 Run <code className="rounded bg-red-100 px-1 dark:bg-red-900/50">make seed-settings</code> to regenerate the seed file.
               </div>
             )}
             {errorMessage != null && errorMessage.includes('Cannot restore while trades are open') && (
-              <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>Close all open trades in the Trade Log first, then try restoring again.</span>
               </div>
