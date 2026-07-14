@@ -7,6 +7,8 @@ import { extractApiErrorMessage } from '@/lib/error-utils';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { TradeAsset } from './types';
 
 interface TradeAssetsCardProps {
@@ -262,18 +264,19 @@ export default function TradeAssetsCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            <ImageIcon className="size-4 text-zinc-500" />
+            <ImageIcon className="size-4 text-muted-foreground" />
             Assets
           </CardTitle>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => {
               setShowForm((v) => !v);
               if (showForm) resetForm();
             }}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             {showForm ? 'Cancel' : '+ Add Asset'}
-          </button>
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -286,19 +289,19 @@ export default function TradeAssetsCard({
           onDrop={handleDrop}
           className={`mb-4 flex cursor-default flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors ${
             dragOver
-              ? 'border-zinc-900 bg-zinc-100 dark:border-zinc-100 dark:bg-zinc-800'
-              : 'border-zinc-300 bg-white hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-500'
+              ? 'border-foreground bg-muted'
+              : 'border bg-background hover:border-foreground/40'
           }`}
         >
-          <ClipboardPaste className="mb-1 size-5 text-zinc-400" />
-          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+          <ClipboardPaste className="mb-1 size-5 text-muted-foreground" />
+          <p className="text-xs font-medium text-muted-foreground">
             {dragOver ? 'Drop here' : 'Paste screenshot (Ctrl+V) or drag & drop'}
           </p>
         </div>
 
         {/* Asset form — collapsible */}
         {showForm && (
-          <div className="mb-6 space-y-4 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mb-6 space-y-4 rounded-md border bg-muted p-4">
             {message && (
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
@@ -313,36 +316,30 @@ export default function TradeAssetsCard({
 
             {/* Mode toggle */}
             <div className="flex gap-2">
-              <button
+              <Button
                 type="button"
+                variant={formMode === 'upload' ? 'default' : 'outline'}
+                size="sm"
                 onClick={() => setFormMode('upload')}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
-                  formMode === 'upload'
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'border border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                }`}
               >
                 <Upload className="size-3" />
                 Upload Screenshot
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant={formMode === 'link' ? 'default' : 'outline'}
+                size="sm"
                 onClick={() => setFormMode('link')}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${
-                  formMode === 'link'
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'border border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                }`}
               >
                 <LinkIcon className="size-3" />
                 Add Link
-              </button>
+              </Button>
             </div>
 
             {formMode === 'upload' ? (
               <form onSubmit={handleUpload} className="space-y-3">
                 <div>
-                  <label htmlFor="ta-screenshot" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-screenshot" className="mb-1 block text-xs font-medium text-muted-foreground">
                     Screenshot File
                   </label>
                   <input
@@ -350,11 +347,11 @@ export default function TradeAssetsCard({
                     type="file"
                     accept="image/*"
                     onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                    className="w-full text-sm text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-200 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-zinc-700 hover:file:bg-zinc-300 dark:text-zinc-400 dark:file:bg-zinc-700 dark:file:text-zinc-300 dark:hover:file:bg-zinc-600"
+                    className="w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-muted/80"
                   />
                 </div>
                 <div>
-                  <label htmlFor="ta-uploadPhase" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-uploadPhase" className="mb-1 block text-xs font-medium text-muted-foreground">
                     Phase
                   </label>
                   <div className="inline-block">
@@ -373,44 +370,38 @@ export default function TradeAssetsCard({
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="ta-uploadLabel" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-uploadLabel" className="mb-1 block text-xs font-medium text-muted-foreground">
                     Label{' '}
-                    <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
+                    <span className="text-muted-foreground">(optional)</span>
                   </label>
-                  <input
+                  <Input
                     id="ta-uploadLabel"
                     type="text"
                     value={uploadLabel}
                     onChange={(e) => setUploadLabel(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     placeholder="Chart setup screenshot"
                   />
                 </div>
-                <button
-                  type="submit"
-                  className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                  disabled={!uploadFile}
-                >
+                <Button type="submit" disabled={!uploadFile}>
                   Upload
-                </button>
+                </Button>
               </form>
             ) : (
               <form onSubmit={handleAddLink} className="space-y-3">
                 <div>
-                  <label htmlFor="ta-linkUrl" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-linkUrl" className="mb-1 block text-xs font-medium text-muted-foreground">
                     URL *
                   </label>
-                  <input
+                  <Input
                     id="ta-linkUrl"
                     type="url"
                     value={linkUrl}
                     onChange={(e) => setLinkUrl(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     placeholder="https://www.tradingview.com/chart/..."
                   />
                 </div>
                 <div>
-                  <label htmlFor="ta-linkPhase" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-linkPhase" className="mb-1 block text-xs font-medium text-muted-foreground">
                     Phase
                   </label>
                   <div className="inline-block">
@@ -429,25 +420,21 @@ export default function TradeAssetsCard({
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="ta-linkLabel" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <label htmlFor="ta-linkLabel" className="mb-1 block text-xs font-medium text-muted-foreground">
                     Label{' '}
-                    <span className="text-zinc-500 dark:text-zinc-400">(optional)</span>
+                    <span className="text-muted-foreground">(optional)</span>
                   </label>
-                  <input
+                  <Input
                     id="ta-linkLabel"
                     type="text"
                     value={linkLabel}
                     onChange={(e) => setLinkLabel(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                     placeholder="TradingView chart analysis"
                   />
                 </div>
-                <button
-                  type="submit"
-                  className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
+                <Button type="submit">
                   Add Link
-                </button>
+                </Button>
               </form>
             )}
           </div>
@@ -455,7 +442,7 @@ export default function TradeAssetsCard({
 
         {/* Asset gallery — grouped by phase */}
         {assets.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             No assets attached to this trade yet.
           </p>
         ) : (
@@ -466,23 +453,25 @@ export default function TradeAssetsCard({
 
               return (
                 <div key={phase}>
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {phaseLabel[phase]}
                   </h4>
                   <div className="flex flex-wrap gap-3">
                     {phaseAssets.map((asset) => (
                       <div
                         key={asset.id}
-                        className="group relative w-40 rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-800/50"
+                        className="group relative w-40 rounded-lg border bg-card p-2 dark:bg-card/50"
                       >
                         {/* Delete button */}
-                        <button
+                        <Button
+                          variant="destructive"
+                          size="icon"
                           onClick={() => handleDelete(asset.id)}
-                          className="absolute -right-1.5 -top-1.5 z-10 flex min-w-11 min-h-11 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-600 opacity-0 shadow-sm transition-colors hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-red-900/30"
+                          className="absolute -right-1.5 -top-1.5 z-10 opacity-0 shadow-sm transition-all group-hover:opacity-100 rounded-full min-w-11 min-h-11"
                           aria-label={`Delete ${asset.label ?? 'asset'}`}
                         >
                           <Trash2 className="size-3" />
-                        </button>
+                        </Button>
 
                         {asset.filePath ? (
                           /* Screenshot thumbnail */
@@ -495,7 +484,7 @@ export default function TradeAssetsCard({
                               onClick={() => setExpandedImage(asset.filePath ?? null)}
                             />
                             {asset.label && (
-                              <p className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+                              <p className="truncate text-xs text-foreground/70">
                                 {asset.label}
                               </p>
                             )}
@@ -506,7 +495,7 @@ export default function TradeAssetsCard({
                             href={asset.externalUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="mb-1 flex h-20 w-full flex-col items-center justify-center rounded bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                            className="mb-1 flex h-20 w-full flex-col items-center justify-center rounded bg-muted text-muted-foreground hover:bg-muted/80"
                           >
                             <LinkIcon className="mb-1 size-5" />
                             <span className="max-w-[120px] truncate text-[10px]">
@@ -516,7 +505,7 @@ export default function TradeAssetsCard({
                         ) : null}
 
                         {asset.label && !asset.filePath && (
-                          <p className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+                          <p className="truncate text-xs text-foreground/70">
                             {asset.label}
                           </p>
                         )}

@@ -5,6 +5,8 @@ import { AlertCircle, Pencil, Trash2 } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { TradeMistake, LookupValue } from './types';
 
 interface TradeMistakesCardProps {
@@ -15,7 +17,7 @@ interface TradeMistakesCardProps {
 }
 
 const severityColors: Record<string, string> = {
-  minor: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+  minor: 'bg-muted text-muted-foreground',
   moderate: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   major: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
   critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -147,26 +149,27 @@ export default function TradeMistakesCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="size-4 text-zinc-500" />
+            <AlertCircle className="size-4 text-muted-foreground" />
             Mistakes
           </CardTitle>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => {
               setShowForm((v) => !v);
               setEditingMistake(null);
               setForm({ ...defaultForm });
             }}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             {showForm ? 'Cancel' : '+ Add Mistake'}
-          </button>
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
         {/* Collapsible form */}
         {showForm && (
-          <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+          <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded-md border bg-muted p-4">
+            <div className="mb-3 text-sm font-semibold text-foreground">
               {editingMistake ? 'Edit Mistake' : 'Add Mistake'}
             </div>
             {message && (
@@ -182,7 +185,7 @@ export default function TradeMistakesCard({
             )}
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               <div>
-                <label htmlFor="mistake-type" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-type" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Mistake Type *
                 </label>
                 <Select
@@ -194,9 +197,9 @@ export default function TradeMistakesCard({
                   </SelectTrigger>
                   <SelectContent>
                     {mistakeTypes.length === 0 ? (
-                      <div className="px-3 py-4 text-xs text-zinc-500 dark:text-zinc-400">
+                      <div className="px-3 py-4 text-xs text-muted-foreground">
                         No mistake types configured.{' '}
-                        <a href="/settings/mistake-types" className="underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-200">
+                        <a href="/settings/mistake-types" className="underline underline-offset-2 hover:text-foreground">
                           Add some in Settings
                         </a>
                       </div>
@@ -211,7 +214,7 @@ export default function TradeMistakesCard({
                 </Select>
               </div>
               <div>
-                <label htmlFor="mistake-phase" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-phase" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Phase *
                 </label>
                 <Select
@@ -231,7 +234,7 @@ export default function TradeMistakesCard({
                 </Select>
               </div>
               <div>
-                <label htmlFor="mistake-severity" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-severity" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Severity *
                 </label>
                 <Select
@@ -250,7 +253,7 @@ export default function TradeMistakesCard({
                 </Select>
               </div>
               <div>
-                <label htmlFor="mistake-status" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="mistake-status" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Status *
                 </label>
                 <Select
@@ -270,50 +273,45 @@ export default function TradeMistakesCard({
               </div>
             </div>
             <div>
-              <label htmlFor="mistake-rootCause" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="mistake-rootCause" className="mb-1 block text-xs font-medium text-muted-foreground">
                 Root Cause *
               </label>
-              <input
+              <Input
                 id="mistake-rootCause"
                 type="text"
                 value={form.rootCause}
                 onChange={(e) => setForm((f) => ({ ...f, rootCause: e.target.value }))}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 placeholder="What caused this mistake?"
               />
             </div>
             <div>
-              <label htmlFor="mistake-correctiveAction" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="mistake-correctiveAction" className="mb-1 block text-xs font-medium text-muted-foreground">
                 Corrective Action *
               </label>
-              <input
+              <Input
                 id="mistake-correctiveAction"
                 type="text"
                 value={form.correctiveAction}
                 onChange={(e) => setForm((f) => ({ ...f, correctiveAction: e.target.value }))}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 placeholder="How will you prevent this in the future?"
               />
             </div>
-            <button
-              type="submit"
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
+            <Button type="submit">
               {editingMistake ? 'Update Mistake' : 'Add Mistake'}
-            </button>
+            </Button>
           </form>
         )}
 
         {/* Mistakes table */}
         {mistakes.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             No mistakes recorded yet.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                <tr className="border-b text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Phase</th>
                   <th className="py-2 pr-4">Severity</th>
@@ -327,49 +325,53 @@ export default function TradeMistakesCard({
                 {mistakes.map((m) => {
                   const typeInfo = mistakeTypes.find((mt) => mt.id === m.mistakeTypeId);
                   return (
-                    <tr key={m.id} className="border-b border-zinc-100 dark:border-zinc-800">
-                      <td className="py-2.5 pr-4 text-zinc-900 dark:text-zinc-100">
+                    <tr key={m.id} className="border-b dark:border-muted/50">
+                      <td className="py-2.5 pr-4 text-foreground">
                         {typeInfo?.value ?? typeInfo?.description ?? m.mistakeTypeId ?? '-'}
                       </td>
-                      <td className="py-2.5 pr-4 capitalize text-zinc-600 dark:text-zinc-400">
+                      <td className="py-2.5 pr-4 capitalize text-muted-foreground">
                         {m.phase.replace('_', ' ')}
                       </td>
                       <td className="py-2.5 pr-4">
                         <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${severityColors[m.severity] ?? 'bg-zinc-100 text-zinc-600'}`}
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${severityColors[m.severity] ?? 'bg-muted text-muted-foreground'}`}
                         >
                           {m.severity.charAt(0).toUpperCase() + m.severity.slice(1)}
                         </span>
                       </td>
-                      <td className="py-2.5 pr-4 max-w-[200px] truncate text-zinc-700 dark:text-zinc-300" title={m.rootCause ?? ''}>
+                      <td className="py-2.5 pr-4 max-w-[200px] truncate text-foreground/70" title={m.rootCause ?? ''}>
                         {m.rootCause ?? '-'}
                       </td>
-                      <td className="py-2.5 pr-4 max-w-[200px] truncate text-zinc-700 dark:text-zinc-300" title={m.correctiveAction ?? ''}>
+                      <td className="py-2.5 pr-4 max-w-[200px] truncate text-foreground/70" title={m.correctiveAction ?? ''}>
                         {m.correctiveAction ?? '-'}
                       </td>
                       <td className="py-2.5 pr-4">
                         <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[m.status] ?? 'bg-zinc-100 text-zinc-600'}`}
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[m.status] ?? 'bg-muted text-muted-foreground'}`}
                         >
                           {m.status.charAt(0).toUpperCase() + m.status.slice(1)}
                         </span>
                       </td>
                       <td className="py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
                             onClick={() => handleEdit(m)}
-                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 min-w-11 min-h-11 justify-center"
                             aria-label="Edit mistake"
+                            className="min-w-11 min-h-11"
                           >
                             <Pencil className="size-3" />
-                          </button>
-                          <button
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
                             onClick={() => handleDelete(m.id)}
-                            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-zinc-700 dark:text-red-400 dark:hover:bg-red-900/30 min-w-11 min-h-11 justify-center"
                             aria-label="Delete mistake"
+                            className="min-w-11 min-h-11 text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20"
                           >
                             <Trash2 className="size-3" />
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     </tr>

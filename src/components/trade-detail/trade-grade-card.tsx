@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Star, Pencil } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { Trade, TradeGrade } from './types';
 
 export interface GradeFormPayload {
@@ -83,12 +85,12 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
       <Card className="mb-8">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Star className="size-4 text-zinc-500" />
+            <Star className="size-4 text-muted-foreground" />
             Trade Grade
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             Grading is only available for closed trades.
           </p>
         </CardContent>
@@ -103,7 +105,7 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
       <Card className="mb-8">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Star className="size-4 text-zinc-500" />
+            <Star className="size-4 text-muted-foreground" />
             Trade Grade
           </CardTitle>
         </CardHeader>
@@ -111,10 +113,10 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
               <div>
-                <label htmlFor="grade-setupScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-setupScore" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Setup Score
                 </label>
-                <input
+                <Input
                   id="grade-setupScore"
                   type="number"
                   min={1}
@@ -123,14 +125,13 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                   onChange={(e) =>
                     setForm((f) => ({ ...f, setupScore: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))
                   }
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
               <div>
-                <label htmlFor="grade-riskScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-riskScore" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Risk Score
                 </label>
-                <input
+                <Input
                   id="grade-riskScore"
                   type="number"
                   min={1}
@@ -139,14 +140,13 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                   onChange={(e) =>
                     setForm((f) => ({ ...f, riskScore: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))
                   }
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
               <div>
-                <label htmlFor="grade-entryScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-entryScore" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Entry Score
                 </label>
-                <input
+                <Input
                   id="grade-entryScore"
                   type="number"
                   min={1}
@@ -155,14 +155,13 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                   onChange={(e) =>
                     setForm((f) => ({ ...f, entryScore: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))
                   }
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
               <div>
-                <label htmlFor="grade-managementScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-managementScore" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Management Score
                 </label>
-                <input
+                <Input
                   id="grade-managementScore"
                   type="number"
                   min={1}
@@ -171,14 +170,13 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                   onChange={(e) =>
                     setForm((f) => ({ ...f, managementScore: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))
                   }
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
               <div>
-                <label htmlFor="grade-exitScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-exitScore" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Exit Score
                 </label>
-                <input
+                <Input
                   id="grade-exitScore"
                   type="number"
                   min={1}
@@ -187,14 +185,13 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                   onChange={(e) =>
                     setForm((f) => ({ ...f, exitScore: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))
                   }
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
               <div>
-                <label htmlFor="grade-reviewScore" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="grade-reviewScore" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Review Score
                 </label>
-                <input
+                <Input
                   id="grade-reviewScore"
                   type="number"
                   min={1}
@@ -203,7 +200,6 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                   onChange={(e) =>
                     setForm((f) => ({ ...f, reviewScore: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) }))
                   }
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </div>
             </div>
@@ -213,33 +209,27 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
                   type="checkbox"
                   checked={form.followedPlan}
                   onChange={(e) => setForm((f) => ({ ...f, followedPlan: e.target.checked }))}
-                  className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700"
+                  className="rounded border text-foreground focus:ring-ring"
                 />
-                <span className="text-zinc-700 dark:text-zinc-300">Followed Plan</span>
+                <span className="text-muted-foreground">Followed Plan</span>
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={form.ruleViolation}
                   onChange={(e) => setForm((f) => ({ ...f, ruleViolation: e.target.checked }))}
-                  className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700"
+                  className="rounded border text-foreground focus:ring-ring"
                 />
-                <span className="text-zinc-700 dark:text-zinc-300">Rule Violation</span>
+                <span className="text-muted-foreground">Rule Violation</span>
               </label>
             </div>
             <div className="flex gap-2 pt-2">
-              <button
-                onClick={handleSave}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
+              <Button onClick={handleSave}>
                 Save
-              </button>
-              <button
-                onClick={() => setEditMode(false)}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
+              </Button>
+              <Button variant="outline" onClick={() => setEditMode(false)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -255,20 +245,21 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <Star className="size-4 text-zinc-500" />
+              <Star className="size-4 text-muted-foreground" />
               Trade Grade
             </CardTitle>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={enterEditMode}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <Pencil className="size-3" />
               Add Grade
-            </button>
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             No grade recorded yet. Click &quot;Add Grade&quot; to evaluate this trade.
           </p>
         </CardContent>
@@ -283,74 +274,75 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            <Star className="size-4 text-zinc-500" />
+            <Star className="size-4 text-muted-foreground" />
             Trade Grade
           </CardTitle>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={enterEditMode}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             <Pencil className="size-3" />
             Edit
-          </button>
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
             <div>
-              <div className="text-zinc-600 dark:text-zinc-300">Setup</div>
-              <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
+              <div className="text-muted-foreground">Setup</div>
+              <div className="tabular-nums text-foreground">
                 {grade.setupQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-600 dark:text-zinc-300">Risk</div>
-              <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
+              <div className="text-muted-foreground">Risk</div>
+              <div className="tabular-nums text-foreground">
                 {grade.riskQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-600 dark:text-zinc-300">Entry</div>
-              <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
+              <div className="text-muted-foreground">Entry</div>
+              <div className="tabular-nums text-foreground">
                 {grade.entryQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-600 dark:text-zinc-300">Management</div>
-              <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
+              <div className="text-muted-foreground">Management</div>
+              <div className="tabular-nums text-foreground">
                 {grade.managementQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-600 dark:text-zinc-300">Exit</div>
-              <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
+              <div className="text-muted-foreground">Exit</div>
+              <div className="tabular-nums text-foreground">
                 {grade.exitQualityScore}
               </div>
             </div>
             <div>
-              <div className="text-zinc-600 dark:text-zinc-300">Review</div>
-              <div className="tabular-nums text-zinc-900 dark:text-zinc-100">
+              <div className="text-muted-foreground">Review</div>
+              <div className="tabular-nums text-foreground">
                 {grade.reviewQualityScore}
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-6 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+          <div className="flex flex-wrap gap-6 border-t pt-3">
             <div>
-              <div className="text-xs text-zinc-600 dark:text-zinc-300">Total</div>
-              <div className="text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+              <div className="text-xs text-muted-foreground">Total</div>
+              <div className="text-lg font-semibold tabular-nums text-foreground">
                 {grade.totalScore}/60
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-600 dark:text-zinc-300">Grade</div>
+              <div className="text-xs text-muted-foreground">Grade</div>
               <div className={`text-lg font-bold tabular-nums ${gradeLetterColor(grade.gradeLabel)}`}>
                 {grade.gradeLabel}
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-600 dark:text-zinc-300">Followed Plan</div>
-              <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <div className="text-xs text-muted-foreground">Followed Plan</div>
+              <div className="text-sm font-medium text-foreground">
                 {grade.followedPlan === true
                   ? 'Yes'
                   : grade.followedPlan === false
@@ -359,8 +351,8 @@ export default function TradeGradeCard({ grade, tradeStatus, onSave }: TradeGrad
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-600 dark:text-zinc-300">Rule Violation</div>
-              <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              <div className="text-xs text-muted-foreground">Rule Violation</div>
+              <div className="text-sm font-medium text-foreground">
                 {grade.ruleViolation === true
                   ? 'Yes'
                   : grade.ruleViolation === false

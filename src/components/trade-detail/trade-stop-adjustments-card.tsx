@@ -4,6 +4,8 @@ import { useState } from 'react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { formatPrice, formatDate } from './helpers';
 import type { StopAdjustment } from './types';
 
@@ -74,19 +76,20 @@ export default function TradeStopAdjustmentsCard({
         <div className="flex items-center justify-between">
           <CardTitle>Stop Adjustments</CardTitle>
           {tradeStatus === 'open' && (
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setShowForm((v) => !v)}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               {showForm ? 'Cancel' : '+ Add Adjustment'}
-            </button>
+            </Button>
           )}
         </div>
       </CardHeader>
       <CardContent>
         {/* Collapsible form — only on open trades */}
         {tradeStatus === 'open' && showForm && (
-          <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <form onSubmit={handleSubmit} className="mb-6 space-y-3 rounded-md border bg-muted p-4">
             {message && (
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
@@ -100,36 +103,34 @@ export default function TradeStopAdjustmentsCard({
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="stop-previous" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="stop-previous" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Previous Stop *
                 </label>
-                <input
+                <Input
                   id="stop-previous"
                   type="number"
                   step="any"
                   value={form.previousStop}
                   onChange={(e) => setForm((f) => ({ ...f, previousStop: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   placeholder="0.00"
                 />
               </div>
               <div>
-                <label htmlFor="stop-new" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="stop-new" className="mb-1 block text-xs font-medium text-muted-foreground">
                   New Stop *
                 </label>
-                <input
+                <Input
                   id="stop-new"
                   type="number"
                   step="any"
                   value={form.newStop}
                   onChange={(e) => setForm((f) => ({ ...f, newStop: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                   placeholder="0.00"
                 />
               </div>
             </div>
             <div>
-              <label htmlFor="stop-reason" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="stop-reason" className="mb-1 block text-xs font-medium text-muted-foreground">
                 Reason
               </label>
               <textarea
@@ -137,7 +138,7 @@ export default function TradeStopAdjustmentsCard({
                 value={form.reason}
                 onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
                 rows={2}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm text-foreground transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
                 placeholder="Why is the stop being adjusted?"
               />
             </div>
@@ -147,24 +148,21 @@ export default function TradeStopAdjustmentsCard({
                 id="ruleBased"
                 checked={form.ruleBased}
                 onChange={(e) => setForm((f) => ({ ...f, ruleBased: e.target.checked }))}
-                className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700"
+                className="rounded border text-foreground focus:ring-ring"
               />
-              <label htmlFor="ruleBased" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label htmlFor="ruleBased" className="text-xs font-medium text-muted-foreground">
                 Rule-based adjustment (e.g. trailing stop, volatility-based)
               </label>
             </div>
-            <button
-              type="submit"
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
+            <Button type="submit">
               Add Stop Adjustment
-            </button>
+            </Button>
           </form>
         )}
 
         {/* Adjustments table */}
         {stopAdjustments.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-muted-foreground">
             No stop adjustments recorded yet.
           </p>
         ) : (
@@ -187,13 +185,13 @@ export default function TradeStopAdjustmentsCard({
                     : null;
                 return (
                   <TableRow key={adj.id}>
-                    <TableCell className="tabular-nums text-zinc-600 dark:text-zinc-300">
+                    <TableCell className="tabular-nums text-muted-foreground">
                       {formatDate(adj.adjustedAt ?? adj.createdAt)}
                     </TableCell>
-                    <TableCell className="tabular-nums text-right text-zinc-900 dark:text-zinc-100">
+                    <TableCell className="tabular-nums text-right text-foreground">
                       {formatPrice(adj.previousStop)}
                     </TableCell>
-                    <TableCell className="tabular-nums text-right text-zinc-900 dark:text-zinc-100">
+                    <TableCell className="tabular-nums text-right text-foreground">
                       {formatPrice(adj.newStop)}
                     </TableCell>
                     <TableCell
@@ -203,15 +201,15 @@ export default function TradeStopAdjustmentsCard({
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : change < 0
                               ? 'text-red-600 dark:text-red-400'
-                              : 'text-zinc-600 dark:text-zinc-300'
-                          : 'text-zinc-600 dark:text-zinc-300'
+                              : 'text-muted-foreground'
+                          : 'text-muted-foreground'
                       }`}
                     >
                       {change != null
                         ? `${change >= 0 ? '+' : ''}${change.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                         : '-'}
                     </TableCell>
-                    <TableCell className="text-zinc-600 dark:text-zinc-300">
+                    <TableCell className="text-muted-foreground">
                       {adj.reason ?? '-'}
                     </TableCell>
                     <TableCell>
@@ -220,7 +218,7 @@ export default function TradeStopAdjustmentsCard({
                           className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                             adj.ruleBased
                               ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                              : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                              : 'bg-muted text-muted-foreground'
                           }`}
                         >
                           {adj.ruleBased ? 'Auto' : 'Manual'}
