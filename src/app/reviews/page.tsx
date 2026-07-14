@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState, Fragment } from 'react';
+import { useEffect, useState, useCallback, Fragment } from 'react';
 import { Star, CalendarPlus, ChevronDown, ChevronRight, RotateCcw, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
+
+import { useAppTimezone } from '@/lib/timezone-context';
 
 import { EmptyState } from '@/components/empty-state';
 import {
@@ -107,26 +109,6 @@ function getMonday(d: Date): Date {
   return date;
 }
 
-function formatDate(d: string | null): string {
-  if (!d) return '-';
-  try {
-    return new Date(d).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return d;
-  }
-}
-
-function formatWeekRange(start: string, end: string): string {
-  const s = new Date(start);
-  const e = new Date(end);
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-  return `${s.toLocaleDateString(undefined, opts)} — ${e.toLocaleDateString(undefined, { ...opts, year: 'numeric' })}`;
-}
-
 function formatCurrency(v: number | null | undefined): string {
   if (v === null || v === undefined) return '-';
   return v.toLocaleString(undefined, {
@@ -217,6 +199,18 @@ function sampleSizeLabel(level: DashboardSetupPerformance['sampleSizeWarning']):
 
 export default function ReviewsPage() {
   useEffect(() => { document.title = "Reviews — Trading Journal"; }, []);
+  const { timezone, formatDate: tzFormatDate } = useAppTimezone();
+  const tzFormatWeekRange = useCallback((start: string, end: string): string => {
+    const s = new Date(start);
+    const e = new Date(end);
+    const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', timeZone: timezone };
+    const endOpts: Intl.DateTimeFormatOptions = { ...opts, year: 'numeric' };
+    try {
+      return `${s.toLocaleDateString(undefined, opts)} — ${e.toLocaleDateString(undefined, endOpts)}`;
+    } catch {
+      return `${start} — ${end}`;
+    }
+  }, [timezone]);
   const [items, setItems] = useState<WeeklyReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -530,7 +524,7 @@ export default function ReviewsPage() {
                         </button>
                       </td>
                       <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
-                        {formatWeekRange(review.weekStart, review.weekEnd)}
+                        {tzFormatWeekRange(review.weekStart, review.weekEnd)}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
                         {review.closedTrades}
@@ -591,7 +585,7 @@ export default function ReviewsPage() {
                                   </span>
                                   {ai.dueDate && (
                                     <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
-                                      Due {formatDate(ai.dueDate)}
+                                      Due {tzFormatDate(ai.dueDate)}
                                     </span>
                                   )}
                                 </div>
@@ -703,7 +697,7 @@ export default function ReviewsPage() {
                         return (
                           <tr key={review.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/30">
                             <td className="px-2 py-1.5 text-zinc-800 dark:text-zinc-200">
-                              {formatWeekRange(review.weekStart, review.weekEnd)}
+                              {tzFormatWeekRange(review.weekStart, review.weekEnd)}
                             </td>
                             <td className="px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
                               {formatDecimal(review.avgProcessScore, 1)}
