@@ -346,6 +346,29 @@ export const reviewActionItems = sqliteTable('review_action_items', {
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });
 
+// ── Schwab Encrypted Tokens ────────────────────────────────────────────
+//
+// Stores OAuth tokens encrypted at rest using AES-256-GCM.
+// Single-row table (always id='default') — only one Schwab connection at a time.
+// The encrypted_access_token and encrypted_refresh_token columns contain
+// JSON-serialized EncryptedData objects (iv, ciphertext, authTag as hex strings).
+//
+// Tokens are NEVER stored in market_data_settings.providers JSON blob;
+// they live here so they are excluded from provider config reads.
+
+export const schwabTokens = sqliteTable('schwab_tokens', {
+  id: text('id').primaryKey().notNull(),
+  encryptedAccessToken: text('encrypted_access_token').notNull(),
+  encryptedRefreshToken: text('encrypted_refresh_token'),
+  scope: text('scope'),
+  tokenType: text('token_type').default('Bearer'),
+  expiresAt: text('expires_at'),
+  refreshTokenExpiresAt: text('refresh_token_expires_at'),
+  status: text('status').default('active'),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+});
+
 // ── Market Data Settings ────────────────────────────────────────────────
 
 export const marketDataSettings = sqliteTable('market_data_settings', {

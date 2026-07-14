@@ -127,6 +127,13 @@
       "when": 1783990000000,
       "tag": "0017_market_data_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1784070000000,
+      "tag": "0018_schwab_tokens",
+      "breakpoints": true
     }
   ]
 }
