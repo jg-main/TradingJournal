@@ -15,37 +15,7 @@ import { db } from '@/db';
 import { trades, positionPriceSnapshots } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { resolveQuoteProvider } from '@/lib/market-data-resolver';
-
-// ── Rate-limit state (in-memory, per-process) ──────────────────────────
-// Resets on server restart / cold start. This is intentional — the cooldown
-// is a safety valve against accidental rapid refreshes, not a hard throttle
-// across deployments.
-
-const RATE_LIMIT_MS = 10_000; // 10 seconds
-let lastRefreshTimestampMs = 0;
-
-/**
- * Reset the rate-limit cooldown timer (for testability).
- */
-export function _resetRateLimit(): void {
-  lastRefreshTimestampMs = 0;
-}
-
-/**
- * Get the current rate-limit state (for testability).
- */
-export function _getRateLimitMs(): number {
-  return RATE_LIMIT_MS;
-}
-
-/**
- * Get the remaining cooldown milliseconds (for testability).
- * Returns 0 when no cooldown is active.
- */
-export function _getRemainingCooldownMs(): number {
-  const elapsed = Date.now() - lastRefreshTimestampMs;
-  return elapsed < RATE_LIMIT_MS ? RATE_LIMIT_MS - elapsed : 0;
-}
+import { isRateLimited, markRefreshSucceeded } from './rate-limit-state';
 
 // ── POST handler ──────────────────────────────────────────────────────
 
@@ -54,11 +24,10 @@ export async function POST(_request: NextRequest) {
     void _request;
 
     // ── Rate-limit check ──────────────────────────────────────────
-    const now = Date.now();
-    const elapsed = now - lastRefreshTimestampMs;
+    const rateLimit = isRateLimited();
 
-    if (elapsed < RATE_LIMIT_MS) {
-      const retryAfter = Math.ceil((RATE_LIMIT_MS - elapsed) / 1000);
+    if (rateLimit.limited) {
+      const retryAfter = rateLimit.retryAfter;
       return NextResponse.json(
         { error: 'Rate limited', retryAfter },
         {
@@ -148,7 +117,7 @@ export async function POST(_request: NextRequest) {
     // The timer resets only when at least one quote was successfully
     // persisted. If all quotes failed, the caller can retry immediately.
     if (updated > 0) {
-      lastRefreshTimestampMs = Date.now();
+      markRefreshSucceeded();
     }
 
     return NextResponse.json({

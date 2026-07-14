@@ -3,7 +3,7 @@
 # Run `make` or `make help` to see all targets.
 
 .PHONY: help dev dev-alt build start lint typecheck test test-all test-watch playwright playwright-ui \
-        db-generate db-migrate db-studio seed setup reset-db clean \
+        db-generate db-migrate db-studio seed seed-settings setup reset-db clean \
         docker-build docker-up docker-upgrade docker-down docker-restart docker-logs
 
 # ─── Configuration ──────────────────────────────────────────────────────────
@@ -24,11 +24,11 @@ help: ## Show this help
 
 # ─── Development ────────────────────────────────────────────────────────────
 
-dev: ## Start Next.js dev server (port $(PORT))
-	$(NPM) run dev -- -p $(PORT)
+dev: ## Start Next.js dev server with webpack (port $(PORT))
+	$(NPM) run dev -- --webpack -p $(PORT)
 
-dev-alt: ## Start dev server on alt port $(ALT_PORT) (for Playwright webServer)
-	$(NPM) run dev -- -p $(ALT_PORT)
+dev-alt: ## Start dev server with webpack (port $(ALT_PORT), for Playwright)
+	$(NPM) run dev -- --webpack -p $(ALT_PORT)
 
 build: ## Build for production (--webpack: see next.config.ts for turbopack config)
 	$(NPM) run build -- --webpack
@@ -77,6 +77,15 @@ db-studio: ## Open Drizzle Studio (GUI for the DB)
 
 seed: ## Seed database with reference data (lookup_values)
 	$(NPX) tsx src/db/seed.ts
+
+seed-settings: ## Regenerate data/settings_init.zip from current database (requires running dev server)
+	@echo "Creating fresh backup via /api/backup/now..."
+	@BACKUP_RESPONSE=$$(curl -sf -X POST http://localhost:3000/api/backup/now) && \
+		echo "$$BACKUP_RESPONSE" && \
+		BACKUP_FILE=$$(ls -t .trading-journal/backups/*.zip 2>/dev/null | head -1) && \
+		cp "$$BACKUP_FILE" data/settings_init.zip && \
+		python3 -c "import zipfile,json; m=json.loads(zipfile.ZipFile('data/settings_init.zip').read('manifest.json')); print(f'Updated settings_init.zip — schema v{m[\"schemaVersion\"]}, {len(m[\"tables\"])} tables')" || \
+		(echo "Error: Make sure the dev server is running (make dev) before running this target." && false)
 
 seed-10k: ## Seed 10K benchmark trades
 	$(NPX) tsx src/db/seed-10k.ts

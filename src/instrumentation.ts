@@ -26,20 +26,22 @@
  *
  * Does not block server startup on failure — errors are logged and swallowed.
  */
-export function register(): void {
+export async function register(): Promise<void> {
+  // The scheduler is production infrastructure. Skipping it in dev keeps the
+  // webpack development compiler from tracing its native SQLite dependency.
+  if (process.env.NODE_ENV === 'development') return;
+
   // Next.js instrumentation runs in both nodejs and edge runtimes;
   // the scheduler and DB access are nodejs-only.
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
 
-  import('./lib/start-backup-scheduler')
-    .then((mod) => {
-      mod.registerSignalHandlers();
-      mod.startSchedulerIfEnabled();
-    })
-    .catch((err) => {
-      console.error(
-        '[instrumentation] Failed to start backup scheduler:',
-        err instanceof Error ? err.message : String(err),
-      );
-    });
+  try {
+    const mod = await import('./instrumentation-node');
+    mod.registerNodeInstrumentation();
+  } catch (err) {
+    console.error(
+      '[instrumentation] Failed to start backup scheduler:',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }

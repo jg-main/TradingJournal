@@ -83,7 +83,7 @@ export function getMigrationCount(): number {
 // ── Table registry ──────────────────────────────────────────────────────
 
 /**
- * Ordered list of all 22 user-data tables in the schema.
+ * Ordered list of all user-data tables in the schema.
  *
  * Each entry maps a snake_case database name to its Drizzle table object,
  * used for both querying (db.select().from(ref)) and output naming.
@@ -92,6 +92,8 @@ export function getMigrationCount(): number {
 export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'app_profile', ref: tables.appProfile },
   { name: 'ai_settings', ref: tables.aiSettings },
+  { name: 'market_data_settings', ref: tables.marketDataSettings },
+  { name: 'schwab_tokens', ref: tables.schwabTokens },
   { name: 'settings', ref: tables.settings },
   { name: 'accounts', ref: tables.accounts },
   { name: 'lookup_values', ref: tables.lookupValues },

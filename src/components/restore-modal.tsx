@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppTimezone } from '@/lib/timezone-context';
+import { useRestoreUploadBridge } from './restore-upload-bridge';
 import { AlertTriangle, CircleCheck, Clock, Loader2, Upload, X } from 'lucide-react';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -27,8 +28,11 @@ interface BackupManifest {
 
 const TABLE_LABELS: Record<string, string> = {
   app_profile: 'App Profile',
+  ai_settings: 'AI Settings',
   accounts: 'Accounts',
   settings: 'Settings',
+  market_data_settings: 'Market Data Settings',
+  schwab_tokens: 'Schwab Tokens',
   lookup_values: 'Lookup Values',
   setup_definitions: 'Setup Definitions',
   trades: 'Trades',
@@ -70,6 +74,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const confirmInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const processedUploadSignatureRef = useRef<string | null>(null);
 
   const [step, setStep] = useState<RestoreStep>(initialFile ? 'confirm' : 'upload');
   const [previewData, setPreviewData] = useState<{ manifest: BackupManifest } | null>(null);
@@ -82,6 +87,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
   const [errorMessage, setErrorMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [localBackupPath, setLocalBackupPath] = useState('settings_init.zip');
   const [confirmText, setConfirmText] = useState('');
 
   useEffect(() => {
@@ -128,9 +134,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
     onClose();
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const previewSelectedFile = useCallback(async (file: File) => {
     setBackupFile(file);
     setErrorMessage('');
     setIsUploading(true);
@@ -145,19 +149,97 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
         method: 'POST', body: formData, signal: controller.signal,
       });
       const data = await res.json();
-      if (!res.ok) { setErrorMessage(data.error || 'Failed to preview backup'); setIsUploading(false); return; }
+      if (!res.ok) {
+        const message = data.error || 'Failed to preview backup';
+        setErrorMessage(message);
+        return;
+      }
       setPreviewData(data);
-      setStep('preview');
-    } catch (err) {
+      setStep('confirm');
+    } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      setErrorMessage(err instanceof Error ? err.message : 'Network error during upload');
+      const message = err instanceof Error ? err.message : 'Network error during upload';
+      console.error('RestoreModal preview error', message);
+      setErrorMessage(message);
     } finally {
       setIsUploading(false);
       abortRef.current = null;
-      // Reset the file input so the same file can be re-selected after a failed attempt
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+    }
+  }, []);
+
+  // Callback refs run whenever Brave swaps the native input node. Bind native
+  // handlers to that exact node instead of relying on React event delegation.
+  const handleChooseFile = useCallback(async () => {
+    const browserWindow = window as Window & {
+      showOpenFilePicker?: (options: {
+        multiple: boolean;
+        types: Array<{ description: string; accept: Record<string, string[]> }>;
+      }) => Promise<Array<{ getFile: () => Promise<File> }>>;
+    };
+
+    // Try the File System Access API if available.  If it throws for any
+    // reason other than user cancellation (AbortError) — e.g. Brave Shields
+    // blocking the permission — fall through to the hidden input fallback.
+    if (browserWindow.showOpenFilePicker) {
+      try {
+        const [handle] = await browserWindow.showOpenFilePicker({
+          multiple: false,
+          types: [{ description: 'Trading Journal backup', accept: { 'application/zip': ['.zip'] } }],
+        });
+        if (!handle) return;
+        const file = await handle.getFile();
+        await previewSelectedFile(file);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        // Fall through to the hidden-input fallback below.
+        console.warn('showOpenFilePicker threw, falling back to hidden input:', error);
       }
+    }
+
+    // Standards-based fallback for browsers without File System Access API,
+    // or when the API exists but the permission was blocked (e.g. Brave Shields).
+    // Clear before opening so picking the same ZIP still emits a change event.
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      processedUploadSignatureRef.current = null;
+      fileInputRef.current.click();
+    }
+  }, [previewSelectedFile]);
+
+  const handleBridgeFile = useCallback((file: File) => {
+    const signature = `${file.name}:${file.size}:${file.lastModified}`;
+    if (processedUploadSignatureRef.current === signature) return;
+    processedUploadSignatureRef.current = signature;
+    void previewSelectedFile(file);
+  }, [previewSelectedFile]);
+
+  useRestoreUploadBridge(handleBridgeFile);
+
+  const handleImportLocalBackup = async () => {
+    setErrorMessage('');
+    setIsUploading(true);
+    try {
+      const response = await fetch('/api/backup/import-local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: localBackupPath }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setErrorMessage(data.error || 'Could not import the local backup.');
+        return;
+      }
+      setSelectedServerFile(data.file as BackupFileEntry);
+      setMode('server');
+      setConfirmText('');
+      setStep('confirm');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not import the local backup.');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -207,26 +289,47 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
   };
 
   const handleGoBack = () => {
-    if (step === 'confirm' && mode === 'upload') { setStep('preview'); setConfirmText(''); }
+    if (step === 'confirm' && mode === 'upload') { setStep('upload'); setConfirmText(''); }
     else if (step === 'confirm' && mode === 'server') { setStep('browse'); setConfirmText(''); setSelectedServerFile(null); }
     else if (step === 'error') { handleRetry(); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Restore backup">
-      <input
-        ref={fileInputRef}
-        id="backup-upload-file"
-        type="file"
-        accept=".zip"
-        onChange={handleFileChange}
-        className="absolute h-0 w-0 opacity-0"
-        aria-label="Select backup ZIP file"
-      />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={handleBackdropClick}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Restore backup"
+    >
       <div className="relative w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <button onClick={handleClose} className="absolute right-4 top-4 rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" aria-label="Close restore modal">
           <X className="size-5" />
         </button>
+
+        {/* Button-driven file input: label triggers hidden (but sized) input, native 'change' listener fires */}
+        <div className="mb-4" style={{ display: step === 'upload' ? 'block' : 'none' }}>
+          <input
+            ref={fileInputRef}
+            id="backup-upload-file"
+            type="file"
+            accept=".zip"
+            className="fixed left-[-9999px] top-0"
+            aria-label="Select backup ZIP file"
+          />
+          <button
+            type="button"
+            onClick={() => { void handleChooseFile(); }}
+            className="flex w-full cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-6 py-8 text-center hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500"
+          >
+            <Upload className="size-10 text-zinc-400" strokeWidth={1.5} />
+            <div>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Choose a backup ZIP file</p>
+              <p className="mt-1 text-xs text-zinc-400">Only .zip files exported from this journal are supported</p>
+            </div>
+          </button>
+        </div>
+
 
         {(step === 'upload' || step === 'browse') && (
           <div className="mb-5 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
@@ -279,12 +382,29 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
           <div>
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Restore from Backup</h2>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Upload a backup ZIP file to restore your journal data. This will replace all existing data.</p>
+            {process.env.NODE_ENV === 'development' && !isUploading && (
+              <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                <label htmlFor="local-backup-path" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">Import project backup path</label>
+                <div className="mt-2 flex gap-2">
+                  <input id="local-backup-path" value={localBackupPath} onChange={(event) => setLocalBackupPath(event.target.value)} className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100" />
+                  <button type="button" onClick={() => { void handleImportLocalBackup(); }} className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900">Import</button>
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">Development only. Paths are limited to the project&apos;s data/ directory.</p>
+              </div>
+            )}
             {errorMessage && (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                   <span className="flex-1">{errorMessage}</span>
                 </div>
+                {errorMessage.includes('Schema version mismatch') && (
+                  <div className="mt-2 ml-6 text-xs text-red-600 dark:text-red-400">
+                    The database schema has changed since this backup was created.
+                    Create a new backup from the current app (Backup Now) or upload a newer backup file.
+                    Run <code className="rounded bg-red-100 px-1 dark:bg-red-900/50">make seed-settings</code> to regenerate the seed file.
+                  </div>
+                )}
                 <button onClick={handleRetry} className="mt-2 ml-6 text-xs font-medium text-red-600 underline underline-offset-2 hover:text-red-500 dark:text-red-300">Retry</button>
               </div>
             )}
@@ -298,13 +418,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
               <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-zinc-400" /><p className="text-sm text-zinc-600 dark:text-zinc-300">Uploading and validating backup...</p></div>
             ) : (
               <div className="mt-6">
-                <label
-                  htmlFor="backup-upload-file"
-                  className="flex w-full cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-6 py-8 text-center hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500"
-                >
-                  <Upload className="size-10 text-zinc-400" strokeWidth={1.5} />
-                  <div><p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Choose a backup ZIP file</p><p className="mt-1 text-xs text-zinc-400">Only .zip files exported from this journal are supported</p></div>
-                </label>
+                <p className="text-xs text-zinc-400">Use the file selector above to choose a backup ZIP file. Only .zip files exported from this journal are supported.</p>
               </div>
             )}
           </div>
@@ -335,10 +449,20 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
         {step === 'confirm' && (
           <div>
-            <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Confirm Restore</h2>
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>This will permanently replace ALL existing data in your journal with the data from the backup. This action cannot be undone.</span></div>
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Backup uploaded. Confirm restore.</h2>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">The backup ZIP was uploaded and validated successfully.</p>
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>Restoring will permanently replace ALL existing data in your journal with the data from the backup. This action cannot be undone.</span></div>
+            
+            {previewData && (
+              <div className="mt-3 space-y-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
+                <div className="flex items-center justify-between"><span className="text-zinc-500">Backup date</span><span className="text-zinc-700 dark:text-zinc-300">{formatBackupDate(previewData.manifest.backupTimestamp, timezone)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-zinc-500">Schema version</span><span className="text-zinc-700 dark:text-zinc-300">v{previewData.manifest.schemaVersion}</span></div>
+                <div className="flex items-center justify-between"><span className="text-zinc-500">Tables</span><span className="text-zinc-700 dark:text-zinc-300">{Object.keys(previewData.manifest.tables).length}</span></div>
+              </div>
+            )}
+
             <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Type <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">RESTORE</span> to confirm:</p>
-            <input ref={confirmInputRef} type="text" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="Type RESTORE to confirm" className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-red-500 dark:focus:ring-red-900/30" autoComplete="off" spellCheck={false} />
+            <input ref={confirmInputRef} type="text" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} aria-label="Type RESTORE to confirm" placeholder="Type RESTORE to confirm" className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-red-500 dark:focus:ring-red-900/30" autoComplete="off" spellCheck={false} />
             <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleGoBack} className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button><button onClick={handleRestore} disabled={confirmText !== 'RESTORE'} className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600">Confirm Restore</button></div>
           </div>
         )}
@@ -355,6 +479,13 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
           <div>
             <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Restore Failed</h2>
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>{errorMessage || 'An unexpected error occurred during restore.'}</span></div>
+            {errorMessage != null && errorMessage.includes('Schema version mismatch') && (
+              <div className="mt-2 ml-6 text-xs text-red-600 dark:text-red-400">
+                The database schema has changed since this backup was created.
+                Create a new backup from the current app (Backup Now) or upload a newer backup file.
+                Run <code className="rounded bg-red-100 px-1 dark:bg-red-900/50">make seed-settings</code> to regenerate the seed file.
+              </div>
+            )}
             {errorMessage != null && errorMessage.includes('Cannot restore while trades are open') && (
               <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />

@@ -153,7 +153,8 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import * as schema from '@/db/schema';
-import { POST, _resetRateLimit } from '../route';
+import { POST } from '../route';
+import { resetRateLimit } from '../rate-limit-state';
 import { createMockQuoteResult } from '@/lib/market-quote';
 
 // ── Test helpers ───────────────────────────────────────────────────────────
@@ -218,7 +219,7 @@ async function callPost(): Promise<{
 describe('POST /api/trades/mtm/refresh', () => {
   beforeEach(() => {
     cleanup();
-    _resetRateLimit();
+    resetRateLimit();
     mockProviderCtx.reset();
   });
 

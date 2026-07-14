@@ -19,6 +19,32 @@ const nextConfig: NextConfig = {
         },
       }
     : {}),
+  webpack(config, { dev, nextRuntime, webpack }) {
+    if (dev && nextRuntime === 'edge') {
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource: { request: string }) => {
+          resource.request = resource.request.replace(/^node:/, '');
+        }),
+      );
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        assert: false,
+        buffer: false,
+        child_process: false,
+        crypto: false,
+        events: false,
+        fs: false,
+        net: false,
+        os: false,
+        path: false,
+        stream: false,
+        tty: false,
+        util: false,
+        zlib: false,
+      };
+    }
+    return config;
+  },
   async redirects() {
     return [
       {

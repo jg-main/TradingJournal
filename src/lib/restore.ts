@@ -43,6 +43,8 @@ function getSnapshotDir(): string {
 export const INSERT_ORDER: string[] = [
   'app_profile',
   'ai_settings',
+  'market_data_settings',
+  'schwab_tokens',
   'accounts',
   'settings',
   'lookup_values',

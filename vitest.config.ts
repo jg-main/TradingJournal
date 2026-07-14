@@ -42,6 +42,7 @@ export default defineConfig({
       'src/app/api/schwab/disconnect/__tests__/route.test.ts',
       'src/lib/__tests__/market-data-resolver.test.ts',
       'src/app/api/trades/mtm/refresh/__tests__/route.vitest.test.ts',
+      'src/lib/__tests__/backup-restore-table-consistency.test.ts',
     ],
   },
 });
