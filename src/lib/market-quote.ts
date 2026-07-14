@@ -40,7 +40,7 @@ export interface QuoteResult {
   /** ISO-8601 timestamp of when this quote was fetched */
   fetchedAt: string;
   /** Source identifier for provenance tracking */
-  source: "yahoo" | "mock";
+  source: "yahoo" | "mock" | "schwab";
   /** Company short name from the provider (e.g. "Apple Inc.") */
   shortName?: string;
   /** Quote type from the provider (e.g. "EQUITY", "ETF") */

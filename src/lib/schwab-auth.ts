@@ -210,6 +210,19 @@ export function resetAuthClient(): void {
   authClient = null;
 }
 
+/**
+ * Get the auth client (EnhancedTokenManager) singleton.
+ *
+ * Returns the internal EnhancedTokenManager so SchwabProvider can create
+ * an API client via createApiClient(). Returns null when Schwab is not
+ * configured (env vars missing).
+ */
+export function getAuthClient(): ReturnType<typeof createSchwabAuth> | null {
+  const client = getClient();
+  if (!client) return null;
+  return client;
+}
+
 // ── Auth URL Generation ─────────────────────────────────────────────────
 
 /**
