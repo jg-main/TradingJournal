@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, positionPriceSnapshots } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
-import { YahooFinanceProvider } from '@/lib/market-quote';
+import { resolveQuoteProvider } from '@/lib/market-data-resolver';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -86,7 +86,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Trade not found' }, { status: 404 });
     }
 
-    const provider = new YahooFinanceProvider();
+    const provider = resolveQuoteProvider();
     const results = await provider.getQuote([trade.symbol]);
     const quote = results[0];
 

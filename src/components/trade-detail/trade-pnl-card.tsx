@@ -88,7 +88,7 @@ export default function TradePnlCard({
                 </span>
                 {/* Company name */}
                 <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400 truncate">
-                  {hasName ? shortName : <span className="text-zinc-400 dark:text-zinc-500 italic">Ticker not found</span>}
+                  {hasName ? shortName : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
                 </span>
               </div>
               {/* Price (for open trades with MTM) */}
@@ -121,10 +121,16 @@ export default function TradePnlCard({
                 </>
               )}
               {hasMeta && hasPrice && <span className="text-zinc-300 dark:text-zinc-600">·</span>}
-              {hasPrice && priceFetchedAt && (
+              {hasPrice && priceFetchedAt && priceSource !== 'schwab' && (
                 <span className="inline-flex items-center gap-1">
                   <Clock className="size-3" />
                   {getStalenessLabel(marketState ?? null, priceFetchedAt)}
+                </span>
+              )}
+              {hasPrice && priceFetchedAt && priceSource === 'schwab' && (
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="size-3" />
+                  Streaming
                 </span>
               )}
               {hasPrice && priceSource && (
