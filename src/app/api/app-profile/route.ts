@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { appProfile } from '@/db/schema';
+import { appProfile, settings } from '@/db/schema';
+import { reschedule, cronTimeToUTCExpression, isSchedulerActive } from '@/lib/scheduler';
+import { runBackupJob } from '@/lib/backup-job';
 
 const appProfileSchema = z.object({
   displayName: z.string().trim().min(1, 'Display name is required'),
@@ -71,6 +73,19 @@ export async function PUT(request: NextRequest) {
       })
       .where(eq(appProfile.id, existing.id))
       .run();
+
+    // If the timezone changed and the scheduler is active, reschedule
+    // the cron so backup times stay correct in the new timezone.
+    if (parsed.data.timezone && parsed.data.timezone !== (existing.timezone ?? '')) {
+      const schedRow = db.select().from(settings).limit(1).get();
+      if (schedRow?.backupEnabled && isSchedulerActive()) {
+        const cronTime = schedRow.backupCronTime ?? '02:00';
+        reschedule(cronTimeToUTCExpression(cronTime, parsed.data.timezone), runBackupJob);
+        console.log(
+          `[app-profile] Timezone changed to "${parsed.data.timezone}" — rescheduled cron to keep "${cronTime}" local time`,
+        );
+      }
+    }
 
     const row = db.select().from(appProfile).where(eq(appProfile.id, existing.id)).get();
     return NextResponse.json(row);

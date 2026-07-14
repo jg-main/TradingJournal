@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { settings } from '@/db/schema';
+import { settings, appProfile } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { startScheduler, stopScheduler } from '@/lib/scheduler';
+import { startScheduler, stopScheduler, reschedule, cronTimeToUTCExpression } from '@/lib/scheduler';
 import { runBackupJob } from '@/lib/backup-job';
 
 const settingsSchema = z.object({
@@ -17,6 +17,7 @@ const settingsSchema = z.object({
   backupRetentionCount: z.number().int().min(1).optional(),
   backupLastRunAt: z.string().nullable().optional(),
   backupLastRunStatus: z.enum(['success', 'error']).nullable().optional(),
+  backupCronTime: z.string().regex(/^\d{2}:\d{2}$/, 'Must be HH:MM (24h format)').optional(),
 });
 
 export async function GET() {
@@ -70,18 +71,27 @@ export async function PUT(request: NextRequest) {
     const row = db.select().from(settings).where(eq(settings.id, existing.id)).get();
 
     // ── Scheduler lifecycle ──────────────────────────────────────────
-    // If backupEnabled was explicitly provided and differs from the
-    // previous value, start or stop the scheduler accordingly.
+    // Determine the effective cron time: use the new value if provided,
+    // otherwise fall back to existing or default.
+    const cronTime = parsed.data.backupCronTime ?? existing.backupCronTime ?? '02:00';
+
+    // Read the user's configured timezone from app_profile
+    const profileRow = db.select().from(appProfile).limit(1).get();
+    const timezone = profileRow?.timezone ?? 'America/Bogota';
+
     if (parsed.data.backupEnabled !== undefined) {
       const wasEnabled = existing.backupEnabled ?? false;
       const nowEnabled = parsed.data.backupEnabled;
       if (nowEnabled && !wasEnabled) {
         // Backup was disabled, now enabled → start scheduler
-        startScheduler('0 2 * * *', runBackupJob);
+        startScheduler(cronTimeToUTCExpression(cronTime, timezone), runBackupJob);
       } else if (!nowEnabled && wasEnabled) {
         // Backup was enabled, now disabled → stop scheduler
         stopScheduler();
       }
+    } else if (parsed.data.backupCronTime !== undefined && (existing.backupEnabled ?? false)) {
+      // Cron time changed while scheduler is active → reschedule
+      reschedule(cronTimeToUTCExpression(cronTime, timezone), runBackupJob);
     }
 
     return NextResponse.json(row);

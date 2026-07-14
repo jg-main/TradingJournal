@@ -24,6 +24,7 @@ import type { ScheduledTask } from 'node-cron';
 let cronTask: ScheduledTask | null = null;
 let immediateTimeout: ReturnType<typeof setTimeout> | null = null;
 let currentCronExpression: string = '';
+let _isSchedulerActive: boolean = false;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
@@ -33,10 +34,118 @@ let currentCronExpression: string = '';
  *
  * Called by the GET /api/backup/status endpoint.
  */
+/**
+ * Return the ISO timestamp of the next scheduled backup run, or null
+ * when the scheduler is not active.
+ */
 export function getNextScheduledAt(): string | null {
   if (!cronTask || cronTask.getStatus() === 'destroyed') return null;
   const next = cronTask.getNextRun();
   return next ? next.toISOString() : null;
+}
+
+/**
+ * Return whether the scheduler is currently active (task exists and running).
+ */
+export function isSchedulerActive(): boolean {
+  return _isSchedulerActive;
+}
+
+/**
+ * Return the current cron status string: 'started', 'stopped', or 'destroyed'.
+ */
+export function getSchedulerStatus(): string {
+  if (!cronTask) return 'stopped';
+  return cronTask.getStatus();
+}
+
+/**
+ * Convert a 24-hour time string (HH:MM) to a daily cron expression.
+ *
+ * Examples:
+ *   '02:00' -> '0 2 * * *'
+ *   '14:30' -> '30 14 * * *'
+ *   '23:45' -> '45 23 * * *'
+ */
+export function cronTimeToExpression(time: string): string {
+  const [hour, minute] = time.split(':').map(Number);
+  if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    console.warn(`[scheduler] Invalid cron time "${time}", falling back to 02:00`);
+    return '0 2 * * *';
+  }
+  return `${minute} ${hour} * * *`;
+}
+
+/**
+ * Convert a 24-hour backup time (HH:MM) expressed in the given IANA timezone
+ * into a UTC cron expression that node-cron can use when the system clock is UTC.
+ *
+ * This allows Docker containers to remain on UTC while the user configures
+ * backup times in their local timezone via app settings.
+ *
+ * Uses Intl.DateTimeFormat for DST-aware offset computation.
+ *
+ * Example: '21:00' in 'America/Bogota' (UTC-5) → '0 2 * * *'
+ */
+export function cronTimeToUTCExpression(time: string, timezone: string): string {
+  const [hour, minute] = time.split(':').map(Number);
+  if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    console.warn(`[scheduler] Invalid cron time "${time}", falling back to 02:00`);
+    return '0 2 * * *';
+  }
+
+  try {
+    // Get the timezone offset to compute UTC from local time.
+    // We create a reference point (today at noon UTC) and ask the target timezone
+    // for its offset at that moment.
+    const noon = new Date();
+    noon.setUTCHours(12, 0, 0, 0);
+
+    const offsetFmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'longOffset',
+      hour12: false,
+    });
+    const offsetStr = offsetFmt.formatToParts(noon)
+      .find((p) => p.type === 'timeZoneName')?.value || 'GMT';
+
+    // Parse "GMT-05:00" or "GMT+05:30"
+    const match = offsetStr.match(/GMT([+-])(\d+):?(\d+)?/);
+    if (!match) throw new Error(`Unparseable offset: ${offsetStr}`);
+
+    const sign = match[1] === '-' ? -1 : 1;
+    const offsetHours = Number(match[2]);
+    const offsetMins = Number(match[3] || 0);
+    const totalOffsetHours = sign * (offsetHours + offsetMins / 60);
+
+    // Convert local time to UTC: UTC = local - offset (offset is negative west of UTC)
+    // Bogota (UTC-5): 21:00 local → 21 - (-5) = 26 → 02:00 UTC
+    // Tokyo (UTC+9):  21:00 local → 21 - 9 = 12:00 UTC
+    const utcTotalMinutes = (hour * 60 + minute) - (totalOffsetHours * 60);
+    // Normalize into 0–1439 range (24h)
+    const normalized = ((utcTotalMinutes % 1440) + 1440) % 1440;
+
+    const utcHour = Math.floor(normalized / 60);
+    const utcMinute = Math.floor(normalized % 60);
+
+    console.log(
+      `[scheduler] TZ conversion: "${time}" ${timezone} (${offsetStr}) → ${String(utcHour).padStart(2, '0')}:${String(utcMinute).padStart(2, '0')} UTC → cron "${utcMinute} ${utcHour} * * *"`,
+    );
+    return `${utcMinute} ${utcHour} * * *`;
+  } catch (err) {
+    console.warn(
+      `[scheduler] Failed to convert timezone "${timezone}", falling back to server-local cron`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return cronTimeToExpression(time);
+  }
+}
+
+/**
+ * Return the current cron expression, or empty string if not set.
+ */
+export function getCurrentCronExpression(): string {
+  return currentCronExpression;
 }
 
 /**
@@ -73,6 +182,7 @@ export function startScheduler(
   }
 
   currentCronExpression = cronExpression;
+  _isSchedulerActive = true;
 
   // Create the recurring cron job (starts in idle state)
   cronTask = cron.schedule(cronExpression, async () => {
@@ -135,6 +245,7 @@ export function stopScheduler(): void {
   }
 
   currentCronExpression = '';
+  _isSchedulerActive = false;
 }
 
 /**

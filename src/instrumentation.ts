@@ -23,9 +23,6 @@
  * src/lib/backup-job.ts
  */
 
-/** Default daily cron: 2:00 AM server-local time */
-const DEFAULT_CRON_EXPRESSION = '0 2 * * *';
-
 /**
  * Server initialization hook — called automatically by Next.js once during
  * server boot, before the first request is accepted.
@@ -59,7 +56,7 @@ export function register(): void {
   // The scheduler itself has a NODE_ENV === 'production' guard, so this
   // is harmless in dev — we gate on settings too so the instrumentation
   // signal is accurate.
-  startSchedulerIfEnabled(DEFAULT_CRON_EXPRESSION).catch((err) => {
+  startSchedulerIfEnabled().catch((err) => {
     console.error(
       '[instrumentation] Failed to start backup scheduler:',
       err instanceof Error ? err.message : String(err),
@@ -73,20 +70,27 @@ export function register(): void {
  * Separated from `register()` so the async import does not make `register()`
  * return a Promise — Next.js calls it synchronously and the catch is handled.
  */
-async function startSchedulerIfEnabled(cronExpression: string): Promise<void> {
+async function startSchedulerIfEnabled(): Promise<void> {
   try {
     const { db } = await import('@/db/index');
-    const { settings } = await import('@/db/schema');
+    const { settings, appProfile } = await import('@/db/schema');
 
-    const row = db.select().from(settings).limit(1).get();
-    const backupEnabled = row?.backupEnabled ?? false;
+    const [settingsRow, profileRow] = await Promise.all([
+      Promise.resolve(db.select().from(settings).limit(1).get()),
+      Promise.resolve(db.select().from(appProfile).limit(1).get()),
+    ]);
+
+    const backupEnabled = settingsRow?.backupEnabled ?? false;
 
     if (backupEnabled) {
-      console.log(
-        '[instrumentation] Backups are enabled in settings — starting scheduler...',
-      );
-      const { startScheduler } = await import('./lib/scheduler');
+      const backupCronTime = settingsRow?.backupCronTime ?? '02:00';
+      const timezone = profileRow?.timezone ?? 'America/Bogota';
+      const { startScheduler, cronTimeToUTCExpression } = await import('./lib/scheduler');
       const { runBackupJob } = await import('./lib/backup-job');
+      const cronExpression = cronTimeToUTCExpression(backupCronTime, timezone);
+      console.log(
+        `[instrumentation] Backups enabled (${backupCronTime} ${timezone}) — starting scheduler...`,
+      );
       startScheduler(cronExpression, runBackupJob);
     } else {
       console.log(
@@ -94,8 +98,6 @@ async function startSchedulerIfEnabled(cronExpression: string): Promise<void> {
       );
     }
   } catch (err) {
-    // Log but do not re-throw — instrumentation failure should never
-    // block server startup
     console.error(
       '[instrumentation] Could not read settings for scheduler startup:',
       err instanceof Error ? err.message : String(err),
