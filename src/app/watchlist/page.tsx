@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Plus, Eye } from 'lucide-react';
+import { Plus, Eye, Columns3 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import DynamicTable from '@/components/dynamic-table';
 
@@ -102,6 +102,15 @@ export default function WatchlistPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showColumns, setShowColumns] = useState(false);
+  const [colVisibility, setColVisibility] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('watchlist:visibility');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
 
   const [form, setForm] = useState(EMPTY_FORM);
 
@@ -265,15 +274,47 @@ export default function WatchlistPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Watchlist
         </h1>
-        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-          <DialogTrigger asChild>
+        <div className="flex items-center gap-2">
+          {/* Columns button */}
+          <div className="relative">
             <button
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+              type="button"
+              onClick={() => setShowColumns(!showColumns)}
+              className="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <Plus className="size-4" />
-              Add Symbol
+              <Columns3 className="size-4" />
+              Columns
             </button>
-          </DialogTrigger>
+            {showColumns && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border bg-popover p-2 shadow-lg">
+                {columns.filter(col => col.id !== 'actions').map((col) => (
+                  <label key={col.id!} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
+                    <input
+                      type="checkbox"
+                      checked={colVisibility[col.id!] !== false}
+                      onChange={(e) => {
+                        const n = { ...colVisibility, [col.id!]: e.target.checked };
+                        setColVisibility(n);
+                        localStorage.setItem('watchlist:visibility', JSON.stringify(n));
+                      }}
+                      className="size-3.5 rounded"
+                    />
+                    <span className="text-foreground">{typeof col.header === 'string' ? col.header : col.id}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+            <DialogTrigger asChild>
+              <button
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+              >
+                <Plus className="size-4" />
+                Add Symbol
+              </button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Symbol' : 'Add to Watchlist'}</DialogTitle>
@@ -413,6 +454,7 @@ export default function WatchlistPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Status message */}
