@@ -86,6 +86,41 @@ export function validatePostingAmount(amount: string): {
 }
 
 /**
+ * Validate a posting amount to micros, allowing zero for non-cash events.
+ * Throws InvalidAmountError or InvalidMicrosBoundsError on failure.
+ */
+export function validateNonNegativePostingAmount(amount: string): {
+  amount: CanonicalDecimal;
+  amountMicros: number;
+} {
+  // Validate canonical decimal format
+  const validation = validateDecimal(amount);
+  if (!validation.valid) {
+    throw new InvalidAmountError(amount, validation.error ?? 'Value is not a canonical decimal');
+  }
+
+  // Convert to micros
+  let amountMicros: number;
+  try {
+    amountMicros = toMicros(amount);
+  } catch {
+    throw new InvalidAmountError(amount, 'Failed to convert to micros');
+  }
+
+  // Check safe integer bounds
+  if (amountMicros > Number.MAX_SAFE_INTEGER || amountMicros < Number.MIN_SAFE_INTEGER) {
+    throw new InvalidMicrosBoundsError(amountMicros);
+  }
+
+  // Allow zero (for non-cash events like stock splits), reject negatives
+  if (amountMicros < 0) {
+    throw new InvalidAmountError(amount, 'Amount must not be negative');
+  }
+
+  return { amount: amount as CanonicalDecimal, amountMicros };
+}
+
+/**
  * Convert domain FinancialEventWithPostings to the types.ts record shape.
  */
 function toFinancialEventRecord(
@@ -151,6 +186,170 @@ function toPostingRecord(
 }
 
 // ── Posting Kernel ──────────────────────────────────────────────────────
+
+// ── Generalized Input Type ──────────────────────────────────────────────
+
+/**
+ * Input for the generalized posting kernel.
+ * Supports all event types with optional payload/effect metadata.
+ */
+export interface PostFinancialEventInput {
+  /** Target account ID (must exist in accounts table). */
+  accountId: string;
+  /** The event type (e.g. 'deposit', 'withdrawal', 'stock_split'). */
+  eventType: EventType;
+  /** Amount as a canonical decimal string (e.g. "10000.00"). May be "0.00" for non-cash events. */
+  amount: CanonicalDecimal | string;
+  /** Optional idempotency key for replay-safe posting. */
+  idempotencyKey?: string;
+  /** Optional human-readable description. */
+  description?: string;
+  /** JSON-encoded event payload metadata (canonical). */
+  payload?: string | null;
+  /** JSON-encoded economic effect descriptor. */
+  effect?: string | null;
+  /** ISO-8601 timestamp. Defaults to current UTC time. */
+  postedAt?: string;
+}
+
+/**
+ * Post any financial event type atomically.
+ *
+ * Generalized version of postOpeningBalance that supports all event types
+ * and accepts optional payload/effect for event-type-specific metadata.
+ * For non-cash events (stock_split), uses the relaxed validator to allow
+ * zero amounts. Cash events use the strict validator.
+ *
+ * Creates one financial event (with optional payload/effect), one ledger
+ * entry, and exactly two balanced ledger postings inside a single SQLite
+ * transaction. Reuses existing idempotency, sequence, rollback, micros-bound,
+ * and immutability protections.
+ *
+ * @param sqlite - Raw better-sqlite3 Database handle for transactional control.
+ * @param input  - Posting parameters including event type, amount, and metadata.
+ * @returns The fully hydrated FinancialEventWithPostings aggregate.
+ * @throws {InvalidAmountError}         If the amount is not valid.
+ * @throws {InvalidMicrosBoundsError}   If micros exceeds safe integer bounds.
+ * @throws {AccountNotFoundError}       If the account does not exist.
+ * @throws {DuplicateIdempotencyKeyError} If the idempotency key is already used.
+ */
+export function postFinancialEvent(
+  sqlite: Database.Database,
+  input: PostFinancialEventInput,
+): FinancialEventWithPostings {
+  const { accountId, eventType, amount: rawAmount, idempotencyKey, description, payload, effect, postedAt } = input;
+  const postedAtStr = postedAt ?? new Date().toISOString();
+
+  // 1. Validate amount (use non-negative validator for stock_split, standard for other cash events)
+  const { amount, amountMicros } = eventType === 'stock_split'
+    ? validateNonNegativePostingAmount(rawAmount)
+    : validatePostingAmount(rawAmount);
+
+  // 2. Check idempotency (pre-transaction to fail fast)
+  if (idempotencyKey) {
+    const existingEvent = findEventByIdempotencyKey(sqlite, idempotencyKey);
+    if (existingEvent) {
+      throw new DuplicateIdempotencyKeyError(idempotencyKey);
+    }
+  }
+
+  // 3. Verify account exists
+  if (!accountExists(sqlite, accountId)) {
+    throw new AccountNotFoundError(accountId);
+  }
+
+  // 4. Begin transaction
+  const transaction = sqlite.transaction(() => {
+    // 5. Insert financial event with optional payload/effect
+    const eventRow = insertFinancialEvent(sqlite, {
+      accountId,
+      eventType,
+      idempotencyKey: idempotencyKey ?? null,
+      description: description ?? null,
+      payload: payload ?? null,
+      effect: effect ?? null,
+      postedAt: postedAtStr,
+    });
+
+    // 6. Insert ledger entry
+    const entryRow = insertLedgerEntry(sqlite, {
+      financialEventId: eventRow.id,
+      accountId,
+      description: description ?? null,
+      postedAt: postedAtStr,
+    });
+
+    // 7. Get next sequence for postings
+    const nextSeq = getNextSequence(sqlite);
+
+    // 8. Insert debit posting
+    const debitRow = insertLedgerPosting(sqlite, {
+      ledgerEntryId: entryRow.id,
+      accountId,
+      side: 'debit',
+      amount,
+      amountMicros,
+      sequence: nextSeq,
+    });
+
+    // 9. Insert credit posting (balanced — same amount, credit side)
+    const creditRow = insertLedgerPosting(sqlite, {
+      ledgerEntryId: entryRow.id,
+      accountId,
+      side: 'credit',
+      amount,
+      amountMicros,
+      sequence: nextSeq + 1,
+    });
+
+    return { eventRow, entryRow, debitRow, creditRow };
+  });
+
+  // Execute the transaction — if any step fails, all changes are rolled back
+  const result = transaction();
+
+  // 10. Convert to domain record types and return (with payload/effect)
+  return {
+    event: {
+      id: result.eventRow.id,
+      accountId,
+      eventType,
+      idempotencyKey: idempotencyKey ?? null,
+      description: description ?? null,
+      payload: payload ?? null,
+      effect: effect ?? null,
+      postedAt: postedAtStr,
+      createdAt: new Date().toISOString(),
+    },
+    entry: toLedgerEntryRecord(
+      result.entryRow.id,
+      result.eventRow.id,
+      accountId,
+      description ?? null,
+      postedAtStr,
+    ),
+    postings: {
+      debit: toPostingRecord(
+        result.debitRow.id,
+        result.entryRow.id,
+        accountId,
+        'debit',
+        amount,
+        amountMicros,
+        result.debitRow.sequence,
+      ),
+      credit: toPostingRecord(
+        result.creditRow.id,
+        result.entryRow.id,
+        accountId,
+        'credit',
+        amount,
+        amountMicros,
+        result.creditRow.sequence,
+      ),
+    },
+  };
+}
 
 /**
  * Post an opening balance financial event atomically.

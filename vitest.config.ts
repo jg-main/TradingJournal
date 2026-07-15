@@ -58,6 +58,8 @@ export default defineConfig({
       'src/app/api/accounts/[id]/financial-events/__tests__/route.test.ts',
       'src/lib/accounting/__tests__/opening-balance-flow.test.ts',
       'src/lib/accounting/__tests__/financial-event-contracts.test.ts',
+      'src/lib/accounting/__tests__/financial-event-posting.test.ts',
+      'src/lib/accounting/__tests__/activity-rebuild.test.ts',
     ],
     environment: 'jsdom',
   },

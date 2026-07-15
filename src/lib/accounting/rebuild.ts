@@ -165,6 +165,73 @@ export function rebuildOpeningCash(
   };
 }
 
+// ── Activities ────────────────────────────────────────────────────────
+
+/**
+ * Raw activity event returned by rebuildAccountActivity.
+ * Provides a raw (non-parsed) view of events for the activity rebuild path.
+ */
+export interface AccountActivityRow {
+  eventId: string;
+  eventType: EventType;
+  description: string | null;
+  payload: string | null;
+  effect: string | null;
+  postedAt: string;
+  createdAt: string;
+  hasEntry: boolean;
+}
+
+/**
+ * Rebuild all financial events for an account (raw query path).
+ *
+ * Returns events in posted_at/id order with raw payload/effect JSON strings.
+ * Unlike `computeAccountActivity` in `activity.ts`, this returns raw strings
+ * for the rebuild/projection path and does not parse effect objects.
+ *
+ * Deterministic — same data always produces the same output.
+ *
+ * @param sqlite    - Raw better-sqlite3 Database handle.
+ * @param accountId - The account to rebuild events for.
+ * @returns Ordered array of AccountActivityRow.
+ */
+export function rebuildAccountActivity(
+  sqlite: Database.Database,
+  accountId: string,
+): AccountActivityRow[] {
+  const rows = sqlite
+    .prepare(
+      `SELECT fe.id, fe.event_type, fe.description, fe.payload, fe.effect,
+              fe.posted_at, fe.created_at,
+              CASE WHEN le.id IS NOT NULL THEN 1 ELSE 0 END AS has_entry
+       FROM financial_events fe
+       LEFT JOIN ledger_entries le ON le.financial_event_id = fe.id
+       WHERE fe.account_id = ?
+       ORDER BY fe.posted_at ASC, fe.id ASC`,
+    )
+    .all(accountId) as Array<{
+      id: string;
+      event_type: string;
+      description: string | null;
+      payload: string | null;
+      effect: string | null;
+      posted_at: string;
+      created_at: string;
+      has_entry: number;
+    }>;
+
+  return rows.map((r) => ({
+    eventId: r.id,
+    eventType: r.event_type as EventType,
+    description: r.description,
+    payload: r.payload,
+    effect: r.effect,
+    postedAt: r.posted_at,
+    createdAt: r.created_at,
+    hasEntry: r.has_entry === 1,
+  }));
+}
+
 /**
  * Rebuild the postings projection: net cash position for an account
  * from all posted ledger entries (all event types).
