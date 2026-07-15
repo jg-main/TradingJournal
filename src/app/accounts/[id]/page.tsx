@@ -13,7 +13,18 @@ interface AccountDetail {
   startingBalance: number | null;
   currentBalance: number;
   netDeposits: number;
-  netPnl: number;
+  kpis?: {
+    netPnl: number;
+    tradeCount: number;
+    winRate: number | null;
+    avgR: number | null;
+    avgGrade: number | null;
+  };
+}
+
+function getNetPnl(account: AccountDetail): number {
+  // Account KPI is embedded in a nested kpis object from the API
+  return account.kpis?.netPnl ?? 0;
 }
 
 export default function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -104,8 +115,8 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           ${formatCurrency(account.currentBalance)}
         </p>
         <div className="mt-3 flex gap-6 text-xs text-zinc-500 dark:text-zinc-400">
-          <span>Net P&amp;L: <span className={account.netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
-            {account.netPnl >= 0 ? '+' : ''}${formatCurrency(account.netPnl)}
+          <span>Net P&amp;L: <span className={getNetPnl(account) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+            {getNetPnl(account) >= 0 ? '+' : ''}${formatCurrency(getNetPnl(account))}
           </span></span>
         </div>
       </div>
@@ -142,9 +153,9 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
         <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Net P&amp;L</p>
           <p className={`mt-1 text-lg font-semibold tabular-nums ${
-            account.netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+            getNetPnl(account) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
           }`}>
-            {account.netPnl >= 0 ? '+' : ''}${formatCurrency(account.netPnl)}
+            {getNetPnl(account) >= 0 ? '+' : ''}${formatCurrency(getNetPnl(account))}
           </p>
         </div>
       </div>

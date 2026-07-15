@@ -176,6 +176,13 @@
       "when": 1784200000000,
       "tag": "0024_immutable_ledger_postings",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1784210000000,
+      "tag": "0025_financial_event_payload",
+      "breakpoints": true
     }
   ]
 }

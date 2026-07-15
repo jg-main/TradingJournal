@@ -60,6 +60,7 @@ export default defineConfig({
       'src/lib/accounting/__tests__/financial-event-contracts.test.ts',
       'src/lib/accounting/__tests__/financial-event-posting.test.ts',
       'src/lib/accounting/__tests__/activity-rebuild.test.ts',
+      'src/lib/accounting/__tests__/financial-events-integration.test.ts',
     ],
     environment: 'jsdom',
   },
