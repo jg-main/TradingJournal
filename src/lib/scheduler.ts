@@ -25,6 +25,7 @@ let cronTask: ScheduledTask | null = null;
 let immediateTimeout: ReturnType<typeof setTimeout> | null = null;
 let currentCronExpression: string = '';
 let _isSchedulerActive: boolean = false;
+let _jobRunning: boolean = false;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
@@ -164,6 +165,9 @@ export function getCurrentCronExpression(): string {
  * If a scheduler is already running, it is stopped first before the new one
  * is created.
  *
+ * A mutex (_jobRunning) prevents concurrent backup executions — node-cron
+ * can double-fire on exact-minute boundaries.
+ *
  * @param cronExpression - Standard cron expression (e.g. '0 2 * * *' for 2 AM daily)
  * @param job - A function that performs the backup work
  */
@@ -186,6 +190,11 @@ export function startScheduler(
 
   // Create the recurring cron job (starts in idle state)
   cronTask = cron.schedule(cronExpression, async () => {
+    if (_jobRunning) {
+      console.log('[scheduler] Backup already running — skipping duplicate cron fire');
+      return;
+    }
+    _jobRunning = true;
     const timestamp = new Date().toISOString();
     console.log(`[scheduler] Backup triggered by cron schedule at ${timestamp}`);
     try {
@@ -196,6 +205,8 @@ export function startScheduler(
         `[scheduler] Backup failed at ${timestamp}:`,
         error instanceof Error ? error.message : String(error),
       );
+    } finally {
+      _jobRunning = false;
     }
   });
 
@@ -218,6 +229,11 @@ export function startScheduler(
   if (secondsUntilNextCron > 60) {
     console.log('[scheduler] Scheduling immediate first backup in 10s readiness delay');
     immediateTimeout = setTimeout(async () => {
+      if (_jobRunning) {
+        console.log('[scheduler] Backup already running — skipping immediate backup');
+        return;
+      }
+      _jobRunning = true;
       const timestamp = new Date().toISOString();
       console.log(`[scheduler] Immediate first backup triggered at ${timestamp}`);
       try {
@@ -230,6 +246,8 @@ export function startScheduler(
           `[scheduler] Immediate first backup failed at ${timestamp}:`,
           error instanceof Error ? error.message : String(error),
         );
+      } finally {
+        _jobRunning = false;
       }
     }, 10_000);
   } else {
