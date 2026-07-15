@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAppTimezone } from '@/lib/timezone-context';
@@ -16,6 +16,7 @@ import {
 } from '@/lib/trade-calc';
 import { computePerfMetrics, type PerfMetrics } from '@/lib/perf-metrics';
 import { deriveInitialRiskAmount } from '@/lib/risk-snapshot';
+import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
 
 import PlannedPhaseView from '@/components/trade-detail/planned-phase-view';
@@ -331,56 +332,24 @@ export default function TradeDetailPage() {
     return () => { cancelled = true; };
   }, [id, refetchTrigger]);
 
-  // Auto-refresh MTM prices on a 15s poll cycle for open trades (visibility-aware)
-  const autoRefreshedRef = useRef(false);
+  // Initial batch MTM refresh on mount for open trades
   useEffect(() => {
     if (trade?.status !== 'open') return;
-
-    // Initial refresh on mount
-    if (!autoRefreshedRef.current) {
-      autoRefreshedRef.current = true;
-      fetch('/api/trades/mtm/refresh', { method: 'POST' })
-        .then(() => fetchMtmData(id, setMtmData))
-        .catch(() => {});
-    }
-
-    // Continuous polling every 15s
-    const doRefresh = () => {
-      fetch('/api/trades/mtm/refresh', { method: 'POST' })
-        .then(() => fetchMtmData(id, setMtmData))
-        .catch(() => {});
-    };
-
-    let intervalId: ReturnType<typeof setInterval> | undefined;
-
-    const start = () => {
-      if (intervalId !== undefined) clearInterval(intervalId);
-      intervalId = setInterval(doRefresh, 15000);
-    };
-    const stop = () => {
-      if (intervalId !== undefined) {
-        clearInterval(intervalId);
-        intervalId = undefined;
-      }
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        doRefresh();
-        start();
-      } else {
-        stop();
-      }
-    };
-
-    start();
-    document.addEventListener('visibilitychange', onVisibility);
-
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
+    fetch('/api/trades/mtm/refresh', { method: 'POST' })
+      .then(() => fetchMtmData(id, setMtmData))
+      .catch(() => {});
   }, [trade?.status, id]);
+
+  // Continuous 15s visibility-aware polling via shared hook
+  useVisibilityPolling(
+    () => {
+      fetch('/api/trades/mtm/refresh', { method: 'POST' })
+        .then(() => fetchMtmData(id, setMtmData))
+        .catch(() => {});
+    },
+    15000,
+    trade?.status === 'open',
+  );
 
   const execData = trade ? toExecutionData(executions) : [];
   const pnlResult = trade && executions.length > 0 ? calculatePnL(execData, trade.direction) : null;
