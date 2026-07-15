@@ -252,13 +252,18 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
           ? data.reference.description
           : undefined;
 
-    // Derive change, changePercent, and previousClose from Schwab quote data
+    // Derive change, changePercent, dayHigh, dayLow, and previousClose from Schwab quote data
     // netChange: absolute price change from previous close
     // closePrice: previous trading day's close price (used as fallback for previousClose)
+    // highPrice / lowPrice: current trading day's high and low prices
     const netChange =
       data.quote?.netChange != null ? Number(data.quote.netChange) : undefined;
     const previousClose =
       data.quote?.closePrice != null ? Number(data.quote.closePrice) : undefined;
+    const dayHigh =
+      data.quote?.highPrice != null ? Number(data.quote.highPrice) : undefined;
+    const dayLow =
+      data.quote?.lowPrice != null ? Number(data.quote.lowPrice) : undefined;
     const changePercent =
       netChange != null && previousClose != null && previousClose !== 0
         ? (netChange / previousClose) * 100
@@ -281,6 +286,8 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
       change: netChange,
       changePercent: changePercent != null ? Math.round(changePercent * 100) / 100 : undefined,
       previousClose,
+      dayHigh,
+      dayLow,
     };
   }
 

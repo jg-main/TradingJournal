@@ -229,13 +229,20 @@ describe('getQuote', () => {
     expect(results).toEqual([]);
   });
 
-  it('returns mapped quotes for valid symbols', async () => {
+  it('returns mapped quotes for valid symbols with dayHigh/dayLow', async () => {
     mockFns.mockGetQuotes.mockResolvedValue({
       AAPL: {
         assetMainType: 'EQUITY',
         symbol: 'AAPL',
         shortName: 'Apple Inc.',
-        quote: { lastPrice: 178.5, securityStatus: 'Normal' },
+        quote: {
+          lastPrice: 178.5,
+          securityStatus: 'Normal',
+          highPrice: 182.0,
+          lowPrice: 176.5,
+          netChange: 2.5,
+          closePrice: 176.0,
+        },
         reference: {
           fundamental: { sector: 'Technology', industry: 'Consumer Electronics' },
         },
@@ -254,8 +261,29 @@ describe('getQuote', () => {
     expect(results[0].sector).toBe('Technology');
     expect(results[0].industry).toBe('Consumer Electronics');
     expect(results[0].quoteType).toBe('EQUITY');
+    expect(results[0].dayHigh).toBe(182.0);
+    expect(results[0].dayLow).toBe(176.5);
+    expect(results[0].change).toBe(2.5);
+    expect(results[0].previousClose).toBe(176.0);
+    expect(results[0].changePercent).toBeCloseTo(1.42, 1);
     expect(results[0].error).toBeUndefined();
     expect(results[0].fetchedAt).toBeDefined();
+  });
+
+  it('handles missing dayHigh/dayLow gracefully', async () => {
+    mockFns.mockGetQuotes.mockResolvedValue({
+      AAPL: {
+        assetMainType: 'EQUITY',
+        symbol: 'AAPL',
+        quote: { lastPrice: 178.5, securityStatus: 'Normal' },
+      },
+    });
+
+    const provider = createProvider();
+    const results = await provider.getQuote(['AAPL']);
+
+    expect(results[0].dayHigh).toBeUndefined();
+    expect(results[0].dayLow).toBeUndefined();
   });
 
   it('returns error for symbols with no quote data', async () => {
