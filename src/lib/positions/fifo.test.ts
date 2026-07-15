@@ -68,7 +68,7 @@ function position(overrides: Partial<PositionState> = {}): any {
 }
 
 function execution(
-  overrides: Partial<FifoExecutionInput> & { action: ExecutionAction; quantity: string; price: string },
+  overrides: Omit<Partial<FifoExecutionInput>, 'quantity' | 'price' | 'fees'> & { action: ExecutionAction; quantity: string; price: string; fees?: string },
 ): any {
   return {
     executionId: overrides.executionId ?? randomUUID(),

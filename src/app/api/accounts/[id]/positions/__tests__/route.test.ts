@@ -208,7 +208,7 @@ describe('GET /api/accounts/[id]/positions — service composition', () => {
       const position = findAccountPosition(ctx.sqlite, ctx.accountId, instrument.id);
       expect(position).toBeDefined();
       expect(position!.instrument_id).toBe(instrument.id);
-      expect(position!.symbol ?? findInstrumentById(ctx.sqlite, instrument.id)!.symbol).toBeDefined();
+      expect(instrument.symbol).toBeDefined();
     });
 
     it('should filter by direction (all long positions)', () => {

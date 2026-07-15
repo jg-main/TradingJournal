@@ -461,6 +461,7 @@ describe('POST /api/accounts/[id]/executions — service composition', () => {
       );
 
       expect(preflight.accepted).toBe(false);
+      if (preflight.accepted) return; // narrow for TS
       expect(preflight.code).toBe('REVERSAL');
     });
 
@@ -502,6 +503,7 @@ describe('POST /api/accounts/[id]/executions — service composition', () => {
       );
 
       expect(preflight.accepted).toBe(false);
+      if (preflight.accepted) return; // narrow for TS
       expect(preflight.code).toBe('NO_POSITION_TO_CLOSE');
     });
   });
