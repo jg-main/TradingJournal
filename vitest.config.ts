@@ -65,6 +65,8 @@ export default defineConfig({
       'src/lib/positions/fifo.test.ts',
       'src/lib/positions/rebuild.test.ts',
       'src/lib/accounting/__tests__/execution-posting.integration.test.ts',
+      'src/app/api/accounts/[id]/executions/__tests__/route.test.ts',
+      'src/app/api/accounts/[id]/positions/__tests__/route.test.ts',
     ],
     environment: 'jsdom',
   },

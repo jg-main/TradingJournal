@@ -36,6 +36,15 @@ const nonNegativeCanonicalDecimalSchema = canonicalDecimalSchema.refine(
 
 const uuidSchema = z.string().uuid('Must be a valid UUID');
 
+const symbolSchema = z
+  .string()
+  .min(1, 'Symbol must not be empty')
+  .max(20, 'Symbol must be at most 20 characters')
+  .regex(
+    /^[A-Z0-9.]+$/,
+    'Symbol must be uppercase alphanumeric (e.g. "AAPL", "SPY")',
+  );
+
 const descriptionSchema = z.string().max(500).optional();
 
 // ── Supported Execution Actions ──────────────────────────────────────────
@@ -66,7 +75,22 @@ export const executionActionSchema = z.enum(EXECUTION_ACTION_VALUES);
  * - description: Optional human-readable description
  * - postedAt: Optional ISO-8601 timestamp (defaults to server time)
  */
+/**
+ * Schema for validating an accounting execution fill.
+ *
+ * Fields:
+ * - symbol: Instrument symbol (e.g. "AAPL")
+ * - action: buy/sell/sell_short/buy_to_cover/add/reduce
+ * - quantity: Positive canonical decimal (e.g. "50.00")
+ * - price: Positive canonical decimal (e.g. "150.75")
+ * - fees: Non-negative canonical decimal (defaults to "0.00")
+ * - idempotencyKey: Optional UUID for idempotent execution posting
+ * - journalTradeId: Optional UUID linking to a journal trade (attribution only)
+ * - description: Optional human-readable description
+ * - postedAt: Optional ISO-8601 timestamp (defaults to server time)
+ */
 export const executionInputSchema = z.object({
+  symbol: symbolSchema,
   action: executionActionSchema,
   quantity: positiveCanonicalDecimalSchema,
   price: positiveCanonicalDecimalSchema,

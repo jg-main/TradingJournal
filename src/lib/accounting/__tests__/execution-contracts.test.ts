@@ -145,6 +145,7 @@ describe('Execution Action Contract — resolveEffectiveDirection', () => {
 describe('Execution Input Validation — executionInputSchema', () => {
   it('accepts a valid buy execution', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.75',
@@ -157,6 +158,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts a valid sell execution', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'sell',
       quantity: '50.00',
       price: '155.00',
@@ -167,6 +169,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts a valid sell_short execution', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'sell_short',
       quantity: '200.00',
       price: '75.50',
@@ -177,6 +180,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts a valid buy_to_cover execution', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy_to_cover',
       quantity: '100.00',
       price: '80.00',
@@ -186,6 +190,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts add and reduce actions', () => {
     const addResult = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'add',
       quantity: '25.00',
       price: '160.00',
@@ -193,6 +198,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
     expect(addResult.success).toBe(true);
 
     const reduceResult = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'reduce',
       quantity: '30.00',
       price: '145.00',
@@ -202,6 +208,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts execution with idempotencyKey (UUID)', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -212,6 +219,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts execution with journalTradeId (UUID)', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -222,6 +230,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts execution with description', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -232,6 +241,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts execution with postedAt (ISO datetime)', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -242,6 +252,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('accepts execution with all optional fields', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'sell',
       quantity: '50.00',
       price: '200.00',
@@ -256,6 +267,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('defaults fees to "0.00" when not provided', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -270,6 +282,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects invalid action string', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'invalid_action',
       quantity: '100.00',
       price: '150.00',
@@ -287,6 +300,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects missing quantity', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       price: '150.00',
     });
@@ -295,6 +309,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects missing price', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
     });
@@ -303,6 +318,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects negative quantity', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '-100.00',
       price: '150.00',
@@ -312,6 +328,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects zero quantity', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '0.00',
       price: '150.00',
@@ -321,6 +338,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects negative price', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '-50.00',
@@ -330,6 +348,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects zero price', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '0.00',
@@ -339,6 +358,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects negative fees', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -349,6 +369,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects non-canonical decimal quantity', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100',
       price: '150.00',
@@ -358,6 +379,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects non-canonical decimal price', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.5',
@@ -367,6 +389,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects non-canonical decimal fees', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -377,6 +400,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects non-UUID idempotencyKey', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -387,6 +411,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects non-UUID journalTradeId', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -397,6 +422,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects description longer than 500 characters', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',
@@ -407,6 +433,7 @@ describe('Execution Input Validation — executionInputSchema', () => {
 
   it('rejects non-datetime postedAt', () => {
     const result = executionInputSchema.safeParse({
+      symbol: 'AAPL',
       action: 'buy',
       quantity: '100.00',
       price: '150.00',

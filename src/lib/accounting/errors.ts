@@ -117,6 +117,35 @@ export class DuplicateExecutionIdempotencyError extends AccountingError {
   }
 }
 
+// ── FIFO Allocation Rejection Error ──────────────────────────────────────
+
+/**
+ * Thrown when a FIFO allocation rejects an execution (over-close, unsupported
+ * flip, mixed side, or reversal).  Used by API routes to return 422
+ * Unprocessable Entity responses with a stable rejection code.
+ */
+export class FifoAllocationRejectedError extends AccountingError {
+  public readonly code: string;
+  public readonly action: string;
+  public readonly quantity?: string;
+  public readonly availableQuantity?: string;
+
+  constructor(
+    code: string,
+    action: string,
+    message: string,
+    details?: { quantity?: string; availableQuantity?: string },
+  ) {
+    super('FIFO_ALLOCATION_REJECTED', message);
+    this.name = 'FifoAllocationRejectedError';
+    this.code = code;
+    this.action = action;
+    this.quantity = details?.quantity;
+    this.availableQuantity = details?.availableQuantity;
+    Object.setPrototypeOf(this, FifoAllocationRejectedError.prototype);
+  }
+}
+
 // ── Account Errors ──────────────────────────────────────────────────────
 
 /**
