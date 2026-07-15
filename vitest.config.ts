@@ -49,6 +49,7 @@ export default defineConfig({
       'src/app/api/watchlist/prices/__tests__/route.test.ts',
       'src/app/api/watchlist/ohlc/__tests__/route.test.ts',
       'src/lib/alert-engine.test.ts',
+      'src/lib/alert-polling.test.ts',
     ],
   },
 });

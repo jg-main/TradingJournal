@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus, Eye, Columns3, Clock } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import DynamicTable from '@/components/dynamic-table';
@@ -11,6 +11,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+
+import { computeRSI, type OhlcBar } from '@/lib/alert-engine';
+import {
+  evaluateAlertPoll,
+  createAlertState,
+  hasRsiAlert,
+  parseAlertConfig,
+  mapConditionToApi,
+  type AlertEvent,
+  type AlertState,
+  type AlertItemInput,
+} from '@/lib/alert-polling';
 
 import { useAppTimezone } from '@/lib/timezone-context';
 import { EmptyState } from '@/components/empty-state';
@@ -104,6 +116,68 @@ function directionBadgeClass(direction: 'long' | 'short'): string {
     : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
 }
 
+// ── Alert helpers (module-level, used by evaluateWatchlistAlerts) ────
+
+/**
+ * Fetch OHLC bars for symbols with RSI alerts and update the corresponding
+ * AlertItemInput entries with computed RSI values.
+ */
+async function fetchRsiForSymbols(
+  symbols: string[],
+  inputs: AlertItemInput[],
+): Promise<void> {
+  await Promise.allSettled(
+    symbols.map(async (symbol) => {
+      try {
+        const res = await fetch(
+          `/api/watchlist/ohlc?symbol=${encodeURIComponent(symbol)}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (
+          !data.bars ||
+          !Array.isArray(data.bars) ||
+          data.bars.length === 0
+        )
+          return;
+        const rsiValues = computeRSI(data.bars as OhlcBar[], 14);
+        const latestRsi = rsiValues[rsiValues.length - 1];
+        const input = inputs.find((inp) => inp.symbol === symbol);
+        if (input && latestRsi != null) {
+          input.rsi = latestRsi;
+        }
+      } catch {
+        // Silent — RSI not available for this symbol
+      }
+    }),
+  );
+}
+
+/**
+ * POST a new alert event to /api/alert-log for persistent history.
+ * Fire-and-forget — errors degrade silently.
+ */
+async function persistAlertEvent(event: AlertEvent): Promise<void> {
+  const res = await fetch('/api/alert-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      watchlistItemId: event.watchlistItemId,
+      symbol: event.symbol,
+      condition: mapConditionToApi(event.condition),
+      threshold: event.threshold ?? null,
+      actualValue: event.actualValue ?? null,
+      firedAt: new Date().toISOString(),
+    }),
+  });
+
+  if (!res.ok) {
+    console.warn(
+      `[alert] Failed to persist alert event for ${event.symbol}: ${res.status}`,
+    );
+  }
+}
+
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function WatchlistPage() {
@@ -147,6 +221,20 @@ export default function WatchlistPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
+  // ── Alert state (persists across poll cycles) ───────────────────────
+  const alertStateRef = useRef<AlertState>(createAlertState());
+  /**
+   * Callback ref for T04 (Web Notification Integration).
+   * T04 sets this to its showNotification function.
+   */
+  const onAlertEventRef = useRef<((event: AlertEvent) => void) | null>(null);
+  /**
+   * Deduplication window: events with the same (symbol, condition) pair
+   * are skipped if they were acknowledged in the last 30 seconds.
+   * This prevents duplicate notifications on rapid price oscillations.
+   */
+  const acknowledgedEventIdsRef = useRef<Set<string>>(new Set());
+
   // ── Live price polling ──────────────────────────────────────────────
 
   useEffect(() => {
@@ -158,7 +246,11 @@ export default function WatchlistPage() {
       fetch(`/api/watchlist/prices?${params}`)
         .then((r) => (r.ok ? r.json() : Promise.reject()))
         .then((data) => {
-          if (data.prices) setPriceData(data.prices);
+          if (data.prices) {
+            setPriceData(data.prices);
+            // Evaluate alerts after price update (fire-and-forget)
+            evaluateWatchlistAlerts(data.prices).catch(() => {});
+          }
         })
         .catch(() => {
           /* silent — UI shows "—" with staleness indicator */
@@ -322,6 +414,78 @@ export default function WatchlistPage() {
       setMessage({ type: 'error', text: 'Failed to remove item.' });
     }
   }, [fetchItems]);
+
+  // ── Alert evaluation helper ─────────────────────────────────────────
+  // Runs after each price poll cycle. Evaluates alert conditions, detects
+  // unmet→met transitions, POSTs new events to /api/alert-log, and fires
+  // the notification callback (registered by T04).
+  // Errors degrade silently to no-notification (not user-visible).
+  const evaluateWatchlistAlerts = useCallback(
+    async (prices: Record<string, { symbol: string; price: number | null }>) => {
+      const symbols = Object.keys(prices);
+      if (symbols.length === 0 || items.length === 0) return;
+
+      // Build AlertItemInput array from current items + price data
+      const inputs: AlertItemInput[] = [];
+      const rsiSymbols: string[] = [];
+
+      for (const item of items) {
+        const quote = prices[item.symbol];
+        if (!quote) continue;
+
+        const config = parseAlertConfig(item.alertConfig);
+        const price = quote.price ?? null;
+
+        inputs.push({
+          id: item.id,
+          symbol: item.symbol,
+          alertConfig: config,
+          currentPrice: price,
+          rsi: null,
+          keyLevel: item.keyLevel,
+          triggerPrice: item.triggerPrice,
+          plannedStop: item.plannedStop,
+          targetPrice: item.targetPrice,
+        });
+
+        if (config && hasRsiAlert(config)) {
+          rsiSymbols.push(item.symbol);
+        }
+      }
+
+      if (inputs.length === 0) return;
+
+      // Fetch OHLC data and compute RSI for items with RSI alerts
+      if (rsiSymbols.length > 0) {
+        await fetchRsiForSymbols(rsiSymbols, inputs);
+      }
+
+      // Evaluate alerts
+      const { events, nextState } = evaluateAlertPoll(alertStateRef.current, inputs);
+      alertStateRef.current = nextState;
+
+      // Fire callbacks and persist new events
+      for (const event of events) {
+        // Deduplicate: skip if same (symbol, condition) acknowledged in last 30s
+        const dedupKey = `${event.symbol}:${event.condition}`;
+        if (acknowledgedEventIdsRef.current.has(dedupKey)) continue;
+        acknowledgedEventIdsRef.current.add(dedupKey);
+        // Clear dedup key after 30 seconds
+        setTimeout(() => {
+          acknowledgedEventIdsRef.current.delete(dedupKey);
+        }, 30000);
+
+        // Fire notification callback (registered by T04)
+        onAlertEventRef.current?.(event);
+
+        // Persist to /api/alert-log (fire-and-forget)
+        persistAlertEvent(event).catch(() => {
+          /* silent — persistence failure degrades gracefully */
+        });
+      }
+    },
+    [items],
+  );
 
   const { formatDate } = useAppTimezone();
 
