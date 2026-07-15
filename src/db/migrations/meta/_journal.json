@@ -141,6 +141,20 @@
       "when": 1787200000000,
       "tag": "0019_watchlist_alert_config",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1787300000000,
+      "tag": "0020_alert_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1787350000000,
+      "tag": "0021_watchlist_name_industry_sector",
+      "breakpoints": true
     }
   ]
 }

@@ -312,15 +312,55 @@ export default function TradeDetailPage() {
     return () => { cancelled = true; };
   }, [id, refetchTrigger]);
 
-  // Auto-refresh MTM prices when first opening an open trade page
+  // Auto-refresh MTM prices on a 15s poll cycle for open trades (visibility-aware)
   const autoRefreshedRef = useRef(false);
   useEffect(() => {
-    if (trade?.status === 'open' && !autoRefreshedRef.current) {
+    if (trade?.status !== 'open') return;
+
+    // Initial refresh on mount
+    if (!autoRefreshedRef.current) {
       autoRefreshedRef.current = true;
       fetch('/api/trades/mtm/refresh', { method: 'POST' })
         .then(() => fetchMtmData(id, setMtmData))
-        .catch(() => {}); // silently ignore — user can manually refresh
+        .catch(() => {});
     }
+
+    // Continuous polling every 15s
+    const doRefresh = () => {
+      fetch('/api/trades/mtm/refresh', { method: 'POST' })
+        .then(() => fetchMtmData(id, setMtmData))
+        .catch(() => {});
+    };
+
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const start = () => {
+      if (intervalId !== undefined) clearInterval(intervalId);
+      intervalId = setInterval(doRefresh, 15000);
+    };
+    const stop = () => {
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        doRefresh();
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [trade?.status, id]);
 
   const execData = trade ? toExecutionData(executions) : [];

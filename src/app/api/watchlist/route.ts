@@ -1,25 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { watchlistItems, lookupValues } from '@/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { watchlistItems } from '@/db/schema';
+import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
+import { YahooFinanceProvider } from '@/lib/market-quote';
+import { fetchYahooProfiles } from '@/lib/profile-enricher';
 
 const createWatchlistItemSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
-  sectorId: z.string().nullable().optional(),
-  setup: z.string().nullable().optional(),
-  direction: z.enum(['long', 'short']),
-  thesis: z.string().nullable().optional(),
-  marketContext: z.string().nullable().optional(),
   keyLevel: z.number().nullable().optional(),
-  triggerPrice: z.number().nullable().optional(),
-  plannedStop: z.number().nullable().optional(),
-  targetPrice: z.number().nullable().optional(),
-  status: z
-    .enum(['pending', 'watching', 'triggered', 'skipped', 'expired'])
-    .default('pending'),
-  notes: z.string().nullable().optional(),
-  promotedTradeId: z.string().nullable().optional(),
   alertConfig: z.any().nullable().optional(),
 });
 
@@ -60,24 +49,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Resolve setup string to UUID if provided
-    let resolvedSetupId: string | null = null;
-    if (parsed.data.setup) {
-      const lowerValue = parsed.data.setup.toLowerCase();
-      const lookup = db
-        .select()
-        .from(lookupValues)
-        .where(and(eq(lookupValues.type, 'setup'), eq(lookupValues.value, lowerValue)))
-        .get();
-      if (!lookup) {
-        return NextResponse.json(
-          { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } },
-          { status: 400 }
-        );
-      }
-      resolvedSetupId = lookup.id;
-    }
-
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -86,23 +57,49 @@ export async function POST(request: NextRequest) {
         id,
         dateAdded: now,
         symbol: parsed.data.symbol,
-        sectorId: parsed.data.sectorId ?? null,
-        setupId: resolvedSetupId,
-        direction: parsed.data.direction,
-        thesis: parsed.data.thesis ?? null,
-        marketContext: parsed.data.marketContext ?? null,
+        name: null,
+        sector: null,
+        industry: null,
+        sectorId: null,
+        setupId: null,
+        direction: 'long',
+        thesis: null,
+        marketContext: null,
         keyLevel: parsed.data.keyLevel ?? null,
-        triggerPrice: parsed.data.triggerPrice ?? null,
-        plannedStop: parsed.data.plannedStop ?? null,
-        targetPrice: parsed.data.targetPrice ?? null,
-        status: parsed.data.status,
-        notes: parsed.data.notes ?? null,
-        promotedTradeId: parsed.data.promotedTradeId ?? null,
+        triggerPrice: null,
+        plannedStop: null,
+        targetPrice: null,
+        status: 'pending',
+        notes: null,
+        promotedTradeId: null,
         alertConfig: parsed.data.alertConfig != null ? JSON.stringify(parsed.data.alertConfig) : null,
         createdAt: now,
         updatedAt: now,
       })
       .run();
+
+    // Auto-enrich name/sector/industry from Yahoo (separate from price provider)
+    try {
+      const yahoo = new YahooFinanceProvider();
+      const quotes = await yahoo.getQuote([parsed.data.symbol]);
+      const quote = quotes?.[0];
+      const name = quote?.shortName ?? null;
+
+      // Also fetch sector/industry from Yahoo assetProfile
+      const profiles = await fetchYahooProfiles([parsed.data.symbol]);
+      const profile = profiles.get(parsed.data.symbol.toUpperCase());
+      const sector = profile?.sector ?? null;
+      const industry = profile?.industry ?? null;
+
+      if (name || sector || industry) {
+        db.update(watchlistItems)
+          .set({ name, sector, industry, updatedAt: now })
+          .where(eq(watchlistItems.id, id))
+          .run();
+      }
+    } catch {
+      // Enrichment is best-effort — item created without profile data
+    }
 
     const row = db
       .select()

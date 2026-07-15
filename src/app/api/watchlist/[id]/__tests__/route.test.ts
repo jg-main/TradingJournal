@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 
@@ -71,15 +71,18 @@ sqlite.exec(`
     date_added TEXT,
     symbol TEXT NOT NULL,
     sector_id TEXT,
+    sector TEXT,
+    name TEXT,
+    industry TEXT,
     setup_id TEXT,
-    direction TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'long',
     thesis TEXT,
     market_context TEXT,
     key_level REAL,
     trigger_price REAL,
     planned_stop REAL,
     target_price REAL,
-    status TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
     notes TEXT,
     promoted_trade_id TEXT,
     alert_config TEXT,
@@ -120,36 +123,10 @@ function doPutWatchlistItem(id: string, body: Record<string, unknown>): { status
       return { status: 404, data: { error: 'Watchlist item not found' } };
     }
 
-    // Map 'setup' back to 'setupId' for the DB column
+    // Update fields passed in body
     const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-    if (body.setup !== undefined) {
-      if (body.setup === null) {
-        updateData.setupId = null;
-      } else {
-        const lowerValue = (body.setup as string).toLowerCase();
-        const lookup = db
-          .select()
-          .from(schema.lookupValues)
-          .where(and(eq(schema.lookupValues.type, 'setup'), eq(schema.lookupValues.value, lowerValue)))
-          .get() as Record<string, unknown> | undefined;
-        if (!lookup) {
-          return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } } };
-        }
-        updateData.setupId = lookup.id;
-      }
-    }
     if (body.symbol !== undefined) updateData.symbol = body.symbol;
-    if (body.sectorId !== undefined) updateData.sectorId = body.sectorId;
-    if (body.direction !== undefined) updateData.direction = body.direction;
-    if (body.thesis !== undefined) updateData.thesis = body.thesis;
-    if (body.marketContext !== undefined) updateData.marketContext = body.marketContext;
     if (body.keyLevel !== undefined) updateData.keyLevel = body.keyLevel;
-    if (body.triggerPrice !== undefined) updateData.triggerPrice = body.triggerPrice;
-    if (body.plannedStop !== undefined) updateData.plannedStop = body.plannedStop;
-    if (body.targetPrice !== undefined) updateData.targetPrice = body.targetPrice;
-    if (body.status !== undefined) updateData.status = body.status;
-    if (body.notes !== undefined) updateData.notes = body.notes;
-    if (body.promotedTradeId !== undefined) updateData.promotedTradeId = body.promotedTradeId;
     if (body.alertConfig !== undefined) updateData.alertConfig = body.alertConfig != null ? JSON.stringify(body.alertConfig) : null;
 
     db.update(schema.watchlistItems)
@@ -200,24 +177,6 @@ function cleanup() {
   sqlite.exec('DELETE FROM lookup_values;');
 }
 
-function seedLookupValue(overrides: Record<string, unknown> = {}) {
-  const id = randomUUID();
-  const now = new Date().toISOString();
-  db.insert(schema.lookupValues)
-    .values({
-      id,
-      type: 'setup',
-      value: 'breakout',
-      sortOrder: 0,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
-      ...overrides,
-    })
-    .run();
-  return db.select().from(schema.lookupValues).where(eq(schema.lookupValues.id, id)).get() as Record<string, unknown>;
-}
-
 function seedWatchlistItem(overrides: Record<string, unknown> = {}) {
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -245,15 +204,13 @@ console.log('\n--- Watchlist Item By ID API Tests ---\n');
 console.log('\n1. GET returns watchlist item by id:');
 {
   cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL', thesis: 'My thesis' });
+  const item = seedWatchlistItem({ symbol: 'AAPL' });
 
   const result = doGetWatchlistItem(item.id as string);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.id, item.id, 'id matches');
   assertEqual(data.symbol, 'AAPL', 'symbol matches');
-  assertEqual(data.direction, 'long', 'direction matches');
-  assertEqual(data.thesis, 'My thesis', 'thesis matches');
 }
 
 // ── 2. GET: 404 for nonexistent id ──────────────────────────────────
@@ -266,97 +223,39 @@ console.log('\n2. GET returns 404 for nonexistent id:');
   assertEqual((result.data as { error: string }).error, 'Watchlist item not found', 'error message');
 }
 
-// ── 3. PUT: Updates fields via spread ──────────────────────────────
+// ── 3. PUT: Updates keyLevel ────────────────────────────────────────
 
-console.log('\n3. PUT updates fields via spread:');
-{
-  cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL', thesis: 'Old thesis' });
-
-  const result = doPutWatchlistItem(item.id as string, { thesis: 'Updated thesis' });
-
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.thesis, 'Updated thesis', 'thesis is updated');
-  assertEqual(data.symbol, 'AAPL', 'symbol preserved');
-  assertEqual(data.direction, 'long', 'direction preserved');
-}
-
-// ── 4. PUT: Resolves setup to setupId ──────────────────────────────
-
-console.log('\n4. PUT resolves setup string to setupId:');
-{
-  cleanup();
-  const lookup = seedLookupValue({ type: 'setup', value: 'breakout' });
-  const item = seedWatchlistItem({ symbol: 'AAPL', setupId: null });
-
-  const result = doPutWatchlistItem(item.id as string, { setup: 'breakout' });
-
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.setupId, lookup.id, 'setupId matches lookup id');
-}
-
-// ── 5. PUT: Validates unknown setup value ──────────────────────────
-
-console.log('\n5. PUT returns 400 for unknown setup value:');
+console.log('\n3. PUT updates keyLevel:');
 {
   cleanup();
   const item = seedWatchlistItem({ symbol: 'AAPL' });
 
-  const result = doPutWatchlistItem(item.id as string, { setup: 'nonexistent-setup' });
-
-  assert(result.status === 400, 'returns 400');
-  const data = result.data as { details: { fieldErrors: Record<string, string[]> } };
-  assertNotNull(data.details, 'has details');
-  assertNotNull(data.details.fieldErrors, 'has fieldErrors');
-  assertNotNull(data.details.fieldErrors.setup, 'has setup field error');
-}
-
-// ── 6. PUT: 404 for nonexistent id ─────────────────────────────────
-
-console.log('\n6. PUT returns 404 for nonexistent id:');
-{
-  cleanup();
-  const result = doPutWatchlistItem('nonexistent-id', { thesis: 'Ghost' });
-  assert(result.status === 404, 'returns 404');
-  assertEqual((result.data as { error: string }).error, 'Watchlist item not found', 'error message');
-}
-
-// ── 7. PUT: Updates multiple fields ────────────────────────────────
-
-console.log('\n7. PUT updates multiple fields:');
-{
-  cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL', direction: 'long', status: 'pending' });
-
   const result = doPutWatchlistItem(item.id as string, {
-    symbol: 'MSFT',
-    direction: 'short',
-    status: 'watching',
-    thesis: 'Changed my mind',
-    triggerPrice: 200,
-    plannedStop: 210,
-    targetPrice: 180,
+    keyLevel: 150,
   });
 
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.symbol, 'MSFT', 'symbol updated');
-  assertEqual(data.direction, 'short', 'direction updated');
-  assertEqual(data.status, 'watching', 'status updated');
-  assertEqual(data.thesis, 'Changed my mind', 'thesis updated');
-  assertEqual(data.triggerPrice, 200, 'triggerPrice updated');
-  assertEqual(data.plannedStop, 210, 'plannedStop updated');
-  assertEqual(data.targetPrice, 180, 'targetPrice updated');
+  assertEqual(data.keyLevel, 150, 'keyLevel updated');
+  assertEqual(data.symbol, 'AAPL', 'symbol preserved');
 }
 
-// ── 8. PUT: Persists alertConfig as JSON ────────────────────────────
+// ── 4. PUT: 404 for nonexistent id ─────────────────────────────────
 
-console.log('\n8. PUT persists alertConfig as JSON string:');
+console.log('\n4. PUT returns 404 for nonexistent id:');
 {
   cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL', direction: 'long', status: 'pending' });
+  const result = doPutWatchlistItem('nonexistent-id', { keyLevel: 150 });
+  assert(result.status === 404, 'returns 404');
+  assertEqual((result.data as { error: string }).error, 'Watchlist item not found', 'error message');
+}
+
+// ── 5. PUT: Persists alertConfig as JSON ────────────────────────────
+
+console.log('\n5. PUT persists alertConfig as JSON string:');
+{
+  cleanup();
+  const item = seedWatchlistItem({ symbol: 'AAPL' });
   const alertConfig = {
     priceBelowKeyLevel: { enabled: true },
     rsiBelow: { enabled: true, threshold: 30 },
@@ -380,9 +279,9 @@ console.log('\n8. PUT persists alertConfig as JSON string:');
   assertEqual(dataNull.alertConfig, null, 'alertConfig is null after removal');
 }
 
-// ── 9. DELETE: Soft-deletes by setting status to expired ───────────
+// ── 6. DELETE: Soft-deletes by setting status to expired ───────────
 
-console.log('\n9. DELETE soft-deletes watchlist item by setting status to expired:');
+console.log('\n6. DELETE soft-deletes watchlist item by setting status to expired:');
 {
   cleanup();
   const item = seedWatchlistItem({ symbol: 'AAPL', status: 'pending' });
@@ -397,9 +296,9 @@ console.log('\n9. DELETE soft-deletes watchlist item by setting status to expire
   assertEqual(updated.status, 'expired', 'status is expired after soft delete');
 }
 
-// ── 9. DELETE: 404 for nonexistent id ──────────────────────────────
+// ── 7. DELETE: 404 for nonexistent id ──────────────────────────────
 
-console.log('\n9. DELETE returns 404 for nonexistent id:');
+console.log('\n7. DELETE returns 404 for nonexistent id:');
 {
   cleanup();
   const result = doDeleteWatchlistItem('nonexistent-id');

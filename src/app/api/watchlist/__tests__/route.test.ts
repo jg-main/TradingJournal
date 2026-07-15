@@ -71,15 +71,18 @@ sqlite.exec(`
     date_added TEXT,
     symbol TEXT NOT NULL,
     sector_id TEXT,
+    name TEXT,
+    industry TEXT,
+    sector TEXT,
     setup_id TEXT,
-    direction TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'long',
     thesis TEXT,
     market_context TEXT,
     key_level REAL,
     trigger_price REAL,
     planned_stop REAL,
     target_price REAL,
-    status TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
     notes TEXT,
     promoted_trade_id TEXT,
     alert_config TEXT,
@@ -116,51 +119,23 @@ function doPostWatchlist(body: Record<string, unknown>): { status: number; data:
       return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { symbol: ['Symbol is required'] } } } };
     }
 
-    const direction = body.direction;
-    if (direction !== 'long' && direction !== 'short') {
-      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { direction: ['Invalid enum value. Expected long | short'] } } } };
-    }
-
-    // Resolve setup string to UUID if provided
-    let resolvedSetupId: string | null = null;
-    const setup = body.setup;
-    if (setup !== undefined && setup !== null && setup !== '') {
-      const lowerValue = (setup as string).toLowerCase();
-      const lookup = db
-        .select()
-        .from(schema.lookupValues)
-        .where(and(eq(schema.lookupValues.type, 'setup'), eq(schema.lookupValues.value, lowerValue)))
-        .get() as Record<string, unknown> | undefined;
-      if (!lookup) {
-        return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { setup: ['Unknown setup value'] } } } };
-      }
-      resolvedSetupId = lookup.id as string;
-    }
-
     const id = randomUUID();
     const now = new Date().toISOString();
-    const status = (body.status as 'pending' | 'watching' | 'triggered' | 'skipped' | 'expired') || 'pending';
 
     db.insert(schema.watchlistItems)
       .values({
         id,
         dateAdded: now,
         symbol: (symbol as string).trim(),
-        sectorId: (body.sectorId as string) ?? null,
-        setupId: resolvedSetupId,
-        direction,
-        thesis: (body.thesis as string) ?? null,
-        marketContext: (body.marketContext as string) ?? null,
+        name: null,
+        sector: null,
+        industry: null,
         keyLevel: (body.keyLevel as number) ?? null,
-        triggerPrice: (body.triggerPrice as number) ?? null,
-        plannedStop: (body.plannedStop as number) ?? null,
-        targetPrice: (body.targetPrice as number) ?? null,
-        status,
-        notes: (body.notes as string) ?? null,
-        promotedTradeId: (body.promotedTradeId as string) ?? null,
         alertConfig: body.alertConfig != null ? JSON.stringify(body.alertConfig) : null,
         createdAt: now,
         updatedAt: now,
+        direction: 'long',
+        status: 'pending',
       })
       .run();
 
@@ -278,15 +253,13 @@ console.log('\n3. GET filters by status:');
 console.log('\n4. POST creates a watchlist item with valid data:');
 {
   cleanup();
-  const result = doPostWatchlist({ symbol: 'AAPL', direction: 'long', thesis: 'Test thesis' });
+  const result = doPostWatchlist({ symbol: 'AAPL' });
 
   assert(result.status === 201, 'returns 201');
   const data = result.data as Record<string, unknown>;
   assertNotNull(data.id, 'has id');
   assertEqual(data.symbol, 'AAPL', 'symbol matches');
-  assertEqual(data.direction, 'long', 'direction matches');
   assertEqual(data.status, 'pending', 'default status is pending');
-  assertEqual(data.thesis, 'Test thesis', 'thesis matches');
   assertNotNull(data.dateAdded, 'has dateAdded');
   assertNotNull(data.createdAt, 'has createdAt');
   assertNotNull(data.updatedAt, 'has updatedAt');
@@ -297,97 +270,29 @@ console.log('\n4. POST creates a watchlist item with valid data:');
 console.log('\n5. POST returns 400 for empty symbol:');
 {
   cleanup();
-  const result = doPostWatchlist({ symbol: '', direction: 'long' });
+  const result = doPostWatchlist({ symbol: '' });
   assert(result.status === 400, 'returns 400');
 }
 
-// ── 6. POST: Validates direction enum ───────────────────────────────
+// ── 6. POST: Creates with keyLevel ──────────────────────────────────
 
-console.log('\n6. POST returns 400 for invalid direction:');
+console.log('\n6. POST creates with keyLevel:');
 {
   cleanup();
-  const result = doPostWatchlist({ symbol: 'AAPL', direction: 'invalid' });
-  assert(result.status === 400, 'returns 400');
-}
-
-// ── 7. POST: Resolves setup string to UUID ──────────────────────────
-
-console.log('\n7. POST resolves setup string to lookup UUID:');
-{
-  cleanup();
-  const lookup = seedLookupValue({ type: 'setup', value: 'breakout' });
-
-  const result = doPostWatchlist({ symbol: 'AAPL', direction: 'long', setup: 'breakout' });
-
-  assert(result.status === 201, 'returns 201');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.setupId, lookup.id, 'setupId matches lookup id');
-}
-
-// ── 8. POST: Returns 400 for unknown setup value ────────────────────
-
-console.log('\n8. POST returns 400 for unknown setup value:');
-{
-  cleanup();
-  const result = doPostWatchlist({ symbol: 'AAPL', direction: 'long', setup: 'nonexistent-setup' });
-  assert(result.status === 400, 'returns 400');
-  const data = result.data as { details: { fieldErrors: Record<string, string[]> } };
-  assertNotNull(data.details, 'has details');
-  assertNotNull(data.details.fieldErrors, 'has fieldErrors');
-  assertNotNull(data.details.fieldErrors.setup, 'has setup field error');
-}
-
-// ── 9. POST: Creates with explicit status ───────────────────────────
-
-console.log('\n9. POST creates with explicit status:');
-{
-  cleanup();
-  const result = doPostWatchlist({ symbol: 'AAPL', direction: 'long', status: 'watching' });
-
-  assert(result.status === 201, 'returns 201');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.status, 'watching', 'status is watching');
-}
-
-// ── 10. POST: Creates with all optional fields ──────────────────────
-
-console.log('\n10. POST creates with all optional fields:');
-{
-  cleanup();
-  const lookup = seedLookupValue({ type: 'setup', value: 'breakout' });
-
   const result = doPostWatchlist({
     symbol: 'AAPL',
-    direction: 'short',
-    setup: 'breakout',
-    sectorId: 'sector-uuid',
-    thesis: 'Short thesis',
-    marketContext: 'Bearish market',
     keyLevel: 150,
-    triggerPrice: 145,
-    plannedStop: 152,
-    targetPrice: 130,
-    notes: 'Watch closely',
   });
 
   assert(result.status === 201, 'returns 201');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.symbol, 'AAPL', 'symbol matches');
-  assertEqual(data.direction, 'short', 'direction matches');
-  assertEqual(data.setupId, lookup.id, 'setupId matches');
-  assertEqual(data.sectorId, 'sector-uuid', 'sectorId matches');
-  assertEqual(data.thesis, 'Short thesis', 'thesis matches');
-  assertEqual(data.marketContext, 'Bearish market', 'marketContext matches');
   assertEqual(data.keyLevel, 150, 'keyLevel matches');
-  assertEqual(data.triggerPrice, 145, 'triggerPrice matches');
-  assertEqual(data.plannedStop, 152, 'plannedStop matches');
-  assertEqual(data.targetPrice, 130, 'targetPrice matches');
-  assertEqual(data.notes, 'Watch closely', 'notes matches');
 }
 
-// ── 11. POST: Persists alertConfig as JSON ──────────────────────────
+// ── 7. POST: Persists alertConfig as JSON ──────────────────────────
 
-console.log('\n11. POST persists alertConfig as JSON string:');
+console.log('\n7. POST persists alertConfig as JSON string:');
 {
   cleanup();
   const alertConfig = {
@@ -397,7 +302,6 @@ console.log('\n11. POST persists alertConfig as JSON string:');
 
   const result = doPostWatchlist({
     symbol: 'AAPL',
-    direction: 'long',
     alertConfig,
   });
 

@@ -20,7 +20,6 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '../db/schema';
 import { readFileSync } from 'node:fs';
 
@@ -76,7 +75,34 @@ function createTestDb() {
 
   // Run migrations to create the full schema
   const migrationsDir = join(process.cwd(), 'src/db/migrations');
-  migrate(testDb, { migrationsFolder: migrationsDir });
+  sqlite.exec(
+    'CREATE TABLE IF NOT EXISTS __drizzle_migrations (' +
+    'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
+    'hash TEXT NOT NULL, ' +
+    'created_at TEXT)'
+  );
+  const meta = require(join(migrationsDir, 'meta', '_journal.json')) as { entries: { tag: string }[] };
+  const fs = require('node:fs') as typeof import('node:fs');
+  const insert = sqlite.prepare(
+    "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, datetime('now'))"
+  );
+  for (const entry of meta.entries) {
+    const tag = entry.tag;
+    const existing = sqlite.prepare(
+      'SELECT id FROM __drizzle_migrations WHERE hash = ?'
+    ).get(tag);
+    if (existing) continue;
+    const sql = fs.readFileSync(join(migrationsDir, tag + '.sql'), 'utf8');
+    sqlite.exec('BEGIN');
+    try {
+      sqlite.exec(sql);
+      insert.run(tag);
+      sqlite.exec('COMMIT');
+    } catch (e) {
+      sqlite.exec('ROLLBACK');
+      throw e;
+    }
+  }
 
   return { sqlite, db: testDb, dbPath };
 }

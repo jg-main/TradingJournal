@@ -23,6 +23,8 @@ type YahooRawQuote = Record<string, unknown> & {
   symbol?: string;
   regularMarketPrice?: number | null;
   regularMarketPreviousClose?: number | null;
+  regularMarketDayHigh?: number | null;
+  regularMarketDayLow?: number | null;
   regularMarketChange?: number | null;
   regularMarketChangePercent?: number | null;
   marketState?: string;
@@ -54,6 +56,10 @@ export interface QuoteResult {
   industry?: string;
   /** Previous trading day close price */
   previousClose?: number;
+  /** Day high price */
+  dayHigh?: number;
+  /** Day low price */
+  dayLow?: number;
   /** Absolute price change from previous close */
   change?: number;
   /** Percentage change from previous close */
@@ -189,6 +195,14 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
       raw.regularMarketPreviousClose != null
         ? Number(raw.regularMarketPreviousClose)
         : null;
+    const dayHigh =
+      raw.regularMarketDayHigh != null
+        ? Number(raw.regularMarketDayHigh)
+        : null;
+    const dayLow =
+      raw.regularMarketDayLow != null
+        ? Number(raw.regularMarketDayLow)
+        : null;
     const change =
       raw.regularMarketChange != null
         ? Number(raw.regularMarketChange)
@@ -202,6 +216,8 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
       symbol: raw.symbol ?? "UNKNOWN",
       price,
       previousClose: previousClose ?? undefined,
+      dayHigh: dayHigh ?? undefined,
+      dayLow: dayLow ?? undefined,
       change: change ?? undefined,
       changePercent: changePercent ?? undefined,
       marketState: raw.marketState ?? "UNKNOWN",
@@ -327,11 +343,15 @@ export async function fetchYahooOhlcBars(
  * @param symbol - Ticker symbol
  * @param price - Price value (or null for unavailable)
  * @param marketState - Market state string (defaults to "UNKNOWN")
+ * @param dayHigh - Day high price (optional)
+ * @param dayLow - Day low price (optional)
  */
 export function createMockQuoteResult(
   symbol: string,
   price: number | null,
   marketState: string = "UNKNOWN",
+  dayHigh?: number,
+  dayLow?: number,
 ): QuoteResult {
   return {
     symbol,
@@ -341,6 +361,8 @@ export function createMockQuoteResult(
     quoteType: 'EQUITY',
     sector: 'Technology',
     industry: 'Software',
+    dayHigh,
+    dayLow,
     fetchedAt: new Date().toISOString(),
     source: "mock",
   };

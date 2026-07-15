@@ -12,11 +12,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-import { computeRSI, type OhlcBar } from '@/lib/alert-engine';
 import {
   evaluateAlertPoll,
   createAlertState,
-  hasRsiAlert,
   parseAlertConfig,
   mapConditionToApi,
   type AlertEvent,
@@ -24,7 +22,6 @@ import {
   type AlertItemInput,
 } from '@/lib/alert-polling';
 
-import { useAppTimezone } from '@/lib/timezone-context';
 import { useNotification } from '@/lib/useNotification';
 import { EmptyState } from '@/components/empty-state';
 import {
@@ -50,17 +47,12 @@ import {
 interface WatchlistItem {
   id: string;
   symbol: string;
-  direction: 'long' | 'short';
-  setup: string | null;
+  name: string | null;
   keyLevel: number | null;
-  triggerPrice: number | null;
-  status: 'pending' | 'watching' | 'triggered' | 'skipped' | 'expired';
-  dateAdded: string | null;
   sector: string | null;
-  thesis: string | null;
-  plannedStop: number | null;
-  targetPrice: number | null;
+  industry: string | null;
   alertConfig: unknown;
+  status: string;
 }
 
 const STATUS_OPTIONS = [
@@ -74,48 +66,15 @@ const STATUS_OPTIONS = [
 
 interface WatchlistForm {
   symbol: string;
-  direction: 'long' | 'short';
-  setup: string;
   keyLevel: string;
-  triggerPrice: string;
-  plannedStop: string;
-  targetPrice: string;
-  status: WatchlistItem['status'];
 }
 
 const EMPTY_FORM: WatchlistForm = {
   symbol: '',
-  direction: 'long',
-  setup: '',
   keyLevel: '',
-  triggerPrice: '',
-  plannedStop: '',
-  targetPrice: '',
-  status: 'pending',
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
-
-function statusBadgeClass(status: WatchlistItem['status']): string {
-  switch (status) {
-    case 'pending':
-      return 'bg-muted text-muted-foreground';
-    case 'watching':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
-    case 'triggered':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
-    case 'skipped':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
-    case 'expired':
-      return 'bg-muted text-muted-foreground';
-  }
-}
-
-function directionBadgeClass(direction: 'long' | 'short'): string {
-  return direction === 'long'
-    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-}
 
 // ── Alert helpers (module-level, used by evaluateWatchlistAlerts) ────
 
@@ -123,37 +82,6 @@ function directionBadgeClass(direction: 'long' | 'short'): string {
  * Fetch OHLC bars for symbols with RSI alerts and update the corresponding
  * AlertItemInput entries with computed RSI values.
  */
-async function fetchRsiForSymbols(
-  symbols: string[],
-  inputs: AlertItemInput[],
-): Promise<void> {
-  await Promise.allSettled(
-    symbols.map(async (symbol) => {
-      try {
-        const res = await fetch(
-          `/api/watchlist/ohlc?symbol=${encodeURIComponent(symbol)}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        if (
-          !data.bars ||
-          !Array.isArray(data.bars) ||
-          data.bars.length === 0
-        )
-          return;
-        const rsiValues = computeRSI(data.bars as OhlcBar[], 14);
-        const latestRsi = rsiValues[rsiValues.length - 1];
-        const input = inputs.find((inp) => inp.symbol === symbol);
-        if (input && latestRsi != null) {
-          input.rsi = latestRsi;
-        }
-      } catch {
-        // Silent — RSI not available for this symbol
-      }
-    }),
-  );
-}
-
 /**
  * POST a new alert event to /api/alert-log for persistent history.
  * Fire-and-forget — errors degrade silently.
@@ -202,8 +130,6 @@ export default function WatchlistPage() {
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [alertConfig, setAlertConfig] = useState<Record<string, { enabled: boolean; threshold?: number }> | null>(null);
-  const [rsiAboveThreshold, setRsiAboveThreshold] = useState('70');
-  const [rsiBelowThreshold, setRsiBelowThreshold] = useState('30');
 
   // ── Data ────────────────────────────────────────────────────────────
 
@@ -318,8 +244,6 @@ export default function WatchlistPage() {
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setAlertConfig(null);
-    setRsiAboveThreshold('70');
-    setRsiBelowThreshold('30');
     setEditingId(null);
     setMessage(null);
   };
@@ -327,28 +251,17 @@ export default function WatchlistPage() {
   const openEdit = useCallback((item: WatchlistItem) => {
     setForm({
       symbol: item.symbol,
-      direction: item.direction,
-      setup: item.setup ?? '',
       keyLevel: item.keyLevel?.toString() ?? '',
-      triggerPrice: item.triggerPrice?.toString() ?? '',
-      plannedStop: item.plannedStop?.toString() ?? '',
-      targetPrice: item.targetPrice?.toString() ?? '',
-      status: item.status,
     });
     // Parse alertConfig from the API response
     const raw = item.alertConfig;
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       const config = raw as Record<string, { enabled: boolean; threshold?: number }>;
       setAlertConfig(config);
-      // Extract RSI thresholds
-      if (config.rsiAbove?.threshold) setRsiAboveThreshold(String(config.rsiAbove.threshold));
-      if (config.rsiBelow?.threshold) setRsiBelowThreshold(String(config.rsiBelow.threshold));
     } else if (typeof raw === 'string') {
       try {
         const parsed = JSON.parse(raw) as Record<string, { enabled: boolean; threshold?: number }>;
         setAlertConfig(parsed);
-        if (parsed.rsiAbove?.threshold) setRsiAboveThreshold(String(parsed.rsiAbove.threshold));
-        if (parsed.rsiBelow?.threshold) setRsiBelowThreshold(String(parsed.rsiBelow.threshold));
       } catch {
         setAlertConfig(null);
       }
@@ -385,13 +298,7 @@ export default function WatchlistPage() {
 
       const body: Record<string, unknown> = {
         symbol: form.symbol.trim().toUpperCase(),
-        direction: form.direction,
-        setup: form.setup.trim() || null,
         keyLevel: form.keyLevel ? parseFloat(form.keyLevel) : null,
-        triggerPrice: form.triggerPrice ? parseFloat(form.triggerPrice) : null,
-        plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
-        targetPrice: form.targetPrice ? parseFloat(form.targetPrice) : null,
-        status: form.status,
         alertConfig: Object.keys(alertConfigBody).length > 0 ? alertConfigBody : null,
       };
 
@@ -452,7 +359,6 @@ export default function WatchlistPage() {
 
       // Build AlertItemInput array from current items + price data
       const inputs: AlertItemInput[] = [];
-      const rsiSymbols: string[] = [];
 
       for (const item of items) {
         const quote = prices[item.symbol];
@@ -468,22 +374,10 @@ export default function WatchlistPage() {
           currentPrice: price,
           rsi: null,
           keyLevel: item.keyLevel,
-          triggerPrice: item.triggerPrice,
-          plannedStop: item.plannedStop,
-          targetPrice: item.targetPrice,
         });
-
-        if (config && hasRsiAlert(config)) {
-          rsiSymbols.push(item.symbol);
-        }
       }
 
       if (inputs.length === 0) return;
-
-      // Fetch OHLC data and compute RSI for items with RSI alerts
-      if (rsiSymbols.length > 0) {
-        await fetchRsiForSymbols(rsiSymbols, inputs);
-      }
 
       // Evaluate alerts
       const { events, nextState } = evaluateAlertPoll(alertStateRef.current, inputs);
@@ -512,8 +406,6 @@ export default function WatchlistPage() {
     [items],
   );
 
-  const { formatDate } = useAppTimezone();
-
   const formatPrice = (v: number | null) => {
     if (v === null || v === undefined) return '-';
     return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -523,18 +415,19 @@ export default function WatchlistPage() {
 
   const columns = useMemo<ColumnDef<WatchlistItem>[]>(() => [
     { id: 'symbol', header: 'Symbol', accessorKey: 'symbol', cell: ({ getValue }) => <span className="font-semibold text-foreground">{getValue<string>()}</span> },
+    { id: 'name', header: 'Name', accessorKey: 'name', cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>() || '\u2014'}</span> },
     // ── Live Price column ──
     {
       id: 'price',
       header: 'Price',
       accessorKey: 'symbol',
       enableSorting: true,
-      sortingFn: (rowA, rowB) => {
+      sortingFn: (rowA: { original: WatchlistItem }, rowB: { original: WatchlistItem }) => {
         const pA = priceData?.[rowA.original.symbol]?.price ?? -Infinity;
         const pB = priceData?.[rowB.original.symbol]?.price ?? -Infinity;
         return pA - pB;
       },
-      cell: ({ row }) => {
+      cell: ({ row }: { row: { original: WatchlistItem } }) => {
         const quote = priceData?.[row.original.symbol];
         if (!quote || (quote.price == null && !quote.error)) {
           return <span className="text-muted-foreground">—</span>;
@@ -566,12 +459,12 @@ export default function WatchlistPage() {
       header: 'Change',
       accessorKey: 'symbol',
       enableSorting: true,
-      sortingFn: (rowA, rowB) => {
+      sortingFn: (rowA: { original: WatchlistItem }, rowB: { original: WatchlistItem }) => {
         const cA = priceData?.[rowA.original.symbol]?.change ?? 0;
         const cB = priceData?.[rowB.original.symbol]?.change ?? 0;
         return cA - cB;
       },
-      cell: ({ row }) => {
+      cell: ({ row }: { row: { original: WatchlistItem } }) => {
         const quote = priceData?.[row.original.symbol];
         if (!quote || quote.change == null || quote.changePercent == null) {
           return <span className="text-muted-foreground">—</span>;
@@ -588,32 +481,16 @@ export default function WatchlistPage() {
         );
       },
     },
-    { id: 'direction', header: 'Direction', accessorKey: 'direction', cell: ({ getValue }) => {
-      const v = getValue<string>();
-      return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${directionBadgeClass(v as 'long' | 'short')}`}>{v === 'long' ? 'Long' : 'Short'}</span>;
-    }},
-    { id: 'setup', header: 'Setup', accessorKey: 'setup', cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>() || '\u2014'}</span> },
     { id: 'keyLevel', header: 'Key Level', accessorKey: 'keyLevel', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
-    { id: 'triggerPrice', header: 'Trigger Price', accessorKey: 'triggerPrice', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
-    { id: 'plannedStop', header: 'Planned Stop', accessorKey: 'plannedStop', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
-    { id: 'targetPrice', header: 'Target Price', accessorKey: 'targetPrice', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
-    { id: 'status', header: 'Status', accessorKey: 'status', cell: ({ getValue }) => {
-      const s = getValue<string>();
-      return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(s as WatchlistItem['status'])}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>;
-    }},
-    { id: 'dateAdded', header: 'Added', accessorKey: 'dateAdded', cell: ({ getValue }) => <span className="text-xs text-muted-foreground">{formatDate(getValue<string | null>())}</span> },
     { id: 'sector', header: 'Sector', accessorKey: 'sector', cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>() || '\u2014'}</span> },
-    { id: 'thesis', header: 'Thesis', accessorKey: 'thesis', cell: ({ getValue }) => {
-      const v = getValue<string | null>();
-      return v ? <span className="block max-w-[200px] truncate text-xs text-muted-foreground" title={v}>{v}</span> : <span className="text-muted-foreground">\u2014</span>;
-    }},
+    { id: 'industry', header: 'Industry', accessorKey: 'industry', cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>() || '\u2014'}</span> },
     { id: 'actions', header: 'Actions', enableSorting: false, cell: ({ row }) => (
       <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
         <button onClick={() => openEdit(row.original)} className="text-sm text-muted-foreground hover:text-foreground">Edit</button>
         <button onClick={() => handleDelete(row.original.id, row.original.symbol)} className="text-sm text-destructive hover:text-destructive/80">Remove</button>
       </div>
     )},
-  ], [handleDelete, openEdit, formatDate, priceData]);
+  ], [handleDelete, openEdit, priceData]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -626,7 +503,7 @@ export default function WatchlistPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-10">
+    <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -708,120 +585,24 @@ export default function WatchlistPage() {
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="e.g. AAPL"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="watchlist-direction" className="mb-1 block text-sm font-medium text-muted-foreground">
-                    Direction
-                  </label>
-                  <select
-                    id="watchlist-direction"
-                    value={form.direction}
-                    onChange={(e) => setForm((f) => ({ ...f, direction: e.target.value as 'long' | 'short' }))}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="long">Long</option>
-                    <option value="short">Short</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="watchlist-status" className="mb-1 block text-sm font-medium text-muted-foreground">
-                    Status
-                  </label>
-                  <select
-                    id="watchlist-status"
-                    value={form.status}
-                    onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as WatchlistItem['status'] }))}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="watching">Watching</option>
-                    <option value="triggered">Triggered</option>
-                    <option value="skipped">Skipped</option>
-                    <option value="expired">Expired</option>
-                  </select>
-                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Name, sector, and industry are auto-fetched from market data.
+                </p>
               </div>
 
               <div>
-                <label htmlFor="setup" className="mb-1 block text-sm font-medium text-muted-foreground">
-                  Setup
+                <label htmlFor="keyLevel" className="mb-1 block text-sm font-medium text-muted-foreground">
+                  Key Level
                 </label>
                 <input
-                  id="setup"
-                  type="text"
-                  value={form.setup}
-                  onChange={(e) => setForm((f) => ({ ...f, setup: e.target.value }))}
+                  id="keyLevel"
+                  type="number"
+                  step="any"
+                  value={form.keyLevel}
+                  onChange={(e) => setForm((f) => ({ ...f, keyLevel: e.target.value }))}
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                  placeholder="e.g. Breakout, Pullback"
+                  placeholder="0.00"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="keyLevel" className="mb-1 block text-sm font-medium text-muted-foreground">
-                    Key Level
-                  </label>
-                  <input
-                    id="keyLevel"
-                    type="number"
-                    step="any"
-                    value={form.keyLevel}
-                    onChange={(e) => setForm((f) => ({ ...f, keyLevel: e.target.value }))}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="triggerPrice" className="mb-1 block text-sm font-medium text-muted-foreground">
-                    Trigger Price
-                  </label>
-                  <input
-                    id="triggerPrice"
-                    type="number"
-                    step="any"
-                    value={form.triggerPrice}
-                    onChange={(e) => setForm((f) => ({ ...f, triggerPrice: e.target.value }))}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              {/* ── Planned Stop / Target Price ── */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="plannedStop" className="mb-1 block text-sm font-medium text-muted-foreground">
-                    Planned Stop
-                  </label>
-                  <input
-                    id="plannedStop"
-                    type="number"
-                    step="any"
-                    value={form.plannedStop}
-                    onChange={(e) => setForm((f) => ({ ...f, plannedStop: e.target.value }))}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="targetPrice" className="mb-1 block text-sm font-medium text-muted-foreground">
-                    Target Price
-                  </label>
-                  <input
-                    id="targetPrice"
-                    type="number"
-                    step="any"
-                    value={form.targetPrice}
-                    onChange={(e) => setForm((f) => ({ ...f, targetPrice: e.target.value }))}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="0.00"
-                  />
-                </div>
               </div>
 
               {/* ── Alert Conditions ── */}
@@ -831,14 +612,10 @@ export default function WatchlistPage() {
                 </summary>
                 <div className="space-y-3 border-t px-3 py-3">
                   <p className="text-xs text-muted-foreground">
-                    Trigger alerts when the current price crosses these levels.
+                    Trigger alerts when the current price crosses the key level.
                   </p>
 
-                  {/* Price crossing toggles */}
                   <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Key Level
-                    </p>
                     <div className="flex items-center gap-2">
                       <input
                         id="priceAboveKeyLevel"
@@ -862,151 +639,6 @@ export default function WatchlistPage() {
                       <label htmlFor="priceBelowKeyLevel" className="text-xs text-foreground">
                         Price below key level
                       </label>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Trigger Price
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="priceAboveTrigger"
-                        type="checkbox"
-                        checked={!!alertConfig?.priceAboveTrigger?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceAboveTrigger: { enabled: e.target.checked } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="priceAboveTrigger" className="text-xs text-foreground">
-                        Price above trigger
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="priceBelowTrigger"
-                        type="checkbox"
-                        checked={!!alertConfig?.priceBelowTrigger?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceBelowTrigger: { enabled: e.target.checked } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="priceBelowTrigger" className="text-xs text-foreground">
-                        Price below trigger
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Planned Stop
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="priceAboveStop"
-                        type="checkbox"
-                        checked={!!alertConfig?.priceAboveStop?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceAboveStop: { enabled: e.target.checked } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="priceAboveStop" className="text-xs text-foreground">
-                        Price above stop
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="priceBelowStop"
-                        type="checkbox"
-                        checked={!!alertConfig?.priceBelowStop?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceBelowStop: { enabled: e.target.checked } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="priceBelowStop" className="text-xs text-foreground">
-                        Price below stop
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Target Price
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="priceAboveTarget"
-                        type="checkbox"
-                        checked={!!alertConfig?.priceAboveTarget?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceAboveTarget: { enabled: e.target.checked } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="priceAboveTarget" className="text-xs text-foreground">
-                        Price above target
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="priceBelowTarget"
-                        type="checkbox"
-                        checked={!!alertConfig?.priceBelowTarget?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceBelowTarget: { enabled: e.target.checked } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="priceBelowTarget" className="text-xs text-foreground">
-                        Price below target
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* RSI alerts */}
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      RSI
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="rsiAbove"
-                        type="checkbox"
-                        checked={!!alertConfig?.rsiAbove?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, rsiAbove: { enabled: e.target.checked, threshold: parseFloat(rsiAboveThreshold) || 70 } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="rsiAbove" className="text-xs text-foreground">
-                        RSI above
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="99"
-                        value={rsiAboveThreshold}
-                        onChange={(e) => {
-                          setRsiAboveThreshold(e.target.value);
-                          setAlertConfig((prev) => ({ ...prev, rsiAbove: { enabled: prev?.rsiAbove?.enabled ?? false, threshold: parseFloat(e.target.value) || 70 } }));
-                        }}
-                        className="ml-auto w-16 rounded border bg-background px-1.5 py-1 text-xs text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                        placeholder="70"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="rsiBelow"
-                        type="checkbox"
-                        checked={!!alertConfig?.rsiBelow?.enabled}
-                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, rsiBelow: { enabled: e.target.checked, threshold: parseFloat(rsiBelowThreshold) || 30 } }))}
-                        className="size-3.5 rounded"
-                      />
-                      <label htmlFor="rsiBelow" className="text-xs text-foreground">
-                        RSI below
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="99"
-                        value={rsiBelowThreshold}
-                        onChange={(e) => {
-                          setRsiBelowThreshold(e.target.value);
-                          setAlertConfig((prev) => ({ ...prev, rsiBelow: { enabled: prev?.rsiBelow?.enabled ?? false, threshold: parseFloat(e.target.value) || 30 } }));
-                        }}
-                        className="ml-auto w-16 rounded border bg-background px-1.5 py-1 text-xs text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                        placeholder="30"
-                      />
                     </div>
                   </div>
                 </div>
@@ -1076,7 +708,7 @@ export default function WatchlistPage() {
         data={filteredItems}
         columns={columns}
         storageKey="watchlist"
-        initialVisibility={{ plannedStop: false, targetPrice: false, sector: false, thesis: false }}
+        initialVisibility={{ name: false, industry: false }}
         emptyState={
           <EmptyState
             icon={<Eye className="size-12 text-muted-foreground" strokeWidth={1} />}

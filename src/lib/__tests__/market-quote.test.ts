@@ -155,6 +155,40 @@ describe("YahooFinanceProvider", () => {
       expect(results[0].error).toContain("No quote data available");
     });
 
+    it("extracts dayHigh/dayLow from Yahoo response", async () => {
+      mockQuote.mockResolvedValueOnce([
+        {
+          symbol: "AAPL",
+          regularMarketPrice: 178.5,
+          regularMarketDayHigh: 182.0,
+          regularMarketDayLow: 175.5,
+          marketState: "REGULAR",
+        },
+      ]);
+
+      const results = await provider.getQuote(["AAPL"]);
+      expect(results).toHaveLength(1);
+      expect(results[0].dayHigh).toBe(182.0);
+      expect(results[0].dayLow).toBe(175.5);
+    });
+
+    it("handles null/undefined dayHigh and dayLow gracefully", async () => {
+      mockQuote.mockResolvedValueOnce([
+        {
+          symbol: "AAPL",
+          regularMarketPrice: 178.5,
+          regularMarketDayHigh: null,
+          regularMarketDayLow: undefined,
+          marketState: "REGULAR",
+        },
+      ]);
+
+      const results = await provider.getQuote(["AAPL"]);
+      expect(results).toHaveLength(1);
+      expect(results[0].dayHigh).toBeUndefined();
+      expect(results[0].dayLow).toBeUndefined();
+    });
+
     it("returns one result per symbol regardless of Yahoo result count", async () => {
       mockQuote.mockResolvedValueOnce([
         { symbol: "AAPL", regularMarketPrice: 150, marketState: "REGULAR" },
