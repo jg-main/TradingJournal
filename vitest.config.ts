@@ -52,6 +52,7 @@ export default defineConfig({
       'src/lib/alert-polling.test.ts',
       'src/hooks/use-visibility-polling.test.ts',
       'src/lib/accounting/decimal.test.ts',
+      'src/lib/accounting/posting.test.ts',
     ],
     environment: 'jsdom',
   },
