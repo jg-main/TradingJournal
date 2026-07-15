@@ -259,6 +259,65 @@ export class MockMarketQuoteProvider implements MarketQuoteProvider {
   }
 }
 
+// ── OHLC Bar Type ────────────────────────────────────────────────────────
+
+/**
+ * A single OHLC close-price bar for RSI computation.
+ * Only date and close are needed — no high/low/volume.
+ */
+export interface OhlcBarResponse {
+  /** Trading date in YYYY-MM-DD format */
+  date: string;
+  /** Adjusted close price */
+  close: number;
+}
+
+// ── Yahoo Finance OHLC Fallback ───────────────────────────────────────────
+
+/**
+ * Fetch OHLC daily close-price bars from Yahoo Finance.
+ *
+ * Used as a fallback when the primary OHLC provider (ClickHouse/Schwab)
+ * is unavailable or returns empty data. Returns ~30 trading days of close
+ * prices needed for 14-period RSI computation.
+ *
+ * Uses the yahoo-finance2 library's chart() method with daily interval
+ * and 'array' return format.
+ *
+ * @param symbol - Ticker symbol (e.g. 'AAPL')
+ * @param startDate - Start date YYYY-MM-DD (inclusive)
+ * @param endDate - End date YYYY-MM-DD (inclusive)
+ * @returns Array of { date, close } bars sorted by date ascending
+ * @throws When the Yahoo Finance API call fails or returns no data
+ *
+ * Pattern: standalone async function (no class wrapper needed)
+ */
+export async function fetchYahooOhlcBars(
+  symbol: string,
+  startDate: string,
+  endDate: string,
+): Promise<OhlcBarResponse[]> {
+  const yahoo = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+
+  const result = await yahoo.chart(symbol, {
+    period1: startDate,
+    period2: endDate,
+    interval: '1d',
+    return: 'array',
+  });
+
+  if (!result.quotes || result.quotes.length === 0) {
+    throw new Error(`No OHLC data returned from Yahoo Finance for symbol: ${symbol}`);
+  }
+
+  return result.quotes
+    .filter((q) => q.close != null)
+    .map((q) => ({
+      date: q.date.toISOString().split('T')[0],
+      close: q.close!,
+    }));
+}
+
 // ── Mock Quote Factory ───────────────────────────────────────────────────
 
 /**
