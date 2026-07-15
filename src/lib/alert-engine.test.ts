@@ -346,4 +346,96 @@ describe('evaluateAlertConditions', () => {
     expect(resultAbove).toHaveLength(1);
     expect(resultAbove[0].condition).toBe('rsi_above');
   });
+
+  it('returns price_above_trigger when price exceeds trigger price', () => {
+    const config: AlertConfig = { priceAboveTrigger: { enabled: true } };
+    const prices: PriceSnapshot = { currentPrice: 105, rsi: null, triggerPrice: 100 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].condition).toBe('price_above_trigger');
+    expect(result[0].message).toContain('trigger');
+  });
+
+  it('returns price_below_trigger when price drops below trigger price', () => {
+    const config: AlertConfig = { priceBelowTrigger: { enabled: true } };
+    const prices: PriceSnapshot = { currentPrice: 95, rsi: null, triggerPrice: 100 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].condition).toBe('price_below_trigger');
+  });
+
+  it('returns price_above_stop when price exceeds stop price', () => {
+    const config: AlertConfig = { priceAboveStop: { enabled: true } };
+    const prices: PriceSnapshot = { currentPrice: 95, rsi: null, stopPrice: 90 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].condition).toBe('price_above_stop');
+    expect(result[0].message).toContain('stop');
+  });
+
+  it('returns price_below_stop when price drops below stop price', () => {
+    const config: AlertConfig = { priceBelowStop: { enabled: true } };
+    const prices: PriceSnapshot = { currentPrice: 85, rsi: null, stopPrice: 90 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].condition).toBe('price_below_stop');
+  });
+
+  it('returns price_above_target when price exceeds target price', () => {
+    const config: AlertConfig = { priceAboveTarget: { enabled: true } };
+    const prices: PriceSnapshot = { currentPrice: 110, rsi: null, targetPrice: 100 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].condition).toBe('price_above_target');
+    expect(result[0].message).toContain('target');
+  });
+
+  it('returns price_below_target when price drops below target price', () => {
+    const config: AlertConfig = { priceBelowTarget: { enabled: true } };
+    const prices: PriceSnapshot = { currentPrice: 90, rsi: null, targetPrice: 100 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].condition).toBe('price_below_target');
+  });
+
+  it('does not trigger price alerts when reference price is 0', () => {
+    const config: AlertConfig = {
+      priceAboveKeyLevel: { enabled: true },
+    };
+    // keyLevel=0 should be treated as a valid reference, not null
+    const prices: PriceSnapshot = { currentPrice: 155, rsi: null, keyLevel: 0 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].condition).toBe('price_above_keyLevel');
+  });
+
+  it('does not trigger price alerts for disabled conditions even when threshold is crossed', () => {
+    const config: AlertConfig = {
+      priceAboveKeyLevel: { enabled: false },
+    };
+    const prices: PriceSnapshot = { currentPrice: 155, rsi: null, keyLevel: 150 };
+    expect(evaluateAlertConditions(config, prices)).toEqual([]);
+  });
+
+  it('handles mixed enabled/disabled conditions correctly', () => {
+    const config: AlertConfig = {
+      priceAboveKeyLevel: { enabled: true },
+      priceBelowKeyLevel: { enabled: false },
+      rsiAbove: { enabled: true, threshold: 70 },
+      rsiBelow: { enabled: false, threshold: 30 },
+    };
+    // Both enabled conditions should trigger
+    const prices: PriceSnapshot = { currentPrice: 155, rsi: 75, keyLevel: 150 };
+    const result = evaluateAlertConditions(config, prices);
+    expect(result).toHaveLength(2);
+    const conditions = result.map((r) => r.condition);
+    expect(conditions).toContain('price_above_keyLevel');
+    expect(conditions).toContain('rsi_above');
+  });
+
+  it('does not trigger price_below when price is exactly at reference', () => {
+    const config: AlertConfig = { priceBelowKeyLevel: { enabled: true } };
+    const prices: PriceSnapshot = { currentPrice: 150, rsi: null, keyLevel: 150 };
+    expect(evaluateAlertConditions(config, prices)).toEqual([]);
+  });
 });
