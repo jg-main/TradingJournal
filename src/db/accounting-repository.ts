@@ -11,7 +11,7 @@
 
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import type { CanonicalDecimal, EventType, PostingSide } from '../lib/accounting/types';
+import type { CanonicalDecimal, EventType, EventStatus, PostingSide } from '../lib/accounting/types';
 
 // ── Row Shape Helpers (matching Drizzle table columns) ──────────────────
 
@@ -21,8 +21,19 @@ export interface FinancialEventRow {
   event_type: string;
   idempotency_key: string | null;
   description: string | null;
+  payload: string | null;
+  effect: string | null;
   posted_at: string;
   created_at: string;
+}
+
+/**
+ * Extended event row with ledger entry/posting status for the activity list.
+ */
+export interface FinancialEventWithStatusRow extends FinancialEventRow {
+  entry_id: string | null;
+  posting_count: number;
+  is_balanced: number;
 }
 
 export interface LedgerEntryRow {
@@ -58,7 +69,7 @@ export function findEventByIdempotencyKey(
 ): FinancialEventRow | undefined {
   const row = sqlite
     .prepare(
-      `SELECT id, account_id, event_type, idempotency_key, description, posted_at, created_at
+      `SELECT id, account_id, event_type, idempotency_key, description, payload, effect, posted_at, created_at
        FROM financial_events
        WHERE idempotency_key = ?`,
     )
@@ -107,14 +118,16 @@ export function insertFinancialEvent(
     eventType: EventType;
     idempotencyKey?: string | null;
     description?: string | null;
+    payload?: string | null;
+    effect?: string | null;
     postedAt: string;
   },
 ): FinancialEventRow {
   const id = values.id ?? randomUUID();
   sqlite
     .prepare(
-      `INSERT INTO financial_events (id, account_id, event_type, idempotency_key, description, posted_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO financial_events (id, account_id, event_type, idempotency_key, description, payload, effect, posted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -122,6 +135,8 @@ export function insertFinancialEvent(
       values.eventType,
       values.idempotencyKey ?? null,
       values.description ?? null,
+      values.payload ?? null,
+      values.effect ?? null,
       values.postedAt,
     );
   // Return the canonical row shape
@@ -131,6 +146,8 @@ export function insertFinancialEvent(
     event_type: values.eventType,
     idempotency_key: values.idempotencyKey ?? null,
     description: values.description ?? null,
+    payload: values.payload ?? null,
+    effect: values.effect ?? null,
     posted_at: values.postedAt,
     created_at: new Date().toISOString(),
   };
@@ -220,6 +237,22 @@ export function insertLedgerPosting(
 // ── Read Operations ─────────────────────────────────────────────────────
 
 /**
+ * Find a financial event by its ID (event-only, no postings).
+ * Returns the row or undefined.
+ */
+export function findEventById(
+  sqlite: Database.Database,
+  eventId: string,
+): FinancialEventRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, event_type, idempotency_key, description, payload, effect, posted_at, created_at
+       FROM financial_events WHERE id = ?`,
+    )
+    .get(eventId) as FinancialEventRow | undefined;
+}
+
+/**
  * Find a financial event by its ID, including its ledger entry and postings.
  * Returns the fully hydrated aggregate, or undefined if not found.
  */
@@ -233,7 +266,7 @@ export function findEventWithPostings(
 } | undefined {
   const event = sqlite
     .prepare(
-      `SELECT id, account_id, event_type, idempotency_key, description, posted_at, created_at
+      `SELECT id, account_id, event_type, idempotency_key, description, payload, effect, posted_at, created_at
        FROM financial_events WHERE id = ?`,
     )
     .get(eventId) as FinancialEventRow | undefined;
@@ -255,6 +288,73 @@ export function findEventWithPostings(
     .all(entry.id) as LedgerPostingRow[];
 
   return { event, entry, postings };
+}
+
+/**
+ * List all financial events for an account in deterministic posted_at/sequence order,
+ * including their ledger entry/posting status.
+ *
+ * Returns an ordered list from oldest to newest.
+ * Each row includes the event data plus:
+ * - entry_id: the associated ledger entry id (or null if not yet posted)
+ * - posting_count: number of ledger postings for this event
+ * - is_balanced: 1 if debit sum === credit sum, 0 otherwise
+ */
+export function listAccountEvents(
+  sqlite: Database.Database,
+  accountId: string,
+  options?: { limit?: number; offset?: number },
+): FinancialEventWithStatusRow[] {
+  const limit = options?.limit ?? 100;
+  const offset = options?.offset ?? 0;
+
+  const rows = sqlite
+    .prepare(
+      `SELECT
+         fe.id,
+         fe.account_id,
+         fe.event_type,
+         fe.idempotency_key,
+         fe.description,
+         fe.payload,
+         fe.effect,
+         fe.posted_at,
+         fe.created_at,
+         le.id AS entry_id,
+         COALESCE(
+           (SELECT COUNT(*) FROM ledger_postings lp WHERE lp.ledger_entry_id = le.id),
+           0
+         ) AS posting_count,
+         CASE
+           WHEN le.id IS NULL THEN 0
+           WHEN (
+             COALESCE((SELECT SUM(lp2.amount_micros) FROM ledger_postings lp2 WHERE lp2.ledger_entry_id = le.id AND lp2.side = 'debit'), 0) =
+             COALESCE((SELECT SUM(lp3.amount_micros) FROM ledger_postings lp3 WHERE lp3.ledger_entry_id = le.id AND lp3.side = 'credit'), 0)
+           ) THEN 1
+           ELSE 0
+         END AS is_balanced
+       FROM financial_events fe
+       LEFT JOIN ledger_entries le ON le.financial_event_id = fe.id
+       WHERE fe.account_id = ?
+       ORDER BY fe.posted_at ASC, fe.id ASC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(accountId, limit, offset) as FinancialEventWithStatusRow[];
+
+  return rows;
+}
+
+/**
+ * Count all financial events for an account.
+ */
+export function countAccountEvents(
+  sqlite: Database.Database,
+  accountId: string,
+): number {
+  const row = sqlite
+    .prepare('SELECT COUNT(*) AS count FROM financial_events WHERE account_id = ?')
+    .get(accountId) as { count: number };
+  return row.count;
 }
 
 /**

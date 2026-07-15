@@ -505,10 +505,18 @@ export const financialEvents = sqliteTable('financial_events', {
     .references(() => accounts.id)
     .notNull(),
   eventType: text('event_type', {
-    enum: ['opening_balance', 'trade_execution', 'adjustment', 'transfer'],
+    enum: [
+      'opening_balance', 'trade_execution', 'adjustment', 'transfer',
+      'deposit', 'withdrawal', 'dividend', 'interest',
+      'fee', 'tax', 'stock_split', 'manual_adjustment',
+    ],
   }).notNull(),
   idempotencyKey: text('idempotency_key'),
   description: text('description'),
+  /** JSON blob of event-type-specific payload (e.g. cash amount, split ratio). */
+  payload: text('payload'),
+  /** JSON blob of standardised economic effect (e.g. cash direction, market symbol). */
+  effect: text('effect'),
   postedAt: text('posted_at').notNull(),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
 }, (t) => [

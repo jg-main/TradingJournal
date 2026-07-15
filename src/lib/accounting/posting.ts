@@ -102,6 +102,8 @@ function toFinancialEventRecord(
     eventType,
     idempotencyKey,
     description,
+    payload: null,
+    effect: null,
     postedAt,
     createdAt: new Date().toISOString(),
   };

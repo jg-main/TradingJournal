@@ -57,6 +57,7 @@ export default defineConfig({
       'src/lib/accounting/__tests__/accounting-integration.test.ts',
       'src/app/api/accounts/[id]/financial-events/__tests__/route.test.ts',
       'src/lib/accounting/__tests__/opening-balance-flow.test.ts',
+      'src/lib/accounting/__tests__/financial-event-contracts.test.ts',
     ],
     environment: 'jsdom',
   },

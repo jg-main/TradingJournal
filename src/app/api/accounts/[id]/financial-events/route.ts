@@ -72,6 +72,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Narrow to opening_balance — S01 only supports this event type
+    if (parsed.data.eventType !== 'opening_balance') {
+      return NextResponse.json(
+        {
+          error: 'Only opening_balance events are supported',
+          details: `Received event type: ${parsed.data.eventType}`,
+        },
+        { status: 400 },
+      );
+    }
     const { amount, idempotencyKey, description } = parsed.data;
 
     // 2. Get the raw SQLite handle for transactional posting
