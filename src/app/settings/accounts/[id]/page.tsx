@@ -23,6 +23,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import AccountExecutionForm from '@/components/accounting/account-execution-form';
+import AccountPositions from '@/components/accounting/account-positions';
+import AccountExecutionsActivity from '@/components/accounting/account-executions-activity';
 
 interface Transaction {
   id: string;
@@ -386,6 +389,27 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Accounting Execution Entry ──────────────────────────────── */}
+      {account.isActive && (
+        <div className="mb-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+          <AccountExecutionForm accountId={id} onExecutionPosted={() => {}} />
+        </div>
+      )}
+
+      {/* ── Current Positions ──────────────────────────────────────── */}
+      {account.isActive && (
+        <div className="mb-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+          <AccountPositions accountId={id} />
+        </div>
+      )}
+
+      {/* ── Execution Activity ─────────────────────────────────────── */}
+      {account.isActive && (
+        <div className="mb-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+          <AccountExecutionsActivity accountId={id} />
         </div>
       )}
 
