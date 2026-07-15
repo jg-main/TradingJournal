@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Plus, Eye } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
+import DynamicTable from '@/components/dynamic-table';
 
 import { useAppTimezone } from '@/lib/timezone-context';
 import { EmptyState } from '@/components/empty-state';
@@ -105,7 +107,7 @@ export default function WatchlistPage() {
 
   // ── Data ────────────────────────────────────────────────────────────
 
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async () => {
     try {
       const res = await fetch('/api/watchlist');
       const data = await res.json();
@@ -115,10 +117,10 @@ export default function WatchlistPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchItems(); }, []);
+  useEffect(() => { fetchItems(); }, [fetchItems]);
 
   // ── Filter ──────────────────────────────────────────────────────────
 
@@ -135,7 +137,7 @@ export default function WatchlistPage() {
     setMessage(null);
   };
 
-  const openEdit = (item: WatchlistItem) => {
+  const openEdit = useCallback((item: WatchlistItem) => {
     setForm({
       symbol: item.symbol,
       direction: item.direction,
@@ -147,7 +149,7 @@ export default function WatchlistPage() {
     setEditingId(item.id);
     setDialogOpen(true);
     setMessage(null);
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,7 +194,7 @@ export default function WatchlistPage() {
     }
   };
 
-  const handleDelete = async (id: string, symbol: string) => {
+  const handleDelete = useCallback(async (id: string, symbol: string) => {
     if (!confirm(`Remove "${symbol}" from watchlist?`)) return;
 
     try {
@@ -206,7 +208,7 @@ export default function WatchlistPage() {
     } catch {
       setMessage({ type: 'error', text: 'Failed to remove item.' });
     }
-  };
+  }, [fetchItems]);
 
   const { formatDate } = useAppTimezone();
 
@@ -214,6 +216,37 @@ export default function WatchlistPage() {
     if (v === null || v === undefined) return '-';
     return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
+
+  // ── Column definitions ─────────────────────────────────────────────
+
+  const columns = useMemo<ColumnDef<WatchlistItem>[]>(() => [
+    { id: 'symbol', header: 'Symbol', accessorKey: 'symbol', cell: ({ getValue }) => <span className="font-semibold text-foreground">{getValue<string>()}</span> },
+    { id: 'direction', header: 'Direction', accessorKey: 'direction', cell: ({ getValue }) => {
+      const v = getValue<string>();
+      return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${directionBadgeClass(v as 'long' | 'short')}`}>{v === 'long' ? 'Long' : 'Short'}</span>;
+    }},
+    { id: 'setup', header: 'Setup', accessorKey: 'setup', cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>() || '\u2014'}</span> },
+    { id: 'keyLevel', header: 'Key Level', accessorKey: 'keyLevel', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
+    { id: 'triggerPrice', header: 'Trigger Price', accessorKey: 'triggerPrice', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
+    { id: 'plannedStop', header: 'Planned Stop', accessorKey: 'plannedStop', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
+    { id: 'targetPrice', header: 'Target Price', accessorKey: 'targetPrice', cell: ({ getValue }) => <span className="tabular-nums text-muted-foreground">{formatPrice(getValue<number | null>())}</span> },
+    { id: 'status', header: 'Status', accessorKey: 'status', cell: ({ getValue }) => {
+      const s = getValue<string>();
+      return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(s as WatchlistItem['status'])}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>;
+    }},
+    { id: 'dateAdded', header: 'Added', accessorKey: 'dateAdded', cell: ({ getValue }) => <span className="text-xs text-muted-foreground">{formatDate(getValue<string | null>())}</span> },
+    { id: 'sector', header: 'Sector', accessorKey: 'sector', cell: ({ getValue }) => <span className="text-muted-foreground">{getValue<string>() || '\u2014'}</span> },
+    { id: 'thesis', header: 'Thesis', accessorKey: 'thesis', cell: ({ getValue }) => {
+      const v = getValue<string | null>();
+      return v ? <span className="block max-w-[200px] truncate text-xs text-muted-foreground" title={v}>{v}</span> : <span className="text-muted-foreground">\u2014</span>;
+    }},
+    { id: 'actions', header: 'Actions', enableSorting: false, cell: ({ row }) => (
+      <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
+        <button onClick={() => openEdit(row.original)} className="text-sm text-muted-foreground hover:text-foreground">Edit</button>
+        <button onClick={() => handleDelete(row.original.id, row.original.symbol)} className="text-sm text-destructive hover:text-destructive/80">Remove</button>
+      </div>
+    )},
+  ], [handleDelete, openEdit, formatDate]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -411,95 +444,34 @@ export default function WatchlistPage() {
         </div>
       )}
 
-      {/* Empty state */}
-      {filteredItems.length === 0 ? (
-        <EmptyState
-          icon={<Eye className="size-12 text-muted-foreground" strokeWidth={1} />}
-          title="No stocks on watch"
-          description={
-            statusFilter !== 'all'
-              ? 'No items match the selected status filter.'
-              : 'Track stocks you are monitoring for potential entries. Add symbols to your watchlist and set price alerts.'
-          }
-          action={
-            statusFilter !== 'all' ? undefined : (
-              <button
-                onClick={() => setDialogOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
-              >
-                <Plus className="size-4" />
-                Add Symbol
-              </button>
-            )
-          }
-        />
-      ) : (
-        <div className="overflow-hidden rounded-lg border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Symbol</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Direction</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Setup</th>
-                <th className="px-4 py-3 text-right text-muted-foreground">Key Level</th>
-                <th className="px-4 py-3 text-right text-muted-foreground">Trigger Price</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Added</th>
-                <th className="px-4 py-3 text-right text-muted-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filteredItems.map((item) => (
-                <tr key={item.id} className="hover:bg-muted/50">
-                  <td className="px-4 py-3 font-semibold text-foreground">
-                    {item.symbol}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${directionBadgeClass(item.direction)}`}
-                    >
-                      {item.direction === 'long' ? 'Long' : 'Short'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {item.setup ?? '-'}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                    {formatPrice(item.keyLevel)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                    {formatPrice(item.triggerPrice)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClass(item.status)}`}
-                    >
-                      {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {formatDate(item.dateAdded)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => openEdit(item)}
-                      className="mr-2 text-sm text-muted-foreground hover:text-foreground"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(item.id, item.symbol)}
-                      className="text-sm text-destructive hover:text-destructive/80"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DynamicTable
+        data={filteredItems}
+        columns={columns}
+        storageKey="watchlist"
+        initialVisibility={{ plannedStop: false, targetPrice: false, sector: false, thesis: false }}
+        emptyState={
+          <EmptyState
+            icon={<Eye className="size-12 text-muted-foreground" strokeWidth={1} />}
+            title="No stocks on watch"
+            description={
+              statusFilter !== 'all'
+                ? 'No items match the selected status filter.'
+                : 'Track stocks you are monitoring for potential entries. Add symbols to your watchlist and set price alerts.'
+            }
+            action={
+              statusFilter !== 'all' ? undefined : (
+                <button
+                  onClick={() => setDialogOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+                >
+                  <Plus className="size-4" />
+                  Add Symbol
+                </button>
+              )
+            }
+          />
+        }
+      />
     </div>
   );
 }
