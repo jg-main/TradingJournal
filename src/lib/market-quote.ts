@@ -22,6 +22,9 @@ import YahooFinance from "yahoo-finance2";
 type YahooRawQuote = Record<string, unknown> & {
   symbol?: string;
   regularMarketPrice?: number | null;
+  regularMarketPreviousClose?: number | null;
+  regularMarketChange?: number | null;
+  regularMarketChangePercent?: number | null;
   marketState?: string;
   shortName?: string;
   longName?: string;
@@ -49,6 +52,12 @@ export interface QuoteResult {
   sector?: string;
   /** Industry from the provider (e.g. "Consumer Electronics") */
   industry?: string;
+  /** Previous trading day close price */
+  previousClose?: number;
+  /** Absolute price change from previous close */
+  change?: number;
+  /** Percentage change from previous close */
+  changePercent?: number;
   /** Human-readable error message when the quote could not be resolved */
   error?: string;
 }
@@ -176,9 +185,25 @@ export class YahooFinanceProvider implements MarketQuoteProvider {
     const price =
       raw.regularMarketPrice != null ? Number(raw.regularMarketPrice) : null;
 
+    const previousClose =
+      raw.regularMarketPreviousClose != null
+        ? Number(raw.regularMarketPreviousClose)
+        : null;
+    const change =
+      raw.regularMarketChange != null
+        ? Number(raw.regularMarketChange)
+        : null;
+    const changePercent =
+      raw.regularMarketChangePercent != null
+        ? Number(raw.regularMarketChangePercent)
+        : null;
+
     return {
       symbol: raw.symbol ?? "UNKNOWN",
       price,
+      previousClose: previousClose ?? undefined,
+      change: change ?? undefined,
+      changePercent: changePercent ?? undefined,
       marketState: raw.marketState ?? "UNKNOWN",
       fetchedAt: now,
       source: "yahoo",

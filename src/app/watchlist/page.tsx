@@ -1,9 +1,16 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Plus, Eye, Columns3 } from 'lucide-react';
+import { Plus, Eye, Columns3, Clock } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import DynamicTable from '@/components/dynamic-table';
+import { getStalenessLabel } from '@/components/trade-detail/helpers';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 import { useAppTimezone } from '@/lib/timezone-context';
 import { EmptyState } from '@/components/empty-state';
@@ -103,6 +110,7 @@ export default function WatchlistPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showColumns, setShowColumns] = useState(false);
+  const [priceData, setPriceData] = useState<Record<string, { symbol: string; price: number | null; marketState: string; fetchedAt: string; change?: number; changePercent?: number; error?: string }> | null>(null);
   const [colVisibility, setColVisibility] = useState<Record<string, boolean>>(() => {
     try {
       const raw = localStorage.getItem('watchlist:visibility');
@@ -130,6 +138,56 @@ export default function WatchlistPage() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  // ── Live price polling ──────────────────────────────────────────────
+
+  useEffect(() => {
+    const symbols = items.map((i) => i.symbol);
+    if (symbols.length === 0) return;
+
+    const doFetch = () => {
+      const params = new URLSearchParams({ symbols: symbols.join(',') });
+      fetch(`/api/watchlist/prices?${params}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((data) => {
+          if (data.prices) setPriceData(data.prices);
+        })
+        .catch(() => {
+          /* silent — UI shows "—" with staleness indicator */
+        });
+    };
+
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const start = () => {
+      doFetch();
+      intervalId = setInterval(doFetch, 15000);
+    };
+
+    const stop = () => {
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        doFetch();
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    start();
+
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [items]);
 
   // ── Filter ──────────────────────────────────────────────────────────
 
@@ -230,6 +288,71 @@ export default function WatchlistPage() {
 
   const columns = useMemo<ColumnDef<WatchlistItem>[]>(() => [
     { id: 'symbol', header: 'Symbol', accessorKey: 'symbol', cell: ({ getValue }) => <span className="font-semibold text-foreground">{getValue<string>()}</span> },
+    // ── Live Price column ──
+    {
+      id: 'price',
+      header: 'Price',
+      accessorKey: 'symbol',
+      enableSorting: true,
+      sortingFn: (rowA, rowB) => {
+        const pA = priceData?.[rowA.original.symbol]?.price ?? -Infinity;
+        const pB = priceData?.[rowB.original.symbol]?.price ?? -Infinity;
+        return pA - pB;
+      },
+      cell: ({ row }) => {
+        const quote = priceData?.[row.original.symbol];
+        if (!quote || (quote.price == null && !quote.error)) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        if (quote.price == null) {
+          const label = getStalenessLabel(quote.marketState, quote.fetchedAt);
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex cursor-default items-center gap-1 text-muted-foreground">
+                    <Clock className="size-3.5" />
+                    <span>—</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {label}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        }
+        return <span className="tabular-nums font-medium text-foreground">{formatPrice(quote.price)}</span>;
+      },
+    },
+    // ── Change column ──
+    {
+      id: 'change',
+      header: 'Change',
+      accessorKey: 'symbol',
+      enableSorting: true,
+      sortingFn: (rowA, rowB) => {
+        const cA = priceData?.[rowA.original.symbol]?.change ?? 0;
+        const cB = priceData?.[rowB.original.symbol]?.change ?? 0;
+        return cA - cB;
+      },
+      cell: ({ row }) => {
+        const quote = priceData?.[row.original.symbol];
+        if (!quote || quote.change == null || quote.changePercent == null) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        const isUp = quote.change >= 0;
+        const sign = isUp ? '+' : '';
+        const colorClass = isUp
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : 'text-red-600 dark:text-red-400';
+        return (
+          <span className={`tabular-nums ${colorClass}`}>
+            {sign}{quote.change.toFixed(2)} ({sign}{quote.changePercent.toFixed(2)}%)
+          </span>
+        );
+      },
+    },
     { id: 'direction', header: 'Direction', accessorKey: 'direction', cell: ({ getValue }) => {
       const v = getValue<string>();
       return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${directionBadgeClass(v as 'long' | 'short')}`}>{v === 'long' ? 'Long' : 'Short'}</span>;
@@ -255,7 +378,7 @@ export default function WatchlistPage() {
         <button onClick={() => handleDelete(row.original.id, row.original.symbol)} className="text-sm text-destructive hover:text-destructive/80">Remove</button>
       </div>
     )},
-  ], [handleDelete, openEdit, formatDate]);
+  ], [handleDelete, openEdit, formatDate, priceData]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
