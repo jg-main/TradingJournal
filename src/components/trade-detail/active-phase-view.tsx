@@ -12,6 +12,7 @@ import {
 import TradeDetailHeader from './trade-detail-header';
 import RiskSnapshotCard from './risk-snapshot-card';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
+import PriceWidget from './price-widget';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
 import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
@@ -141,6 +142,11 @@ export default function ActivePhaseView({
         />
       </div>
 
+      {/* ── Price Widget ── */}
+      <div className="mb-8">
+        <PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} />
+      </div>
+
       {/* ── P&L-R Metrics first (the most important outcome) ── */}
       <div className="mb-8">
         <TradePnlCard
@@ -155,16 +161,6 @@ export default function ActivePhaseView({
           unrealizedPnl={unrealizedPnl}
           unrealizedReturnPct={unrealizedReturnPct}
           unrealizedRMultiple={unrealizedRMultiple}
-          symbol={trade.symbol}
-          shortName={mtmData?.shortName}
-          sector={mtmData?.sector}
-          industry={mtmData?.industry}
-          currentPrice={mtmData?.price}
-          priceChangePct={unrealizedReturnPct}
-          marketState={mtmData?.marketState}
-          priceSource={mtmData?.source}
-          priceFetchedAt={mtmData?.fetchedAt}
-          priceLoading={mtmData?.loading}
           setupName={trade.setupName}
         />
       </div>

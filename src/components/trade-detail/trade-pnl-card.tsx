@@ -1,9 +1,7 @@
 'use client';
 
-import { Clock, RefreshCw } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { formatCurrency, formatPrice, formatDuration, getStalenessLabel } from './helpers';
-import type { MtmData } from './types';
+import { formatCurrency, formatPrice, formatDuration } from './helpers';
 
 interface TradePnlCardProps {
   realizedPnl: number;
@@ -18,17 +16,6 @@ interface TradePnlCardProps {
   unrealizedPnl?: number | null;
   unrealizedReturnPct?: number | null;
   unrealizedRMultiple?: number | null;
-  /** Profile data for the header */
-  symbol?: string;
-  shortName?: string | null;
-  sector?: string | null;
-  industry?: string | null;
-  currentPrice?: number | null;
-  priceChangePct?: number | null;
-  marketState?: string | null;
-  priceSource?: string | null;
-  priceFetchedAt?: string | null;
-  priceLoading?: boolean;
   /** Setup/play name */
   setupName?: string | null;
 }
@@ -45,16 +32,6 @@ export default function TradePnlCard({
   unrealizedPnl,
   unrealizedReturnPct,
   unrealizedRMultiple,
-  symbol,
-  shortName,
-  sector,
-  industry,
-  currentPrice,
-  priceChangePct,
-  marketState,
-  priceSource,
-  priceFetchedAt,
-  priceLoading,
   setupName,
 }: TradePnlCardProps) {
   const hasUnrealized = unrealizedPnl != null;
@@ -69,80 +46,9 @@ export default function TradePnlCard({
     </span>
   );
 
-  const hasProfile = !!symbol;
-  const hasName = !!shortName;
-  const hasPrice = currentPrice != null;
-  const hasMeta = sector || industry;
-
   return (
     <Card className="border-zinc-200/60 dark:border-zinc-800/60">
       <CardContent className="p-0">
-        {/* ── Profile Header ── */}
-        {hasProfile && (
-          <div className="border-b border-zinc-100 px-5 py-3 dark:border-zinc-800">
-            <div className="flex items-center justify-between">
-              <div className="flex items-baseline gap-3 min-w-0">
-                {/* Ticker */}
-                <span className="text-base font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-                  {symbol}
-                </span>
-                {/* Company name */}
-                <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400 truncate">
-                  {hasName ? shortName : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
-                </span>
-              </div>
-              {/* Price (for open trades with MTM) */}
-              {hasPrice && (
-                <div className="flex items-center gap-2 shrink-0">
-                  {priceLoading ? (
-                    <RefreshCw className="size-3.5 animate-spin text-zinc-400" />
-                  ) : (
-                    <>
-                      <span className={`text-base tabular-nums font-semibold ${priceChangePct != null ? (priceChangePct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : 'text-zinc-800 dark:text-zinc-200'}`}>
-                        {formatPrice(currentPrice)}
-                      </span>
-                      {priceChangePct != null && (
-                        <span className={`text-xs tabular-nums font-medium ${priceChangePct >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                          {priceChangePct >= 0 ? '+' : ''}{priceChangePct.toFixed(1)}%
-                        </span>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            {/* Meta row: sector · industry · source · staleness */}
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-zinc-400 dark:text-zinc-500">
-              {hasMeta && (
-                <>
-                  {sector && <span>{sector}</span>}
-                  {sector && industry && <span className="text-zinc-300 dark:text-zinc-600">·</span>}
-                  {industry && <span>{industry}</span>}
-                </>
-              )}
-              {hasMeta && hasPrice && <span className="text-zinc-300 dark:text-zinc-600">·</span>}
-              {hasPrice && priceFetchedAt && priceSource !== 'schwab' && (
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="size-3" />
-                  {getStalenessLabel(marketState ?? null, priceFetchedAt)}
-                </span>
-              )}
-              {hasPrice && priceFetchedAt && priceSource === 'schwab' && (
-                <span className="inline-flex items-center gap-1">
-                  <Clock className="size-3" />
-                  Streaming
-                </span>
-              )}
-              {hasPrice && priceSource && (
-                <>
-                  <span className="text-zinc-300 dark:text-zinc-600">·</span>
-                  <span>{priceSource}</span>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* ── P&L Metrics Grid ── */}
         <div className="px-5 py-4">
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">

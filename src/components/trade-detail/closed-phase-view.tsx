@@ -12,6 +12,7 @@ import {
 import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import RiskSnapshotCard from './risk-snapshot-card';
+import PriceWidget from './price-widget';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
 import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
@@ -207,7 +208,12 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      {/* ── P&L-R Metrics first ── */}
+      {/* ── Price Widget ── */}
+      <div className="mb-8">
+        <PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} frozen />
+      </div>
+
+      {/* ── P&L-R Metrics ── */}
       <div className="mb-8">
         <TradePnlCard
           realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
@@ -218,11 +224,7 @@ export default function ClosedPhaseView({
           duration={perfMetrics?.duration ?? null}
           returnPercent={perfMetrics?.returnPercent ?? null}
           totalFees={perfMetrics?.totalFees ?? 0}
-          symbol={trade.symbol}
-          shortName={mtmData?.shortName}
-          sector={mtmData?.sector}
           setupName={trade.setupName}
-          industry={mtmData?.industry}
         />
       </div>
 
