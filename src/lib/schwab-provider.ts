@@ -85,6 +85,12 @@ interface SchwabQuoteData {
     closePrice?: number;
   };
   reference?: {
+    cusip?: string;
+    description?: string;
+    exchange?: string;
+    exchangeName?: string;
+    isHardToBorrow?: boolean;
+    isShortable?: boolean;
     fundamental?: {
       sector?: string;
       industry?: string;
@@ -237,18 +243,27 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
         ? data.reference.fundamental.industry
         : undefined;
 
+    // Schwab sometimes returns company name as reference.description instead
+    // of top-level shortName.
+    const shortName =
+      typeof data.shortName === 'string'
+        ? data.shortName
+        : typeof data.reference?.description === 'string'
+          ? data.reference.description
+          : undefined;
+
     return {
       symbol,
       price,
       marketState,
       fetchedAt,
       source: 'schwab',
-      shortName: typeof data.shortName === 'string'
-        ? data.shortName
-        : undefined,
+      shortName,
       quoteType: typeof data.assetMainType === 'string'
         ? data.assetMainType
-        : undefined,
+        : typeof data.reference?.exchangeName === 'string'
+          ? data.reference.exchangeName
+          : undefined,
       sector,
       industry,
     };
