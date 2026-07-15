@@ -561,3 +561,129 @@ export const ledgerPostings = sqliteTable('ledger_postings', {
   index('idx_ledger_postings_account_id_side').on(t.accountId, t.side),
   index('idx_ledger_postings_sequence').on(t.sequence),
 ]);
+
+// ── Accounting Executions & FIFO Positions ───────────────────────────────
+//
+// Immutable execution and position-projection tables for economic-side
+// fills, separate from the journal-domain trade_executions table.
+//
+// instruments        — Canonical symbol references (one per unique symbol).
+// accounting_executions — Immutable economic-side fill records with
+//                         exact-decimal quantity/price/fees.
+// account_positions    — Current rebuildable projection of positions per
+//                         (account, instrument) pair.
+// fifo_lots            — Open FIFO cost-basis lots per position.
+// lot_matches          — Closed lot slice matches with realized P&L.
+//
+// All monetary amounts are TEXT canonical decimals (e.g. "1000.00")
+// with INTEGER micros column for exact arithmetic.
+// UPDATE/DELETE triggers enforce immutability.
+
+export const instruments = sqliteTable('instruments', {
+  id: text('id').primaryKey().notNull(),
+  symbol: text('symbol').notNull().unique(),
+  name: text('name'),
+  type: text('type', {
+    enum: ['stock', 'etf', 'option', 'future', 'forex', 'crypto', 'other'],
+  }).default('stock').notNull(),
+  currency: text('currency').default('USD').notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_instruments_symbol').on(t.symbol),
+]);
+
+export const accountingExecutions = sqliteTable('accounting_executions', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  instrumentId: text('instrument_id')
+    .references(() => instruments.id)
+    .notNull(),
+  action: text('action', {
+    enum: ['buy', 'sell', 'sell_short', 'buy_to_cover', 'add', 'reduce'],
+  }).notNull(),
+  quantity: text('quantity').notNull(),
+  price: text('price').notNull(),
+  fees: text('fees').notNull().default('0.00'),
+  idempotencyKey: text('idempotency_key'),
+  journalTradeId: text('journal_trade_id'),
+  description: text('description'),
+  postedAt: text('posted_at').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  unique('uq_accounting_executions_idempotency_key').on(t.idempotencyKey),
+  index('idx_accounting_executions_account_id').on(t.accountId),
+  index('idx_accounting_executions_instrument_id').on(t.instrumentId),
+  index('idx_accounting_executions_posted_at').on(t.postedAt),
+]);
+
+export const accountPositions = sqliteTable('account_positions', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  instrumentId: text('instrument_id')
+    .references(() => instruments.id)
+    .notNull(),
+  direction: text('direction', { enum: ['long', 'short'] }),
+  quantity: text('quantity').notNull().default('0.00'),
+  averageCost: text('average_cost').notNull().default('0.00'),
+  totalCostBasis: text('total_cost_basis').notNull().default('0.00'),
+  realizedGrossPnl: text('realized_gross_pnl').notNull().default('0.00'),
+  realizedFees: text('realized_fees').notNull().default('0.00'),
+  realizedNetPnl: text('realized_net_pnl').notNull().default('0.00'),
+  lastUpdated: text('last_updated').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  unique('uq_account_positions_account_instrument').on(t.accountId, t.instrumentId),
+  index('idx_account_positions_account_id').on(t.accountId),
+  index('idx_account_positions_instrument_id').on(t.instrumentId),
+]);
+
+export const fifoLots = sqliteTable('fifo_lots', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  instrumentId: text('instrument_id')
+    .references(() => instruments.id)
+    .notNull(),
+  direction: text('direction', { enum: ['long', 'short'] }).notNull(),
+  remainingQuantity: text('remaining_quantity').notNull(),
+  originalQuantity: text('original_quantity').notNull(),
+  entryPrice: text('entry_price').notNull(),
+  costBasisTotal: text('cost_basis_total').notNull(),
+  allocatedFees: text('allocated_fees').notNull().default('0.00'),
+  openingExecutionId: text('opening_execution_id')
+    .references(() => accountingExecutions.id)
+    .notNull(),
+  openedAt: text('opened_at').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_fifo_lots_account_instrument').on(t.accountId, t.instrumentId),
+  index('idx_fifo_lots_opening_execution_id').on(t.openingExecutionId),
+]);
+
+export const lotMatches = sqliteTable('lot_matches', {
+  id: text('id').primaryKey().notNull(),
+  closingExecutionId: text('closing_execution_id')
+    .references(() => accountingExecutions.id)
+    .notNull(),
+  lotId: text('lot_id')
+    .references(() => fifoLots.id)
+    .notNull(),
+  matchQuantity: text('match_quantity').notNull(),
+  matchPrice: text('match_price').notNull(),
+  realizedGrossPnl: text('realized_gross_pnl').notNull(),
+  allocatedFees: text('allocated_fees').notNull().default('0.00'),
+  realizedNetPnl: text('realized_net_pnl').notNull(),
+  sequence: integer('sequence').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_lot_matches_closing_execution_id').on(t.closingExecutionId),
+  index('idx_lot_matches_lot_id').on(t.lotId),
+]);
