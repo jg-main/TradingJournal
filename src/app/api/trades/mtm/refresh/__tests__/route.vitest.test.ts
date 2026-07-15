@@ -106,6 +106,26 @@ const mockProviderCtx = vi.hoisted(() => {
   };
 });
 
+// ── Hoisted: controllable mock enricher state ────────────────────────────────
+
+const mockEnricherCtx = vi.hoisted(() => {
+  const profileData = new Map<string, { sector?: string; industry?: string }>();
+  let shouldThrow = false;
+
+  return {
+    profileData,
+    getShouldThrow() { return shouldThrow; },
+    setProfile(symbol: string, sector?: string, industry?: string) {
+      profileData.set(symbol.toUpperCase(), { sector, industry });
+    },
+    setThrow(t: boolean) { shouldThrow = t; },
+    reset() {
+      profileData.clear();
+      shouldThrow = false;
+    },
+  };
+});
+
 // ── Mock @/db ─────────────────────────────────────────────────────────────
 // Route imports { db } from '@/db'. We replace it with a drizzle instance
 // wrapping our in-memory SQLite.
@@ -145,6 +165,27 @@ vi.mock('@/lib/market-data-resolver', () => ({
       });
     },
   }),
+}));
+
+// ── Mock profile-enricher ──────────────────────────────────────────────────
+// Route calls fetchYahooProfiles() after persisting snapshots to enrich
+// rows where the primary provider (e.g. Schwab) returned NULL sector/industry.
+
+vi.mock('@/lib/profile-enricher', () => ({
+  fetchYahooProfiles: async (symbols: string[]) => {
+    if (mockEnricherCtx.getShouldThrow()) {
+      throw new Error('Simulated enricher failure');
+    }
+    const map = new Map<string, { symbol: string; sector?: string; industry?: string }>();
+    for (const sym of symbols) {
+      const up = sym.toUpperCase();
+      const p = mockEnricherCtx.profileData.get(up);
+      if (p) {
+        map.set(up, { symbol: up, sector: p.sector, industry: p.industry });
+      }
+    }
+    return map;
+  },
 }));
 
 // ── Module-level imports (after mocks) ────────────────────────────────────
@@ -221,6 +262,7 @@ describe('POST /api/trades/mtm/refresh', () => {
     cleanup();
     resetRateLimit();
     mockProviderCtx.reset();
+    mockEnricherCtx.reset();
   });
 
   it('uses resolveQuoteProvider (not hardcoded YahooFinanceProvider)', async () => {
@@ -402,5 +444,69 @@ describe('POST /api/trades/mtm/refresh', () => {
     expect(data.updated).toBe(0);
     expect((data.failed as unknown[]).length).toBe(0);
     expect(data.timestamp).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
+  });
+
+  it('enriches NULL sector/industry from Yahoo profiles when provider omits them', async () => {
+    seedAccount();
+    seedOpenTrade({ symbol: 'WKC' });
+
+    // Mock quote WITHOUT sector/industry (simulates Schwab provider behavior)
+    mockProviderCtx.setQuotes(
+      new Map([['WKC', {
+        symbol: 'WKC',
+        price: 25.0,
+        marketState: 'REGULAR',
+        source: 'schwab',
+        shortName: 'WKC',
+        quoteType: 'EQUITY',
+      }]]),
+    );
+
+    // Set up mock enricher to return sector/industry for WKC
+    mockEnricherCtx.setProfile('WKC', 'Energy', 'Oil & Gas');
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(1);
+    expect((data.failed as unknown[]).length).toBe(0);
+
+    // Verify the snapshot was enriched with Yahoo profile data
+    const snapshot = testCtx.sqlite
+      .prepare('SELECT sector, industry FROM position_price_snapshots')
+      .get() as { sector: string | null; industry: string | null };
+
+    expect(snapshot.sector).toBe('Energy');
+    expect(snapshot.industry).toBe('Oil & Gas');
+  });
+
+  it('non-fatal when Yahoo profile enrichment fails', async () => {
+    seedAccount();
+    const tradeId = seedOpenTrade({ symbol: 'AAPL' });
+
+    mockProviderCtx.setQuotes(
+      new Map([['AAPL', createMockQuoteResult('AAPL', 150.0, 'REGULAR')]]),
+    );
+
+    // Make the enricher throw — enrichment should fail silently
+    mockEnricherCtx.setThrow(true);
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(1);
+    expect((data.failed as unknown[]).length).toBe(0);
+
+    // Snapshot should still exist — enrichment failure does not block the refresh
+    const snapshotCount = (testCtx.sqlite
+      .prepare('SELECT COUNT(*) as cnt FROM position_price_snapshots')
+      .get() as { cnt: number }).cnt;
+    expect(snapshotCount).toBe(1);
+
+    // Trade price should still be updated
+    const trade = db
+      .select({ cp: schema.trades.currentPrice })
+      .from(schema.trades)
+      .where(eq(schema.trades.id, tradeId))
+      .get() as { cp: number | null };
+    expect(trade.cp).toBe(150.0);
   });
 });

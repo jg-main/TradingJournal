@@ -13,8 +13,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { db } from '@/db';
 import { trades, positionPriceSnapshots } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { resolveQuoteProvider } from '@/lib/market-data-resolver';
+import { fetchYahooProfiles } from '@/lib/profile-enricher';
 import { isRateLimited, markRefreshSucceeded } from './rate-limit-state';
 
 // ── POST handler ──────────────────────────────────────────────────────
@@ -110,6 +111,42 @@ export async function POST(_request: NextRequest) {
         updated++;
       } catch {
         failed.push(trade.symbol);
+      }
+    }
+
+    // ── Enrich sector/industry from Yahoo profiles ──────────────────────
+    // When the primary quote provider (e.g. Schwab) does not return sector or
+    // industry metadata, fetch it from Yahoo Finance as a non-blocking enrichment.
+    if (updated > 0) {
+      const symbolsToEnrich = [...new Set(
+        openTrades
+          .filter(t => !failed.includes(t.symbol))
+          .map(t => t.symbol),
+      )];
+
+      try {
+        const profiles = await fetchYahooProfiles(symbolsToEnrich);
+
+        for (const trade of openTrades) {
+          if (failed.includes(trade.symbol)) continue;
+          const profile = profiles.get(trade.symbol.toUpperCase());
+          if (!profile?.sector && !profile?.industry) continue;
+
+          db.update(positionPriceSnapshots)
+            .set({
+              sector: profile.sector ?? null,
+              industry: profile.industry ?? null,
+            })
+            .where(
+              and(
+                eq(positionPriceSnapshots.tradeId, trade.id),
+                eq(positionPriceSnapshots.fetchedAt, nowISO),
+              ),
+            )
+            .run();
+        }
+      } catch {
+        // Non-fatal — enrichment failure leaves snapshots as-is.
       }
     }
 
