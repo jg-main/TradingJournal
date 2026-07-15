@@ -25,6 +25,7 @@ import {
 } from '@/lib/alert-polling';
 
 import { useAppTimezone } from '@/lib/timezone-context';
+import { useNotification } from '@/lib/useNotification';
 import { EmptyState } from '@/components/empty-state';
 import {
   Dialog,
@@ -235,6 +236,22 @@ export default function WatchlistPage() {
    */
   const acknowledgedEventIdsRef = useRef<Set<string>>(new Set());
 
+  // ── Web Notification Integration (T04) ──────────────────────────────
+  const { requestPermission, fireNotification, isSupported, denied } =
+    useNotification();
+
+  // Wire the notification callback ref to fireNotification.
+  // Called from evaluateWatchlistAlerts within the price polling setInterval.
+  // Safe because permission was already granted from a user gesture (handleSubmit below).
+  // PERF: fireNotification is stable (useCallback with [isSupported]) so this runs once.
+  onAlertEventRef.current = (event: AlertEvent) => {
+    fireNotification({
+      symbol: event.symbol,
+      message: event.message,
+      url: '/watchlist',
+    });
+  };
+
   // ── Live price polling ──────────────────────────────────────────────
 
   useEffect(() => {
@@ -392,6 +409,14 @@ export default function WatchlistPage() {
 
       setMessage({ type: 'success', text: editingId ? 'Watchlist item updated.' : 'Watchlist item added.' });
       setDialogOpen(false);
+
+      // Request notification permission on alert config save (user gesture context).
+      // MEM581: Chrome suppresses Notification.requestPermission() from non-gesture
+      // callbacks. The form submit button provides the required user gesture.
+      if (Object.keys(alertConfigBody).length > 0) {
+        requestPermission().catch(() => {});
+      }
+
       resetForm();
       fetchItems();
     } catch {
@@ -1015,6 +1040,13 @@ export default function WatchlistPage() {
       {message && message.type === 'success' && (
         <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
           {message.text}
+        </div>
+      )}
+
+      {/* Notification permission state */}
+      {denied && isSupported && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+          Notifications blocked · enable browser notifications for alerts.
         </div>
       )}
 
