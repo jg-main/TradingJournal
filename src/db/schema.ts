@@ -141,6 +141,11 @@ export const positionPriceSnapshots = sqliteTable('position_price_snapshots', {
   quoteType: text('quote_type'),
   sector: text('sector'),
   industry: text('industry'),
+  previousClose: real('previous_close'),
+  dayHigh: real('day_high'),
+  dayLow: real('day_low'),
+  change: real('price_change'),
+  changePercent: real('change_percent'),
   fetchedAt: text('fetched_at').notNull(),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
 }, (t) => [
