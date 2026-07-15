@@ -443,3 +443,28 @@ export const tradeAssessmentSnapshots = sqliteTable('trade_assessment_snapshots'
   notes: text('notes'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
 });
+
+// ── Alert Log ──────────────────────────────────────────────────────────
+//
+// Persistent log of fired alert conditions. Written by the alert polling
+// engine (S04/T03) when a transition from unmet→met is detected. Read by
+// the /alerts page (S04/T05) to display notification history.
+
+export const alertLog = sqliteTable('alert_log', {
+  id: text('id').primaryKey().notNull(),
+  watchlistItemId: text('watchlist_item_id')
+    .references(() => watchlistItems.id, { onDelete: 'cascade' })
+    .notNull(),
+  symbol: text('symbol').notNull(),
+  condition: text('condition', {
+    enum: ['above', 'below', 'rsiAbove', 'rsiBelow'],
+  }).notNull(),
+  threshold: real('threshold'),
+  actualValue: real('actual_value'),
+  firedAt: text('fired_at').notNull(),
+  readAt: text('read_at'),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_alert_log_fired_at').on(t.firedAt),
+  index('idx_alert_log_watchlist_item_id').on(t.watchlistItemId),
+]);
