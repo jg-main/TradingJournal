@@ -30,6 +30,7 @@ export default defineConfig({
       'src/lib/__tests__/market-data-settings-migration.test.ts',
       'src/lib/__tests__/clickhouse-provider.test.ts',
       'src/app/api/market-data/settings/__tests__/route.test.ts',
+      'src/app/api/market-data/enrich-profiles/__tests__/route.test.ts',
       'src/lib/__tests__/clickhouse-client-config.test.ts',
       'src/lib/__tests__/token-encryption.test.ts',
       'src/lib/__tests__/schwab-tokens-migration.test.ts',
