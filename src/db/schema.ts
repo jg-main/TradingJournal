@@ -252,6 +252,7 @@ export const watchlistItems = sqliteTable('watchlist_items', {
   }).notNull(),
   notes: text('notes'),
   promotedTradeId: text('promoted_trade_id').references(() => trades.id),
+  alertConfig: text('alert_config'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });

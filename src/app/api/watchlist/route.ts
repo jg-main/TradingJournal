@@ -20,6 +20,7 @@ const createWatchlistItemSchema = z.object({
     .default('pending'),
   notes: z.string().nullable().optional(),
   promotedTradeId: z.string().nullable().optional(),
+  alertConfig: z.any().nullable().optional(),
 });
 
 
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
         status: parsed.data.status,
         notes: parsed.data.notes ?? null,
         promotedTradeId: parsed.data.promotedTradeId ?? null,
+        alertConfig: parsed.data.alertConfig != null ? JSON.stringify(parsed.data.alertConfig) : null,
         createdAt: now,
         updatedAt: now,
       })

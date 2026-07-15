@@ -82,6 +82,7 @@ sqlite.exec(`
     status TEXT NOT NULL,
     notes TEXT,
     promoted_trade_id TEXT,
+    alert_config TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -149,6 +150,7 @@ function doPutWatchlistItem(id: string, body: Record<string, unknown>): { status
     if (body.status !== undefined) updateData.status = body.status;
     if (body.notes !== undefined) updateData.notes = body.notes;
     if (body.promotedTradeId !== undefined) updateData.promotedTradeId = body.promotedTradeId;
+    if (body.alertConfig !== undefined) updateData.alertConfig = body.alertConfig != null ? JSON.stringify(body.alertConfig) : null;
 
     db.update(schema.watchlistItems)
       .set(updateData)
@@ -349,9 +351,38 @@ console.log('\n7. PUT updates multiple fields:');
   assertEqual(data.targetPrice, 180, 'targetPrice updated');
 }
 
-// ── 8. DELETE: Soft-deletes by setting status to expired ───────────
+// ── 8. PUT: Persists alertConfig as JSON ────────────────────────────
 
-console.log('\n8. DELETE soft-deletes watchlist item by setting status to expired:');
+console.log('\n8. PUT persists alertConfig as JSON string:');
+{
+  cleanup();
+  const item = seedWatchlistItem({ symbol: 'AAPL', direction: 'long', status: 'pending' });
+  const alertConfig = {
+    priceBelowKeyLevel: { enabled: true },
+    rsiBelow: { enabled: true, threshold: 30 },
+  };
+
+  const result = doPutWatchlistItem(item.id as string, { alertConfig });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.alertConfig, 'has alertConfig');
+  assertEqual(typeof data.alertConfig, 'string', 'alertConfig is a string (JSON serialized)');
+  const parsed = JSON.parse(data.alertConfig as string);
+  assertEqual(parsed.priceBelowKeyLevel.enabled, true, 'priceBelowKeyLevel.enabled is true');
+  assertEqual(parsed.rsiBelow.enabled, true, 'rsiBelow.enabled is true');
+  assertEqual(parsed.rsiBelow.threshold, 30, 'rsiBelow.threshold is 30');
+
+  // Verify null/removal
+  const resultNull = doPutWatchlistItem(item.id as string, { alertConfig: null });
+  assert(resultNull.status === 200, 'returns 200');
+  const dataNull = resultNull.data as Record<string, unknown>;
+  assertEqual(dataNull.alertConfig, null, 'alertConfig is null after removal');
+}
+
+// ── 9. DELETE: Soft-deletes by setting status to expired ───────────
+
+console.log('\n9. DELETE soft-deletes watchlist item by setting status to expired:');
 {
   cleanup();
   const item = seedWatchlistItem({ symbol: 'AAPL', status: 'pending' });

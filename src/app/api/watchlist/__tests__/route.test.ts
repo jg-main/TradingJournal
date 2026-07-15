@@ -82,6 +82,7 @@ sqlite.exec(`
     status TEXT NOT NULL,
     notes TEXT,
     promoted_trade_id TEXT,
+    alert_config TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -157,6 +158,7 @@ function doPostWatchlist(body: Record<string, unknown>): { status: number; data:
         status,
         notes: (body.notes as string) ?? null,
         promotedTradeId: (body.promotedTradeId as string) ?? null,
+        alertConfig: body.alertConfig != null ? JSON.stringify(body.alertConfig) : null,
         createdAt: now,
         updatedAt: now,
       })
@@ -381,6 +383,32 @@ console.log('\n10. POST creates with all optional fields:');
   assertEqual(data.plannedStop, 152, 'plannedStop matches');
   assertEqual(data.targetPrice, 130, 'targetPrice matches');
   assertEqual(data.notes, 'Watch closely', 'notes matches');
+}
+
+// ── 11. POST: Persists alertConfig as JSON ──────────────────────────
+
+console.log('\n11. POST persists alertConfig as JSON string:');
+{
+  cleanup();
+  const alertConfig = {
+    priceAboveKeyLevel: { enabled: true },
+    rsiAbove: { enabled: true, threshold: 70 },
+  };
+
+  const result = doPostWatchlist({
+    symbol: 'AAPL',
+    direction: 'long',
+    alertConfig,
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.alertConfig, 'has alertConfig');
+  assertEqual(typeof data.alertConfig, 'string', 'alertConfig is a string (JSON serialized)');
+  const parsed = JSON.parse(data.alertConfig as string);
+  assertEqual(parsed.priceAboveKeyLevel.enabled, true, 'priceAboveKeyLevel.enabled is true');
+  assertEqual(parsed.rsiAbove.enabled, true, 'rsiAbove.enabled is true');
+  assertEqual(parsed.rsiAbove.threshold, 70, 'rsiAbove.threshold is 70');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

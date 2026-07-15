@@ -134,6 +134,13 @@
       "when": 1784070000000,
       "tag": "0018_schwab_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1787200000000,
+      "tag": "0019_watchlist_alert_config",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,7 @@ const updateWatchlistItemSchema = z.object({
     .optional(),
   notes: z.string().nullable().optional(),
   promotedTradeId: z.string().nullable().optional(),
+  alertConfig: z.any().nullable().optional(),
 });
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -109,6 +110,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (parsed.data.status !== undefined) updateData.status = parsed.data.status;
     if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
     if (parsed.data.promotedTradeId !== undefined) updateData.promotedTradeId = parsed.data.promotedTradeId;
+    if (parsed.data.alertConfig !== undefined) updateData.alertConfig = parsed.data.alertConfig != null ? JSON.stringify(parsed.data.alertConfig) : null;
     updateData.updatedAt = new Date().toISOString();
 
     db.update(watchlistItems)
