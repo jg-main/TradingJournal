@@ -125,6 +125,16 @@ function postFinancialEvent(
     };
   }
 
+  // Narrow to opening_balance — this endpoint only supports the opening_balance flow
+  if (parsed.data.eventType !== 'opening_balance') {
+    return {
+      status: 400,
+      body: {
+        error: 'Only opening_balance events are supported',
+        details: `Received event type: ${parsed.data.eventType}`,
+      },
+    };
+  }
   const { amount, idempotencyKey, description } = parsed.data;
 
   // 3. Delegate to the posting kernel

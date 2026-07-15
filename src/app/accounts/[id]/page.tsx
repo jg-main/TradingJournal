@@ -1,48 +1,31 @@
 'use client';
 
 import { useEffect, useState, use } from 'react';
-import { ArrowLeft, Plus, Minus } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { useAppTimezone } from '@/lib/timezone-context';
-
-interface Transaction {
-  id: string;
-  type: 'deposit' | 'withdrawal';
-  amount: number;
-  balanceAfter: number;
-  date: string;
-  notes: string | null;
-  createdAt: string;
-}
+import AccountActivity from '@/components/accounting/account-activity';
 
 interface AccountDetail {
   id: string;
   name: string;
   broker: string | null;
   currency: string;
+  startingBalance: number | null;
+  currentBalance: number;
+  netDeposits: number;
+  netPnl: number;
 }
 
 export default function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
   const [account, setAccount] = useState<AccountDetail | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [currentBalance, setCurrentBalance] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const [amount, setAmount] = useState('');
-  const [notes, setNotes] = useState('');
-  const [txnType, setTxnType] = useState<'deposit' | 'withdrawal'>('deposit');
-  const [showForm, setShowForm] = useState(false);
-
-  const fetchData = async () => {
+  const fetchAccount = async () => {
     try {
-      const [acctRes, txnRes] = await Promise.all([
-        fetch(`/api/accounts/${id}`),
-        fetch(`/api/accounts/${id}/transactions`),
-      ]);
+      const acctRes = await fetch(`/api/accounts/${id}`);
 
       if (!acctRes.ok) {
         setMessage({ type: 'error', text: 'Account not found.' });
@@ -52,12 +35,6 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
 
       const acctData = await acctRes.json();
       setAccount(acctData);
-
-      if (txnRes.ok) {
-        const txnData = await txnRes.json();
-        setTransactions(txnData.data ?? []);
-        setCurrentBalance(txnData.currentBalance ?? 0);
-      }
     } catch {
       setMessage({ type: 'error', text: 'Failed to load account data.' });
     } finally {
@@ -66,63 +43,13 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchAccount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
-
-  const handleTransaction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage(null);
-
-    const parsedAmount = parseFloat(amount);
-    if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
-      setMessage({ type: 'error', text: 'Please enter a valid positive amount.' });
-      setSaving(false);
-      return;
-    }
-
-    if (txnType === 'withdrawal' && parsedAmount > currentBalance) {
-      setMessage({ type: 'error', text: `Insufficient balance. Current balance: $${currentBalance.toFixed(2)}` });
-      setSaving(false);
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/accounts/${id}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: txnType,
-          amount: parsedAmount,
-          notes: notes.trim() || null,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Transaction failed.') });
-        return;
-      }
-
-      setMessage({ type: 'success', text: `${txnType === 'deposit' ? 'Deposit' : 'Withdrawal'} recorded.` });
-      setAmount('');
-      setNotes('');
-      setShowForm(false);
-      await fetchData();
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to record transaction.' });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const formatCurrency = (v: number) => {
     return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
-
-  const { formatDate } = useAppTimezone();
 
   if (loading) {
     return (
@@ -147,7 +74,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-6 py-8">
       {/* Back link */}
       <Link
         href="/accounts"
@@ -172,13 +99,18 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
       <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Current Balance</p>
         <p className={`mt-1 text-3xl font-semibold tabular-nums ${
-          currentBalance >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'
+          account.currentBalance >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'
         }`}>
-          ${formatCurrency(currentBalance)}
+          ${formatCurrency(account.currentBalance)}
         </p>
+        <div className="mt-3 flex gap-6 text-xs text-zinc-500 dark:text-zinc-400">
+          <span>Net P&amp;L: <span className={account.netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+            {account.netPnl >= 0 ? '+' : ''}${formatCurrency(account.netPnl)}
+          </span></span>
+        </div>
       </div>
 
-      {/* Transaction form */}
+      {/* Error message */}
       {message && (
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
@@ -191,148 +123,34 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      <div className="mb-8">
-        {!showForm ? (
-          <div className="flex gap-3">
-            <button
-              onClick={() => { setTxnType('deposit'); setShowForm(true); setMessage(null); }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-            >
-              <Plus className="size-4" />
-              Add Funds
-            </button>
-            <button
-              onClick={() => { setTxnType('withdrawal'); setShowForm(true); setMessage(null); }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-            >
-              <Minus className="size-4" />
-              Withdraw
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleTransaction} className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
-              {txnType === 'deposit' ? 'Add Funds' : 'Withdraw Funds'}
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="amount" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Amount ($)
-                </label>
-                <input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-                  placeholder={txnType === 'deposit' ? 'Amount to deposit' : 'Amount to withdraw'}
-                  autoFocus
-                />
-                {txnType === 'withdrawal' && (
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    Current balance: ${formatCurrency(currentBalance)}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label htmlFor="notes" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Notes (optional)
-                </label>
-                <input
-                  id="notes"
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
-                  placeholder="e.g. Initial deposit, Profit withdrawal"
-                />
-              </div>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className={`rounded-md px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${
-                  txnType === 'deposit'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200'
-                }`}
-              >
-                {saving ? 'Processing...' : txnType === 'deposit' ? 'Add Funds' : 'Withdraw'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowForm(false); setMessage(null); }}
-                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
+      {/* Payoff summary */}
+      <div className="mb-8 grid grid-cols-3 gap-4">
+        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Starting Balance</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+            ${formatCurrency(account.startingBalance ?? 0)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Net Deposits</p>
+          <p className={`mt-1 text-lg font-semibold tabular-nums ${
+            account.netDeposits >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+          }`}>
+            ${formatCurrency(account.netDeposits)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Net P&amp;L</p>
+          <p className={`mt-1 text-lg font-semibold tabular-nums ${
+            account.netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+          }`}>
+            {account.netPnl >= 0 ? '+' : ''}${formatCurrency(account.netPnl)}
+          </p>
+        </div>
       </div>
 
-      {/* Transaction history */}
-      <div>
-        <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
-          Transaction History
-        </h2>
-
-        {transactions.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-            <p className="text-sm text-zinc-600 dark:text-zinc-300">No transactions yet.</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Type</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Amount</th>
-                  <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Balance After</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {transactions.map((txn) => (
-                  <tr key={txn.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                      {formatDate(txn.date)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                          txn.type === 'deposit'
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                        }`}
-                      >
-                        {txn.type === 'deposit' ? 'Deposit' : 'Withdrawal'}
-                      </span>
-                    </td>
-                    <td className={`px-4 py-3 text-right tabular-nums font-medium ${
-                      txn.type === 'deposit'
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      {txn.type === 'deposit' ? '+' : '-'}${formatCurrency(txn.amount)}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
-                      ${formatCurrency(txn.balanceAfter)}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300 max-w-[200px] truncate">
-                      {txn.notes ?? '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Accounting Activity (replaces legacy transaction view) */}
+      <AccountActivity accountId={id} />
     </div>
   );
 }
