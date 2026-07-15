@@ -439,10 +439,12 @@ export default function MarketDataSettingsPage() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-zinc-600 dark:text-zinc-400">Active Provider</span>
               <div className="flex items-center gap-2">
-                <StatusDot status={connectionResult?.ok === true ? 'success' : connectionResult ? 'error' : null} />
+                {activeProvider === 'schwab' && (
+                  <SchwabStatusDot status={getSchwabDotStatus(schwabStatus)} />
+                )}
                 <select
                   value={activeProvider}
-                  onChange={(e) => { setActiveProvider(e.target.value); setConnectionResult(null); }}
+                  onChange={(e) => { setActiveProvider(e.target.value); }}
                   className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 >
                   <option value="clickhouse">ClickHouse</option>
@@ -453,28 +455,6 @@ export default function MarketDataSettingsPage() {
               </div>
             </div>
 
-            {connectionResult && (
-              <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Connection</span>
-                <span className={`inline-flex items-center gap-1.5 text-sm ${
-                  connectionResult.ok
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-600 dark:text-red-400'
-                }`}>
-                  {connectionResult.ok ? (
-                    <>
-                      <CircleCheck className="size-4" />
-                      Connected
-                    </>
-                  ) : (
-                    <>
-                      <CircleX className="size-4" />
-                      {connectionResult.error || 'Connection failed'}
-                    </>
-                  )}
-                </span>
-              </div>
-            )}
             {/* Save provider selection */}
             <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <button
@@ -598,6 +578,29 @@ export default function MarketDataSettingsPage() {
                 {testing ? 'Testing...' : 'Test Connection'}
               </button>
             </div>
+
+            {connectionResult && (
+              <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">Test Result</span>
+                <span className={`inline-flex items-center gap-1.5 text-sm ${
+                  connectionResult.ok
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {connectionResult.ok ? (
+                    <>
+                      <CircleCheck className="size-4" />
+                      Connected
+                    </>
+                  ) : (
+                    <>
+                      <CircleX className="size-4" />
+                      {connectionResult.error || 'Connection failed'}
+                    </>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
