@@ -668,6 +668,75 @@ export const fifoLots = sqliteTable('fifo_lots', {
   index('idx_fifo_lots_opening_execution_id').on(t.openingExecutionId),
 ]);
 
+// ── Valuation Marks (immutable price observations) ──────────────────────
+//
+// Immutable exact-decimal price marks per (account, instrument, timestamp),
+// append-only via UPDATE/DELETE triggers.
+//
+// price / price_micros follow the same exact-decimal pattern as ledger_postings
+// (TEXT canonical decimal + INTEGER micros for exact arithmetic).
+
+export const valuationMarks = sqliteTable('valuation_marks', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  instrumentId: text('instrument_id')
+    .references(() => instruments.id)
+    .notNull(),
+  price: text('price').notNull(),
+  priceMicros: integer('price_micros').notNull(),
+  source: text('source', {
+    enum: ['user', 'market_data', 'import', 'system'],
+  }).notNull(),
+  markTimestamp: text('mark_timestamp').notNull(),
+  idempotencyKey: text('idempotency_key'),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  unique('uq_valuation_marks_idempotency_key').on(t.idempotencyKey),
+  index('idx_valuation_marks_account_instrument').on(t.accountId, t.instrumentId),
+  index('idx_valuation_marks_account_instrument_timestamp').on(t.accountId, t.instrumentId, t.markTimestamp),
+]);
+
+// ── Account Performance Projection (single-row per account, rebuildable) ──
+//
+// Rebuildable per-account performance projection containing NAV, P&L, fees,
+// exposure, TWR, high-water mark, and drawdown with explicit data-quality
+// warnings. Replaced atomically on each rebuild (upsert by account_id).
+
+export const accountPerformance = sqliteTable('account_performance', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull()
+    .unique(),
+  computedAsOf: text('computed_as_of').notNull(),
+  netCash: text('net_cash').notNull(),
+  nav: text('nav').notNull(),
+  markedPositions: text('marked_positions').notNull(),
+  realizedPnl: text('realized_pnl').notNull(),
+  unrealizedPnl: text('unrealized_pnl').notNull(),
+  totalPnl: text('total_pnl').notNull(),
+  realizedFees: text('realized_fees').notNull(),
+  grossExposure: text('gross_exposure').notNull(),
+  netExposure: text('net_exposure').notNull(),
+  modifiedDietzReturn: text('modified_dietz_return'),
+  twr: text('twr'),
+  highWaterMark: text('high_water_mark'),
+  drawdown: text('drawdown'),
+  drawdownPct: text('drawdown_pct'),
+  warnings: text('warnings').notNull().default('[]'),
+  positionsJson: text('positions_json').notNull().default('[]'),
+  rebuildCount: integer('rebuild_count').notNull().default(0),
+  lastRebuiltAt: text('last_rebuilt_at').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+  updatedAt: text('updated_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_account_performance_account_id').on(t.accountId),
+]);
+
+// ── Lot Matches ─────────────────────────────────────────────────────────
+
 export const lotMatches = sqliteTable('lot_matches', {
   id: text('id').primaryKey().notNull(),
   closingExecutionId: text('closing_execution_id')

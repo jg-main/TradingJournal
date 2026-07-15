@@ -1134,3 +1134,328 @@ export function deleteProjectionByAccountInstrument(
   deleteFifoLotsByAccountInstrument(sqlite, accountId, instrumentId);
   deleteAccountPosition(sqlite, accountId, instrumentId);
 }
+
+// ── Valuation Marks (immutable price observations) ──────────────────────
+// row types, insert, find, list
+
+export interface ValuationMarkRow {
+  id: string;
+  account_id: string;
+  instrument_id: string;
+  price: string;
+  price_micros: number;
+  source: string;
+  mark_timestamp: string;
+  idempotency_key: string | null;
+  created_at: string;
+}
+
+export interface AccountPerformanceRow {
+  id: string;
+  account_id: string;
+  computed_as_of: string;
+  net_cash: string;
+  nav: string;
+  marked_positions: string;
+  realized_pnl: string;
+  unrealized_pnl: string;
+  total_pnl: string;
+  realized_fees: string;
+  gross_exposure: string;
+  net_exposure: string;
+  modified_dietz_return: string | null;
+  twr: string | null;
+  high_water_mark: string | null;
+  drawdown: string | null;
+  drawdown_pct: string | null;
+  warnings: string;
+  positions_json: string;
+  rebuild_count: number;
+  last_rebuilt_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Valuation Marks ─────────────────────────────────────────────────────
+
+/**
+ * Insert a valuation mark row.  Returns the inserted row.
+ * Marks are immutable — UPDATE/DELETE triggers prevent modification.
+ */
+export function insertValuationMark(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    accountId: string;
+    instrumentId: string;
+    price: string;
+    priceMicros: number;
+    source: string;
+    markTimestamp: string;
+    idempotencyKey?: string | null;
+  },
+): ValuationMarkRow {
+  const id = values.id ?? randomUUID();
+  sqlite
+    .prepare(
+      `INSERT INTO valuation_marks
+       (id, account_id, instrument_id, price, price_micros, source, mark_timestamp, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      values.accountId,
+      values.instrumentId,
+      values.price,
+      values.priceMicros,
+      values.source,
+      values.markTimestamp,
+      values.idempotencyKey ?? null,
+    );
+  return {
+    id,
+    account_id: values.accountId,
+    instrument_id: values.instrumentId,
+    price: values.price,
+    price_micros: values.priceMicros,
+    source: values.source,
+    mark_timestamp: values.markTimestamp,
+    idempotency_key: values.idempotencyKey ?? null,
+    created_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Find a valuation mark by its idempotency key.
+ * Returns the row or undefined.
+ */
+export function findValuationMarkByIdempotencyKey(
+  sqlite: Database.Database,
+  idempotencyKey: string,
+): ValuationMarkRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, instrument_id, price, price_micros, source,
+              mark_timestamp, idempotency_key, created_at
+       FROM valuation_marks WHERE idempotency_key = ?`,
+    )
+    .get(idempotencyKey) as ValuationMarkRow | undefined;
+}
+
+/**
+ * Get the most recent valuation mark for each instrument in an account.
+ *
+ * For each distinct (account_id, instrument_id), returns the mark with the
+ * latest mark_timestamp.  Subquery uses MAX(mark_timestamp) for correctness.
+ */
+export function listLatestValuationMarks(
+  sqlite: Database.Database,
+  accountId: string,
+): ValuationMarkRow[] {
+  return sqlite
+    .prepare(
+      `SELECT vm.id, vm.account_id, vm.instrument_id, vm.price, vm.price_micros,
+              vm.source, vm.mark_timestamp, vm.idempotency_key, vm.created_at
+       FROM valuation_marks vm
+       INNER JOIN (
+         SELECT account_id, instrument_id, MAX(mark_timestamp) AS max_ts
+         FROM valuation_marks
+         WHERE account_id = ?
+         GROUP BY account_id, instrument_id
+       ) latest
+       ON vm.account_id = latest.account_id
+       AND vm.instrument_id = latest.instrument_id
+       AND vm.mark_timestamp = latest.max_ts`,
+    )
+    .all(accountId) as ValuationMarkRow[];
+}
+
+/**
+ * List all valuation marks for an account, newest first.
+ * Supports optional instrument filter and date range.
+ */
+export function listAccountValuationMarks(
+  sqlite: Database.Database,
+  accountId: string,
+  options?: {
+    instrumentId?: string;
+    fromDate?: string;
+    toDate?: string;
+    limit?: number;
+    offset?: number;
+  },
+): ValuationMarkRow[] {
+  let sql = `SELECT id, account_id, instrument_id, price, price_micros, source,
+                    mark_timestamp, idempotency_key, created_at
+             FROM valuation_marks WHERE account_id = ?`;
+  const params: unknown[] = [accountId];
+
+  if (options?.instrumentId) {
+    sql += ` AND instrument_id = ?`;
+    params.push(options.instrumentId);
+  }
+  if (options?.fromDate) {
+    sql += ` AND mark_timestamp >= ?`;
+    params.push(options.fromDate);
+  }
+  if (options?.toDate) {
+    sql += ` AND mark_timestamp <= ?`;
+    params.push(options.toDate);
+  }
+
+  sql += ` ORDER BY mark_timestamp DESC, created_at DESC`;
+
+  const limit = options?.limit ?? 100;
+  const offset = options?.offset ?? 0;
+  sql += ` LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+
+  return sqlite.prepare(sql).all(...params) as ValuationMarkRow[];
+}
+
+/**
+ * Count valuation marks for an account.
+ */
+export function countAccountValuationMarks(
+  sqlite: Database.Database,
+  accountId: string,
+): number {
+  const row = sqlite
+    .prepare('SELECT COUNT(*) AS count FROM valuation_marks WHERE account_id = ?')
+    .get(accountId) as { count: number };
+  return row.count;
+}
+
+// ── Account Performance Projection ──────────────────────────────────────
+
+/**
+ * Upsert the account performance projection using the unique constraint
+ * on account_id.  Returns the row.
+ */
+export function upsertAccountPerformance(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    accountId: string;
+    computedAsOf: string;
+    netCash: string;
+    nav: string;
+    markedPositions: string;
+    realizedPnl: string;
+    unrealizedPnl: string;
+    totalPnl: string;
+    realizedFees: string;
+    grossExposure: string;
+    netExposure: string;
+    modifiedDietzReturn?: string | null;
+    twr?: string | null;
+    highWaterMark?: string | null;
+    drawdown?: string | null;
+    drawdownPct?: string | null;
+    warnings: string;
+    positionsJson: string;
+    rebuildCount: number;
+    lastRebuiltAt: string;
+  },
+): AccountPerformanceRow {
+  const id = values.id ?? randomUUID();
+  const now = new Date().toISOString();
+
+  sqlite
+    .prepare(
+      `INSERT INTO account_performance
+       (id, account_id, computed_as_of, net_cash, nav, marked_positions,
+        realized_pnl, unrealized_pnl, total_pnl, realized_fees,
+        gross_exposure, net_exposure, modified_dietz_return, twr,
+        high_water_mark, drawdown, drawdown_pct, warnings, positions_json,
+        rebuild_count, last_rebuilt_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(account_id) DO UPDATE SET
+         computed_as_of = excluded.computed_as_of,
+         net_cash = excluded.net_cash,
+         nav = excluded.nav,
+         marked_positions = excluded.marked_positions,
+         realized_pnl = excluded.realized_pnl,
+         unrealized_pnl = excluded.unrealized_pnl,
+         total_pnl = excluded.total_pnl,
+         realized_fees = excluded.realized_fees,
+         gross_exposure = excluded.gross_exposure,
+         net_exposure = excluded.net_exposure,
+         modified_dietz_return = excluded.modified_dietz_return,
+         twr = excluded.twr,
+         high_water_mark = excluded.high_water_mark,
+         drawdown = excluded.drawdown,
+         drawdown_pct = excluded.drawdown_pct,
+         warnings = excluded.warnings,
+         positions_json = excluded.positions_json,
+         rebuild_count = excluded.rebuild_count,
+         last_rebuilt_at = excluded.last_rebuilt_at,
+         updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      values.accountId,
+      values.computedAsOf,
+      values.netCash,
+      values.nav,
+      values.markedPositions,
+      values.realizedPnl,
+      values.unrealizedPnl,
+      values.totalPnl,
+      values.realizedFees,
+      values.grossExposure,
+      values.netExposure,
+      values.modifiedDietzReturn ?? null,
+      values.twr ?? null,
+      values.highWaterMark ?? null,
+      values.drawdown ?? null,
+      values.drawdownPct ?? null,
+      values.warnings,
+      values.positionsJson,
+      values.rebuildCount,
+      values.lastRebuiltAt,
+      now,
+      now,
+    );
+
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, computed_as_of, net_cash, nav, marked_positions,
+              realized_pnl, unrealized_pnl, total_pnl, realized_fees,
+              gross_exposure, net_exposure, modified_dietz_return, twr,
+              high_water_mark, drawdown, drawdown_pct, warnings, positions_json,
+              rebuild_count, last_rebuilt_at, created_at, updated_at
+       FROM account_performance WHERE account_id = ?`,
+    )
+    .get(values.accountId) as AccountPerformanceRow;
+}
+
+/**
+ * Find the current account performance projection for an account.
+ * Returns the row or undefined if no projection exists.
+ */
+export function findAccountPerformance(
+  sqlite: Database.Database,
+  accountId: string,
+): AccountPerformanceRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, computed_as_of, net_cash, nav, marked_positions,
+              realized_pnl, unrealized_pnl, total_pnl, realized_fees,
+              gross_exposure, net_exposure, modified_dietz_return, twr,
+              high_water_mark, drawdown, drawdown_pct, warnings, positions_json,
+              rebuild_count, last_rebuilt_at, created_at, updated_at
+       FROM account_performance WHERE account_id = ?`,
+    )
+    .get(accountId) as AccountPerformanceRow | undefined;
+}
+
+/**
+ * Delete the account performance projection for an account (rebuild cleanup).
+ */
+export function deleteAccountPerformanceByAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): void {
+  sqlite.prepare('DELETE FROM account_performance WHERE account_id = ?').run(accountId);
+}
