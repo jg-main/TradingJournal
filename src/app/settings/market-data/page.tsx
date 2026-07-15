@@ -224,9 +224,43 @@ export default function MarketDataSettingsPage() {
     };
   }, [loadSettings, loadSchwabStatus]);
 
-  // ── Save ────────────────────────────────────────────────────────────
+  // ── Save Provider ───────────────────────────────────────────────────
 
-  const handleSave = async () => {
+  const handleSaveProvider = async () => {
+    setSaving(true);
+    setMessage(null);
+
+    const providers: Record<string, unknown> = {};
+    if (activeProvider === 'schwab' && schwabStatus?.connected) {
+      providers.schwab = { configured: true };
+    }
+
+    try {
+      const res = await fetch('/api/market-data/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activeProvider, providers }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : err.error });
+        return;
+      }
+
+      const data = (await res.json()) as MarketDataSettings;
+      setSettings(data);
+      setMessage({ type: 'success', text: `Active provider set to ${activeProvider === 'clickhouse' ? 'ClickHouse' : 'Schwab'}.` });
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save provider selection.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Save ClickHouse Config ──────────────────────────────────────────
+
+  const handleSaveClickHouse = async () => {
     setSaving(true);
     setMessage(null);
 
@@ -237,21 +271,12 @@ export default function MarketDataSettingsPage() {
     if (chPassword) clickhouseConfig.password = chPassword;
     if (chDatabase) clickhouseConfig.database = chDatabase;
 
-    const providers: Record<string, unknown> = {};
-    if (activeProvider === 'clickhouse' || Object.keys(clickhouseConfig).length > 0) {
-      providers.clickhouse = clickhouseConfig;
-    }
-    if (activeProvider === 'schwab' && schwabStatus?.connected) {
-      providers.schwab = { configured: true };
-    }
-
     try {
       const res = await fetch('/api/market-data/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          activeProvider,
-          providers,
+          providers: { clickhouse: clickhouseConfig },
         }),
       });
 
@@ -264,9 +289,9 @@ export default function MarketDataSettingsPage() {
       const data = (await res.json()) as MarketDataSettings;
       setSettings(data);
       setChPassword('');
-      setMessage({ type: 'success', text: 'Market data settings saved.' });
+      setMessage({ type: 'success', text: 'ClickHouse configuration saved.' });
     } catch {
-      setMessage({ type: 'error', text: 'Failed to save market data settings.' });
+      setMessage({ type: 'error', text: 'Failed to save ClickHouse configuration.' });
     } finally {
       setSaving(false);
     }
@@ -450,17 +475,16 @@ export default function MarketDataSettingsPage() {
                 </span>
               </div>
             )}
-            {/* Save — applies to provider selection + ClickHouse config below */}
+            {/* Save provider selection */}
             <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
               <button
                 type="button"
-                onClick={handleSave}
+                onClick={handleSaveProvider}
                 disabled={saving}
                 className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">Saves provider selection and ClickHouse config</span>
             </div>
           </div>
         </div>
@@ -555,8 +579,16 @@ export default function MarketDataSettingsPage() {
               />
             </div>
 
-            {/* Test ClickHouse connection */}
+            {/* Save + Test ClickHouse connection */}
             <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={handleSaveClickHouse}
+                disabled={saving}
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
               <button
                 type="button"
                 onClick={handleTestConnection}
