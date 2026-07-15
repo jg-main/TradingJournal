@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, positionPriceSnapshots } from '@/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { resolveQuoteProvider } from '@/lib/market-data-resolver';
+import { fetchYahooProfiles } from '@/lib/profile-enricher';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -97,7 +98,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       }, { status: 502 });
     }
 
-    // Persist snapshot and update trade
+    // Persist snapshot
     const now = new Date().toISOString();
     db.insert(positionPriceSnapshots).values({
       id: crypto.randomUUID(),
@@ -112,12 +113,67 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       fetchedAt: now,
     }).run();
 
+    // Update trade's current price
     db.update(trades)
       .set({ currentPrice: quote.price, currentPriceFetchedAt: now })
       .where(eq(trades.id, id))
       .run();
 
-    return NextResponse.json({
+    // ── Enrich NULL sector/industry from Yahoo profiles ────────────────
+    // When the primary quote provider (e.g. Schwab) does not return
+    // sector or industry metadata, fetch it from Yahoo Finance as
+    // non-blocking enrichment. Only fills null fields — never overwrites
+    // sector/industry already provided by the primary provider.
+    // Failure is non-fatal — the snapshot remains as-is.
+    const needsSector = quote.sector == null;
+    const needsIndustry = quote.industry == null;
+    if (needsSector || needsIndustry) {
+      try {
+        const profiles = await fetchYahooProfiles([trade.symbol]);
+        const profile = profiles.get(trade.symbol.toUpperCase());
+        if (profile) {
+          const update: Record<string, string | null> = {};
+          if (needsSector && profile.sector) update.sector = profile.sector;
+          if (needsIndustry && profile.industry) update.industry = profile.industry;
+          if (Object.keys(update).length > 0) {
+            db.update(positionPriceSnapshots)
+              .set(update)
+              .where(
+                and(
+                  eq(positionPriceSnapshots.tradeId, id),
+                  eq(positionPriceSnapshots.fetchedAt, now),
+                ),
+              )
+              .run();
+          }
+        }
+      } catch {
+        // Non-fatal — enrichment failure leaves snapshots as-is.
+      }
+    }
+
+    // Read back the snapshot to return current state (possibly enriched)
+    const enrichedSnapshot = db
+      .select({
+        price: positionPriceSnapshots.price,
+        marketState: positionPriceSnapshots.marketState,
+        shortName: positionPriceSnapshots.shortName,
+        quoteType: positionPriceSnapshots.quoteType,
+        sector: positionPriceSnapshots.sector,
+        industry: positionPriceSnapshots.industry,
+        fetchedAt: positionPriceSnapshots.fetchedAt,
+        source: positionPriceSnapshots.source,
+      })
+      .from(positionPriceSnapshots)
+      .where(
+        and(
+          eq(positionPriceSnapshots.tradeId, id),
+          eq(positionPriceSnapshots.fetchedAt, now),
+        ),
+      )
+      .get();
+
+    const result = enrichedSnapshot ?? {
       price: quote.price,
       marketState: quote.marketState,
       shortName: quote.shortName ?? null,
@@ -126,6 +182,17 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       industry: quote.industry ?? null,
       fetchedAt: now,
       source: quote.source,
+    };
+
+    return NextResponse.json({
+      price: result.price,
+      marketState: result.marketState,
+      shortName: result.shortName ?? null,
+      quoteType: result.quoteType ?? null,
+      sector: result.sector ?? null,
+      industry: result.industry ?? null,
+      fetchedAt: result.fetchedAt,
+      source: result.source,
     });
   } catch (error) {
     return NextResponse.json(

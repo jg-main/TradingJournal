@@ -44,6 +44,7 @@ export default defineConfig({
       'src/app/api/trades/mtm/refresh/__tests__/route.vitest.test.ts',
       'src/lib/__tests__/backup-restore-table-consistency.test.ts',
       'src/lib/__tests__/profile-enricher.test.ts',
+      'src/app/api/trades/[id]/mtm/__tests__/post.vitest.test.ts',
     ],
   },
 });
