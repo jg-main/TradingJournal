@@ -50,6 +50,8 @@ export default defineConfig({
       'src/app/api/watchlist/ohlc/__tests__/route.test.ts',
       'src/lib/alert-engine.test.ts',
       'src/lib/alert-polling.test.ts',
+      'src/hooks/use-visibility-polling.test.ts',
     ],
+    environment: 'jsdom',
   },
 });
