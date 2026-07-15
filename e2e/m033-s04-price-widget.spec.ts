@@ -42,27 +42,6 @@ function mockMtmPopulated(): Record<string, unknown> {
 }
 
 /**
- * Create a mock MTM response with no price data (error state — no cached price).
- */
-function mockMtmError(): Record<string, unknown> {
-  return {
-    price: null,
-    marketState: null,
-    shortName: null,
-    quoteType: null,
-    sector: null,
-    industry: null,
-    previousClose: null,
-    dayHigh: null,
-    dayLow: null,
-    change: null,
-    changePercent: null,
-    fetchedAt: null,
-    source: null,
-  };
-}
-
-/**
  * Set up route mocking for the MTM and refresh endpoints.
  * Intercepts GET /api/trades/:id/mtm and POST /api/trades/mtm/refresh.
  */
@@ -328,7 +307,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
       source: 'schwab',
     };
 
-    let resolveMtm: (() => void) | null = null;
+    let resolveMtm = () => {};
     await page.route('**/api/trades/*/mtm', async (route) => {
       // Only block GET requests (the MTM fetch)
       if (route.request().method() === 'GET') {
@@ -491,7 +470,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
       source: 'schwab',
     };
 
-    let resolveMtm: (() => void) | null = null;
+    let resolveMtm = () => {};
     await page.route('**/api/trades/*/mtm', async (route) => {
       if (route.request().method() === 'GET') {
         await new Promise<void>((r) => { resolveMtm = r; });
@@ -888,7 +867,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
 
     // Click retry in error widget → refresh succeeds → GET returns populated
-    let retryBtn = errorWidget.locator('[data-testid="price-widget-retry"]');
+    const retryBtn = errorWidget.locator('[data-testid="price-widget-retry"]');
     await expect(retryBtn).toBeVisible();
     await retryBtn.click();
     await page.waitForTimeout(3000);

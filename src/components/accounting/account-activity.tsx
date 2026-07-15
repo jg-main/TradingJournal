@@ -105,11 +105,6 @@ function formatCurrency(v: number | string): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function formatDate(isoString: string): string {
-  const d = new Date(isoString);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 function formatDateTime(isoString: string): string {
   const d = new Date(isoString);
   return d.toLocaleString(undefined, {
@@ -197,7 +192,9 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
   }, [accountId]);
 
   useEffect(() => {
-    fetchActivity();
+    // The async loader updates loading/error state after the request resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchActivity();
   }, [fetchActivity]);
 
   const handlePost = async (e: React.FormEvent) => {

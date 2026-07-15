@@ -54,7 +54,9 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   };
 
   useEffect(() => {
-    fetchAccount();
+    // The async loader updates loading/error state after the request resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchAccount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
