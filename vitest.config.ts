@@ -43,6 +43,7 @@ export default defineConfig({
       'src/lib/__tests__/market-data-resolver.test.ts',
       'src/app/api/trades/mtm/refresh/__tests__/route.vitest.test.ts',
       'src/lib/__tests__/backup-restore-table-consistency.test.ts',
+      'src/lib/__tests__/profile-enricher.test.ts',
     ],
   },
 });
