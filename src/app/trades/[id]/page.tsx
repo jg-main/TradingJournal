@@ -174,7 +174,7 @@ function toExecutionData(executions: Execution[]): ExecutionData[] {
  * Used on mount and after manual price refresh.
  */
 async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): Promise<void> {
-  setter({ price: null, marketState: null, shortName: null, quoteType: null, sector: null, industry: null, fetchedAt: null, source: null, loading: true, error: null });
+  setter({ price: null, marketState: null, shortName: null, quoteType: null, sector: null, industry: null, previousClose: null, dayHigh: null, dayLow: null, change: null, changePercent: null, fetchedAt: null, source: null, loading: true, error: null });
   try {
     const res = await fetch(`/api/trades/${tradeId}/mtm`);
     if (!res.ok) {
@@ -184,6 +184,13 @@ async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): P
         marketState: null,
         shortName: null,
         quoteType: null,
+        sector: null,
+        industry: null,
+        previousClose: null,
+        dayHigh: null,
+        dayLow: null,
+        change: null,
+        changePercent: null,
         fetchedAt: null,
         source: null,
         loading: false,
@@ -199,6 +206,11 @@ async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): P
       sector: data.sector ?? null,
       industry: data.industry ?? null,
       quoteType: data.quoteType ?? null,
+      previousClose: data.previousClose ?? null,
+      dayHigh: data.dayHigh ?? null,
+      dayLow: data.dayLow ?? null,
+      change: data.change ?? null,
+      changePercent: data.changePercent ?? null,
       fetchedAt: data.fetchedAt ?? null,
       source: data.source ?? null,
       loading: false,
@@ -210,6 +222,13 @@ async function fetchMtmData(tradeId: string, setter: (data: MtmData) => void): P
       marketState: null,
       shortName: null,
       quoteType: null,
+      sector: null,
+      industry: null,
+      previousClose: null,
+      dayHigh: null,
+      dayLow: null,
+      change: null,
+      changePercent: null,
       fetchedAt: null,
       source: null,
       loading: false,

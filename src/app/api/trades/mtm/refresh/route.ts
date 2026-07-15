@@ -93,6 +93,11 @@ export async function POST(_request: NextRequest) {
             quoteType: quote.quoteType ?? null,
             sector: quote.sector ?? null,
             industry: quote.industry ?? null,
+            previousClose: quote.previousClose ?? null,
+            dayHigh: quote.dayHigh ?? null,
+            dayLow: quote.dayLow ?? null,
+            change: quote.change ?? null,
+            changePercent: quote.changePercent ?? null,
             fetchedAt: nowISO,
             createdAt: nowISO,
           })

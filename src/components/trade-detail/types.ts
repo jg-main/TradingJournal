@@ -121,6 +121,11 @@ export interface MtmData {
   quoteType?: string | null;
   sector?: string | null;
   industry?: string | null;
+  previousClose?: number | null;
+  dayHigh?: number | null;
+  dayLow?: number | null;
+  change?: number | null;
+  changePercent?: number | null;
   loading: boolean;
   error: string | null;
 }

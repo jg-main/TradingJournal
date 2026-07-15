@@ -117,6 +117,11 @@ sqlite.exec(`
     price REAL NOT NULL,
     source TEXT NOT NULL DEFAULT 'yahoo',
     market_state TEXT,
+    previous_close REAL,
+    day_high REAL,
+    day_low REAL,
+    price_change REAL,
+    change_percent REAL,
     fetched_at TEXT NOT NULL,
     created_at TEXT DEFAULT (current_timestamp)
   );
@@ -142,6 +147,11 @@ function doGetMtm(tradeId: string): { status: number; data: unknown } {
       .select({
         price: schema.positionPriceSnapshots.price,
         marketState: schema.positionPriceSnapshots.marketState,
+        previousClose: schema.positionPriceSnapshots.previousClose,
+        dayHigh: schema.positionPriceSnapshots.dayHigh,
+        dayLow: schema.positionPriceSnapshots.dayLow,
+        change: schema.positionPriceSnapshots.change,
+        changePercent: schema.positionPriceSnapshots.changePercent,
         fetchedAt: schema.positionPriceSnapshots.fetchedAt,
         source: schema.positionPriceSnapshots.source,
       })
@@ -157,6 +167,11 @@ function doGetMtm(tradeId: string): { status: number; data: unknown } {
         data: {
           price: null,
           marketState: null,
+          previousClose: null,
+          dayHigh: null,
+          dayLow: null,
+          change: null,
+          changePercent: null,
           fetchedAt: null,
           source: null,
           message: 'No price snapshot',
@@ -169,6 +184,11 @@ function doGetMtm(tradeId: string): { status: number; data: unknown } {
       data: {
         price: snapshot.price,
         marketState: snapshot.marketState,
+        previousClose: snapshot.previousClose ?? null,
+        dayHigh: snapshot.dayHigh ?? null,
+        dayLow: snapshot.dayLow ?? null,
+        change: snapshot.change ?? null,
+        changePercent: snapshot.changePercent ?? null,
         fetchedAt: snapshot.fetchedAt,
         source: snapshot.source,
       },

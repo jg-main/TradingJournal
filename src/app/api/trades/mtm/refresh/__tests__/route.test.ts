@@ -118,6 +118,11 @@ sqlite.exec(`
     price REAL NOT NULL,
     source TEXT NOT NULL DEFAULT 'yahoo',
     market_state TEXT,
+    previous_close REAL,
+    day_high REAL,
+    day_low REAL,
+    price_change REAL,
+    change_percent REAL,
     fetched_at TEXT NOT NULL,
     created_at TEXT DEFAULT (current_timestamp)
   );
@@ -214,6 +219,11 @@ async function doRefresh(
             price: quote.price,
             source: quote.source,
             marketState: quote.marketState,
+            previousClose: quote.previousClose ?? null,
+            dayHigh: quote.dayHigh ?? null,
+            dayLow: quote.dayLow ?? null,
+            change: quote.change ?? null,
+            changePercent: quote.changePercent ?? null,
             fetchedAt: nowISO,
             createdAt: nowISO,
           })

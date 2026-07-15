@@ -75,6 +75,11 @@ const testCtx = vi.hoisted(() => {
       quote_type TEXT,
       sector TEXT,
       industry TEXT,
+      previous_close REAL,
+      day_high REAL,
+      day_low REAL,
+      price_change REAL,
+      change_percent REAL,
       fetched_at TEXT NOT NULL,
       created_at TEXT DEFAULT (current_timestamp)
     );
