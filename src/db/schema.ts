@@ -476,3 +476,80 @@ export const alertLog = sqliteTable('alert_log', {
   index('idx_alert_log_fired_at').on(t.firedAt),
   index('idx_alert_log_watchlist_item_id').on(t.watchlistItemId),
 ]);
+
+// ── Accounting Ledger ────────────────────────────────────────────────────
+//
+// Three-table accounting kernel for balanced double-entry posting.
+//
+// financial_events  — Source documents triggering accounting actions
+//                     (opening balance, trade execution, adjustment, transfer).
+//                     Each event carries an optional idempotency_key for
+//                     replay-safe posting.
+//
+// ledger_entries    — Journal entry headers (one per financial event).
+//                     The entry groups a set of debit/credit postings into
+//                     one accounting journal entry.
+//
+// ledger_postings   — Individual debit or credit posting rows. Every entry
+//                     produces exactly two postings (one debit, one credit)
+//                     that are balanced. Postings are immutable — UPDATE and
+//                     DELETE are blocked by later migration-level triggers.
+//
+// All monetary amounts are stored as TEXT canonical decimals (e.g. "1000.00")
+// with an INTEGER micros column (1 unit = 1_000_000 micros) for exact
+// arithmetic without floating-point rounding.
+
+export const financialEvents = sqliteTable('financial_events', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  eventType: text('event_type', {
+    enum: ['opening_balance', 'trade_execution', 'adjustment', 'transfer'],
+  }).notNull(),
+  idempotencyKey: text('idempotency_key'),
+  description: text('description'),
+  postedAt: text('posted_at').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  unique('uq_financial_events_idempotency_key').on(t.idempotencyKey),
+  index('idx_financial_events_account_id').on(t.accountId),
+  index('idx_financial_events_posted_at').on(t.postedAt),
+]);
+
+export const ledgerEntries = sqliteTable('ledger_entries', {
+  id: text('id').primaryKey().notNull(),
+  financialEventId: text('financial_event_id')
+    .references(() => financialEvents.id, { onDelete: 'cascade' })
+    .notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  description: text('description'),
+  postedAt: text('posted_at').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_ledger_entries_financial_event_id').on(t.financialEventId),
+  index('idx_ledger_entries_account_id').on(t.accountId),
+  index('idx_ledger_entries_posted_at').on(t.postedAt),
+]);
+
+export const ledgerPostings = sqliteTable('ledger_postings', {
+  id: text('id').primaryKey().notNull(),
+  ledgerEntryId: text('ledger_entry_id')
+    .references(() => ledgerEntries.id, { onDelete: 'cascade' })
+    .notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  side: text('side', { enum: ['debit', 'credit'] }).notNull(),
+  amount: text('amount').notNull(),
+  amountMicros: integer('amount_micros').notNull(),
+  currency: text('currency').default('USD').notNull(),
+  sequence: integer('sequence').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_ledger_postings_ledger_entry_id').on(t.ledgerEntryId),
+  index('idx_ledger_postings_account_id_side').on(t.accountId, t.side),
+  index('idx_ledger_postings_sequence').on(t.sequence),
+]);
