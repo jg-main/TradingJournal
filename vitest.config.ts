@@ -67,6 +67,8 @@ export default defineConfig({
       'src/lib/accounting/__tests__/execution-posting.integration.test.ts',
       'src/app/api/accounts/[id]/executions/__tests__/route.test.ts',
       'src/app/api/accounts/[id]/positions/__tests__/route.test.ts',
+      'src/lib/performance/valuation.test.ts',
+      'src/lib/performance/performance.test.ts',
     ],
     environment: 'jsdom',
   },
