@@ -47,6 +47,7 @@ interface WatchlistItem {
   thesis: string | null;
   plannedStop: number | null;
   targetPrice: number | null;
+  alertConfig: unknown;
 }
 
 const STATUS_OPTIONS = [
@@ -64,6 +65,8 @@ interface WatchlistForm {
   setup: string;
   keyLevel: string;
   triggerPrice: string;
+  plannedStop: string;
+  targetPrice: string;
   status: WatchlistItem['status'];
 }
 
@@ -73,6 +76,8 @@ const EMPTY_FORM: WatchlistForm = {
   setup: '',
   keyLevel: '',
   triggerPrice: '',
+  plannedStop: '',
+  targetPrice: '',
   status: 'pending',
 };
 
@@ -121,6 +126,9 @@ export default function WatchlistPage() {
   });
 
   const [form, setForm] = useState(EMPTY_FORM);
+  const [alertConfig, setAlertConfig] = useState<Record<string, { enabled: boolean; threshold?: number }> | null>(null);
+  const [rsiAboveThreshold, setRsiAboveThreshold] = useState('70');
+  const [rsiBelowThreshold, setRsiBelowThreshold] = useState('30');
 
   // ── Data ────────────────────────────────────────────────────────────
 
@@ -200,6 +208,9 @@ export default function WatchlistPage() {
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
+    setAlertConfig(null);
+    setRsiAboveThreshold('70');
+    setRsiBelowThreshold('30');
     setEditingId(null);
     setMessage(null);
   };
@@ -211,8 +222,30 @@ export default function WatchlistPage() {
       setup: item.setup ?? '',
       keyLevel: item.keyLevel?.toString() ?? '',
       triggerPrice: item.triggerPrice?.toString() ?? '',
+      plannedStop: item.plannedStop?.toString() ?? '',
+      targetPrice: item.targetPrice?.toString() ?? '',
       status: item.status,
     });
+    // Parse alertConfig from the API response
+    const raw = item.alertConfig;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const config = raw as Record<string, { enabled: boolean; threshold?: number }>;
+      setAlertConfig(config);
+      // Extract RSI thresholds
+      if (config.rsiAbove?.threshold) setRsiAboveThreshold(String(config.rsiAbove.threshold));
+      if (config.rsiBelow?.threshold) setRsiBelowThreshold(String(config.rsiBelow.threshold));
+    } else if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, { enabled: boolean; threshold?: number }>;
+        setAlertConfig(parsed);
+        if (parsed.rsiAbove?.threshold) setRsiAboveThreshold(String(parsed.rsiAbove.threshold));
+        if (parsed.rsiBelow?.threshold) setRsiBelowThreshold(String(parsed.rsiBelow.threshold));
+      } catch {
+        setAlertConfig(null);
+      }
+    } else {
+      setAlertConfig(null);
+    }
     setEditingId(item.id);
     setDialogOpen(true);
     setMessage(null);
@@ -231,13 +264,26 @@ export default function WatchlistPage() {
       const url = editingId ? `/api/watchlist/${editingId}` : '/api/watchlist';
       const method = editingId ? 'PUT' : 'POST';
 
+      // Build alertConfig from toggles state
+      const alertConfigBody: Record<string, { enabled: boolean; threshold?: number }> = {};
+      if (alertConfig) {
+        for (const [key, val] of Object.entries(alertConfig)) {
+          if (val.enabled) {
+            alertConfigBody[key] = val;
+          }
+        }
+      }
+
       const body: Record<string, unknown> = {
         symbol: form.symbol.trim().toUpperCase(),
         direction: form.direction,
         setup: form.setup.trim() || null,
         keyLevel: form.keyLevel ? parseFloat(form.keyLevel) : null,
         triggerPrice: form.triggerPrice ? parseFloat(form.triggerPrice) : null,
+        plannedStop: form.plannedStop ? parseFloat(form.plannedStop) : null,
+        targetPrice: form.targetPrice ? parseFloat(form.targetPrice) : null,
         status: form.status,
+        alertConfig: Object.keys(alertConfigBody).length > 0 ? alertConfigBody : null,
       };
 
       const res = await fetch(url, {
@@ -555,6 +601,227 @@ export default function WatchlistPage() {
                   />
                 </div>
               </div>
+
+              {/* ── Planned Stop / Target Price ── */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="plannedStop" className="mb-1 block text-sm font-medium text-muted-foreground">
+                    Planned Stop
+                  </label>
+                  <input
+                    id="plannedStop"
+                    type="number"
+                    step="any"
+                    value={form.plannedStop}
+                    onChange={(e) => setForm((f) => ({ ...f, plannedStop: e.target.value }))}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="targetPrice" className="mb-1 block text-sm font-medium text-muted-foreground">
+                    Target Price
+                  </label>
+                  <input
+                    id="targetPrice"
+                    type="number"
+                    step="any"
+                    value={form.targetPrice}
+                    onChange={(e) => setForm((f) => ({ ...f, targetPrice: e.target.value }))}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
+              {/* ── Alert Conditions ── */}
+              <details className="rounded-lg border">
+                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-foreground hover:bg-muted">
+                  Alert Conditions
+                </summary>
+                <div className="space-y-3 border-t px-3 py-3">
+                  <p className="text-xs text-muted-foreground">
+                    Trigger alerts when the current price crosses these levels.
+                  </p>
+
+                  {/* Price crossing toggles */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Key Level
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceAboveKeyLevel"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceAboveKeyLevel?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceAboveKeyLevel: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceAboveKeyLevel" className="text-xs text-foreground">
+                        Price above key level
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceBelowKeyLevel"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceBelowKeyLevel?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceBelowKeyLevel: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceBelowKeyLevel" className="text-xs text-foreground">
+                        Price below key level
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Trigger Price
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceAboveTrigger"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceAboveTrigger?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceAboveTrigger: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceAboveTrigger" className="text-xs text-foreground">
+                        Price above trigger
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceBelowTrigger"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceBelowTrigger?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceBelowTrigger: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceBelowTrigger" className="text-xs text-foreground">
+                        Price below trigger
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Planned Stop
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceAboveStop"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceAboveStop?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceAboveStop: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceAboveStop" className="text-xs text-foreground">
+                        Price above stop
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceBelowStop"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceBelowStop?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceBelowStop: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceBelowStop" className="text-xs text-foreground">
+                        Price below stop
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Target Price
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceAboveTarget"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceAboveTarget?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceAboveTarget: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceAboveTarget" className="text-xs text-foreground">
+                        Price above target
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="priceBelowTarget"
+                        type="checkbox"
+                        checked={!!alertConfig?.priceBelowTarget?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, priceBelowTarget: { enabled: e.target.checked } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="priceBelowTarget" className="text-xs text-foreground">
+                        Price below target
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* RSI alerts */}
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      RSI
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="rsiAbove"
+                        type="checkbox"
+                        checked={!!alertConfig?.rsiAbove?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, rsiAbove: { enabled: e.target.checked, threshold: parseFloat(rsiAboveThreshold) || 70 } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="rsiAbove" className="text-xs text-foreground">
+                        RSI above
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={rsiAboveThreshold}
+                        onChange={(e) => {
+                          setRsiAboveThreshold(e.target.value);
+                          setAlertConfig((prev) => ({ ...prev, rsiAbove: { enabled: prev?.rsiAbove?.enabled ?? false, threshold: parseFloat(e.target.value) || 70 } }));
+                        }}
+                        className="ml-auto w-16 rounded border bg-background px-1.5 py-1 text-xs text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                        placeholder="70"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="rsiBelow"
+                        type="checkbox"
+                        checked={!!alertConfig?.rsiBelow?.enabled}
+                        onChange={(e) => setAlertConfig((prev) => ({ ...prev, rsiBelow: { enabled: e.target.checked, threshold: parseFloat(rsiBelowThreshold) || 30 } }))}
+                        className="size-3.5 rounded"
+                      />
+                      <label htmlFor="rsiBelow" className="text-xs text-foreground">
+                        RSI below
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="99"
+                        value={rsiBelowThreshold}
+                        onChange={(e) => {
+                          setRsiBelowThreshold(e.target.value);
+                          setAlertConfig((prev) => ({ ...prev, rsiBelow: { enabled: prev?.rsiBelow?.enabled ?? false, threshold: parseFloat(e.target.value) || 30 } }));
+                        }}
+                        className="ml-auto w-16 rounded border bg-background px-1.5 py-1 text-xs text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                        placeholder="30"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </details>
 
               <DialogFooter className="border-t pt-4">
                 <div className="flex w-full justify-end gap-2">
