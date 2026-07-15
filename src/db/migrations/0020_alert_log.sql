@@ -9,5 +9,7 @@ CREATE TABLE `alert_log` (
   `read_at` text,
   `created_at` text DEFAULT (current_timestamp)
 );
+--> statement-breakpoint
 CREATE INDEX `idx_alert_log_fired_at` ON `alert_log` (`fired_at`);
+--> statement-breakpoint
 CREATE INDEX `idx_alert_log_watchlist_item_id` ON `alert_log` (`watchlist_item_id`);
