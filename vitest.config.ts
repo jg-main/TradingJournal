@@ -47,6 +47,7 @@ export default defineConfig({
       'src/lib/__tests__/profile-enricher.test.ts',
       'src/app/api/trades/[id]/mtm/__tests__/post.vitest.test.ts',
       'src/app/api/watchlist/prices/__tests__/route.test.ts',
+      'src/lib/alert-engine.test.ts',
     ],
   },
 });
