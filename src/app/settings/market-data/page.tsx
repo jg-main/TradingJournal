@@ -120,6 +120,12 @@ export default function MarketDataSettingsPage() {
   const [schwabConnecting, setSchwabConnecting] = useState(false);
   const [schwabMessage, setSchwabMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // ── Enrichment State ──────────────────────────────────────────────────
+
+  const [enriching, setEnriching] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<{ enriched: number; errored: number; total: number; timestamp: string } | null>(null);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
+
   // ── Data Loading ────────────────────────────────────────────────────
 
   const loadSettings = useCallback(async (signal?: AbortSignal) => {
@@ -384,6 +390,29 @@ export default function MarketDataSettingsPage() {
       setSchwabMessage({ type: 'success', text: 'Disconnected from Schwab.' });
     } catch {
       setSchwabMessage({ type: 'error', text: 'Failed to reach disconnect endpoint.' });
+    }
+  };
+
+  // ── Enrich Missing Profiles ──────────────────────────────────────────
+
+  const handleEnrichProfiles = async () => {
+    setEnriching(true);
+    setEnrichResult(null);
+    setEnrichError(null);
+
+    try {
+      const res = await fetch('/api/market-data/enrich-profiles', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to enrich profiles' }));
+        setEnrichError(err.error || 'Failed to enrich profiles');
+        return;
+      }
+      const data = await res.json();
+      setEnrichResult(data);
+    } catch {
+      setEnrichError('Failed to reach enrichment endpoint.');
+    } finally {
+      setEnriching(false);
     }
   };
 
@@ -707,6 +736,51 @@ export default function MarketDataSettingsPage() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* ── Enrich Missing Profiles ──────────────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Enrich Missing Profiles
+          </h2>
+          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+            Fetch sector and industry data from Yahoo Finance for position price snapshots missing this information.
+          </p>
+
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleEnrichProfiles}
+                disabled={enriching}
+                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {enriching ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Enriching...
+                  </>
+                ) : (
+                  'Enrich Missing Profiles'
+                )}
+              </button>
+            </div>
+
+            {enrichResult && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                <p className="font-medium">Enrichment complete</p>
+                <p className="mt-1">
+                  Enriched: {enrichResult.enriched} | Errors: {enrichResult.errored} | Total: {enrichResult.total} symbols
+                </p>
+              </div>
+            )}
+
+            {enrichError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+                {enrichError}
+              </div>
+            )}
           </div>
         </div>
       </div>

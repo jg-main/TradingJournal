@@ -78,6 +78,14 @@ test.describe('Market Data Settings — UI', () => {
     await page.locator('#chHost').fill('new-host');
     await expect(page.getByText('Test connection endpoint not available yet.', { exact: true })).not.toBeVisible();
   });
+
+  test('renders Enrich Missing Profiles section with button', async ({ page }) => {
+    await page.goto('/settings/market-data');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.locator('h2', { hasText: 'Enrich Missing Profiles' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /enrich missing profiles/i })).toBeVisible();
+  });
 });
 
 // Form submission tests must be serial because they all write to the shared
