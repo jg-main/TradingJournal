@@ -533,4 +533,416 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     // Zero console errors
     assertNoConsoleErrors(consoleErrors);
   });
+
+  // ── T03: Error/Offline states, retry, and cross-state console audit ──
+
+  test('T03: Error state — PriceWidget shows error banner with retry, retry transitions to populated', async ({ page }) => {
+    const consoleErrors = captureConsoleErrors(page);
+
+    // ── Clear stale route handlers from prior serial tests ──
+    await page.unroute('**/api/trades/*/mtm');
+    await page.unroute('**/api/trades/mtm/refresh');
+
+    // Create account
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: `M033-S04-ERR-${TS}`, isActive: true, startingBalance: 50000 },
+    });
+    expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+
+    // Create and execute open trade
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'TSLA', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    const execRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: { entryPrice: 220.00, entryQuantity: 50, stopPrice: 210.00, fees: 4.00 },
+    });
+    expect(execRes.ok()).toBeTruthy();
+
+    // ── MTM GET: always return 500 with error (no cached price scenario) ──
+    // We do NOT need a counter-based mock because the mount effect's refresh POST
+    // also returns 500, preventing any second fetchMtmData from overwriting state.
+    await page.route('**/api/trades/*/mtm', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Market data unavailable' }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    // Refresh POST always fails so mount effect never calls fetchMtmData again
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Rate limited' }),
+      });
+    });
+
+    // ── Navigate to trade detail page ──
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1500);
+
+    // ── Verify error state appears ──
+    const errorWidget = page.locator('[data-testid="price-widget-error"]');
+    await expect(errorWidget).toBeVisible({ timeout: 10000 });
+    await expect(errorWidget.getByText('Price data unavailable')).toBeVisible();
+    await expect(errorWidget.getByText('Market data unavailable')).toBeVisible();
+
+    // Retry button should be visible
+    const retryBtnInError = errorWidget.locator('[data-testid="price-widget-retry"]');
+    await expect(retryBtnInError).toBeVisible();
+
+    // ── Now change BOTH mocks: MTM GET + refresh POST return success ──
+    const populatedPayload = {
+      price: 235.80,
+      marketState: 'REGULAR',
+      shortName: 'Tesla Inc',
+      quoteType: 'EQUITY',
+      sector: 'Automotive',
+      industry: 'Electric Vehicles',
+      previousClose: 230.00,
+      dayHigh: 237.50,
+      dayLow: 233.10,
+      change: 5.80,
+      changePercent: 2.52,
+      fetchedAt: new Date().toISOString(),
+      source: 'schwab',
+    };
+
+    // Unroute AND re-route BOTH endpoints for the retry phase
+    await page.unroute('**/api/trades/*/mtm');
+    await page.unroute('**/api/trades/mtm/refresh');
+
+    await page.route('**/api/trades/*/mtm', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(populatedPayload),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    });
+
+    // ── Click retry button to transition to populated display ──
+    await retryBtnInError.click();
+
+    // Wait for: loading → POST refresh succeeds → fetchMtmData GET → populated
+    await page.waitForTimeout(3000);
+
+    // Verify populated display replaces error
+    const priceWidget = page.locator('[data-testid="price-widget"]');
+    await expect(priceWidget).toBeVisible({ timeout: 10000 });
+    await expect(priceWidget.getByText('Tesla Inc')).toBeVisible();
+    await expect(priceWidget.getByText('235.80')).toBeVisible();
+    await expect(priceWidget.getByText('Streaming')).toBeVisible();
+
+    // Error state should be gone
+    await expect(errorWidget).not.toBeVisible({ timeout: 5000 });
+
+    // ── Zero console errors ──
+    assertNoConsoleErrors(consoleErrors);
+  });
+
+  test('T03: Offline state — PriceWidget shows cached price with offline indicator after refresh failure, retry restores live', async ({ page }) => {
+    const consoleErrors = captureConsoleErrors(page);
+
+    // Create account
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: `M033-S04-OFFLINE-${TS}`, isActive: true, startingBalance: 50000 },
+    });
+    expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+
+    // Create and execute open trade
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'AMZN', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    const execRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: { entryPrice: 190.00, entryQuantity: 60, stopPrice: 185.00, fees: 4.00 },
+    });
+    expect(execRes.ok()).toBeTruthy();
+
+    // ── Mock: MTM GET always returns populated; refresh POST always successful ──
+    const populatedPayload = {
+      price: 198.75,
+      marketState: 'REGULAR',
+      shortName: 'Amazon.com Inc',
+      quoteType: 'EQUITY',
+      sector: 'Technology',
+      industry: 'E-Commerce',
+      previousClose: 196.00,
+      dayHigh: 200.50,
+      dayLow: 197.20,
+      change: 2.75,
+      changePercent: 1.40,
+      fetchedAt: new Date().toISOString(),
+      source: 'schwab',
+    };
+
+    await page.route('**/api/trades/*/mtm', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(populatedPayload),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    // Start with refresh returning 200 (for initial mount + populated display)
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    });
+
+    // ── Navigate to trade detail page ──
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1500);
+
+    // ── Verify populated display ──
+    let priceWidget = page.locator('[data-testid="price-widget"]');
+    await expect(priceWidget).toBeVisible({ timeout: 10000 });
+    await expect(priceWidget.getByText('Amazon.com Inc')).toBeVisible();
+    await expect(priceWidget.getByText('198.75')).toBeVisible();
+    await expect(priceWidget.getByText('Streaming')).toBeVisible();
+
+    // Verify no offline indicator yet
+    await expect(priceWidget.getByText('Offline')).not.toBeVisible();
+
+    // ── Change refresh mock to return 500 (failure) ──
+    await page.unroute('**/api/trades/mtm/refresh');
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Refresh unavailable' }),
+      });
+    });
+
+    // ── Trigger refresh via dropdown menu (More actions > Refresh) ──
+    // This calls handleRefreshPrice which preserves cached price on error
+    await page.click('[aria-label="More actions"]');
+    // Wait for dropdown to open
+    await page.waitForTimeout(500);
+    // Click "Refresh" in the dropdown menu
+    await page.getByRole('menuitem', { name: 'Refresh' }).click();
+
+    // Wait for handleRefreshPrice to: loading=true → refresh POST fails → error set, price preserved
+    await page.waitForTimeout(2000);
+
+    // ── Verify offline state: populated card + amber offline indicator + retry ──
+    // The card should still be data-testid="price-widget" (not error) because price is cached
+    priceWidget = page.locator('[data-testid="price-widget"]');
+    await expect(priceWidget).toBeVisible({ timeout: 10000 });
+
+    // Cached price is still visible
+    await expect(priceWidget.getByText('Amazon.com Inc')).toBeVisible();
+    await expect(priceWidget.getByText('198.75')).toBeVisible();
+
+    // Offline indicator should be visible
+    const offlineIndicator = priceWidget.locator('[data-testid="price-widget-offline"]');
+    await expect(offlineIndicator).toBeVisible();
+    await expect(offlineIndicator.getByText('Offline — showing cached price')).toBeVisible();
+
+    // Retry button should be visible inside the PriceWidget
+    const retryBtn = priceWidget.locator('[data-testid="price-widget-retry"]');
+    await expect(retryBtn).toBeVisible();
+
+    // Note: Streaming label may still show alongside offline indicator when
+    // source is 'schwab' — both showStreamingLabel and isCachedWithError can coexist.
+
+    // ── Change refresh mock back to 200 (success) ──
+    await page.unroute('**/api/trades/mtm/refresh');
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    });
+
+    // ── Click retry button to restore live display ──
+    await retryBtn.click();
+
+    // Wait for: loading=true → refresh POST succeeds → fetchMtmData → populated display
+    await page.waitForTimeout(2000);
+
+    // ── Verify populated display restored (no offline indicator) ──
+    priceWidget = page.locator('[data-testid="price-widget"]');
+    await expect(priceWidget).toBeVisible({ timeout: 10000 });
+    await expect(priceWidget.getByText('Amazon.com Inc')).toBeVisible();
+    await expect(priceWidget.getByText('198.75')).toBeVisible();
+    await expect(priceWidget.getByText('Streaming')).toBeVisible();
+
+    // Offline indicator should be gone
+    await expect(priceWidget.getByText('Offline')).not.toBeVisible();
+
+    // Retry button should also be gone (no error)
+    await expect(priceWidget.locator('[data-testid="price-widget-retry"]')).not.toBeVisible();
+
+    // ── Zero console errors ──
+    assertNoConsoleErrors(consoleErrors);
+  });
+
+  test('T03: Cross-state console error audit — zero console errors across all widget states', async ({ page }) => {
+    const consoleErrors = captureConsoleErrors(page);
+
+    // ── Clear stale route handlers from prior serial tests ──
+    await page.unroute('**/api/trades/*/mtm');
+    await page.unroute('**/api/trades/mtm/refresh');
+
+    // Create account
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: `M033-S04-AUDIT-${TS}`, isActive: true, startingBalance: 50000 },
+    });
+    expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+
+    // Create and execute open trade
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'META', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    const execRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: { entryPrice: 500.00, entryQuantity: 30, stopPrice: 490.00, fees: 3.00 },
+    });
+    expect(execRes.ok()).toBeTruthy();
+
+    const populatedPayload = {
+      price: 515.25,
+      marketState: 'REGULAR',
+      shortName: 'Meta Platforms Inc',
+      quoteType: 'EQUITY',
+      sector: 'Technology',
+      industry: 'Social Media',
+      previousClose: 510.00,
+      dayHigh: 518.00,
+      dayLow: 512.50,
+      change: 5.25,
+      changePercent: 1.03,
+      fetchedAt: new Date().toISOString(),
+      source: 'schwab',
+    };
+
+    // ── State 1: Error state ──
+    // MTM GET returns 500, refresh POST returns 500 (both always)
+    await page.route('**/api/trades/*/mtm', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Service temporarily unavailable' }),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Refresh unavailable' }),
+      });
+    });
+
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1500);
+
+    // State 1: Error state
+    const errorWidget = page.locator('[data-testid="price-widget-error"]');
+    await expect(errorWidget).toBeVisible({ timeout: 10000 });
+    await expect(errorWidget.getByText('Price data unavailable')).toBeVisible();
+    await expect(errorWidget.getByText('Service temporarily unavailable')).toBeVisible();
+
+    // ── Transition 1: Error → Populated (retry with both mocks now successful) ──
+    await page.unroute('**/api/trades/*/mtm');
+    await page.route('**/api/trades/*/mtm', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(populatedPayload),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.unroute('**/api/trades/mtm/refresh');
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    });
+
+    // Click retry in error widget → refresh succeeds → GET returns populated
+    let retryBtn = errorWidget.locator('[data-testid="price-widget-retry"]');
+    await expect(retryBtn).toBeVisible();
+    await retryBtn.click();
+    await page.waitForTimeout(3000);
+
+    // State 2: Populated display
+    const priceWidget = page.locator('[data-testid="price-widget"]');
+    await expect(priceWidget).toBeVisible({ timeout: 10000 });
+    await expect(priceWidget.getByText('Meta Platforms Inc')).toBeVisible();
+    await expect(priceWidget.getByText('515.25')).toBeVisible();
+    await expect(priceWidget.getByText('Streaming')).toBeVisible();
+    await expect(errorWidget).not.toBeVisible({ timeout: 5000 });
+
+    // ── Transition 2: Populated → Offline (refresh fails while price is cached) ──
+    await page.unroute('**/api/trades/mtm/refresh');
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Rate limited' }),
+      });
+    });
+
+    // Trigger handleRefreshPrice via dropdown > Refresh
+    await page.click('[aria-label="More actions"]');
+    await page.waitForTimeout(500);
+    await page.getByRole('menuitem', { name: 'Refresh' }).click();
+    await page.waitForTimeout(2000);
+
+    // State 3: Offline — cached price + offline indicator visible
+    await expect(priceWidget).toBeVisible({ timeout: 10000 });
+    await expect(priceWidget.getByText('Meta Platforms Inc')).toBeVisible();
+    const offlineIndicator = priceWidget.locator('[data-testid="price-widget-offline"]');
+    await expect(offlineIndicator).toBeVisible();
+    await expect(offlineIndicator.getByText('Offline — showing cached price')).toBeVisible();
+
+    // ── Transition 3: Offline → Populated (retry with refresh succeeding again) ──
+    await page.unroute('**/api/trades/mtm/refresh');
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    });
+
+    const offlineRetryBtn = priceWidget.locator('[data-testid="price-widget-retry"]');
+    await expect(offlineRetryBtn).toBeVisible();
+    await offlineRetryBtn.click();
+    await page.waitForTimeout(3000);
+
+    // State 4: Populated restored
+    await expect(priceWidget).toBeVisible();
+    await expect(priceWidget.getByText('Meta Platforms Inc')).toBeVisible();
+    await expect(priceWidget.getByText('515.25')).toBeVisible();
+    await expect(priceWidget.getByText('Streaming')).toBeVisible();
+    await expect(priceWidget.getByText('Offline')).not.toBeVisible();
+
+    // ── Final: Zero console errors across ALL state transitions ──
+    assertNoConsoleErrors(consoleErrors);
+  });
 });
