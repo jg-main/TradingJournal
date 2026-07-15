@@ -450,6 +450,18 @@ export default function MarketDataSettingsPage() {
                 </span>
               </div>
             )}
+            {/* Save — applies to provider selection + ClickHouse config below */}
+            <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">Saves provider selection and ClickHouse config</span>
+            </div>
           </div>
         </div>
 
@@ -543,17 +555,8 @@ export default function MarketDataSettingsPage() {
               />
             </div>
 
-            {/* Actions */}
+            {/* Test ClickHouse connection */}
             <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-
               <button
                 type="button"
                 onClick={handleTestConnection}
