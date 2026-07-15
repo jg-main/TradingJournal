@@ -55,6 +55,7 @@ export default defineConfig({
       'src/lib/accounting/posting.test.ts',
       'src/lib/accounting/rebuild.test.ts',
       'src/lib/accounting/__tests__/accounting-integration.test.ts',
+      'src/app/api/accounts/[id]/financial-events/__tests__/route.test.ts',
     ],
     environment: 'jsdom',
   },
