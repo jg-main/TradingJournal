@@ -371,4 +371,166 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     // ── Verify zero console errors ─────────────────────────────────
     assertNoConsoleErrors(consoleErrors);
   });
+
+  test('T02: Closed trade frozen display — PriceWidget shows data without streaming labels or retry', async ({ page }) => {
+    const consoleErrors = captureConsoleErrors(page);
+
+    // Create account
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: `M033-S04-FROZEN-${TS}`, isActive: true, startingBalance: 50000 },
+    });
+    expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+
+    // Create trade (long)
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'NVDA', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    // Execute entry (buy 100 shares at 120)
+    const entryRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: { entryPrice: 120.00, entryQuantity: 100, stopPrice: 115.00, fees: 5.00 },
+    });
+    expect(entryRes.ok()).toBeTruthy();
+
+    // Close trade by adding a sell execution for all shares at 125
+    const sellRes = await page.request.post(`/api/trades/${trade.id}/executions`, {
+      data: { action: 'sell', price: 125.00, quantity: 100, fees: 5.00 },
+    });
+    expect(sellRes.ok()).toBeTruthy();
+
+    // Mock MTM routes — populated data, source='schwab'
+    await mockMtmRoutes(page, {
+      price: 125.00,
+      marketState: 'REGULAR',
+      shortName: 'NVIDIA Corp',
+      quoteType: 'EQUITY',
+      sector: 'Technology',
+      industry: 'Semiconductors',
+      previousClose: 123.00,
+      dayHigh: 126.50,
+      dayLow: 124.20,
+      change: 2.00,
+      changePercent: 1.63,
+      fetchedAt: new Date().toISOString(),
+      source: 'schwab',
+    });
+
+    // Navigate to trade detail page
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1000);
+
+    // PriceWidget is visible with populated data
+    const priceWidget = page.locator('[data-testid="price-widget"]');
+    await expect(priceWidget).toBeVisible({ timeout: 8000 });
+    await expect(priceWidget.getByText('NVIDIA Corp')).toBeVisible();
+    await expect(priceWidget.getByText('Semiconductors')).toBeVisible();
+    await expect(priceWidget.getByText('125.00')).toBeVisible();
+    await expect(priceWidget.getByText('Day High')).toBeVisible();
+    await expect(priceWidget.getByText('Day Low')).toBeVisible();
+    await expect(priceWidget.getByText('Prev Close')).toBeVisible();
+    await expect(priceWidget.getByText('126.50')).toBeVisible();
+    await expect(priceWidget.getByText('124.20')).toBeVisible();
+    await expect(priceWidget.getByText('123.00')).toBeVisible();
+
+    // Frozen: NO "Streaming" label even with 'schwab' source
+    await expect(priceWidget.getByText('Streaming')).not.toBeVisible();
+
+    // Frozen: NO retry button
+    await expect(priceWidget.locator('[data-testid="price-widget-retry"]')).not.toBeVisible();
+
+    // Zero console errors
+    assertNoConsoleErrors(consoleErrors);
+  });
+
+  test('T02: Closed trade — PriceWidget shows loading then frozen populated display', async ({ page }) => {
+    const consoleErrors = captureConsoleErrors(page);
+
+    // Create account
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: `M033-S04-FROZEN-LOAD-${TS}`, isActive: true, startingBalance: 50000 },
+    });
+    expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+
+    // Create trade (long)
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'AMD', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    // Execute entry (buy 50 shares at 150)
+    const entryRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: { entryPrice: 150.00, entryQuantity: 50, stopPrice: 145.00, fees: 3.00 },
+    });
+    expect(entryRes.ok()).toBeTruthy();
+
+    // Close trade by adding a sell execution for all shares at 155
+    const sellRes = await page.request.post(`/api/trades/${trade.id}/executions`, {
+      data: { action: 'sell', price: 155.00, quantity: 50, fees: 3.00 },
+    });
+    expect(sellRes.ok()).toBeTruthy();
+
+    // Block-then-release MTM mock
+    const populatedPayload = {
+      price: 155.00,
+      marketState: 'REGULAR',
+      shortName: 'AMD Inc',
+      quoteType: 'EQUITY',
+      sector: 'Technology',
+      industry: 'Semiconductors',
+      previousClose: 153.00,
+      dayHigh: 156.50,
+      dayLow: 154.20,
+      change: 2.00,
+      changePercent: 1.31,
+      fetchedAt: new Date().toISOString(),
+      source: 'schwab',
+    };
+
+    let resolveMtm: (() => void) | null = null;
+    await page.route('**/api/trades/*/mtm', async (route) => {
+      if (route.request().method() === 'GET') {
+        await new Promise<void>((r) => { resolveMtm = r; });
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(populatedPayload),
+        });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.route('**/api/trades/mtm/refresh', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+    });
+
+    // Navigate (waitUntil: 'load' because MTM is blocked)
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'load' });
+
+    // Loading skeleton appears (MTM is blocked)
+    const loadingSkeleton = page.locator('[data-testid="price-widget-loading"]');
+    await expect(loadingSkeleton).toBeVisible({ timeout: 8000 });
+
+    // Release MTM response
+    resolveMtm?.();
+
+    // Populated frozen display appears
+    const priceWidget = page.locator('[data-testid="price-widget"]');
+    await expect(priceWidget).toBeVisible({ timeout: 8000 });
+    await expect(priceWidget.getByText('AMD Inc')).toBeVisible();
+    await expect(priceWidget.getByText('155.00')).toBeVisible();
+
+    // Frozen: no "Streaming" label
+    await expect(priceWidget.getByText('Streaming')).not.toBeVisible();
+
+    // Loading skeleton is gone
+    await expect(loadingSkeleton).not.toBeVisible({ timeout: 5000 });
+
+    // Zero console errors
+    assertNoConsoleErrors(consoleErrors);
+  });
 });
