@@ -98,6 +98,25 @@ export class DuplicateIdempotencyKeyError extends AccountingError {
   }
 }
 
+/// ── Execution Idempotency Errors ──────────────────────────────────────────
+
+/**
+ * Thrown when an accounting execution with the same idempotency key already exists.
+ */
+export class DuplicateExecutionIdempotencyError extends AccountingError {
+  public readonly idempotencyKey: string;
+
+  constructor(idempotencyKey: string) {
+    super(
+      'DUPLICATE_EXECUTION_IDEMPOTENCY_KEY',
+      `Accounting execution with idempotency key "${idempotencyKey}" already exists`,
+    );
+    this.name = 'DuplicateExecutionIdempotencyError';
+    this.idempotencyKey = idempotencyKey;
+    Object.setPrototypeOf(this, DuplicateExecutionIdempotencyError.prototype);
+  }
+}
+
 // ── Account Errors ──────────────────────────────────────────────────────
 
 /**

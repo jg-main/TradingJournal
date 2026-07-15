@@ -386,3 +386,751 @@ export function findPostingsByEntryId(
     )
     .all(ledgerEntryId) as LedgerPostingRow[];
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5 NEW TABLES: Instruments, Accounting Executions, Account Positions,
+// FIFO Lots, and Lot Matches.  See schema.ts / migration 0026.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Row Shape Helpers for new tables ─────────────────────────────────────
+
+export interface InstrumentRow {
+  id: string;
+  symbol: string;
+  name: string | null;
+  type: string;
+  currency: string;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingExecutionRow {
+  id: string;
+  account_id: string;
+  instrument_id: string;
+  action: string;
+  quantity: string;
+  price: string;
+  fees: string;
+  idempotency_key: string | null;
+  journal_trade_id: string | null;
+  description: string | null;
+  posted_at: string;
+  created_at: string;
+}
+
+export interface AccountPositionRow {
+  id: string;
+  account_id: string;
+  instrument_id: string;
+  direction: string | null;
+  quantity: string;
+  average_cost: string;
+  total_cost_basis: string;
+  realized_gross_pnl: string;
+  realized_fees: string;
+  realized_net_pnl: string;
+  last_updated: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FifoLotRow {
+  id: string;
+  account_id: string;
+  instrument_id: string;
+  direction: string;
+  remaining_quantity: string;
+  original_quantity: string;
+  entry_price: string;
+  cost_basis_total: string;
+  allocated_fees: string;
+  opening_execution_id: string;
+  opened_at: string;
+  created_at: string;
+}
+
+export interface LotMatchRow {
+  id: string;
+  closing_execution_id: string;
+  lot_id: string;
+  match_quantity: string;
+  match_price: string;
+  realized_gross_pnl: string;
+  allocated_fees: string;
+  realized_net_pnl: string;
+  sequence: number;
+  created_at: string;
+}
+
+// ── Instruments ─────────────────────────────────────────────────────────--
+
+/**
+ * Find an instrument by symbol.  Returns the row or undefined.
+ */
+export function findInstrumentBySymbol(
+  sqlite: Database.Database,
+  symbol: string,
+): InstrumentRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, symbol, name, type, currency, is_active, created_at, updated_at
+       FROM instruments WHERE symbol = ?`,
+    )
+    .get(symbol) as InstrumentRow | undefined;
+}
+
+/**
+ * Find an instrument by its UUID.  Returns the row or undefined.
+ */
+export function findInstrumentById(
+  sqlite: Database.Database,
+  id: string,
+): InstrumentRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, symbol, name, type, currency, is_active, created_at, updated_at
+       FROM instruments WHERE id = ?`,
+    )
+    .get(id) as InstrumentRow | undefined;
+}
+
+/**
+ * Find an instrument by symbol or create one if none exists.
+ * Returns the existing or new row.
+ */
+export function findOrCreateInstrument(
+  sqlite: Database.Database,
+  symbol: string,
+  name?: string,
+  type?: string,
+): InstrumentRow {
+  const existing = findInstrumentBySymbol(sqlite, symbol);
+  if (existing) return existing;
+
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const instrumentType = type ?? 'stock';
+  sqlite
+    .prepare(
+      `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+    )
+    .run(id, symbol, name ?? null, instrumentType, now, now);
+
+  return {
+    id,
+    symbol,
+    name: name ?? null,
+    type: instrumentType,
+    currency: 'USD',
+    is_active: 1,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+// ── Accounting Executions ─────────────────────────────────────────────---
+
+/**
+ * Insert an accounting execution row.  Returns the inserted row.
+ */
+export function insertAccountingExecution(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    accountId: string;
+    instrumentId: string;
+    action: string;
+    quantity: string;
+    price: string;
+    fees?: string;
+    idempotencyKey?: string | null;
+    journalTradeId?: string | null;
+    description?: string | null;
+    postedAt: string;
+  },
+): AccountingExecutionRow {
+  const id = values.id ?? randomUUID();
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT INTO accounting_executions
+       (id, account_id, instrument_id, action, quantity, price, fees, idempotency_key, journal_trade_id, description, posted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      values.accountId,
+      values.instrumentId,
+      values.action,
+      values.quantity,
+      values.price,
+      values.fees ?? '0.00',
+      values.idempotencyKey ?? null,
+      values.journalTradeId ?? null,
+      values.description ?? null,
+      values.postedAt,
+    );
+  return {
+    id,
+    account_id: values.accountId,
+    instrument_id: values.instrumentId,
+    action: values.action,
+    quantity: values.quantity,
+    price: values.price,
+    fees: values.fees ?? '0.00',
+    idempotency_key: values.idempotencyKey ?? null,
+    journal_trade_id: values.journalTradeId ?? null,
+    description: values.description ?? null,
+    posted_at: values.postedAt,
+    created_at: now,
+  };
+}
+
+/**
+ * Find an accounting execution by its idempotency key.
+ * Returns the row or undefined.
+ */
+export function findAccountingExecutionByIdempotencyKey(
+  sqlite: Database.Database,
+  idempotencyKey: string,
+): AccountingExecutionRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, instrument_id, action, quantity, price, fees,
+              idempotency_key, journal_trade_id, description, posted_at, created_at
+       FROM accounting_executions WHERE idempotency_key = ?`,
+    )
+    .get(idempotencyKey) as AccountingExecutionRow | undefined;
+}
+
+/**
+ * Find an accounting execution by its UUID.
+ * Returns the row or undefined.
+ */
+export function findAccountingExecutionById(
+  sqlite: Database.Database,
+  id: string,
+): AccountingExecutionRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, instrument_id, action, quantity, price, fees,
+              idempotency_key, journal_trade_id, description, posted_at, created_at
+       FROM accounting_executions WHERE id = ?`,
+    )
+    .get(id) as AccountingExecutionRow | undefined;
+}
+
+/**
+ * List accounting executions for an account in deterministic order.
+ * Ordered by posted_at ASC, id ASC.
+ */
+export function listAccountingExecutions(
+  sqlite: Database.Database,
+  accountId: string,
+  options?: {
+    limit?: number;
+    offset?: number;
+    instrumentId?: string;
+  },
+): AccountingExecutionRow[] {
+  const limit = options?.limit ?? 100;
+  const offset = options?.offset ?? 0;
+
+  let sql = `SELECT id, account_id, instrument_id, action, quantity, price, fees,
+                    idempotency_key, journal_trade_id, description, posted_at, created_at
+             FROM accounting_executions
+             WHERE account_id = ?`;
+  const params: unknown[] = [accountId];
+
+  if (options?.instrumentId) {
+    sql += ` AND instrument_id = ?`;
+    params.push(options.instrumentId);
+  }
+
+  sql += ` ORDER BY posted_at ASC, id ASC LIMIT ? OFFSET ?`;
+  params.push(limit, offset);
+
+  return sqlite.prepare(sql).all(...params) as AccountingExecutionRow[];
+}
+
+/**
+ * Count accounting executions for an account (optionally filtered by instrument).
+ */
+export function countAccountingExecutions(
+  sqlite: Database.Database,
+  accountId: string,
+  options?: { instrumentId?: string },
+): number {
+  let sql = `SELECT COUNT(*) AS count FROM accounting_executions WHERE account_id = ?`;
+  const params: unknown[] = [accountId];
+  if (options?.instrumentId) {
+    sql += ` AND instrument_id = ?`;
+    params.push(options.instrumentId);
+  }
+  const row = sqlite.prepare(sql).get(...params) as { count: number };
+  return row.count;
+}
+
+// ── Account Positions ─────────────────────────────────────────────────-──
+
+/**
+ * Upsert an account position row using the unique constraint on
+ * (account_id, instrument_id).  Returns the row.
+ */
+export function upsertAccountPosition(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    accountId: string;
+    instrumentId: string;
+    direction: string | null;
+    quantity: string;
+    averageCost: string;
+    totalCostBasis: string;
+    realizedGrossPnl: string;
+    realizedFees: string;
+    realizedNetPnl: string;
+    lastUpdated: string;
+  },
+): AccountPositionRow {
+  const id = values.id ?? randomUUID();
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT INTO account_positions
+       (id, account_id, instrument_id, direction, quantity, average_cost,
+        total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+        last_updated, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(account_id, instrument_id) DO UPDATE SET
+         direction = excluded.direction,
+         quantity = excluded.quantity,
+         average_cost = excluded.average_cost,
+         total_cost_basis = excluded.total_cost_basis,
+         realized_gross_pnl = excluded.realized_gross_pnl,
+         realized_fees = excluded.realized_fees,
+         realized_net_pnl = excluded.realized_net_pnl,
+         last_updated = excluded.last_updated,
+         updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      values.accountId,
+      values.instrumentId,
+      values.direction,
+      values.quantity,
+      values.averageCost,
+      values.totalCostBasis,
+      values.realizedGrossPnl,
+      values.realizedFees,
+      values.realizedNetPnl,
+      values.lastUpdated,
+      now,
+      now,
+    );
+  const row = sqlite
+    .prepare(
+      `SELECT id, account_id, instrument_id, direction, quantity, average_cost,
+              total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+              last_updated, created_at, updated_at
+       FROM account_positions WHERE account_id = ? AND instrument_id = ?`,
+    )
+    .get(values.accountId, values.instrumentId) as AccountPositionRow;
+  return row;
+}
+
+/**
+ * Find an account position by account + instrument.
+ * Returns the row or undefined.
+ */
+export function findAccountPosition(
+  sqlite: Database.Database,
+  accountId: string,
+  instrumentId: string,
+): AccountPositionRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, instrument_id, direction, quantity, average_cost,
+              total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+              last_updated, created_at, updated_at
+       FROM account_positions WHERE account_id = ? AND instrument_id = ?`,
+    )
+    .get(accountId, instrumentId) as AccountPositionRow | undefined;
+}
+
+/**
+ * List all account positions for an account.
+ */
+export function listAccountPositions(
+  sqlite: Database.Database,
+  accountId: string,
+): AccountPositionRow[] {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, instrument_id, direction, quantity, average_cost,
+              total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+              last_updated, created_at, updated_at
+       FROM account_positions WHERE account_id = ?
+       ORDER BY instrument_id ASC`,
+    )
+    .all(accountId) as AccountPositionRow[];
+}
+
+/**
+ * Delete all account positions for an account (full rebuild cleanup).
+ */
+export function deleteAccountPositionsByAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): void {
+  sqlite.prepare('DELETE FROM account_positions WHERE account_id = ?').run(accountId);
+}
+
+/**
+ * Delete an account position for a specific account + instrument.
+ */
+export function deleteAccountPosition(
+  sqlite: Database.Database,
+  accountId: string,
+  instrumentId: string,
+): void {
+  sqlite
+    .prepare('DELETE FROM account_positions WHERE account_id = ? AND instrument_id = ?')
+    .run(accountId, instrumentId);
+}
+
+// ── FIFO Lots ───────────────────────────────────────────────────────────
+
+/**
+ * Insert a single FIFO lot row.
+ */
+export function insertFifoLot(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    accountId: string;
+    instrumentId: string;
+    direction: string;
+    remainingQuantity: string;
+    originalQuantity: string;
+    entryPrice: string;
+    costBasisTotal: string;
+    allocatedFees?: string;
+    openingExecutionId: string;
+    openedAt: string;
+  },
+): FifoLotRow {
+  const id = values.id ?? randomUUID();
+  sqlite
+    .prepare(
+      `INSERT INTO fifo_lots
+       (id, account_id, instrument_id, direction, remaining_quantity,
+        original_quantity, entry_price, cost_basis_total, allocated_fees,
+        opening_execution_id, opened_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      values.accountId,
+      values.instrumentId,
+      values.direction,
+      values.remainingQuantity,
+      values.originalQuantity,
+      values.entryPrice,
+      values.costBasisTotal,
+      values.allocatedFees ?? '0.00',
+      values.openingExecutionId,
+      values.openedAt,
+    );
+  return {
+    id,
+    account_id: values.accountId,
+    instrument_id: values.instrumentId,
+    direction: values.direction,
+    remaining_quantity: values.remainingQuantity,
+    original_quantity: values.originalQuantity,
+    entry_price: values.entryPrice,
+    cost_basis_total: values.costBasisTotal,
+    allocated_fees: values.allocatedFees ?? '0.00',
+    opening_execution_id: values.openingExecutionId,
+    opened_at: values.openedAt,
+    created_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Insert multiple FIFO lots in a loop (for rebuild results).
+ */
+export function insertFifoLots(
+  sqlite: Database.Database,
+  lots: Array<{
+    id?: string;
+    accountId: string;
+    instrumentId: string;
+    direction: string;
+    remainingQuantity: string;
+    originalQuantity: string;
+    entryPrice: string;
+    costBasisTotal: string;
+    allocatedFees?: string;
+    openingExecutionId: string;
+    openedAt: string;
+  }>,
+): FifoLotRow[] {
+  if (lots.length === 0) return [];
+  const insert = sqlite.prepare(
+    `INSERT INTO fifo_lots
+     (id, account_id, instrument_id, direction, remaining_quantity,
+      original_quantity, entry_price, cost_basis_total, allocated_fees,
+      opening_execution_id, opened_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const results: FifoLotRow[] = [];
+  const now = new Date().toISOString();
+  for (const lot of lots) {
+    const id = lot.id ?? randomUUID();
+    insert.run(
+      id,
+      lot.accountId,
+      lot.instrumentId,
+      lot.direction,
+      lot.remainingQuantity,
+      lot.originalQuantity,
+      lot.entryPrice,
+      lot.costBasisTotal,
+      lot.allocatedFees ?? '0.00',
+      lot.openingExecutionId,
+      lot.openedAt,
+    );
+    results.push({
+      id,
+      account_id: lot.accountId,
+      instrument_id: lot.instrumentId,
+      direction: lot.direction,
+      remaining_quantity: lot.remainingQuantity,
+      original_quantity: lot.originalQuantity,
+      entry_price: lot.entryPrice,
+      cost_basis_total: lot.costBasisTotal,
+      allocated_fees: lot.allocatedFees ?? '0.00',
+      opening_execution_id: lot.openingExecutionId,
+      opened_at: lot.openedAt,
+      created_at: now,
+    });
+  }
+  return results;
+}
+
+/**
+ * Find all FIFO lots (including closed) for an account + instrument.
+ */
+export function findFifoLotsByAccountInstrument(
+  sqlite: Database.Database,
+  accountId: string,
+  instrumentId: string,
+): FifoLotRow[] {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, instrument_id, direction, remaining_quantity,
+              original_quantity, entry_price, cost_basis_total, allocated_fees,
+              opening_execution_id, opened_at, created_at
+       FROM fifo_lots
+       WHERE account_id = ? AND instrument_id = ?
+       ORDER BY opened_at ASC, id ASC`,
+    )
+    .all(accountId, instrumentId) as FifoLotRow[];
+}
+
+/**
+ * Delete all FIFO lots for an account + instrument (for rebuild cleanup).
+ */
+export function deleteFifoLotsByAccountInstrument(
+  sqlite: Database.Database,
+  accountId: string,
+  instrumentId: string,
+): void {
+  sqlite
+    .prepare('DELETE FROM fifo_lots WHERE account_id = ? AND instrument_id = ?')
+    .run(accountId, instrumentId);
+}
+
+/**
+ * Delete all FIFO lots for an account (for full cleanup).
+ */
+export function deleteFifoLotsByAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): void {
+  sqlite.prepare('DELETE FROM fifo_lots WHERE account_id = ?').run(accountId);
+}
+
+// ── Lot Matches ─────────────────────────────────────────────────────────
+
+/**
+ * Insert a single lot match row.
+ */
+export function insertLotMatch(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    closingExecutionId: string;
+    lotId: string;
+    matchQuantity: string;
+    matchPrice: string;
+    realizedGrossPnl: string;
+    allocatedFees?: string;
+    realizedNetPnl: string;
+    sequence: number;
+  },
+): LotMatchRow {
+  const id = values.id ?? randomUUID();
+  sqlite
+    .prepare(
+      `INSERT INTO lot_matches
+       (id, closing_execution_id, lot_id, match_quantity, match_price,
+        realized_gross_pnl, allocated_fees, realized_net_pnl, sequence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      values.closingExecutionId,
+      values.lotId,
+      values.matchQuantity,
+      values.matchPrice,
+      values.realizedGrossPnl,
+      values.allocatedFees ?? '0.00',
+      values.realizedNetPnl,
+      values.sequence,
+    );
+  return {
+    id,
+    closing_execution_id: values.closingExecutionId,
+    lot_id: values.lotId,
+    match_quantity: values.matchQuantity,
+    match_price: values.matchPrice,
+    realized_gross_pnl: values.realizedGrossPnl,
+    allocated_fees: values.allocatedFees ?? '0.00',
+    realized_net_pnl: values.realizedNetPnl,
+    sequence: values.sequence,
+    created_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Insert multiple lot matches in a loop (for rebuild results).
+ */
+export function insertLotMatches(
+  sqlite: Database.Database,
+  matches: Array<{
+    id?: string;
+    closingExecutionId: string;
+    lotId: string;
+    matchQuantity: string;
+    matchPrice: string;
+    realizedGrossPnl: string;
+    allocatedFees?: string;
+    realizedNetPnl: string;
+    sequence: number;
+  }>,
+): LotMatchRow[] {
+  if (matches.length === 0) return [];
+  const insert = sqlite.prepare(
+    `INSERT INTO lot_matches
+     (id, closing_execution_id, lot_id, match_quantity, match_price,
+      realized_gross_pnl, allocated_fees, realized_net_pnl, sequence)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const results: LotMatchRow[] = [];
+  const now = new Date().toISOString();
+  for (const m of matches) {
+    const id = m.id ?? randomUUID();
+    insert.run(
+      id,
+      m.closingExecutionId,
+      m.lotId,
+      m.matchQuantity,
+      m.matchPrice,
+      m.realizedGrossPnl,
+      m.allocatedFees ?? '0.00',
+      m.realizedNetPnl,
+      m.sequence,
+    );
+    results.push({
+      id,
+      closing_execution_id: m.closingExecutionId,
+      lot_id: m.lotId,
+      match_quantity: m.matchQuantity,
+      match_price: m.matchPrice,
+      realized_gross_pnl: m.realizedGrossPnl,
+      allocated_fees: m.allocatedFees ?? '0.00',
+      realized_net_pnl: m.realizedNetPnl,
+      sequence: m.sequence,
+      created_at: now,
+    });
+  }
+  return results;
+}
+
+/**
+ * Delete all lot matches for a specific closing execution.
+ */
+export function deleteLotMatchesByExecution(
+  sqlite: Database.Database,
+  executionId: string,
+): void {
+  sqlite
+    .prepare('DELETE FROM lot_matches WHERE closing_execution_id = ?')
+    .run(executionId);
+}
+
+/**
+ * Delete all lot matches for an account + instrument via subquery.
+ */
+export function deleteLotMatchesByAccountInstrument(
+  sqlite: Database.Database,
+  accountId: string,
+  instrumentId: string,
+): void {
+  sqlite
+    .prepare(
+      `DELETE FROM lot_matches WHERE closing_execution_id IN (
+         SELECT id FROM accounting_executions
+         WHERE account_id = ? AND instrument_id = ?
+       )`,
+    )
+    .run(accountId, instrumentId);
+}
+
+/**
+ * Delete all lot matches for an account via subquery.
+ */
+export function deleteLotMatchesByAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): void {
+  sqlite
+    .prepare(
+      `DELETE FROM lot_matches WHERE closing_execution_id IN (
+         SELECT id FROM accounting_executions WHERE account_id = ?
+       )`,
+    )
+    .run(accountId);
+}
+
+// ── All-in-one rebuild cleanup ─────────────────────────────────────────---
+
+/**
+ * Delete all rebuildable projection rows for an account + instrument.
+ * Called before a full rebuild to clear the previous projection.
+ */
+export function deleteProjectionByAccountInstrument(
+  sqlite: Database.Database,
+  accountId: string,
+  instrumentId: string,
+): void {
+  deleteLotMatchesByAccountInstrument(sqlite, accountId, instrumentId);
+  deleteFifoLotsByAccountInstrument(sqlite, accountId, instrumentId);
+  deleteAccountPosition(sqlite, accountId, instrumentId);
+}
