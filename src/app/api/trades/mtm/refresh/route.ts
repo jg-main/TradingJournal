@@ -127,10 +127,16 @@ export async function POST(_request: NextRequest) {
       try {
         const profiles = await fetchYahooProfiles(symbolsToEnrich);
 
+        let enriched = 0;
+        let unchanged = 0;
+
         for (const trade of openTrades) {
           if (failed.includes(trade.symbol)) continue;
           const profile = profiles.get(trade.symbol.toUpperCase());
-          if (!profile?.sector && !profile?.industry) continue;
+          if (!profile?.sector && !profile?.industry) {
+            unchanged++;
+            continue;
+          }
 
           db.update(positionPriceSnapshots)
             .set({
@@ -144,9 +150,30 @@ export async function POST(_request: NextRequest) {
               ),
             )
             .run();
+          enriched++;
         }
-      } catch {
+
+        console.log(
+          JSON.stringify({
+            event: 'mtm-refresh.enrichment',
+            enriched,
+            unchanged,
+            errored: 0,
+            total: symbolsToEnrich.length,
+            symbols: symbolsToEnrich,
+            timestamp: nowISO,
+          }),
+        );
+      } catch (err) {
         // Non-fatal — enrichment failure leaves snapshots as-is.
+        console.log(
+          JSON.stringify({
+            event: 'mtm-refresh.enrichment.error',
+            error: String(err),
+            symbols: symbolsToEnrich,
+            timestamp: nowISO,
+          }),
+        );
       }
     }
 

@@ -145,10 +145,57 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
                 ),
               )
               .run();
+            console.log(
+              JSON.stringify({
+                event: 'mtm-single.enrichment',
+                tradeId: id,
+                symbol: trade.symbol,
+                enriched: 1,
+                unchanged: 0,
+                errored: 0,
+                total: 1,
+                timestamp: now,
+              }),
+            );
+          } else {
+            console.log(
+              JSON.stringify({
+                event: 'mtm-single.enrichment',
+                tradeId: id,
+                symbol: trade.symbol,
+                enriched: 0,
+                unchanged: 1,
+                errored: 0,
+                total: 1,
+                timestamp: now,
+              }),
+            );
           }
+        } else {
+          console.log(
+            JSON.stringify({
+              event: 'mtm-single.enrichment',
+              tradeId: id,
+              symbol: trade.symbol,
+              enriched: 0,
+              unchanged: 0,
+              errored: 1,
+              total: 1,
+              timestamp: now,
+            }),
+          );
         }
-      } catch {
+      } catch (err) {
         // Non-fatal — enrichment failure leaves snapshots as-is.
+        console.log(
+          JSON.stringify({
+            event: 'mtm-single.enrichment.error',
+            tradeId: id,
+            symbol: trade.symbol,
+            error: String(err),
+            timestamp: now,
+          }),
+        );
       }
     }
 

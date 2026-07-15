@@ -69,6 +69,8 @@ export async function POST(_request: NextRequest) {
     // sector or industry.
     let enriched = 0;
     let errored = 0;
+    const enrichedSymbols: string[] = [];
+    const erroredSymbols: string[] = [];
 
     for (const symbol of distinctSymbols) {
       const profile = profiles.get(symbol.toUpperCase());
@@ -76,6 +78,7 @@ export async function POST(_request: NextRequest) {
       if (!profile || (!profile.sector && !profile.industry)) {
         // Symbol not returned or has no sector/industry data → count as error
         errored++;
+        erroredSymbols.push(symbol);
         continue;
       }
 
@@ -107,7 +110,20 @@ export async function POST(_request: NextRequest) {
         .run();
 
       enriched++;
+      enrichedSymbols.push(symbol);
     }
+
+    console.log(
+      JSON.stringify({
+        event: 'enrich-profiles.backfill',
+        enriched,
+        errored,
+        total: distinctSymbols.length,
+        enrichedSymbols,
+        erroredSymbols,
+        timestamp: nowISO,
+      }),
+    );
 
     return NextResponse.json({
       enriched,
