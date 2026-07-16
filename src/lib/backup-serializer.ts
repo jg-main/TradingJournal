@@ -122,6 +122,7 @@ export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'position_price_snapshots', ref: tables.positionPriceSnapshots },
   { name: 'trade_assessment_snapshots', ref: tables.tradeAssessmentSnapshots },
   { name: 'watchlist_items', ref: tables.watchlistItems },
+  { name: 'alert_log', ref: tables.alertLog },
   { name: 'account_transactions', ref: tables.accountTransactions },
   { name: 'account_rollforward', ref: tables.accountRollforward },
   { name: 'weekly_reviews', ref: tables.weeklyReviews },

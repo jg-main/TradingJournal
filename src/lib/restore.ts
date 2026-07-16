@@ -75,6 +75,7 @@ export const INSERT_ORDER: string[] = [
   'trade_mistakes',
   'trade_check_results',
   'watchlist_items',
+  'alert_log',
   'account_transactions',
   'account_rollforward',
   'weekly_reviews',
