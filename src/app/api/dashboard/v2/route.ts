@@ -1,0 +1,154 @@
+/**
+ * Dashboard V2 API Route
+ *
+ * GET /api/dashboard/v2 — ledger-derived dashboard aggregation for one
+ *   account, including cutover integrity state, valuation completeness,
+ *   journal attribution, and reconciliation eligibility.
+ *
+ * Uses the S04 performance projection and S05 reconciliation report
+ * underneath the S04/S05 cutover gate, with no legacy P&L fallback.
+ *
+ * @module dashboard/v2/route
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { getSqliteHandle } from '@/db';
+import { computeDashboardV2 } from '@/lib/accounting/dashboard-v2';
+import { accountExists } from '@/db/accounting-repository';
+
+// ── Query Schema ────────────────────────────────────────────────────────
+
+const dashboardV2QuerySchema = z.object({
+  accountId: z.string().uuid('Account ID must be a valid UUID').optional(),
+  freshnessThresholdMinutes: z
+    .string()
+    .optional()
+    .transform((val) => (val ? parseInt(val, 10) : undefined))
+    .pipe(
+      z
+        .number()
+        .int()
+        .positive('Freshness threshold must be a positive integer')
+        .optional(),
+    ),
+});
+
+// ── Account Resolution ──────────────────────────────────────────────────
+
+/**
+ * Resolve the target account ID from the request query parameters,
+ * falling back to settings.defaultAccountId, then the first active account.
+ *
+ * Returns the account ID or null if no account can be resolved.
+ */
+function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | null {
+  // Try settings.defaultAccountId
+  const setting = sqlite
+    .prepare('SELECT default_account_id FROM settings LIMIT 1')
+    .get() as { default_account_id: string | null } | undefined;
+
+  if (setting?.default_account_id) {
+    return setting.default_account_id;
+  }
+
+  // Fall back to first active account
+  const firstActive = sqlite
+    .prepare(
+      'SELECT id FROM accounts WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1',
+    )
+    .get() as { id: string } | undefined;
+
+  return firstActive?.id ?? null;
+}
+
+// ── GET ─────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/dashboard/v2
+ *
+ * Return a ledger-derived dashboard aggregation for one account.
+ *
+ * Query parameters:
+ * - accountId (UUID, optional): target account.  Falls back to
+ *   settings.defaultAccountId, then the first active account.
+ * - freshnessThresholdMinutes (number, optional): max age in minutes
+ *   for a fresh valuation mark (default 1440 = 24h).
+ *
+ * Responses:
+ * - 200: Dashboard V2 aggregation (see DashboardV2Response)
+ * - 400: No account resolved, invalid query params, or account not found
+ * - 500: Unexpected server error
+ */
+export async function GET(request: NextRequest) {
+  try {
+    // 1. Parse query parameters
+    const queryParams = Object.fromEntries(request.nextUrl.searchParams.entries());
+    const parsedQuery = dashboardV2QuerySchema.safeParse(queryParams);
+
+    if (!parsedQuery.success) {
+      return NextResponse.json(
+        {
+          error: 'Invalid query parameters',
+          details: parsedQuery.error.flatten(),
+        },
+        { status: 400 },
+      );
+    }
+
+    const sqlite = getSqliteHandle();
+
+    // 2. Resolve account ID
+    let accountId = parsedQuery.data.accountId;
+    if (!accountId) {
+      accountId = resolveAccountId(sqlite);
+    }
+
+    if (!accountId) {
+      return NextResponse.json(
+        {
+          error: 'No account found',
+          details:
+            'No account specified and no default account or active account found. Create an account first.',
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!accountExists(sqlite, accountId)) {
+      return NextResponse.json(
+        {
+          error: 'Account not found',
+          details: `Account "${accountId}" not found`,
+        },
+        { status: 400 },
+      );
+    }
+
+    // 3. Compute the Dashboard V2 aggregation
+    const dashboard = computeDashboardV2(sqlite, accountId, {
+      freshnessThresholdMinutes: parsedQuery.data.freshnessThresholdMinutes,
+    });
+
+    if (!dashboard) {
+      return NextResponse.json(
+        {
+          error: 'Account not found',
+          details: `Account "${accountId}" not found`,
+        },
+        { status: 404 },
+      );
+    }
+
+    // 4. Return the result
+    return NextResponse.json(dashboard, { status: 200 });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to compute dashboard V2',
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 },
+    );
+  }
+}
