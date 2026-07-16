@@ -30,16 +30,6 @@ interface OverviewSnapshot {
   netExposure: string | null;
 }
 
-interface ReconciliationBanner {
-  status: 'eligible' | 'stale' | 'blocked';
-  cutoverEligible: boolean;
-  refusalReasons: string[];
-  summary: string;
-  comparisonCount: number;
-  resolvedCount: number;
-  unresolvedCount: number;
-}
-
 interface PositionRow {
   symbol: string;
   direction: string | null;
@@ -70,7 +60,6 @@ interface EventRow {
 interface OverviewResponse {
   accountId: string;
   snapshot: OverviewSnapshot;
-  reconciliation: ReconciliationBanner | null;
   positions: PositionRow[];
   positionsTotal: number;
   events: EventRow[];
@@ -263,7 +252,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
     );
   }
 
-  const { snapshot, reconciliation, positions, positionsTotal, events, eventsTotal } = data;
+  const { snapshot, positions, positionsTotal, events, eventsTotal } = data;
 
   // ── Render ─────────────────────────────────────────────────────────
   return (
@@ -360,53 +349,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
         />
       </div>
 
-      {/* ── 2. Reconciliation Health Banner ─────────────────────────── */}
-      {reconciliation && (
-        <div
-          className={cn(
-            'mb-6 rounded-lg border px-4 py-3 text-sm',
-            reconciliation.status === 'eligible'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : reconciliation.status === 'blocked'
-              ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
-              : 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400',
-          )}
-          role="status"
-          aria-live="polite"
-        >
-          <div className="flex items-center gap-2">
-            {reconciliation.status === 'eligible' ? (
-              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            ) : (
-              <AlertTriangle className="size-4 shrink-0" />
-            )}
-            <span>{reconciliation.summary}</span>
-          </div>
-          {reconciliation.comparisonCount > 0 && (
-            <div className="mt-2 flex gap-4 text-xs text-zinc-500 dark:text-zinc-400">
-              <span>{reconciliation.resolvedCount} resolved</span>
-              {reconciliation.unresolvedCount > 0 && (
-                <span className="font-semibold text-amber-600 dark:text-amber-400">
-                  {reconciliation.unresolvedCount} unresolved
-                </span>
-              )}
-              <span>{reconciliation.comparisonCount} total comparisons</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Null reconciliation state (no run data) */}
-      {!reconciliation && (
-        <div className="mb-6 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400">
-          <div className="flex items-center gap-2">
-            <Minus className="size-4 shrink-0 text-zinc-400" />
-            <span>No reconciliation data yet. Post executions and rebuild performance to establish ledger metrics.</span>
-          </div>
-        </div>
-      )}
-
-      {/* ── 3. Positions Preview (up to 5) ───────────────────────────── */}
+      {/* ── 2. Positions Preview (up to 5) ───────────────────────────── */}
       <div className="mb-6">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-wider text-zinc-600 dark:text-zinc-300 uppercase">

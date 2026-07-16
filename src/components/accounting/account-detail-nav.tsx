@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   BookOpen,
   BarChart3,
-  GitCompareArrows,
   Settings,
   type LucideIcon,
 } from 'lucide-react';
@@ -37,7 +36,6 @@ function buildTabs(accountId: string): AccountNavTab[] {
     { href: base, label: 'Overview', icon: LayoutDashboard },
     { href: `${base}/ledger`, label: 'Ledger', icon: BookOpen },
     { href: `${base}/positions`, label: 'Positions', icon: BarChart3 },
-    { href: `${base}/reconciliation`, label: 'Reconciliation', icon: GitCompareArrows },
     { href: `${base}/settings`, label: 'Settings', icon: Settings },
   ];
 }

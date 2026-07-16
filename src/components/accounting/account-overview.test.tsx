@@ -2,7 +2,7 @@
  * Component tests for AccountOverview.
  *
  * Covers:
- * - Populated overview with NAV, cash, positions, events, reconciliation
+ * - Populated overview with NAV, cash, positions, events
  * - Empty account (no projection, positions, or events)
  * - Missing-price positions (no valuation marks for an open position)
  * - Loading state (skeleton/spinner)
@@ -30,15 +30,6 @@ const FIXTURE_POPULATED = {
     realizedFees: '1500.00',
     grossExposure: '200000.00',
     netExposure: '150000.00',
-  },
-  reconciliation: {
-    status: 'eligible' as const,
-    cutoverEligible: true,
-    refusalReasons: [],
-    summary: 'Ledger reconciled and eligible for cutover.',
-    comparisonCount: 5,
-    resolvedCount: 5,
-    unresolvedCount: 0,
   },
   positions: [
     {
@@ -117,7 +108,6 @@ const FIXTURE_EMPTY = {
     grossExposure: null,
     netExposure: null,
   },
-  reconciliation: null,
   positions: [],
   positionsTotal: 0,
   events: [],
@@ -138,7 +128,6 @@ const FIXTURE_MISSING_PRICE = {
     grossExposure: '15000.00',
     netExposure: '15000.00',
   },
-  reconciliation: null,
   positions: [
     {
       symbol: 'TSLA',
@@ -225,17 +214,7 @@ describe('AccountOverview — populated state', () => {
     expect(screen.getByText('Realized Fees')).toBeTruthy();
   });
 
-  it('renders reconciliation health banner as eligible', async () => {
-    mockFetchSuccess(FIXTURE_POPULATED);
-    render(<AccountOverview accountId="acct-001" />);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Ledger reconciled/)).toBeTruthy();
-    });
-
-    expect(screen.getByText('5 resolved')).toBeTruthy();
-    expect(screen.getByText('5 total comparisons')).toBeTruthy();
-  });
 
   it('renders positions table with symbol, direction, and mark status', async () => {
     mockFetchSuccess(FIXTURE_POPULATED);
@@ -340,18 +319,7 @@ describe('AccountOverview — empty state', () => {
     expect(dashes.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('renders null reconciliation message', async () => {
-    mockFetchSuccess(FIXTURE_EMPTY);
-    render(<AccountOverview accountId="acct-empty" />);
 
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          'No reconciliation data yet. Post executions and rebuild performance to establish ledger metrics.',
-        ),
-      ).toBeTruthy();
-    });
-  });
 });
 
 describe('AccountOverview — missing-price positions', () => {

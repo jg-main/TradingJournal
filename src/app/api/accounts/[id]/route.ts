@@ -5,7 +5,6 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
 import { findAccountPerformance } from '@/db/accounting-repository';
-import { computeReconciliation } from '@/lib/accounting/reconciliation';
 
 const updateAccountSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -43,33 +42,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const grossExposure = projection?.gross_exposure ?? null;
     const netExposure = projection?.net_exposure ?? null;
 
-    // ── 2. Reconciliation / integrity state ──────────────────────────────
-    let accountingIntegrity: Record<string, unknown> | null = null;
-    try {
-      const reconciliation = computeReconciliation(sqlite, id);
-      if (reconciliation) {
-        const status =
-          reconciliation.cutoverEligible
-            ? 'eligible'
-            : reconciliation.totals.unexplained > 0
-              ? 'blocked'
-              : 'stale';
-        accountingIntegrity = {
-          status,
-          cutoverEligible: reconciliation.cutoverEligible,
-          cutoverRefusalReasons: reconciliation.cutoverRefusalReasons,
-          totals: reconciliation.totals,
-          runId: reconciliation.runId,
-          runStatus: reconciliation.runStatus,
-          computedAt: reconciliation.computedAt,
-          recordStatusCounts: reconciliation.recordStatusCounts,
-        };
-      }
-    } catch {
-      // Reconciliation fetch is best-effort
-    }
-
-    // ── 3. Return authoritative accounting-derived values ────────────────
+    // ── 2. Return authoritative accounting-derived values ────────────────
     return NextResponse.json({
       ...account,
       // Cash and position data from the authoritative accounting projection
@@ -88,8 +61,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       // realized P&L but not individual trade counts, win rates, or
       // R-multiples. These fields remain null.
       kpis: null,
-      // Cutover verification evidence
-      accountingIntegrity,
+
     });
   } catch (error) {
     return NextResponse.json(
