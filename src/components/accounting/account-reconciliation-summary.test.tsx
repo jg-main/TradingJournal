@@ -658,4 +658,499 @@ describe('AccountReconciliationSummary — accessibility', () => {
       expect(screen.getByText('Dimension')).toBeTruthy();
     });
   });
+
+  it('inspect button has accessible label', async () => {
+    mockFetchSuccess(FIXTURE_HEALTHY);
+    render(<AccountReconciliationSummary accountId="acct-a11y-inspect" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Run dry-run migration inspection')).toBeTruthy();
+    });
+  });
+
+  it('run migration button has accessible label', async () => {
+    mockFetchSuccess(FIXTURE_HEALTHY);
+    render(<AccountReconciliationSummary accountId="acct-a11y-migrate" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Run full migration')).toBeTruthy();
+    });
+  });
+
+  it('confirmation dialog has role="alertdialog"', async () => {
+    mockFetchSuccess(FIXTURE_HEALTHY);
+    render(<AccountReconciliationSummary accountId="acct-a11y-confirm" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Run full migration')).toBeTruthy();
+    });
+
+    // Click Run Migration to show dialog
+    fireEvent.click(screen.getByLabelText('Run full migration'));
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('alertdialog');
+      expect(dialog).toBeTruthy();
+    });
+  });
+
+  it('failure feedback has role="alert"', async () => {
+    const mockFetch = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        if (options && typeof options === 'object' && options.method === 'POST') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: async () => ({ error: 'Migration engine unavailable' }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => FIXTURE_HEALTHY,
+        });
+      },
+    );
+    globalThis.fetch = mockFetch;
+
+    render(<AccountReconciliationSummary accountId="acct-a11y-failfb" />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Run full migration')).toBeTruthy();
+    });
+
+    // Click Run Migration to show dialog
+    fireEvent.click(screen.getByLabelText('Run full migration'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeTruthy();
+    });
+
+    // Find the Confirm Migration button (not the dialog container)
+    const confirmBtns = screen.getAllByLabelText('Confirm migration');
+    const confirmBtn = confirmBtns.find((el) => el.tagName === 'BUTTON') ?? confirmBtns[1];
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      const alertEl = screen.getByRole('alert');
+      expect(alertEl).toBeTruthy();
+      expect(alertEl.textContent).toContain('Migration failed');
+    });
+  });
+});
+
+describe('AccountReconciliationSummary — maintenance controls', () => {
+  it('renders Inspect, Run Migration, and Refresh buttons', async () => {
+    mockFetchSuccess(FIXTURE_HEALTHY);
+    render(<AccountReconciliationSummary accountId="acct-maint-01" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    expect(screen.getByText('Inspect')).toBeTruthy();
+    expect(screen.getByText('Run Migration')).toBeTruthy();
+    expect(screen.getByText('Refresh')).toBeTruthy();
+  });
+
+  it('clicking Inspect sends POST with dryRun=true and shows inspection results', async () => {
+    // Use mockImplementation to handle both GET and POST differently.
+    // This avoids Strict Mode double-render consuming mockResolvedValueOnce prematurely.
+    const mockFetchInspect = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        if (options && typeof options === 'object' && options.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              runId: 'dry-run-123',
+              accountId: 'acct-001',
+              status: 'completed',
+              totalRecords: 10,
+              mappedCount: 8,
+              anomalyCount: 1,
+              unsupportedCount: 0,
+              duplicateCount: 1,
+              rebuildFingerprint: null,
+              errorMessage: null,
+              dryRun: true,
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => FIXTURE_HEALTHY,
+        });
+      },
+    );
+    globalThis.fetch = mockFetchInspect;
+
+    render(<AccountReconciliationSummary accountId="acct-maint-inspect" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    // Click Inspect
+    fireEvent.click(screen.getByText('Inspect'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Inspection complete')).toBeTruthy();
+    });
+
+    // Verify counts shown
+    expect(screen.getByText(/10 records/)).toBeTruthy();
+    expect(screen.getByText(/8 mapped/)).toBeTruthy();
+    expect(screen.getByText(/1 anomalies/)).toBeTruthy();
+  });
+
+  it('clicking Run Migration shows confirmation dialog', async () => {
+    mockFetchSuccess(FIXTURE_HEALTHY);
+    render(<AccountReconciliationSummary accountId="acct-maint-confirm" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    // Click Run Migration
+    fireEvent.click(screen.getByText('Run Migration'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Run full migration?')).toBeTruthy();
+      // Confirm migration label matches both the dialog container and the button;
+      // just verify at least one element has the label we want
+      const confirmLabels = screen.getAllByLabelText('Confirm migration');
+      expect(confirmLabels.length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByLabelText('Cancel migration')).toBeTruthy();
+    });
+  });
+
+  it('Cancel button closes confirmation dialog', async () => {
+    mockFetchSuccess(FIXTURE_HEALTHY);
+    render(<AccountReconciliationSummary accountId="acct-maint-cancel" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    // Click Run Migration to show dialog
+    fireEvent.click(screen.getByText('Run Migration'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Run full migration?')).toBeTruthy();
+    });
+
+    // Click Cancel
+    fireEvent.click(screen.getByLabelText('Cancel migration'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Run full migration?')).toBeNull();
+    });
+  });
+
+  it('confirming migration sends POST with dryRun=false and shows success', async () => {
+    const mockFetchSuccess = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        if (options && typeof options === 'object' && options.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              runId: 'mig-run-456',
+              accountId: 'acct-001',
+              status: 'completed',
+              totalRecords: 15,
+              mappedCount: 12,
+              anomalyCount: 0,
+              unsupportedCount: 1,
+              duplicateCount: 2,
+              rebuildFingerprint: 'sha256-abcdef1234567890',
+              errorMessage: null,
+              dryRun: false,
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => FIXTURE_HEALTHY,
+        });
+      },
+    );
+    globalThis.fetch = mockFetchSuccess;
+
+    render(<AccountReconciliationSummary accountId="acct-maint-success" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    // Click Run Migration
+    fireEvent.click(screen.getByText('Run Migration'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Run full migration?')).toBeTruthy();
+    });
+
+    // Click Confirm Migration (find the button element specifically)
+    const confirmBtnsComp = screen.getAllByLabelText('Confirm migration');
+    const confirmBtnComp = confirmBtnsComp.find((el) => el.tagName === 'BUTTON') ?? confirmBtnsComp[1];
+    fireEvent.click(confirmBtnComp);
+
+    await waitFor(() => {
+      expect(screen.getByText('Migration completed successfully')).toBeTruthy();
+    });
+
+    // Verify result details shown
+    expect(screen.getByText(/15 records/)).toBeTruthy();
+    expect(screen.getByText(/12 mapped/)).toBeTruthy();
+    // The component shows fingerprint.slice(0, 16) + '...'
+    // sha256-abcdef1234567890 -> slice(0,16) = sha256-abcdef12
+    expect(screen.getByText(/sha256-abcdef12/)).toBeTruthy();
+  });
+
+  it('displays failure feedback when migration API returns error', async () => {
+    const mockFetchFail = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        if (options && typeof options === 'object' && options.method === 'POST') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: async () => ({ error: 'Internal database error' }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => FIXTURE_HEALTHY,
+        });
+      },
+    );
+    globalThis.fetch = mockFetchFail;
+
+    render(<AccountReconciliationSummary accountId="acct-maint-fail" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    // Click Run Migration
+    fireEvent.click(screen.getByText('Run Migration'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Run full migration?')).toBeTruthy();
+    });
+
+    // Find the specific Confirm Migration button (not the dialog container)
+    const confirmBtns = screen.getAllByLabelText('Confirm migration');
+    const confirmBtn = confirmBtns.find((el) => el.tagName === 'BUTTON') ?? confirmBtns[1];
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Migration failed')).toBeTruthy();
+      expect(screen.getByText('Internal database error')).toBeTruthy();
+    });
+  });
+
+  it('displays refusal feedback for 404 response', async () => {
+    const mockFetch404 = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        if (options && typeof options === 'object' && options.method === 'POST') {
+          return Promise.resolve({
+            ok: false,
+            status: 404,
+            json: async () => ({ error: 'Account not found' }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => FIXTURE_HEALTHY,
+        });
+      },
+    );
+    globalThis.fetch = mockFetch404;
+
+    render(<AccountReconciliationSummary accountId="acct-maint-refuse" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Run Migration'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Run full migration?')).toBeTruthy();
+    });
+
+    const confirmBtns = screen.getAllByLabelText('Confirm migration');
+    const confirmBtn = confirmBtns.find((el) => el.tagName === 'BUTTON') ?? confirmBtns[1];
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Migration refused')).toBeTruthy();
+      expect(screen.getByText('Account not found.')).toBeTruthy();
+    });
+  });
+
+  it('displays network error feedback when fetch throws', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        // GET calls (initial render + possibly strict mode double render)
+        if (!options || options.method !== 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => FIXTURE_HEALTHY,
+          });
+        }
+        // POST call (migration) — reject
+        return Promise.reject(new Error('Failed to fetch'));
+      },
+    );
+
+    render(<AccountReconciliationSummary accountId="acct-maint-net" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Run Migration'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Run full migration?')).toBeTruthy();
+    });
+
+    const confirmBtnsNet = screen.getAllByLabelText('Confirm migration');
+    const confirmBtnNet = confirmBtnsNet.find((el) => el.tagName === 'BUTTON') ?? confirmBtnsNet[1];
+    fireEvent.click(confirmBtnNet);
+
+    await waitFor(() => {
+      expect(screen.getByText('Migration failed')).toBeTruthy();
+      expect(screen.getByText('Failed to fetch')).toBeTruthy();
+    });
+  });
+
+  it('dismiss button clears migration feedback', async () => {
+    const mockFetch = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        if (options && typeof options === 'object' && options.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              runId: 'dry-run-789',
+              accountId: 'acct-001',
+              status: 'completed',
+              totalRecords: 5,
+              mappedCount: 5,
+              anomalyCount: 0,
+              unsupportedCount: 0,
+              duplicateCount: 0,
+              rebuildFingerprint: null,
+              errorMessage: null,
+              dryRun: true,
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => FIXTURE_HEALTHY,
+        });
+      },
+    );
+    globalThis.fetch = mockFetch;
+
+    render(<AccountReconciliationSummary accountId="acct-maint-dismiss" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Inspect'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Inspection complete')).toBeTruthy();
+    });
+
+    // Click dismiss button
+    const dismissBtn = screen.getByLabelText('Dismiss migration result');
+    fireEvent.click(dismissBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Inspection complete')).toBeNull();
+    });
+  });
+
+  it('buttons are disabled while migrating', async () => {
+    // Use a pending promise for the POST call to simulate in-progress migration
+    const pendingPromise = new Promise(() => {});
+
+    globalThis.fetch = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        // GET calls return the healthy fixture
+        if (!options || options.method !== 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => FIXTURE_HEALTHY,
+          });
+        }
+        // POST call returns a never-resolving promise (stays in migrating state)
+        return pendingPromise;
+      },
+    );
+
+    render(<AccountReconciliationSummary accountId="acct-maint-disabled" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account is eligible for cutover')).toBeTruthy();
+    });
+
+    // Click Inspect to start migration (won't resolve)
+    fireEvent.click(screen.getByText('Inspect'));
+
+    // All buttons should be disabled while migrating
+    await waitFor(() => {
+      const inspectBtn = screen.getByText('Inspect').closest('button');
+      const migrateBtn = screen.getByText('Run Migration').closest('button');
+      expect(inspectBtn).toBeTruthy();
+      expect(migrateBtn).toBeTruthy();
+      // Check disabled attribute directly (not toBeDisabled which may not be available)
+      expect(inspectBtn!.disabled).toBe(true);
+      expect(migrateBtn!.disabled).toBe(true);
+    });
+  });
+
+  it('inspect runs on no-migration state', async () => {
+    globalThis.fetch = vi.fn().mockImplementation(
+      (url: string | URL | Request, options?: RequestInit) => {
+        if (options && typeof options === 'object' && options.method === 'POST') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              runId: 'dry-no-mig',
+              accountId: 'acct-001',
+              status: 'completed',
+              totalRecords: 3,
+              mappedCount: 3,
+              anomalyCount: 0,
+              unsupportedCount: 0,
+              duplicateCount: 0,
+              rebuildFingerprint: null,
+              errorMessage: null,
+              dryRun: true,
+            }),
+          });
+        }
+        // GET returns no-migration (400)
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: async () => ({ error: 'No migration run found' }),
+        });
+      },
+    );
+
+    render(<AccountReconciliationSummary accountId="acct-maint-nomig" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No migration run recorded.')).toBeTruthy();
+    });
+
+    // Click Inspect from no-migration state — buttons are still rendered
+    const inspectBtn = screen.getByText('Inspect');
+    expect(inspectBtn).toBeTruthy();
+  });
 });

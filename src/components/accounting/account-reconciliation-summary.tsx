@@ -10,6 +10,9 @@ import {
   ChevronDown,
   ChevronRight,
   BookOpen,
+  Play,
+  Eye,
+  ShieldAlert,
 } from 'lucide-react';
 
 // ── Types (mirroring the reconciliation API contract) ────────────────────
@@ -67,6 +70,30 @@ interface AccountReconciliationSummaryProps {
   refreshKey?: number;
 }
 
+// ── Migration API contract ──────────────────────────────────────────────
+
+interface MigrationResult {
+  runId: string;
+  accountId: string;
+  status: string;
+  totalRecords: number;
+  mappedCount: number;
+  anomalyCount: number;
+  unsupportedCount: number;
+  duplicateCount: number;
+  rebuildFingerprint: string | null;
+  errorMessage: string | null;
+  dryRun: boolean;
+}
+
+interface MigrationFeedback {
+  /** 'pending' | 'success' | 'failure' | 'refused' */
+  outcome: 'pending' | 'success' | 'failure' | 'refused';
+  result?: MigrationResult;
+  errorMessage?: string;
+  dryRun: boolean;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function getClassificationBadge(
@@ -113,6 +140,31 @@ function getHistoryLabel(runStatus: string): string {
   }
 }
 
+function feedbackContentClass(outcome: MigrationFeedback['outcome']): string {
+  switch (outcome) {
+    case 'success':
+      return 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20';
+    case 'failure':
+    case 'refused':
+      return 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20';
+    case 'pending':
+      return 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20';
+  }
+}
+
+function feedbackIcon(outcome: MigrationFeedback['outcome']) {
+  switch (outcome) {
+    case 'success':
+      return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />;
+    case 'failure':
+      return <XCircle className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400" />;
+    case 'refused':
+      return <ShieldAlert className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400" />;
+    case 'pending':
+      return <RefreshCw className="mt-0.5 size-4 animate-spin shrink-0 text-blue-600 dark:text-blue-400" />;
+  }
+}
+
 // ── Component ──────────────────────────────────────────────────────────
 
 export default function AccountReconciliationSummary({
@@ -125,6 +177,13 @@ export default function AccountReconciliationSummary({
   const [errorType, setErrorType]
     = useState<'account-not-found' | 'no-migration' | 'generic' | null>(null);
   const [expanded, setExpanded] = useState(false);
+
+  // Migration state
+  const [migrating, setMigrating] = useState(false);
+  const [migrationFeedback, setMigrationFeedback] = useState<MigrationFeedback | null>(null);
+  const [showConfirmRun, setShowConfirmRun] = useState(false);
+
+  // ── Fetch reconciliation report ─────────────────────────────────────
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
@@ -171,6 +230,64 @@ export default function AccountReconciliationSummary({
     void fetchReport();
   }, [fetchReport, refreshKey]);
 
+  // ── Run migration ──────────────────────────────────────────────────
+
+  const runMigration = useCallback(
+    async (dryRun: boolean) => {
+      // Prevent duplicate submissions
+      if (migrating) return;
+
+      setMigrating(true);
+      setMigrationFeedback({ outcome: 'pending', dryRun });
+      setShowConfirmRun(false);
+
+      try {
+        const res = await fetch(`/api/accounts/${accountId}/migration`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dryRun }),
+        });
+
+        if (res.status === 404) {
+          setMigrationFeedback({
+            outcome: 'refused',
+            dryRun,
+            errorMessage: 'Account not found.',
+          });
+          return;
+        }
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'Migration failed' }));
+          setMigrationFeedback({
+            outcome: 'failure',
+            dryRun,
+            errorMessage: err.error ?? 'Migration failed',
+          });
+          return;
+        }
+
+        const data = (await res.json()) as MigrationResult;
+        setMigrationFeedback({ outcome: 'success', result: data, dryRun });
+
+        // Auto-refresh the reconciliation report after a successful migration
+        if (!dryRun && data.status === 'completed') {
+          // Small delay to let DB settle
+          setTimeout(() => void fetchReport(), 300);
+        }
+      } catch (err) {
+        setMigrationFeedback({
+          outcome: 'failure',
+          dryRun,
+          errorMessage: err instanceof Error ? err.message : 'An error occurred',
+        });
+      } finally {
+        setMigrating(false);
+      }
+    },
+    [accountId, migrating, fetchReport],
+  );
+
   // ── Derived state ──────────────────────────────────────────────────
 
   const hasReport = report !== null;
@@ -189,17 +306,173 @@ export default function AccountReconciliationSummary({
         <h2 className="text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
           Reconciliation
         </h2>
-        <button
-          onClick={fetchReport}
-          disabled={loading}
-          className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
-          title="Refresh reconciliation report"
-          aria-label="Refresh reconciliation report"
-        >
-          <RefreshCw className={`size-3 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Dry Run Button */}
+          <button
+            onClick={() => runMigration(true)}
+            disabled={migrating}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+            title="Preview what would be migrated without writing any data"
+            aria-label="Run dry-run migration inspection"
+          >
+            <Eye className="size-3" />
+            Inspect
+          </button>
+          {/* Run Migration Button */}
+          <button
+            onClick={() => setShowConfirmRun(true)}
+            disabled={migrating}
+            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:bg-zinc-800 dark:text-amber-400 dark:hover:bg-zinc-700"
+            title="Run a full migration from legacy data"
+            aria-label="Run full migration"
+          >
+            <Play className="size-3" />
+            Run Migration
+          </button>
+          {/* Refresh Button */}
+          <button
+            onClick={fetchReport}
+            disabled={loading || migrating}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+            title="Refresh reconciliation report"
+            aria-label="Refresh reconciliation report"
+          >
+            <RefreshCw className={`size-3 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {/* ── Confirmation Dialog ──────────────────────────────────────── */}
+      {showConfirmRun && (
+        <div
+          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20"
+          role="alertdialog"
+          aria-label="Confirm migration"
+        >
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Run full migration?
+              </p>
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                This will import all legacy account transactions, trade executions,
+                and price snapshots into the accounting system and rebuild all projections.
+                Existing data is safe (duplicates are detected), but this action cannot be
+                undone once committed. Use &quot;Inspect&quot; first to preview the results.
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={() => setShowConfirmRun(false)}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  aria-label="Cancel migration"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => runMigration(false)}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 dark:border-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600"
+                  aria-label="Confirm migration"
+                >
+                  <Play className="size-3" />
+                  Confirm Migration
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Migration Feedback ───────────────────────────────────────── */}
+      {migrationFeedback && (
+        <div
+          className={`mb-4 rounded-lg border p-4 ${feedbackContentClass(migrationFeedback.outcome)}`}
+          role={migrationFeedback.outcome === 'failure' ? 'alert' : 'status'}
+          aria-live="polite"
+        >
+          <div className="flex items-start gap-3">
+            {feedbackIcon(migrationFeedback.outcome)}
+            <div className="flex-1">
+              {migrationFeedback.outcome === 'pending' && (
+                <>
+                  <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                    {migrationFeedback.dryRun
+                      ? 'Inspecting legacy data...'
+                      : 'Running migration...'}
+                  </p>
+                  <p className="mt-1 text-xs text-blue-700 dark:text-blue-400">
+                    {migrationFeedback.dryRun
+                      ? 'Counting records that would be migrated.'
+                      : 'Importing records and rebuilding projections.'}
+                  </p>
+                </>
+              )}
+
+              {migrationFeedback.outcome === 'success' && migrationFeedback.result && (
+                <>
+                  <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                    {migrationFeedback.dryRun
+                      ? 'Inspection complete'
+                      : 'Migration completed successfully'}
+                  </p>
+                  <div className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
+                    <p>
+                      {migrationFeedback.result.totalRecords} record
+                      {migrationFeedback.result.totalRecords !== 1 ? 's' : ''} processed
+                      ({migrationFeedback.result.mappedCount} mapped,
+                      {' '}{migrationFeedback.result.duplicateCount} duplicates
+                      {migrationFeedback.result.anomalyCount > 0
+                        ? `, ${migrationFeedback.result.anomalyCount} anomalies`
+                        : ''}
+                      {migrationFeedback.result.unsupportedCount > 0
+                        ? `, ${migrationFeedback.result.unsupportedCount} unsupported`
+                        : ''})
+                    </p>
+                    {migrationFeedback.result.rebuildFingerprint && (
+                      <p className="mt-0.5 font-mono">
+                        Fingerprint: {migrationFeedback.result.rebuildFingerprint.slice(0, 16)}...
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {migrationFeedback.outcome === 'failure' && (
+                <>
+                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                    {migrationFeedback.dryRun ? 'Inspection failed' : 'Migration failed'}
+                  </p>
+                  <p className="mt-1 text-xs text-red-700 dark:text-red-400">
+                    {migrationFeedback.errorMessage ?? 'An unexpected error occurred.'}
+                  </p>
+                </>
+              )}
+
+              {migrationFeedback.outcome === 'refused' && (
+                <>
+                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                    Migration refused
+                  </p>
+                  <p className="mt-1 text-xs text-red-700 dark:text-red-400">
+                    {migrationFeedback.errorMessage ?? 'Request could not be processed.'}
+                  </p>
+                </>
+              )}
+            </div>
+            {/* Dismiss button for completed outcomes */}
+            {migrationFeedback.outcome !== 'pending' && (
+              <button
+                onClick={() => setMigrationFeedback(null)}
+                className="shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                aria-label="Dismiss migration result"
+              >
+                <XCircle className="size-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Loading State ───────────────────────────────────────────── */}
       {loading && (
@@ -245,7 +518,9 @@ export default function AccountReconciliationSummary({
             No migration run recorded.
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Run a migration via the API to compare legacy source data against accounting projections.
+            Use the Inspect button above to preview what data would be migrated,
+            then run a full migration to compare legacy source data against
+            accounting projections.
           </p>
         </div>
       )}
