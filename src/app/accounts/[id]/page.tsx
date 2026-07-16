@@ -178,7 +178,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
 
   const fetchJournalAttribution = useCallback(async () => {
     try {
-      const res = await fetch(`/api/accounts/${id}/executions?limit=1000&offset=0`);
+      const res = await fetch(`/api/accounts/${id}/executions?limit=100&offset=0`);
       if (!res.ok) return;
       const data = await res.json();
       const executions: Array<{ journalTradeId: string | null }> = data.executions ?? [];
