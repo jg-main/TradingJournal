@@ -122,27 +122,44 @@ export default function AccountReconciliationSummary({
   const [report, setReport] = useState<ReconciliationReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType]
+    = useState<'account-not-found' | 'no-migration' | 'generic' | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setErrorType(null);
     try {
       const res = await fetch(`/api/accounts/${accountId}/reconciliation`);
-      if (res.status === 400) {
-        // No migration run yet — this is expected for new accounts
+
+      if (res.status === 404) {
+        setError('Account not found.');
+        setErrorType('account-not-found');
         setReport(null);
         setLoading(false);
         return;
       }
+
+      if (res.status === 400) {
+        // No migration run yet — this is expected for new accounts
+        setReport(null);
+        setErrorType('no-migration');
+        setLoading(false);
+        return;
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to fetch' }));
         throw new Error(err.error ?? 'Failed to fetch reconciliation report');
       }
+
       const data = (await res.json()) as ReconciliationReport;
       setReport(data);
+      setErrorType(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
+      setErrorType('generic');
     } finally {
       setLoading(false);
     }
@@ -194,17 +211,35 @@ export default function AccountReconciliationSummary({
         </div>
       )}
 
-      {/* ── Error State ─────────────────────────────────────────────── */}
+      {/* ── Error / Not-Found State ─────────────────────────────────── */}
       {error && !loading && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
+        <div
+          className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20"
+          role="alert"
+          aria-live="polite"
+        >
           <XCircle className="mx-auto mb-2 size-5 text-red-500" />
           <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+          {errorType === 'generic' && (
+            <button
+              onClick={fetchReport}
+              className="mt-3 inline-flex items-center gap-1 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900/30"
+              aria-label="Retry loading reconciliation report"
+            >
+              <RefreshCw className="size-3" />
+              Try Again
+            </button>
+          )}
         </div>
       )}
 
       {/* ── No Migration Run (expected for new/empty accounts) ──────── */}
-      {!loading && !error && !hasReport && (
-        <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700">
+      {!loading && !error && !hasReport && errorType === 'no-migration' && (
+        <div
+          className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"
+          role="status"
+          aria-live="polite"
+        >
           <BookOpen className="mx-auto mb-2 size-6 text-zinc-400" />
           <p className="text-sm text-zinc-600 dark:text-zinc-300">
             No migration run recorded.
