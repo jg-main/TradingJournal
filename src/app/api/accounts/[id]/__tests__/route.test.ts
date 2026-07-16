@@ -174,7 +174,64 @@ sqlite.exec(`
     notes TEXT,
     created_at TEXT DEFAULT (current_timestamp)
   );
+
+  CREATE TABLE IF NOT EXISTS account_performance (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    computed_as_of TEXT,
+    net_cash TEXT,
+    nav TEXT,
+    marked_positions TEXT,
+    realized_pnl TEXT,
+    unrealized_pnl TEXT,
+    total_pnl TEXT,
+    realized_fees TEXT,
+    gross_exposure TEXT,
+    net_exposure TEXT,
+    warnings TEXT DEFAULT '[]',
+    positions_json TEXT DEFAULT '[]',
+    rebuild_count INTEGER DEFAULT 0,
+    last_rebuilt_at TEXT,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
 `);
+
+// ── Seed function for accounting projection ────────────────────────
+
+function seedAccountingProjection(
+  accountId: string,
+  overrides?: Record<string, string | null>,
+): void {
+  const defaults = {
+    nav: '0.00',
+    net_cash: '0.00',
+    marked_positions: '0.00',
+    realized_pnl: '0.00',
+    unrealized_pnl: '0.00',
+    total_pnl: '0.00',
+    realized_fees: '0.00',
+    gross_exposure: '0.00',
+    net_exposure: '0.00',
+    computed_as_of: new Date().toISOString(),
+    last_rebuilt_at: new Date().toISOString(),
+    rebuild_count: 1,
+  };
+  const vals = { ...defaults, ...overrides };
+  sqlite.prepare(`
+    INSERT OR REPLACE INTO account_performance
+      (id, account_id, computed_as_of, net_cash, nav, marked_positions,
+       realized_pnl, unrealized_pnl, total_pnl, realized_fees,
+       gross_exposure, net_exposure, rebuild_count, last_rebuilt_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).run(
+    randomUUID(), accountId, vals.computed_as_of,
+    vals.net_cash, vals.nav, vals.marked_positions,
+    vals.realized_pnl, vals.unrealized_pnl, vals.total_pnl,
+    vals.realized_fees, vals.gross_exposure, vals.net_exposure,
+    vals.rebuild_count, vals.last_rebuilt_at,
+  );
+}
 
 // ── Simulated route logic ───────────────────────────────────────────
 
@@ -185,150 +242,36 @@ function doGetAccount(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Account not found' } };
     }
 
-    // Fetch all closed trades for this account
-    const closedTrades = db
-      .select()
-      .from(schema.trades)
-      .where(and(eq(schema.trades.accountId, id), eq(schema.trades.status, 'closed')))
-      .all();
+    // Query accounting projection (authoritative source post-cutover)
+    const projection = sqlite
+      .prepare('SELECT * FROM account_performance WHERE account_id = ?')
+      .get(id) as Record<string, unknown> | undefined;
 
-    // Compute realized P&L across closed trades
-    let realizedPnl = 0;
-    let kpis = {
-      tradeCount: 0,
-      netPnl: 0,
-      winRate: null as number | null,
-      avgR: null as number | null,
-      avgGrade: null as number | null,
-    };
-
-    if (closedTrades.length > 0) {
-      const tradeIds = closedTrades.map((t) => t.id);
-
-      // Fetch all executions for closed trades in one query
-      const allExecutions = db
-        .select()
-        .from(schema.tradeExecutions)
-        .where(inArray(schema.tradeExecutions.tradeId, tradeIds))
-        .all();
-
-      const execByTradeId = new Map<string, typeof allExecutions>();
-      for (const exec of allExecutions) {
-        const list = execByTradeId.get(exec.tradeId) ?? [];
-        list.push(exec);
-        execByTradeId.set(exec.tradeId, list);
-      }
-
-      // Compute P&L for each closed trade
-      for (const trade of closedTrades) {
-        const executions = execByTradeId.get(trade.id) ?? [];
-        if (executions.length === 0) continue;
-
-        const execData: ExecutionData[] = executions.map((e) => ({
-          action: e.action,
-          quantity: e.quantity,
-          price: e.price,
-          fees: e.fees ?? 0,
-          executedAt: e.executedAt ?? trade.createdAt ?? new Date().toISOString(),
-        }));
-
-        const pnl = calculatePnL(execData, trade.direction);
-        realizedPnl += pnl.totalRealizedPnL;
-      }
-
-      // Compute KPI metrics
-      const riskSnapshots = db
-        .select()
-        .from(schema.tradeRiskSnapshots)
-        .where(inArray(schema.tradeRiskSnapshots.tradeId, tradeIds))
-        .all();
-
-      const grades = db
-        .select()
-        .from(schema.tradeGrades)
-        .where(inArray(schema.tradeGrades.tradeId, tradeIds))
-        .all();
-
-      const riskByTradeId = new Map(riskSnapshots.map((rs) => [rs.tradeId, rs]));
-      const gradeByTradeId = new Map(grades.map((g) => [g.tradeId, g]));
-
-      let winCount = 0;
-      let netPnlForKpis = 0;
-      const rMultiples: number[] = [];
-      const gradeScores: number[] = [];
-
-      for (const trade of closedTrades) {
-        const executions = execByTradeId.get(trade.id) ?? [];
-        if (executions.length === 0) continue;
-
-        const execData: ExecutionData[] = executions.map((e) => ({
-          action: e.action,
-          quantity: e.quantity,
-          price: e.price,
-          fees: e.fees ?? 0,
-          executedAt: e.executedAt ?? trade.createdAt ?? new Date().toISOString(),
-        }));
-
-        const pnl = calculatePnL(execData, trade.direction);
-        netPnlForKpis += pnl.totalRealizedPnL;
-
-        const risk = riskByTradeId.get(trade.id);
-        if (risk?.initialRiskAmount != null && risk.initialRiskAmount > 0) {
-          const rResult = calculateRMultiple(pnl.totalRealizedPnL, risk.initialRiskAmount);
-          if (rResult.rMultiple !== null) rMultiples.push(rResult.rMultiple);
-        }
-
-        const grade = gradeByTradeId.get(trade.id);
-        if (grade?.totalScore != null) gradeScores.push(grade.totalScore);
-
-        if (pnl.totalRealizedPnL > 0) winCount++;
-      }
-
-      const decisions = closedTrades.filter(
-        (t) => (execByTradeId.get(t.id)?.length ?? 0) > 0,
-      ).length;
-
-      kpis = {
-        tradeCount: closedTrades.length,
-        netPnl: netPnlForKpis,
-        winRate: decisions > 0 ? winCount / decisions : null,
-        avgR: rMultiples.length > 0
-          ? rMultiples.reduce((a, b) => a + b, 0) / rMultiples.length
-          : null,
-        avgGrade: gradeScores.length > 0
-          ? gradeScores.reduce((a, b) => a + b, 0) / gradeScores.length
-          : null,
-      };
-    }
-
-    // Fetch account transactions for deposits/withdrawals
-    const transactions = db
-      .select()
-      .from(schema.accountTransactions)
-      .where(eq(schema.accountTransactions.accountId, id))
-      .all();
-
-    const netDeposits = transactions
-      .filter((t) => t.type === 'deposit')
-      .reduce((s, t) => s + t.amount, 0);
-
-    const netWithdrawals = transactions
-      .filter((t) => t.type === 'withdrawal')
-      .reduce((s, t) => s + t.amount, 0);
-
-    // Compute current balance
-    const startingBalance = account.startingBalance ?? 0;
-    const currentBalance = startingBalance + netDeposits - netWithdrawals + realizedPnl;
+    const nav = projection?.nav ? parseFloat(projection.nav as string) : null;
+    const realizedPnl = projection?.realized_pnl ? parseFloat(projection.realized_pnl as string) : null;
+    const netCash = projection?.net_cash ? parseFloat(projection.net_cash as string) : null;
+    const markedPositions = projection?.marked_positions ? parseFloat(projection.marked_positions as string) : null;
+    const unrealizedPnl = projection?.unrealized_pnl ? parseFloat(projection.unrealized_pnl as string) : null;
+    const totalPnl = projection?.total_pnl ? parseFloat(projection.total_pnl as string) : null;
+    const realizedFees = projection?.realized_fees ? parseFloat(projection.realized_fees as string) : null;
+    const grossExposure = projection?.gross_exposure ? parseFloat(projection.gross_exposure as string) : null;
+    const netExposure = projection?.net_exposure ? parseFloat(projection.net_exposure as string) : null;
 
     return {
       status: 200,
       data: {
         ...account,
-        currentBalance,
+        nav,
+        netCash,
+        markedPositions,
+        currentBalance: nav,
         realizedPnl,
-        netDeposits,
-        netWithdrawals,
-        kpis,
+        unrealizedPnl,
+        totalPnl,
+        realizedFees,
+        grossExposure,
+        netExposure,
+        kpis: null,
       },
     };
   } catch (error) {
@@ -667,346 +610,83 @@ console.log('\n10. GET returns 404 for nonexistent account:');
   assertEqual((result.data as { error: string }).error, 'Account not found', 'error message');
 }
 
-// ── 11. Rollforward: No trades, no transactions (with startingBalance) ──
+// ── 11. Accounting projection: populated values ──────────────────────
 
-console.log('\n11. Rollforward: no trades, no transactions (with startingBalance):');
+console.log('\n11. GET returns accounting projection values:');
 {
   cleanup();
-  const account = seedAccount({ name: 'Rollforward Test', startingBalance: 10000 });
+  const account = seedAccount({ name: 'Proj Test', startingBalance: 10000 });
+  seedAccountingProjection(account.id as string, {
+    nav: '1002.20',
+    net_cash: '632.50',
+    marked_positions: '369.70',
+    realized_pnl: '-17.00',
+    unrealized_pnl: '19.20',
+    total_pnl: '2.20',
+    realized_fees: '0.00',
+    gross_exposure: '369.70',
+    net_exposure: '369.70',
+  });
 
   const result = doGetAccount(account.id as string);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
 
-  assertEqual(data.currentBalance, 10000, 'currentBalance equals startingBalance');
-  assertEqual(data.realizedPnl, 0, 'realizedPnl is 0');
-  assertEqual(data.netDeposits, 0, 'netDeposits is 0');
-  assertEqual(data.netWithdrawals, 0, 'netWithdrawals is 0');
+  assertEqual(data.nav, 1002.2, 'nav matches projection');
+  assertEqual(data.netCash, 632.5, 'netCash matches projection');
+  assertEqual(data.markedPositions, 369.7, 'markedPositions matches projection');
+  assertEqual(data.currentBalance, 1002.2, 'currentBalance = nav');
+  assertEqual(data.realizedPnl, -17, 'realizedPnl = -17.00 from projection');
+  assertEqual(data.unrealizedPnl, 19.2, 'unrealizedPnl = 19.20 from projection');
+  assertEqual(data.totalPnl, 2.2, 'totalPnl = 2.20 from projection');
+  assertEqual(data.realizedFees, 0, 'realizedFees is 0');
+  assertEqual(data.grossExposure, 369.7, 'grossExposure matches');
+  assertEqual(data.netExposure, 369.7, 'netExposure matches');
+  assertEqual(data.kpis, null, 'kpis is null (accounting does not track trade-level KPIs)');
 }
 
-// ── 12. Rollforward: No trades, no transactions (startingBalance = null) ─
+// ── 12. Accounting projection: null values (no projection) ─────────────
 
-console.log('\n12. Rollforward: no trades, no transactions (startingBalance = null):');
+console.log('\n12. GET returns null values when no projection exists:');
 {
   cleanup();
-  const account = seedAccount({ name: 'Null Start', startingBalance: null });
+  const account = seedAccount({ name: 'No Proj', startingBalance: null });
 
   const result = doGetAccount(account.id as string);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
 
-  assertEqual(data.currentBalance, 0, 'currentBalance is 0 (null treated as 0)');
-  assertEqual(data.realizedPnl, 0, 'realizedPnl is 0');
+  assertEqual(data.nav, null, 'nav is null');
+  assertEqual(data.netCash, null, 'netCash is null');
+  assertEqual(data.currentBalance, null, 'currentBalance is null');
+  assertEqual(data.realizedPnl, null, 'realizedPnl is null');
+  assertEqual(data.kpis, null, 'kpis is null');
 }
 
-// ── 13. Rollforward: Closed trades, no transactions ────────────────────
+// ── 16. GET: Realized P&L from projection ─────────────────────────────
 
-console.log('\n13. Rollforward: closed trades (win), no transactions:');
+console.log('\n16. GET uses projection realizedPnl:');
 {
   cleanup();
-  const account = seedAccount({ id: 'test-account-id', name: 'Trade Only', startingBalance: 10000 });
-
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'closed', symbol: 'AAPL' });
-  seedExecution({ tradeId: trade.id, action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-  seedExecution({ tradeId: trade.id, action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-01T11:00:00Z' });
-
-  // P&L = (160 - 150) * 100 = 1000, fees = 0
-  // currentBalance = 10000 + 0 - 0 + 1000 = 11000
+  const account = seedAccount({ id: 'test-account-id', name: 'Pnl Check' });
+  seedAccountingProjection(account.id as string, {
+    nav: '1000.00',
+    net_cash: '1000.00',
+    realized_pnl: '-28.50',
+    unrealized_pnl: '0.00',
+    total_pnl: '-28.50',
+  });
 
   const result = doGetAccount(account.id as string);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
 
-  assertEqual(data.currentBalance, 11000, 'currentBalance = startingBalance + realizedPnl');
-  assertEqual(data.realizedPnl, 1000, 'realizedPnl = 1000 from winning trade');
-  assertEqual(data.netDeposits, 0, 'netDeposits is 0');
-  assertEqual(data.netWithdrawals, 0, 'netWithdrawals is 0');
-}
-
-// ── 14. Rollforward: Transactions AND closed trades ────────────────────
-
-console.log('\n14. Rollforward: transactions AND closed trades:');
-{
-  cleanup();
-  const account = seedAccount({ id: 'test-account-id', name: 'Full Rollforward', startingBalance: 10000 });
-
-  // Add a deposit of 2000
-  const now = new Date().toISOString();
-  db.insert(schema.accountTransactions)
-    .values({
-      id: randomUUID(),
-      accountId: 'test-account-id',
-      type: 'deposit',
-      amount: 2000,
-      balanceAfter: 12000,
-      date: '2025-06-10T10:00:00Z',
-      notes: null,
-      createdAt: now,
-    })
-    .run();
-
-  // Add a withdrawal of 500
-  db.insert(schema.accountTransactions)
-    .values({
-      id: randomUUID(),
-      accountId: 'test-account-id',
-      type: 'withdrawal',
-      amount: 500,
-      balanceAfter: 11500,
-      date: '2025-06-15T10:00:00Z',
-      notes: null,
-      createdAt: now,
-    })
-    .run();
-
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'closed', symbol: 'AAPL' });
-  seedExecution({ tradeId: trade.id, action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-  seedExecution({ tradeId: trade.id, action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-01T11:00:00Z' });
-
-  // P&L = 1000, netDeposits = 2000, netWithdrawals = 500
-  // currentBalance = 10000 + 2000 - 500 + 1000 = 12500
-
-  const result = doGetAccount(account.id as string);
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-
-  assertEqual(data.currentBalance, 12500, 'currentBalance = startingBalance + deposits - withdrawals + realizedPnl');
-  assertEqual(data.realizedPnl, 1000, 'realizedPnl = 1000 from winning trade');
-  assertEqual(data.netDeposits, 2000, 'netDeposits = 2000');
-  assertEqual(data.netWithdrawals, 500, 'netWithdrawals = 500');
+  assertEqual(data.realizedPnl, -28.5, 'realizedPnl = -28.50 from projection');
+  assertEqual(data.totalPnl, -28.5, 'totalPnl = -28.50');
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// NEW: GET KPI tests
-// ═══════════════════════════════════════════════════════════════════
-
-// ── 15. KPI: No closed trades → tradeCount=0, netPnl=0, winRate=null, avgR=null, avgGrade=null ─
-
-console.log('\n15. KPI: no closed trades returns empty KPIs:');
-{
-  cleanup();
-  const account = seedAccount({ id: 'test-account-id', name: 'No Closed', startingBalance: 10000 });
-
-  // Create an open trade (not closed) to verify it is excluded
-  seedTrade({ accountId: 'test-account-id', status: 'open', symbol: 'TSLA' });
-
-  const result = doGetAccount(account.id as string);
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  const kpis = data.kpis as Record<string, unknown>;
-
-  assertEqual(kpis.tradeCount, 0, 'tradeCount is 0');
-  assertEqual(kpis.netPnl, 0, 'netPnl is 0');
-  assertEqual(kpis.winRate, null, 'winRate is null');
-  assertEqual(kpis.avgR, null, 'avgR is null');
-  assertEqual(kpis.avgGrade, null, 'avgGrade is null');
-}
-
-// ── 16. KPI: Closed trades with risk snapshots → avgR populated ────────
-
-console.log('\n16. KPI: closed trades with risk snapshots populate avgR:');
-{
-  cleanup();
-  const account = seedAccount({ id: 'test-account-id', name: 'AvgR Test', startingBalance: 10000 });
-
-  // Trade 1: winning trade (P&L = +1000)
-  const trade1 = seedTrade({ accountId: 'test-account-id', status: 'closed', symbol: 'AAPL' });
-  seedExecution({ tradeId: trade1.id, action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-  seedExecution({ tradeId: trade1.id, action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-01T11:00:00Z' });
-
-  // Risk snapshot for trade1 (initialRiskAmount = 500, so R = 1000/500 = 2.0)
-  const now = new Date().toISOString();
-  db.insert(schema.tradeRiskSnapshots)
-    .values({
-      id: randomUUID(),
-      tradeId: trade1.id as string,
-      initialRiskAmount: 500,
-      accountEquityAtOpen: 10000,
-      initialEntryPrice: 150.0,
-      initialQuantity: 100,
-      createdAt: now,
-    })
-    .run();
-
-  // Trade 2: losing trade (P&L = -500)
-  const trade2 = seedTrade({ accountId: 'test-account-id', status: 'closed', symbol: 'MSFT' });
-  seedExecution({ tradeId: trade2.id, action: 'buy', quantity: 100, price: 200.0, executedAt: '2025-06-02T10:00:00Z' });
-  seedExecution({ tradeId: trade2.id, action: 'sell', quantity: 100, price: 195.0, executedAt: '2025-06-02T11:00:00Z' });
-
-  // Risk snapshot for trade2 (initialRiskAmount = 500, so R = -500/500 = -1.0)
-  db.insert(schema.tradeRiskSnapshots)
-    .values({
-      id: randomUUID(),
-      tradeId: trade2.id as string,
-      initialRiskAmount: 500,
-      accountEquityAtOpen: 10000,
-      initialEntryPrice: 200.0,
-      initialQuantity: 100,
-      createdAt: now,
-    })
-    .run();
-
-  // Expected: avgR = (2.0 + (-1.0)) / 2 = 0.5
-  // netPnl = 1000 + (-500) = 500
-  // tradeCount = 2
-  // winRate = 1/2 = 0.5
-
-  const result = doGetAccount(account.id as string);
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  const kpis = data.kpis as Record<string, unknown>;
-
-  assertEqual(kpis.tradeCount, 2, 'tradeCount is 2');
-  assertEqual(kpis.netPnl, 500, 'netPnl = 1000 + (-500) = 500');
-  assertEqual(kpis.winRate, 0.5, 'winRate = 1/2 = 0.5');
-  assertEqual(kpis.avgR, 0.5, 'avgR = (2.0 + (-1.0)) / 2 = 0.5');
-  assertEqual(kpis.avgGrade, null, 'avgGrade is null (no grades)');
-}
-
-// ── 17. KPI: Closed trades with grades → avgGrade populated ────────────
-
-console.log('\n17. KPI: closed trades with grades populate avgGrade:');
-{
-  cleanup();
-  const account = seedAccount({ id: 'test-account-id', name: 'AvgGrade Test', startingBalance: 10000 });
-
-  // Trade with grade
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'closed', symbol: 'AAPL' });
-  seedExecution({ tradeId: trade.id, action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-  seedExecution({ tradeId: trade.id, action: 'sell', quantity: 100, price: 155.0, executedAt: '2025-06-01T11:00:00Z' });
-
-  const now = new Date().toISOString();
-  db.insert(schema.tradeGrades)
-    .values({
-      id: randomUUID(),
-      tradeId: trade.id as string,
-      totalScore: 85,
-      setupQualityScore: 8,
-      riskQualityScore: 7,
-      entryQualityScore: 9,
-      managementQualityScore: 8,
-      exitQualityScore: 8,
-      reviewQualityScore: 9,
-      gradeLabel: 'B+',
-      followedPlan: true,
-      ruleViolation: false,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
-
-  const result = doGetAccount(account.id as string);
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  const kpis = data.kpis as Record<string, unknown>;
-
-  assertEqual(kpis.tradeCount, 1, 'tradeCount is 1');
-  assertEqual(kpis.avgGrade, 85, 'avgGrade = 85');
-  assertEqual(kpis.avgR, null, 'avgR is null (no risk snapshots)');
-}
-
-// ── 18. KPI: Mixed trades with risk snapshots AND grades ──────────────
-
-console.log('\n18. KPI: closed trades with both risk and grades:');
-{
-  cleanup();
-  const account = seedAccount({ id: 'test-account-id', name: 'Mixed KPI', startingBalance: 10000 });
-
-  const now = new Date().toISOString();
-
-  // Trade 1: win, P&L = 1000, R = 2.0, grade = 80
-  const trade1 = seedTrade({ accountId: 'test-account-id', status: 'closed', symbol: 'AAPL' });
-  seedExecution({ tradeId: trade1.id, action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-  seedExecution({ tradeId: trade1.id, action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-01T11:00:00Z' });
-
-  db.insert(schema.tradeRiskSnapshots)
-    .values({
-      id: randomUUID(),
-      tradeId: trade1.id as string,
-      initialRiskAmount: 500,
-      createdAt: now,
-    })
-    .run();
-
-  db.insert(schema.tradeGrades)
-    .values({
-      id: randomUUID(),
-      tradeId: trade1.id as string,
-      totalScore: 80,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
-
-  // Trade 2: loss, P&L = -600, R = -1.2, grade = 70
-  const trade2 = seedTrade({ accountId: 'test-account-id', status: 'closed', symbol: 'MSFT' });
-  seedExecution({ tradeId: trade2.id, action: 'buy', quantity: 100, price: 200.0, executedAt: '2025-06-02T10:00:00Z' });
-  seedExecution({ tradeId: trade2.id, action: 'sell', quantity: 100, price: 194.0, executedAt: '2025-06-02T11:00:00Z' });
-
-  db.insert(schema.tradeRiskSnapshots)
-    .values({
-      id: randomUUID(),
-      tradeId: trade2.id as string,
-      initialRiskAmount: 500,
-      createdAt: now,
-    })
-    .run();
-
-  db.insert(schema.tradeGrades)
-    .values({
-      id: randomUUID(),
-      tradeId: trade2.id as string,
-      totalScore: 70,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
-
-  // Expected: realizedPnl = 1000 + (-600) = 400
-  // netPnl = 1000 + (-600) = 400
-  // tradeCount = 2
-  // winRate = 1/2 = 0.5
-  // avgR = (1000/500 + (-600/500)) / 2 = (2.0 + (-1.2)) / 2 = 0.4
-  // avgGrade = (80 + 70) / 2 = 75
-
-  const result = doGetAccount(account.id as string);
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  const kpis = data.kpis as Record<string, unknown>;
-
-  assertEqual(kpis.tradeCount, 2, 'tradeCount is 2');
-  assertEqual(kpis.netPnl, 400, 'netPnl = 1000 + (-600) = 400');
-  assertEqual(kpis.winRate, 0.5, 'winRate = 1/2 = 0.5');
-  assertEqual(kpis.avgR, 0.4, 'avgR = (2.0 + (-1.2)) / 2 = 0.4');
-  assertEqual(kpis.avgGrade, 75, 'avgGrade = (80 + 70) / 2 = 75');
-}
-
-// ── 19. GET: Returns rollforward fields even with no trades ────────────
-
-console.log('\n19. GET returns all expected rollforward fields:');
-{
-  cleanup();
-  const account = seedAccount({ id: 'test-account-id', name: 'Field Check', startingBalance: 5000 });
-
-  const result = doGetAccount(account.id as string);
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-
-  // Verify all rollforward fields are present
-  assertNotNull(data.currentBalance, 'currentBalance is present');
-  assertNotNull(data.realizedPnl, 'realizedPnl is present');
-  assertNotNull(data.netDeposits, 'netDeposits is present');
-  assertNotNull(data.netWithdrawals, 'netWithdrawals is present');
-  assertNotNull(data.kpis, 'kpis is present');
-
-  // Verify account fields are preserved
-  assertEqual(data.id, account.id, 'account id is preserved');
-  assertEqual(data.name, 'Field Check', 'account name is preserved');
-  assertEqual(data.startingBalance, 5000, 'startingBalance is preserved');
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// NEW: PUT trading default fields and lifecycle edge cases
+// PUT trading default fields and lifecycle edge cases
 // ═══════════════════════════════════════════════════════════════════
 
 // ── 20. PUT: Update maxRiskPerTradePct ───────────────────────────────

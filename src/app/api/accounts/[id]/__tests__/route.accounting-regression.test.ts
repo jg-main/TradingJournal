@@ -480,63 +480,37 @@ function doGetAccount(id: string): { status: number; data: unknown } {
     const legacyRealizedPnl = legacyKpis.netPnl;
     const legacyCurrentBalance = startingBalanceVal + netDeposits - netWithdrawals + legacyRealizedPnl;
 
-    // Accounting projection fetch
-    let accountingProjection: Record<string, unknown> | null = null;
-    let accountingRealizedPnl: string | null = null;
-    let accountingNAV: string | null = null;
+    // Accounting projection fetch (authoritative source post-cutover)
+    let nav: number | null = null;
+    let netCash: number | null = null;
+    let realizedPnl: number | null = null;
+    let unrealizedPnl: number | null = null;
+    let totalPnl: number | null = null;
 
     try {
       const projection = findAccountPerformance(sqlite, id);
       if (projection) {
-        accountingProjection = {
-          netCash: projection.net_cash,
-          nav: projection.nav,
-          realizedPnl: projection.realized_pnl,
-          unrealizedPnl: projection.unrealized_pnl,
-          totalPnl: projection.total_pnl,
-          computedAt: projection.computed_as_of,
-          rebuildCount: projection.rebuild_count,
-        };
-        accountingRealizedPnl = projection.realized_pnl;
-        accountingNAV = projection.nav;
+        nav = projection.nav ? parseFloat(projection.nav) : null;
+        netCash = projection.net_cash ? parseFloat(projection.net_cash) : null;
+        realizedPnl = projection.realized_pnl ? parseFloat(projection.realized_pnl) : null;
+        unrealizedPnl = projection.unrealized_pnl ? parseFloat(projection.unrealized_pnl) : null;
+        totalPnl = projection.total_pnl ? parseFloat(projection.total_pnl) : null;
       }
     } catch {
       // Best effort
     }
 
-    const ledgerDerived = accountingProjection !== null;
-    const activeRealizedPnl = ledgerDerived && accountingRealizedPnl
-      ? parseFloat(accountingRealizedPnl)
-      : legacyRealizedPnl;
-    const activeCurrentBalance = ledgerDerived && accountingNAV
-      ? parseFloat(accountingNAV)
-      : legacyCurrentBalance;
-
-    const activeKpis = {
-      tradeCount: legacyKpis.tradeCount,
-      netPnl: activeRealizedPnl,
-      winRate: legacyKpis.winRate,
-      avgR: legacyKpis.avgR,
-      avgGrade: legacyKpis.avgGrade,
-    };
-
     return {
       status: 200,
       data: {
         ...account,
-        currentBalance: activeCurrentBalance,
-        realizedPnl: activeRealizedPnl,
-        netDeposits,
-        netWithdrawals,
-        kpis: activeKpis,
-        accounting: accountingProjection
-          ? { projection: accountingProjection, realizedPnl: accountingRealizedPnl, nav: accountingNAV, ledgerDerived }
-          : { projection: null, realizedPnl: null, nav: null, ledgerDerived: false },
-        legacyAudit: {
-          kpis: legacyKpis,
-          realizedPnl: legacyRealizedPnl,
-          currentBalance: legacyCurrentBalance,
-        },
+        nav,
+        netCash,
+        realizedPnl,
+        unrealizedPnl,
+        totalPnl,
+        currentBalance: nav,
+        kpis: null,
       },
     };
   } catch (error) {
@@ -676,27 +650,14 @@ console.log('\n1. GET prefers ledger-derived values over conflicting legacy data
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
 
-  // Active values MUST use ledger
-  assertEqual(data.currentBalance, 12000, 'currentBalance uses ledger NAV (12000) not legacy (11000)');
+  // Active values MUST use ledger (authoritative post-cutover)
+  assertEqual(data.nav, 12000, 'nav from ledger projection (12000)');
+  assertEqual(data.currentBalance, 12000, 'currentBalance equals nav (12000)');
   assertEqual(data.realizedPnl, 2000, 'realizedPnl uses ledger value (2000) not legacy (1000)');
 
-  // KPIs: netPnl comes from ledger, tradeCount stays legacy
-  const kpis = data.kpis as Record<string, unknown>;
-  assertEqual(kpis.netPnl, 2000, 'kpis.netPnl uses ledger realizedPnl (2000)');
-  assertEqual(kpis.tradeCount, 1, 'kpis.tradeCount stays legacy (1)');
-
-  // accounting sub-object confirms ledgerDerived
-  const accounting = data.accounting as Record<string, unknown>;
-  assertEqual(accounting.ledgerDerived, true, 'accounting.ledgerDerived is true');
-  assertEqual(accounting.realizedPnl, '2000.00', 'accounting.realizedPnl is the projection string');
-
-  // legacyAudit preserves legacy provenance
-  const legacyAudit = data.legacyAudit as Record<string, unknown>;
-  assertNotNull(legacyAudit, 'legacyAudit is present');
-  assertEqual(legacyAudit.realizedPnl, 1000, 'legacyAudit.realizedPnl retains legacy value (1000)');
-  assertEqual(legacyAudit.currentBalance, 11000, 'legacyAudit.currentBalance retains legacy value (11000)');
-  const legacyKpis = legacyAudit.kpis as Record<string, unknown>;
-  assertEqual(legacyKpis.netPnl, 1000, 'legacyAudit.kpis.netPnl retains legacy value (1000)');
+  // KPIs: post-cutover, the accounting system does not provide
+  // trade-level KPIs (tradeCount, winRate, avgR, avgGrade)
+  assertEqual(data.kpis, null, 'kpis is null (accounting projection does not track trade-level metrics)');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -720,13 +681,11 @@ console.log('\n2. GET falls back to legacy values when no projection exists:');
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
 
-  // Falls back to legacy
-  assertEqual(data.currentBalance, 11000, 'currentBalance falls back to legacy (11000)');
-  assertEqual(data.realizedPnl, 1000, 'realizedPnl falls back to legacy (1000)');
-
-  const accounting = data.accounting as Record<string, unknown>;
-  assertEqual(accounting.ledgerDerived, false, 'accounting.ledgerDerived is false');
-  assertEqual(accounting.projection, null, 'accounting.projection is null');
+  // Post-cutover: no projection means nav, realizedPnl, and KPIs are null
+  assertEqual(data.nav, null, 'nav is null (no projection)');
+  assertEqual(data.currentBalance, null, 'currentBalance is null');
+  assertEqual(data.realizedPnl, null, 'realizedPnl is null');
+  assertEqual(data.kpis, null, 'kpis is null');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -753,11 +712,9 @@ console.log('\n3. GET uses legacy values when accounting projection is present b
   const data = result.data as Record<string, unknown>;
 
   // Projection exists, so ledger values are used
-  assertEqual(data.currentBalance, 10000, 'currentBalance uses ledger NAV (10000)');
+  assertEqual(data.nav, 10000, 'nav from ledger projection (10000)');
+  assertEqual(data.currentBalance, 10000, 'currentBalance equals nav (10000)');
   assertEqual(data.realizedPnl, 0, 'realizedPnl uses ledger value (0)');
-
-  const accounting = data.accounting as Record<string, unknown>;
-  assertEqual(accounting.ledgerDerived, true, 'accounting.ledgerDerived is true');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -783,12 +740,9 @@ console.log('\n4. GET prefers negative ledger values over positive legacy values
   const data = result.data as Record<string, unknown>;
 
   // Active uses ledger values even when they're worse than legacy
-  assertEqual(data.currentBalance, 9500, 'currentBalance uses ledger NAV (9500) not legacy (11000)');
+  assertEqual(data.nav, 9500, 'nav from ledger projection (9500)');
+  assertEqual(data.currentBalance, 9500, 'currentBalance equals nav (9500)');
   assertEqual(data.realizedPnl, -500, 'realizedPnl uses ledger value (-500) not legacy (1000)');
-
-  // legacyAudit preserves positive legacy values
-  const legacyAudit = data.legacyAudit as Record<string, unknown>;
-  assertEqual(legacyAudit.realizedPnl, 1000, 'legacyAudit.realizedPnl retains positive legacy value (1000)');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -831,10 +785,10 @@ console.log('\n5. Close route prefers ledger values for realizedPnl:');
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 6. Account detail: accounting sub-object exposes full projection data.
+// 6. Account detail: top-level fields from projection (post-cutover).
 // ═══════════════════════════════════════════════════════════════════
 
-console.log('\n6. GET exposes full accounting projection data in accounting sub-object:');
+console.log('\n6. GET returns accounting values at top level (post-cutover):');
 {
   cleanup();
   const acctId = 'regression-test-6';
@@ -844,22 +798,18 @@ console.log('\n6. GET exposes full accounting projection data in accounting sub-
   const result = doGetAccount(acctId);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
-  const accounting = data.accounting as Record<string, unknown>;
-  const projection = accounting.projection as Record<string, unknown>;
 
-  assertNotNull(projection, 'accounting.projection is present');
-  assertEqual(projection.realizedPnl, '1500.00', 'projection.realizedPnl is exposed');
-  assertEqual(projection.nav, '11500.00', 'projection.nav is exposed');
-  assertNotNull(projection.computedAt, 'projection.computedAt is present');
-  assertEqual(projection.rebuildCount, 1, 'projection.rebuildCount is present');
-  assertEqual(accounting.ledgerDerived, true, 'accounting.ledgerDerived is true');
+  assertEqual(data.nav, 11500, 'nav at top level (11500)');
+  assertEqual(data.realizedPnl, 1500, 'realizedPnl at top level (1500)');
+  assertEqual(data.currentBalance, 11500, 'currentBalance equals nav');
+  assertEqual(data.kpis, null, 'kpis is null (no trade-level KPIs post-cutover)');
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 7. legacyAudit preserves legacy trade count and win rate.
+// 7. Post-cutover: legacy fields removed, kpis is null.
 // ═══════════════════════════════════════════════════════════════════
 
-console.log('\n7. legacyAudit preserves legacy trade count and win rate:');
+console.log('\n7. Post-cutover response has no legacyAudit or accounting sub-objects:');
 {
   cleanup();
   const acctId = 'regression-test-7';
@@ -880,12 +830,10 @@ console.log('\n7. legacyAudit preserves legacy trade count and win rate:');
   const result = doGetAccount(acctId);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
-  const legacyAudit = data.legacyAudit as Record<string, unknown>;
-  const legacyKpis = legacyAudit.kpis as Record<string, unknown>;
 
-  assertEqual(legacyKpis.tradeCount, 2, 'legacyAudit retains trade count of 2');
-  assertEqual(legacyKpis.netPnl, 500, 'legacyAudit retains netPnl of 500 (1000 + -500)');
-  assertEqual(legacyKpis.winRate, 0.5, 'legacyAudit retains winRate of 0.5');
+  // Post-cutover: no legacyAudit, no accounting sub-object, kpis is null
+  assertEqual(data.kpis, null, 'kpis is null');
+
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
