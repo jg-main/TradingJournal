@@ -617,3 +617,253 @@ export const AUTHORITATIVE_EVENT_IDENTITY_COUNT = Object.keys(EVENT_IDS).length;
  * Total fixture rows including grouped corrections.
  */
 export const FULL_LEDGER_DISPLAY_ROW_COUNT = Object.keys(EVENT_IDS).length;
+
+// ───────────────────────────────────────────────────────────────────────────
+// 8. Repository-Shaped Ledger Fixtures (consumed by ledger.ts adapter)
+// ───────────────────────────────────────────────────────────────────────────
+//
+// These fixtures match the LedgerEventInput / LedgerEntryInput / LedgerPostingInput
+// types from ledger.ts and the accounting-repository row shapes.
+// T02 route tests import these directly. The correction grouping links are
+// expressed at the financial-event ID level via CorrectionGroupInput.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Effect JSON: cash increase.
+ */
+function cEffect(amount: string, micros: number): string {
+  return JSON.stringify({ kind: 'cash', direction: 'increase', amount, amountMicros: micros });
+}
+
+/**
+ * Effect JSON: cash decrease.
+ */
+function cdEffect(amount: string, micros: number): string {
+  return JSON.stringify({ kind: 'cash', direction: 'decrease', amount, amountMicros: micros });
+}
+
+/**
+ * Effect JSON: market (non-cash) effect.
+ */
+function mEffect(symbol: string): string {
+  return JSON.stringify({ kind: 'market', symbol, details: 'stock split' });
+}
+
+/**
+ * Repository-shaped financial event rows matching LedgerEventInput.
+ */
+export const LEDGER_EVENTS_INPUT = [
+  {
+    id: EVENT_IDS.openingBalance,
+    account_id: ACCOUNT_ID,
+    event_type: 'opening_balance',
+    idempotency_key: null,
+    description: 'Opening balance for account',
+    payload: null,
+    effect: cEffect('100000.00', 100_000_000_000),
+    posted_at: '2026-01-01T00:00:00.000Z',
+    created_at: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    id: EVENT_IDS.deposit,
+    account_id: ACCOUNT_ID,
+    event_type: 'deposit',
+    idempotency_key: null,
+    description: 'Initial deposit',
+    payload: null,
+    effect: cEffect('50000.00', 50_000_000_000),
+    posted_at: '2026-01-02T10:00:00.000Z',
+    created_at: '2026-01-02T10:00:00.000Z',
+  },
+  {
+    id: EVENT_IDS.tradeOriginal,
+    account_id: ACCOUNT_ID,
+    event_type: 'trade_execution',
+    idempotency_key: null,
+    description: 'Buy 100 AAPL @ 150.00',
+    payload: null,
+    effect: cdEffect('15015.00', 15_015_000_000),
+    posted_at: '2026-07-14T10:00:00.000Z',
+    created_at: '2026-07-14T10:00:00.000Z',
+  },
+  {
+    id: EVENT_IDS.tradeReversal,
+    account_id: ACCOUNT_ID,
+    event_type: 'trade_execution',
+    idempotency_key: null,
+    description: 'Correction reversal: Sell 100 AAPL @ 150.00',
+    payload: null,
+    effect: cEffect('15015.00', 15_015_000_000),
+    posted_at: '2026-07-15T14:00:00.000Z',
+    created_at: '2026-07-15T14:00:00.000Z',
+  },
+  {
+    id: EVENT_IDS.tradeReplacement,
+    account_id: ACCOUNT_ID,
+    event_type: 'trade_execution',
+    idempotency_key: null,
+    description: 'Corrected: Buy 50 AAPL @ 150.00',
+    payload: null,
+    effect: cdEffect('7507.50', 7_507_500_000),
+    posted_at: '2026-07-15T14:00:01.000Z',
+    created_at: '2026-07-15T14:00:01.000Z',
+  },
+  {
+    id: EVENT_IDS.tradeUncorrected,
+    account_id: ACCOUNT_ID,
+    event_type: 'trade_execution',
+    idempotency_key: null,
+    description: 'Buy 200 MSFT @ 300.00',
+    payload: null,
+    effect: cdEffect('60030.00', 60_030_000_000),
+    posted_at: '2026-07-16T10:00:00.000Z',
+    created_at: '2026-07-16T10:00:00.000Z',
+  },
+  {
+    id: EVENT_IDS.dividend,
+    account_id: ACCOUNT_ID,
+    event_type: 'dividend',
+    idempotency_key: null,
+    description: 'AAPL dividend',
+    payload: null,
+    effect: cEffect('50.00', 50_000_000),
+    posted_at: '2026-07-17T09:00:00.000Z',
+    created_at: '2026-07-17T09:00:00.000Z',
+  },
+  {
+    id: EVENT_IDS.fee,
+    account_id: ACCOUNT_ID,
+    event_type: 'fee',
+    idempotency_key: null,
+    description: 'Monthly platform fee',
+    payload: null,
+    effect: cdEffect('25.00', 25_000_000),
+    posted_at: '2026-07-18T00:00:00.000Z',
+    created_at: '2026-07-18T00:00:00.000Z',
+  },
+];
+
+/**
+ * Repository-shaped stock split event (non-cash, non-trade).
+ */
+export const LEDGER_EVENT_STOCK_SPLIT = {
+  id: 'evt-split-001',
+  account_id: ACCOUNT_ID,
+  event_type: 'stock_split',
+  idempotency_key: null,
+  description: 'AAPL 4:1 stock split',
+  payload: null,
+  effect: mEffect('AAPL'),
+  posted_at: '2026-07-19T00:00:00.000Z',
+  created_at: '2026-07-19T00:00:00.000Z',
+};
+
+/**
+ * Ledger entry ID mapping (keyed by event ID for readability).
+ * This constant makes it easy for T02 route tests to reference entries.
+ */
+export const LEDGER_ENTRY_IDS = {
+  [EVENT_IDS.openingBalance]: 'entry-ob-001',
+  [EVENT_IDS.deposit]: 'entry-dep-001',
+  [EVENT_IDS.tradeOriginal]: 'entry-trade-orig-001',
+  [EVENT_IDS.tradeReversal]: 'entry-trade-rev-001',
+  [EVENT_IDS.tradeReplacement]: 'entry-trade-repl-001',
+  [EVENT_IDS.tradeUncorrected]: 'entry-trade-uncorr-001',
+  [EVENT_IDS.dividend]: 'entry-div-001',
+  [EVENT_IDS.fee]: 'entry-fee-001',
+  'evt-split-001': 'entry-split-001',
+} as const;
+
+/**
+ * Repository-shaped ledger entry rows matching LedgerEntryInput.
+ */
+export const LEDGER_ENTRIES_INPUT = Object.entries(LEDGER_ENTRY_IDS).map(([financialEventId, entryId]) => ({
+  id: entryId,
+  financial_event_id: financialEventId,
+  account_id: ACCOUNT_ID,
+  description: null,
+  posted_at: '2026-01-01T00:00:00.000Z',
+  created_at: '2026-01-01T00:00:00.000Z',
+}));
+
+/**
+ * Repository-shaped ledger posting rows matching LedgerPostingInput.
+ * Each event with an entry gets a balanced debit/credit pair.
+ */
+function makeBalancedPostings(entryId: string, amount: string, micros: number): Array<{
+  id: string;
+  ledger_entry_id: string;
+  account_id: string;
+  side: string;
+  amount: string;
+  amount_micros: number;
+  currency: string;
+  sequence: number;
+  created_at: string;
+}> {
+  return [
+    {
+      id: `p-debit-${entryId}`,
+      ledger_entry_id: entryId,
+      account_id: ACCOUNT_ID,
+      side: 'debit',
+      amount,
+      amount_micros: micros,
+      currency: 'USD',
+      sequence: 1,
+      created_at: '2026-01-01T00:00:00.000Z',
+    },
+    {
+      id: `p-credit-${entryId}`,
+      ledger_entry_id: entryId,
+      account_id: ACCOUNT_ID,
+      side: 'credit',
+      amount,
+      amount_micros: micros,
+      currency: 'USD',
+      sequence: 2,
+      created_at: '2026-01-01T00:00:00.000Z',
+    },
+  ];
+}
+
+/**
+ * All postings for the full ledger fixture.
+ */
+export const LEDGER_POSTINGS_INPUT: Array<{
+  id: string;
+  ledger_entry_id: string;
+  account_id: string;
+  side: string;
+  amount: string;
+  amount_micros: number;
+  currency: string;
+  sequence: number;
+  created_at: string;
+}> = [
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.openingBalance], '100000.00', 100_000_000_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.deposit], '50000.00', 50_000_000_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.tradeOriginal], '15015.00', 15_015_000_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.tradeReversal], '15015.00', 15_015_000_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.tradeReplacement], '7507.50', 7_507_500_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.tradeUncorrected], '60030.00', 60_030_000_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.dividend], '50.00', 50_000_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS[EVENT_IDS.fee], '25.00', 25_000_000),
+  ...makeBalancedPostings(LEDGER_ENTRY_IDS['evt-split-001'], '0.00', 0),
+];
+
+/**
+ * Correction group fixture at the financial-event identity level,
+ * matching the CorrectionGroupInput type from ledger.ts.
+ * Maps the 3 correction constituent execution IDs to their
+ * financial event IDs for adapter consumption.
+ */
+export const LEDGER_CORRECTION_GROUP_INPUT = {
+  correctionId: 'grouped-corr-001',
+  originalEventId: EVENT_IDS.tradeOriginal,
+  reversalEventId: EVENT_IDS.tradeReversal,
+  replacementEventId: EVENT_IDS.tradeReplacement,
+  reason: CORRECTION_LINEAGE.reason,
+  correctedAt: CORRECTION_LINEAGE.correctedAt,
+};
+

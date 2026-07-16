@@ -75,6 +75,7 @@ export default defineConfig({
       'src/app/api/accounts/[id]/valuations/__tests__/route.test.ts',
       'src/app/api/accounts/[id]/performance/__tests__/route.test.ts',
       'src/lib/accounting/correction.test.ts',
+      'src/lib/accounting/ledger.test.ts',
       'src/app/api/accounts/[id]/executions/[executionId]/correct/__tests__/route.test.ts',
       'src/lib/accounting/reconciliation.test.ts',
       'src/app/api/accounts/[id]/reconciliation/__tests__/route.test.ts',
