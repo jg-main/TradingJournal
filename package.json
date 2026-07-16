@@ -9,7 +9,11 @@
     "lint": "eslint",
     "clean": "npm run clean:artifacts",
     "clean:artifacts": "rm -rf playwright-report test-results docs .gsd-backups .test*db .test*-shm .test*-wal .next/dev/logs .trading-journal/snapshots .trading-journal/playwright-*.db .trading-journal/playwright-*.db-wal .trading-journal/playwright-*.db-shm",
-    "migrate": "drizzle-kit migrate"
+    "migrate": "drizzle-kit migrate",
+    "accounting:migrate": "npx tsx scripts/accounting-migrate.ts migrate",
+    "accounting:rebuild": "npx tsx scripts/accounting-migrate.ts rebuild",
+    "accounting:reconcile": "npx tsx scripts/accounting-migrate.ts reconcile",
+    "accounting:cutover-check": "npx tsx scripts/accounting-migrate.ts cutover-check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
