@@ -32,7 +32,6 @@ import type {
   CashEventMigrationInput,
   ExecutionMigrationInput,
   PriceMarkMigrationInput,
-  MigrationInput,
 } from './legacy-migration';
 import {
   scenario1ValidDeposit,
@@ -49,7 +48,6 @@ import {
   scenario12InvalidPriceSnapshot,
   scenario13MissingPriceSnapshot,
   scenario14LegacyJournalAttribution,
-  allScenarios,
 } from './__fixtures__/legacy-migration-scenarios';
 
 // ═══════════════════════════════════════════════════════════════════════════

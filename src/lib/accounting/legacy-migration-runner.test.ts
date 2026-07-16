@@ -658,7 +658,8 @@ describe('findLatestMigrationRun', () => {
     // Insert more legacy data and run again
     insertLegacyDeposit(ctx.sqlite, accountId, { id: 'lr-dep-002', amount: 5000, date: '2024-02-01T00:00:00.000Z' });
 
-    const secondResult = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    // Run again (result intentionally unused — we only need side effects)
+    runLegacyMigration({ sqlite: ctx.sqlite, accountId });
 
     // Latest should be the second run — verify by totalRecords (2 = 1 dup + 1 new)
     // rather than exact runId, since start_at timestamps may collide in wall time

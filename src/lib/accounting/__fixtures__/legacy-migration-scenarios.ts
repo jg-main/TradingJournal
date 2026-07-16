@@ -20,11 +20,8 @@ import type {
   LegacyAccountTransaction,
   LegacyTradeExecution,
   LegacyPriceSnapshot,
-  MapResult,
-  MigrationInput,
   CashEventMigrationInput,
   ExecutionMigrationInput,
-  PriceMarkMigrationInput,
 } from '../legacy-migration';
 import type { CanonicalDecimal } from '../types';
 

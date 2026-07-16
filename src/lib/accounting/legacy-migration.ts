@@ -15,7 +15,7 @@
 
 import { normalizeDecimal, toMicros } from './decimal';
 import type { CanonicalDecimal, EventType } from './types';
-import type { ExecutionAction, FifoRejectionCode } from '../positions/types';
+import type { ExecutionAction } from '../positions/types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Anomaly Codes
