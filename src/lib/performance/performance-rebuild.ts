@@ -160,9 +160,9 @@ function buildValuationPositions(
   for (const pos of positions) {
     // Realized P&L is retained on closed position projection rows, but closed
     // rows have no market value and must not request/display valuation marks.
-    if (pos.quantity === '0.00') continue;
-
-    const mark = markByInstrument.get(pos.instrument_id);
+    const mark = pos.quantity === '0.00'
+      ? null
+      : markByInstrument.get(pos.instrument_id);
 
     const markInput = mark
       ? {

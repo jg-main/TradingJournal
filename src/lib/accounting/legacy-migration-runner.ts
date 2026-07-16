@@ -42,6 +42,7 @@ import type {
 import type { CanonicalDecimal } from './types';
 import { toMicros, fromMicros } from './decimal';
 import { rebuildPositions } from '../positions/rebuild';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 
 // ── Repository Imports ──────────────────────────────────────────────────
 
@@ -680,6 +681,10 @@ function rebuildAccountProjections(
 ): void {
   // 1. Rebuild FIFO positions for ALL instruments in this account
   rebuildPositions(sqlite, accountId);
+
+  // 2. Rebuild the performance projection so realized P&L and NAV reflect
+  //    closed-position realized P&L in addition to open-position data.
+  rebuildAccountPerformance(sqlite, accountId);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
