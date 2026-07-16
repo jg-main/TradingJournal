@@ -88,6 +88,7 @@ export default defineConfig({
       'src/components/accounting/account-ledger.test.tsx',
       'src/components/accounting/account-positions.test.tsx',
       'src/components/accounting/account-reconciliation-summary.test.tsx',
+      'src/components/accounting/account-settings.test.tsx',
       'src/lib/account-detail.test.ts',
       'src/lib/__fixtures__/account-detail-contracts.test.ts',
       'src/app/api/accounts/[id]/overview/__tests__/route.test.ts',
