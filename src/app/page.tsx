@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/tooltip';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { DashboardFilters } from '@/components/dashboard-filters';
+import { DashboardV2 } from '@/components/dashboard-v2';
 import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
 import type { MonthlyPerformanceItem, RDistributionBin, DirectionalPerformanceResult, ProcessScoreBin } from '@/lib/dashboard';
 
@@ -381,6 +382,21 @@ function HomeContent() {
           {Array.from({ length: 11 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
+        </div>
+      )}
+
+      {/* Account Performance (V2 Dashboard) — ledger-derived accounting metrics */}
+      <DashboardV2 initialAccountId={accountId ?? undefined} />
+
+      {/* Journal Performance separator */}
+      {!loading && kpis !== null && !isEmpty && (
+        <div className="mt-8">
+          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
+            Journal Performance
+          </h2>
+          <p className="mb-6 text-sm text-zinc-500 dark:text-zinc-400">
+            Performance metrics derived from the trade journal.
+          </p>
         </div>
       )}
 
