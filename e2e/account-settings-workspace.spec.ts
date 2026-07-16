@@ -78,7 +78,7 @@ async function postDeposit(page: Page, accountId: string, amount: string, descri
 async function setGlobalSetting(page: Page, key: string, value: number | string) {
   // Read existing settings first
   const getRes = await page.request.get('/api/settings');
-  const existing = getRes.ok ? await getRes.json() : {};
+  const existing = getRes.ok() ? await getRes.json() : {};
 
   const response = await page.request.put('/api/settings', {
     data: { ...existing, [key]: value },
@@ -251,8 +251,11 @@ test.describe('Account Settings Workspace', () => {
       await expect(page.locator('#settings-max-risk')).toHaveValue('3.5');
       await expect(page.locator('#settings-starting-balance')).toHaveValue('25000');
 
-      // ── Verify no API or page errors ────────────────────────────────
-      expect(errorCapture.errors).toEqual([]);
+      // ── Verify no API or page errors (filter turbopack dev HMR infra) ─
+      const appErrors = errorCapture.errors.filter(
+        (e) => !e.includes('[turbopack]') && !e.includes('Failed to load chunk'),
+      );
+      expect(appErrors).toEqual([]);
       const apiFailures = errorCapture.failed.filter(
         (f) => !f.includes('favicon') && !f.includes('__next'),
       );
@@ -305,13 +308,13 @@ test.describe('Account Settings Workspace', () => {
 
       const confirmButton = dialog.getByRole('button', { name: /confirm close/i });
       await expect(confirmButton).toBeVisible();
-      await confirmButton.click();
-
-      // Wait for the close API response
-      await page.waitForResponse(
+      // Register listener before click to avoid race condition
+      const closeApiResponse = page.waitForResponse(
         (res) =>
           res.url().includes(`/api/accounts/${lifecycleAccountId}/close`) && res.ok(),
       );
+      await confirmButton.click();
+      await closeApiResponse;
 
       // ── Closure summary appears ─────────────────────────────────────
       await expect(page.getByText(/account closed/i)).toBeVisible();
@@ -340,24 +343,26 @@ test.describe('Account Settings Workspace', () => {
       // ── Click Reactivate ────────────────────────────────────────────
       const reactivateButton = page.getByRole('button', { name: /reactivate account/i });
       await expect(reactivateButton).toBeVisible();
-      await reactivateButton.click();
-
-      // Wait for the PUT reactivation
-      await page.waitForResponse(
+      // Register both listeners before click to avoid race conditions
+      const putReactivate = page.waitForResponse(
         (res) =>
           res.url().includes(`/api/accounts/${lifecycleAccountId}`) &&
           res.request().method() === 'PUT' &&
           res.status() === 200,
       );
-
-      // The component does a GET refresh after the PUT to update state.
-      // Wait for this GET to complete before asserting post-reactivation state.
-      await page.waitForResponse(
+      const getRefresh = page.waitForResponse(
         (res) =>
           res.url().includes(`/api/accounts/${lifecycleAccountId}`) &&
           res.request().method() === 'GET' &&
           res.status() === 200,
       );
+      await reactivateButton.click();
+
+      // Wait for the PUT reactivation
+      await putReactivate;
+
+      // Wait for the GET refresh that follows the PUT
+      await getRefresh;
 
       // ── Verify reactivation by state change (success message is cleared
       // by fetchData() in the same React batch, so never renders to DOM) ─
