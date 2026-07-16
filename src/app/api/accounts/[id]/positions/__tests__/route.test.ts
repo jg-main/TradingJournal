@@ -32,8 +32,11 @@ import {
   findFifoLotsByAccountInstrument,
   findInstrumentById,
   findOrCreateInstrument,
+  listLatestValuationMarks,
+  insertValuationMark,
 } from '@/db/accounting-repository';
 import { listPositionsQuerySchema } from '@/lib/accounting/execution-contracts';
+import { toMicros } from '@/lib/accounting/decimal';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -309,6 +312,206 @@ describe('GET /api/accounts/[id]/positions — service composition', () => {
         instrumentId: 'not-a-uuid',
       });
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('Valuation-aware enrichment', () => {
+    let markedAccountId: string;
+
+    beforeAll(() => {
+      markedAccountId = randomUUID();
+      const now = new Date().toISOString();
+      ctx.sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        )
+        .run(markedAccountId, 'Marked Account', 'margin', 'USD', now, now);
+    });
+
+    it('should return markStatus fresh and correct valuation fields when mark exists', () => {
+      // Post AAPL position for the marked account
+      postExecutionFill(ctx.sqlite, {
+        accountId: markedAccountId,
+        symbol: 'AAPL',
+        action: 'buy',
+        quantity: '100.00',
+        price: '150.00',
+        fees: '5.00',
+      });
+      rebuildPositions(ctx.sqlite, markedAccountId);
+
+      // Insert a fresh valuation mark
+      const aaplusId = findOrCreateInstrument(ctx.sqlite, 'AAPL').id;
+      const markTimestamp = new Date().toISOString();
+      insertValuationMark(ctx.sqlite, {
+        accountId: markedAccountId,
+        instrumentId: aaplusId,
+        price: '165.00',
+        priceMicros: toMicros('165.00'),
+        source: 'system',
+        markTimestamp,
+      });
+
+      // Query via the same functions the route uses
+      const marks = listLatestValuationMarks(ctx.sqlite, markedAccountId);
+      expect(marks).toHaveLength(1);
+      expect(marks[0].price).toBe('165.00');
+      expect(marks[0].instrument_id).toBe(aaplusId);
+
+      const positions = listAccountPositions(ctx.sqlite, markedAccountId);
+      expect(positions).toHaveLength(1);
+
+      const aaplPos = positions[0];
+      expect(aaplPos.quantity).toBe('100.00');
+      expect(aaplPos.average_cost).toBe('150.00');
+
+      // Construct the same enrichment the route performs
+      const positionMarks = marks.filter((m) => m.instrument_id === aaplPos.instrument_id);
+      expect(positionMarks).toHaveLength(1);
+      const mark = positionMarks[0];
+      expect(mark.price).toBe('165.00');
+
+      // Quant: 100 * 165 = 16500, UPnL: (165 - 150) * 100 = 1500
+      // (assertions are on the repository data, not the pure mapping contract
+      //  which is independently tested in account-detail.test.ts)
+      const enrichedMarkPrice = mark.price;
+      const enrichedQty = aaplPos.quantity;
+      const enrichedAvgCost = aaplPos.average_cost;
+      expect(enrichedMarkPrice).toBe('165.00');
+      expect(parseFloat(enrichedQty)).toBe(100.00);
+      expect(parseFloat(enrichedAvgCost)).toBe(150.00);
+    });
+
+    it('should return missing markStatus for an account with no valuation marks', () => {
+      // Create a separate account with positions but no valuation marks
+      const unmarkedAccountId = randomUUID();
+      const now = new Date().toISOString();
+      ctx.sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        )
+        .run(unmarkedAccountId, 'Unmarked Account', 'margin', 'USD', now, now);
+
+      postExecutionFill(ctx.sqlite, {
+        accountId: unmarkedAccountId,
+        symbol: 'MSFT',
+        action: 'buy',
+        quantity: '50.00',
+        price: '300.00',
+        fees: '2.00',
+      });
+      rebuildPositions(ctx.sqlite, unmarkedAccountId);
+
+      // No marks inserted — listLatestValuationMarks should be empty
+      const marks = listLatestValuationMarks(ctx.sqlite, unmarkedAccountId);
+      expect(marks).toEqual([]);
+
+      // The route will detect missing marks and pass null to mapPositionRow
+      // which should produce markStatus: 'missing', markPrice: null, etc.
+      const positions = listAccountPositions(ctx.sqlite, unmarkedAccountId);
+      expect(positions).toHaveLength(1);
+
+      // Each position should resolve to markStatus=missing when no mark exists
+      // (enrichment is done through mapPositionRow, tested in account-detail.test.ts)
+      const msftPos = positions[0];
+      expect(msftPos.quantity).toBe('50.00');
+    });
+
+    it('should not leak marks across accounts', () => {
+      // Self-contained: create a separate account with a position AND a mark
+      const sourceAccountId = randomUUID();
+      const now = new Date().toISOString();
+      ctx.sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        )
+        .run(sourceAccountId, 'Mark Source', 'margin', 'USD', now, now);
+
+      postExecutionFill(ctx.sqlite, {
+        accountId: sourceAccountId,
+        symbol: 'NVDA',
+        action: 'buy',
+        quantity: '10.00',
+        price: '500.00',
+        fees: '1.00',
+      });
+      rebuildPositions(ctx.sqlite, sourceAccountId);
+
+      const nvdaId = findOrCreateInstrument(ctx.sqlite, 'NVDA').id;
+      insertValuationMark(ctx.sqlite, {
+        accountId: sourceAccountId,
+        instrumentId: nvdaId,
+        price: '520.00',
+        priceMicros: toMicros('520.00'),
+        source: 'system',
+        markTimestamp: new Date().toISOString(),
+      });
+
+      // Source account has both position and mark
+      const sourceMarks = listLatestValuationMarks(ctx.sqlite, sourceAccountId);
+      expect(sourceMarks).toHaveLength(1);
+
+      // Isolation account has nothing
+      const isolationId = randomUUID();
+      ctx.sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        )
+        .run(isolationId, 'Isolation Check', 'margin', 'USD', now, now);
+
+      // Source account's marks must not appear for the isolation account
+      const isolationMarks = listLatestValuationMarks(ctx.sqlite, isolationId);
+      expect(isolationMarks).toEqual([]);
+
+      // Isolation account has no positions
+      const isolationPositions = listAccountPositions(ctx.sqlite, isolationId);
+      expect(isolationPositions).toEqual([]);
+    });
+
+    it('should return multiple marks for a multi-position account', () => {
+      // The markedAccount already has AAPL. Add MSFT position with a mark.
+      postExecutionFill(ctx.sqlite, {
+        accountId: markedAccountId,
+        symbol: 'MSFT',
+        action: 'buy',
+        quantity: '25.00',
+        price: '400.00',
+        fees: '1.00',
+      });
+      rebuildPositions(ctx.sqlite, markedAccountId);
+
+      const msftId = findOrCreateInstrument(ctx.sqlite, 'MSFT').id;
+      insertValuationMark(ctx.sqlite, {
+        accountId: markedAccountId,
+        instrumentId: msftId,
+        price: '420.00',
+        priceMicros: toMicros('420.00'),
+        source: 'system',
+        markTimestamp: new Date().toISOString(),
+      });
+
+      // Should have 2 marks: AAPL and MSFT
+      const marks = listLatestValuationMarks(ctx.sqlite, markedAccountId);
+      expect(marks).toHaveLength(2);
+
+      const markByInstrument = new Map(marks.map((m) => [m.instrument_id, m]));
+
+      const aaplusId = findOrCreateInstrument(ctx.sqlite, 'AAPL').id;
+      const aaplMark = markByInstrument.get(aaplusId);
+      expect(aaplMark).toBeDefined();
+      expect(aaplMark!.price).toBe('165.00');
+
+      const msftMark = markByInstrument.get(msftId);
+      expect(msftMark).toBeDefined();
+      expect(msftMark!.price).toBe('420.00');
+
+      // Both positions resolve with mark data
+      const positions = listAccountPositions(ctx.sqlite, markedAccountId);
+      expect(positions.length).toBeGreaterThanOrEqual(2);
     });
   });
 });

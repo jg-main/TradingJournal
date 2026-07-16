@@ -20,7 +20,11 @@ import {
   findAccountPosition,
   findFifoLotsByAccountInstrument,
   findInstrumentById,
+  listLatestValuationMarks,
 } from '@/db/accounting-repository';
+import { mapPositionRow } from '@/lib/account-detail';
+import type { PositionRowInput } from '@/lib/account-detail';
+
 import {
   InvalidAmountError,
 } from '@/lib/accounting/errors';
@@ -96,6 +100,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { instrumentId, direction } = parsedQuery.data;
     const sqlite = getSqliteHandle();
 
+    // 2a. Fetch latest valuation marks for mark enrichment
+    const valuationMarks = listLatestValuationMarks(sqlite, accountId);
+    const markMap = new Map<string, { price: string; timestamp: string; markAgeMinutes: number | null }>();
+    for (const mark of valuationMarks) {
+      const markAgeMinutes = Math.floor(
+        (Date.now() - new Date(mark.mark_timestamp).getTime()) / 60000,
+      );
+      markMap.set(mark.instrument_id, {
+        price: mark.price,
+        timestamp: mark.mark_timestamp,
+        markAgeMinutes,
+      });
+    }
+
     // 2. Instrument cache for symbol resolution
     const instrumentCache = new Map<string, { id: string; symbol: string }>();
     function resolveInstrument(instrId: string): { id: string; symbol: string } {
@@ -141,17 +159,39 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const instrumentInfo = resolveInstrument(row.instrument_id);
 
-        return {
-          accountId: row.account_id,
-          instrumentId: row.instrument_id,
+        // Build valuation-enriched position using pure mapping contract
+        const markData = markMap.get(row.instrument_id);
+        const positionRowInput: PositionRowInput = {
           symbol: instrumentInfo.symbol,
           direction: row.direction,
           quantity: row.quantity,
           averageCost: row.average_cost,
           totalCostBasis: row.total_cost_basis,
           realizedGrossPnl: row.realized_gross_pnl,
-          realizedFees: row.realized_fees,
           realizedNetPnl: row.realized_net_pnl,
+          markTimestamp: markData?.timestamp ?? null,
+          markPrice: markData?.price ?? null,
+          markAgeMinutes: markData?.markAgeMinutes ?? null,
+        };
+        const enriched = mapPositionRow(positionRowInput);
+
+        return {
+          accountId: row.account_id,
+          instrumentId: row.instrument_id,
+          symbol: enriched.symbol,
+          direction: enriched.direction,
+          quantity: enriched.quantity,
+          averageCost: enriched.averageCost,
+          totalCostBasis: enriched.totalCostBasis,
+          // Valuation mark fields (null when no mark exists)
+          markStatus: enriched.markStatus,
+          markPrice: enriched.markPrice,
+          markedValue: enriched.markedValue,
+          unrealizedPnl: enriched.unrealizedPnl,
+          // Realized P&L
+          realizedGrossPnl: enriched.realizedGrossPnl,
+          realizedFees: row.realized_fees,
+          realizedNetPnl: enriched.realizedNetPnl,
           lastUpdated: row.last_updated,
           openLots: lotRows
             .filter((lot) => lot.remaining_quantity !== '0.00')
