@@ -405,12 +405,26 @@ function writeCashEventInput(
     }
   }
 
-  // Write financial event
+  // Write financial event with cash effect so the reconciliation and
+  // performance-rebuild engines can read the cash impact from the
+  // financial event's canonical metadata rather than re-querying ledger
+  // debit postings or the migration-runner-specific payload shape.
+  const amount = input.amount as CanonicalDecimal;
+  const amountMicros = toMicros(amount);
+  const direction = input.eventType === 'deposit' ? 'increase' : 'decrease';
+  const effect = JSON.stringify({
+    kind: 'cash',
+    direction,
+    amount,
+    amountMicros,
+  });
   const eventRow = insertFinancialEvent(sqlite, {
     accountId: input.accountId,
     eventType: input.eventType,
     idempotencyKey: idempotencyKey ?? null,
     description: input.description,
+    payload: null,
+    effect,
     postedAt: input.postedAt,
   });
 
@@ -424,8 +438,6 @@ function writeCashEventInput(
 
   // Write balanced debit/credit postings
   const nextSeq = getNextSequence(sqlite);
-  const amount = input.amount as CanonicalDecimal;
-  const amountMicros = toMicros(amount);
 
   insertLedgerPosting(sqlite, {
     ledgerEntryId: entryRow.id,
