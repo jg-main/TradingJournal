@@ -53,6 +53,7 @@ export default defineConfig({
       'src/hooks/use-visibility-polling.test.ts',
       'src/lib/accounting/decimal.test.ts',
       'src/lib/accounting/legacy-migration.test.ts',
+      'src/lib/accounting/legacy-migration-runner.test.ts',
       'src/lib/accounting/posting.test.ts',
       'src/lib/accounting/rebuild.test.ts',
       'src/lib/accounting/__tests__/accounting-integration.test.ts',
