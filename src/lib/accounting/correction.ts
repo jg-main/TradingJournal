@@ -270,9 +270,13 @@ export function correctExecution(
   // and add 1ms per tick so ordering is deterministic regardless of
   // how fast the test runs.
   const postedAt = rawPostedAt ?? new Date().toISOString();
-  // Start from the later of: the original's postedAt OR the requested postedAt
+  // Both MUST come AFTER the original execution in the FIFO stream
+  // so the original's economic effect is processed before the reversal
+  // tries to close it.  Add 1ms to the effective base to guarantee the
+  // reversal posted_at is always strictly greater than the original's
+  // posted_at, even when correction runs in the same clock tick.
   const baseDateMs = Math.max(
-    new Date(originalExecution.posted_at).getTime(),
+    new Date(originalExecution.posted_at).getTime() + 1,
     new Date(postedAt).getTime(),
   );
   const effectivePostedAt = new Date(baseDateMs).toISOString();
