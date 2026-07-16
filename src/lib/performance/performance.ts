@@ -20,11 +20,7 @@ import type { CanonicalDecimal } from '../accounting/types';
 import {
   toMicros,
   fromMicros,
-  addDecimal,
   subtractDecimal,
-  negateDecimal,
-  compareDecimal,
-  sumDecimals,
   MICROS_PER_UNIT,
 } from '../accounting/decimal';
 import type {
@@ -36,22 +32,8 @@ import type {
   HighWaterMarkInput,
 } from './types';
 
-// ── Internal Constants ──────────────────────────────────────────────────
-
-/** Canonical representation of 1.00 (used for TWR chaining). */
-const ONE: CanonicalDecimal = '1.00' as CanonicalDecimal;
-/** Canonical representation of 0.00. */
-const ZERO: CanonicalDecimal = '0.00' as CanonicalDecimal;
 
 // ── Internal Helpers ────────────────────────────────────────────────────
-
-/**
- * Multiply two canonical decimals using exact BigInt arithmetic.
- */
-function multiplyDecimal(a: CanonicalDecimal, b: CanonicalDecimal): CanonicalDecimal {
-  const product = BigInt(toMicros(a)) * BigInt(toMicros(b));
-  return fromMicros(Number(product / BigInt(MICROS_PER_UNIT)));
-}
 
 /**
  * Divide two canonical decimals using exact BigInt arithmetic.

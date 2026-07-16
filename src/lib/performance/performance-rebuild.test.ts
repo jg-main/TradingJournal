@@ -20,17 +20,13 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { rebuildAccountPerformance, type PerformanceRebuildResult } from './performance-rebuild';
-import { insertValidatedValuationMark, type InsertValuationMarkResult } from './valuation-repository';
+import { rebuildAccountPerformance } from './performance-rebuild';
+import { insertValidatedValuationMark } from './valuation-repository';
 import { postOpeningBalance } from '../accounting/posting';
 import {
-  insertAccountingExecution,
   upsertAccountPosition,
   findAccountPerformance,
-  insertValuationMark,
 } from '../../db/accounting-repository';
-import { rebuildNetPosition } from '../accounting/rebuild';
-import { toMicros } from '../accounting/decimal';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -231,7 +227,7 @@ describe('rebuildAccountPerformance', () => {
   // ── Cash-Only Account ─────────────────────────────────────────────────
 
   it('rebuilds an account with cash but no positions', () => {
-    const { accountId, instrumentId: _instId } = createAccountWithCash(ctx.sqlite, '50000.00');
+    const { accountId } = createAccountWithCash(ctx.sqlite, '50000.00');
 
     const result = rebuildAccountPerformance(ctx.sqlite, accountId);
     expect(result.success).toBe(true);

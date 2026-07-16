@@ -21,7 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import type { CanonicalDecimal } from '../accounting/types';
 import type { PositionDirection } from '../positions/types';
-import type { MarkSource, ValuationPosition, AccountValuation } from './types';
+import type { MarkSource, ValuationPosition } from './types';
 import {
   computeMarkStatus,
   computeMarkAgeMinutes,

@@ -21,11 +21,9 @@ import {
   countAccountValuationMarks,
   accountExists,
   findInstrumentById,
-  findInstrumentBySymbol,
   findOrCreateInstrument,
 } from '../../db/accounting-repository';
 import {
-  validateDecimal,
   toMicros,
   normalizeDecimal,
 } from '../accounting/decimal';

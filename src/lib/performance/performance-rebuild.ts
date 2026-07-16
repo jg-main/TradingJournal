@@ -14,22 +14,20 @@
  */
 
 import Database from 'better-sqlite3';
-import { randomUUID } from 'node:crypto';
+
 import {
   listAccountPositions,
   listLatestValuationMarks,
   upsertAccountPerformance,
   findAccountPerformance,
-  deleteAccountPerformanceByAccount,
   accountExists,
-  findInstrumentById,
 } from '../../db/accounting-repository';
-import { rebuildOpeningCash, rebuildNetPosition, rebuildAccountActivity } from '../accounting/rebuild';
-import { fromMicros, toMicros, sumDecimals, addDecimal, normalizeDecimal } from '../accounting/decimal';
+import { rebuildOpeningCash, rebuildAccountActivity } from '../accounting/rebuild';
+import { normalizeDecimal } from '../accounting/decimal';
 import type { CanonicalDecimal } from '../accounting/types';
 import { deriveValuationPosition, computeAccountValuation } from './valuation';
 import { computePerformance } from './performance';
-import type { ValuationMark, CashFlow, ValuationPosition } from './types';
+import type { CashFlow, ValuationPosition } from './types';
 
 // ── Rebuild Result ──────────────────────────────────────────────────────
 
@@ -271,7 +269,7 @@ export function rebuildAccountPerformance(
 
       // Try to read existing projection for historical HWM data
       const existingProj = findAccountPerformance(sqlite, accountId);
-      let historicalNavs: Array<{ nav: CanonicalDecimal; date: string }> = [];
+      const historicalNavs: Array<{ nav: CanonicalDecimal; date: string }> = [];
 
       // Build historical NAV array from existing projection and current
       if (existingProj) {

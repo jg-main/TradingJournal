@@ -4,6 +4,8 @@ import { useEffect, useState, use } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import AccountActivity from '@/components/accounting/account-activity';
+import AccountPerformance from '@/components/accounting/account-performance';
+import AccountValuationForm from '@/components/accounting/account-valuation-form';
 
 interface AccountDetail {
   id: string;
@@ -33,6 +35,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const [account, setAccount] = useState<AccountDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [performanceRefreshKey, setPerformanceRefreshKey] = useState(0);
 
   const fetchAccount = async () => {
     try {
@@ -59,6 +62,11 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
     void fetchAccount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const handleMarkSubmitted = () => {
+    // Trigger a performance refresh after a mark is posted
+    setPerformanceRefreshKey((k) => k + 1);
+  };
 
   const formatCurrency = (v: number) => {
     return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -160,6 +168,20 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
             {getNetPnl(account) >= 0 ? '+' : ''}${formatCurrency(getNetPnl(account))}
           </p>
         </div>
+      </div>
+
+      {/* Accounting Performance & Valuation section */}
+      <div className="mb-8">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+            Valuation &amp; Performance
+          </h2>
+          <AccountValuationForm accountId={id} onMarkSubmitted={handleMarkSubmitted} />
+        </div>
+        <AccountPerformance
+          key={`perf-${performanceRefreshKey}`}
+          accountId={id}
+        />
       </div>
 
       {/* Accounting Activity (replaces legacy transaction view) */}

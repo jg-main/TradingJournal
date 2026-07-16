@@ -26,14 +26,12 @@ import {
   fromMicros,
   addDecimal,
   subtractDecimal,
-  negateDecimal,
   compareDecimal,
   sumDecimals,
   MICROS_PER_UNIT,
 } from '../accounting/decimal';
 import type { PositionDirection } from '../positions/types';
 import type {
-  ValuationMark,
   ValuationPosition,
   MarkStatus,
   MarkSource,
