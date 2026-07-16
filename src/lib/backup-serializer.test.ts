@@ -81,7 +81,9 @@ function createTestDb() {
     'hash TEXT NOT NULL, ' +
     'created_at TEXT)'
   );
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const meta = require(join(migrationsDir, 'meta', '_journal.json')) as { entries: { tag: string }[] };
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('node:fs') as typeof import('node:fs');
   const insert = sqlite.prepare(
     "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, datetime('now'))"

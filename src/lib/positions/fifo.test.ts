@@ -33,6 +33,7 @@ import type { CanonicalDecimal } from '../accounting/types';
 
 function lot(
   overrides: Partial<FifoLot> & { remainingQuantity?: CanonicalDecimal; originalQuantity: CanonicalDecimal },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   const now = new Date().toISOString();
   return {
@@ -50,7 +51,10 @@ function lot(
   } as unknown as FifoLot;
 }
 
-function position(overrides: Partial<PositionState> = {}): any {
+function position(
+  overrides: Partial<PositionState> = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any {
   const now = new Date().toISOString();
   return {
     accountId: overrides.accountId ?? 'acct-1',
@@ -69,6 +73,7 @@ function position(overrides: Partial<PositionState> = {}): any {
 
 function execution(
   overrides: Omit<Partial<FifoExecutionInput>, 'quantity' | 'price' | 'fees'> & { action: ExecutionAction; quantity: string; price: string; fees?: string },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
   return {
     executionId: overrides.executionId ?? randomUUID(),

@@ -120,7 +120,7 @@ function sortLotsFifo(lots: FifoLot[]): FifoLot[] {
   return [...lots].sort((a, b) => {
     const tsCmp = a.openedAt.localeCompare(b.openedAt);
     if (tsCmp !== 0) return tsCmp;
-    const seqCmp = ((a as any).sequence ?? 0) - ((b as any).sequence ?? 0);
+    const seqCmp = (a.sequence ?? 0) - (b.sequence ?? 0);
     if (seqCmp !== 0) return seqCmp;
     return a.id.localeCompare(b.id);
   });

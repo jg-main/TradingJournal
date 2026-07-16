@@ -170,13 +170,74 @@ export default function WatchlistPage() {
   // Called from evaluateWatchlistAlerts within the price polling setInterval.
   // Safe because permission was already granted from a user gesture (handleSubmit below).
   // PERF: fireNotification is stable (useCallback with [isSupported]) so this runs once.
-  onAlertEventRef.current = (event: AlertEvent) => {
-    fireNotification({
-      symbol: event.symbol,
-      message: event.message,
-      url: '/watchlist',
-    });
-  };
+  useEffect(() => {
+    onAlertEventRef.current = (event: AlertEvent) => {
+      fireNotification({
+        symbol: event.symbol,
+        message: event.message,
+        url: '/watchlist',
+      });
+    };
+  }, [fireNotification]);
+
+  // ── Alert evaluation helper ─────────────────────────────────────────
+  // Runs after each price poll cycle. Evaluates alert conditions, detects
+  // unmet→met transitions, POSTs new events to /api/alert-log, and fires
+  // the notification callback (registered by T04).
+  // Errors degrade silently to no-notification (not user-visible).
+  const evaluateWatchlistAlerts = useCallback(
+    async (prices: Record<string, { symbol: string; price: number | null }>) => {
+      const symbols = Object.keys(prices);
+      if (symbols.length === 0 || items.length === 0) return;
+
+      // Build AlertItemInput array from current items + price data
+      const inputs: AlertItemInput[] = [];
+
+      for (const item of items) {
+        const quote = prices[item.symbol];
+        if (!quote) continue;
+
+        const config = parseAlertConfig(item.alertConfig);
+        const price = quote.price ?? null;
+
+        inputs.push({
+          id: item.id,
+          symbol: item.symbol,
+          alertConfig: config,
+          currentPrice: price,
+          rsi: null,
+          keyLevel: item.keyLevel,
+        });
+      }
+
+      if (inputs.length === 0) return;
+
+      // Evaluate alerts
+      const { events, nextState } = evaluateAlertPoll(alertStateRef.current, inputs);
+      alertStateRef.current = nextState;
+
+      // Fire callbacks and persist new events
+      for (const event of events) {
+        // Deduplicate: skip if same (symbol, condition) acknowledged in last 30s
+        const dedupKey = `${event.symbol}:${event.condition}`;
+        if (acknowledgedEventIdsRef.current.has(dedupKey)) continue;
+        acknowledgedEventIdsRef.current.add(dedupKey);
+        // Clear dedup key after 30 seconds
+        setTimeout(() => {
+          acknowledgedEventIdsRef.current.delete(dedupKey);
+        }, 30000);
+
+        // Fire notification callback (registered by T04)
+        onAlertEventRef.current?.(event);
+
+        // Persist to /api/alert-log (fire-and-forget)
+        persistAlertEvent(event).catch(() => {
+          /* silent — persistence failure degrades gracefully */
+        });
+      }
+    },
+    [items],
+  );
 
   // ── Live price polling ──────────────────────────────────────────────
 
@@ -230,7 +291,7 @@ export default function WatchlistPage() {
       stop();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [items]);
+  }, [items, evaluateWatchlistAlerts]);
 
   // ── Filter ──────────────────────────────────────────────────────────
 
@@ -346,65 +407,6 @@ export default function WatchlistPage() {
       setMessage({ type: 'error', text: 'Failed to remove item.' });
     }
   }, [fetchItems]);
-
-  // ── Alert evaluation helper ─────────────────────────────────────────
-  // Runs after each price poll cycle. Evaluates alert conditions, detects
-  // unmet→met transitions, POSTs new events to /api/alert-log, and fires
-  // the notification callback (registered by T04).
-  // Errors degrade silently to no-notification (not user-visible).
-  const evaluateWatchlistAlerts = useCallback(
-    async (prices: Record<string, { symbol: string; price: number | null }>) => {
-      const symbols = Object.keys(prices);
-      if (symbols.length === 0 || items.length === 0) return;
-
-      // Build AlertItemInput array from current items + price data
-      const inputs: AlertItemInput[] = [];
-
-      for (const item of items) {
-        const quote = prices[item.symbol];
-        if (!quote) continue;
-
-        const config = parseAlertConfig(item.alertConfig);
-        const price = quote.price ?? null;
-
-        inputs.push({
-          id: item.id,
-          symbol: item.symbol,
-          alertConfig: config,
-          currentPrice: price,
-          rsi: null,
-          keyLevel: item.keyLevel,
-        });
-      }
-
-      if (inputs.length === 0) return;
-
-      // Evaluate alerts
-      const { events, nextState } = evaluateAlertPoll(alertStateRef.current, inputs);
-      alertStateRef.current = nextState;
-
-      // Fire callbacks and persist new events
-      for (const event of events) {
-        // Deduplicate: skip if same (symbol, condition) acknowledged in last 30s
-        const dedupKey = `${event.symbol}:${event.condition}`;
-        if (acknowledgedEventIdsRef.current.has(dedupKey)) continue;
-        acknowledgedEventIdsRef.current.add(dedupKey);
-        // Clear dedup key after 30 seconds
-        setTimeout(() => {
-          acknowledgedEventIdsRef.current.delete(dedupKey);
-        }, 30000);
-
-        // Fire notification callback (registered by T04)
-        onAlertEventRef.current?.(event);
-
-        // Persist to /api/alert-log (fire-and-forget)
-        persistAlertEvent(event).catch(() => {
-          /* silent — persistence failure degrades gracefully */
-        });
-      }
-    },
-    [items],
-  );
 
   const formatPrice = (v: number | null) => {
     if (v === null || v === undefined) return '-';

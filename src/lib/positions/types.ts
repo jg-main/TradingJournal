@@ -105,6 +105,8 @@ export interface FifoLot {
   openingExecutionId: string;
   /** Timestamp when the lot was opened. */
   openedAt: string;
+  /** Optional stable sequence order for same-timestamp deterministic ordering. */
+  sequence?: number;
 }
 
 // ── Lot Match ────────────────────────────────────────────────────────────

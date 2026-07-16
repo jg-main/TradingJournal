@@ -24,7 +24,9 @@ export function useVisibilityPolling(
   const callbackRef = useRef(callback);
   // Keep the callback ref current so the interval closure never captures
   // a stale reference.
-  callbackRef.current = callback;
+  useEffect(() => {
+    callbackRef.current = callback;
+  });
 
   const intervalIdRef = useRef<ReturnType<typeof setInterval> | undefined>(
     undefined,

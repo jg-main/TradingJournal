@@ -189,7 +189,9 @@ async function runTests() {
 
       const validation = validateRestoreZip(badZip);
       assert(validation.valid === false, 'Missing correction_lineage table: validation fails');
-      assert(validation.error.includes('missing'), `Error mentions "missing": ${validation.error}`);
+      if (!validation.valid) {
+        assert(validation.error.includes('missing'), `Error mentions "missing": ${validation.error}`);
+      }
       assert(
         (validation as { valid: false; details?: unknown }).details !== undefined,
         'Error has details object',
@@ -232,7 +234,9 @@ async function runTests() {
 
       const validation = validateRestoreZip(badZip);
       assert(validation.valid === false, 'Corrupt data file: validation fails');
-      assert(validation.error.includes('not valid JSON'), `Error mentions invalid JSON: ${validation.error}`);
+      if (!validation.valid) {
+        assert(validation.error.includes('not valid JSON'), `Error mentions invalid JSON: ${validation.error}`);
+      }
 
       sqlite.close();
     } finally {
@@ -268,7 +272,9 @@ async function runTests() {
 
       const validation = validateRestoreZip(badZip);
       assert(validation.valid === false, 'Row count mismatch: validation fails');
-      assert(validation.error.includes('Row count'), `Error mentions "Row count": ${validation.error}`);
+      if (!validation.valid) {
+        assert(validation.error.includes('Row count'), `Error mentions "Row count": ${validation.error}`);
+      }
 
       sqlite.close();
     } finally {
@@ -368,7 +374,9 @@ async function runTests() {
       // Unbalanced ledger should fail
       const validation = validateRestoreZip(zipBuffer);
       assert(validation.valid === false, 'Unbalanced ledger: validation fails');
-      assert(validation.error.includes('Unbalanced'), `Error mentions "Unbalanced": ${validation.error}`);
+      if (!validation.valid) {
+        assert(validation.error.includes('Unbalanced'), `Error mentions "Unbalanced": ${validation.error}`);
+      }
 
       sqlite.close();
     } finally {
@@ -398,7 +406,9 @@ async function runTests() {
 
     const validation = validateRestoreZip(zipBuffer);
     assert(validation.valid === false, 'Schema version mismatch: validation fails');
-    assert(validation.error.includes('Schema version'), `Error mentions "Schema version": ${validation.error}`);
+    if (!validation.valid) {
+      assert(validation.error.includes('Schema version'), `Error mentions "Schema version": ${validation.error}`);
+    }
     const det = (validation as { valid: false; details?: unknown }).details as Record<string, unknown> | undefined;
     assert(det !== undefined, 'Schema mismatch has details');
 
@@ -445,7 +455,9 @@ async function runTests() {
       // Even with a valid backup ZIP, the open trades check should fail
       const validation = validateRestoreZip(zipBuffer);
       assert(validation.valid === false, 'Open trades: validation fails');
-      assert(validation.error.includes('open'), `Error mentions "open": ${validation.error}`);
+      if (!validation.valid) {
+        assert(validation.error.includes('open'), `Error mentions "open": ${validation.error}`);
+      }
 
       sqlite.close();
     } finally {

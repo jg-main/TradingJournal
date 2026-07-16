@@ -87,7 +87,11 @@ export function useNotification(): UseNotificationResult {
 
   // Stable ref for the permission state so callbacks don't stale-close
   const permissionRef = useRef<PermissionState>(permission);
-  permissionRef.current = permission;
+
+  // Sync ref with state whenever permission changes
+  useEffect(() => {
+    permissionRef.current = permission;
+  }, [permission]);
 
   // Keep react state in sync when permission changes externally (e.g. browser
   // settings change). Subscribe to the `permissionchange` event on the

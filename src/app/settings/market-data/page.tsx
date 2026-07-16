@@ -182,6 +182,7 @@ export default function MarketDataSettingsPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSettings(controller.signal);
     void loadSchwabStatus();
 

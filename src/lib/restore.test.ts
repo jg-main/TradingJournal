@@ -191,7 +191,9 @@ describe('Restore Pipeline', () => {
 
         const validation = validateRestoreZip(badZip);
         expect(validation.valid).toBe(false);
-        expect(validation.error.toLowerCase()).toContain('missing');
+        if (!validation.valid) {
+          expect(validation.error.toLowerCase()).toContain('missing');
+        }
       } finally {
         rmSync(testDir, { recursive: true, force: true });
       }
@@ -262,7 +264,9 @@ describe('Restore Pipeline', () => {
 
         const validation = validateRestoreZip(zipBuffer);
         expect(validation.valid).toBe(false);
-        expect(validation.error.toLowerCase()).toContain('unbalanced');
+        if (!validation.valid) {
+          expect(validation.error.toLowerCase()).toContain('unbalanced');
+        }
       } finally {
         rmSync(testDir, { recursive: true, force: true });
       }
@@ -288,7 +292,9 @@ describe('Restore Pipeline', () => {
 
       const validation = validateRestoreZip(zipBuffer);
       expect(validation.valid).toBe(false);
-      expect(validation.error.toLowerCase()).toContain('schema version');
+      if (!validation.valid) {
+        expect(validation.error.toLowerCase()).toContain('schema version');
+      }
     });
   });
 
@@ -330,7 +336,9 @@ describe('Restore Pipeline', () => {
 
         const validation = validateRestoreZip(zipBuffer);
         expect(validation.valid).toBe(false);
-        expect(validation.error.toLowerCase()).toContain('open');
+        if (!validation.valid) {
+          expect(validation.error.toLowerCase()).toContain('open');
+        }
 
         // Clean up singleton DB
         singletonSqlite.prepare('DELETE FROM trades WHERE id = ?').run('ot-sg-trade-1');
@@ -373,7 +381,9 @@ describe('Restore Pipeline', () => {
 
         const validation = validateRestoreZip(badZip);
         expect(validation.valid).toBe(false);
-        expect(validation.error.toLowerCase()).toContain('row count');
+        if (!validation.valid) {
+          expect(validation.error.toLowerCase()).toContain('row count');
+        }
       } finally {
         rmSync(testDir, { recursive: true, force: true });
       }

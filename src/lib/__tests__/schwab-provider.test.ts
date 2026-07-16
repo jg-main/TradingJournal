@@ -145,6 +145,7 @@ function createProvider(): SchwabProvider {
         priceHistory: { getPriceHistory: mockFns.mockGetPriceHistory },
       },
     },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
   return new SchwabProvider(mockClient);
 }
@@ -157,6 +158,7 @@ function createMockQuoteEntry(
   sector?: string,
   industry?: string,
 ) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const entry: Record<string, any> = {
     assetMainType: 'EQUITY',
     symbol,
@@ -214,6 +216,7 @@ describe('SchwabProvider construction', () => {
 
   it('fromAuthClient returns provider when configured and auth available', () => {
     mockAuthFns.mockSchwabIsConfigured.mockReturnValue(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockAuthFns.mockGetAuthClient.mockReturnValue({} as any);
     const provider = SchwabProvider.fromAuthClient();
     expect(provider).toBeInstanceOf(SchwabProvider);

@@ -124,6 +124,7 @@ function doPutMarketDataSettings(body: Record<string, unknown>): { status: numbe
         id,
         activeProvider,
         providers,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any).run();
 
       const row = db.select().from(schema.marketDataSettings).where(eq(schema.marketDataSettings.id, id)).get();
@@ -235,8 +236,8 @@ test('2. GET returns settings with activeProvider and parsed providers', () => {
 test('3. GET returns empty providers when row has empty JSON', () => {
   const id = randomUUID();
   db.insert(schema.marketDataSettings)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .values({ id, activeProvider: 'clickhouse', providers: '{}' } as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .values({ id, activeProvider: 'clickhouse', providers: '{}' } as any)
     .run();
 
   const result = doGetMarketDataSettings();

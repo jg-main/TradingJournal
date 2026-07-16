@@ -257,6 +257,7 @@ describe('postExecutionFill', () => {
     expect(executions.length).toBeGreaterThanOrEqual(3);
 
     // Verify order: first posted_at is the earliest
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const firstExec = executions[0] as any;
     expect(firstExec.posted_at).toBe('2026-07-15T10:00:00.000Z');
     expect(firstExec.action).toBe('buy');
