@@ -42,7 +42,7 @@ const dashboardV2QuerySchema = z.object({
  *
  * Returns the account ID or null if no account can be resolved.
  */
-function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | null {
+function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | undefined {
   // Try settings.defaultAccountId
   const setting = sqlite
     .prepare('SELECT default_account_id FROM settings LIMIT 1')
@@ -59,7 +59,7 @@ function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | 
     )
     .get() as { id: string } | undefined;
 
-  return firstActive?.id ?? null;
+  return firstActive?.id ?? undefined;
 }
 
 // ── GET ─────────────────────────────────────────────────────────────────

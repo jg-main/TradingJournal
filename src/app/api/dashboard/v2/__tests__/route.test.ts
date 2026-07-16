@@ -387,7 +387,7 @@ describe('GET /api/dashboard/v2', () => {
     expect(reconciliation.totals).toBeNull();
 
     // Integrity
-    const integrity = body.integrity as Record<string, unknown>;
+    const integrity = body.integrity as { status: string; warnings: unknown[] };
     expect(integrity.status).toBe('critical');
     expect(Array.isArray(integrity.warnings)).toBe(true);
     expect(integrity.warnings.length).toBeGreaterThan(0);

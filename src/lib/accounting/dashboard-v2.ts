@@ -373,9 +373,9 @@ export function computeDashboardV2(
       markPrice = mark.price;
 
       // Compute marked value = quantity × price
+      const priceMicros = mark.price_micros;
       try {
         const qtyMicros = toMicros(pos.quantity);
-        const priceMicros = mark.price_micros;
         const valueMicros = Number(
           (BigInt(qtyMicros) * BigInt(priceMicros)) / BigInt(1_000_000),
         );
