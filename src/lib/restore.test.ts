@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * restore.test.ts
  *
@@ -13,6 +14,10 @@
  * Run: npx vitest run src/lib/restore.test.ts
  *
  * Pattern: src/lib/backup-serializer.test.ts, src/lib/create-backup.test.ts
+ *
+ * NOTE: @vitest-environment node is required because adm-zip's buffer/zip
+ * round-trip breaks under jsdom (toBuffer() produces output with 0 entries
+ * on readback). Tests requiring ZIP creation rely on working zlib/buffer.
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';

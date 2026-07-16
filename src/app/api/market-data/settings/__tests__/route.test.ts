@@ -119,7 +119,7 @@ function doPutMarketDataSettings(body: Record<string, unknown>): { status: numbe
       const providers = body.providers ? JSON.stringify(body.providers) : '{}';
       const activeProvider = (typeof body.activeProvider === 'string' ? body.activeProvider : 'clickhouse');
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       db.insert(schema.marketDataSettings).values({
         id,
         activeProvider,

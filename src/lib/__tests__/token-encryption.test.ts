@@ -154,7 +154,7 @@ describe('tamper detection', () => {
 
     const tampered: EncryptedData = {
       ...encrypted,
-      authTag: encrypted.authTag.replace(/[0-9a-f]$/, '0'),
+      authTag: encrypted.authTag.replace(/.$/, (c) => (parseInt(c, 16) ^ 1).toString(16)),
     };
     expect(() => decryptToken(tampered, key)).toThrow();
   });

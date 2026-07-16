@@ -293,7 +293,7 @@ describe('POST /api/accounts/[id]/executions — service composition', () => {
       expect(position!.direction).toBe('short');
       expect(position!.quantity).toBe('20.00');
 
-      let lots = findFifoLotsByAccountInstrument(ctx.sqlite, ctx.accountId, instrument.id);
+      const lots = findFifoLotsByAccountInstrument(ctx.sqlite, ctx.accountId, instrument.id);
       expect(lots).toHaveLength(1);
       expect(lots[0].direction).toBe('short');
 

@@ -70,6 +70,6 @@ export function useVisibilityPolling(
     };
     // Intentionally re-run only when enabled or intervalMs changes.
     // The callback ref pattern avoids including callback in the dep array.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [enabled, intervalMs]);
 }
