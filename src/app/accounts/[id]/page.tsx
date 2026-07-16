@@ -2,14 +2,12 @@
 
 import { useCallback, useEffect, useState, use } from 'react';
 import {
-  ArrowLeft,
   BookOpen,
   Activity,
   CheckCircle2,
   AlertTriangle,
   XCircle,
 } from 'lucide-react';
-import Link from 'next/link';
 import AccountActivity from '@/components/accounting/account-activity';
 import AccountExecutionForm from '@/components/accounting/account-execution-form';
 import AccountExecutionsActivity from '@/components/accounting/account-executions-activity';
@@ -245,17 +243,8 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
 
   if (!account) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <Link
-          href="/accounts"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-        >
-          <ArrowLeft className="size-4" />
-          Back to Accounts
-        </Link>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
-          <p className="text-sm text-red-700 dark:text-red-400">Account not found.</p>
-        </div>
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
+        <p className="text-sm text-red-700 dark:text-red-400">Account not found.</p>
       </div>
     );
   }
@@ -264,30 +253,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      {/* ── Back Link ───────────────────────────────────────────────── */}
-      <Link
-        href="/accounts"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-      >
-        <ArrowLeft className="size-4" />
-        Back to Accounts
-      </Link>
 
-      {/* ── Account Header ──────────────────────────────────────────── */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {account.name}
-          </h1>
-          {!account.isActive && (
-            <Badge variant="secondary">Inactive</Badge>
-          )}
-        </div>
-        <div className="mt-2 flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-300">
-          {account.broker && <span>{account.broker}</span>}
-          <span>{account.currency}</span>
-        </div>
-      </div>
 
       {/* ── Balance Card ────────────────────────────────────────────── */}
       <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
