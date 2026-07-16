@@ -42,7 +42,7 @@ const cashEventPayloadSchema = z.object({
 /** Payload schema for stock-split corporate actions. */
 const stockSplitPayloadSchema = z.object({
   symbol: z.string().min(1).max(20),
-  ratio: z.string().min(1).max(20),
+  ratio: z.string().regex(/^\d+\.?\d*:\d+\.?\d*$/, 'Stock split ratio must be in X:Y format (e.g. "4:1")'),
   oldShares: z.number().int().positive(),
   newShares: z.number().int().positive(),
   oldPrice: canonicalDecimalSchema.optional(),
@@ -134,7 +134,7 @@ const taxSchema = z.object({
 const stockSplitSchema = z.object({
   eventType: z.literal('stock_split'),
   symbol: z.string().min(1).max(20),
-  ratio: z.string().min(1).max(20),
+  ratio: z.string().regex(/^\d+\.?\d*:\d+\.?\d*$/, 'Stock split ratio must be in X:Y format (e.g. "4:1")'),
   oldShares: z.number().int().positive(),
   newShares: z.number().int().positive(),
   oldPrice: canonicalDecimalSchema.optional(),
