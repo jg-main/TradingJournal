@@ -339,6 +339,7 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [page, setPage] = useState(1);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [fetchKey, setFetchKey] = useState(0);
 
   const pageLimit = 25;
 
@@ -355,32 +356,53 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
     return params.toString();
   }, []);
 
-  const fetchLedger = useCallback(async (category: string, pageNum: number) => {
-    setLoading(true);
-    setError(null);
-    try {
+  /** Pure data fetcher — no state side effects. */
+  const loadLedgerData = useCallback(
+    async (category: string, pageNum: number): Promise<LedgerProjectionResponse> => {
       const qs = buildQueryString(category, pageNum);
       const res = await fetch(`/api/accounts/${accountId}/ledger?${qs}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to fetch ledger' }));
         throw new Error(err.error ?? 'Failed to fetch account ledger');
       }
-      const ledgerData = (await res.json()) as LedgerProjectionResponse;
-      setData(ledgerData);
-      setExpandedRows(new Set());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
-  }, [accountId, buildQueryString]);
+      return res.json() as Promise<LedgerProjectionResponse>;
+    },
+    [accountId, buildQueryString],
+  );
 
-  // Initial fetch on mount and on category/page changes.
-  // The async loader updates loading/error state after the request resolves.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
+  // Fetch on mount and on category/page/fetchKey changes.
+  // Uses a local cancellation flag so stale responses do not overwrite newer results.
+  // Loading/error state transitions are deferred to a microtask to avoid calling
+  // setState synchronously within the effect body (react-hooks/set-state-in-effect).
   useEffect(() => {
-    void fetchLedger(activeCategory, page);
-  }, [fetchLedger, activeCategory, page]);
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+    });
+
+    loadLedgerData(activeCategory, page)
+      .then((ledgerData) => {
+        if (!cancelled) {
+          setData(ledgerData);
+          setExpandedRows(new Set());
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'An error occurred');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadLedgerData, activeCategory, page, fetchKey]);
 
   // ── Handlers ──────────────────────────────────────────────────────
 
@@ -395,8 +417,8 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
   }, []);
 
   const handleRetry = useCallback(() => {
-    void fetchLedger(activeCategory, page);
-  }, [fetchLedger, activeCategory, page]);
+    setFetchKey((k) => k + 1);
+  }, []);
 
   const handlePrevPage = useCallback(() => {
     setPage((p) => Math.max(1, p - 1));
