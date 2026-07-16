@@ -5,8 +5,6 @@
 -- at the database level. Any attempt to modify or delete posted rows
 -- raises an ABORT error with a descriptive message.
 
---> statement-breakpoint
-
 -- ── Financial Events Immuatability ──────────────────────────────────────
 
 CREATE TRIGGER trg_financial_events_prevent_update

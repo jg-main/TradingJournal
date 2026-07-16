@@ -8,8 +8,6 @@
 -- Adds immutability triggers on accounting_executions to enforce
 -- append-only semantics.
 
---> statement-breakpoint
-
 -- ── Instruments (canonical symbol identity) ─────────────────────────────
 
 CREATE TABLE IF NOT EXISTS instruments (

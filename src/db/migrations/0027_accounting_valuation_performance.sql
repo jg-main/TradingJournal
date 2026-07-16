@@ -9,8 +9,6 @@
 -- Follows the same exact-decimal pattern as ledger_postings:
 -- TEXT canonical decimal (e.g. "150.50") + INTEGER micros for exact arithmetic.
 
---> statement-breakpoint
-
 -- ── Valuation Marks (immutable price observations) ──────────────────────
 
 CREATE TABLE IF NOT EXISTS valuation_marks (

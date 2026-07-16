@@ -145,8 +145,11 @@ function clearAllTables() {
     'trade_risk_snapshots', 'trade_assessment_snapshots',
     'trade_check_results', 'trade_executions', 'trades',
     'play_evaluation_fields', 'checklist_definitions',
-    'setup_definitions', 'lookup_values', 'accounts',
-    'ai_settings', 'settings', 'app_profile',
+    'setup_definitions', 'lookup_values',
+    'lot_matches', 'ledger_postings', 'ledger_entries', 'financial_events',
+    'fifo_lots', 'valuation_marks', 'account_performance', 'account_positions',
+    'accounting_executions', 'instruments',
+    'accounts', 'ai_settings', 'settings', 'app_profile',
   ];
   // Wrap in an explicit transaction so PRAGMA defer_foreign_keys takes effect
   // across all DELETEs. With better-sqlite3, each exec() creates its own
