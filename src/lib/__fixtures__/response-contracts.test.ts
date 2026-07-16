@@ -431,6 +431,149 @@ section('API 2: Account Detail');
   assert(response.kpis.tradeCount === 2, '  tradeCount = 2');
   assertClose('  netPnl = 484', response.kpis.netPnl, 484);
   assertClose('  avgGrade = (85+45)/2 = 65', response.kpis.avgGrade, 65);
+
+  // ── accounting sub-object (new in redesign) ────────────────────────
+  const accountingResponse = {
+    ...account,
+    ...balance,
+    kpis,
+    accounting: {
+      projection: {
+        netCash: '50000.00',
+        nav: '150000.00',
+        markedPositions: '100000.00',
+        realizedPnl: '25000.00',
+        unrealizedPnl: '5000.00',
+        totalPnl: '30000.00',
+        realizedFees: '1500.00',
+        grossExposure: '200000.00',
+        netExposure: '150000.00',
+        modifiedDietzReturn: '12.50',
+        twr: '15.00',
+        highWaterMark: '150000.00',
+        drawdown: '-5000.00',
+        drawdownPct: '-3.23',
+        computedAt: '2026-07-15T12:00:00.000Z',
+        rebuildCount: 2,
+        lastRebuiltAt: '2026-07-15T11:00:00.000Z',
+      },
+      realizedPnl: '25000.00',
+      nav: '150000.00',
+      ledgerDerived: true,
+    },
+    accountingIntegrity: {
+      status: 'eligible',
+      cutoverEligible: true,
+      cutoverRefusalReasons: [] as string[],
+      totals: {
+        comparisons: 12,
+        matching: 10,
+        explained: 2,
+        unexplained: 0,
+      },
+      runId: 'rec-run-001',
+      runStatus: 'complete',
+      computedAt: '2026-07-15T12:00:00.000Z',
+      recordStatusCounts: {
+        mappedCount: 10,
+        anomalyCount: 0,
+        unsupportedCount: 0,
+        duplicateCount: 0,
+        totalRecords: 10,
+      },
+    },
+    legacyAudit: {
+      kpis: {
+        tradeCount: 5,
+        netPnl: 12000,
+        winRate: 0.6,
+        avgR: 1.8,
+        avgGrade: 72,
+      },
+      realizedPnl: 12000,
+      currentBalance: 112000,
+      netDeposits: 50000,
+      netWithdrawals: 10000,
+    },
+  };
+
+  // Verify accounting.projection fields
+  assert('  accounting is object', typeof accountingResponse.accounting === 'object');
+  assert('  accounting.projection is object', typeof accountingResponse.accounting.projection === 'object');
+  assert('  accounting.ledgerDerived is boolean', typeof accountingResponse.accounting.ledgerDerived === 'boolean');
+  assert('  accounting.ledgerDerived === true', accountingResponse.accounting.ledgerDerived === true);
+  assertFieldConcrete(accountingResponse.accounting, 'realizedPnl', 'string');
+  assertFieldConcrete(accountingResponse.accounting, 'nav', 'string');
+
+  // Verify projection string fields
+  const proj = accountingResponse.accounting.projection;
+  assertFieldConcrete(proj, 'netCash', 'string');
+  assertFieldConcrete(proj, 'nav', 'string');
+  assertFieldConcrete(proj, 'markedPositions', 'string');
+  assertFieldConcrete(proj, 'realizedPnl', 'string');
+  assertFieldConcrete(proj, 'unrealizedPnl', 'string');
+  assertFieldConcrete(proj, 'totalPnl', 'string');
+  assertFieldConcrete(proj, 'realizedFees', 'string');
+  assertFieldConcrete(proj, 'grossExposure', 'string');
+  assertFieldConcrete(proj, 'netExposure', 'string');
+
+  // Projection typed fields
+  assert('  proj.modifiedDietzReturn is string or null', proj.modifiedDietzReturn === null || typeof proj.modifiedDietzReturn === 'string');
+  assert('  proj.twr is string or null', proj.twr === null || typeof proj.twr === 'string');
+  assert('  proj.highWaterMark is string or null', proj.highWaterMark === null || typeof proj.highWaterMark === 'string');
+  assert('  proj.drawdown is string or null', proj.drawdown === null || typeof proj.drawdown === 'string');
+  assert('  proj.drawdownPct is string or null', proj.drawdownPct === null || typeof proj.drawdownPct === 'string');
+  assertFieldConcrete(proj, 'computedAt', 'string');
+  assert('  proj.rebuildCount is number', typeof proj.rebuildCount === 'number');
+  assert('  proj.lastRebuiltAt is string or null', proj.lastRebuiltAt === null || typeof proj.lastRebuiltAt === 'string');
+
+  // Representative projection values
+  assert(proj.netCash === '50000.00', '  proj.netCash = 50000.00');
+  assert(proj.nav === '150000.00', '  proj.nav = 150000.00');
+  assert(proj.rebuildCount === 2, '  proj.rebuildCount = 2');
+
+  // Verify accountingIntegrity fields
+  const integrity = accountingResponse.accountingIntegrity;
+  assert('  accountingIntegrity is object', typeof integrity === 'object');
+  assert('  integrity.status is string', typeof integrity.status === 'string');
+  assert('  integrity.status is one of eligible/stale/blocked', ['eligible', 'stale', 'blocked'].includes(integrity.status));
+  assert('  integrity.cutoverEligible is boolean', typeof integrity.cutoverEligible === 'boolean');
+  assert('  integrity.cutoverRefusalReasons is array', Array.isArray(integrity.cutoverRefusalReasons));
+  assert('  integrity.totals is object', typeof integrity.totals === 'object');
+  assert('  integrity.totals.comparisons is number', typeof integrity.totals.comparisons === 'number');
+  assert('  integrity.totals.matching is number', typeof integrity.totals.matching === 'number');
+  assert('  integrity.totals.explained is number', typeof integrity.totals.explained === 'number');
+  assert('  integrity.totals.unexplained is number', typeof integrity.totals.unexplained === 'number');
+  assert('  integrity.runId is string', typeof integrity.runId === 'string');
+  assert('  integrity.runStatus is string', typeof integrity.runStatus === 'string');
+  assert('  integrity.computedAt is string or null', integrity.computedAt === null || typeof integrity.computedAt === 'string');
+  assert('  integrity.recordStatusCounts is object', typeof integrity.recordStatusCounts === 'object');
+
+  // Representative integrity values
+  assert(integrity.status === 'eligible', '  integrity.status = eligible');
+  assert(integrity.cutoverEligible === true, '  integrity.cutoverEligible = true');
+  assert(integrity.totals.comparisons === 12, '  totals.comparisons = 12');
+  assert(integrity.recordStatusCounts.mappedCount === 10, '  recordStatusCounts.mappedCount = 10');
+  assert(integrity.recordStatusCounts.anomalyCount === 0, '  recordStatusCounts.anomalyCount = 0');
+
+  // Verify legacyAudit fields (confined exclusively to Reconciliation)
+  const audit = accountingResponse.legacyAudit;
+  assert('  legacyAudit is object', typeof audit === 'object');
+  assert('  legacyAudit.kpis is object', typeof audit.kpis === 'object');
+  assert('  legacyAudit.kpis.tradeCount is number', typeof audit.kpis.tradeCount === 'number');
+  assert('  legacyAudit.kpis.netPnl is number', typeof audit.kpis.netPnl === 'number');
+  assert('  legacyAudit.kpis.winRate is number or null', audit.kpis.winRate === null || typeof audit.kpis.winRate === 'number');
+  assert('  legacyAudit.kpis.avgR is number or null', audit.kpis.avgR === null || typeof audit.kpis.avgR === 'number');
+  assert('  legacyAudit.kpis.avgGrade is number or null', audit.kpis.avgGrade === null || typeof audit.kpis.avgGrade === 'number');
+  assert('  legacyAudit.realizedPnl is number', typeof audit.realizedPnl === 'number');
+  assert('  legacyAudit.currentBalance is number', typeof audit.currentBalance === 'number');
+  assert('  legacyAudit.netDeposits is number', typeof audit.netDeposits === 'number');
+  assert('  legacyAudit.netWithdrawals is number', typeof audit.netWithdrawals === 'number');
+
+  // Representative legacyAudit values
+  assert(audit.kpis.tradeCount === 5, '  legacyAudit.kpis.tradeCount = 5');
+  assert(audit.kpis.netPnl === 12000, '  legacyAudit.kpis.netPnl = 12000');
+  assert(audit.realizedPnl === 12000, '  legacyAudit.realizedPnl = 12000');
 })();
 
 /* ════════════════════════════════════════════════════════════════════════ */
