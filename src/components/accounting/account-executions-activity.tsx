@@ -7,7 +7,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
+  Pencil,
 } from 'lucide-react';
+import AccountCorrectionForm from '@/components/accounting/account-correction-form';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -139,6 +141,8 @@ export default function AccountExecutionsActivity({
   const [data, setData] = useState<ExecutionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [correctingExecution, setCorrectingExecution] = useState<Execution | null>(null);
+  const [correctDialogOpen, setCorrectDialogOpen] = useState(false);
 
   const fetchExecutions = useCallback(async () => {
     setLoading(true);
@@ -163,6 +167,18 @@ export default function AccountExecutionsActivity({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchExecutions();
   }, [fetchExecutions, refreshKey]);
+
+  // ── Handle opening correction dialog ───────────────────────────────
+
+  const openCorrection = useCallback((exec: Execution) => {
+    setCorrectingExecution(exec);
+    setCorrectDialogOpen(true);
+  }, []);
+
+  const handleCorrectionComplete = useCallback(() => {
+    // Refresh executions to show reversal + replacement
+    void fetchExecutions();
+  }, [fetchExecutions]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -241,6 +257,9 @@ export default function AccountExecutionsActivity({
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
                   Journal Trade
                 </th>
+                <th className="w-20 px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -311,6 +330,19 @@ export default function AccountExecutionsActivity({
                         <span className="text-zinc-400 dark:text-zinc-500">—</span>
                       )}
                     </td>
+
+                    {/* Correct Action */}
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <button
+                        onClick={() => openCorrection(exec)}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                        title="Correct this execution"
+                        aria-label={`Correct execution ${exec.symbol} ${exec.action} ${exec.quantity} @ ${exec.price}`}
+                      >
+                        <Pencil className="size-3" />
+                        <span className="sr-only sm:not-sr-only">Correct</span>
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -321,6 +353,25 @@ export default function AccountExecutionsActivity({
             {data.total > data.limit && ` (showing ${data.limit})`}
           </div>
         </div>
+      )}
+
+      {/* ── Correction Dialog ─────────────────────────────────────── */}
+      {correctingExecution && (
+        <AccountCorrectionForm
+          accountId={accountId}
+          execution={{
+            id: correctingExecution.id,
+            symbol: correctingExecution.symbol,
+            action: correctingExecution.action,
+            quantity: correctingExecution.quantity,
+            price: correctingExecution.price,
+            fees: correctingExecution.fees,
+            postedAt: correctingExecution.postedAt,
+          }}
+          open={correctDialogOpen}
+          onOpenChange={setCorrectDialogOpen}
+          onCorrectionComplete={handleCorrectionComplete}
+        />
       )}
     </div>
   );

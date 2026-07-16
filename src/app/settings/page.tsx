@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  BookOpen,
   Building2,
   CircleCheck,
   CircleDashed,
@@ -574,6 +575,91 @@ export default function SettingsHubPage() {
 
         </div>
       )}
+
+      {/* ── Data Integrity & Backup Guidance ───────────────────────── */}
+      <section className="mt-10 mb-10">
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-start gap-3">
+            <BookOpen className="mt-0.5 size-5 shrink-0 text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                Data Integrity &amp; Backup Guide
+              </h2>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+                How accounting data, corrections, and backup/restore work together.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {/* Corrections */}
+            <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                Execution Corrections
+              </h3>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Posted executions are immutable and cannot be edited or deleted. To correct a
+                mistake, use the <strong>Correct</strong> button on the execution row in the
+                account detail page. This creates an auditable reversal (opposite action, same
+                values) and a replacement (corrected values). The original execution remains
+                unchanged. FIFO positions and performance projections are rebuilt automatically.
+              </p>
+            </div>
+
+            {/* Backup / Restore */}
+            <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                Backup &amp; Restore Safety
+              </h3>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Backups include all accounting data: correction lineage, ledger entries, FIFO
+                lots, positions, valuations, performance projections, and reconciliation state.
+                When you restore a backup, the system validates the archive integrity before
+                making any changes. It checks manifest completeness, schema versions, checksums,
+                and ledger balance integrity. If validation fails, the live database is not
+                modified. A pre-restore snapshot is saved so you can recover if needed.
+                <span className="mt-1 block">
+                  Navigate to{' '}
+                  <Link href="/settings/backup" className="font-medium text-zinc-800 underline dark:text-zinc-200">
+                    Backup Settings
+                  </Link>
+                  {' '}to create, download, or upload backups.
+                </span>
+              </p>
+            </div>
+
+            {/* Reconciliation Cutover */}
+            <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                Reconciliation &amp; Cutover
+              </h3>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Account metrics can be sourced either from legacy calculations or from the
+                accounting ledger. Active account views use ledger-derived metrics when
+                available. The reconciliation status (eligible / stale / blocked) appears as
+                a banner on the account detail page. A cutover is blocked when there are
+                unmatched records or missing price data. Use the Reconciliation Summary
+                section on the account page to review comparison totals.
+              </p>
+            </div>
+
+            {/* Legacy Audit Boundary */}
+            <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                Legacy Read-Only Boundary
+              </h3>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Journal trade attribution, legacy migration data, and audit records remain
+                preserved and read-only. They are not modified by the accounting engine.
+                Active account and dashboard metrics use the accounting ledger when
+                reconciliation is complete. The Journal Attribution badge on the account
+                page shows how many executions are linked to journal trades versus direct
+                account-only entries.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Danger Zone */}
       <section className="mt-12 rounded-xl border border-red-200 bg-red-50/40 p-6 dark:border-red-900/50 dark:bg-red-950/20">

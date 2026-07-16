@@ -81,6 +81,7 @@ export default defineConfig({
       'src/lib/accounting/dashboard-v2.test.ts',
       'src/app/api/dashboard/v2/__tests__/route.test.ts',
       'src/components/dashboard-v2.test.tsx',
+      'src/components/accounting/account-correction-form.test.tsx',
     ],
     environment: 'jsdom',
   },
