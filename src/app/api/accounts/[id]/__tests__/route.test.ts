@@ -357,10 +357,24 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
       return { status: 404, data: { error: 'Account not found' } };
     }
 
+    // Validate trading default fields (mirrors real PUT zod schema)
+    if (body.maxRiskPerTradePct !== undefined && body.maxRiskPerTradePct !== null && (typeof body.maxRiskPerTradePct !== 'number' || (body.maxRiskPerTradePct as number) <= 0)) {
+      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { maxRiskPerTradePct: ['Number must be greater than 0'] } } } };
+    }
+    if (body.defaultCommission !== undefined && body.defaultCommission !== null && (typeof body.defaultCommission !== 'number' || (body.defaultCommission as number) < 0)) {
+      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { defaultCommission: ['Number must be greater than or equal to 0'] } } } };
+    }
+    if (body.startingBalance !== undefined && body.startingBalance !== null && (typeof body.startingBalance !== 'number' || (body.startingBalance as number) < 0)) {
+      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { startingBalance: ['Number must be greater than or equal to 0'] } } } };
+    }
+
     const updateData: Partial<typeof schema.accounts.$inferInsert> = { updatedAt: new Date().toISOString() };
     if (body.name !== undefined) updateData.name = body.name;
     if (body.broker !== undefined) updateData.broker = body.broker;
     if (body.currency !== undefined) updateData.currency = body.currency;
+    if (body.maxRiskPerTradePct !== undefined) updateData.maxRiskPerTradePct = body.maxRiskPerTradePct as number | null | undefined;
+    if (body.defaultCommission !== undefined) updateData.defaultCommission = body.defaultCommission as number | null | undefined;
+    if (body.startingBalance !== undefined) updateData.startingBalance = body.startingBalance as number | null | undefined;
 
     const accountTrades = db.select({ status: schema.trades.status }).from(schema.trades).where(eq(schema.trades.accountId, id)).all();
 
@@ -989,6 +1003,118 @@ console.log('\n19. GET returns all expected rollforward fields:');
   assertEqual(data.id, account.id, 'account id is preserved');
   assertEqual(data.name, 'Field Check', 'account name is preserved');
   assertEqual(data.startingBalance, 5000, 'startingBalance is preserved');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// NEW: PUT trading default fields and lifecycle edge cases
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 20. PUT: Update maxRiskPerTradePct ───────────────────────────────
+
+console.log('\n20. PUT updates maxRiskPerTradePct:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Risk Limit', maxRiskPerTradePct: 1.5 });
+  const result = doPutAccount(account.id as string, { maxRiskPerTradePct: 3.0 });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.maxRiskPerTradePct, 3.0, 'maxRiskPerTradePct updated to 3.0');
+}
+
+// ── 21. PUT: Update defaultCommission ─────────────────────────────────
+
+console.log('\n21. PUT updates defaultCommission:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Commission Test', defaultCommission: 0.50 });
+  const result = doPutAccount(account.id as string, { defaultCommission: 1.25 });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.defaultCommission, 1.25, 'defaultCommission updated to 1.25');
+}
+
+// ── 22. PUT: Update startingBalance ───────────────────────────────────
+
+console.log('\n22. PUT updates startingBalance:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Start Bal Test', startingBalance: 10000 });
+  const result = doPutAccount(account.id as string, { startingBalance: 25000 });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.startingBalance, 25000, 'startingBalance updated to 25000');
+}
+
+// ── 23. PUT: Set nullable fields to null (NULL fallback) ──────────────
+
+console.log('\n23. PUT sets nullable trading default fields to null:');
+{
+  cleanup();
+  const account = seedAccount({
+    name: 'Null Fallback',
+    maxRiskPerTradePct: 2.5,
+    defaultCommission: 1.00,
+    startingBalance: 50000,
+  });
+
+  // Clear all three nullable fields to null
+  const result = doPutAccount(account.id as string, {
+    maxRiskPerTradePct: null,
+    defaultCommission: null,
+    startingBalance: null,
+  });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.maxRiskPerTradePct, null, 'maxRiskPerTradePct is null');
+  assertEqual(data.defaultCommission, null, 'defaultCommission is null');
+  assertEqual(data.startingBalance, null, 'startingBalance is null');
+  assertEqual(data.name, 'Null Fallback', 'name unchanged');
+}
+
+// ── 24. PUT: Reject zero/negative maxRiskPerTradePct ─────────────────
+
+console.log('\n24. PUT rejects zero maxRiskPerTradePct:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Bad Risk', maxRiskPerTradePct: 2.0 });
+  const result = doPutAccount(account.id as string, { maxRiskPerTradePct: 0 });
+  assert(result.status === 400, 'returns 400');
+
+  // Verify the value was not persisted
+  const current = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
+  assertEqual(current.maxRiskPerTradePct, 2.0, 'value unchanged');
+}
+
+// ── 25. PUT: Blocks reactivation with open trades ────────────────────
+
+console.log('\n25. PUT blocks reactivation with open trade:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Reactivation Block', isActive: false });
+  seedTrade({ accountId: account.id as string, status: 'open' });
+  const result = doPutAccount(account.id as string, { isActive: true });
+
+  assert(result.status === 409, 'returns 409');
+  assertEqual((result.data as { error: string }).error, 'Cannot reactivate account with open trades', 'error message');
+  const current = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
+  assertEqual(current.isActive, false, 'account remains inactive');
+}
+
+// ── 26. PUT: Allows reactivation when inactive with no trades ────────
+
+console.log('\n26. PUT allows reactivation when inactive with no trades:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Clean Reactivate', isActive: false });
+  const result = doPutAccount(account.id as string, { isActive: true });
+
+  assert(result.status === 200, 'returns 200');
+  const updated = result.data as Record<string, unknown>;
+  assertEqual(updated.isActive, true, 'account is reactivated');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

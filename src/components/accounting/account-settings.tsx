@@ -7,10 +7,21 @@ import {
   RefreshCw,
   AlertTriangle,
   Settings,
+  TriangleAlert,
+  RotateCcw,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -29,6 +40,29 @@ interface GlobalSettings {
   maxRiskPerTradePct: number | null;
   defaultCommission: number | null;
   startingAccountValue: number | null;
+}
+
+interface ClosureSummary {
+  accountId: string;
+  accountName: string;
+  startingBalance: number;
+  depositsTotal: number;
+  withdrawalsTotal: number;
+  realizedPnl: number;
+  finalBalance: number;
+  netReturn: number | null;
+  kpis: {
+    tradeCount: number;
+    netPnl: number;
+    winRate: number | null;
+    avgR: number | null;
+    avgGrade: number | null;
+  };
+  datesActive: {
+    from: string;
+    to: string;
+  };
+  closedAt: string;
 }
 
 interface AccountSettingsProps {
@@ -177,6 +211,104 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
     } else {
       setStartBal(value);
       setClearStartBal(value === '');
+    }
+  };
+
+  // ── Lifecycle state ──────────────────────────────────────────────────
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [closureSummary, setClosureSummary] = useState<ClosureSummary | null>(null);
+  const [actionPending, setActionPending] = useState<'deactivate' | 'reactivate' | 'delete' | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleCloseAccount = async () => {
+    setIsClosing(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/close`, { method: 'POST' });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to close account' }));
+        setMessage({ type: 'error', text: err.error ?? err.details ?? 'Failed to close account.' });
+        setIsClosing(false);
+        return;
+      }
+
+      const data = (await res.json()) as ClosureSummary;
+      setClosureSummary(data);
+      setCloseDialogOpen(false);
+
+      // Refresh account data to reflect inactive state
+      await fetchData();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to close account.' });
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
+  const handleReactivateAccount = async () => {
+    setActionPending('reactivate');
+    setMessage(null);
+
+    try {
+      const res = await fetch(`/api/accounts/${accountId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: true }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const errMsg =
+          typeof data?.error === 'string'
+            ? data.error
+            : typeof data?.details === 'string'
+              ? data.details
+              : 'Failed to reactivate account.';
+        setMessage({ type: 'error', text: errMsg });
+        return;
+      }
+
+      setMessage({ type: 'success', text: 'Account reactivated.' });
+      await fetchData();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to reactivate account.' });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const errMsg =
+          typeof data?.error === 'string'
+            ? data.error
+            : typeof data?.details === 'string'
+              ? data.details
+              : 'Failed to delete account.';
+        setMessage({ type: 'error', text: errMsg });
+        setIsDeleting(false);
+        return;
+      }
+
+      // Navigate to accounts list after successful deletion
+      setDeleteDialogOpen(false);
+      window.location.href = '/settings/accounts';
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to delete account.' });
+      setIsDeleting(false);
     }
   };
 
@@ -548,6 +680,156 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
           Discard changes
         </Button>
       </div>
+
+      {/* ── Lifecycle Controls ───────────────────────────────────────── */}
+      <hr className="my-8 border-zinc-200 dark:border-zinc-800" />
+
+      <section aria-labelledby="settings-lifecycle-heading">
+        <h2
+          id="settings-lifecycle-heading"
+          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-zinc-600 dark:text-zinc-300 uppercase"
+        >
+          <AlertTriangle className="size-4" />
+          Account Lifecycle
+        </h2>
+
+        {/* ── Closure Summary (shown after successful close) ────────── */}
+        {closureSummary && (
+          <div className="mt-4 mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                  Account Closed
+                </p>
+                <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                  {closureSummary.accountName} closed at{' '}
+                  {new Date(closureSummary.closedAt).toLocaleString(undefined, {
+                    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                  })}. Final balance: $
+                  {closureSummary.finalBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {closureSummary.netReturn !== null &&
+                    ` Net return: ${closureSummary.netReturn.toFixed(2)}%.`}
+                </p>
+              </div>
+              <button
+                onClick={() => setClosureSummary(null)}
+                className="shrink-0 text-xs text-emerald-600 underline hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-200"
+              >
+                Dismiss
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-3 border-t border-emerald-200 pt-3 dark:border-emerald-800">
+              <div>
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">Starting Balance</p>
+                <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
+                  ${closureSummary.startingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">Deposits</p>
+                <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
+                  ${closureSummary.depositsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">Realized P&amp;L</p>
+                <p className={`text-sm font-semibold tabular-nums ${
+                  closureSummary.realizedPnl >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                }`}>
+                  {closureSummary.realizedPnl >= 0 ? '+' : ''}${closureSummary.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Active account: Close Account ────────────────────────── */}
+        {account.isActive && !closureSummary && (
+          <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="mb-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Close this account to archive it. A final balance will be computed and the account will be marked inactive.
+            </p>
+            <Button
+              variant="destructive"
+              onClick={() => { setCloseDialogOpen(true); setMessage(null); }}
+            >
+              <TriangleAlert className="size-4" />
+              Close Account
+            </Button>
+          </div>
+        )}
+
+        {/* ── Inactive account: Reactivate and Delete ──────────────── */}
+        {!account.isActive && (
+          <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Account Actions</p>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                onClick={handleReactivateAccount}
+                disabled={actionPending === 'reactivate'}
+              >
+                <RotateCcw className="size-4" />
+                Reactivate Account
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => { setDeleteDialogOpen(true); setMessage(null); }}
+                disabled={actionPending === 'delete'}
+              >
+                <Trash2 className="size-4" />
+                Delete Account
+              </Button>
+            </div>
+            <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
+              Deleting an account permanently removes it. Only accounts with no trade history can be deleted.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* ── Close Account Confirmation Dialog ────────────────────────── */}
+      <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Close Account</DialogTitle>
+            <DialogDescription>
+              Are you sure? This will archive the account, compute final balance, and
+              generate a closure summary. It cannot be undone for accounts with trade history.
+              Accounts with open trades cannot be closed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseDialogOpen(false)} disabled={isClosing}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleCloseAccount} disabled={isClosing}>
+              {isClosing ? 'Closing...' : 'Confirm Close'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Account Confirmation Dialog ───────────────────────── */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Account</DialogTitle>
+            <DialogDescription>
+              Are you sure? This permanently removes the account and all associated transactions.
+              This action cannot be undone. Only accounts with no trade history can be deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteAccount} disabled={isDeleting}>
+              {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
