@@ -87,6 +87,7 @@ export default defineConfig({
       'src/lib/account-detail.test.ts',
       'src/lib/__fixtures__/account-detail-contracts.test.ts',
       'src/app/api/accounts/[id]/overview/__tests__/route.test.ts',
+      'src/app/api/accounts/[id]/ledger/__tests__/route.test.ts',
     ],
     environment: 'jsdom',
   },
