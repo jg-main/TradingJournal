@@ -91,8 +91,16 @@ const FIXTURE_POPULATED = {
       postedAt: '2026-01-02T10:00:00.000Z',
       status: { hasEntry: false, isBalanced: false, postingCount: 0 },
     },
+    {
+      id: 'evt-004',
+      eventType: 'trade_execution',
+      description: 'Buy 100 AAPL @ 150.00',
+      postedAt: '2026-07-16T14:00:00.000Z',
+      tradeId: 'trade-aapl-live',
+      status: { hasEntry: true, isBalanced: true, postingCount: 2 },
+    },
   ],
-  eventsTotal: 3,
+  eventsTotal: 4,
 };
 
 /** Empty account — no projection, positions, or events. */
@@ -384,6 +392,23 @@ describe('AccountOverview — loading state', () => {
   });
 });
 
+describe('AccountOverview — trade navigation links', () => {
+  it('renders a trade link for trade_execution events with tradeId', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountOverview accountId="acct-001" />);
+
+    // 'trade-aapl-live'.slice(0, 8) = 'trade-aa'
+    await waitFor(() => {
+      const link = screen.getByLabelText('View trade trade-aa');
+      expect(link).toBeTruthy();
+    });
+
+    const tradeLink = screen.getByLabelText('View trade trade-aa');
+    expect(tradeLink.closest('a')?.getAttribute('href')).toBe('/trades/trade-aapl-live');
+    expect(tradeLink.textContent).toContain('Trade');
+  });
+});
+
 describe('AccountOverview — error state', () => {
   it('renders error message and retry button on network error', async () => {
     mockFetchNetworkError();
@@ -397,7 +422,6 @@ describe('AccountOverview — error state', () => {
   });
 
   it('retry button re-fetches and recovers', async () => {
-    // First call fails
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock;
     fetchMock.mockRejectedValueOnce(new Error('Network error'));
@@ -408,7 +432,6 @@ describe('AccountOverview — error state', () => {
       expect(screen.getByText('Network error')).toBeTruthy();
     });
 
-    // Set up success for retry
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => FIXTURE_POPULATED,

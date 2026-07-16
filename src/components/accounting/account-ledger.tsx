@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import {
   RefreshCw,
   AlertTriangle,
@@ -12,6 +13,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Layers,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -59,6 +61,7 @@ interface LedgerRowDisplay {
   postings: PostingPairDisplay | null;
   idempotencyKey: string | null;
   correctionGroup: CorrectionGroupDisplay | null;
+  tradeId?: string | null;
 }
 
 interface LedgerProjectionResponse {
@@ -617,6 +620,17 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                                   reason={evt.correctionGroup.reason}
                                   correctedAt={evt.correctionGroup.correctedAt}
                                 />
+                              )}
+                              {/* Trade navigation link — visible for trade_execution events with a trade association */}
+                              {evt.tradeId && evt.eventType === 'trade_execution' && (
+                                <Link
+                                  href={`/trades/${evt.tradeId}`}
+                                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-cyan-600 underline hover:text-cyan-800 dark:text-cyan-400 dark:hover:text-cyan-200"
+                                  aria-label={`View trade ${evt.tradeId.slice(0, 8)}`}
+                                >
+                                  <ExternalLink className="size-2.5" aria-hidden="true" />
+                                  Trade
+                                </Link>
                               )}
                             </div>
                           </div>

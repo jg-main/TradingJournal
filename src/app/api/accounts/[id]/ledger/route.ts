@@ -138,18 +138,32 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // 6. Convert events to adapter format
-    const events: LedgerEventInput[] = eventRows.map((row) => ({
-      id: row.id,
-      account_id: row.account_id,
-      event_type: row.event_type,
-      idempotency_key: row.idempotency_key,
-      description: row.description,
-      payload: row.payload,
-      effect: row.effect,
-      posted_at: row.posted_at,
-      created_at: row.created_at,
-    }));
+    // 6. Convert events to adapter format, extracting trade association from payload
+    const events: LedgerEventInput[] = eventRows.map((row) => {
+      let tradeId: string | null = null;
+      if (row.payload && row.event_type === 'trade_execution') {
+        try {
+          const parsed = JSON.parse(row.payload);
+          if (parsed.journalTradeId && typeof parsed.journalTradeId === 'string') {
+            tradeId = parsed.journalTradeId;
+          }
+        } catch {
+          // Malformed payload — no trade association available
+        }
+      }
+      return {
+        id: row.id,
+        account_id: row.account_id,
+        event_type: row.event_type,
+        idempotency_key: row.idempotency_key,
+        description: row.description,
+        payload: row.payload,
+        effect: row.effect,
+        posted_at: row.posted_at,
+        created_at: row.created_at,
+        tradeId,
+      };
+    });
 
     // 7. Resolve correction groups from execution IDs to event IDs
     const correctionGroups = resolveCorrectionGroupsForAccount(sqlite, accountId);

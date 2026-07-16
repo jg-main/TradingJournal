@@ -78,6 +78,7 @@ const FIXTURE_POPULATED = {
       description: 'Buy 100 AAPL @ 150.00',
       category: 'Trade',
       cashImpact: '-15015.00',
+      tradeId: 'trade-aapl-001',
       status: { hasEntry: true, isBalanced: true, postingCount: 2 },
       postings: {
         debit: { id: 'p-debit-04', side: 'debit', amount: '15015.00', amountMicros: 15015000000, currency: 'USD', sequence: 0 },
@@ -93,6 +94,9 @@ const FIXTURE_POPULATED = {
       description: 'Corrected: Buy 50 AAPL @ 150.00',
       category: 'Trade',
       cashImpact: '-7507.50',
+      // Correction group events do have a trade association parsed from the
+      // replacement event's payload. UI renders tradeId when present.
+      tradeId: 'trade-aapl-001',
       status: { hasEntry: true, isBalanced: true, postingCount: 2 },
       postings: {
         debit: { id: 'p-debit-05', side: 'debit', amount: '7507.50', amountMicros: 7507500000, currency: 'USD', sequence: 0 },
@@ -771,6 +775,81 @@ describe('AccountLedger — accessibility', () => {
     });
 
     expect(screen.getByLabelText('Next page')).toBeTruthy();
+  });
+});
+
+describe('AccountLedger — trade navigation links', () => {
+  it('renders a trade link for trade_execution events with tradeId', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountLedger accountId="acct-001" />);
+
+    await waitFor(() => {
+      // The trade event should have a "Trade" link next to description
+      const tradeLinks = screen.getAllByLabelText(/View trade/);
+      expect(tradeLinks.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // Verify the href is correctly formed for the first trade event
+    const tradeLinks = screen.getAllByLabelText(/View trade/);
+    const firstLink = tradeLinks[0].closest('a');
+    expect(firstLink?.getAttribute('href')).toBe('/trades/trade-aapl-001');
+    expect(firstLink?.textContent).toContain('Trade');
+  });
+
+  it('does not render a trade link for non-trade events', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountLedger accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Opening balance')).toBeTruthy();
+    });
+
+    // Opening, deposit, and fee events should NOT have trade links
+    // They should not have the aria-label pattern used for trade links
+    const allTradeLinks = screen.queryAllByLabelText(/View trade/);
+    // Only the 2 trade_execution events have tradeId
+    expect(allTradeLinks.length).toBe(2);
+  });
+
+  it('trade link has accessible aria-label with truncated trade ID', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountLedger accountId="acct-001" />);
+
+    await waitFor(() => {
+      // Two trade events share 'trade-aapl-001', so slice(0,8) = 'trade-aa'
+      const links = screen.getAllByLabelText('View trade trade-aa');
+      expect(links.length).toBe(2);
+    });
+  });
+
+  it('does not render trade link when tradeId is null', async () => {
+    // Use a fixture where trade events have no tradeId, like the fee event
+    const fixture = {
+      ...FIXTURE_POPULATED,
+      events: FIXTURE_POPULATED.events.map((e) => ({
+        ...e,
+        // Remove tradeId from non-trade events (they already don't have it)
+        tradeId: e.eventType === 'trade_execution' ? null : e.tradeId ?? null,
+      })),
+    };
+    // Override specific events with null tradeId
+    fixture.events = fixture.events.map((e) => {
+      if (e.eventType === 'trade_execution') {
+        return { ...e, tradeId: null };
+      }
+      return e;
+    });
+
+    mockFetchSuccess(fixture);
+    render(<AccountLedger accountId="acct-no-trade" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Buy 100 AAPL @ 150.00')).toBeTruthy();
+    });
+
+    // No trade links should be rendered
+    const tradeLinks = screen.queryAllByLabelText(/View trade/);
+    expect(tradeLinks.length).toBe(0);
   });
 });
 

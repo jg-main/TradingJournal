@@ -17,6 +17,10 @@
 
 /**
  * A financial event row in the shape returned by the accounting repository.
+ *
+ * The optional tradeId is parsed from the JSON payload (journalTradeId field)
+ * by the API route before calling the projection.  Non-trade events always
+ * have tradeId=null.
  */
 export interface LedgerEventInput {
   id: string;
@@ -28,6 +32,8 @@ export interface LedgerEventInput {
   effect: string | null;
   posted_at: string;
   created_at: string;
+  /** Optional trade association parsed from the event payload (journalTradeId). */
+  tradeId?: string | null;
 }
 
 /**
@@ -146,6 +152,9 @@ export interface CorrectionGroupDisplay {
  * One row in the ledger projection response.
  * Represents a single authoritative financial event, with optional
  * correction group metadata.
+ *
+ * When eventType is 'trade_execution' and tradeId is non-null, the
+ * UI can render a link to /trades/[tradeId] for direct navigation.
  */
 export interface LedgerRowDisplay {
   eventId: string;
@@ -158,6 +167,8 @@ export interface LedgerRowDisplay {
   postings: PostingPairDisplay | null;
   idempotencyKey: string | null;
   correctionGroup: CorrectionGroupDisplay | null;
+  /** Optional trade association for navigating to the trade detail page. */
+  tradeId?: string | null;
 }
 
 /**
@@ -301,6 +312,7 @@ export function buildLedgerProjection(
         reason: cg.reason,
         correctedAt: cg.correctedAt,
       },
+      tradeId: displayEvent.tradeId ?? null,
     });
   }
 
@@ -332,6 +344,7 @@ export function buildLedgerProjection(
       postings: postingPair,
       idempotencyKey: evt.idempotency_key,
       correctionGroup: null,
+      tradeId: evt.tradeId ?? null,
     });
   }
 

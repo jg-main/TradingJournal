@@ -223,18 +223,33 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         .get(accountId) as { count: number }
     ).count;
 
-    // Map events to a lightweight shape for the overview
-    const events = eventRows.map((row) => ({
-      id: row.id,
-      eventType: row.event_type,
-      description: row.description,
-      postedAt: row.posted_at,
-      status: {
-        hasEntry: row.entry_id !== null,
-        isBalanced: row.is_balanced === 1,
-        postingCount: row.posting_count,
-      },
-    }));
+    // Map events to a lightweight shape for the overview, extracting
+    // trade association from the payload when available.
+    const events = eventRows.map((row) => {
+      let tradeId: string | null = null;
+      if (row.payload && row.event_type === 'trade_execution') {
+        try {
+          const parsed = JSON.parse(row.payload);
+          if (parsed.journalTradeId && typeof parsed.journalTradeId === 'string') {
+            tradeId = parsed.journalTradeId;
+          }
+        } catch {
+          // Malformed payload — no trade association available
+        }
+      }
+      return {
+        id: row.id,
+        eventType: row.event_type,
+        description: row.description,
+        postedAt: row.posted_at,
+        tradeId,
+        status: {
+          hasEntry: row.entry_id !== null,
+          isBalanced: row.is_balanced === 1,
+          postingCount: row.posting_count,
+        },
+      };
+    });
 
     // ── 6. Return composed response ───────────────────────────────────
     return NextResponse.json(

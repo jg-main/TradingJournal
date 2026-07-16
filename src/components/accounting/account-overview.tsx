@@ -11,6 +11,7 @@ import {
   Minus,
   Receipt,
   BarChart3,
+  ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -58,6 +59,7 @@ interface EventRow {
   eventType: string;
   description: string | null;
   postedAt: string;
+  tradeId?: string | null;
   status: {
     hasEntry: boolean;
     isBalanced: boolean;
@@ -573,9 +575,24 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
                         </span>
                       </td>
                       <td className="max-w-[240px] truncate px-4 py-2 text-zinc-700 dark:text-zinc-300">
-                        {ev.description ?? (
-                          <span className="text-zinc-400 dark:text-zinc-500">—</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="truncate">
+                            {ev.description ?? (
+                              <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                            )}
+                          </span>
+                          {/* Trade navigation link for trade_execution events with association */}
+                          {ev.tradeId && ev.eventType === 'trade_execution' && (
+                            <Link
+                              href={`/trades/${ev.tradeId}`}
+                              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-cyan-600 underline hover:text-cyan-800 dark:text-cyan-400 dark:hover:text-cyan-200"
+                              aria-label={`View trade ${ev.tradeId.slice(0, 8)}`}
+                            >
+                              <ExternalLink className="size-2.5" aria-hidden="true" />
+                              Trade
+                            </Link>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-2 text-center">
                         <span
