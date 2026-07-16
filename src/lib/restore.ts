@@ -355,6 +355,22 @@ export async function executeRestore(
   let restoredTables = 0;
   let restoredRows = 0;
 
+  // DROP immutable accounting DELETE triggers before the transaction.
+  // These unconditionally block DELETE on ledger/accounting/valuation
+  // tables (migrations 0024, 0026, 0027). DDL auto-commits in SQLite,
+  // so DROP must run outside the transactional wipe below. The triggers
+  // will be recreated on next startup via migration CREATE TRIGGER IF NOT EXISTS.
+  const deleteTriggers = [
+    'trg_financial_events_prevent_delete',
+    'trg_ledger_entries_prevent_delete',
+    'trg_ledger_postings_prevent_delete',
+    'trg_accounting_executions_prevent_delete',
+    'trg_valuation_marks_prevent_delete',
+  ];
+  for (const trigger of deleteTriggers) {
+    sqlite.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
+  }
+
   sqlite.transaction(() => {
     // Defer FK constraint checking until commit.
     // This allows DELETE in any order (children then parents) while keeping

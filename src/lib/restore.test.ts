@@ -135,6 +135,11 @@ function createSeedZip(): Buffer {
 
 /**
  * Clear all data from all tables in FK-safe order.
+ *
+ * First drops immutable accounting DELETE triggers (from migrations 0024,
+ * 0026, 0027) which unconditionally block DELETE on ledger/accounting/
+ * valuation tables. DDL auto-commits in SQLite, so the DROP must run
+ * outside the transactional DELETE loop.
  */
 function clearAllTables() {
   const sqlite = getSqlite();
@@ -151,6 +156,18 @@ function clearAllTables() {
     'accounting_executions', 'instruments',
     'accounts', 'ai_settings', 'settings', 'app_profile',
   ];
+  // DROP immutable accounting DELETE triggers (DDL auto-commits, so
+  // this must run outside the explicit transaction below)
+  const deleteTriggers = [
+    'trg_financial_events_prevent_delete',
+    'trg_ledger_entries_prevent_delete',
+    'trg_ledger_postings_prevent_delete',
+    'trg_accounting_executions_prevent_delete',
+    'trg_valuation_marks_prevent_delete',
+  ];
+  for (const trigger of deleteTriggers) {
+    sqlite.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
+  }
   // Wrap in an explicit transaction so PRAGMA defer_foreign_keys takes effect
   // across all DELETEs. With better-sqlite3, each exec() creates its own
   // implicit transaction, but defer_foreign_keys only works inside explicit
