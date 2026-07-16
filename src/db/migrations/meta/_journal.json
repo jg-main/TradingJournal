@@ -204,6 +204,13 @@
       "when": 1787000000000,
       "tag": "0028_legacy_accounting_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1788000000000,
+      "tag": "0029_correction_lineage",
+      "breakpoints": true
     }
   ]
 }

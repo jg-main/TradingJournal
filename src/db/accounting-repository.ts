@@ -1459,3 +1459,138 @@ export function deleteAccountPerformanceByAccount(
 ): void {
   sqlite.prepare('DELETE FROM account_performance WHERE account_id = ?').run(accountId);
 }
+
+// ── Correction Lineage ───────────────────────────────────────────────────
+
+export interface CorrectionLineageRow {
+  id: string;
+  account_id: string;
+  original_execution_id: string;
+  reversal_execution_id: string;
+  replacement_execution_id: string;
+  idempotency_key: string | null;
+  reason: string | null;
+  corrected_at: string;
+  created_at: string;
+}
+
+/**
+ * Insert a correction lineage row.  Returns the inserted row.
+ */
+export function insertCorrectionLineage(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    accountId: string;
+    originalExecutionId: string;
+    reversalExecutionId: string;
+    replacementExecutionId: string;
+    idempotencyKey?: string | null;
+    reason?: string | null;
+    correctedAt: string;
+  },
+): CorrectionLineageRow {
+  const id = values.id ?? randomUUID();
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT INTO correction_lineage
+       (id, account_id, original_execution_id, reversal_execution_id,
+        replacement_execution_id, idempotency_key, reason, corrected_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      values.accountId,
+      values.originalExecutionId,
+      values.reversalExecutionId,
+      values.replacementExecutionId,
+      values.idempotencyKey ?? null,
+      values.reason ?? null,
+      values.correctedAt,
+    );
+  return {
+    id,
+    account_id: values.accountId,
+    original_execution_id: values.originalExecutionId,
+    reversal_execution_id: values.reversalExecutionId,
+    replacement_execution_id: values.replacementExecutionId,
+    idempotency_key: values.idempotencyKey ?? null,
+    reason: values.reason ?? null,
+    corrected_at: values.correctedAt,
+    created_at: now,
+  };
+}
+
+/**
+ * Find a correction by the original execution ID.
+ * Returns the row or undefined.
+ */
+export function findCorrectionByOriginalExecution(
+  sqlite: Database.Database,
+  originalExecutionId: string,
+): CorrectionLineageRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_execution_id, reversal_execution_id,
+              replacement_execution_id, idempotency_key, reason, corrected_at, created_at
+       FROM correction_lineage WHERE original_execution_id = ?`,
+    )
+    .get(originalExecutionId) as CorrectionLineageRow | undefined;
+}
+
+/**
+ * Find a correction by its idempotency key.
+ * Returns the row or undefined.
+ */
+export function findCorrectionByIdempotencyKey(
+  sqlite: Database.Database,
+  idempotencyKey: string,
+): CorrectionLineageRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_execution_id, reversal_execution_id,
+              replacement_execution_id, idempotency_key, reason, corrected_at, created_at
+       FROM correction_lineage WHERE idempotency_key = ?`,
+    )
+    .get(idempotencyKey) as CorrectionLineageRow | undefined;
+}
+
+/**
+ * Find a correction by reversal or replacement execution ID.
+ * Returns the row or undefined.
+ */
+export function findCorrectionByRelatedExecution(
+  sqlite: Database.Database,
+  executionId: string,
+): CorrectionLineageRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_execution_id, reversal_execution_id,
+              replacement_execution_id, idempotency_key, reason, corrected_at, created_at
+       FROM correction_lineage
+       WHERE reversal_execution_id = ? OR replacement_execution_id = ?`,
+    )
+    .get(executionId, executionId) as CorrectionLineageRow | undefined;
+}
+
+/**
+ * List corrections for an account, newest first.
+ */
+export function listCorrectionsByAccount(
+  sqlite: Database.Database,
+  accountId: string,
+  options?: { limit?: number; offset?: number },
+): CorrectionLineageRow[] {
+  const limit = options?.limit ?? 50;
+  const offset = options?.offset ?? 0;
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_execution_id, reversal_execution_id,
+              replacement_execution_id, idempotency_key, reason, corrected_at, created_at
+       FROM correction_lineage WHERE account_id = ?
+       ORDER BY corrected_at DESC, id ASC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(accountId, limit, offset) as CorrectionLineageRow[];
+}

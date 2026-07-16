@@ -146,6 +146,61 @@ export class FifoAllocationRejectedError extends AccountingError {
   }
 }
 
+// ── Correction Errors ───────────────────────────────────────────────────
+
+/**
+ * Thrown when attempting to correct an execution that has already been corrected.
+ */
+export class ExecutionAlreadyCorrectedError extends AccountingError {
+  public readonly executionId: string;
+  public readonly correctionId: string;
+
+  constructor(executionId: string, correctionId: string) {
+    super(
+      'EXECUTION_ALREADY_CORRECTED',
+      `Execution "${executionId}" has already been corrected via correction "${correctionId}"`,
+    );
+    this.name = 'ExecutionAlreadyCorrectedError';
+    this.executionId = executionId;
+    this.correctionId = correctionId;
+    Object.setPrototypeOf(this, ExecutionAlreadyCorrectedError.prototype);
+  }
+}
+
+/**
+ * Thrown when attempting to correct an execution that is a reversal or replacement.
+ */
+export class ExecutionNotMutableError extends AccountingError {
+  public readonly executionId: string;
+
+  constructor(executionId: string, reason: string) {
+    super(
+      'EXECUTION_NOT_MUTABLE',
+      `Execution "${executionId}" cannot be corrected: ${reason}`,
+    );
+    this.name = 'ExecutionNotMutableError';
+    this.executionId = executionId;
+    Object.setPrototypeOf(this, ExecutionNotMutableError.prototype);
+  }
+}
+
+/**
+ * Thrown when a correction idempotency key already exists.
+ */
+export class DuplicateCorrectionIdempotencyError extends AccountingError {
+  public readonly idempotencyKey: string;
+
+  constructor(idempotencyKey: string) {
+    super(
+      'DUPLICATE_CORRECTION_IDEMPOTENCY_KEY',
+      `Correction with idempotency key "${idempotencyKey}" already exists`,
+    );
+    this.name = 'DuplicateCorrectionIdempotencyError';
+    this.idempotencyKey = idempotencyKey;
+    Object.setPrototypeOf(this, DuplicateCorrectionIdempotencyError.prototype);
+  }
+}
+
 // ── Account Errors ──────────────────────────────────────────────────────
 
 /**

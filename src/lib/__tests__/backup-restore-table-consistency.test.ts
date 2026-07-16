@@ -45,6 +45,7 @@ const EXPECTED_LABEL_KEYS = new Set([
   'schwab_tokens',
   'instruments',
   'accounting_executions',
+  'correction_lineage',
   'account_positions',
   'account_performance',
   'valuation_marks',

@@ -735,6 +735,38 @@ export const accountPerformance = sqliteTable('account_performance', {
   index('idx_account_performance_account_id').on(t.accountId),
 ]);
 
+// ── Correction Lineage ──────────────────────────────────────────────────
+//
+// Tracks execution corrections that follow the reversal-and-replacement
+// pattern. Every correction links an original execution to its reversal
+// and replacement executions, preserving full audit lineage.
+
+export const correctionLineage = sqliteTable('correction_lineage', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  originalExecutionId: text('original_execution_id')
+    .references(() => accountingExecutions.id)
+    .notNull(),
+  reversalExecutionId: text('reversal_execution_id')
+    .references(() => accountingExecutions.id)
+    .notNull(),
+  replacementExecutionId: text('replacement_execution_id')
+    .references(() => accountingExecutions.id)
+    .notNull(),
+  idempotencyKey: text('idempotency_key'),
+  reason: text('reason'),
+  correctedAt: text('corrected_at').notNull(),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+}, (t) => [
+  unique('uq_correction_lineage_idempotency_key').on(t.idempotencyKey),
+  index('idx_correction_lineage_account_id').on(t.accountId),
+  index('idx_correction_lineage_original_execution_id').on(t.originalExecutionId),
+  index('idx_correction_lineage_reversal_execution_id').on(t.reversalExecutionId),
+  index('idx_correction_lineage_replacement_execution_id').on(t.replacementExecutionId),
+]);
+
 // ── Lot Matches ─────────────────────────────────────────────────────────
 
 export const lotMatches = sqliteTable('lot_matches', {

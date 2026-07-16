@@ -98,6 +98,7 @@ export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'accounts', ref: tables.accounts },
   { name: 'instruments', ref: tables.instruments },
   { name: 'accounting_executions', ref: tables.accountingExecutions },
+  { name: 'correction_lineage', ref: tables.correctionLineage },
   { name: 'account_positions', ref: tables.accountPositions },
   { name: 'account_performance', ref: tables.accountPerformance },
   { name: 'valuation_marks', ref: tables.valuationMarks },

@@ -37,6 +37,35 @@ interface AccountDetail {
     avgR: number | null;
     avgGrade: number | null;
   };
+  accounting?: {
+    projection: {
+      netCash: string;
+      nav: string;
+      realizedPnl: string;
+      unrealizedPnl: string;
+      totalPnl: string;
+      grossExposure: string;
+      netExposure: string;
+      drawdown: string | null;
+      highWaterMark: string | null;
+      computedAt: string;
+      rebuildCount: number;
+    } | null;
+    realizedPnl: string | null;
+    nav: string | null;
+    ledgerDerived: boolean;
+  };
+  accountingIntegrity: {
+    status: 'eligible' | 'stale' | 'blocked' | 'not_available';
+    cutoverEligible: boolean;
+    cutoverRefusalReasons: string[];
+    totals: {
+      comparisons: number;
+      matching: number;
+      explained: number;
+      unexplained: number;
+    } | null;
+  } | null;
 }
 
 interface CloseResponse {
@@ -327,6 +356,48 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           </p>
         </div>
       </div>
+
+      {/* ── Accounting Integrity Banner ─────────────────────────────── */}
+      {account.accountingIntegrity && (
+        <div
+          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+            account.accountingIntegrity.status === 'eligible'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+              : account.accountingIntegrity.status === 'blocked'
+                ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                : 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2">
+            {account.accountingIntegrity.status === 'eligible' ? (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <AlertTriangle className="size-4 shrink-0" />
+            )}
+            <span>
+              Accounting data:
+              {account.accountingIntegrity.status === 'eligible'
+                ? ' Ledger reconciled and eligible for cutover.'
+                : account.accountingIntegrity.status === 'blocked'
+                  ? ` Reconciliation blocked: ${account.accountingIntegrity.cutoverRefusalReasons?.[0] ?? 'See reconciliation report for details.'}`
+                  : ' No reconciliation run available. Post executions and rebuild performance to establish ledger metrics.'}
+            </span>
+          </div>
+          {account.accountingIntegrity.totals && (
+            <div className="mt-2 flex gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+              <span>{account.accountingIntegrity.totals.matching} matching</span>
+              <span>{account.accountingIntegrity.totals.explained} explained</span>
+              {account.accountingIntegrity.totals.unexplained > 0 && (
+                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                  {account.accountingIntegrity.totals.unexplained} unexplained
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Message Banner ──────────────────────────────────────────── */}
       {message && (

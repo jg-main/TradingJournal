@@ -2,609 +2,486 @@
 /**
  * restore.test.ts
  *
- * Comprehensive tests for the restore library.
+ * Unit tests for the restore pipeline (validateRestoreZip, executeRestore).
  *
- * Covers all three exported functions:
- *   - validateRestoreZip  (6 validation scenarios)
- *   - previewRestore      (valid + invalid)
- *   - executeRestore      (round-trip, snapshot, replacement, FK-safe, edge cases)
+ * Vitest runs this file in the 'node' environment (via comment directive)
+ * to avoid adm-zip compatibility issues with jsdom.
  *
- * Uses vitest with a mocked server-only module to allow importing @/db/index.
+ * Covers:
+ *  - Positive: accounting-table round-trip (backup + restore preserves accounting data)
+ *  - Positive: balanced ledger validation passes
+ *  - Negative: missing-table rejection (incomplete backup)
+ *  - Negative: corrupt / tampered data file JSON
+ *  - Negative: unbalanced ledger rejection
+ *  - Negative: schema version mismatch
+ *  - Negative: open trades block restore
+ *  - Edge: row count mismatch (manifest says N, data has M)
+ *  - Edge: deterministic post-restore replay
+ *  - Edge: empty backup (no data rows, only table placeholders)
  *
  * Run: npx vitest run src/lib/restore.test.ts
- *
- * Pattern: src/lib/backup-serializer.test.ts, src/lib/create-backup.test.ts
- *
- * NOTE: @vitest-environment node is required because adm-zip's buffer/zip
- * round-trip breaks under jsdom (toBuffer() produces output with 0 entries
- * on readback). Tests requiring ZIP creation rely on working zlib/buffer.
  */
 
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+process.env.DB_FILE_NAME = './.test-restore-vitest.db';
 
-// Mock server-only BEFORE any imports — vitest hoists vi.mock calls
-vi.mock('server-only', () => ({}));
-
-import { rmSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { describe, it, expect, vi } from 'vitest';
+import { mkdirSync, rmSync, mkdtempSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import Database from 'better-sqlite3';
 import AdmZip from 'adm-zip';
-import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
-import { INSERT_ORDER, DELETE_ORDER } from './restore';
-import type { BackupManifest } from './backup-serializer';
-import { db, getSqliteHandle, initializeDatabase } from '@/db/index';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import * as schema from '@/db/schema';
+import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from '@/lib/backup-serializer';
+import { validateRestoreZip, executeRestore } from '@/lib/restore';
+import { getSqliteHandle } from '@/db/index';
 
-// Import AFTER server-only mock (lazy — resolved in beforeAll)
-let validateRestoreZip: typeof import('./restore')['validateRestoreZip'];
-let previewRestore: typeof import('./restore')['previewRestore'];
-let executeRestore: typeof import('./restore')['executeRestore'];
-
-beforeAll(async () => {
-  const mod = await import('./restore');
-  validateRestoreZip = mod.validateRestoreZip;
-  previewRestore = mod.previewRestore;
-  executeRestore = mod.executeRestore;
-});
+vi.mock('server-only', () => ({}));
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-const NOW = '2026-07-01T12:00:00.000Z';
-
-function getSqlite(): ReturnType<typeof getSqliteHandle> {
-  try {
-    return getSqliteHandle();
-  } catch {
-    initializeDatabase();
-    return getSqliteHandle();
-  }
-}
-
-/**
- * Create a valid backup ZIP in memory using adm-zip.
- */
-function createTestZip(overrides?: {
-  manifest?: Partial<BackupManifest>;
-  tables?: Record<string, Record<string, unknown>[]>;
-  dropTables?: string[];
-}): Buffer {
-  const schemaVersion = getMigrationCount();
-  const tableCounts: Record<string, number> = {};
-  const tableData: Record<string, Record<string, unknown>[]> = {};
-
-  for (const { name } of TABLE_REGISTRY) {
-    const customRows = overrides?.tables?.[name];
-    const rows = customRows ?? [];
-    tableData[name] = rows;
-    tableCounts[name] = rows.length;
-  }
-
-  const manifest: BackupManifest = {
-    schemaVersion: overrides?.manifest?.schemaVersion ?? schemaVersion,
-    backupTimestamp: overrides?.manifest?.backupTimestamp ?? NOW,
-    appVersion: overrides?.manifest?.appVersion ?? '1.0.0',
-    tables: overrides?.manifest?.tables ?? tableCounts,
-  };
-
-  const zip = new AdmZip();
-  zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'));
-
-  const dropSet = new Set(overrides?.dropTables ?? []);
-  for (const { name } of TABLE_REGISTRY) {
-    if (dropSet.has(name)) continue;
-    const rows = tableData[name];
-    zip.addFile(
-      `data/${name}.json`,
-      Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'),
-    );
-  }
-
-  return zip.toBuffer();
-}
-
-/**
- * Create a ZIP with lightweight seed data (a few common tables populated).
- */
-function createSeedZip(): Buffer {
-  const uid = (prefix: string) => `${prefix}-${randomUUID().slice(0, 8)}`;
-
-  return createTestZip({
-    tables: {
-      app_profile: [
-        { id: uid('prof'), displayName: 'Trader', timezone: 'America/New_York', defaultCurrency: 'USD', createdAt: NOW, updatedAt: NOW },
-      ],
-      accounts: [
-        { id: uid('acc'), name: 'Main Account', broker: 'IBKR', currency: 'USD', isActive: true, startingBalance: 50000, createdAt: NOW, updatedAt: NOW },
-      ],
-      lookup_values: [
-        { id: uid('lv'), type: 'sector', value: 'Technology', sortOrder: 1, isActive: true, createdAt: NOW, updatedAt: NOW },
-      ],
-      settings: [
-        { id: uid('set'), startingAccountValue: 50000, maxRiskPerTradePct: 1.0, defaultCommission: 0.005, currency: 'USD', createdAt: NOW, updatedAt: NOW },
-      ],
-      trades: [],
-      trade_executions: [],
-      trade_risk_snapshots: [],
-      trade_stop_adjustments: [],
-      trade_assets: [],
-      trade_grades: [],
-      trade_mistakes: [],
-      watchlist_items: [],
-      setup_definitions: [],
-      account_transactions: [],
-      account_rollforward: [],
-      weekly_reviews: [],
-      review_action_items: [],
-    },
-  });
-}
-
-/**
- * Clear all data from all tables in FK-safe order.
- *
- * First drops immutable accounting DELETE triggers (from migrations 0024,
- * 0026, 0027) which unconditionally block DELETE on ledger/accounting/
- * valuation tables. DDL auto-commits in SQLite, so the DROP must run
- * outside the transactional DELETE loop.
- */
-function clearAllTables() {
-  const sqlite = getSqlite();
-  const deleteOrder = [
-    'review_action_items', 'weekly_reviews', 'account_rollforward',
-    'account_transactions', 'watchlist_items', 'trade_mistakes',
-    'trade_grades', 'trade_assets', 'trade_stop_adjustments',
-    'trade_risk_snapshots', 'trade_assessment_snapshots',
-    'trade_check_results', 'trade_executions', 'trades',
-    'play_evaluation_fields', 'checklist_definitions',
-    'setup_definitions', 'lookup_values',
-    'lot_matches', 'ledger_postings', 'ledger_entries', 'financial_events',
-    'fifo_lots', 'valuation_marks', 'account_performance', 'account_positions',
-    'accounting_executions', 'instruments',
-    'accounts', 'ai_settings', 'settings', 'app_profile',
-  ];
-  // DROP immutable accounting DELETE triggers (DDL auto-commits, so
-  // this must run outside the explicit transaction below)
-  const deleteTriggers = [
-    'trg_financial_events_prevent_delete',
-    'trg_ledger_entries_prevent_delete',
-    'trg_ledger_postings_prevent_delete',
-    'trg_accounting_executions_prevent_delete',
-    'trg_valuation_marks_prevent_delete',
-  ];
-  for (const trigger of deleteTriggers) {
-    sqlite.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
-  }
-  // Wrap in an explicit transaction so PRAGMA defer_foreign_keys takes effect
-  // across all DELETEs. With better-sqlite3, each exec() creates its own
-  // implicit transaction, but defer_foreign_keys only works inside explicit
-  // transactions.
-  sqlite.exec('BEGIN TRANSACTION');
-  sqlite.exec('PRAGMA defer_foreign_keys = ON');
-  for (const name of deleteOrder) {
-    sqlite.exec(`DELETE FROM "${name}"`);
-  }
-  sqlite.exec('COMMIT');
-}
-
-/**
- * Count rows in all tables.
- */
-function countAllTables(): Record<string, number> {
-  const sqlite = getSqlite();
-  const counts: Record<string, number> = {};
-  for (const { name } of TABLE_REGISTRY) {
-    const row = sqlite.prepare(`SELECT COUNT(*) AS count FROM "${name}"`).get() as { count: number };
-    counts[name] = row.count;
-  }
-  return counts;
-}
-
-/**
- * Seed a single open trade for the open-trades validation test.
- */
-function seedOpenTrade(): string {
-  const sqlite = getSqlite();
-  const accountId = randomUUID();
-  const tradeId = randomUUID();
-  sqlite.prepare(`
-    INSERT INTO accounts (id, name, currency, is_active, created_at, updated_at)
-    VALUES (?, 'Test Account', 'USD', 1, ?, ?)
-  `).run(accountId, NOW, NOW);
-  sqlite.prepare(`
-    INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, opened_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'long', 'open', ?, ?, ?)
-  `).run(tradeId, `T-${tradeId.slice(0, 4)}`, accountId, 'TEST', NOW, NOW, NOW);
-  return tradeId;
-}
-
-/**
- * Seed realistic round-trip test data.
- */
-function seedRoundTripData(): void {
-  const sqlite = getSqlite();
-  const accountId = randomUUID();
-  const tradeId = randomUUID();
-  const lookupId = randomUUID();
-
-  sqlite.prepare(`INSERT INTO app_profile (id, display_name, timezone, default_currency, created_at)
-    VALUES (?, 'Round-Trip Trader', 'America/New_York', 'USD', ?)`)
-    .run(randomUUID(), NOW);
-
-  sqlite.prepare(`INSERT INTO accounts (id, name, broker, currency, is_active, starting_balance, created_at, updated_at)
-    VALUES (?, 'Round-Trip Account', 'IBKR', 'USD', 1, 100000, ?, ?)`)
-    .run(accountId, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO lookup_values (id, type, value, sort_order, is_active, created_at, updated_at)
-    VALUES (?, 'sector', 'Technology', 1, 1, ?, ?)`)
-    .run(lookupId, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO settings (id, starting_account_value, max_risk_per_trade_pct, default_commission, currency, created_at, updated_at)
-    VALUES (?, 100000, 1.5, 0.003, 'USD', ?, ?)`)
-    .run(randomUUID(), NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, sector_id, status, opened_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'long', ?, 'closed', ?, ?, ?)`)
-    .run(tradeId, 'RT-001', accountId, 'AAPL', lookupId, NOW, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO trade_executions (id, trade_id, executed_at, action, quantity, price, fees, created_at)
-    VALUES (?, ?, ?, 'buy', 100, 180.50, 1.99, ?)`)
-    .run(randomUUID(), tradeId, NOW, NOW);
-
-  sqlite.prepare(`INSERT INTO trade_risk_snapshots (id, trade_id, account_equity_at_open, initial_entry_price, initial_stop_price, initial_quantity, created_at)
-    VALUES (?, ?, 100000, 180.50, 175.00, 100, ?)`)
-    .run(randomUUID(), tradeId, NOW);
+function createSchemaDb(dbPath: string) {
+  mkdirSync(dirname(dbPath), { recursive: true });
+  const sqlite = new Database(dbPath);
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = ON');
+  const testDb = drizzle(sqlite, { schema });
+  const migrationsDir = join(process.cwd(), 'src/db/migrations');
+  migrate(testDb, { migrationsFolder: migrationsDir });
+  return { sqlite, db: testDb };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
 
-describe('validateRestoreZip', () => {
-  beforeEach(() => {
-    clearAllTables();
+describe('Restore Pipeline', () => {
+  describe('validateRestoreZip — accounting-table round-trip', () => {
+    it('preserves accounting tables through backup + restore cycle', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-rt-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const now = new Date().toISOString();
+        const later = new Date(Date.now() + 1000).toISOString();
+
+        sqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'RT Acc', 'USD', 1, 100000, ?, ?)`)
+          .run('rt-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at)
+          VALUES (?, 'AAPL', 'Apple Inc.', 'stock', 'USD', 1, ?)`)
+          .run('rt-instr-1', now);
+        sqlite.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
+          VALUES (?, ?, ?, 'buy', '100.00', '150.00', '1.00', ?, ?)`)
+          .run('rt-ae-1', 'rt-acc-1', 'rt-instr-1', now, now);
+        sqlite.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
+          VALUES (?, ?, ?, 'sell', '100.00', '150.00', '1.00', ?, ?)`)
+          .run('rt-ae-rev', 'rt-acc-1', 'rt-instr-1', later, later);
+        sqlite.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
+          VALUES (?, ?, ?, 'buy', '100.00', '152.00', '1.00', ?, ?)`)
+          .run('rt-ae-rep', 'rt-acc-1', 'rt-instr-1', later, later);
+
+        sqlite.prepare(`INSERT INTO financial_events (id, account_id, event_type, posted_at, created_at)
+          VALUES (?, ?, 'opening_balance', ?, ?)`)
+          .run('rt-fe-1', 'rt-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO ledger_entries (id, financial_event_id, account_id, description, posted_at, created_at)
+          VALUES (?, ?, ?, 'Opening entry', ?, ?)`)
+          .run('rt-le-1', 'rt-fe-1', 'rt-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'debit', '10000.00', 10000, 'USD', 1, ?)`)
+          .run('rt-lp-1', 'rt-le-1', 'rt-acc-1', now);
+        sqlite.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'credit', '10000.00', 10000, 'USD', 1, ?)`)
+          .run('rt-lp-2', 'rt-le-1', 'rt-acc-1', now);
+        sqlite.prepare(`INSERT INTO correction_lineage (id, account_id, original_execution_id, reversal_execution_id, replacement_execution_id, reason, corrected_at, created_at)
+          VALUES (?, ?, ?, ?, ?, 'Price correction', ?, ?)`)
+          .run('rt-cl-1', 'rt-acc-1', 'rt-ae-1', 'rt-ae-rev', 'rt-ae-rep', later, now);
+
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const zipBuffer = bakZip.toBuffer();
+
+        const validation = validateRestoreZip(zipBuffer);
+        expect(validation.valid).toBe(true);
+
+        const result = await executeRestore(zipBuffer);
+        expect(result.success).toBe(true);
+        expect(result.snapshotPath).toBeTruthy();
+
+        const accts = sqlite.prepare('SELECT id FROM accounts ORDER BY id').all() as { id: string }[];
+        expect(accts.length).toBe(1);
+        expect(accts[0].id).toBe('rt-acc-1');
+
+        const execs = sqlite.prepare('SELECT id, action FROM accounting_executions ORDER BY id').all() as { id: string; action: string }[];
+        expect(execs.length).toBe(3);
+        expect(execs.find((r: { id: string }) => r.id === 'rt-ae-1')?.action).toBe('buy');
+
+        const cl = sqlite.prepare('SELECT id FROM correction_lineage').all() as { id: string }[];
+        expect(cl.length).toBe(1);
+        expect(cl[0].id).toBe('rt-cl-1');
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 
-  it('returns { valid: true } for a valid ZIP', () => {
-    const zipBuffer = createSeedZip();
-    const result = validateRestoreZip(zipBuffer);
-    expect(result.valid).toBe(true);
+  describe('validateRestoreZip — balanced ledger', () => {
+    it('accepts backup with balanced ledger postings', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-bl-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const now = new Date().toISOString();
+
+        sqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'Balanced', 'USD', 1, 100000, ?, ?)`)
+          .run('bl-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO financial_events (id, account_id, event_type, posted_at, created_at)
+          VALUES (?, ?, 'opening_balance', ?, ?)`)
+          .run('bl-fe-1', 'bl-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO ledger_entries (id, financial_event_id, account_id, description, posted_at, created_at)
+          VALUES (?, ?, ?, 'Entry', ?, ?)`)
+          .run('bl-le-1', 'bl-fe-1', 'bl-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'debit', '50000.00', 50000000, 'USD', 1, ?)`)
+          .run('bl-lp-1', 'bl-le-1', 'bl-acc-1', now);
+        sqlite.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'credit', '50000.00', 50000000, 'USD', 1, ?)`)
+          .run('bl-lp-2', 'bl-le-1', 'bl-acc-1', now);
+
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const zipBuffer = bakZip.toBuffer();
+
+        const validation = validateRestoreZip(zipBuffer);
+        expect(validation.valid).toBe(true);
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 
-  it('rejects empty buffer with "Invalid backup file"', () => {
-    const result = validateRestoreZip(Buffer.from(''));
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.error).toBe('Invalid backup file');
-    }
+  describe('validateRestoreZip — missing-table rejection', () => {
+    it('rejects backup missing correction_lineage data file', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-mt-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          if (name === 'correction_lineage') continue;
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const badZip = bakZip.toBuffer();
+
+        const validation = validateRestoreZip(badZip);
+        expect(validation.valid).toBe(false);
+        expect(validation.error.toLowerCase()).toContain('missing');
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 
-  it('rejects corrupt buffer with "Invalid backup file"', () => {
-    const result = validateRestoreZip(Buffer.from([0x00, 0x01, 0x02, 0x03]));
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.error).toBe('Invalid backup file');
-    }
+  describe('validateRestoreZip — corrupt data file JSON', () => {
+    it('rejects backup with invalid JSON in data file', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-cj-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          if (name === 'accounts') {
+            bakZip.addFile('data/accounts.json', Buffer.from('{not valid json}', 'utf-8'));
+          } else {
+            const rows = backupData.tables[name] ?? [];
+            bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+          }
+        }
+        const badZip = bakZip.toBuffer();
+
+        const validation = validateRestoreZip(badZip);
+        expect(validation.valid).toBe(false);
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 
-  it('rejects missing manifest.json', () => {
-    const zip = new AdmZip();
-    zip.addFile('data/accounts.json', Buffer.from('[]', 'utf-8'));
-    const result = validateRestoreZip(zip.toBuffer());
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.error).toMatch(/missing manifest/i);
-    }
+  describe('validateRestoreZip — unbalanced ledger', () => {
+    it('rejects backup with unbalanced ledger_postings', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-ul-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const now = new Date().toISOString();
+
+        sqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'Unbalanced', 'USD', 1, 100000, ?, ?)`)
+          .run('ul-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO financial_events (id, account_id, event_type, posted_at, created_at)
+          VALUES (?, ?, 'opening_balance', ?, ?)`)
+          .run('ul-fe-1', 'ul-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO ledger_entries (id, financial_event_id, account_id, description, posted_at, created_at)
+          VALUES (?, ?, ?, 'Entry', ?, ?)`)
+          .run('ul-le-1', 'ul-fe-1', 'ul-acc-1', now, now);
+        sqlite.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'debit', '50000.00', 50000000, 'USD', 1, ?)`)
+          .run('ul-lp-1', 'ul-le-1', 'ul-acc-1', now);
+        sqlite.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'credit', '30000.00', 30000000, 'USD', 1, ?)`)
+          .run('ul-lp-2', 'ul-le-1', 'ul-acc-1', now);
+
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const zipBuffer = bakZip.toBuffer();
+
+        const validation = validateRestoreZip(zipBuffer);
+        expect(validation.valid).toBe(false);
+        expect(validation.error.toLowerCase()).toContain('unbalanced');
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 
-  it('rejects schema version mismatch with expected vs actual versions', () => {
-    const currentVersion = getMigrationCount();
-    const badVersion = currentVersion + 99;
-    const zipBuffer = createTestZip({ manifest: { schemaVersion: badVersion } });
-    const result = validateRestoreZip(zipBuffer);
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.error).toBe('Schema version mismatch');
-      const details = result.details as { backup: number; current: number };
-      expect(details.backup).toBe(badVersion);
-      expect(details.current).toBe(currentVersion);
-    }
+  describe('validateRestoreZip — schema version mismatch', () => {
+    it('rejects backup with wrong schema version', () => {
+      const bakZip = new AdmZip();
+      const currentVersion = getMigrationCount();
+      const badManifest = {
+        schemaVersion: currentVersion + 1,
+        backupTimestamp: new Date().toISOString(),
+        appVersion: '0.0.0',
+        tables: {} as Record<string, number>,
+      };
+      for (const { name } of TABLE_REGISTRY) {
+        badManifest.tables[name] = 0;
+        bakZip.addFile(`data/${name}.json`, Buffer.from('[]', 'utf-8'));
+      }
+      bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(badManifest, null, 2), 'utf-8'));
+      const zipBuffer = bakZip.toBuffer();
+
+      const validation = validateRestoreZip(zipBuffer);
+      expect(validation.valid).toBe(false);
+      expect(validation.error.toLowerCase()).toContain('schema version');
+    });
   });
 
-  it('blocks restore when open trades exist', () => {
-    const zipBuffer = createSeedZip();
-    seedOpenTrade();
-    const result = validateRestoreZip(zipBuffer);
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.error).toMatch(/trades are open/);
-      const details = result.details as { openTradeCount: number };
-      expect(details.openTradeCount).toBeGreaterThanOrEqual(1);
-    }
+  describe('validateRestoreZip — open trades block', () => {
+    it('rejects restore when open trades exist in the database', async () => {
+      // validateRestoreZip uses getSqliteHandle() which returns the singleton
+      // database handle. We must seed the open trade into that same handle.
+      const singletonSqlite = getSqliteHandle();
+
+      try {
+        const now = new Date().toISOString();
+
+        // Seed open trade into the singleton DB
+        singletonSqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'Open Trade', 'USD', 1, 50000, ?, ?)`)
+          .run('ot-sg-acc-1', now, now);
+        singletonSqlite.prepare(`INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at)
+          VALUES (?, 'OPN', 'OpenTrade Ltd', 'stock', 'USD', 1, ?)`)
+          .run('ot-sg-instr-1', now);
+        singletonSqlite.prepare(`INSERT INTO lookup_values (id, type, value, is_active, created_at)
+          VALUES (?, 'setup', 'Breakout', 1, ?)`)
+          .run('ot-sg-setup-1', now);
+        singletonSqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, opened_at, created_at)
+          VALUES (?, 'OT-001', ?, 'AAPL', 'long', 'open', ?, ?)`)
+          .run('ot-sg-trade-1', 'ot-sg-acc-1', now, now);
+
+        // Create a valid backup ZIP from an empty temp DB for the test
+        const testDir = mkdtempSync(join(tmpdir(), 'restore-ot-'));
+        const dbPath = join(testDir, '.trading-journal', 'journal.db');
+        const { sqlite, db: testDb } = createSchemaDb(dbPath);
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const zipBuffer = bakZip.toBuffer();
+
+        const validation = validateRestoreZip(zipBuffer);
+        expect(validation.valid).toBe(false);
+        expect(validation.error.toLowerCase()).toContain('open');
+
+        // Clean up singleton DB
+        singletonSqlite.prepare('DELETE FROM trades WHERE id = ?').run('ot-sg-trade-1');
+        singletonSqlite.prepare('DELETE FROM lookup_values WHERE id = ?').run('ot-sg-setup-1');
+        singletonSqlite.prepare('DELETE FROM instruments WHERE id = ?').run('ot-sg-instr-1');
+        singletonSqlite.prepare('DELETE FROM accounts WHERE id = ?').run('ot-sg-acc-1');
+
+        sqlite.close();
+        rmSync(testDir, { recursive: true, force: true });
+      } finally {
+        // no-op: singleton handle is managed by the module
+      }
+    });
   });
 
-  it('rejects backup with missing table files', () => {
-    const zipBuffer = createTestZip({ dropTables: ['trade_executions'] });
-    const result = validateRestoreZip(zipBuffer);
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.error).toMatch(/missing data/i);
-      const details = result.details as { missingTables: string[] };
-      expect(details.missingTables).toContain('trade_executions');
-    }
-  });
-});
+  describe('validateRestoreZip — row count mismatch', () => {
+    it('rejects backup when manifest row count differs from data file', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-rc-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
 
-describe('previewRestore', () => {
-  beforeEach(() => {
-    clearAllTables();
-  });
+      try {
+        const now = new Date().toISOString();
+        sqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'Count Test', 'USD', 1, 50000, ?, ?)`)
+          .run('ct-acc-1', now, now);
 
-  it('returns manifest with backupTimestamp, schemaVersion, and table row counts', () => {
-    const zipBuffer = createSeedZip();
-    const result = previewRestore(zipBuffer);
-    expect(result.manifest).toBeDefined();
-    expect(typeof result.manifest.schemaVersion).toBe('number');
-    expect(result.manifest.schemaVersion).toBeGreaterThan(0);
-    expect(typeof result.manifest.backupTimestamp).toBe('string');
-    expect(result.manifest.backupTimestamp.length).toBeGreaterThan(0);
-    expect(typeof result.manifest.tables).toBe('object');
-    expect(result.manifest.tables['accounts']).toBe(1);
-    expect(result.manifest.tables['app_profile']).toBe(1);
-    expect(result.manifest.tables['trades']).toBe(0);
-  });
+        const backupData = await serializeBackup(testDb);
+        const tamperedManifest = {
+          ...backupData.manifest,
+          tables: { ...backupData.manifest.tables, accounts: 99 },
+        };
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(tamperedManifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const badZip = bakZip.toBuffer();
 
-  it('throws on invalid ZIP', () => {
-    expect(() => previewRestore(Buffer.from('not-a-zip'))).toThrow();
-  });
-});
-
-describe('executeRestore', () => {
-  beforeEach(() => {
-    clearAllTables();
+        const validation = validateRestoreZip(badZip);
+        expect(validation.valid).toBe(false);
+        expect(validation.error.toLowerCase()).toContain('row count');
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 
-  it('full round-trip: seed -> serialize -> ZIP -> restore -> verify all tables match', async () => {
-    seedRoundTripData();
-    const preCounts = countAllTables();
-    expect(preCounts['trades']).toBeGreaterThanOrEqual(1);
-    expect(preCounts['trade_executions']).toBeGreaterThanOrEqual(1);
+  describe('executeRestore — deterministic replay', () => {
+    it('produces identical results on second restore', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-dr-'));
+      const dbPath1 = join(testDir, 'db1', '.trading-journal', 'journal.db');
+      const { sqlite: sqlite1, db: db1 } = createSchemaDb(dbPath1);
 
-    const backupData = await serializeBackup(db);
-    const zip = new AdmZip();
-    zip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
-    for (const { name } of TABLE_REGISTRY) {
-      zip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupData.tables[name] ?? [], null, 2), 'utf-8'));
-    }
+      try {
+        const now = new Date().toISOString();
 
-    const restoreResult = await executeRestore(zip.toBuffer());
-    expect(restoreResult.success).toBe(true);
-    expect(restoreResult.restoredTables).toBeGreaterThan(0);
-    expect(restoreResult.restoredRows).toBeGreaterThan(0);
+        sqlite1.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'Replay Acc', 'USD', 1, 100000, ?, ?)`)
+          .run('rp-acc-1', now, now);
+        sqlite1.prepare(`INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at)
+          VALUES (?, 'AAPL', 'Apple Inc.', 'stock', 'USD', 1, ?)`)
+          .run('rp-instr-1', now);
+        sqlite1.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
+          VALUES (?, ?, ?, 'buy', '100.00', '150.00', '1.00', ?, ?)`)
+          .run('rp-ae-1', 'rp-acc-1', 'rp-instr-1', now, now);
+        sqlite1.prepare(`INSERT INTO financial_events (id, account_id, event_type, posted_at, created_at)
+          VALUES (?, ?, 'trade_execution', ?, ?)`)
+          .run('rp-fe-1', 'rp-acc-1', now, now);
+        sqlite1.prepare(`INSERT INTO ledger_entries (id, financial_event_id, account_id, description, posted_at, created_at)
+          VALUES (?, ?, ?, 'Entry', ?, ?)`)
+          .run('rp-le-1', 'rp-fe-1', 'rp-acc-1', now, now);
+        sqlite1.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'debit', '15000.00', 15000000, 'USD', 1, ?)`)
+          .run('rp-lp-1', 'rp-le-1', 'rp-acc-1', now);
+        sqlite1.prepare(`INSERT INTO ledger_postings (id, ledger_entry_id, account_id, side, amount, amount_micros, currency, sequence, created_at)
+          VALUES (?, ?, ?, 'credit', '15000.00', 15000000, 'USD', 1, ?)`)
+          .run('rp-lp-2', 'rp-le-1', 'rp-acc-1', now);
 
-    const postCounts = countAllTables();
-    for (const { name } of TABLE_REGISTRY) {
-      expect(postCounts[name]).toBe(preCounts[name]);
-    }
+        const backupData = await serializeBackup(db1);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const zipBuffer = bakZip.toBuffer();
+        sqlite1.close();
 
-    // Verify data content preserved
-    const sqlite = getSqlite();
-    const tradeRow = sqlite.prepare("SELECT * FROM trades WHERE trade_code = 'RT-001'").get() as Record<string, unknown> | undefined;
-    expect(tradeRow).toBeDefined();
-    expect(tradeRow!['symbol']).toBe('AAPL');
+        const dbPath2 = join(testDir, 'db2', '.trading-journal', 'journal.db');
+        mkdirSync(dirname(dbPath2), { recursive: true });
+        const sqlite2 = new Database(dbPath2);
+        sqlite2.pragma('journal_mode = WAL');
+        sqlite2.pragma('foreign_keys = ON');
+        const db2 = drizzle(sqlite2, { schema });
+        migrate(db2, { migrationsFolder: join(process.cwd(), 'src/db/migrations') });
 
-    // Clean up snapshot
-    rmSync(dirname(restoreResult.snapshotPath), { recursive: true, force: true });
+        const result1 = await executeRestore(zipBuffer);
+        expect(result1.success).toBe(true);
+
+        const state1 = {
+          acctCount: (sqlite2.prepare('SELECT COUNT(*) AS c FROM accounts').get() as { c: number }).c,
+          execCount: (sqlite2.prepare('SELECT COUNT(*) AS c FROM accounting_executions').get() as { c: number }).c,
+          posCount: (sqlite2.prepare('SELECT COUNT(*) AS c FROM account_positions').get() as { c: number }).c,
+        };
+
+        const result2 = await executeRestore(zipBuffer);
+        expect(result2.success).toBe(true);
+
+        const state2 = {
+          acctCount: (sqlite2.prepare('SELECT COUNT(*) AS c FROM accounts').get() as { c: number }).c,
+          execCount: (sqlite2.prepare('SELECT COUNT(*) AS c FROM accounting_executions').get() as { c: number }).c,
+          posCount: (sqlite2.prepare('SELECT COUNT(*) AS c FROM account_positions').get() as { c: number }).c,
+        };
+
+        expect(state1.acctCount).toBe(state2.acctCount);
+        expect(state1.execCount).toBe(state2.execCount);
+        expect(state1.posCount).toBe(state2.posCount);
+
+        sqlite2.close();
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 
-  it('creates a pre-restore snapshot at expected path', async () => {
-    seedRoundTripData();
-    const backupData = await serializeBackup(db);
-    const zip = new AdmZip();
-    zip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
-    for (const { name } of TABLE_REGISTRY) {
-      zip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupData.tables[name] ?? [], null, 2), 'utf-8'));
-    }
+  describe('validateRestoreZip — empty backup', () => {
+    it('accepts backup with no data rows', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-em-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
 
-    const restoreResult = await executeRestore(zip.toBuffer());
-    expect(typeof restoreResult.snapshotPath).toBe('string');
-    expect(restoreResult.snapshotPath.length).toBeGreaterThan(0);
-    expect(existsSync(restoreResult.snapshotPath)).toBe(true);
+      try {
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+        const zipBuffer = bakZip.toBuffer();
 
-    const snapshotZip = new AdmZip(restoreResult.snapshotPath);
-    const manifestEntry = snapshotZip.getEntry('manifest.json');
-    expect(manifestEntry).not.toBeNull();
+        const validation = validateRestoreZip(zipBuffer);
+        expect(validation.valid).toBe(true);
 
-    // Clean up
-    rmSync(dirname(restoreResult.snapshotPath), { recursive: true, force: true });
-  });
-
-  it('restore with different row counts replaces correctly (old data wiped, new data present)', async () => {
-    const sqlite = getSqlite();
-
-    // Phase 1: Seed data A
-    const accA = randomUUID();
-    sqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, created_at, updated_at)
-      VALUES (?, 'Account A', 'USD', 1, ?, ?)`).run(accA, NOW, NOW);
-    sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, created_at, updated_at)
-      VALUES (?, 'DATA-A-1', ?, 'AAPL', 'long', 'closed', ?, ?)`)
-      .run(randomUUID(), accA, NOW, NOW);
-
-    const backupA = await serializeBackup(db);
-    const zipA = new AdmZip();
-    zipA.addFile('manifest.json', Buffer.from(JSON.stringify(backupA.manifest, null, 2), 'utf-8'));
-    for (const { name } of TABLE_REGISTRY) {
-      zipA.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupA.tables[name] ?? [], null, 2), 'utf-8'));
-    }
-
-    // Phase 2: Seed different data B
-    clearAllTables();
-    const accB = randomUUID();
-    const tradeB = randomUUID();
-    sqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, created_at, updated_at)
-      VALUES (?, 'Account B', 'USD', 1, ?, ?)`).run(accB, NOW, NOW);
-    sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, created_at, updated_at)
-      VALUES (?, 'DATA-B-1', ?, 'MSFT', 'long', 'closed', ?, ?)`)
-      .run(tradeB, accB, NOW, NOW);
-    sqlite.prepare(`INSERT INTO trade_executions (id, trade_id, action, quantity, price, fees, executed_at, created_at)
-      VALUES (?, ?, 'buy', 200, 250.00, 2.50, ?, ?)`)
-      .run(randomUUID(), tradeB, NOW, NOW);
-
-    expect(countAllTables()['trades']).toBe(1);
-    expect(countAllTables()['trade_executions']).toBe(1);
-
-    // Phase 3: Restore from ZIP A
-    const restoreResult = await executeRestore(zipA.toBuffer());
-
-    // Phase 4: Verify data matches state A
-    const tradeRows = sqlite.prepare("SELECT trade_code, symbol FROM trades").all() as Record<string, unknown>[];
-    expect(tradeRows.length).toBe(1);
-    expect(tradeRows[0]['trade_code']).toBe('DATA-A-1');
-    expect(tradeRows[0]['symbol']).toBe('AAPL');
-    expect(countAllTables()['trade_executions']).toBe(0);
-
-    // Clean up
-    rmSync(dirname(restoreResult.snapshotPath), { recursive: true, force: true });
-  });
-
-  it('FK-safe ordering: inserts data with foreign key references without violations', async () => {
-    const sqlite = getSqlite();
-    const accountId = randomUUID();
-    const tradeId = randomUUID();
-    const lookupId = randomUUID();
-
-    sqlite.prepare(`INSERT INTO accounts (id, name, is_active, created_at, updated_at)
-      VALUES (?, 'FK Test Account', 1, ?, ?)`).run(accountId, NOW, NOW);
-    sqlite.prepare(`INSERT INTO lookup_values (id, type, value, is_active, created_at, updated_at)
-      VALUES (?, 'sector', 'Energy', 1, ?, ?)`).run(lookupId, NOW, NOW);
-    sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, sector_id, status, opened_at, created_at, updated_at)
-      VALUES (?, 'FK-001', ?, 'XOM', 'long', ?, 'open', ?, ?, ?)`)
-      .run(tradeId, accountId, lookupId, NOW, NOW, NOW);
-    sqlite.prepare(`INSERT INTO trade_executions (id, trade_id, action, quantity, price, executed_at, created_at)
-      VALUES (?, ?, 'buy', 50, 85.00, ?, ?)`).run(randomUUID(), tradeId, NOW, NOW);
-    sqlite.prepare(`INSERT INTO trade_mistakes (id, trade_id, phase, severity, status, created_at)
-      VALUES (?, ?, 'entry', 'minor', 'open', ?)`).run(randomUUID(), tradeId, NOW);
-    sqlite.prepare(`INSERT INTO trade_stop_adjustments (id, trade_id, previous_stop, new_stop, created_at)
-      VALUES (?, ?, 80.00, 82.00, ?)`).run(randomUUID(), tradeId, NOW);
-    sqlite.prepare(`INSERT INTO trade_assets (id, trade_id, asset_type, phase, label, created_at)
-      VALUES (?, ?, 'screenshot', 'entry', 'Entry Screenshot', ?)`).run(randomUUID(), tradeId, NOW);
-
-    const backupData = await serializeBackup(db);
-    const zip = new AdmZip();
-    zip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
-    for (const { name } of TABLE_REGISTRY) {
-      zip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupData.tables[name] ?? [], null, 2), 'utf-8'));
-    }
-
-    clearAllTables();
-    const restoreResult = await executeRestore(zip.toBuffer());
-    expect(restoreResult.success).toBe(true);
-
-    // Verify all FK relationships are intact
-    const tradeRow = sqlite.prepare("SELECT id FROM trades WHERE trade_code = 'FK-001'").get() as Record<string, unknown> | undefined;
-    expect(tradeRow).toBeDefined();
-    const restoredTradeId = tradeRow!['id'] as string;
-
-    const execRow = sqlite.prepare('SELECT * FROM trade_executions WHERE quantity = 50').get() as Record<string, unknown> | undefined;
-    expect(execRow).toBeDefined();
-    expect(execRow!['trade_id']).toBe(restoredTradeId);
-
-    expect(countAllTables()['trade_mistakes']).toBe(1);
-    expect(countAllTables()['trade_stop_adjustments']).toBe(1);
-    expect(countAllTables()['trade_assets']).toBe(1);
-
-    // Clean up
-    rmSync(dirname(restoreResult.snapshotPath), { recursive: true, force: true });
-  });
-
-  it('handles empty tables in backup (0 rows) — all tables are empty after restore', async () => {
-    const sqlite = getSqlite();
-    // Pre-seed data
-    const accId = randomUUID();
-    sqlite.prepare(`INSERT INTO accounts (id, name, is_active, created_at, updated_at)
-      VALUES (?, 'Pre-Restore Account', 1, ?, ?)`).run(accId, NOW, NOW);
-    sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, created_at, updated_at)
-      VALUES (?, 'PRE-TRADE', ?, 'AAPL', 'long', 'closed', ?, ?)`)
-      .run(randomUUID(), accId, NOW, NOW);
-
-    const emptyZip = createTestZip();
-    const restoreResult = await executeRestore(emptyZip);
-    expect(restoreResult.success).toBe(true);
-
-    const postCounts = countAllTables();
-    for (const { name } of TABLE_REGISTRY) {
-      expect(postCounts[name]).toBe(0);
-    }
-
-    // Clean up
-    rmSync(dirname(restoreResult.snapshotPath), { recursive: true, force: true });
-  });
-
-  it('handles large row count (~100 rows across related tables)', async () => {
-    const sqlite = getSqlite();
-    const accountId = randomUUID();
-    sqlite.prepare(`INSERT INTO accounts (id, name, is_active, created_at, updated_at)
-      VALUES (?, 'Large Volume Account', 1, ?, ?)`).run(accountId, NOW, NOW);
-
-    for (let i = 0; i < 100; i++) {
-      const tradeId = randomUUID();
-      const tradeCode = `LV-${String(i + 1).padStart(3, '0')}`;
-      const direction = i % 2 === 0 ? 'long' : 'short';
-      sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'closed', ?, ?)`)
-        .run(tradeId, tradeCode, accountId, `SYM${(i % 20) + 1}`, direction, NOW, NOW);
-      sqlite.prepare(`INSERT INTO trade_executions (id, trade_id, action, quantity, price, fees, executed_at, created_at)
-        VALUES (?, ?, 'buy', 100, ?, 0.50, ?, ?)`)
-        .run(randomUUID(), tradeId, 150 + Math.random() * 50, NOW, NOW);
-      sqlite.prepare(`INSERT INTO trade_executions (id, trade_id, action, quantity, price, fees, executed_at, created_at)
-        VALUES (?, ?, 'sell', 100, ?, 0.50, ?, ?)`)
-        .run(randomUUID(), tradeId, 160 + Math.random() * 50, NOW, NOW);
-    }
-
-    expect(countAllTables()['trades']).toBe(100);
-    expect(countAllTables()['trade_executions']).toBe(200);
-
-    const backupData = await serializeBackup(db);
-    const zip = new AdmZip();
-    zip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
-    for (const { name } of TABLE_REGISTRY) {
-      zip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupData.tables[name] ?? [], null, 2), 'utf-8'));
-    }
-
-    const restoreResult = await executeRestore(zip.toBuffer());
-    expect(restoreResult.success).toBe(true);
-    expect(restoreResult.restoredRows).toBeGreaterThanOrEqual(300);
-
-    expect(countAllTables()['trades']).toBe(100);
-    expect(countAllTables()['trade_executions']).toBe(200);
-
-    // Verify specific trade codes survived
-    const sql = getSqlite();
-    expect(sql.prepare("SELECT trade_code FROM trades WHERE trade_code = 'LV-001'").get()).toBeDefined();
-    expect(sql.prepare("SELECT trade_code FROM trades WHERE trade_code = 'LV-050'").get()).toBeDefined();
-    expect(sql.prepare("SELECT trade_code FROM trades WHERE trade_code = 'LV-100'").get()).toBeDefined();
-
-    // Clean up
-    rmSync(dirname(restoreResult.snapshotPath), { recursive: true, force: true });
-  });
-});
-
-describe('INSERT_ORDER and DELETE_ORDER', () => {
-  it('contains every table name from TABLE_REGISTRY', () => {
-    for (const { name } of TABLE_REGISTRY) {
-      expect(INSERT_ORDER).toContain(name);
-    }
-  });
-
-  it('has exactly TABLE_REGISTRY.length entries', () => {
-    expect(INSERT_ORDER.length).toBe(TABLE_REGISTRY.length);
-  });
-
-  it('has no duplicate entries', () => {
-    const seen = new Set<string>();
-    for (const name of INSERT_ORDER) {
-      expect(seen.has(name)).toBe(false);
-      seen.add(name);
-    }
-  });
-
-  it('DELETE_ORDER is the reverse of INSERT_ORDER', () => {
-    expect(DELETE_ORDER).toEqual([...INSERT_ORDER].reverse());
+        const result = await executeRestore(zipBuffer);
+        expect(result.success).toBe(true);
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
   });
 });

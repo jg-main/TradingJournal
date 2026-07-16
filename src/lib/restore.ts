@@ -17,9 +17,11 @@
 import AdmZip from 'adm-zip';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import Database from 'better-sqlite3';
 import { db, getSqliteHandle } from '@/db/index';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
 import type { BackupManifest } from './backup-serializer';
+import { rebuildPositions } from './positions/rebuild';
 
 // ── Configuration ───────────────────────────────────────────────────────
 
@@ -49,6 +51,7 @@ export const INSERT_ORDER: string[] = [
   'settings',
   'instruments',
   'accounting_executions',
+  'correction_lineage',
   'account_positions',
   'account_performance',
   'valuation_marks',
@@ -140,7 +143,9 @@ function checkOpenTrades():
  * 2. Manifest exists — manifest.json present and valid JSON matching BackupManifest
  * 3. Schema version match — manifest.schemaVersion === getMigrationCount()
  * 4. All tables present — every TABLE_REGISTRY entry has data/<name>.json in ZIP
- * 5. Open trades check — SELECT COUNT(*) FROM trades WHERE status = 'open' returns 0
+ * 5. Data file integrity — each data file is valid JSON and row count matches manifest
+ * 6. Ledger balance validation — sum of debits equals sum of credits in ledger_postings
+ * 7. Open trades check — SELECT COUNT(*) FROM trades WHERE status = 'open' returns 0
  *
  * @returns { valid: true } on success, or { valid: false, error, details } on failure
  */
@@ -226,7 +231,94 @@ export function validateRestoreZip(
     };
   }
 
-  // Step 5: Open trades check
+  // Step 5: Data file integrity — validate JSON and row counts match manifest
+  for (const { name } of TABLE_REGISTRY) {
+    const entry = zip.getEntry(`data/${name}.json`);
+    if (!entry) continue; // Already checked in Step 4
+
+    let rows: unknown;
+    try {
+      const raw = entry.getData().toString('utf-8');
+      rows = JSON.parse(raw);
+    } catch {
+      return {
+        valid: false,
+        error: `Corrupt data file: ${name}.json is not valid JSON`,
+        details: { table: name },
+      };
+    }
+
+    if (!Array.isArray(rows)) {
+      return {
+        valid: false,
+        error: `Corrupt data file: ${name}.json is not a JSON array`,
+        details: { table: name },
+      };
+    }
+
+    // Verify row count matches manifest when manifest has a positive count
+    const manifestCount = typedManifest.tables[name];
+    if (typeof manifestCount === 'number' && manifestCount >= 0 && rows.length !== manifestCount) {
+      return {
+        valid: false,
+        error: `Row count mismatch for ${name}: manifest says ${manifestCount}, data has ${rows.length}`,
+        details: { table: name, expected: manifestCount, actual: rows.length },
+      };
+    }
+  }
+
+  // Step 6: Ledger balance validation
+  const ledgerEntry = zip.getEntry('data/ledger_postings.json');
+  if (ledgerEntry) {
+    try {
+      const raw = ledgerEntry.getData().toString('utf-8');
+      const postings: Record<string, unknown>[] = JSON.parse(raw);
+
+      if (!Array.isArray(postings)) {
+        return {
+          valid: false,
+          error: 'Corrupt data file: ledger_postings.json is not a JSON array',
+          details: { table: 'ledger_postings' },
+        };
+      }
+
+      let debitTotal = 0;
+      let creditTotal = 0;
+
+      for (const posting of postings) {
+        const side = posting.side;
+        const amountMicros = typeof posting.amount_micros === 'number'
+          ? posting.amount_micros
+          : (typeof posting.amountMicros === 'number' ? posting.amountMicros : 0);
+
+        if (side === 'debit') {
+          debitTotal += amountMicros;
+        } else if (side === 'credit') {
+          creditTotal += amountMicros;
+        }
+      }
+
+      if (debitTotal !== creditTotal) {
+        return {
+          valid: false,
+          error: 'Unbalanced ledger: sum of debits does not equal sum of credits',
+          details: {
+            debitTotal,
+            creditTotal,
+            difference: debitTotal - creditTotal,
+          },
+        };
+      }
+    } catch {
+      return {
+        valid: false,
+        error: 'Failed to validate ledger balance in backup',
+        details: { table: 'ledger_postings' },
+      };
+    }
+  }
+
+  // Step 7: Open trades check
   const openCheck = checkOpenTrades();
   if (!openCheck.valid) {
     return openCheck;
@@ -365,18 +457,19 @@ export async function executeRestore(
     'trg_ledger_entries_prevent_delete',
     'trg_ledger_postings_prevent_delete',
     'trg_accounting_executions_prevent_delete',
+    'trg_correction_lineage_prevent_delete',
     'trg_valuation_marks_prevent_delete',
   ];
   for (const trigger of deleteTriggers) {
     sqlite.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
   }
 
-  sqlite.transaction(() => {
-    // Defer FK constraint checking until commit.
-    // This allows DELETE in any order (children then parents) while keeping
-    // PRAGMA foreign_keys = ON. FK violations are caught at commit time.
-    sqlite.exec('PRAGMA defer_foreign_keys = ON');
+  // Defer FK constraint checking until commit.
+  // PRAGMA defer_foreign_keys MUST be set before the transaction starts;
+  // inside a BEGIN block it is a no-op in SQLite.
+  sqlite.exec('PRAGMA defer_foreign_keys = ON');
 
+  sqlite.transaction(() => {
     // DELETE all existing rows in reverse FK order
     for (const tableName of DELETE_ORDER) {
       sqlite.exec(`DELETE FROM "${tableName}"`);
@@ -426,6 +519,37 @@ export async function executeRestore(
       restoredRows += rows.length;
     }
   })();
+
+  // Step 7: Rebuild FIFO position projections after restore.
+  // After replacing accounting_executions with backup data, the FIFO positions,
+  // lots, and lot_matches are stale projections. Rebuild them for every account
+  // that has accounting_executions in the restored data.
+  const accountsWithExecutions = sqlite
+    .prepare('SELECT DISTINCT account_id FROM accounting_executions')
+    .all() as { account_id: string }[];
+
+  let rebuiltAccountCount = 0;
+  let rebuiltExecutionCount = 0;
+  let rebuiltLotCount = 0;
+  let rebuiltMatchCount = 0;
+
+  for (const { account_id } of accountsWithExecutions) {
+    const result = rebuildPositions(sqlite, account_id);
+    rebuiltAccountCount++;
+    rebuiltExecutionCount += result.executionCount || 0;
+    rebuiltLotCount += result.lotCount || 0;
+    rebuiltMatchCount += result.matchCount || 0;
+  }
+
+  console.log(
+    JSON.stringify({
+      event: 'restore_rebuild',
+      accountsRebuilt: rebuiltAccountCount,
+      executionCount: rebuiltExecutionCount,
+      lotCount: rebuiltLotCount,
+      matchCount: rebuiltMatchCount,
+    }),
+  );
 
   return {
     success: true,

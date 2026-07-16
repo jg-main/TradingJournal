@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { accounts, accountTransactions, tradeExecutions, trades, tradeRiskSnapshots, tradeGrades } from '@/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { type ExecutionData } from '@/lib/trade-calc';
 import { computeAccountKPIs, computeAccountBalance, computeDatesActive } from '@/lib/account-summary';
+import { findAccountPerformance } from '@/db/accounting-repository';
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function POST(_request: NextRequest, { params }: RouteParams) {
@@ -93,25 +94,55 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     // 7. Delegate datesActive computation to shared library
     const datesActive = computeDatesActive(accountCreatedAt, transactions);
 
+    // ── 7b. Fetch accounting ledger-derived realized P&L (best-effort) ──
+    let accountingRealizedPnl: string | null = null;
+    let accountingNav: string | null = null;
+    let accountingLedgerDerived = false;
+    try {
+      const sqlite = getSqliteHandle();
+      const projection = findAccountPerformance(sqlite, id);
+      if (projection) {
+        accountingRealizedPnl = projection.realized_pnl;
+        accountingNav = projection.nav;
+        accountingLedgerDerived = true;
+      }
+    } catch {
+      // Accounting projection fetch is best-effort during closure
+    }
+
+    // Use accounting-derived realized P&L when available (ledger is the source of truth)
+    const activeRealizedPnl = accountingLedgerDerived && accountingRealizedPnl
+      ? parseFloat(accountingRealizedPnl)
+      : balance.realizedPnl;
+    const activeFinalBalance = accountingLedgerDerived && accountingNav
+      ? parseFloat(accountingNav)
+      : balance.currentBalance;
+
     // 8. Deactivate the account
     db.update(accounts)
       .set({ isActive: false, updatedAt: new Date().toISOString() })
       .where(eq(accounts.id, id))
       .run();
 
-    // 9. Return closure summary JSON
+    // 9. Return closure summary JSON with accounting-derived metrics
     return NextResponse.json({
       accountId: id,
       accountName: account.name,
       startingBalance,
       depositsTotal: balance.netDeposits,
       withdrawalsTotal: balance.netWithdrawals,
-      realizedPnl: balance.realizedPnl,
-      finalBalance: balance.currentBalance,
+      realizedPnl: activeRealizedPnl,
+      finalBalance: activeFinalBalance,
       netReturn,
       kpis,
       datesActive,
       closedAt: new Date().toISOString(),
+      // Accounting provenance (read-only audit trail)
+      accounting: {
+        ledgerDerived: accountingLedgerDerived,
+        realizedPnl: accountingRealizedPnl,
+        nav: accountingNav,
+      },
     });
   } catch (error) {
     return NextResponse.json(
