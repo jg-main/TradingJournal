@@ -84,6 +84,7 @@ export default defineConfig({
       'src/components/accounting/account-correction-form.test.tsx',
       'src/lib/account-detail.test.ts',
       'src/lib/__fixtures__/account-detail-contracts.test.ts',
+      'src/app/api/accounts/[id]/overview/__tests__/route.test.ts',
     ],
     environment: 'jsdom',
   },
