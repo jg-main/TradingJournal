@@ -62,6 +62,12 @@ interface RebuildResponse {
 
 interface AccountPerformanceProps {
   accountId: string;
+  /**
+   * External refresh trigger.  Bumping this value triggers a refetch
+   * so callers can coordinate refresh after mutations (execution post,
+   * valuation mark, rebuild, etc.).
+   */
+  refreshKey?: number;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -117,7 +123,7 @@ function getDirectionIcon(direction: 'long' | 'short' | null) {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export default function AccountPerformance({ accountId }: AccountPerformanceProps) {
+export default function AccountPerformance({ accountId, refreshKey = 0 }: AccountPerformanceProps) {
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,13 +146,13 @@ export default function AccountPerformance({ accountId }: AccountPerformanceProp
     } finally {
       setLoading(false);
     }
-  }, [accountId]);
+  }, [accountId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // The async loader updates loading/error state after the request resolves.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchPerformance();
-  }, [fetchPerformance]);
+  }, [fetchPerformance, refreshKey]);
 
   const handleRebuild = async () => {
     setRebuilding(true);
