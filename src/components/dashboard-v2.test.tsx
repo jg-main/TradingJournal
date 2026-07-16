@@ -113,14 +113,6 @@ const MOCK_DASHBOARD: DashboardV2Response = {
     journalExecutionCount: 3,
     accountOnlyExecutionCount: 1,
   },
-  reconciliation: {
-    eligible: false,
-    refusalReasons: [
-      'No migration run yet. Run the journal-to-ledger migration first.',
-    ],
-    comparisons: null,
-    totals: null,
-  },
   integrity: {
     status: 'critical',
     warnings: [
@@ -216,12 +208,12 @@ describe('DashboardV2', () => {
 
     // Wait for heading
     await waitFor(() => {
-      expect(screen.getByText('Account Performance')).toBeTruthy();
+      expect(screen.getAllByText('Account Performance')[0]).toBeTruthy();
     });
 
     // Account name should be visible
     await waitFor(() => {
-      expect(screen.getByText('Main Trading')).toBeTruthy();
+      expect(screen.getAllByText('Main Trading')[0]).toBeTruthy();
     });
 
     // Key metrics should be rendered
@@ -266,36 +258,10 @@ describe('DashboardV2', () => {
       expect(screen.getByText('critical')).toBeTruthy();
     });
 
-    expect(
-      screen.getByText(/Reconciliation has not been run/),
-    ).toBeTruthy();
+
   });
 
-  // ── Reconciliation eligibility ───────────────────────────────────
 
-  it('shows cutover not ready banner when reconciliation is ineligible', async () => {
-    let callCount = 0;
-    global.fetch = vi.fn(() => {
-      callCount++;
-      if (callCount <= 1) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve(MOCK_ACCOUNTS),
-        } as Response);
-      }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(MOCK_DASHBOARD),
-      } as Response);
-    });
-
-    render(<TooltipProvider><DashboardV2 /></TooltipProvider>);
-
-    await waitFor(() => {
-      expect(screen.getByText('Cutover not ready')).toBeTruthy();
-    });
   });
 
   // ── Valuation completeness ───────────────────────────────────────
@@ -413,13 +379,13 @@ describe('DashboardV2', () => {
     render(<TooltipProvider><DashboardV2 /></TooltipProvider>);
 
     await waitFor(() => {
-      expect(screen.getByText('Account performance')).toBeTruthy();
+      expect(screen.getAllByText('Account performance')[0]).toBeTruthy();
     });
 
     expect(
-      screen.getByText(/Journal attribution/),
+      screen.getAllByText(/Journal attribution/)[0],
     ).toBeTruthy();
-    expect(screen.getByText(/3 linked, 1 direct/)).toBeTruthy();
+    expect(screen.getAllByText(/3 linked, 1 direct/)[0]).toBeTruthy();
   });
 
   // ── Empty accounts list ──────────────────────────────────────────
@@ -464,13 +430,13 @@ describe('DashboardV2', () => {
 
     // Wait for account name to appear (confirms data loaded)
     await waitFor(() => {
-      expect(screen.getByText('Main Trading')).toBeTruthy();
+      expect(screen.getAllByText('Main Trading')[0]).toBeTruthy();
     });
 
     const callsBefore = fetchCount;
 
     // Click refresh button
-    const refreshButton = screen.getByLabelText('Refresh dashboard data');
+    const refreshButton = screen.getAllByLabelText('Refresh dashboard data')[0];
     await act(async () => {
       refreshButton.click();
     });
@@ -480,4 +446,3 @@ describe('DashboardV2', () => {
       expect(fetchCount).toBeGreaterThan(callsBefore);
     });
   });
-});

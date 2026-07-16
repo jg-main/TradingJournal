@@ -84,18 +84,6 @@ export interface DashboardV2Response {
   };
   valuation: ValuationCompleteness;
   journalAttribution: JournalAttribution;
-  reconciliation: {
-    eligible: boolean;
-    refusalReasons: string[];
-    comparisons: Array<unknown> | null;
-    totals: {
-      comparisons: number;
-      matching: number;
-      explained: number;
-      anomalies: number;
-      unexplained: number;
-    } | null;
-  };
   integrity: {
     status: IntegrityStatus;
     warnings: string[];
@@ -454,7 +442,6 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
   const metrics = dashboard?.metrics;
   const valuation = dashboard?.valuation;
   const journalAttribution = dashboard?.journalAttribution;
-  const reconciliation = dashboard?.reconciliation;
   const integrity = dashboard?.integrity;
 
   // ── Render ───────────────────────────────────────────────────────────
@@ -535,22 +522,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
             </div>
           )}
 
-          {/* Reconciliation eligibility banner */}
-          {reconciliation && !reconciliation.eligible && (
-            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-              <Info className="mt-0.5 size-4 shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium">Cutover not ready</p>
-                {reconciliation.refusalReasons.length > 0 && (
-                  <ul className="mt-1 list-inside list-disc space-y-0.5">
-                    {reconciliation.refusalReasons.map((reason, i) => (
-                      <li key={i}>{reason}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
+
 
           {/* Metrics grid — Key account financial metrics */}
           <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -780,57 +752,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
             </CardContent>
           </Card>
 
-          {/* Reconciliation summary card */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Reconciliation</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {reconciliation && reconciliation.eligible ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="size-4 text-green-600 dark:text-green-400" />
-                    <span className="text-sm font-medium text-green-700 dark:text-green-400">
-                      Account is eligible for cutover
-                    </span>
-                  </div>
-                  {reconciliation.totals && (
-                    <div className="mt-3 flex flex-wrap gap-4 text-xs text-zinc-500 dark:text-zinc-400">
-                      <span>
-                        Comparisons: {reconciliation.totals.comparisons}
-                      </span>
-                      <span>Matching: {reconciliation.totals.matching}</span>
-                      <span>Explained: {reconciliation.totals.explained}</span>
-                      <span>
-                        Anomalies: {reconciliation.totals.anomalies}
-                      </span>
-                      <span>
-                        Unexplained: {reconciliation.totals.unexplained}
-                      </span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="flex items-start gap-2">
-                    <XCircle className="mt-0.5 size-4 text-amber-600 dark:text-amber-400" />
-                    <div>
-                      <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                        Account not eligible for cutover
-                      </p>
-                      {reconciliation && reconciliation.refusalReasons.length > 0 && (
-                        <ul className="mt-1 list-inside list-disc text-xs text-amber-600 dark:text-amber-400">
-                          {reconciliation.refusalReasons.map((reason, i) => (
-                            <li key={i}>{reason}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+
 
           {/* Computed at timestamp */}
           {dashboard.computedAt && (
