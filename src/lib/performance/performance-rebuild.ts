@@ -23,6 +23,8 @@ import {
   accountExists,
 } from '../../db/accounting-repository';
 import { rebuildOpeningCash, rebuildAccountActivity } from '../accounting/rebuild';
+import { computeAccountActivity, computeRebuildCashFlow } from '../accounting/activity';
+import { fromMicros } from '../accounting/decimal';
 import { normalizeDecimal } from '../accounting/decimal';
 import type { CanonicalDecimal } from '../accounting/types';
 import { deriveValuationPosition, computeAccountValuation } from './valuation';
@@ -66,14 +68,16 @@ export interface PerformanceRebuildOptions {
 /**
  * Read the net cash balance for an account from posted ledger postings.
  *
- * Uses rebuildOpeningCash to get the cash from opening_balance events.
- * In the current ledger model, both sides of a balanced posting point to
- * the same account, so rebuildNetPosition always returns 0.  The cash
- * available is embedded in the debit side of cash-positive events.
+ * Opening funding is read from debit postings for compatibility with migrated
+ * and restored journals. All later cash effects, including economic trade
+ * executions, are replayed from their canonical metadata.
  */
 function readAccountCash(sqlite: Database.Database, accountId: string): CanonicalDecimal {
   const openingCash = rebuildOpeningCash(sqlite, accountId);
-  return openingCash.totalOpeningCash;
+  const laterEvents = computeAccountActivity(sqlite, accountId).events
+    .filter((event) => event.eventType !== 'opening_balance');
+  const laterCash = computeRebuildCashFlow(laterEvents);
+  return fromMicros(openingCash.totalOpeningCashMicros + laterCash.netCashImpactMicros);
 }
 
 /**
@@ -154,6 +158,10 @@ function buildValuationPositions(
   const valuationPositions: ValuationPosition[] = [];
 
   for (const pos of positions) {
+    // Realized P&L is retained on closed position projection rows, but closed
+    // rows have no market value and must not request/display valuation marks.
+    if (pos.quantity === '0.00') continue;
+
     const mark = markByInstrument.get(pos.instrument_id);
 
     const markInput = mark

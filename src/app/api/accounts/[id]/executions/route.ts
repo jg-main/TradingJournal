@@ -32,6 +32,7 @@ import {
   findAccountingExecutionByIdempotencyKey,
   listAccountingExecutions,
   countAccountingExecutions,
+  listLegacyTradeExecutionsForAccount,
   findAccountPosition,
   findFifoLotsByAccountInstrument,
   findInstrumentById,
@@ -367,36 +368,48 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const sqlite = getSqliteHandle();
 
     // 2. Fetch executions from the repository
+    // 2. Fetch accounting executions
     const executionRows = listAccountingExecutions(sqlite, accountId, {
       limit,
       offset,
       instrumentId,
     });
-    const total = countAccountingExecutions(sqlite, accountId, {
+    let accountingTotal = countAccountingExecutions(sqlite, accountId, {
       instrumentId,
     });
 
-    // 3. Resolve instrument symbols for the response
+    // 3. Also fetch legacy trade_executions for this account
+    const legacyRows = listLegacyTradeExecutionsForAccount(sqlite, accountId);
+
+    // 4. Resolve instrument symbols for the response
     const instrumentCache = new Map<string, { id: string; symbol: string }>();
-    function resolveInstrument(instrumentId: string): { id: string; symbol: string } {
-      const cached = instrumentCache.get(instrumentId);
+    function resolveInstrument(instrumentIdOrSymbol: string): { id: string; symbol: string } {
+      const cached = instrumentCache.get(instrumentIdOrSymbol);
       if (cached) return cached;
-      const instrument = findInstrumentById(sqlite, instrumentId);
+      const instrument = findInstrumentById(sqlite, instrumentIdOrSymbol);
       if (instrument) {
         const entry = { id: instrument.id, symbol: instrument.symbol };
-        instrumentCache.set(instrumentId, entry);
+        instrumentCache.set(instrumentIdOrSymbol, entry);
         return entry;
       }
-      return { id: instrumentId, symbol: 'UNKNOWN' };
+      // Not a valid instrument ID — treat as symbol, create on the fly for legacy data
+      try {
+        const created = findOrCreateInstrument(sqlite, instrumentIdOrSymbol);
+        const entry = { id: created.id, symbol: created.symbol };
+        instrumentCache.set(instrumentIdOrSymbol, entry);
+        return entry;
+      } catch {
+        return { id: instrumentIdOrSymbol, symbol: instrumentIdOrSymbol };
+      }
     }
 
-    // 4. Transform to camelCase response shape
-    const executions = (executionRows as unknown as Record<string, unknown>[]).map((row) => {
+    // 5. Transform accounting executions
+    const accountingExecs = (executionRows as unknown as Record<string, unknown>[]).map((row) => {
       const instr = resolveInstrument(row.instrument_id as string);
       return {
         id: row.id as string,
         accountId: row.account_id as string,
-        instrumentId: row.instrument_id as string,
+        instrumentId: instr.id,
         symbol: instr.symbol,
         action: row.action as string,
         quantity: row.quantity as string,
@@ -410,10 +423,41 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       };
     });
 
+    // 6. Transform legacy trade executions
+    const legacyExecs = legacyRows.map((row) => {
+      const instr = resolveInstrument(row._symbol);
+      return {
+        id: row.id,
+        accountId: row.account_id,
+        instrumentId: instr.id,
+        symbol: instr.symbol,
+        action: row.action,
+        quantity: row.quantity,
+        price: row.price,
+        fees: row.fees,
+        idempotencyKey: row.idempotency_key,
+        journalTradeId: row.journal_trade_id,
+        description: row.description,
+        postedAt: row.posted_at,
+        createdAt: row.created_at,
+      };
+    });
+
+    // 7. Merge: accounting executions first, then legacy, sorted by postedAt ASC, id ASC
+    const allExecs = [...accountingExecs, ...legacyExecs].sort((a, b) => {
+      const dateCmp = a.postedAt.localeCompare(b.postedAt);
+      if (dateCmp !== 0) return dateCmp;
+      return a.id.localeCompare(b.id);
+    });
+    const mergedTotal = allExecs.length;
+
+    // 8. Apply pagination on merged result
+    const paginatedExecs = allExecs.slice(offset, offset + limit);
+
     return NextResponse.json(
       {
-        executions,
-        total,
+        executions: paginatedExecs,
+        total: mergedTotal,
         limit,
         offset,
       },

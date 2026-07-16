@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions } from '@/db/schema';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -221,6 +221,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'No active account found. Create an account first or set a default account in settings.' },
         { status: 400 }
+      );
+    }
+
+    const account = db.select().from(accounts).where(eq(accounts.id, accountId)).get();
+    const hasOpeningCash = getSqliteHandle()
+      .prepare(`SELECT EXISTS(SELECT 1 FROM financial_events WHERE account_id = ? AND event_type IN ('opening_balance', 'deposit')) AS has_cash`)
+      .get(accountId) as { has_cash: number };
+    if (!account?.isActive || account.maxRiskPerTradePct === null || account.defaultCommission === null || !hasOpeningCash.has_cash) {
+      return NextResponse.json(
+        { error: 'Account setup incomplete', details: 'Set risk parameters, post opening cash, then activate the account before trading.' },
+        { status: 409 },
       );
     }
 

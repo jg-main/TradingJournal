@@ -8,10 +8,6 @@ const createAccountSchema = z.object({
   name: z.string().min(1, 'Name is required').max(200),
   broker: z.string().max(200).nullable().optional(),
   currency: z.string().min(1).max(3).default('USD'),
-  isActive: z.boolean().optional().default(true),
-  maxRiskPerTradePct: z.number().positive().optional(),
-  defaultCommission: z.number().min(0).optional(),
-  startingBalance: z.number().min(0).optional(),
 });
 
 export async function GET() {
@@ -47,10 +43,12 @@ export async function POST(request: NextRequest) {
         name: parsed.data.name,
         broker: parsed.data.broker ?? null,
         currency: parsed.data.currency,
-        isActive: parsed.data.isActive,
-        maxRiskPerTradePct: parsed.data.maxRiskPerTradePct ?? null,
-        defaultCommission: parsed.data.defaultCommission ?? null,
-        startingBalance: parsed.data.startingBalance ?? null,
+        // Accounts begin as Draft. Risk parameters and opening cash are
+        // completed later on the dedicated account page.
+        isActive: false,
+        maxRiskPerTradePct: null,
+        defaultCommission: null,
+        startingBalance: null,
         createdAt: now,
         updatedAt: now,
       })

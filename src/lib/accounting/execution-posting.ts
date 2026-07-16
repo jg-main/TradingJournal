@@ -182,10 +182,11 @@ export function postExecutionFill(
       ...(description ? { description } : {}),
     });
 
-    // Build the effect descriptor
+    // Build the available-cash effect. Long exits and short sales receive
+    // cash; long entries, adds, and covers spend it.
     const effect = JSON.stringify({
       kind: 'cash',
-      direction: 'decrease', // Executions always decrease cash (buy pays out, sell_short receives but is offset by liability)
+      direction: ['sell', 'reduce', 'sell_short'].includes(action) ? 'increase' : 'decrease',
       amount: finalConsideration,
       amountMicros: Number(considerationMicros),
     });

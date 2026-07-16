@@ -367,7 +367,7 @@ export function correctExecution(
     });
     const reversalEffect = JSON.stringify({
       kind: 'cash',
-      direction: 'increase',
+      direction: ['sell', 'reduce', 'sell_short'].includes(reversalAction) ? 'increase' : 'decrease',
       amount: fromMicros(reversalConsiderationMicros),
       amountMicros: reversalConsiderationMicros,
     });
@@ -415,7 +415,7 @@ export function correctExecution(
     });
     const replacementEffect = JSON.stringify({
       kind: 'cash',
-      direction: 'decrease',
+      direction: ['sell', 'reduce', 'sell_short'].includes(replacementAction) ? 'increase' : 'decrease',
       amount: fromMicros(replacementConsiderationMicros),
       amountMicros: replacementConsiderationMicros,
     });

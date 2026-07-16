@@ -125,7 +125,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // 4. Build responses with open FIFO lots
     const positions = positionRows
       .filter((row) => {
-        // Apply direction filter if specified
+        // This endpoint is the Current Positions feed: realized rows belong
+        // in performance/history, never alongside open holdings.
+        if (row.quantity === '0.00' || row.direction === null) return false;
         if (direction && row.direction !== direction) return false;
         return true;
       })

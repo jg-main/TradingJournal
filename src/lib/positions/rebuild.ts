@@ -78,11 +78,24 @@ export function rebuildPositions(
     }
 
     // ── 2. Read all executions in deterministic order ──────────────────
-    const executions = listAccountingExecutions(sqlite, accountId, {
+    const rawExecutions = listAccountingExecutions(sqlite, accountId, {
       instrumentId,
       limit: 100000, // High limit to avoid pagination during rebuild
       offset: 0,
     });
+
+    // Corrections are reversal-and-replacement pairs. Projection replay must
+    // consume the replacement once, not replay the invalid original and its
+    // compensating reversal (which can transiently create impossible lots).
+    const supersededRows = sqlite
+      .prepare(
+        `SELECT original_execution_id AS execution_id FROM correction_lineage WHERE account_id = ?
+         UNION ALL
+         SELECT reversal_execution_id AS execution_id FROM correction_lineage WHERE account_id = ?`,
+      )
+      .all(accountId, accountId) as Array<{ execution_id: string }>;
+    const supersededExecutionIds = new Set(supersededRows.map((row) => row.execution_id));
+    const executions = rawExecutions.filter((execution) => !supersededExecutionIds.has(execution.id));
 
     if (executions.length === 0) {
       return {
@@ -195,20 +208,18 @@ export function rebuildPositions(
       });
       persistedPositions.set(key, pos);
 
-      // ── Persist ALL lots (open + closed) ─────────────────────────────
-      // Build a deduplicated map of unique lot IDs.  For lots that appear
-      // in both allNewLots (created with full quantities) and acc.lots
-      // (final open lots with reduced remaining quantities), the acc.lots
-      // entry is final.
-      const allLotMap = new Map<string, FifoLot>();
-      for (const lot of acc.allNewLots) {
-        allLotMap.set(lot.id, { ...lot });
+      // Keep closed lots for lot_match foreign-key history, but persist them
+      // with zero remaining quantity so neither API nor UI can mistake them
+      // for current open lots.
+      const lotsById = new Map<string, FifoLot>();
+      for (const lot of acc.allNewLots) lotsById.set(lot.id, { ...lot });
+      for (const match of acc.allMatches) {
+        const lot = lotsById.get(match.lotId);
+        if (lot) lotsById.set(match.lotId, { ...lot, remainingQuantity: '0.00' as CanonicalDecimal });
       }
-      for (const lot of acc.lots) {
-        allLotMap.set(lot.id, { ...lot });
-      }
+      for (const lot of acc.lots) lotsById.set(lot.id, { ...lot });
 
-      for (const lot of allLotMap.values()) {
+      for (const lot of lotsById.values()) {
         insertLot.run(
           lot.id,
           lot.accountId,

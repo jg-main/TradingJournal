@@ -657,6 +657,56 @@ export function listAccountingExecutions(
 }
 
 /**
+ * List legacy trade_executions for an account (joined through trades table).
+ * These are executions created from the Trade Log before the accounting system
+ * was introduced. Returns rows shaped like AccountingExecutionRow.
+ */
+/** Legacy trade execution row with symbol for symbol resolution. */
+export interface LegacyTradeExecutionRow {
+  id: string;
+  account_id: string;
+  action: string;
+  quantity: string;
+  price: string;
+  fees: string;
+  idempotency_key: string;
+  journal_trade_id: string;
+  description: string | null;
+  posted_at: string;
+  created_at: string;
+  /** Symbol from the parent trade. Used as lookup key for instruments. */
+  _symbol: string;
+}
+
+/**
+ * List legacy trade_executions for an account (joined through trades table).
+ * These are executions created from the Trade Log before the accounting system
+ * was introduced. Returns rows with a _symbol field for instrument resolution.
+ */
+export function listLegacyTradeExecutionsForAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): LegacyTradeExecutionRow[] {
+  const sql = `SELECT te.id,
+                      t.account_id,
+                      te.action,
+                      CAST(te.quantity AS TEXT) AS quantity,
+                      CAST(te.price AS TEXT) AS price,
+                      CAST(COALESCE(te.fees, 0) AS TEXT) AS fees,
+                      te.id AS idempotency_key,
+                      te.trade_id AS journal_trade_id,
+                      te.notes AS description,
+                      te.executed_at AS posted_at,
+                      te.created_at,
+                      t.symbol AS _symbol
+               FROM trade_executions te
+               JOIN trades t ON te.trade_id = t.id
+               WHERE t.account_id = ?
+               ORDER BY te.executed_at ASC, te.id ASC`;
+  return sqlite.prepare(sql).all(accountId) as LegacyTradeExecutionRow[];
+}
+
+/**
  * Count accounting executions for an account (optionally filtered by instrument).
  */
 export function countAccountingExecutions(

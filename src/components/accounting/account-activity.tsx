@@ -53,6 +53,27 @@ function parseEffect(effectStr: string | null): ParsedEffect | null {
   }
 }
 
+/** Derive trade cash from its immutable execution payload for legacy rows. */
+function getDisplayEffect(event: ActivityEvent): ParsedEffect | null {
+  const storedEffect = parseEffect(event.effect);
+  if (event.eventType !== 'trade_execution' || !event.payload) return storedEffect;
+
+  try {
+    const payload = JSON.parse(event.payload) as { action?: string; quantity?: string; price?: string };
+    const quantity = Number(payload.quantity);
+    const price = Number(payload.price);
+    if (!payload.action || !Number.isFinite(quantity) || !Number.isFinite(price)) return storedEffect;
+
+    return {
+      kind: 'cash',
+      direction: ['sell', 'reduce', 'sell_short'].includes(payload.action) ? 'increase' : 'decrease',
+      amount: (quantity * price).toFixed(2),
+    };
+  } catch {
+    return storedEffect;
+  }
+}
+
 function getEffectLabel(effect: ParsedEffect | null): string {
   if (!effect) return '—';
   if (effect.kind === 'cash') {
@@ -519,7 +540,7 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
               {activity.events.map((item) => {
                 const ev = item.event;
                 const badge = getEventTypeBadge(ev.eventType);
-                const effect = parseEffect(ev.effect);
+                const effect = getDisplayEffect(ev);
                 const effectLabel = getEffectLabel(effect);
                 const effectClass = getEffectClass(effect);
                 const effectAmount = getEffectAmount(effect, ev.eventType);

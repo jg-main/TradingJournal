@@ -1,9 +1,18 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useCallback, useEffect, useState, use } from 'react';
 import { useAppTimezone } from '@/lib/timezone-context';
-import { ArrowLeft, Plus, Minus, TriangleAlert, RotateCcw } from 'lucide-react';
-import ChecklistManager from '@/components/checklist-manager';
+import {
+  ArrowLeft,
+  Plus,
+  Minus,
+  TriangleAlert,
+  RotateCcw,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Pencil,
+} from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,9 +32,13 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import AccountExecutionForm from '@/components/accounting/account-execution-form';
+
 import AccountPositions from '@/components/accounting/account-positions';
 import AccountExecutionsActivity from '@/components/accounting/account-executions-activity';
+import AccountActivity from '@/components/accounting/account-activity';
+import AccountPerformance from '@/components/accounting/account-performance';
+import AccountValuationForm from '@/components/accounting/account-valuation-form';
+import AccountReconciliationSummary from '@/components/accounting/account-reconciliation-summary';
 
 interface Transaction {
   id: string;
@@ -48,6 +61,7 @@ interface AccountDetail {
   startingBalance: number | null;
   currentBalance?: number;
   realizedPnl?: number;
+  netDeposits?: number;
   kpis?: {
     tradeCount: number;
     netPnl: number;
@@ -55,6 +69,35 @@ interface AccountDetail {
     avgR: number | null;
     avgGrade: number | null;
   };
+  accounting?: {
+    projection: {
+      netCash: string;
+      nav: string;
+      realizedPnl: string;
+      unrealizedPnl: string;
+      totalPnl: string;
+      grossExposure: string;
+      netExposure: string;
+      drawdown: string | null;
+      highWaterMark: string | null;
+      computedAt: string;
+      rebuildCount: number;
+    } | null;
+    realizedPnl: string | null;
+    nav: string | null;
+    ledgerDerived: boolean;
+  } | null;
+  accountingIntegrity: {
+    status: 'eligible' | 'stale' | 'blocked' | 'not_available';
+    cutoverEligible: boolean;
+    cutoverRefusalReasons: string[];
+    totals: {
+      comparisons: number;
+      matching: number;
+      explained: number;
+      unexplained: number;
+    } | null;
+  } | null;
 }
 
 interface ClosureSummary {
@@ -80,62 +123,61 @@ interface ClosureSummary {
   closedAt: string;
 }
 
+
 export default function AccountDetailSettingsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
   const [account, setAccount] = useState<AccountDetail | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions] = useState<Transaction[]>([]);
   const [currentBalance, setCurrentBalance] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [performanceRefreshKey, setPerformanceRefreshKey] = useState(0);
+  const [accountRefreshKey, setAccountRefreshKey] = useState(0);
 
-  const [amount, setAmount] = useState('');
-  const [notes, setNotes] = useState('');
-  const [txnType, setTxnType] = useState<'deposit' | 'withdrawal'>('deposit');
-  const [showForm, setShowForm] = useState(false);
+  const [editingParams, setEditingParams] = useState(false);
+  const [savingParams, setSavingParams] = useState(false);
+  const [paramForm, setParamForm] = useState({ maxRisk: '', defaultCommission: '' });
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [closureSummary] = useState<ClosureSummary | null>(null);
+  const [closureSummary, setClosureSummary] = useState<ClosureSummary | null>(null);
   const [actionPending, setActionPending] = useState<'deactivate' | 'reactivate' | 'delete' | null>(null);
   const { formatDate } = useAppTimezone();
 
-  const fetchData = async () => {
+  const fetchAccount = useCallback(async () => {
     try {
-      const [acctRes, txnRes] = await Promise.all([
-        fetch(`/api/accounts/${id}`),
-        fetch(`/api/accounts/${id}/transactions`),
-      ]);
+      const res = await fetch(`/api/accounts/${id}`);
 
-      if (!acctRes.ok) {
+      if (!res.ok) {
         setMessage({ type: 'error', text: 'Account not found.' });
         setLoading(false);
         return;
       }
 
-      const acctData = await acctRes.json();
+      const acctData = await res.json();
       setAccount(acctData);
 
       if (acctData.currentBalance != null) {
         setCurrentBalance(acctData.currentBalance);
       }
 
-      if (txnRes.ok) {
-        const txnData = await txnRes.json();
-        setTransactions(txnData.data ?? []);
-      }
+      setParamForm({
+        maxRisk: acctData.maxRiskPerTradePct != null ? String(acctData.maxRiskPerTradePct) : '',
+        defaultCommission: acctData.defaultCommission != null ? String(acctData.defaultCommission) : '',
+      });
     } catch {
       setMessage({ type: 'error', text: 'Failed to load account data.' });
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchData();
+    void fetchAccount();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, accountRefreshKey]);
+
 
   const surfaceError = (payload: { error?: string; details?: unknown } | null, fallback: string) => {
     if (!payload) return fallback;
@@ -158,7 +200,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
         return;
       }
       setMessage({ type: 'success', text: success });
-      await fetchData();
+      await fetchAccount();
     } catch {
       setMessage({ type: 'error', text: fallback });
     } finally {
@@ -175,73 +217,79 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
     setMessage(null);
 
     try {
-      await mutateLifecycle(
-        'PUT',
-        { isActive: false },
-        'deactivate',
-        'Account deactivated.',
-        'Failed to deactivate account.',
-      );
+      const res = await fetch(`/api/accounts/${id}/close`, { method: 'POST' });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to close account' }));
+        setMessage({ type: 'error', text: err.error ?? err.details ?? 'Failed to close account.' });
+        setIsClosing(false);
+        return;
+      }
+
+      const data: ClosureSummary = await res.json();
+      setClosureSummary(data);
       setCloseDialogOpen(false);
+      setAccountRefreshKey((k) => k + 1);
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to close account.' });
     } finally {
       setIsClosing(false);
     }
   };
 
-  const handleTransaction = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
+  const handleParamSave = async () => {
+    setSavingParams(true);
     setMessage(null);
-
-    const parsedAmount = parseFloat(amount);
-    if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
-      setMessage({ type: 'error', text: 'Please enter a valid positive amount.' });
-      setSaving(false);
-      return;
-    }
-
-    if (txnType === 'withdrawal' && parsedAmount > currentBalance) {
-      setMessage({ type: 'error', text: `Insufficient balance. Current balance: $${currentBalance.toFixed(2)}` });
-      setSaving(false);
-      return;
-    }
-
     try {
-      const res = await fetch(`/api/accounts/${id}/transactions`, {
-        method: 'POST',
+      const body: Record<string, unknown> = {};
+      if (paramForm.maxRisk !== '') body.maxRiskPerTradePct = parseFloat(paramForm.maxRisk);
+      if (paramForm.defaultCommission !== '') body.defaultCommission = parseFloat(paramForm.defaultCommission);
+
+      const res = await fetch(`/api/accounts/${id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: txnType,
-          amount: parsedAmount,
-          notes: notes.trim() || null,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : (err.error ?? 'Transaction failed.') });
+        const err = await res.json().catch(() => ({ error: 'Failed to save' }));
+        setMessage({ type: 'error', text: err.error ?? 'Failed to save parameters.' });
         return;
       }
 
-      setMessage({ type: 'success', text: `${txnType === 'deposit' ? 'Deposit' : 'Withdrawal'} recorded.` });
-      setAmount('');
-      setNotes('');
-      setShowForm(false);
-      await fetchData();
+      setEditingParams(false);
+      setMessage({ type: 'success', text: 'Parameters saved. Changes apply to future trades.' });
+      await fetchAccount();
     } catch {
-      setMessage({ type: 'error', text: 'Failed to record transaction.' });
+      setMessage({ type: 'error', text: 'Failed to save parameters.' });
     } finally {
-      setSaving(false);
+      setSavingParams(false);
     }
   };
 
-  const formatCurrency = (v: number) => {
-    return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const handleMarkSubmitted = useCallback(() => {
+    setPerformanceRefreshKey((k) => k + 1);
+  }, []);
+
+  const formatCurrency = (v: number | string) => {
+    const n = typeof v === 'string' ? parseFloat(v) : v;
+    if (isNaN(n)) return String(v);
+    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
+
+  function getNetPnl(acct: AccountDetail): number {
+    const nav = acct.accounting?.projection?.nav;
+    if (nav !== undefined && acct.startingBalance !== null) {
+      // Account P&L is NAV less external funding, not the legacy closed-trade
+      // KPI (which excludes realized history retained outside open positions).
+      return Number(nav) - acct.startingBalance - (acct.netDeposits ?? 0);
+    }
+    return acct.kpis?.netPnl ?? 0;
+  }
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-6 py-8">
         <p className="text-sm text-zinc-500">Loading account details...</p>
       </div>
     );
@@ -249,7 +297,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
 
   if (!account) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-4xl px-6 py-8">
         <Link href="/settings" className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200">
           <ArrowLeft className="size-4" />
           Back to Settings
@@ -262,8 +310,8 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
-      {/* Back link */}
+    <div className="mx-auto max-w-4xl px-6 py-8">
+      {/* ── Back link ────────────────────────────────────────────────── */}
       <Link
         href="/settings"
         className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
@@ -272,7 +320,7 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
         Back to Settings
       </Link>
 
-      {/* Account header */}
+      {/* ── Account header ───────────────────────────────────────────── */}
       <div className="mb-8">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -294,374 +342,310 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
         </div>
       </div>
 
-      {/* Balance card */}
-      <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+      {/* ── Message Banner ────────────────────────────────────────────── */}
+      {message && (
+        <div
+          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+            message.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+          }`}
+          role="alert"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2">
+            {message.type === 'success' ? (
+              <CheckCircle2 className="size-4 shrink-0" />
+            ) : (
+              <XCircle className="size-4 shrink-0" />
+            )}
+            <span>{message.text}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Balance Card ──────────────────────────────────────────────── */}
+      <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
         <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Current Balance</p>
         <p className={`mt-1 text-3xl font-semibold tabular-nums ${
           currentBalance >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'
         }`}>
           ${formatCurrency(currentBalance)}
         </p>
-      </div>
-
-      {/* Risk Parameters card */}
-      <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Risk Parameters</p>
-        <div className="grid grid-cols-3 gap-6">
-          <div>
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Max Risk Per Trade</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-              {account.maxRiskPerTradePct != null ? `${account.maxRiskPerTradePct}%` : (
-                <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Using global defaults</span>
-              )}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Default Commission</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-              {account.defaultCommission != null ? `$${account.defaultCommission.toFixed(2)}` : (
-                <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Using global defaults</span>
-              )}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Starting Balance</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-              {account.startingBalance != null ? `$${account.startingBalance.toFixed(2)}` : (
-                <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Using global defaults</span>
-              )}
-            </p>
-          </div>
+        <div className="mt-3 flex gap-6 text-xs text-zinc-500 dark:text-zinc-400">
+          <span>
+            Account Net P&amp;L:{' '}
+            <span
+              className={
+                getNetPnl(account) >= 0
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-red-600 dark:text-red-400'
+              }
+            >
+              {getNetPnl(account) >= 0 ? '+' : ''}${formatCurrency(getNetPnl(account))}
+            </span>
+          </span>
         </div>
       </div>
 
-      {/* Entry Checks for active accounts */}
-      {account.isActive && (
-        <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <ChecklistManager parentId={id} scope="account" />
+      {/* ── Payoff Summary ────────────────────────────────────────────── */}
+      <div className="mb-6 grid grid-cols-3 gap-4">
+        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            Starting Balance
+          </p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+            ${formatCurrency(account.startingBalance ?? 0)}
+          </p>
         </div>
-      )}
-
-      {/* Performance Metrics card */}
-      {account.kpis && (
-        <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Performance Metrics</p>
-          <div className="grid grid-cols-3 gap-6">
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Net P&amp;L</p>
-              <p className={`mt-1 text-lg font-semibold tabular-nums ${
-                account.kpis.netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
-              }`}>
-                {account.kpis.netPnl >= 0 ? '+' : ''}${formatCurrency(account.kpis.netPnl)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Win Rate</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {account.kpis.winRate != null
-                  ? `${(account.kpis.winRate * 100).toFixed(1)}%`
-                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
-                }
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Trade Count</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {account.kpis.tradeCount}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg R</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {account.kpis.avgR != null
-                  ? account.kpis.avgR.toFixed(2)
-                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
-                }
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg Grade</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {account.kpis.avgGrade != null
-                  ? account.kpis.avgGrade.toFixed(1)
-                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
-                }
-              </p>
-            </div>
-          </div>
+        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            Net Deposits
+          </p>
+          <p className={`mt-1 text-lg font-semibold tabular-nums ${
+            (account.netDeposits ?? 0) >= 0
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-red-600 dark:text-red-400'
+          }`}>
+            ${formatCurrency(account.netDeposits ?? 0)}
+          </p>
         </div>
-      )}
-
-      {/* ── Accounting Execution Entry ──────────────────────────────── */}
-      {account.isActive && (
-        <div className="mb-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-          <AccountExecutionForm accountId={id} onExecutionPosted={() => {}} />
+        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            Account Net P&amp;L
+          </p>
+          <p className={`mt-1 text-lg font-semibold tabular-nums ${
+            getNetPnl(account) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+          }`}>
+            {getNetPnl(account) >= 0 ? '+' : ''}${formatCurrency(getNetPnl(account))}
+          </p>
         </div>
-      )}
+      </div>
 
-      {/* ── Current Positions ──────────────────────────────────────── */}
-      {account.isActive && (
-        <div className="mb-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-          <AccountPositions accountId={id} />
-        </div>
-      )}
-
-      {/* ── Execution Activity ─────────────────────────────────────── */}
-      {account.isActive && (
-        <div className="mb-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-          <AccountExecutionsActivity accountId={id} />
-        </div>
-      )}
-
-      {/* Transaction form */}
-      {message && (
+      {/* ── Accounting Integrity Banner ──────────────────────────────── */}
+      {account.accountingIntegrity && (
         <div
-          role="alert"
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
-            message.type === 'success'
+            account.accountingIntegrity.status === 'eligible'
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              : account.accountingIntegrity.status === 'blocked'
+                ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                : 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400'
           }`}
+          role="status"
+          aria-live="polite"
         >
-          {message.text}
-        </div>
-      )}
-
-      {account.isActive && (
-        <div className="mb-8">
-          {!showForm ? (
-            <div className="flex gap-3">
-              <Button
-                onClick={() => { setTxnType('deposit'); setShowForm(true); setMessage(null); }}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                <Plus className="size-4" />
-                Add Funds
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => { setTxnType('withdrawal'); setShowForm(true); setMessage(null); }}
-              >
-                <Minus className="size-4" />
-                Withdraw
-              </Button>
+          <div className="flex items-center gap-2">
+            {account.accountingIntegrity.status === 'eligible' ? (
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <AlertTriangle className="size-4 shrink-0" />
+            )}
+            <span>
+              Accounting data:
+              {account.accountingIntegrity.status === 'eligible'
+                ? ' Ledger reconciled and eligible for cutover.'
+                : account.accountingIntegrity.status === 'blocked'
+                  ? ` Reconciliation blocked: ${account.accountingIntegrity.cutoverRefusalReasons?.[0] ?? 'See reconciliation report for details.'}`
+                  : ' No reconciliation run available. Post executions and rebuild performance to establish ledger metrics.'}
+            </span>
+          </div>
+          {account.accountingIntegrity.totals && (
+            <div className="mt-2 flex gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+              <span>{account.accountingIntegrity.totals.matching} matching</span>
+              <span>{account.accountingIntegrity.totals.explained} explained</span>
+              {account.accountingIntegrity.totals.unexplained > 0 && (
+                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                  {account.accountingIntegrity.totals.unexplained} unexplained
+                </span>
+              )}
             </div>
-          ) : (
-            <form onSubmit={handleTransaction} className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
-                {txnType === 'deposit' ? 'Add Funds' : 'Withdraw Funds'}
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="amount" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Amount ($)
-                  </label>
-                  <Input
-                    id="amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder={txnType === 'deposit' ? 'Amount to deposit' : 'Amount to withdraw'}
-                    autoFocus
-                  />
-                  {txnType === 'withdrawal' && (
-                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      Current balance: ${formatCurrency(currentBalance)}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label htmlFor="notes" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Notes (optional)
-                  </label>
-                  <Input
-                    id="notes"
-                    type="text"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="e.g. Initial deposit, Profit withdrawal"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button
-                  type="submit"
-                  disabled={saving}
-                  className={
-                    txnType === 'deposit'
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
-                      : ''
-                  }
-                >
-                  {saving ? 'Processing...' : txnType === 'deposit' ? 'Add Funds' : 'Withdraw'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => { setShowForm(false); setMessage(null); }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
           )}
         </div>
       )}
 
-      {/* Closure Summary Card */}
+      {/* ── Parameters ──────────────────────────────────────────────── */}
+      <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Parameters</p>
+          {!editingParams && (
+            <button
+              onClick={() => setEditingParams(true)}
+              title="Edit parameters"
+              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+            >
+              <Pencil className="size-4" />
+            </button>
+          )}
+        </div>
+        {editingParams ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Max Risk Per Trade (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={paramForm.maxRisk}
+                  onChange={(e) => setParamForm({ ...paramForm, maxRisk: e.target.value })}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  placeholder="e.g. 2"
+                />
+                <p className="mt-1 text-xs text-zinc-400">Applies to future trades.</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Default Commission ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={paramForm.defaultCommission}
+                  onChange={(e) => setParamForm({ ...paramForm, defaultCommission: e.target.value })}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  placeholder="e.g. 0.50"
+                />
+                <p className="mt-1 text-xs text-zinc-400">Applies to future trades.</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleParamSave}
+                disabled={savingParams}
+                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {savingParams ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setEditingParams(false); setParamForm({ maxRisk: String(account.maxRiskPerTradePct ?? ''), defaultCommission: String(account.defaultCommission ?? '') }); }}
+                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Max Risk Per Trade</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                {account.maxRiskPerTradePct != null ? `${account.maxRiskPerTradePct}%` : (
+                  <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Not set</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Default Commission</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                {account.defaultCommission != null ? `$${account.defaultCommission.toFixed(2)}` : (
+                  <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">Not set</span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+
+
+
+
+
+
+      {/* ── Valuation & Performance Section ────────────────────────────── */}
+      {account.isActive && (
+        <div className="mb-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+              Valuation &amp; Performance
+            </h2>
+            <AccountValuationForm accountId={id} onMarkSubmitted={handleMarkSubmitted} />
+          </div>
+          <AccountPerformance
+            key={`perf-${performanceRefreshKey}`}
+            accountId={id}
+            refreshKey={performanceRefreshKey}
+          />
+        </div>
+      )}
+
+      {/* ── Executions Feed (from Trade Log) ───────────────────────────── */}
+      {account.isActive && (
+        <>
+          <AccountExecutionsActivity accountId={id} />
+          <AccountPositions accountId={id} />
+        </>
+      )}
+
+      {/* ── Reconciliation Summary ──────────────────────────────────────── */}
+      {account.isActive && (
+        <div className="mb-6">
+          <AccountReconciliationSummary accountId={id} />
+        </div>
+      )}
+
+      {/* ── Account Activity (Post Event + Financial Events Table) ────── */}
+      {account.isActive && (
+        <div className="mb-6 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+          <AccountActivity accountId={id} />
+        </div>
+      )}
+
+      {/* ── Closure Summary ────────────────────────────────────────────── */}
       {closureSummary && (
-        <div className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Closure Summary</p>
-          <div className="grid grid-cols-3 gap-6">
+        <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                Account Closed
+              </p>
+              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                {closureSummary.accountName} closed at{' '}
+                {new Date(closureSummary.closedAt).toLocaleString(undefined, {
+                  month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                })}. Final balance: $
+                {formatCurrency(closureSummary.finalBalance)}.
+                {closureSummary.netReturn !== null &&
+                  ` Net return: ${closureSummary.netReturn.toFixed(2)}%.`}
+              </p>
+            </div>
+            <button
+              onClick={() => setClosureSummary(null)}
+              className="shrink-0 text-xs text-emerald-600 underline hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-200"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-3 border-t border-emerald-200 pt-3 dark:border-emerald-800">
             <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Final Balance</p>
-              <p className={`mt-1 text-lg font-semibold tabular-nums ${
-                closureSummary.finalBalance >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'
-              }`}>
-                ${formatCurrency(closureSummary.finalBalance)}
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">Starting Balance</p>
+              <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
+                ${formatCurrency(closureSummary.startingBalance)}
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Net P&amp;L</p>
-              <p className={`mt-1 text-lg font-semibold tabular-nums ${
-                closureSummary.realizedPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
-              }`}>
-                {closureSummary.realizedPnl >= 0 ? '+' : ''}${formatCurrency(closureSummary.realizedPnl)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Net Return</p>
-              <p className={`mt-1 text-lg font-semibold tabular-nums ${
-                closureSummary.netReturn != null && closureSummary.netReturn >= 0
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-red-600 dark:text-red-400'
-              }`}>
-                {closureSummary.netReturn != null
-                  ? `${closureSummary.netReturn >= 0 ? '+' : ''}${closureSummary.netReturn.toFixed(2)}%`
-                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
-                }
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Trade Count</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {closureSummary.kpis.tradeCount}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Win Rate</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {closureSummary.kpis.winRate != null
-                  ? `${(closureSummary.kpis.winRate * 100).toFixed(1)}%`
-                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
-                }
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg R</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {closureSummary.kpis.avgR != null
-                  ? closureSummary.kpis.avgR.toFixed(2)
-                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
-                }
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg Grade</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                {closureSummary.kpis.avgGrade != null
-                  ? closureSummary.kpis.avgGrade.toFixed(1)
-                  : <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">N/A</span>
-                }
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Deposits</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">Deposits</p>
+              <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
                 ${formatCurrency(closureSummary.depositsTotal)}
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Withdrawals</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-red-600 dark:text-red-400">
-                ${formatCurrency(closureSummary.withdrawalsTotal)}
-              </p>
-            </div>
-            <div className="col-span-3">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Dates Active</p>
-              <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {formatDate(closureSummary.datesActive.from)} &ndash; {formatDate(closureSummary.datesActive.to)}
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">Realized P&amp;L</p>
+              <p className={`text-sm font-semibold tabular-nums ${
+                closureSummary.realizedPnl >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+              }`}>
+                {closureSummary.realizedPnl >= 0 ? '+' : ''}${formatCurrency(closureSummary.realizedPnl)}
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Transaction history */}
-      <div>
-        <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
-          Transaction History
-        </h2>
-
-        {transactions.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-            <p className="text-sm text-zinc-600 dark:text-zinc-300">No transactions yet.</p>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Balance After</TableHead>
-                  <TableHead>Notes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transactions.map((txn) => (
-                  <TableRow key={txn.id}>
-                    <TableCell className="text-zinc-600 dark:text-zinc-400">
-                      {formatDate(txn.date)}
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                          txn.type === 'deposit'
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                        }`}
-                      >
-                        {txn.type === 'deposit' ? 'Deposit' : 'Withdrawal'}
-                      </span>
-                    </TableCell>
-                    <TableCell className={`text-right tabular-nums font-medium ${
-                      txn.type === 'deposit'
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      {txn.type === 'deposit' ? '+' : '-'}${formatCurrency(txn.amount)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-zinc-600 dark:text-zinc-400">
-                      ${formatCurrency(txn.balanceAfter)}
-                    </TableCell>
-                    <TableCell className="text-zinc-600 dark:text-zinc-300 max-w-[200px] truncate">
-                      {txn.notes ?? '-'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
-
-      {/* Close Account button */}
-      {account.isActive && (
-        <div className="mt-8 border-t border-zinc-200 pt-8 dark:border-zinc-800">
+      {/* ── Close Account button ──────────────────────────────────────── */}
+      {account.isActive && !closureSummary && (
+        <div className="mb-6">
           <Button
             variant="destructive"
             onClick={() => { setCloseDialogOpen(true); setMessage(null); }}
@@ -672,12 +656,10 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
         </div>
       )}
 
-      {/* Lifecycle actions for inactive accounts */}
+      {/* ── Lifecycle actions for inactive accounts ────────────────────── */}
       {!account.isActive && (
-        <div className="mt-8 border-t border-zinc-200 pt-8 dark:border-zinc-800">
-          <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">
-            Account Actions
-          </p>
+        <div className="mb-6 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+          <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Account Actions</p>
           <Button
             onClick={handleReactivateAccount}
             disabled={actionPending === 'reactivate'}
@@ -688,28 +670,22 @@ export default function AccountDetailSettingsPage({ params }: { params: Promise<
         </div>
       )}
 
-      {/* Close Account Confirmation Dialog */}
+      {/* ── Close Account Confirmation Dialog ──────────────────────────── */}
       <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Close Account</DialogTitle>
             <DialogDescription>
-              Are you sure? This will archive the account. All trade data is preserved.
+              Are you sure? This will archive the account, compute final balance, and
+              generate a closure summary. It cannot be undone for accounts with trade history.
+              Accounts with open trades cannot be closed.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setCloseDialogOpen(false)}
-              disabled={isClosing}
-            >
+            <Button variant="outline" onClick={() => setCloseDialogOpen(false)} disabled={isClosing}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleCloseAccount}
-              disabled={isClosing}
-            >
+            <Button variant="destructive" onClick={handleCloseAccount} disabled={isClosing}>
               {isClosing ? 'Closing...' : 'Confirm Close'}
             </Button>
           </DialogFooter>

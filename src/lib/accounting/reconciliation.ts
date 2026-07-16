@@ -16,11 +16,10 @@
 import Database from 'better-sqlite3';
 import { fromMicros, toMicros } from './decimal';
 import type { CanonicalDecimal } from './types';
-import {
-  listAccountPositions,
-  countAccountingExecutions,
-} from '../../db/accounting-repository';
+import { listAccountPositions } from '../../db/accounting-repository';
 import { findLatestMigrationRun, listMigrationRecords } from './legacy-migration-runner';
+import { computeAccountActivity, computeRebuildCashFlow } from './activity';
+import { rebuildOpeningCash } from './rebuild';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Public Types
@@ -164,21 +163,6 @@ interface AccountingExecutionSummary {
 
 const TOLERANCE_ONE_CENT = '0.01';
 
-/** Event types that increase net cash. */
-const CASH_INCREASING_EVENTS = new Set([
-  'opening_balance',
-  'deposit',
-  'dividend',
-  'interest',
-]);
-
-/** Event types that decrease net cash. */
-const CASH_DECREASING_EVENTS = new Set([
-  'withdrawal',
-  'fee',
-  'tax',
-]);
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Legacy Data Queries
 // ═══════════════════════════════════════════════════════════════════════════
@@ -207,10 +191,33 @@ function queryLegacyCash(
     )
     .get(accountId) as { total: number };
 
+  const openingRow = sqlite
+    .prepare('SELECT COALESCE(starting_balance, 0) AS starting_balance FROM accounts WHERE id = ?')
+    .get(accountId) as { starting_balance: number } | undefined;
+
+  const executions = sqlite
+    .prepare(
+      `SELECT e.action, e.quantity, e.price, COALESCE(e.fees, 0) AS fees
+       FROM trade_executions e
+       INNER JOIN trades t ON t.id = e.trade_id
+       WHERE t.account_id = ?`,
+    )
+    .all(accountId) as Array<{ action: string; quantity: number; price: number; fees: number }>;
+
+  let executionCashImpact = 0;
+  for (const execution of executions) {
+    const consideration = execution.quantity * execution.price;
+    if (['sell', 'reduce', 'sell_short'].includes(execution.action)) {
+      executionCashImpact += consideration - execution.fees;
+    } else {
+      executionCashImpact -= consideration + execution.fees;
+    }
+  }
+
   return {
-    totalDeposits: depositRow.total,
+    totalDeposits: (openingRow?.starting_balance ?? 0) + depositRow.total,
     totalWithdrawals: withdrawalRow.total,
-    netCash: depositRow.total - withdrawalRow.total,
+    netCash: (openingRow?.starting_balance ?? 0) + depositRow.total - withdrawalRow.total + executionCashImpact,
   };
 }
 
@@ -273,48 +280,19 @@ function queryLegacyPriceMarks(
  * Instead, net cash is derived from the financial_events event_type and the
  * debit posting amount from the associated ledger entry.
  *
- * Cash-increasing events (deposit, opening_balance, dividend, interest):
- *   net += debit posting amount
- * Cash-decreasing events (withdrawal, fee, tax):
- *   net -= debit posting amount
- * Other events (trade_execution, adjustment, stock_split, manual_adjustment):
- *   skipped (balanced, no net cash effect)
+ * Uses the same activity replay as the performance projection, including
+ * trade cash effects reconstructed from legacy migration payloads.
  */
 function queryAccountingCash(
   sqlite: Database.Database,
   accountId: string,
 ): { netMicros: number; netAmount: CanonicalDecimal } {
-  // Query all financial events with their debit posting amounts in one pass
-  const rows = sqlite
-    .prepare(
-      `SELECT fe.event_type,
-              COALESCE(
-                (SELECT lp.amount_micros
-                 FROM ledger_entries le
-                 JOIN ledger_postings lp ON lp.ledger_entry_id = le.id AND lp.side = 'debit'
-                 WHERE le.financial_event_id = fe.id
-                 ORDER BY lp.sequence ASC
-                 LIMIT 1),
-                0
-              ) AS debit_micros
-       FROM financial_events fe
-       WHERE fe.account_id = ?
-       ORDER BY fe.posted_at ASC, fe.id ASC`,
-    )
-    .all(accountId) as Array<{ event_type: string; debit_micros: number }>;
-
-  let netMicros = 0;
-
-  for (const row of rows) {
-    if (CASH_INCREASING_EVENTS.has(row.event_type)) {
-      netMicros += row.debit_micros;
-    } else if (CASH_DECREASING_EVENTS.has(row.event_type)) {
-      netMicros -= row.debit_micros;
-    }
-    // Other event types (trade_execution, adjustment, etc.) are balanced
-    // and don't contribute to net cash
-  }
-
+  const openingCash = rebuildOpeningCash(sqlite, accountId);
+  const laterCash = computeRebuildCashFlow(
+    computeAccountActivity(sqlite, accountId).events
+      .filter((event) => event.eventType !== 'opening_balance'),
+  );
+  const netMicros = openingCash.totalOpeningCashMicros + laterCash.netCashImpactMicros;
   return {
     netMicros,
     netAmount: fromMicros(netMicros),
@@ -329,14 +307,22 @@ function queryAccountingExecutions(
   sqlite: Database.Database,
   accountId: string,
 ): AccountingExecutionSummary {
-  const execCount = countAccountingExecutions(sqlite, accountId);
-
-  const feeRows = sqlite
-    .prepare('SELECT fees FROM accounting_executions WHERE account_id = ?')
+  // A correction replaces its original execution. Its reversal neutralizes
+  // the original and must not be compared as an additional Trade Log fill.
+  const rows = sqlite
+    .prepare(
+      `SELECT ae.fees
+       FROM accounting_executions ae
+       LEFT JOIN correction_lineage original ON original.original_execution_id = ae.id
+       LEFT JOIN correction_lineage reversal ON reversal.reversal_execution_id = ae.id
+       WHERE ae.account_id = ?
+         AND original.id IS NULL
+         AND reversal.id IS NULL`,
+    )
     .all(accountId) as Array<{ fees: string }>;
 
   let feeTotalMicros = 0;
-  for (const row of feeRows) {
+  for (const row of rows) {
     try {
       feeTotalMicros += toMicros(row.fees);
     } catch {
@@ -345,7 +331,7 @@ function queryAccountingExecutions(
   }
 
   return {
-    executionCount: execCount,
+    executionCount: rows.length,
     feeTotalMicros,
   };
 }
@@ -357,8 +343,16 @@ function queryAccountingValuationMarks(
   sqlite: Database.Database,
   accountId: string,
 ): number {
+  // Reconcile legacy snapshots against their imported counterparts only.
+  // User/market marks added after migration are valid accounting observations,
+  // not missing legacy records.
   const row = sqlite
-    .prepare('SELECT COUNT(*) AS count FROM valuation_marks WHERE account_id = ?')
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM valuation_marks
+       WHERE account_id = ?
+         AND idempotency_key LIKE 'migrated:position_price_snapshots:%'`,
+    )
     .get(accountId) as { count: number };
   return row.count;
 }
@@ -371,7 +365,8 @@ function queryAccountingPositionExposure(
   sqlite: Database.Database,
   accountId: string,
 ): { positionCount: number; totalMarkedMicros: number } {
-  const positions = listAccountPositions(sqlite, accountId);
+  const positions = listAccountPositions(sqlite, accountId)
+    .filter((position) => position.quantity !== '0.00');
   let totalMarkedMicros = 0;
 
   for (const pos of positions) {
@@ -589,9 +584,9 @@ function queryLegacyPositionExposure(
   const symbolPositions = new Map<string, { netQuantity: number }>();
   for (const row of rows) {
     const existing = symbolPositions.get(row.symbol) ?? { netQuantity: 0 };
-    if (row.action === 'buy' || row.action === 'buy_to_cover') {
+    if (row.action === 'buy' || row.action === 'buy_to_cover' || row.action === 'add') {
       existing.netQuantity += row.quantity;
-    } else if (row.action === 'sell' || row.action === 'sell_short') {
+    } else if (row.action === 'sell' || row.action === 'sell_short' || row.action === 'reduce') {
       existing.netQuantity -= row.quantity;
     }
     symbolPositions.set(row.symbol, existing);
@@ -613,8 +608,11 @@ function queryLegacyPositionExposure(
       .get(symbol, accountId) as { price: number } | undefined;
 
     if (latestRow && latestRow.price > 0) {
+      // Accounting valuation marks are canonical cents. Normalize the legacy
+      // floating quote to that same precision before comparing exposure.
+      const canonicalPrice = Math.round(latestRow.price * 100) / 100;
       const netQtyMicros = Math.abs(pos.netQuantity) * 1_000_000;
-      const priceMicros = Math.round(latestRow.price * 1_000_000);
+      const priceMicros = Math.round(canonicalPrice * 1_000_000);
       totalMicros += Number(
         (BigInt(netQtyMicros) * BigInt(priceMicros)) / BigInt(1_000_000),
       );
@@ -631,15 +629,22 @@ function queryLegacyPositionCount(
   sqlite: Database.Database,
   accountId: string,
 ): number {
-  const row = sqlite
+  const rows = sqlite
     .prepare(
-      `SELECT COUNT(DISTINCT t.symbol) AS count
+      `SELECT t.symbol, e.action, e.quantity
        FROM trade_executions e
        INNER JOIN trades t ON t.id = e.trade_id
        WHERE t.account_id = ?`,
     )
-    .get(accountId) as { count: number };
-  return row.count;
+    .all(accountId) as Array<{ symbol: string; action: string; quantity: number }>;
+
+  const quantities = new Map<string, number>();
+  for (const row of rows) {
+    const sign = ['sell', 'reduce', 'sell_short'].includes(row.action) ? -1 : 1;
+    quantities.set(row.symbol, (quantities.get(row.symbol) ?? 0) + sign * row.quantity);
+  }
+
+  return [...quantities.values()].filter((quantity) => quantity !== 0).length;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

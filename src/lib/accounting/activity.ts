@@ -13,7 +13,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { fromMicros } from './decimal';
+import { fromMicros, toMicros } from './decimal';
 import type { CanonicalDecimal, EventType, EventEffect } from './types';
 
 // ── Activity Types ──────────────────────────────────────────────────────
@@ -130,7 +130,11 @@ export function computeAccountActivity(
     postedAt: r.posted_at,
     createdAt: r.created_at,
     payload: r.payload ? tryParseJSON(r.payload) : null,
-    effect: r.effect ? (tryParseJSON(r.effect) as EventEffect | null) : null,
+    effect: deriveActivityEffect(
+      r.event_type as EventType,
+      r.payload ? tryParseJSON(r.payload) : null,
+      r.effect ? (tryParseJSON(r.effect) as EventEffect | null) : null,
+    ),
     postingStatus: r.entry_id ? 'posted' : 'pending',
   }));
 
@@ -140,6 +144,59 @@ export function computeAccountActivity(
     totalCount: events.length,
     rebuiltAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Return a usable cash effect for an activity event.
+ *
+ * Early migrated trade executions stored a `#skip#` display placeholder in
+ * their immutable effect JSON. Their payload retains the economic inputs, so
+ * reconstruct the real effect at read time without rewriting the event.
+ */
+function deriveActivityEffect(
+  eventType: EventType,
+  payload: unknown,
+  effect: EventEffect | null,
+): EventEffect | null {
+  // Execution payloads are the immutable economic source of truth. This also
+  // repairs legacy `#skip#` effects and earlier correction rows whose effect
+  // direction was recorded incorrectly.
+  if (eventType !== 'trade_execution') {
+    return effect;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return effect;
+  }
+
+  const execution = payload as { action?: unknown; quantity?: unknown; price?: unknown };
+  if (
+    typeof execution.action !== 'string'
+    || typeof execution.quantity !== 'string'
+    || typeof execution.price !== 'string'
+  ) {
+    return effect;
+  }
+
+  const cashIncreaseActions = new Set(['sell', 'reduce', 'sell_short']);
+  const cashDecreaseActions = new Set(['buy', 'add', 'buy_to_cover']);
+  if (!cashIncreaseActions.has(execution.action) && !cashDecreaseActions.has(execution.action)) {
+    return effect;
+  }
+
+  try {
+    const considerationMicros = Number(
+      (BigInt(toMicros(execution.quantity)) * BigInt(toMicros(execution.price))) / BigInt(1_000_000),
+    );
+    return {
+      kind: 'cash',
+      direction: cashIncreaseActions.has(execution.action) ? 'increase' : 'decrease',
+      amount: fromMicros(considerationMicros),
+      amountMicros: considerationMicros,
+    };
+  } catch {
+    return effect;
+  }
 }
 
 // ── Cash Flow Projection ────────────────────────────────────────────────

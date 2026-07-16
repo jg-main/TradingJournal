@@ -512,8 +512,14 @@ function writeExecutionInput(
     postedAt: input.postedAt,
   });
 
+  // Consideration = quantity × price in micros.
+  const qMicros = toMicros(input.quantity);
+  const pMicros = toMicros(input.price);
+  const considerationMicros = Number((BigInt(qMicros) * BigInt(pMicros)) / BigInt(1_000_000));
+  const finalConsideration = fromMicros(considerationMicros);
+
   // Write financial event for the cash consideration
-  // (same structure as execution-posting.ts without the high-level wrapper)
+  // (same structure as execution-posting.ts without the high-level wrapper).
   const eventRow = insertFinancialEvent(sqlite, {
     accountId: input.accountId,
     eventType: 'trade_execution',
@@ -529,17 +535,12 @@ function writeExecutionInput(
     }),
     effect: JSON.stringify({
       kind: 'cash',
-      direction: 'decrease',
-      amount: '#skip#', // Will be replaced by actual consideration below
+      direction: ['sell', 'reduce', 'sell_short'].includes(input.action) ? 'increase' : 'decrease',
+      amount: finalConsideration,
+      amountMicros: considerationMicros,
     }),
     postedAt: input.postedAt,
   });
-
-  // Considerations = quantity × price in micros
-  const qMicros = toMicros(input.quantity);
-  const pMicros = toMicros(input.price);
-  const considerationMicros = Number((BigInt(qMicros) * BigInt(pMicros)) / BigInt(1_000_000));
-  const finalConsideration = fromMicros(considerationMicros);
 
   // Write ledger entry
   const entryRow = insertLedgerEntry(sqlite, {
@@ -913,9 +914,7 @@ export function runLegacyMigration(
       // Always rebuild projections + compute fingerprint, even when no
       // new records were mapped (re-run with all duplicates). This ensures
       // the migration run captures the current state for reconciliation.
-      if (mappedCount > 0) {
-        rebuildAccountProjections(sqlite, accountId);
-      }
+      rebuildAccountProjections(sqlite, accountId);
       fingerprint = computeAccountFingerprint(sqlite, accountId);
     }
 

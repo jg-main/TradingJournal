@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit3, Trash2, User, Building2, Wallet, ArrowLeft } from 'lucide-react';
+import { Plus, Edit3, User, Building2, Wallet, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -46,12 +46,14 @@ type AccountForm = {
   name: string;
   broker: string;
   currency: string;
-  maxRiskPerTradePct: string;
-  defaultCommission: string;
-  startingBalance: string;
+  // Retained temporarily so the existing dialog fields compile while the
+  // account detail page becomes the canonical parameter surface.
+  maxRiskPerTradePct?: string;
+  defaultCommission?: string;
+  startingBalance?: string;
 };
 
-const EMPTY_FORM: AccountForm = { name: '', broker: '', currency: 'USD', maxRiskPerTradePct: '', defaultCommission: '', startingBalance: '' };
+const EMPTY_FORM: AccountForm = { name: '', broker: '', currency: 'USD' }; 
 
 export default function AccountsSettingsPage() {
   const router = useRouter();
@@ -59,7 +61,6 @@ export default function AccountsSettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,43 +87,19 @@ export default function AccountsSettingsPage() {
     fetchData();
   }, [fetchData]);
 
-  const openCreate = () => {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setDialogOpen(true);
-  };
-
-  const openEdit = (account: Account) => {
-    setEditingId(account.id);
-    setForm({
-      name: account.name,
-      broker: account.broker ?? '',
-      currency: account.currency,
-      maxRiskPerTradePct: account.maxRiskPerTradePct?.toString() ?? '',
-      defaultCommission: account.defaultCommission?.toString() ?? '',
-      startingBalance: account.startingBalance?.toString() ?? '',
-    });
-    setDialogOpen(true);
-  };
-
   const handleSave = async () => {
     setSaving(true);
     setError(null);
 
     try {
-      const url = editingId ? `/api/accounts/${editingId}` : '/api/accounts';
-      const method = editingId ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
+      const res = await fetch('/api/accounts', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name,
           broker: form.broker || null,
           currency: form.currency,
-          ...(form.maxRiskPerTradePct ? { maxRiskPerTradePct: parseFloat(form.maxRiskPerTradePct) } : {}),
-          ...(form.defaultCommission ? { defaultCommission: parseFloat(form.defaultCommission) } : {}),
-          ...(form.startingBalance ? { startingBalance: parseFloat(form.startingBalance) } : {}),
+          // Parameters and opening cash are completed after Draft creation.
         }),
       });
 
@@ -133,28 +110,12 @@ export default function AccountsSettingsPage() {
       }
 
       setDialogOpen(false);
+      setForm(EMPTY_FORM);
       await fetchData();
-      router.push('/settings');
     } catch {
-      setError('Failed to save account.');
+      setError('Failed to create account.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleDeactivate = async (id: string) => {
-    if (!confirm('Deactivate this account? It will be hidden from most views.')) return;
-
-    try {
-      const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const err = await res.json();
-        setError(err.error);
-        return;
-      }
-      await fetchData();
-    } catch {
-      setError('Failed to deactivate account.');
     }
   };
 
@@ -169,7 +130,7 @@ export default function AccountsSettingsPage() {
     );
   }
 
-  if (activeAccounts.length === 0) {
+  if (accounts.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8">
         <Link
@@ -188,7 +149,7 @@ export default function AccountsSettingsPage() {
           title="No accounts yet"
           description="Create your first trading account to start tracking performance."
           action={
-            <Button onClick={openCreate}>
+            <Button onClick={() => { setForm(EMPTY_FORM); setDialogOpen(true); }}>
               <Plus className="size-4" />
               Add Account
             </Button>
@@ -197,7 +158,6 @@ export default function AccountsSettingsPage() {
         <AccountDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
-          editingId={editingId}
           form={form}
           setForm={setForm}
           onSave={handleSave}
@@ -225,10 +185,15 @@ export default function AccountsSettingsPage() {
             Accounts
           </h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-            Manage your brokerage accounts.
+            Manage your brokerage accounts — click a row to view details.
           </p>
         </div>
-        <Button onClick={openCreate}>
+        <Button
+          onClick={() => {
+            setForm(EMPTY_FORM);
+            setDialogOpen(true);
+          }}
+        >
           <Plus className="size-4" />
           Add Account
         </Button>
@@ -248,20 +213,18 @@ export default function AccountsSettingsPage() {
               <TableHead>Broker</TableHead>
               <TableHead>Currency</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {activeAccounts.map((account) => (
-              <TableRow key={account.id}>
+              <TableRow
+                key={account.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/settings/accounts/${account.id}`)}
+              >
                 <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={`/settings/accounts/${account.id}`}
-                      className="hover:text-zinc-600 dark:hover:text-zinc-300"
-                    >
-                      {account.name}
-                    </Link>
+                    {account.name}
                     {settings?.defaultAccountId === account.id && (
                       <Badge variant="secondary" className="text-[10px]">
                         Default
@@ -290,22 +253,6 @@ export default function AccountsSettingsPage() {
                     {account.isActive ? 'Active' : 'Inactive'}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button variant="ghost" size="icon-sm" onClick={() => openEdit(account)} title="Edit account">
-                      <Edit3 className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleDeactivate(account.id)}
-                      title="Deactivate account"
-                      className="text-zinc-400 hover:text-red-600"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -321,14 +268,13 @@ export default function AccountsSettingsPage() {
             <Table>
               <TableBody>
                 {inactiveAccounts.map((account) => (
-                  <TableRow key={account.id}>
+                  <TableRow
+                    key={account.id}
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/settings/accounts/${account.id}`)}
+                  >
                     <TableCell className="font-medium text-zinc-500">
-                      <Link
-                        href={`/settings/accounts/${account.id}`}
-                        className="hover:text-zinc-700 dark:hover:text-zinc-300"
-                      >
-                        {account.name}
-                      </Link>
+                      {account.name}
                     </TableCell>
                     <TableCell className="text-zinc-400">{account.broker ?? '\u2014'}</TableCell>
                     <TableCell className="text-zinc-400">{account.currency}</TableCell>
@@ -348,7 +294,6 @@ export default function AccountsSettingsPage() {
       <AccountDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        editingId={editingId}
         form={form}
         setForm={setForm}
         onSave={handleSave}
@@ -363,7 +308,6 @@ export default function AccountsSettingsPage() {
 function AccountDialog({
   open,
   onOpenChange,
-  editingId,
   form,
   setForm,
   onSave,
@@ -373,7 +317,6 @@ function AccountDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  editingId: string | null;
   form: AccountForm;
   setForm: (f: AccountForm) => void;
   onSave: () => void;
@@ -387,11 +330,9 @@ function AccountDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{editingId ? 'Edit Account' : 'Add Account'}</DialogTitle>
+          <DialogTitle>Add Account</DialogTitle>
           <DialogDescription>
-            {editingId
-              ? 'Update the account details below.'
-              : 'Create a new brokerage account to track trades and performance.'}
+            Create a new brokerage account to track trades and performance.
           </DialogDescription>
         </DialogHeader>
 
@@ -441,9 +382,13 @@ function AccountDialog({
             />
           </div>
 
-          <hr className="border-zinc-200 dark:border-zinc-700" />
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Create a Draft account first. Set risk parameters and post opening cash from its account page.
+          </p>
 
-          <div>
+          <hr className="hidden border-zinc-200 dark:border-zinc-700" />
+
+          <div className="hidden">
             <label htmlFor="account-max-risk" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Max Risk Per Trade (%)
             </label>
@@ -459,7 +404,7 @@ function AccountDialog({
             />
           </div>
 
-          <div>
+          <div className="hidden">
             <label htmlFor="account-default-commission" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Default Commission ($)
             </label>
@@ -474,7 +419,7 @@ function AccountDialog({
             />
           </div>
 
-          <div>
+          <div className="hidden">
             <label htmlFor="account-starting-balance" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-300">
               Starting Balance ($)
             </label>
@@ -495,7 +440,7 @@ function AccountDialog({
             Cancel
           </Button>
           <Button onClick={onSave} disabled={!isValid || saving}>
-            {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Create Account'}
+            {saving ? 'Saving...' : 'Add Account'}
           </Button>
         </DialogFooter>
       </DialogContent>
