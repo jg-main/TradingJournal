@@ -220,7 +220,7 @@ export default function AccountsSettingsPage() {
               <TableRow
                 key={account.id}
                 className="cursor-pointer"
-                onClick={() => router.push(`/settings/accounts/${account.id}`)}
+                onClick={() => router.push(`/accounts/${account.id}`)}
               >
                 <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">
                   <div className="flex items-center gap-2">
@@ -271,7 +271,7 @@ export default function AccountsSettingsPage() {
                   <TableRow
                     key={account.id}
                     className="cursor-pointer"
-                    onClick={() => router.push(`/settings/accounts/${account.id}`)}
+                    onClick={() => router.push(`/accounts/${account.id}`)}
                   >
                     <TableCell className="font-medium text-zinc-500">
                       {account.name}
