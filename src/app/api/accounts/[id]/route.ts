@@ -16,7 +16,8 @@ const updateAccountSchema = z.object({
   isActive: z.boolean().optional(),
   maxRiskPerTradePct: z.number().positive().optional(),
   defaultCommission: z.number().min(0).optional(),
-  startingBalance: z.number().min(0).optional(),
+  // Opening cash must be posted through account transactions, not account settings.
+  startingBalance: z.never().optional(),
 });
 
 type RouteParams = { params: Promise<{ id: string }> };

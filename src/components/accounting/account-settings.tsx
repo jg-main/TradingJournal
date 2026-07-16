@@ -33,13 +33,11 @@ interface AccountData {
   isActive: boolean;
   maxRiskPerTradePct: number | null;
   defaultCommission: number | null;
-  startingBalance: number | null;
 }
 
 interface GlobalSettings {
   maxRiskPerTradePct: number | null;
   defaultCommission: number | null;
-  startingAccountValue: number | null;
 }
 
 interface ClosureSummary {
@@ -98,12 +96,10 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
   const [name, setName] = useState('');
   const [maxRisk, setMaxRisk] = useState('');
   const [commission, setCommission] = useState('');
-  const [startBal, setStartBal] = useState('');
 
   // Track whether each nullable field was explicitly cleared (null)
   const [clearMaxRisk, setClearMaxRisk] = useState(false);
   const [clearCommission, setClearCommission] = useState(false);
-  const [clearStartBal, setClearStartBal] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
 
   // ── Data loading ────────────────────────────────────────────────────
@@ -132,10 +128,8 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
       setName(acctData.name);
       setMaxRisk(acctData.maxRiskPerTradePct != null ? String(acctData.maxRiskPerTradePct) : '');
       setCommission(acctData.defaultCommission != null ? String(acctData.defaultCommission) : '');
-      setStartBal(acctData.startingBalance != null ? String(acctData.startingBalance) : '');
       setClearMaxRisk(acctData.maxRiskPerTradePct === null);
       setClearCommission(acctData.defaultCommission === null);
-      setClearStartBal(acctData.startingBalance === null);
       setNameError(null);
 
       // Load global settings (best-effort)
@@ -158,59 +152,41 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
   // ── Toggle for nullable fields ──────────────────────────────────────
   // When currently in "use global" mode (field is cleared), restore the
   // original account value.  When in per-account mode, clear to use global.
-  const handleToggleDefault = (
-    field: 'maxRisk' | 'commission' | 'startBal',
-  ) => {
-    const isClear = field === 'maxRisk' ? clearMaxRisk
-      : field === 'commission' ? clearCommission
-      : clearStartBal;
+  const handleToggleDefault = (field: 'maxRisk' | 'commission') => {
+    const isClear = field === 'maxRisk' ? clearMaxRisk : clearCommission;
 
     if (isClear) {
       // Switch back to per-account value (if one exists) or enable manual entry
       const originalValue = field === 'maxRisk'
         ? account?.maxRiskPerTradePct
-        : field === 'commission'
-          ? account?.defaultCommission
-          : account?.startingBalance;
+        : account?.defaultCommission;
 
       if (field === 'maxRisk') {
         if (originalValue != null) setMaxRisk(String(originalValue));
         setClearMaxRisk(false);
-      } else if (field === 'commission') {
+      } else {
         if (originalValue != null) setCommission(String(originalValue));
         setClearCommission(false);
-      } else {
-        if (originalValue != null) setStartBal(String(originalValue));
-        setClearStartBal(false);
       }
     } else {
       // Clear to use global default
       if (field === 'maxRisk') {
         setMaxRisk('');
         setClearMaxRisk(true);
-      } else if (field === 'commission') {
+      } else {
         setCommission('');
         setClearCommission(true);
-      } else {
-        setStartBal('');
-        setClearStartBal(true);
       }
     }
   };
 
-  const handleFieldChange = (
-    field: 'maxRisk' | 'commission' | 'startBal',
-    value: string,
-  ) => {
+  const handleFieldChange = (field: 'maxRisk' | 'commission', value: string) => {
     if (field === 'maxRisk') {
       setMaxRisk(value);
       setClearMaxRisk(value === '');
-    } else if (field === 'commission') {
+    } else {
       setCommission(value);
       setClearCommission(value === '');
-    } else {
-      setStartBal(value);
-      setClearStartBal(value === '');
     }
   };
 
@@ -340,12 +316,6 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
         body.defaultCommission = parseFloat(commission);
       }
 
-      if (clearStartBal) {
-        body.startingBalance = null;
-      } else if (startBal !== '') {
-        body.startingBalance = parseFloat(startBal);
-      }
-
       const res = await fetch(`/api/accounts/${accountId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -375,10 +345,8 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
         setName(updated.name);
         setMaxRisk(updated.maxRiskPerTradePct != null ? String(updated.maxRiskPerTradePct) : '');
         setCommission(updated.defaultCommission != null ? String(updated.defaultCommission) : '');
-        setStartBal(updated.startingBalance != null ? String(updated.startingBalance) : '');
         setClearMaxRisk(updated.maxRiskPerTradePct === null);
         setClearCommission(updated.defaultCommission === null);
-        setClearStartBal(updated.startingBalance === null);
       }
     } catch {
       setMessage({ type: 'error', text: 'Failed to save settings.' });
@@ -417,7 +385,6 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
   // ── Derived defaults ───────────────────────────────────────────────
   const globalMaxRisk = globalSettings?.maxRiskPerTradePct ?? null;
   const globalCommission = globalSettings?.defaultCommission ?? null;
-  const globalStartBal = globalSettings?.startingAccountValue ?? null;
 
   // ── Render ─────────────────────────────────────────────────────────
   return (
@@ -511,6 +478,10 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
         </h2>
 
         <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">
+            Opening cash is recorded as a cash transaction in the Ledger, not as an account setting.
+          </p>
+
           {/* Max Risk Per Trade */}
           <div className="mb-5">
             <label
@@ -610,54 +581,6 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
             </div>
           </div>
 
-          {/* Starting Balance */}
-          <div className="mb-5">
-            <label
-              htmlFor="settings-starting-balance"
-              className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-300"
-            >
-              Starting Balance ($)
-            </label>
-            <div className="flex items-start gap-3">
-              <div className="flex-1">
-                <Input
-                  id="settings-starting-balance"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={startBal}
-                  onChange={(e) => handleFieldChange('startBal', e.target.value)}
-                  placeholder={clearStartBal ? '' : 'e.g. 50000'}
-                  aria-describedby={
-                    clearStartBal && globalStartBal !== null
-                      ? 'settings-start-bal-default'
-                      : undefined
-                  }
-                />
-                {clearStartBal && globalStartBal !== null && (
-                  <p
-                    id="settings-start-bal-default"
-                    className="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
-                  >
-                    Using global default: ${formatCurrency(globalStartBal)}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleToggleDefault('startBal')}
-                className={cn(
-                  'mt-1 shrink-0 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  clearStartBal
-                    ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                    : 'border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700',
-                )}
-                aria-label={clearStartBal ? 'Switch to per-account starting balance' : 'Clear starting balance to use global default'}
-              >
-                {clearStartBal ? 'Per-account value' : 'Use global default'}
-              </button>
-            </div>
-          </div>
         </div>
       </section>
 

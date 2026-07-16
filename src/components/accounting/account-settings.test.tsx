@@ -5,7 +5,7 @@
  * - Loading state (spinner/text)
  * - Populated render with identity and trading defaults
  * - Editing name with save success
- * - Editing trading defaults (max risk, commission, starting balance)
+ * - Editing trading defaults (max risk and commission)
  * - Validation error (empty name)
  * - API error with retry
  * - NULL fallback display with global default hints
@@ -139,7 +139,8 @@ describe('AccountSettings — populated state', () => {
     // Check field labels are rendered
     expect(screen.getByText('Max Risk Per Trade (%)')).toBeTruthy();
     expect(screen.getByText('Default Commission ($)')).toBeTruthy();
-    expect(screen.getByText('Starting Balance ($)')).toBeTruthy();
+    expect(screen.getByText('Opening cash is recorded as a cash transaction in the Ledger, not as an account setting.')).toBeTruthy();
+    expect(screen.queryByText('Starting Balance ($)')).toBeNull();
 
     // Check input values
     const maxRiskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
@@ -147,9 +148,6 @@ describe('AccountSettings — populated state', () => {
 
     const commissionInput = screen.getByLabelText('Default Commission ($)') as HTMLInputElement;
     expect(commissionInput.value).toBe('1');
-
-    const startBalInput = screen.getByLabelText('Starting Balance ($)') as HTMLInputElement;
-    expect(startBalInput.value).toBe('50000');
   });
 
   it('renders Save and Discard changes buttons', async () => {
@@ -185,12 +183,11 @@ describe('AccountSettings — NULL fallback display', () => {
 
     // Null fields show "Per-account value" buttons (they are currently using global default)
     const perAccountButtons = screen.getAllByText('Per-account value');
-    expect(perAccountButtons.length).toBe(3);
+    expect(perAccountButtons.length).toBe(2);
 
     // Each button has a descriptive aria-label
     expect(screen.getByLabelText('Switch to per-account value')).toBeTruthy();
     expect(screen.getByLabelText('Switch to per-account commission')).toBeTruthy();
-    expect(screen.getByLabelText('Switch to per-account starting balance')).toBeTruthy();
   });
 
   it('shows global default hint text for null fields when settings are available', async () => {
@@ -203,7 +200,6 @@ describe('AccountSettings — NULL fallback display', () => {
 
     expect(screen.getByText('Using global default: 2%')).toBeTruthy();
     expect(screen.getByText('Using global default: $0.50')).toBeTruthy();
-    expect(screen.getByText('Using global default: $25,000.00')).toBeTruthy();
   });
 });
 
@@ -306,9 +302,6 @@ describe('AccountSettings — edit and save flow', () => {
     const commissionInput = screen.getByLabelText('Default Commission ($)') as HTMLInputElement;
     fireEvent.change(commissionInput, { target: { value: '2' } });
 
-    // Click "Use global default" for starting balance to set it to null
-    fireEvent.click(screen.getByLabelText('Clear starting balance to use global default'));
-
     // Click Save
     fireEvent.click(screen.getByText('Save'));
 
@@ -322,7 +315,7 @@ describe('AccountSettings — edit and save flow', () => {
     const body = JSON.parse((putCall[1] as RequestInit).body as string);
     expect(body.maxRiskPerTradePct).toBe(3.0);
     expect(body.defaultCommission).toBe(2);
-    expect(body.startingBalance).toBeNull();
+    expect(body).not.toHaveProperty('startingBalance');
   });
 });
 
@@ -479,7 +472,7 @@ describe('AccountSettings — "Use global default" toggle', () => {
 
     // Initially values are populated - button says "Use global default"
     const toggleButtons = screen.getAllByText('Use global default');
-    expect(toggleButtons.length).toBe(3);
+    expect(toggleButtons.length).toBe(2);
 
     // Click "Use global default" for max risk
     const maxRiskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
