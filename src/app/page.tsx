@@ -8,6 +8,7 @@ import {
   TrendingUp,
   Star,
 } from 'lucide-react';
+import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
@@ -614,6 +615,11 @@ function HomeContent() {
 
   /** Whether we have dashboard data (used to show/hide widget sections) */
   const hasData = kpis !== null && !isEmpty;
+
+  // Wire visibility-aware MTM polling: refetch every 30s while the tab is visible,
+  // pause when backgrounded. Only active after initial data has loaded.
+  useVisibilityPolling(fetchDashboard, 30000, hasData);
+
   /** Whether we're refetching while stale data is still visible */
   const isRefetching = loading && hasData;
 
