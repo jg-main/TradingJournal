@@ -43,7 +43,7 @@ test.describe('Backup Settings UI', () => {
     await page.waitForLoadState('networkidle');
 
     // Verify heading
-    await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Backup', exact: true })).toBeVisible();
 
     // Verify back link points to hub
     const backLink = page.getByRole('link', { name: /back to settings/i });
@@ -51,9 +51,9 @@ test.describe('Backup Settings UI', () => {
     await expect(backLink).toHaveAttribute('href', '/settings');
 
     // Verify the three sections are present
-    await expect(page.getByText('Status')).toBeVisible();
-    await expect(page.getByText('Automatic Backups')).toBeVisible();
-    await expect(page.getByText('Retention Count')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Status' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Automatic Backups' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Retention Count' })).toBeVisible();
   });
 
   test('toggle enables and disables scheduled backups', async ({ page, request }) => {
@@ -62,10 +62,10 @@ test.describe('Backup Settings UI', () => {
     await page.goto('/settings/backup');
     await page.waitForLoadState('networkidle');
 
-    // Verify initial state: disabled, shows "currently disabled"
+    // Verify initial state: disabled, shows "Scheduled backups are disabled"
     const toggle = page.getByRole('switch');
     await expect(toggle).not.toBeChecked();
-    await expect(page.getByText(/currently disabled/i)).toBeVisible();
+    await expect(page.getByText(/scheduled backups are disabled/i)).toBeVisible();
 
     // Click toggle to enable — wait for PUT response
     const enableRespPromise = page.waitForResponse(
@@ -93,7 +93,7 @@ test.describe('Backup Settings UI', () => {
 
     // Verify toggle is unchecked
     await expect(toggle).not.toBeChecked();
-    await expect(page.getByText(/currently disabled/i)).toBeVisible();
+    await expect(page.getByText(/scheduled backups are disabled/i)).toBeVisible();
   });
 
   test('retention count dropdown saves changes', async ({ page, request }) => {
@@ -116,7 +116,7 @@ test.describe('Backup Settings UI', () => {
         r.request().method() === 'PUT' &&
         r.request().postDataJSON()?.backupRetentionCount === 14,
     );
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
     expect((await saveRespPromise).ok()).toBeTruthy();
 
     // Verify success message appears
@@ -177,13 +177,18 @@ test.describe('Backup Settings UI', () => {
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
-    // Click the Backup card
-    await page.getByRole('link', { name: /scheduled backups/i }).click();
+    // Click the Data & Backups card → lands on data-and-backups sub-hub
+    await page.getByRole('link', { name: /data.*backups/i }).click();
+    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/settings\/data-and-backups$/);
+
+    // Click the Backup card on the sub-hub → lands on the backup page
+    await page.getByRole('link', { name: 'Backup' }).click();
     await page.waitForLoadState('networkidle');
 
     // Verify we landed on the backup page
     await expect(page).toHaveURL(/\/settings\/backup$/);
-    await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Backup', exact: true })).toBeVisible();
   });
 
   test('toggle reverts on API failure', async ({ page, request }) => {
@@ -231,7 +236,7 @@ test.describe('Backup Settings UI', () => {
     await page.waitForLoadState('networkidle');
 
     // The status section should appear even without settings data
-    await expect(page.getByRole('heading', { name: 'Backup' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Backup', exact: true })).toBeVisible();
     await expect(page.getByText('Status')).toBeVisible();
     await expect(page.getByText('Automatic Backups')).toBeVisible();
 

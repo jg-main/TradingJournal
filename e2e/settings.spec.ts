@@ -88,7 +88,7 @@ test.describe('Settings', () => {
   });
 
   test.describe('Danger Zone reset flow', () => {
-    test('full reset flow from Danger Zone button to setup checklist', async ({ page }) => {
+    test('full reset flow from Danger Zone page to setup checklist', async ({ page }) => {
       // Reset readiness tables at test start
       resetReadinessState();
 
@@ -130,34 +130,22 @@ test.describe('Settings', () => {
       });
       expect(setupRes.ok()).toBeTruthy();
 
-      // Navigate to Settings
-      await page.goto('/settings');
+      // Navigate to the standalone Danger Zone page
+      await page.goto('/settings/danger-zone');
       await page.waitForLoadState('networkidle');
 
-      // Verify Danger Zone section is visible
-      await expect(page.getByText('Danger Zone')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Reset Journal' })).toBeVisible();
-
-      // Open reset dialog
-      await page.getByRole('button', { name: 'Reset Journal' }).click();
-
-      // Verify dialog is visible with Factory Reset heading
-      const resetDialog = page.getByRole('dialog', { name: 'Factory reset' });
-      await expect(resetDialog).toBeVisible();
-      await expect(
-        resetDialog.getByRole('heading', { name: 'Factory Reset' }),
-      ).toBeVisible();
-      await expect(resetDialog.getByText('Download Backup')).toBeVisible();
+      // Verify page heading and Factory Reset section are visible
+      await expect(page.getByRole('heading', { name: 'Danger Zone' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Factory Reset' })).toBeVisible();
 
       // Click Download Backup — the onClick sets backupDownloaded = true
       // The browser also triggers a download via the <a download> attribute.
       // We catch the download event gracefully; success in our test is the
       // state change, not the file landing on disk.
-      // Scope to the dialog to avoid ambiguity with Backup card description text
       const downloadPromise = page
         .waitForEvent('download', { timeout: 5000 })
         .catch(() => null);
-      await resetDialog.getByRole('link', { name: 'Download Backup', exact: true }).click();
+      await page.getByRole('link', { name: 'Download Backup', exact: true }).click();
       await downloadPromise;
 
       // Verify backup downloaded indicator appears
@@ -166,7 +154,7 @@ test.describe('Settings', () => {
       ).toBeVisible();
 
       // Click Next to advance to confirm step
-      await resetDialog.getByRole('button', { name: 'Next' }).click();
+      await page.getByRole('button', { name: 'Next', exact: true }).click();
 
       // Verify confirm step and type RESET
       await expect(
@@ -175,10 +163,10 @@ test.describe('Settings', () => {
       await page.getByPlaceholder('Type RESET to confirm').fill('RESET');
 
       // Click Confirm Reset
-      await resetDialog.getByRole('button', { name: 'Confirm Reset' }).click();
+      await page.getByRole('button', { name: 'Confirm Reset' }).click();
 
-      // Wait for success state (RESET sent, 17 tables wiped)
-      await expect(resetDialog.getByText('Reset Complete')).toBeVisible({
+      // Wait for success state (RESET sent, data wiped)
+      await expect(page.getByText('Reset Complete')).toBeVisible({
         timeout: 10000,
       });
 
@@ -608,9 +596,14 @@ test.describe('Settings', () => {
       await page.goto('/settings');
       await page.waitForLoadState('networkidle');
 
-      // Click the Backup card (Next.js Link -> /settings/backup)
-      // Use .first() to disambiguate from "Backup Settings" link
-      await page.getByRole('link', { name: /backup/i }).first().click();
+      // Click the Data & Backups card → lands on data-and-backups sub-hub
+      await page.getByRole('link', { name: /data.*backups/i }).click();
+      await page.waitForLoadState('networkidle');
+      await expect(page).toHaveURL(/\/settings\/data-and-backups$/);
+
+      // Click the Backup card on the sub-hub → lands on the backup page
+      await page.getByRole('link', { name: 'Backup' }).click();
+      await page.waitForLoadState('networkidle');
 
       // Wait for backup page to load
       await expect(page).toHaveURL(/\/settings\/backup$/);

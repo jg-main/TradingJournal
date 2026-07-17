@@ -68,12 +68,12 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
   test('RestoreModal opens and shows browse tab with uploaded tab default', async ({ page, request }) => {
     await seedBackupSettings(request);
 
-    await page.goto('/settings');
+    // Navigate directly to /settings/backup and open the RestoreModal via Upload Backup
+    await page.goto('/settings/backup');
     await page.waitForLoadState('networkidle');
 
-    // Click the Restore card button to open the modal
-    const restoreButton = page.getByRole('button', { name: /restore/i }).first();
-    await restoreButton.click();
+    // Click Upload Backup to open the RestoreModal
+    await page.getByRole('button', { name: /upload backup/i }).click();
 
     // Verify modal is open
     const modal = page.getByRole('dialog', { name: /restore backup/i });
@@ -94,11 +94,12 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
   test('browse tab switches and lists backup files', async ({ page, request }) => {
     await seedBackupSettings(request);
 
-    await page.goto('/settings');
+    // Navigate directly to /settings/backup and open the RestoreModal
+    await page.goto('/settings/backup');
     await page.waitForLoadState('networkidle');
 
-    // Open the RestoreModal
-    await page.getByRole('button', { name: /restore/i }).first().click();
+    // Click Upload Backup to open the RestoreModal
+    await page.getByRole('button', { name: /upload backup/i }).click();
 
     const modal = page.getByRole('dialog', { name: /restore backup/i });
     await expect(modal).toBeVisible();
@@ -124,11 +125,12 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
   test('selecting a browse file advances to confirm step', async ({ page, request }) => {
     await seedBackupSettings(request);
 
-    await page.goto('/settings');
+    // Navigate directly to /settings/backup and open the RestoreModal
+    await page.goto('/settings/backup');
     await page.waitForLoadState('networkidle');
 
-    // Open the RestoreModal
-    await page.getByRole('button', { name: /restore/i }).first().click();
+    // Click Upload Backup to open the RestoreModal
+    await page.getByRole('button', { name: /upload backup/i }).click();
 
     const modal = page.getByRole('dialog', { name: /restore backup/i });
 
@@ -157,11 +159,12 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
   test('back button on confirm returns to browse step', async ({ page, request }) => {
     await seedBackupSettings(request);
 
-    await page.goto('/settings');
+    // Navigate directly to /settings/backup and open the RestoreModal
+    await page.goto('/settings/backup');
     await page.waitForLoadState('networkidle');
 
-    // Open RestoreModal → browse → select file → confirm
-    await page.getByRole('button', { name: /restore/i }).first().click();
+    // Open RestoreModal via Upload Backup → browse → select file → confirm
+    await page.getByRole('button', { name: /upload backup/i }).click();
     const modal = page.getByRole('dialog', { name: /restore backup/i });
 
     await modal.getByRole('button', { name: /browse scheduled backups/i }).click();
@@ -184,10 +187,11 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
 
     await seedBackupSettings(request);
 
-    await page.goto('/settings');
+    // Navigate directly to /settings/backup and open the RestoreModal
+    await page.goto('/settings/backup');
     await page.waitForLoadState('networkidle');
 
-    await page.getByRole('button', { name: /restore/i }).first().click();
+    await page.getByRole('button', { name: /upload backup/i }).click();
     const modal = page.getByRole('dialog', { name: /restore backup/i });
 
     // Switch to browse tab
