@@ -17,6 +17,8 @@ import { DashboardFilters } from '@/components/dashboard-filters';
 import { DashboardV2 } from '@/components/dashboard-v2';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
 import { EquityDrawdownChart } from '@/components/dashboard/equity-drawdown-chart';
+import { CalendarHeatmapWidget } from '@/components/dashboard/calendar-heatmap-widget';
+import { PeriodMatrixWidget } from '@/components/dashboard/period-matrix-widget';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { useDashboardLayout } from '@/components/dashboard/use-dashboard-layout';
 import {
@@ -38,6 +40,8 @@ import {
 import type { Layout } from 'react-grid-layout';
 import type { KpiMetrics, MtmData } from '@/components/dashboard/kpi-widgets';
 import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
+import type { CalendarHeatmapYearData } from '@/lib/calendar-heatmap';
+import type { PeriodMatrixResult } from '@/lib/period-matrix';
 import type {
   MonthlyPerformanceItem,
   RDistributionBin,
@@ -58,30 +62,38 @@ interface DashboardResponse {
   directionalPerformance?: DirectionalPerformanceResult;
   processScoreDistribution?: ProcessScoreBin[];
   tradeMarkers?: TradeMarkerPoint[];
+  calendarHeatmap: CalendarHeatmapYearData[];
+  periodMatrix: Record<string, PeriodMatrixResult>;
 }
 
 // ── Default chart layout (12 cols: 2 charts per row) ──────────────────
 
 const CHART_WIDGET_IDS = [
   'equity-drawdown',
+  'calendar-heatmap',
   'monthly-performance',
   'r-distribution',
+  'period-matrix',
   'directional-performance',
   'process-score-dist',
 ] as const;
 
 const DEFAULT_CHART_LAYOUT = [
   { i: 'equity-drawdown', x: 0, y: 0, w: 12, h: 5, minW: 6, minH: 4 },
-  { i: 'monthly-performance', x: 0, y: 5, w: 6, h: 5, minW: 4, minH: 4 },
-  { i: 'r-distribution', x: 6, y: 5, w: 6, h: 5, minW: 4, minH: 4 },
-  { i: 'directional-performance', x: 0, y: 10, w: 12, h: 3, minW: 6, minH: 3 },
-  { i: 'process-score-dist', x: 0, y: 13, w: 12, h: 5, minW: 6, minH: 4 },
+  { i: 'calendar-heatmap', x: 0, y: 5, w: 12, h: 6, minW: 6, minH: 4 },
+  { i: 'monthly-performance', x: 0, y: 11, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'r-distribution', x: 6, y: 11, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'period-matrix', x: 0, y: 16, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'directional-performance', x: 0, y: 21, w: 12, h: 3, minW: 6, minH: 3 },
+  { i: 'process-score-dist', x: 0, y: 24, w: 12, h: 5, minW: 6, minH: 4 },
 ];
 
 const CHART_TITLES: Record<string, string> = {
   'equity-drawdown': 'Equity & Drawdown',
+  'calendar-heatmap': 'Calendar Heatmap',
   'monthly-performance': 'Monthly Performance',
   'r-distribution': 'R Distribution',
+  'period-matrix': 'Period Comparison',
   'directional-performance': 'Directional Performance',
   'process-score-dist': 'Process Quality Score Distribution',
 };
@@ -216,6 +228,8 @@ function HomeContent() {
   const directionalPerformance = data?.directionalPerformance ?? null;
   const processScoreDistribution = data?.processScoreDistribution ?? null;
   const tradeMarkers = data?.tradeMarkers ?? [];
+  const calendarHeatmap = data?.calendarHeatmap ?? [];
+  const periodMatrix = data?.periodMatrix ?? null;
 
   // Detect empty state
   const isEmpty =
@@ -468,6 +482,24 @@ function HomeContent() {
               description="Long/short performance breakdown will appear after you close trades in both directions."
             />
           </div>
+        );
+      case 'calendar-heatmap':
+        return (
+          <CalendarHeatmapWidget
+            heatmapData={calendarHeatmap}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-calendar-heatmap"
+          />
+        );
+      case 'period-matrix':
+        return (
+          <PeriodMatrixWidget
+            periodMatrixData={periodMatrix}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-period-matrix"
+          />
         );
       case 'process-score-dist':
         return processScoreDistribution !== null && !processScoreDistribution.every((b) => b.count === 0) && processScoreOption ? (
