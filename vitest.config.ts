@@ -108,7 +108,6 @@ export default defineConfig({
       'src/components/dashboard/setup-ranking-widget.test.tsx',
       'src/components/dashboard/process-discipline-widget.test.tsx',
       'src/components/dashboard/attention-insights-widget.test.tsx',
-      'src/components/dashboard/valuation-positions-widget.test.tsx',
       'src/components/dashboard/add-remove-widgets-dialog.test.tsx',
       'src/components/dashboard/view-switcher.test.tsx',
       'src/components/dashboard/manage-views-dialog.test.tsx',

@@ -119,6 +119,13 @@ const MOCK_DASHBOARD: DashboardV2Response = {
       'Reconciliation has not been run. Run the cutover migration to compare journal and ledger data.',
     ],
   },
+  riskSummary: {
+    openPnl: '120.00',
+    openRisk: '500.00',
+    portfolioHeat: '2.86',
+    missingStops: 0,
+    positionsWithStop: 2,
+  },
   computedAt: new Date().toISOString(),
 };
 

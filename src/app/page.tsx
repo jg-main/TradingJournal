@@ -27,7 +27,7 @@ import { DirectionalPerformanceWidget } from '@/components/dashboard/directional
 import { AccountPerformancePanel } from '@/components/dashboard/account-performance-panel';
 import { PtdPerformancePanel } from '@/components/dashboard/ptd-performance-panel';
 import { CurrentRiskPanel } from '@/components/dashboard/current-risk-panel';
-import { ValuationPositionsWidget } from '@/components/dashboard/valuation-positions-widget';
+import { OpenPositionsRiskWidget } from '@/components/dashboard/open-positions-risk-widget';
 import { useDashboardLayout } from '@/components/dashboard/use-dashboard-layout';
 import {
   FilterProvider,
@@ -501,10 +501,11 @@ function HomeContent() {
         );
 
       // ── Valuation / Account Details ──────────────────────────────────
-      case WIDGET_IDS.VALUATION_POSITIONS:
+      case WIDGET_IDS.OPEN_POSITIONS_RISK:
         return (
-          <ValuationPositionsWidget
-            data={v2Data?.valuation ?? null}
+          <OpenPositionsRiskWidget
+            valuation={v2Data?.valuation ?? null}
+            riskSummary={v2Data?.riskSummary ?? null}
             isLoading={isV2Refetching}
             error={v2Error}
           />

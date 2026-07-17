@@ -17,7 +17,7 @@
  * |---------------|------------------------------------------------|
  * | `metrics`     | account-performance, ptd-performance, current-risk |
  * | `charts`      | equity-drawdown, calendar-heatmap, setup-ranking, process-discipline, monthly-performance, r-distribution, period-matrix, attention-insights, directional-performance |
- * | `valuation`   | valuation-positions                            |
+ * | `valuation`   | valuation-positions, open-positions-risk        |
  *
  * ## Default Layout
  *
@@ -64,6 +64,7 @@ export const WIDGET_IDS = {
 
   // ── Valuation / Account Details ──────────────────────────────────
   VALUATION_POSITIONS: 'valuation-positions',
+  OPEN_POSITIONS_RISK: 'open-positions-risk',
 } as const;
 
 /** Union type of all registered widget ID string values */
@@ -173,7 +174,7 @@ export const WIDGET_REGISTRY = {
     title: 'Calendar Heatmap',
     category: 'charts',
     defaultLayout: {
-      x: 0, y: 12, w: 12, h: 6,
+      x: 0, y: 16, w: 12, h: 6,
       minW: 6, minH: 4,
     },
     defaultVisibility: true,
@@ -184,7 +185,7 @@ export const WIDGET_REGISTRY = {
     title: 'Setup Ranking',
     category: 'charts',
     defaultLayout: {
-      x: 0, y: 18, w: 6, h: 5,
+      x: 0, y: 22, w: 6, h: 5,
       minW: 4, minH: 4,
     },
     defaultVisibility: true,
@@ -195,7 +196,7 @@ export const WIDGET_REGISTRY = {
     title: 'Process Discipline',
     category: 'charts',
     defaultLayout: {
-      x: 6, y: 18, w: 6, h: 5,
+      x: 6, y: 22, w: 6, h: 5,
       minW: 4, minH: 4,
     },
     defaultVisibility: true,
@@ -206,7 +207,7 @@ export const WIDGET_REGISTRY = {
     title: 'Monthly Performance',
     category: 'charts',
     defaultLayout: {
-      x: 0, y: 23, w: 6, h: 5,
+      x: 0, y: 27, w: 6, h: 5,
       minW: 4, minH: 4,
     },
     defaultVisibility: true,
@@ -217,7 +218,7 @@ export const WIDGET_REGISTRY = {
     title: 'R Distribution',
     category: 'charts',
     defaultLayout: {
-      x: 6, y: 23, w: 6, h: 5,
+      x: 6, y: 27, w: 6, h: 5,
       minW: 4, minH: 4,
     },
     defaultVisibility: true,
@@ -228,7 +229,7 @@ export const WIDGET_REGISTRY = {
     title: 'Period Comparison',
     category: 'charts',
     defaultLayout: {
-      x: 0, y: 28, w: 6, h: 5,
+      x: 0, y: 32, w: 6, h: 5,
       minW: 4, minH: 4,
     },
     defaultVisibility: true,
@@ -239,7 +240,7 @@ export const WIDGET_REGISTRY = {
     title: 'Attention Insights',
     category: 'charts',
     defaultLayout: {
-      x: 6, y: 28, w: 6, h: 5,
+      x: 6, y: 32, w: 6, h: 5,
       minW: 4, minH: 4,
     },
     defaultVisibility: true,
@@ -250,7 +251,7 @@ export const WIDGET_REGISTRY = {
     title: 'Directional Performance',
     category: 'charts',
     defaultLayout: {
-      x: 0, y: 33, w: 12, h: 3,
+      x: 0, y: 37, w: 12, h: 3,
       minW: 6, minH: 3,
     },
     defaultVisibility: true,
@@ -260,15 +261,26 @@ export const WIDGET_REGISTRY = {
   // Valuation / Account Details
   // ═══════════════════════════════════════════════════════════════════
 
+  [WIDGET_IDS.OPEN_POSITIONS_RISK]: {
+    id: WIDGET_IDS.OPEN_POSITIONS_RISK,
+    title: 'Open Positions & Risk',
+    category: 'valuation',
+    defaultLayout: {
+      x: 0, y: 12, w: 12, h: 4,
+      minW: 6, minH: 4,
+    },
+    defaultVisibility: true,
+  } satisfies WidgetDefinition,
+
   [WIDGET_IDS.VALUATION_POSITIONS]: {
     id: WIDGET_IDS.VALUATION_POSITIONS,
     title: 'Valuation Positions',
     category: 'valuation',
     defaultLayout: {
-      x: 0, y: 36, w: 12, h: 4,
+      x: 0, y: 40, w: 12, h: 4,
       minW: 6, minH: 3,
     },
-    defaultVisibility: true,
+    defaultVisibility: false,
   } satisfies WidgetDefinition,
 } as const satisfies Record<WidgetId, WidgetDefinition>;
 

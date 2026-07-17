@@ -52,6 +52,13 @@ const SAMPLE_DATA: DashboardV2Response = {
     status: 'healthy',
     warnings: [],
   },
+  riskSummary: {
+    openPnl: '42.50',
+    openRisk: '1000.00',
+    portfolioHeat: '5.79',
+    missingStops: 0,
+    positionsWithStop: 2,
+  },
   computedAt: '2026-07-17T20:00:00.000Z',
 };
 
