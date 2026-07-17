@@ -100,6 +100,7 @@ export default defineConfig({
       'src/components/dashboard/kpi-widgets.test.tsx',
       'src/components/dashboard/equity-drawdown-chart.test.tsx',
       'src/components/dashboard/monthly-performance-chart.test.tsx',
+      'src/components/dashboard/open-positions-risk-widget.test.tsx',
       'src/components/dashboard/r-distribution-chart.test.tsx',
       'src/components/dashboard/directional-performance-widget.test.tsx',
       'src/components/dashboard/calendar-heatmap-widget.test.tsx',

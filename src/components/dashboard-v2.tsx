@@ -59,6 +59,20 @@ export interface ValuationCompleteness {
   positions: DashboardPositionSummary[];
 }
 
+/** Risk summary derived from open positions and journal trades. */
+export interface RiskSummary {
+  /** Sum of unrealizedPnl across all open positions (canonical decimal). */
+  openPnl: string;
+  /** Sum of initialRiskAmount from open journal trades (canonical decimal). */
+  openRisk: string;
+  /** openRisk / NAV * 100 as a percentage (canonical decimal), or null when NAV is zero. */
+  portfolioHeat: string | null;
+  /** Number of open trades without a planned_stop. */
+  missingStops: number;
+  /** Number of open trades with a planned_stop set. */
+  positionsWithStop: number;
+}
+
 export interface JournalAttribution {
   hasJournalTrades: boolean;
   journalExecutionCount: number;
@@ -84,6 +98,7 @@ export interface DashboardV2Response {
   };
   valuation: ValuationCompleteness;
   journalAttribution: JournalAttribution;
+  riskSummary: RiskSummary;
   integrity: {
     status: IntegrityStatus;
     warnings: string[];
