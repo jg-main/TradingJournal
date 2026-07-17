@@ -11,8 +11,8 @@ const updateAccountSchema = z.object({
   broker: z.string().max(200).nullable().optional(),
   currency: z.string().min(1).max(3).optional(),
   isActive: z.boolean().optional(),
-  maxRiskPerTradePct: z.number().positive().optional(),
-  defaultCommission: z.number().min(0).optional(),
+  maxRiskPerTradePct: z.number().positive().nullable().optional(),
+  defaultCommission: z.number().min(0).nullable().optional(),
   // Opening cash must be posted through account transactions, not account settings.
   startingBalance: z.never().optional(),
 });
