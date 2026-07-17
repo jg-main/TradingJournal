@@ -31,6 +31,8 @@ import {
   computeDrawdown,
   computeTradeMarkers,
 } from '@/lib/equity';
+import { computeCalendarHeatmap, type CalendarHeatmapTradeInput } from '@/lib/calendar-heatmap';
+import { computePeriodMatrix, type PeriodMatrixTradeInput } from '@/lib/period-matrix';
 
 /**
  * Chunk an array of IDs into batches of CHUNK_SIZE and run a query for each chunk,
@@ -313,6 +315,29 @@ export async function GET(request: NextRequest) {
 
     const tradeMarkers = computeTradeMarkers(dateFilteredClosedInputs, rollforwardRowsForCharts);
 
+    // 11. Compute calendar heatmap and period matrix from closed trade data
+    const heatmapInputs: CalendarHeatmapTradeInput[] = closedKpiInputs.map((input) => ({
+      id: input.id,
+      direction: input.direction,
+      executions: input.executions,
+      closedAt: input.closedAt,
+    }));
+
+    const periodInputs: PeriodMatrixTradeInput[] = closedKpiInputs.map((input) => ({
+      id: input.id,
+      direction: input.direction,
+      executions: input.executions,
+      riskSnapshot: input.riskSnapshot,
+      closedAt: input.closedAt,
+    }));
+
+    const calendarHeatmap = computeCalendarHeatmap(heatmapInputs);
+    const periodMatrix = {
+      wow: computePeriodMatrix(periodInputs, 'wow'),
+      mom: computePeriodMatrix(periodInputs, 'mom'),
+      qoq: computePeriodMatrix(periodInputs, 'qoq'),
+    };
+
     return NextResponse.json({
       kpis,
       mtm,
@@ -323,6 +348,8 @@ export async function GET(request: NextRequest) {
       directionalPerformance,
       processScoreDistribution,
       tradeMarkers,
+      calendarHeatmap,
+      periodMatrix,
     });
   } catch (error) {
     return NextResponse.json(

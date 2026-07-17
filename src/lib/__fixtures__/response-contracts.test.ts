@@ -76,6 +76,16 @@ import {
   type DrawdownDataPoint,
   type TradeMarkerPoint,
 } from '../equity';
+import {
+  computeCalendarHeatmap,
+  type CalendarHeatmapTradeInput,
+  type CalendarHeatmapYearData,
+} from '../calendar-heatmap';
+import {
+  computePeriodMatrix,
+  type PeriodMatrixTradeInput,
+  type PeriodMatrixResult,
+} from '../period-matrix';
 
 /* ── Assertion helpers ──────────────────────────────────────────────── */
 
@@ -250,6 +260,28 @@ section('API 1: Dashboard');
   const directionalPerformance = computeDirectionalPerformance(closedInputs);
   const processScoreDistribution = computeProcessScoreDistribution(closedInputs);
 
+  // Compute calendar heatmap and period matrix (matching route.ts)
+  const heatmapInputs: CalendarHeatmapTradeInput[] = closedInputs.map((t) => ({
+    id: t.id,
+    direction: t.direction,
+    executions: t.executions,
+    closedAt: t.closedAt,
+  }));
+  const periodInputs: PeriodMatrixTradeInput[] = closedInputs.map((t) => ({
+    id: t.id,
+    direction: t.direction,
+    executions: t.executions,
+    riskSnapshot: t.riskSnapshot,
+    closedAt: t.closedAt,
+  }));
+
+  const calendarHeatmap = computeCalendarHeatmap(heatmapInputs);
+  const periodMatrix = {
+    wow: computePeriodMatrix(periodInputs, 'wow'),
+    mom: computePeriodMatrix(periodInputs, 'mom'),
+    qoq: computePeriodMatrix(periodInputs, 'qoq'),
+  };
+
   // ── Construct the dashboard response object ────────────────────
   const dashboardResponse = {
     kpis,
@@ -261,6 +293,8 @@ section('API 1: Dashboard');
     directionalPerformance,
     processScoreDistribution,
     tradeMarkers: [] as TradeMarkerPoint[],
+    calendarHeatmap,
+    periodMatrix,
   };
 
   // ── Verify top-level structure ─────────────────────────────────
@@ -273,6 +307,38 @@ section('API 1: Dashboard');
   assert('  directionalPerformance is object', typeof dashboardResponse.directionalPerformance === 'object');
   assert('  processScoreDistribution is array', Array.isArray(dashboardResponse.processScoreDistribution));
   assert('  tradeMarkers is array', Array.isArray(dashboardResponse.tradeMarkers));
+
+  // ── Calendar Heatmap contract ─────────────────────────────────
+  assert('  calendarHeatmap is array', Array.isArray(dashboardResponse.calendarHeatmap));
+  const ch = dashboardResponse.calendarHeatmap[0];
+  if (ch) {
+    assertField(ch as unknown as Record<string, unknown>, 'year', 'number');
+    assert('  calendarHeatmap[0].days is array', Array.isArray(ch.days));
+  }
+
+  // ── Period Matrix contract ────────────────────────────────────
+  assert('  periodMatrix is object', typeof dashboardResponse.periodMatrix === 'object');
+  const pm = dashboardResponse.periodMatrix;
+  assert('  periodMatrix.wow is object', typeof pm.wow === 'object');
+  assert('  periodMatrix.mom is object', typeof pm.mom === 'object');
+  assert('  periodMatrix.qoq is object', typeof pm.qoq === 'object');
+  assert(pm.wow.comparisonType === 'wow', '  periodMatrix.wow.comparisonType = wow');
+  assert(pm.mom.comparisonType === 'mom', '  periodMatrix.mom.comparisonType = mom');
+  assert(pm.qoq.comparisonType === 'qoq', '  periodMatrix.qoq.comparisonType = qoq');
+  assert('  periodMatrix.wow.rows is array', Array.isArray(pm.wow.rows));
+  const perfRow = pm.wow.rows[0];
+  if (perfRow) {
+    assert('  row.current is object', typeof perfRow.current === 'object');
+    assert('  row.previous is object', typeof perfRow.previous === 'object');
+    assert('  row.delta is object', typeof perfRow.delta === 'object');
+    assertField(perfRow.current as unknown as Record<string, unknown>, 'periodId', 'string');
+    assertField(perfRow.current as unknown as Record<string, unknown>, 'periodLabel', 'string');
+    assertField(perfRow.current as unknown as Record<string, unknown>, 'pnl', 'number');
+    assertField(perfRow.current as unknown as Record<string, unknown>, 'tradeCount', 'number');
+    assert('  current.avgR is number or null', perfRow.current.avgR === null || typeof perfRow.current.avgR === 'number');
+    assert('  delta.pnl is number', typeof perfRow.delta.pnl === 'number');
+    assert('  delta.tradeCount is number', typeof perfRow.delta.tradeCount === 'number');
+  }
 
   // ── KPI contract ─────────────────────────────────────────────
   const k = dashboardResponse.kpis;

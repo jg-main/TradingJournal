@@ -41,6 +41,8 @@ import {
   type EquityDataPoint,
   type DrawdownDataPoint,
 } from '@/lib/equity';
+import { computeCalendarHeatmap, type CalendarHeatmapTradeInput, type CalendarHeatmapYearData } from '@/lib/calendar-heatmap';
+import { computePeriodMatrix, type PeriodMatrixTradeInput, type PeriodMatrixResult } from '@/lib/period-matrix';
 
 let passed = 0;
 let failed = 0;
@@ -132,6 +134,11 @@ sqlite.exec(`
     default_commission REAL,
     journal_start_date TEXT,
     currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp),
     FOREIGN KEY (default_account_id) REFERENCES accounts(id)
@@ -256,7 +263,7 @@ interface MtmResult {
 
 interface DashboardRouteResult {
   status: number;
-  body: { kpis?: KpiMetrics; mtm?: MtmResult; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; processScoreDistribution?: ProcessScoreBin[]; error?: string; details?: unknown };
+  body: { kpis?: KpiMetrics; mtm?: MtmResult; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; processScoreDistribution?: ProcessScoreBin[]; calendarHeatmap?: CalendarHeatmapYearData[]; periodMatrix?: { wow: PeriodMatrixResult; mom: PeriodMatrixResult; qoq: PeriodMatrixResult }; error?: string; details?: unknown };
 }
 
 function doGetDashboard(
@@ -567,7 +574,30 @@ function doGetDashboard(
     const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
     const processScoreDistribution = computeProcessScoreDistribution(closedKpiInputs);
 
-    return { status: 200, body: { kpis, mtm, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution } };
+    // Compute calendar heatmap and period matrix (matching route.ts)
+    const heatmapInputs: CalendarHeatmapTradeInput[] = closedKpiInputs.map((input) => ({
+      id: input.id,
+      direction: input.direction,
+      executions: input.executions,
+      closedAt: input.closedAt,
+    }));
+
+    const periodInputs: PeriodMatrixTradeInput[] = closedKpiInputs.map((input) => ({
+      id: input.id,
+      direction: input.direction,
+      executions: input.executions,
+      riskSnapshot: input.riskSnapshot,
+      closedAt: input.closedAt,
+    }));
+
+    const calendarHeatmap = computeCalendarHeatmap(heatmapInputs);
+    const periodMatrix = {
+      wow: computePeriodMatrix(periodInputs, 'wow'),
+      mom: computePeriodMatrix(periodInputs, 'mom'),
+      qoq: computePeriodMatrix(periodInputs, 'qoq'),
+    };
+
+    return { status: 200, body: { kpis, mtm, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution, calendarHeatmap, periodMatrix } };
   } catch (error) {
     return {
       status: 500,
@@ -2104,6 +2134,238 @@ cleanup();
   assert(Array.isArray(result.body.monthlyPerformance), 'monthlyPerformance present');
 }
 
+
+// ── Calendar Heatmap Tests ──────────────────────────────────────────
+
+console.log('\n▶ Calendar Heatmap');
+
+// ── Test NN: calendarHeatmap is empty array when no closed trades ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const result = doGetDashboard(accountId);
+  assert(Array.isArray(result.body.calendarHeatmap), 'calendarHeatmap is an array');
+  assert(result.body.calendarHeatmap!.length === 0, 'calendarHeatmap is empty when no trades');
+}
+
+// ── Test NN: calendarHeatmap with trades on same date ──────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Two trades closing on the same day: 2026-06-15
+  const t1 = seedTrade(accountId, {
+    symbol: 'HM-1',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'HM-2',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T14:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 50, price: 200, fees: 3 });
+  seedExecution(t2, { action: 'sell', quantity: 50, price: 190, fees: 3 });
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.calendarHeatmap!.length === 1, 'calendarHeatmap has 1 year (2026)');
+  assert(result.body.calendarHeatmap![0].year === 2026, 'Year is 2026');
+  assert(result.body.calendarHeatmap![0].days.length === 1, '1 day with activity');
+  assert(result.body.calendarHeatmap![0].days[0].date === '2026-06-15', 'Date is 2026-06-15');
+  // t1 P&L = (120-100)*100 - 10 = 1990, t2 P&L = (190-200)*50 - 6 = -506
+  // Combined = 1990 + (-506) = 1484
+  assertClose(result.body.calendarHeatmap![0].days[0].pnl, 1484, 'Combined daily P&L = 1990 + (-506) = 1484');
+}
+
+// ── Test NN: calendarHeatmap with trades on different dates --------
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'HM-JUN',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-10T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100, fees: 2 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110, fees: 2 });
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'HM-JUL',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-07-05T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 100, fees: 1 });
+  seedExecution(t2, { action: 'sell', quantity: 10, price: 150, fees: 1 });
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.calendarHeatmap!.length === 1, 'calendarHeatmap has 1 year (2026)');
+  assert(result.body.calendarHeatmap![0].days.length === 2, '2 days with activity');
+  assert(result.body.calendarHeatmap![0].days[0].date < result.body.calendarHeatmap![0].days[1].date, 'Days sorted chronologically');
+  assertClose(result.body.calendarHeatmap![0].days[0].pnl, 96, 'June P&L = (110-100)*10 - 4 = 96');
+  assertClose(result.body.calendarHeatmap![0].days[1].pnl, 498, 'July P&L = (150-100)*10 - 2 = 498');
+}
+
+// ── Test NN: Open trades excluded from calendarHeatmap ─────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'CLOSED-HM',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-10T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+
+  const t2 = seedTrade(accountId, {
+    symbol: 'OPEN-HM',
+    direction: 'long',
+    status: 'open',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 10, price: 150 });
+
+  seedRollforward(accountId, { endingEquity: 50000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.calendarHeatmap!.length === 1, 'calendarHeatmap has 1 year');
+  assert(result.body.calendarHeatmap![0].days.length === 1, 'Only 1 day (open trade excluded)');
+}
+
+// ── Period Matrix Tests ─────────────────────────────────────────────
+
+console.log('\n▶ Period Matrix');
+
+// ── Test NN: periodMatrix has all 3 comparison types ────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'PM-TEST',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+  seedRiskSnapshot(t1, 500);
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.periodMatrix !== undefined, 'periodMatrix present in response');
+  assert(result.body.periodMatrix!.wow !== undefined, 'periodMatrix.wow present');
+  assert(result.body.periodMatrix!.mom !== undefined, 'periodMatrix.mom present');
+  assert(result.body.periodMatrix!.qoq !== undefined, 'periodMatrix.qoq present');
+
+  // Each comparison type should have rows with the correct structure
+  assert(result.body.periodMatrix!.wow.comparisonType === 'wow', 'wow.comparisonType = wow');
+  assert(result.body.periodMatrix!.mom.comparisonType === 'mom', 'mom.comparisonType = mom');
+  assert(result.body.periodMatrix!.qoq.comparisonType === 'qoq', 'qoq.comparisonType = qoq');
+}
+
+// ── Test NN: periodMatrix rows have correct shape ───────────────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'PM-SHAPE',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+  seedRiskSnapshot(t1, 500);
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  const mom = result.body.periodMatrix!.mom;
+
+  // With 1 trade in June 2026, mom should have 4 periods and 3 comparison rows
+  assert(mom.rows.length > 0, 'periodMatrix.mom has rows');
+  const row = mom.rows[0];
+  assert(row.current !== undefined, 'row.current present');
+  assert(row.previous !== undefined, 'row.previous present');
+  assert(row.delta !== undefined, 'row.delta present');
+
+  // PeriodMetrics shape
+  assert(typeof row.current.periodId === 'string', 'current.periodId is string');
+  assert(typeof row.current.periodLabel === 'string', 'current.periodLabel is string');
+  assert(typeof row.current.pnl === 'number', 'current.pnl is number');
+  assert(typeof row.current.tradeCount === 'number', 'current.tradeCount is number');
+  assert(row.current.avgR === null || typeof row.current.avgR === 'number', 'current.avgR is number or null');
+
+  // PeriodDelta shape
+  assert(row.delta.winRate === null || typeof row.delta.winRate === 'number', 'delta.winRate is number or null');
+  assert(typeof row.delta.pnl === 'number', 'delta.pnl is number');
+  assert(typeof row.delta.tradeCount === 'number', 'delta.tradeCount is number');
+  assert(row.delta.avgR === null || typeof row.delta.avgR === 'number', 'delta.avgR is number or null');
+}
+
+// ── Test NN: Both new fields present alongside existing fields ──────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const t1 = seedTrade(accountId, {
+    symbol: 'ALL-FIELDS',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+  seedRiskSnapshot(t1, 500);
+  seedGrade(t1, 80);
+
+  seedRollforward(accountId, { endingEquity: 52000, drawdownAmount: -200, drawdownPct: -0.01 });
+
+  const result = doGetDashboard(accountId);
+
+  // Existing KPIs still present
+  assert(result.body.kpis !== undefined, 'kpis present with new fields');
+  assertClose(result.body.kpis!.netPnl, 1990, 'netPnl still correct');
+
+  // Existing arrays still present
+  assert(Array.isArray(result.body.equityCurve), 'equityCurve present');
+  assert(Array.isArray(result.body.drawdown), 'drawdown present');
+  assert(Array.isArray(result.body.monthlyPerformance), 'monthlyPerformance present');
+  assert(Array.isArray(result.body.rDistribution), 'rDistribution present');
+  assert(Array.isArray(result.body.processScoreDistribution), 'processScoreDistribution present');
+  assert(result.body.directionalPerformance !== undefined, 'directionalPerformance present');
+  assert(result.body.mtm !== undefined, 'mtm present');
+
+  // New fields present
+  assert(Array.isArray(result.body.calendarHeatmap), 'calendarHeatmap present alongside existing fields');
+  assert(result.body.periodMatrix !== undefined, 'periodMatrix present alongside existing fields');
+  assert(result.body.calendarHeatmap!.length > 0, 'calendarHeatmap has data');
+  assert(result.body.periodMatrix!.mom.rows.length > 0, 'periodMatrix.mom has data');
+}
 // ── Summary ────────────────────────────────────────────────────────────
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
