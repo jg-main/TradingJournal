@@ -34,8 +34,8 @@ export function DashboardLayout({
   layout,
   onLayoutChange,
   cols = 12,
-  rowHeight = 120,
-  margin = [16, 16] as const,
+  rowHeight = 60,
+  margin = [8, 8] as const,
   children,
   isCustomizing = false,
 }: DashboardLayoutProps) {

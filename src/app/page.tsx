@@ -605,9 +605,9 @@ function HomeContent() {
   // ── Render ─────────────────────────────────────────────────────────
 
   return (
-    <div className="px-4 py-3 sm:px-8 sm:py-10">
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
+    <div className="px-3 py-2 sm:px-6 sm:py-3">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
           Dashboard
         </h1>
         <div className="flex items-center gap-2">
@@ -657,10 +657,6 @@ function HomeContent() {
           <ThemeToggle />
         </div>
       </div>
-      <p className="mb-8 text-sm text-zinc-500 dark:text-zinc-400">
-        Overview of your trading performance and activity.
-      </p>
-
       {/* Global Filter Bar */}
       <DashboardFilters
         dateFrom={filters.dateFrom}
@@ -672,7 +668,7 @@ function HomeContent() {
       />
 
       {/* Quick date filters — wired to FilterProvider actions */}
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="mb-2 flex flex-wrap gap-1">
         {[
           { label: '1W', days: 7 },
           { label: '1M', days: 30 },
@@ -702,7 +698,7 @@ function HomeContent() {
 
       {/* Error state — initial load failure */}
       {error && !data && (
-        <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           <AlertTriangle className="size-4 shrink-0" />
           <span className="flex-1">{error}</span>
           <button
@@ -725,8 +721,8 @@ function HomeContent() {
             layout={visibleLayout}
             onLayoutChange={(newLayout: Layout) => setUnifiedLayout([...newLayout])}
             cols={12}
-            rowHeight={80}
-            margin={[12, 12]}
+            rowHeight={60}
+            margin={[8, 8]}
             isCustomizing={cm.isCustomizing}
           >
             {visibleLayout.map((item) => (
