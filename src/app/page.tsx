@@ -796,7 +796,7 @@ function HomeContent() {
                       },
                       yAxis: [
                         { type: 'value' as const, name: 'P&L ($)' },
-                        { type: 'value' as const, name: 'Win Rate', min: 0, max: 1, axisLabel: { formatter: '{value}%' } },
+                        { type: 'value' as const, name: 'Win Rate', min: 0, max: 1, axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
                       ],
                       series: [
                         {
