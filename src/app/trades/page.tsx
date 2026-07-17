@@ -135,7 +135,7 @@ export default function TradesPage() {
     }
   }, [page, statusFilter, fetchItems]);
 
-  useVisibilityPolling(refreshPrices, 30000, hasOpenTrades);
+  useVisibilityPolling(refreshPrices, 15000, hasOpenTrades);
 
   const handleDelete = useCallback(async (id: string, tradeCode: string) => {
     if (!confirm(`Delete trade ${tradeCode}?`)) return;
@@ -238,7 +238,7 @@ export default function TradesPage() {
           {hasOpenTrades && (
             <span
               className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
-              title={lastRefreshRef.current ? `Last auto-refresh: ${new Date(lastRefreshRef.current).toLocaleTimeString()}` : 'Auto-refreshing prices for open trades'}
+              title={lastRefreshRef.current ? `Prices refresh every 15s. Last: ${new Date(lastRefreshRef.current).toLocaleTimeString()}` : 'Auto-refreshing prices for open trades'}
             >
               <span className={`size-1.5 rounded-full ${refreshing ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-500'}`} />
               Live
@@ -313,7 +313,7 @@ export default function TradesPage() {
           data={data}
           columns={columns}
           storageKey="trades"
-          initialVisibility={{ qty: false, target2: false, thesis: false, account: false, pnl: false, riskPct: false, returnPct: false }}
+          initialVisibility={{ qty: false, target2: false, thesis: false, account: false, riskPct: false }}
           onRowClick={row => router.push('/trades/' + row.original.id)}
         />
       )}
