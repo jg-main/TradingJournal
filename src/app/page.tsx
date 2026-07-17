@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   NotebookPen,
   TrendingUp,
-  Star,
 } from 'lucide-react';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 
@@ -19,6 +18,9 @@ import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
 import { EquityDrawdownChart } from '@/components/dashboard/equity-drawdown-chart';
 import { CalendarHeatmapWidget } from '@/components/dashboard/calendar-heatmap-widget';
 import { PeriodMatrixWidget } from '@/components/dashboard/period-matrix-widget';
+import { SetupRankingWidget } from '@/components/dashboard/setup-ranking-widget';
+import { ProcessDisciplineWidget } from '@/components/dashboard/process-discipline-widget';
+import { AttentionInsightsWidget } from '@/components/dashboard/attention-insights-widget';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { useDashboardLayout } from '@/components/dashboard/use-dashboard-layout';
 import {
@@ -48,6 +50,8 @@ import type {
   DirectionalPerformanceResult,
   ProcessScoreBin,
 } from '@/lib/dashboard';
+import type { SetupPerfResult } from '@/lib/review-dashboard';
+import type { AttentionInsight } from '@/lib/attention-insights';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -64,6 +68,8 @@ interface DashboardResponse {
   tradeMarkers?: TradeMarkerPoint[];
   calendarHeatmap: CalendarHeatmapYearData[];
   periodMatrix: Record<string, PeriodMatrixResult>;
+  setupRanking: SetupPerfResult[];
+  attentionInsights: { insights: AttentionInsight[]; tradeCount: number };
 }
 
 // ── Default chart layout (12 cols: 2 charts per row) ──────────────────
@@ -71,31 +77,37 @@ interface DashboardResponse {
 const CHART_WIDGET_IDS = [
   'equity-drawdown',
   'calendar-heatmap',
+  'setup-ranking',
+  'process-discipline',
   'monthly-performance',
   'r-distribution',
   'period-matrix',
+  'attention-insights',
   'directional-performance',
-  'process-score-dist',
 ] as const;
 
 const DEFAULT_CHART_LAYOUT = [
   { i: 'equity-drawdown', x: 0, y: 0, w: 12, h: 5, minW: 6, minH: 4 },
   { i: 'calendar-heatmap', x: 0, y: 5, w: 12, h: 6, minW: 6, minH: 4 },
-  { i: 'monthly-performance', x: 0, y: 11, w: 6, h: 5, minW: 4, minH: 4 },
-  { i: 'r-distribution', x: 6, y: 11, w: 6, h: 5, minW: 4, minH: 4 },
-  { i: 'period-matrix', x: 0, y: 16, w: 6, h: 5, minW: 4, minH: 4 },
-  { i: 'directional-performance', x: 0, y: 21, w: 12, h: 3, minW: 6, minH: 3 },
-  { i: 'process-score-dist', x: 0, y: 24, w: 12, h: 5, minW: 6, minH: 4 },
+  { i: 'setup-ranking', x: 0, y: 11, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'process-discipline', x: 6, y: 11, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'monthly-performance', x: 0, y: 16, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'r-distribution', x: 6, y: 16, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'period-matrix', x: 0, y: 21, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'attention-insights', x: 6, y: 21, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'directional-performance', x: 0, y: 26, w: 12, h: 3, minW: 6, minH: 3 },
 ];
 
 const CHART_TITLES: Record<string, string> = {
   'equity-drawdown': 'Equity & Drawdown',
   'calendar-heatmap': 'Calendar Heatmap',
+  'setup-ranking': 'Setup Ranking',
+  'process-discipline': 'Process Discipline',
   'monthly-performance': 'Monthly Performance',
   'r-distribution': 'R Distribution',
   'period-matrix': 'Period Comparison',
+  'attention-insights': 'Attention Insights',
   'directional-performance': 'Directional Performance',
-  'process-score-dist': 'Process Quality Score Distribution',
 };
 
 // ── Skeleton Card ──────────────────────────────────────────────────────
@@ -227,6 +239,8 @@ function HomeContent() {
   const rDistribution = data?.rDistribution ?? [];
   const directionalPerformance = data?.directionalPerformance ?? null;
   const processScoreDistribution = data?.processScoreDistribution ?? null;
+  const setupRanking = data?.setupRanking ?? [];
+  const attentionInsights = data?.attentionInsights ?? { insights: [], tradeCount: 0 };
   const tradeMarkers = data?.tradeMarkers ?? [];
   const calendarHeatmap = data?.calendarHeatmap ?? [];
   const periodMatrix = data?.periodMatrix ?? null;
@@ -333,49 +347,6 @@ function HomeContent() {
         grid: { left: '10%', right: '5%', top: 20, bottom: 35 },
       }
     : null;
-
-  const processScoreOption =
-    processScoreDistribution !== null && !processScoreDistribution.every((b) => b.count === 0)
-      ? {
-          tooltip: {
-            trigger: 'axis',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            formatter: (params: any) => {
-              if (!Array.isArray(params) || params.length === 0) return '';
-              const idx = params[0].dataIndex;
-              const bin = processScoreDistribution[idx];
-              if (!bin) return '';
-              return `<strong>${bin.label}</strong><br/>Trades: ${bin.count}`;
-            },
-          },
-          xAxis: {
-            type: 'category' as const,
-            data: processScoreDistribution.map((b) => b.label),
-            axisLabel: { rotate: 30 },
-          },
-          yAxis: { type: 'value' as const, name: 'Trades' },
-          series: [
-            {
-              name: 'Trades',
-              type: 'bar' as const,
-              data: processScoreDistribution.map((b) => {
-                const colors: Record<string, string> = {
-                  'A (54-60)': '#22c55e',
-                  'B (42-53)': '#84cc16',
-                  'C (30-41)': '#eab308',
-                  'D (18-29)': '#f97316',
-                  'F (0-17)': '#ef4444',
-                };
-                return {
-                  value: b.count,
-                  itemStyle: { color: colors[b.label] ?? '#a1a1aa' },
-                };
-              }),
-            },
-          ],
-          grid: { left: '10%', right: '5%', top: 20, bottom: 35 },
-        }
-      : null;
 
   // ── Render chart content helper ─────────────────────────────────────
 
@@ -501,17 +472,32 @@ function HomeContent() {
             testId="dashboard-widget-period-matrix"
           />
         );
-      case 'process-score-dist':
-        return processScoreDistribution !== null && !processScoreDistribution.every((b) => b.count === 0) && processScoreOption ? (
-          <DashboardChart option={processScoreOption} height={280} />
-        ) : (
-          <div className="flex items-center justify-center py-8">
-            <EmptyState
-              icon={<Star className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
-              title="No scores available"
-              description="Grade your trades to see the process quality score distribution."
-            />
-          </div>
+      case 'setup-ranking':
+        return (
+          <SetupRankingWidget
+            setupRanking={setupRanking}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-setup-ranking"
+          />
+        );
+      case 'process-discipline':
+        return (
+          <ProcessDisciplineWidget
+            processScoreDistribution={processScoreDistribution ?? []}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-process-discipline"
+          />
+        );
+      case 'attention-insights':
+        return (
+          <AttentionInsightsWidget
+            insights={attentionInsights.insights}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-attention-insights"
+          />
         );
       default:
         return null;
@@ -783,30 +769,7 @@ function HomeContent() {
         </section>
       )}
 
-      {/* Process Quality Score Distribution (shown when toggled) */}
-      {showMoreAnalytics && hasData && processScoreDistribution !== null && chartLoaded && (
-        <section className="mb-6">
-          <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
-            Process Quality Score Distribution
-          </h2>
-          <DashboardLayout
-            layout={chartLayout.filter((l) => l.i === 'process-score-dist')}
-            onLayoutChange={(newLayout: Layout) => {
-              const other = chartLayout.filter((l) => l.i !== 'process-score-dist');
-              setChartLayout([...other, ...newLayout]);
-            }}
-            cols={12}
-            rowHeight={80}
-            margin={[12, 12]}
-          >
-            <div key="process-score-dist">
-              <DashboardWidget title="Score Distribution" isLoading={isRefetching} error={isRefetching && error ? error : null}>
-                {renderChartContent('process-score-dist')}
-              </DashboardWidget>
-            </div>
-          </DashboardLayout>
-        </section>
-      )}
+
     </div>
   );
 }
