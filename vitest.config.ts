@@ -92,6 +92,8 @@ export default defineConfig({
       'src/components/dashboard/formatting.test.ts',
       'src/components/dashboard/kpi-card.test.tsx',
       'src/components/dashboard/account-performance-panel.test.tsx',
+      'src/components/dashboard/ptd-performance-panel.test.tsx',
+      'src/components/dashboard/current-risk-panel.test.tsx',
       'src/components/dashboard/kpi-widgets.test.tsx',
       'src/components/dashboard/equity-drawdown-chart.test.tsx',
       'src/components/dashboard/calendar-heatmap-widget.test.tsx',
