@@ -22,6 +22,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 /** Standalone tsx test files (not covered by vitest config). */
 const TSX_TESTS: string[] = [
   'src/lib/account-summary.test.ts',
+  'src/lib/attention-insights.test.ts',
   'src/lib/dashboard.test.ts',
   'src/lib/mark-to-market.test.ts',
   'src/lib/metrics.test.ts',
