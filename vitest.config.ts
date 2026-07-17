@@ -87,6 +87,8 @@ export default defineConfig({
       'src/app/settings/risk-defaults/__tests__/page.test.tsx',
       'src/components/dashboard-v2.test.tsx',
       'src/components/dashboard/filter-context.test.tsx',
+      'src/components/dashboard/dashboard-widget.test.tsx',
+      'src/components/dashboard/use-dashboard-layout.test.ts',
       'src/components/accounting/account-correction-form.test.tsx',
       'src/components/accounting/account-overview.test.tsx',
       'src/components/accounting/account-ledger.test.tsx',
