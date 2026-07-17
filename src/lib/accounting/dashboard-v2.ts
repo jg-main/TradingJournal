@@ -14,7 +14,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { fromMicros, toMicros } from './decimal';
+import { fromMicros, toMicros, normalizeDecimal, sumDecimals } from './decimal';
 import type { CanonicalDecimal } from './types';
 import {
   accountExists,
@@ -97,6 +97,20 @@ export interface DashboardReconciliationSummary {
   } | null;
 }
 
+/** Risk summary derived from open positions and journal trades. */
+export interface RiskSummary {
+  /** Sum of unrealizedPnl across all open positions (canonical decimal). */
+  openPnl: string;
+  /** Sum of initialRiskAmount from open journal trades (canonical decimal). */
+  openRisk: string;
+  /** openRisk / NAV * 100 as a percentage (canonical decimal), or null when NAV is zero. */
+  portfolioHeat: string | null;
+  /** Number of open trades without a planned_stop. */
+  missingStops: number;
+  /** Number of open trades with a planned_stop set. */
+  positionsWithStop: number;
+}
+
 /** Dashboard V2 aggregation for one account. */
 export interface DashboardV2Response {
   account: {
@@ -125,6 +139,7 @@ export interface DashboardV2Response {
   };
   journalAttribution: JournalAttribution;
   reconciliation: DashboardReconciliationSummary;
+  riskSummary: RiskSummary;
   integrity: {
     /** Overall cutover integrity status. */
     status: IntegrityStatus;
@@ -468,6 +483,53 @@ export function computeDashboardV2(
         totals: null,
       };
 
+  // ── Risk Summary ──────────────────────────────────────────────────
+  const openPnlValues = dashboardPositions
+    .map((p) => p.unrealizedPnl)
+    .filter((v): v is string => v !== null);
+  const openPnl = sumDecimals(openPnlValues);
+
+  const riskRow = sqlite
+    .prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN t.planned_stop IS NULL THEN 1 ELSE 0 END), 0) AS missing_stops,
+         COALESCE(SUM(CASE WHEN t.planned_stop IS NOT NULL THEN 1 ELSE 0 END), 0) AS with_stop,
+         COALESCE(SUM(trs.initial_risk_amount), 0) AS total_risk
+       FROM trades t
+       LEFT JOIN trade_risk_snapshots trs ON trs.trade_id = t.id
+       WHERE t.account_id = ? AND t.status = 'open'`,
+    )
+    .get(accountId) as
+    | { missing_stops: number; with_stop: number; total_risk: number }
+    | undefined;
+
+  const missingStops = riskRow?.missing_stops ?? 0;
+  const positionsWithStop = riskRow?.with_stop ?? 0;
+  const openRisk = riskRow ? normalizeDecimal(riskRow.total_risk) : '0.00';
+
+  // Portfolio heat = openRisk / NAV * 100
+  const nav = performance?.nav;
+  let portfolioHeat: string | null = null;
+  if (nav && nav !== '0.00') {
+    const navMicros = toMicros(nav);
+    const riskMicros = toMicros(openRisk);
+    if (riskMicros > 0) {
+      portfolioHeat = normalizeDecimal((riskMicros / navMicros) * 100);
+    } else {
+      portfolioHeat = '0.00';
+    }
+  } else if (openRisk === '0.00') {
+    portfolioHeat = '0.00';
+  }
+
+  const riskSummary: RiskSummary = {
+    openPnl,
+    openRisk,
+    portfolioHeat,
+    missingStops,
+    positionsWithStop,
+  };
+
   // ── Integrity status ────────────────────────────────────────────────
   const integrity = deriveIntegrityStatus(
     perfWarnings,
@@ -502,6 +564,7 @@ export function computeDashboardV2(
     },
     journalAttribution,
     reconciliation: reconciliationSummary,
+    riskSummary,
     integrity,
     computedAt,
   };

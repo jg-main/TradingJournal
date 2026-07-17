@@ -393,6 +393,14 @@ describe('GET /api/dashboard/v2', () => {
     expect(Array.isArray(integrity.warnings)).toBe(true);
     expect(integrity.warnings.length).toBe(0);
 
+    // Risk summary (no journal trades exist, so all zeros)
+    const riskSummary = body.riskSummary as Record<string, unknown>;
+    expect(riskSummary.openPnl).toBe('120.00');
+    expect(riskSummary.openRisk).toBe('0.00');
+    expect(riskSummary.portfolioHeat).toBe('0.00');
+    expect(riskSummary.missingStops).toBe(0);
+    expect(riskSummary.positionsWithStop).toBe(0);
+
     // Timestamp
     expect(typeof body.computedAt).toBe('string');
   });
@@ -422,6 +430,7 @@ describe('GET /api/dashboard/v2', () => {
     expect(body).toHaveProperty('valuation');
     expect(body).toHaveProperty('journalAttribution');
     expect(body).toHaveProperty('reconciliation');
+    expect(body).toHaveProperty('riskSummary');
     expect(body).toHaveProperty('integrity');
     expect(body).toHaveProperty('computedAt');
 
@@ -456,6 +465,14 @@ describe('GET /api/dashboard/v2', () => {
     expect(typeof valuation.stale).toBe('number');
     expect(typeof valuation.missing).toBe('number');
     expect(Array.isArray(valuation.positions)).toBe(true);
+
+    // Risk summary structure
+    const rs = body.riskSummary as Record<string, unknown>;
+    expect(typeof rs.openPnl).toBe('string');
+    expect(typeof rs.openRisk).toBe('string');
+    expect(rs.portfolioHeat === null || typeof rs.portfolioHeat === 'string').toBe(true);
+    expect(typeof rs.missingStops).toBe('number');
+    expect(typeof rs.positionsWithStop).toBe('number');
 
     // Integrity structure
     const integrity = body.integrity as Record<string, unknown>;
