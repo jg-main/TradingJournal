@@ -25,6 +25,11 @@ export interface DashboardWidgetProps {
   className?: string;
   /** Data attribute for test targeting */
   testId?: string;
+  /**
+   * When true, the drag handle is rendered so react-grid-layout can target it.
+   * When false (default), the drag handle is hidden and reordering is disabled.
+   */
+  isCustomizing?: boolean;
 }
 
 // ── Drag Handle ────────────────────────────────────────────────────────
@@ -64,8 +69,10 @@ function WidgetSkeleton() {
  * - `isEmpty`: Displays an empty state message.
  * - Default (children): Renders the widget content.
  *
- * The drag handle (`.dashboard-widget-drag-handle`) is always rendered in the
- * card header so react-grid-layout can target it for drag-to-reorder.
+ * The drag handle (`.dashboard-widget-drag-handle`) is only rendered when
+ * `isCustomizing` is true, so react-grid-layout can target it during
+ * customization mode.  When not customizing, the drag handle is hidden and
+ * reordering is disabled.
  *
  * @example
  * ```tsx
@@ -83,6 +90,7 @@ export function DashboardWidget({
   children,
   className,
   testId,
+  isCustomizing = false,
 }: DashboardWidgetProps) {
   return (
     <Card
@@ -91,7 +99,7 @@ export function DashboardWidget({
       size="sm"
     >
       <CardHeader className="flex flex-row items-center gap-0 border-b pb-2">
-        <DragHandle />
+        {isCustomizing && <DragHandle />}
         <CardTitle className="flex-1 truncate text-sm font-medium">
           {title}
         </CardTitle>

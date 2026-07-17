@@ -117,9 +117,9 @@ describe('DashboardWidget', () => {
 
   // ── Drag handle ─────────────────────────────────────────────────
 
-  it('renders the drag handle element', () => {
+  it('renders the drag handle element when isCustomizing is true', () => {
     const { container } = render(
-      <DashboardWidget title="Draggable">
+      <DashboardWidget title="Draggable" isCustomizing>
         <span />
       </DashboardWidget>,
     );
@@ -127,9 +127,19 @@ describe('DashboardWidget', () => {
     expect(dragHandle).toBeTruthy();
   });
 
-  it('drag handle has accessible label and role', () => {
+  it('hides the drag handle when isCustomizing is false (default)', () => {
+    const { container } = render(
+      <DashboardWidget title="Locked">
+        <span />
+      </DashboardWidget>,
+    );
+    const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
+    expect(dragHandle).toBeFalsy();
+  });
+
+  it('drag handle has accessible label and role when visible', () => {
     render(
-      <DashboardWidget title="Accessible">
+      <DashboardWidget title="Accessible" isCustomizing>
         <span />
       </DashboardWidget>,
     );

@@ -17,12 +17,18 @@ export interface DashboardLayoutProps {
   rowHeight?: number;
   /** Horizontal and vertical margin in pixels (default: [16, 16]) */
   margin?: readonly [number, number];
+  /**
+   * When true, drag-to-reorder and resize are enabled.
+   * When false (default), the grid is locked and non-interactive.
+   */
+  isCustomizing?: boolean;
 }
 
 /**
  * Full-width widget dashboard layout powered by react-grid-layout.
  * Wraps children in a GridLayout with drag-to-reorder and resize handles.
  * The drag handle is identified by the `.dashboard-widget-drag-handle` class.
+ * Drag and resize are only enabled when `isCustomizing` is true.
  */
 export function DashboardLayout({
   layout,
@@ -31,6 +37,7 @@ export function DashboardLayout({
   rowHeight = 120,
   margin = [16, 16] as const,
   children,
+  isCustomizing = false,
 }: DashboardLayoutProps) {
   const { width, containerRef, mounted } = useContainerWidth();
 
@@ -49,8 +56,8 @@ export function DashboardLayout({
           layout={layout}
           onLayoutChange={handleLayoutChange}
           gridConfig={{ cols, rowHeight, margin }}
-          dragConfig={{ enabled: true, handle: ".dashboard-widget-drag-handle" }}
-          resizeConfig={{ enabled: true }}
+          dragConfig={{ enabled: isCustomizing, handle: ".dashboard-widget-drag-handle" }}
+          resizeConfig={{ enabled: isCustomizing }}
           autoSize
           className="dashboard-grid"
         >
