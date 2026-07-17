@@ -25,7 +25,7 @@ export interface ReadinessState {
 const ALL_STEPS: MissingStep[] = [
   { id: 'app_profile', label: 'Workspace', href: '/settings/workspace' },
   { id: 'settings', label: 'Risk Defaults', href: '/settings/risk-defaults' },
-  { id: 'accounts', label: 'Accounts', href: '/accounts' },
+  { id: 'accounts', label: 'Accounts', href: '/settings/accounts' },
   { id: 'setups', label: 'Trading Setups', href: '/settings/plays' },
 ];
 

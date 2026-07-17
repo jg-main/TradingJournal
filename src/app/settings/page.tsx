@@ -9,6 +9,7 @@ import {
   CircleDashed,
   Globe,
   HardDrive,
+  Landmark,
   Play,
   Puzzle,
   ShieldCheck,
@@ -37,6 +38,12 @@ const cards: HubCard[] = [
     icon: <Globe className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
+    title: 'Accounts',
+    description: 'Manage brokerage accounts, view effective risk and commission values, and set overrides.',
+    href: '/settings/accounts',
+    icon: <Landmark className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+  },
+  {
     title: 'Risk Defaults',
     description: 'Set global risk defaults that apply as fallbacks for all accounts.',
     href: '/settings/risk-defaults',
@@ -55,9 +62,9 @@ const cards: HubCard[] = [
     icon: <Puzzle className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
-    title: 'Data & Backups',
-    description: 'Manage backups, scheduling, and data integrity.',
-    href: '/settings/data-and-backups',
+    title: 'Backup',
+    description: 'Download backups, schedule automatic backups, and restore from backup files.',
+    href: '/settings/backup',
     icon: <HardDrive className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {

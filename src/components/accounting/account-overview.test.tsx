@@ -260,10 +260,10 @@ describe('AccountOverview — populated state', () => {
 
     const viewAllLinks = screen.getAllByText(/View all →/);
     const positionsLink = viewAllLinks.find(
-      (l) => l.closest('a')?.getAttribute('href') === '/accounts/acct-001/positions',
+      (l) => l.closest('a')?.getAttribute('href') === '/settings/accounts/acct-001/positions',
     );
     const ledgerLink = viewAllLinks.find(
-      (l) => l.closest('a')?.getAttribute('href') === '/accounts/acct-001/ledger',
+      (l) => l.closest('a')?.getAttribute('href') === '/settings/accounts/acct-001/ledger',
     );
     expect(positionsLink).toBeTruthy();
     expect(ledgerLink).toBeTruthy();

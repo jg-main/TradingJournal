@@ -362,7 +362,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           </h2>
           {positionsTotal > 0 && (
             <Link
-              href={`/accounts/${accountId}/positions`}
+              href={`/settings/accounts/${accountId}/positions`}
               className="text-xs font-medium text-zinc-600 underline hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
             >
               View all →
@@ -449,7 +449,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
               <div className="border-t border-zinc-200 px-3 py-2 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
                 Showing {positions.length} of {positionsTotal} positions.
                 <Link
-                  href={`/accounts/${accountId}/positions`}
+                  href={`/settings/accounts/${accountId}/positions`}
                   className="ml-1 underline hover:text-zinc-700 dark:hover:text-zinc-300"
                 >
                   View all →
@@ -473,7 +473,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           </h2>
           {eventsTotal > 0 && (
             <Link
-              href={`/accounts/${accountId}/ledger`}
+              href={`/settings/accounts/${accountId}/ledger`}
               className="text-xs font-medium text-zinc-600 underline hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
             >
               View all →

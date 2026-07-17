@@ -31,7 +31,7 @@ interface AccountNavTab {
  * left-to-right in the navigation bar.
  */
 function buildTabs(accountId: string): AccountNavTab[] {
-  const base = `/accounts/${accountId}`;
+  const base = `/settings/accounts/${accountId}`;
   return [
     { href: base, label: 'Overview', icon: LayoutDashboard },
     { href: `${base}/ledger`, label: 'Ledger', icon: BookOpen },

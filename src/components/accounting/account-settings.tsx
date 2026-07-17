@@ -369,7 +369,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
 
       // Navigate to accounts list after successful deletion
       setDeleteDialogOpen(false);
-      window.location.href = '/accounts';
+      window.location.href = '/settings/accounts';
     } catch {
       setMessage({ type: 'error', text: 'Failed to delete account.' });
       setIsDeleting(false);
