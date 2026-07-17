@@ -1,56 +1,49 @@
 'use client';
 
-import { Moon, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Moon, Sun } from 'lucide-react';
 
 type Theme = 'light' | 'dark';
 
-function getStoredTheme(): Theme | null {
-  if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem('theme');
-  if (stored === 'light' || stored === 'dark') return stored;
-  return null;
-}
-
-function getSystemTheme(): Theme {
-  if (typeof window === 'undefined') return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function applyTheme(theme: Theme) {
-  document.documentElement.classList.toggle('dark', theme === 'dark');
-}
-
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>('light');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const initial = getStoredTheme() ?? getSystemTheme();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTheme(initial);
-    applyTheme(initial);
+    setMounted(true);
+    const stored = localStorage.getItem('theme') as Theme | null;
+    if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      setTheme('dark');
+      document.documentElement.classList.add('dark');
+    } else {
+      setTheme('light');
+      document.documentElement.classList.remove('dark');
+    }
   }, []);
 
   const toggle = () => {
-    const next = theme === 'light' ? 'dark' : 'light';
+    const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
-    applyTheme(next);
     localStorage.setItem('theme', next);
+    if (next === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   };
+
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <button
       onClick={toggle}
-      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-200"
-      aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-      title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+      className="rounded-md border border-zinc-200 bg-white p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+      aria-label="Toggle dark mode"
+      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
     >
-      {theme === 'light' ? (
-        <Moon className="size-4 shrink-0" />
-      ) : (
-        <Sun className="size-4 shrink-0" />
-      )}
-      <span>{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>
+      {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </button>
   );
 }

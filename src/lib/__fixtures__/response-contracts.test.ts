@@ -52,7 +52,7 @@ import {
 import { computeWinRate, averageRMultiples, averageProcessScore } from '../metrics';
 import { computeOpenPosition, calculateUnrealizedPnL, computeMarkToMarketSummary } from '../mark-to-market';
 import { calculatePositionSize } from '../position-sizing';
-import { computeSetupPerformance, type SetupPerfTradeInput, type DashboardMetrics } from '../review-dashboard';
+import { computeSetupPerformance, type SetupPerfTradeInput, type SetupPerfResult, type DashboardMetrics } from '../review-dashboard';
 import { computeWeeklyMetrics, type WeekReviewTradeInput } from '../weekly-review';
 import {
   computeKpiMetrics,
@@ -86,6 +86,7 @@ import {
   type PeriodMatrixTradeInput,
   type PeriodMatrixResult,
 } from '../period-matrix';
+import { computeAttentionInsights, type AttentionInsightTradeInput, type AttentionInsight } from '../attention-insights';
 
 /* ── Assertion helpers ──────────────────────────────────────────────── */
 
@@ -282,6 +283,29 @@ section('API 1: Dashboard');
     qoq: computePeriodMatrix(periodInputs, 'qoq'),
   };
 
+  // Compute setup ranking and attention insights (matching route.ts)
+  const setupPerfInputs: SetupPerfTradeInput[] = closedInputs.map((t) => ({
+    id: t.id,
+    direction: t.direction,
+    executions: t.executions,
+    grade: t.grade,
+    riskSnapshot: t.riskSnapshot,
+    setupId: null,
+  }));
+  const setupPerf = computeSetupPerformance(setupPerfInputs, {}, true);
+  const setupRanking = setupPerf.setupPerformance;
+
+  const insightInputs: AttentionInsightTradeInput[] = closedInputs.map((t) => ({
+    id: t.id,
+    direction: t.direction,
+    executions: t.executions,
+    riskSnapshot: t.riskSnapshot,
+    grade: t.grade,
+    closedAt: t.closedAt,
+    setupId: null,
+  }));
+  const attentionInsightsResult = computeAttentionInsights(insightInputs);
+
   // ── Construct the dashboard response object ────────────────────
   const dashboardResponse = {
     kpis,
@@ -295,6 +319,8 @@ section('API 1: Dashboard');
     tradeMarkers: [] as TradeMarkerPoint[],
     calendarHeatmap,
     periodMatrix,
+    setupRanking,
+    attentionInsights: { insights: attentionInsightsResult.insights, tradeCount: attentionInsightsResult.tradeCount },
   };
 
   // ── Verify top-level structure ─────────────────────────────────
@@ -326,6 +352,40 @@ section('API 1: Dashboard');
   assert(pm.mom.comparisonType === 'mom', '  periodMatrix.mom.comparisonType = mom');
   assert(pm.qoq.comparisonType === 'qoq', '  periodMatrix.qoq.comparisonType = qoq');
   assert('  periodMatrix.wow.rows is array', Array.isArray(pm.wow.rows));
+
+  // ── Setup Ranking contract ────────────────────────────────────
+  assert('  setupRanking is array', Array.isArray(dashboardResponse.setupRanking));
+  const sr = dashboardResponse.setupRanking[0];
+  if (sr) {
+    assertField(sr as unknown as Record<string, unknown>, 'setupName', 'string');
+    assert('  sr.setupId is string or null', sr.setupId === null || typeof sr.setupId === 'string');
+    assertField(sr as unknown as Record<string, unknown>, 'count', 'number');
+    assert('  sr.winRate is number or null', sr.winRate === null || typeof sr.winRate === 'number');
+    assert('  sr.avgR is number or null', sr.avgR === null || typeof sr.avgR === 'number');
+    assert('  sr.avgProcessScore is number or null', sr.avgProcessScore === null || typeof sr.avgProcessScore === 'number');
+    assert('  sr.sampleSizeWarning is valid string', typeof sr.sampleSizeWarning === 'string');
+    assert(
+      '  sampleSizeWarning is one of very_small/small/moderate/adequate',
+      ['very_small', 'small', 'moderate', 'adequate'].includes(sr.sampleSizeWarning),
+    );
+  }
+
+  // ── Attention Insights contract ───────────────────────────────
+  assert('  attentionInsights is object', typeof dashboardResponse.attentionInsights === 'object');
+  assert('  attentionInsights.insights is array', Array.isArray(dashboardResponse.attentionInsights.insights));
+  assert('  attentionInsights.tradeCount is number', typeof dashboardResponse.attentionInsights.tradeCount === 'number');
+  const insight = dashboardResponse.attentionInsights.insights[0];
+  if (insight) {
+    assertField(insight as unknown as Record<string, unknown>, 'type', 'string');
+    assertField(insight as unknown as Record<string, unknown>, 'title', 'string');
+    assertField(insight as unknown as Record<string, unknown>, 'message', 'string');
+    assertField(insight as unknown as Record<string, unknown>, 'severity', 'string');
+    assert(
+      '  severity is one of critical/warning/info',
+      ['critical', 'warning', 'info'].includes(insight.severity),
+    );
+    assert('  insight.value is string, number, or undefined', insight.value === undefined || typeof insight.value === 'string' || typeof insight.value === 'number');
+  }
   const perfRow = pm.wow.rows[0];
   if (perfRow) {
     assert('  row.current is object', typeof perfRow.current === 'object');

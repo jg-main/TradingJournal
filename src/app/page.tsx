@@ -19,6 +19,7 @@ import { EquityDrawdownChart } from '@/components/dashboard/equity-drawdown-char
 import { CalendarHeatmapWidget } from '@/components/dashboard/calendar-heatmap-widget';
 import { PeriodMatrixWidget } from '@/components/dashboard/period-matrix-widget';
 import { SetupRankingWidget } from '@/components/dashboard/setup-ranking-widget';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { ProcessDisciplineWidget } from '@/components/dashboard/process-discipline-widget';
 import { AttentionInsightsWidget } from '@/components/dashboard/attention-insights-widget';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
@@ -518,9 +519,12 @@ function HomeContent() {
 
   return (
     <div className="px-4 py-3 sm:px-8 sm:py-10">
-      <h1 className="mb-2 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
-        Dashboard
-      </h1>
+      <div className="mb-2 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
+          Dashboard
+        </h1>
+        <ThemeToggle />
+      </div>
       <p className="mb-8 text-sm text-zinc-500 dark:text-zinc-400">
         Overview of your trading performance and activity.
       </p>
