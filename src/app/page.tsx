@@ -5,13 +5,10 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   NotebookPen,
-  TrendingUp,
 } from 'lucide-react';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 
-import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
-import { DashboardChart } from '@/components/dashboard-chart';
 import { DashboardFilters } from '@/components/dashboard-filters';
 import { DashboardV2 } from '@/components/dashboard-v2';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
@@ -22,6 +19,9 @@ import { SetupRankingWidget } from '@/components/dashboard/setup-ranking-widget'
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ProcessDisciplineWidget } from '@/components/dashboard/process-discipline-widget';
 import { AttentionInsightsWidget } from '@/components/dashboard/attention-insights-widget';
+import { MonthlyPerformanceChart } from '@/components/dashboard/monthly-performance-chart';
+import { RDistributionChart } from '@/components/dashboard/r-distribution-chart';
+import { DirectionalPerformanceWidget } from '@/components/dashboard/directional-performance-widget';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { useDashboardLayout } from '@/components/dashboard/use-dashboard-layout';
 import {
@@ -36,10 +36,6 @@ import {
   PTD_WIDGET_IDS,
   CURRENT_STATE_WIDGET_IDS,
 } from '@/components/dashboard/kpi-widgets';
-import {
-  formatCurrency,
-  formatPercent,
-} from '@/components/dashboard/formatting';
 import type { Layout } from 'react-grid-layout';
 import type { KpiMetrics, MtmData } from '@/components/dashboard/kpi-widgets';
 import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
@@ -257,98 +253,6 @@ function HomeContent() {
     kpis.currentDrawdown === null &&
     kpis.accountValue === null;
 
-
-
-  const monthlyPerformanceOption = monthlyPerformance.length > 0
-    ? {
-        tooltip: {
-          trigger: 'axis',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          formatter: (params: any) => {
-            if (!Array.isArray(params) || params.length === 0) return '';
-            const idx = params[0].dataIndex;
-            const item = monthlyPerformance[idx];
-            if (!item) return '';
-            return [
-              `<strong>${item.month}</strong>`,
-              `P&amp;L: ${formatCurrency(item.netPnl, { sign: true })}`,
-              `Win Rate: ${formatPercent(item.winRate)}`,
-              `Trades: ${item.tradeCount}`,
-            ].join('<br/>');
-          },
-        },
-        xAxis: {
-          type: 'category' as const,
-          data: monthlyPerformance.map((m) => m.month),
-          axisLabel: { formatter: (v: string) => v.slice(5) },
-        },
-        yAxis: [
-          { type: 'value' as const, name: 'P&L ($)' },
-          { type: 'value' as const, name: 'Win Rate', min: 0, max: 1, axisLabel: { formatter: (v: number) => `${(v * 100).toFixed(0)}%` } },
-        ],
-        series: [
-          {
-            name: 'Net P&L',
-            type: 'bar' as const,
-            data: monthlyPerformance.map((m) => ({
-              value: m.netPnl,
-              itemStyle: { color: m.netPnl >= 0 ? '#22c55e' : '#ef4444' },
-            })),
-          },
-          {
-            name: 'Win Rate',
-            type: 'line' as const,
-            yAxisIndex: 1,
-            data: monthlyPerformance.map((m) => m.winRate ?? 0),
-            smooth: true,
-            color: '#3b82f6',
-            symbol: 'none',
-          },
-        ],
-        grid: { left: '10%', right: '10%', top: 20, bottom: 25 },
-      }
-    : null;
-
-  const rDistributionOption = rDistribution.length > 0 && !rDistribution.every((b) => b.count === 0)
-    ? {
-        tooltip: {
-          trigger: 'axis',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          formatter: (params: any) => {
-            if (!Array.isArray(params) || params.length === 0) return '';
-            const idx = params[0].dataIndex;
-            const bin = rDistribution[idx];
-            if (!bin) return '';
-            return `<strong>${bin.label}</strong><br/>Trades: ${bin.count}`;
-          },
-        },
-        xAxis: {
-          type: 'category' as const,
-          data: rDistribution.map((b) => b.label),
-          axisLabel: { rotate: 30 },
-        },
-        yAxis: { type: 'value' as const, name: 'Trades' },
-        series: [
-          {
-            name: 'Trades',
-            type: 'bar' as const,
-            data: rDistribution.map((b) => {
-              let color: string;
-              if (b.label === '-1 to 0') {
-                color = '#a1a1aa';
-              } else if (['0 to 1', '1 to 2', '2 to 3', '> 3'].includes(b.label)) {
-                color = '#22c55e';
-              } else {
-                color = '#ef4444';
-              }
-              return { value: b.count, itemStyle: { color } };
-            }),
-          },
-        ],
-        grid: { left: '10%', right: '5%', top: 20, bottom: 35 },
-      }
-    : null;
-
   // ── Render chart content helper ─────────────────────────────────────
 
   const renderChartContent = (id: string) => {
@@ -365,95 +269,31 @@ function HomeContent() {
           />
         );
       case 'monthly-performance':
-        return monthlyPerformance.length === 0 ? (
-          <div className="px-(--card-spacing) pb-(--card-spacing)">
-            <EmptyState
-              icon={<TrendingUp className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
-              title="No monthly data available"
-              description="Your monthly performance chart will appear here after you close trades across multiple months."
-            />
-          </div>
-        ) : monthlyPerformanceOption ? (
-          <DashboardChart option={monthlyPerformanceOption} height={280} />
-        ) : null;
+        return (
+          <MonthlyPerformanceChart
+            monthlyPerformance={monthlyPerformance}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-monthly-performance"
+          />
+        );
       case 'r-distribution':
-        return rDistribution.length === 0 || rDistribution.every((b) => b.count === 0) ? (
-          <div className="px-(--card-spacing) pb-(--card-spacing)">
-            <EmptyState
-              icon={<TrendingUp className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
-              title="No R distribution data available"
-              description="Your R-multiple distribution chart will appear here after you close trades with risk data."
-            />
-          </div>
-        ) : rDistributionOption ? (
-          <DashboardChart option={rDistributionOption} height={280} />
-        ) : null;
+        return (
+          <RDistributionChart
+            rDistribution={rDistribution}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-r-distribution"
+          />
+        );
       case 'directional-performance':
-        return directionalPerformance ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Card size="sm">
-              <CardContent className="flex flex-col gap-3 p-5">
-                <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Long
-                </p>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <p className={`text-xl font-bold tabular-nums ${directionalPerformance.long.netPnl > 0 ? 'text-zinc-700 dark:text-zinc-300' : directionalPerformance.long.netPnl < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>
-                      {formatCurrency(directionalPerformance.long.netPnl, { sign: true })}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {formatPercent(directionalPerformance.long.winRate)}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Win Rate</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {directionalPerformance.long.tradeCount}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Trades</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card size="sm">
-              <CardContent className="flex flex-col gap-3 p-5">
-                <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Short
-                </p>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <p className={`text-xl font-bold tabular-nums ${directionalPerformance.short.netPnl > 0 ? 'text-zinc-700 dark:text-zinc-300' : directionalPerformance.short.netPnl < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>
-                      {formatCurrency(directionalPerformance.short.netPnl, { sign: true })}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {formatPercent(directionalPerformance.short.winRate)}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Win Rate</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {directionalPerformance.short.tradeCount}
-                    </p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Trades</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center py-8">
-            <EmptyState
-              icon={<TrendingUp className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
-              title="No directional data"
-              description="Long/short performance breakdown will appear after you close trades in both directions."
-            />
-          </div>
+        return (
+          <DirectionalPerformanceWidget
+            directionalPerformance={directionalPerformance}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-directional-performance"
+          />
         );
       case 'calendar-heatmap':
         return (
@@ -721,7 +561,9 @@ function HomeContent() {
               .filter((l) => CHART_WIDGET_IDS.includes(l.i as typeof CHART_WIDGET_IDS[number]))
               .map((item) => {
                 const content = renderChartContent(item.i);
-                if (item.i === 'equity-drawdown') {
+                // Widgets that include their own DashboardWrapper (EquityDrawdownChart,
+                // MonthlyPerformanceChart, RDistributionChart, DirectionalPerformanceWidget)
+                if (['equity-drawdown', 'monthly-performance', 'r-distribution', 'directional-performance'].includes(item.i)) {
                   return <div key={item.i}>{content}</div>;
                 }
                 return (
@@ -765,9 +607,7 @@ function HomeContent() {
             margin={[12, 12]}
           >
             <div key="directional-performance">
-              <DashboardWidget title="Directional Performance" isLoading={isRefetching} error={isRefetching && error ? error : null}>
-                {renderChartContent('directional-performance')}
-              </DashboardWidget>
+              {renderChartContent('directional-performance')}
             </div>
           </DashboardLayout>
         </section>
