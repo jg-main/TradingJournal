@@ -29,7 +29,7 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
-  const filePath = join(process.cwd(), 'public', ...path);
+  const filePath = join(process.cwd(), 'public', 'uploads', ...path);
   const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
 
   try {
