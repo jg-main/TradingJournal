@@ -8,12 +8,11 @@ import {
   BookOpen,
   CircleCheck,
   CircleDashed,
-  Database,
-  Gamepad2,
   Globe,
   HardDrive,
   Loader2,
   Play,
+  Puzzle,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -35,12 +34,6 @@ type ResetStep = 'warning' | 'confirm' | 'resetting' | 'success' | 'error';
 
 const cards: HubCard[] = [
   {
-    title: 'Plays',
-    description: 'Manage trading setups that appear in the Plan Trade dropdown.',
-    href: '/settings/plays',
-    icon: <Gamepad2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
-  },
-  {
     title: 'Workspace',
     description: 'Configure workspace timezone and regional preferences.',
     href: '/settings/workspace',
@@ -53,16 +46,16 @@ const cards: HubCard[] = [
     icon: <ShieldCheck className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
-    title: 'Mistake Types',
-    description: 'Manage mistake categories for trade reviews.',
-    href: '/settings/mistake-types',
-    icon: <AlertTriangle className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+    title: 'Journal Setup',
+    description: 'Manage trading setups and mistake categories used in your journal.',
+    href: '/settings/journal-setup',
+    icon: <BookOpen className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
-    title: 'Market Data',
-    description: 'Configure market data providers and connection settings.',
-    href: '/settings/market-data',
-    icon: <Database className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+    title: 'Integrations',
+    description: 'Configure AI service providers and market data sources.',
+    href: '/settings/integrations',
+    icon: <Puzzle className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Backup',
