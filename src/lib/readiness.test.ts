@@ -8,7 +8,7 @@
  *   - Each entity alone → not ready, 3 missing (per-step isolation)
  *   - All 4 present → ready, 0 missing
  *   - Inactive account → still missing "accounts"
- *   - app_profile without displayName → still missing "app_profile"
+ *   - app_profile without timezone → still missing "app_profile"
  *
  * Run: npx vitest run src/lib/readiness.test.ts
  */
@@ -37,26 +37,28 @@ function createDb() {
 
 // ── Fixtures ───────────────────────────────────────────────────────────
 
-function insertProfile(db: ReturnType<typeof createDb>, displayName?: string) {
+function insertProfile(db: ReturnType<typeof createDb>, displayName?: string, timezone?: string | null) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   db.insert(schema.appProfile).values({
     id,
     displayName: displayName ?? 'Test User',
-    timezone: 'America/Bogota',
+    timezone: timezone ?? 'America/Bogota',
     defaultCurrency: 'USD',
     createdAt: now,
     updatedAt: now,
   }).run();
 }
 
-function insertSettings(db: ReturnType<typeof createDb>, opts?: { startingAccountValue?: number; journalStartDate?: string }) {
+function insertSettings(db: ReturnType<typeof createDb>, opts?: { startingAccountValue?: number; journalStartDate?: string; maxRiskPerTradePct?: number }) {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   db.insert(schema.settings).values({
     id,
     startingAccountValue: opts?.startingAccountValue ?? null,
     journalStartDate: opts?.journalStartDate ?? null,
+    maxRiskPerTradePct: opts?.maxRiskPerTradePct ?? null,
+    defaultCommission: null,
     createdAt: now,
     updatedAt: now,
   }).run();
@@ -109,7 +111,7 @@ function insertSetupDefinition(db: ReturnType<typeof createDb>, isActive = true)
  */
 function insertAll(db: ReturnType<typeof createDb>) {
   insertProfile(db);
-  insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01' });
+  insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01', maxRiskPerTradePct: 2 });
   insertAccount(db, true);
   insertSetupLookup(db);
 }
@@ -149,7 +151,7 @@ describe('checkReadiness', () => {
 
   it('is not ready when only settings are present', () => {
     const db = createDb();
-    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01' });
+    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01', maxRiskPerTradePct: 2 });
 
     const state = checkReadiness(db);
 
@@ -208,7 +210,7 @@ describe('checkReadiness', () => {
   it('is not ready when account exists but is inactive', () => {
     const db = createDb();
     insertProfile(db);
-    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01' });
+    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01', maxRiskPerTradePct: 2 });
     insertAccount(db, false); // inactive account
     insertSetupLookup(db);
 
@@ -219,10 +221,21 @@ describe('checkReadiness', () => {
     expect(state.missing).toHaveLength(1);
   });
 
-  it('is not ready when app_profile lacks displayName', () => {
+  it('is not ready when app_profile lacks timezone', () => {
     const db = createDb();
-    insertProfile(db, ''); // empty displayName
-    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01' });
+    // Insert a row with null timezone — the ?? default in insertProfile prevents
+    // this from working, so we use Drizzle's values() with explicit null directly.
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    db.insert(schema.appProfile).values({
+      id,
+      displayName: 'Test User',
+      timezone: null as unknown as string,
+      defaultCurrency: 'USD',
+      createdAt: now,
+      updatedAt: now,
+    }).run();
+    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01', maxRiskPerTradePct: 2 });
     insertAccount(db, true);
     insertSetupLookup(db);
 
@@ -236,7 +249,7 @@ describe('checkReadiness', () => {
   it('is ready when setups exist via setupDefinitions only', () => {
     const db = createDb();
     insertProfile(db);
-    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01' });
+    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01', maxRiskPerTradePct: 2 });
     insertAccount(db, true);
     insertSetupDefinition(db); // no lookupValues setup — only setupDefinitions
 
@@ -249,7 +262,7 @@ describe('checkReadiness', () => {
   it('is not ready when all setups are inactive', () => {
     const db = createDb();
     insertProfile(db);
-    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01' });
+    insertSettings(db, { startingAccountValue: 10000, journalStartDate: '2024-01-01', maxRiskPerTradePct: 2 });
     insertAccount(db, true);
     insertSetupLookup(db, false); // inactive setup
 

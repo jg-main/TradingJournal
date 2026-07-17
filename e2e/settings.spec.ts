@@ -66,21 +66,19 @@ test.describe('Settings', () => {
       await page.waitForLoadState('networkidle');
 
       const continueLink = page.getByRole('link', { name: /continue setup/i }).first();
-      await expect(continueLink).toHaveAttribute('href', '/settings/risk');
+      await expect(continueLink).toHaveAttribute('href', '/settings/risk-defaults');
 
       await continueLink.click();
-      await expect(page).toHaveURL(/\/settings\/risk$/);
+      await expect(page).toHaveURL(/\/settings\/risk-defaults$/);
 
-      await page.locator('#startingAccountValue').fill('25000');
-      await page.locator('#defaultCommission').fill('0.5');
       await page.locator('#maxRiskPerTradePct').fill('1.5');
-      await page.locator('#journalStartDate').fill('2025-01-01');
+      await page.locator('#defaultCommission').fill('0.5');
 
       // Wait for the save API response before checking the redirect
       const saveRespPromise = page.waitForResponse(
         (r) => r.url().includes('/api/settings') && r.request().method() === 'PUT',
       );
-      await page.getByRole('button', { name: 'Save Risk Settings' }).click();
+      await page.getByRole('button', { name: 'Save Risk Defaults' }).click();
       expect((await saveRespPromise).ok()).toBeTruthy();
 
       await expect(page).toHaveURL(/\/settings$/);

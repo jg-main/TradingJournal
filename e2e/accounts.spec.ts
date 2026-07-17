@@ -9,7 +9,6 @@ async function createAccount(page: Page, name: string) {
       name,
       broker: 'Deterministic Broker',
       currency: 'USD',
-      startingBalance: 0,
     },
   });
 
@@ -21,7 +20,15 @@ async function createAccount(page: Page, name: string) {
     currency: 'USD',
   });
 
-  return account as { id: string; name: string };
+  // POST /api/accounts creates Draft accounts (isActive: false).
+  // Activate so the account shows in the main table on the list page.
+  const activateResponse = await page.request.put(`/api/accounts/${account.id}`, {
+    data: { isActive: true },
+  });
+  expect(activateResponse.ok()).toBeTruthy();
+  const activatedAccount = await activateResponse.json();
+
+  return activatedAccount as { id: string; name: string };
 }
 
 async function createOpenTrade(page: Page, accountId: string) {
@@ -66,7 +73,9 @@ test.describe('Accounts', () => {
     await page.goto('/account');
     await expect(page).toHaveURL(/\/settings\/accounts/);
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
-    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+    // Account name is rendered inside a clickable <TableRow>, not an <a>/<Link> element.
+    // Use a cell or row locator instead of getByRole('link').
+    await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     expect(account.id).toBeTruthy();
   });
@@ -78,10 +87,10 @@ test.describe('Accounts', () => {
     await page.goto('/settings/accounts');
     await expect(page).toHaveURL(/\/settings\/accounts$/);
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
-    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+    await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
 
-    await page.getByRole('link', { name: accountName, exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await page.getByRole('cell', { name: accountName, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     await expect(page.getByText('Current Balance')).toBeVisible();
     await expect(page.getByText('No transactions yet.')).toBeVisible();
@@ -107,7 +116,7 @@ test.describe('Accounts', () => {
     await expect(page.getByRole('cell', { name: '$925.00', exact: true })).toBeVisible();
 
     await page.reload();
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.locator('p').filter({ hasText: '$925.00' }).first()).toBeVisible();
     await expect(page.getByRole('row', { name: /Deposit/ })).toBeVisible();
     await expect(page.getByRole('row', { name: /Withdrawal/ })).toBeVisible();
@@ -134,7 +143,7 @@ test.describe('Accounts', () => {
     const account = await createAccount(page, accountName);
 
     await page.goto(`/settings/accounts/${account.id}`);
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
@@ -146,14 +155,12 @@ test.describe('Accounts', () => {
 
     await page.goto('/settings/accounts');
     await page.getByText(/Inactive accounts/).click();
-    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: accountName, exact: true })).toHaveAttribute(
-      'href',
-      `/settings/accounts/${account.id}`,
-    );
-    await page.getByRole('link', { name: accountName, exact: true }).click();
+    await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
+    const accountCell = page.getByRole('cell', { name: accountName, exact: true });
+    await accountCell.click();
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
 
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByText('Closed')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reactivate Account' })).toBeVisible();
 
@@ -162,7 +169,7 @@ test.describe('Accounts', () => {
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
     await page.goto('/settings/accounts');
-    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+    await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
   });
 
   test('blocks deactivate, close, and delete lifecycle actions when trades exist', async ({ page }) => {
@@ -171,7 +178,7 @@ test.describe('Accounts', () => {
     await createOpenTrade(page, account.id);
 
     await page.goto(`/settings/accounts/${account.id}`);
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
 
     const deactivateResponse = await page.request.put(`/api/accounts/${account.id}`, {
@@ -183,7 +190,7 @@ test.describe('Accounts', () => {
 
     await page.getByRole('button', { name: 'Close Account' }).click();
     await page.getByRole('button', { name: 'Confirm Close' }).click();
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByText('Cannot deactivate account with open trades')).toBeVisible();
 
     const deleteResponse = await page.request.delete(`/api/accounts/${account.id}`);
@@ -191,7 +198,7 @@ test.describe('Accounts', () => {
     const deleteBody = (await deleteResponse.json()) as { error: string };
     expect(deleteBody.error).toBe('Cannot delete account with any trade history');
     await page.reload();
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
   });
 
@@ -200,7 +207,7 @@ test.describe('Accounts', () => {
     const account = await createAccount(page, accountName);
 
     await page.goto(`/settings/accounts/${account.id}`);
-    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Close Account' }).click();
@@ -218,7 +225,7 @@ test.describe('Accounts', () => {
     await createAccount(page, accountName);
 
     await page.goto('/settings/accounts');
-    await expect(page.getByRole('link', { name: accountName, exact: true })).toBeVisible();
+    await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
 
     // Target the deactivate button in THIS account's row, not the first one in the list
     const row = page.locator('tr').filter({ hasText: accountName });
@@ -232,6 +239,6 @@ test.describe('Accounts', () => {
     await row.locator('[title="Deactivate account"]').click();
     await deletePromise;
     await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('link', { name: accountName, exact: true })).not.toBeVisible();
+    await expect(page.getByRole('cell', { name: accountName, exact: true })).not.toBeVisible();
   });
 });

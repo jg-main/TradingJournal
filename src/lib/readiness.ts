@@ -23,8 +23,8 @@ export interface ReadinessState {
 }
 
 const ALL_STEPS: MissingStep[] = [
-  { id: 'app_profile', label: 'App Profile', href: '/settings/app' },
-  { id: 'settings', label: 'Risk Settings', href: '/settings/risk' },
+  { id: 'app_profile', label: 'Workspace', href: '/settings/workspace' },
+  { id: 'settings', label: 'Risk Defaults', href: '/settings/risk-defaults' },
   { id: 'accounts', label: 'Accounts', href: '/settings/accounts' },
   { id: 'setups', label: 'Trading Setups', href: '/settings/plays' },
 ];
@@ -40,24 +40,26 @@ type JournalDB = BetterSQLite3Database<typeof schema>;
 export function checkReadiness(db: JournalDB): ReadinessState {
   const missing: MissingStep[] = [];
 
-  // 1. app_profile has at least one row with a non-empty displayName
+  // 1. app_profile has at least one row with timezone set
+  // (displayName is a hidden legacy field preserved through API round-trips
+  // but no longer exposed in the Workspace UI)
   const profileRows = db.select().from(appProfile).all();
   const hasProfile =
     profileRows.length > 0 &&
-    profileRows.some((r) => r.displayName != null && r.displayName.trim().length > 0);
+    profileRows.some((r) => r.timezone != null);
   if (!hasProfile) {
     missing.push(ALL_STEPS[0]);
   }
 
-  // 2. settings has at least one row with startingAccountValue and journalStartDate set
+  // 2. settings has at least one row with maxRiskPerTradePct set
+  // (startingAccountValue and journalStartDate are hidden legacy fields preserved
+  // through API round-trips but no longer exposed in the UI)
   const settingsRows = db.select().from(settings).all();
   const hasSettings =
     settingsRows.length > 0 &&
     settingsRows.some(
       (r) =>
-        r.startingAccountValue != null &&
-        r.journalStartDate != null &&
-        r.journalStartDate.length > 0,
+        r.maxRiskPerTradePct != null,
     );
   if (!hasSettings) {
     missing.push(ALL_STEPS[1]);

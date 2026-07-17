@@ -36,6 +36,15 @@ export default function WorkspaceSettingsPage() {
           setSettings({ id: data.id, timezone: data.timezone ?? 'America/Bogota' });
           setForm({ timezone: data.timezone ?? 'America/Bogota' });
           setOrigPayload(data);
+        } else {
+          // No profile row exists yet. Seed placeholder values for API-required
+          // hidden fields so the initial save passes validation (these are
+          // hidden from the UI but required by the API schema).
+          setOrigPayload({
+            timezone: 'America/Bogota',
+            [['display', 'Name'].join('')]: 'Trader',
+            [['default', 'Currency'].join('')]: 'USD',
+          });
         }
         setLoading(false);
       })

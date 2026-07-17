@@ -146,6 +146,8 @@ function seedSettings() {
       id,
       startingAccountValue: 10000,
       journalStartDate: '2025-01-01',
+      maxRiskPerTradePct: 2,
+      defaultCommission: 0,
       currency: 'USD',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
