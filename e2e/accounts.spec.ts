@@ -84,13 +84,13 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-deposit-withdrawal`;
     const account = await createAccount(page, accountName);
 
-    await page.goto('/accounts');
+    await page.goto('/settings/accounts');
     await expect(page).toHaveURL(/\/accounts$/);
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
 
     await page.getByRole('cell', { name: accountName, exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     await expect(page.getByText('Current Balance')).toBeVisible();
     await expect(page.getByText('No transactions yet.')).toBeVisible();
@@ -116,7 +116,7 @@ test.describe('Accounts', () => {
     await expect(page.getByRole('cell', { name: '$925.00', exact: true })).toBeVisible();
 
     await page.reload();
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.locator('p').filter({ hasText: '$925.00' }).first()).toBeVisible();
     await expect(page.getByRole('row', { name: /Deposit/ })).toBeVisible();
     await expect(page.getByRole('row', { name: /Withdrawal/ })).toBeVisible();
@@ -127,7 +127,7 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-withdrawal-guard`;
     const account = await createAccount(page, accountName);
 
-    await page.goto(`/accounts/${account.id}`);
+    await page.goto(`/settings/accounts/${account.id}`);
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
 
     await page.getByRole('button', { name: 'Withdraw' }).click();
@@ -142,8 +142,8 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-reactivate-inactive`;
     const account = await createAccount(page, accountName);
 
-    await page.goto(`/accounts/${account.id}`);
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await page.goto(`/settings/accounts/${account.id}`);
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
@@ -153,14 +153,14 @@ test.describe('Accounts', () => {
     await expect(page.getByText('Closed')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reactivate Account' })).toBeVisible();
 
-    await page.goto('/accounts');
+    await page.goto('/settings/accounts');
     await page.getByText(/Inactive accounts/).click();
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
     const accountCell = page.getByRole('cell', { name: accountName, exact: true });
     await accountCell.click();
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
 
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.getByText('Closed')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reactivate Account' })).toBeVisible();
 
@@ -168,7 +168,7 @@ test.describe('Accounts', () => {
 
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
-    await page.goto('/accounts');
+    await page.goto('/settings/accounts');
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
   });
 
@@ -177,8 +177,8 @@ test.describe('Accounts', () => {
     const account = await createAccount(page, accountName);
     await createOpenTrade(page, account.id);
 
-    await page.goto(`/accounts/${account.id}`);
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await page.goto(`/settings/accounts/${account.id}`);
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
 
     const deactivateResponse = await page.request.put(`/api/accounts/${account.id}`, {
@@ -190,7 +190,7 @@ test.describe('Accounts', () => {
 
     await page.getByRole('button', { name: 'Close Account' }).click();
     await page.getByRole('button', { name: 'Confirm Close' }).click();
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.getByText('Cannot deactivate account with open trades')).toBeVisible();
 
     const deleteResponse = await page.request.delete(`/api/accounts/${account.id}`);
@@ -198,7 +198,7 @@ test.describe('Accounts', () => {
     const deleteBody = (await deleteResponse.json()) as { error: string };
     expect(deleteBody.error).toBe('Cannot delete account with any trade history');
     await page.reload();
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
   });
 
@@ -206,8 +206,8 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-cancel-close`;
     const account = await createAccount(page, accountName);
 
-    await page.goto(`/accounts/${account.id}`);
-    await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
+    await page.goto(`/settings/accounts/${account.id}`);
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${account.id}`));
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Close Account' }).click();
@@ -224,7 +224,7 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-delete-no-trades`;
     await createAccount(page, accountName);
 
-    await page.goto('/accounts');
+    await page.goto('/settings/accounts');
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
 
     // Target the deactivate button in THIS account's row, not the first one in the list

@@ -11,7 +11,7 @@
  *    Journal Setup, Integrations, Data &amp; Backups, Danger Zone)
  * 3. Accounts page is reachable with default-account controls
  * 4. Account workspace (Overview, Ledger, Positions, Settings tabs)
- *    is reachable via /accounts/[id]
+ *    is reachable via /settings/accounts/[id]
  * 5. Global default → account override → reset to inherited → reload → restart
  *    persistence journey
  * 6. Back navigation from each sub-domain returns to the Settings hub
@@ -259,7 +259,7 @@ test.describe('Settings Ownership Journey', () => {
     const diagnostics = captureDiagnostics(page);
     diagnosticPages.push(page);
 
-    await page.goto('/accounts');
+    await page.goto('/settings/accounts');
     await page.waitForLoadState('networkidle');
 
     // Verify Accounts page heading
@@ -312,7 +312,7 @@ test.describe('Settings Ownership Journey', () => {
     // ── Global defaults are already seeded: 2.5% maxRisk, $1.00 commission ──
 
     // Step 1: Verify the account shows inherited values
-    await page.goto(`/accounts/${testAccount.id}/settings`);
+    await page.goto(`/settings/accounts/${testAccount.id}/settings`);
     await page.waitForLoadState('networkidle');
 
     const maxRiskStatus = page.getByRole('status', { name: 'Effective max risk per trade' });
@@ -375,7 +375,7 @@ test.describe('Settings Ownership Journey', () => {
     // Step 6: Restart simulation — navigate away and back
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
-    await page.goto(`/accounts/${testAccount.id}/settings`);
+    await page.goto(`/settings/accounts/${testAccount.id}/settings`);
     await page.waitForLoadState('networkidle');
 
     await expect(maxRiskInput).toHaveValue('');

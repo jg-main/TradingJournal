@@ -3,7 +3,7 @@
  *
  * Verifies the full runtime path from account navigation through
  * populated positions table, FIFO lot expansion, missing-price state,
- * empty state, and 404 handling at /accounts/[id]/positions.
+ * empty state, and 404 handling at /settings/settings/accounts/[id]/positions.
  *
  * No valuation marks are inserted for the test account, so all positions
  * naturally show the "Missing" markStatus and "—" display values —
@@ -11,7 +11,7 @@
  *
  * Covers:
  * 1. Positions tab navigation from account base route
- * 2. Direct deep-link to /accounts/[id]/positions
+ * 2. Direct deep-link to /settings/settings/accounts/[id]/positions
  * 3. Populated state: summary strip with position count, table with
  *    symbols and column headers, "Current Positions" heading
  * 4. FIFO lot expansion: expand/collapse with lot detail columns
@@ -170,11 +170,11 @@ test.describe('Account Positions Workspace', () => {
     expect(missingStatusPositions.length).toBe(2);
   });
 
-  test('Positions tab navigation: click tab navigates to /accounts/[id]/positions', async ({
+  test('Positions tab navigation: click tab navigates to /settings/settings/accounts/[id]/positions', async ({
     page,
   }) => {
     // Navigate to the account detail page (Overview default tab)
-    await page.goto(`/accounts/${populatedAccountId}`);
+    await page.goto(`/settings/accounts/${populatedAccountId}`);
     await page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}/overview`) &&
@@ -190,7 +190,7 @@ test.describe('Account Positions Workspace', () => {
 
     // Verify deep-linked URL
     await expect(page).toHaveURL(
-      new RegExp(`/accounts/${populatedAccountId}/positions`),
+      new RegExp(`/settings/accounts/${populatedAccountId}/positions`),
     );
 
     // Positions tab should be selected
@@ -201,7 +201,7 @@ test.describe('Account Positions Workspace', () => {
     page,
   }) => {
     // Navigate directly to the positions workspace (not via tab click)
-    await page.goto(`/accounts/${populatedAccountId}/positions`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/positions`);
 
     // Wait for the positions API to return
     await waitForPositionsResponse(page, populatedAccountId);
@@ -246,7 +246,7 @@ test.describe('Account Positions Workspace', () => {
   test('FIFO lot expansion: expand AAPL row and verify lot details', async ({
     page,
   }) => {
-    await page.goto(`/accounts/${populatedAccountId}/positions`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/positions`);
     await waitForPositionsResponse(page, populatedAccountId);
 
     // Wait for the table to be fully rendered
@@ -302,7 +302,7 @@ test.describe('Account Positions Workspace', () => {
     // No valuation marks were inserted during setup — all positions
     // have markStatus='missing', markPrice=null, markedValue=null,
     // and unrealizedPnl=null
-    await page.goto(`/accounts/${populatedAccountId}/positions`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/positions`);
     await waitForPositionsResponse(page, populatedAccountId);
 
     // Both positions should show "Missing" badge
@@ -329,7 +329,7 @@ test.describe('Account Positions Workspace', () => {
     const emptyAccount = await createAccount(page, emptyName);
 
     // Navigate to the positions page
-    await page.goto(`/accounts/${emptyAccount.id}/positions`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}/positions`);
     await waitForPositionsResponse(page, emptyAccount.id);
 
     // Should show empty state
@@ -350,7 +350,7 @@ test.describe('Account Positions Workspace', () => {
     page,
   }) => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    await page.goto(`/accounts/${nonExistentId}/positions`);
+    await page.goto(`/settings/accounts/${nonExistentId}/positions`);
 
     // The layout fetches /api/accounts/:id first; non-existent accounts
     // cause the layout to render an error state without loading children.
@@ -400,7 +400,7 @@ test.describe('Account Positions Workspace', () => {
     });
 
     // Exercise the populated flow
-    await page.goto(`/accounts/${populatedAccountId}/positions`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/positions`);
     await waitForPositionsResponse(page, populatedAccountId);
 
     // Wait for table to render

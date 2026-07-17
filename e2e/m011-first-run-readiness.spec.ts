@@ -230,7 +230,7 @@ test.describe('first-run readiness', () => {
     // Step 4: Create an Account via the UI dialog (navigate directly since the
     // checklist no longer has a "Setup Accounts" step — accounts are managed
     // as their own domain outside the Setup Checklist)
-    await page.goto('/accounts', { waitUntil: 'networkidle' });
+    await page.goto('/settings/accounts', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Add Account' }).click();
     await page.waitForSelector('#account-name', { state: 'visible', timeout: 5_000 });
     await page.locator('#account-name').fill('Guided Account');

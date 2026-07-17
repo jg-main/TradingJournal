@@ -166,7 +166,7 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
     const consoleErrors = await captureConsoleErrors(page);
     const failedRequests = await captureFailedRequests(page);
 
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // The account name should be visible
     await expect(page.getByText('Dashboard V2 E2E')).toBeVisible();
@@ -218,7 +218,7 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
     expect(warnings.some((w: string) => w.includes('Missing mark'))).toBe(true);
 
     // Navigate to the account page and verify UI reflects the warning
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // The performance section should show the data quality warning
     await expect(page.getByText('data quality warning')).toBeVisible();
@@ -248,7 +248,7 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
     await rebuildPerformanceViaApi(request, accountId);
 
     // Navigate to page and verify
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // NAV should be visible (no longer empty)
     await expect(page.getByText('Net Asset Value')).toBeVisible();
@@ -312,7 +312,7 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
     }
 
     // Navigate to account page and verify
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // NAV should still be visible (cash only now)
     await expect(page.getByText('Net Asset Value')).toBeVisible();
@@ -403,7 +403,7 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
     expect(typeof report.totals.comparisons).toBe('number');
 
     // ── 3. Navigate to account page and verify reconciliation summary ────
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // Click the reconciliation Refresh button to fetch the report
     const refreshButton = page.getByRole('button', { name: 'Refresh reconciliation report' });

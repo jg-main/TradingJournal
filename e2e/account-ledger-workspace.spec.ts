@@ -3,7 +3,7 @@
  *
  * Verifies the full runtime path from account navigation through
  * filtering, pagination, expansion, and correction audit inspection
- * at /accounts/[id]/ledger.
+ * at /settings/settings/accounts/[id]/ledger.
  *
  * Covers:
  * 1. Ledger tab navigation and deep-link
@@ -198,9 +198,9 @@ test.describe('Account Ledger Workspace', () => {
     expect(correctionEvents.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('renders Ledger tab, deep-links to /accounts/[id]/ledger', async ({ page }) => {
+  test('renders Ledger tab, deep-links to /settings/settings/accounts/[id]/ledger', async ({ page }) => {
     // Navigate to the account detail page (Overview default tab)
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
     await page.waitForSelector('text=Overview');
 
     // The Ledger tab should be visible
@@ -211,14 +211,14 @@ test.describe('Account Ledger Workspace', () => {
     await ledgerTab.click();
 
     // Verify deep-linked URL
-    await expect(page).toHaveURL(new RegExp(`/accounts/${accountId}/ledger`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${accountId}/ledger`));
 
     // Ledger tab should be selected
     await expect(ledgerTab).toHaveAttribute('aria-selected', 'true');
   });
 
   test('displays event rows with type badges, descriptions, dates, and posted status', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
 
     // Wait for the ledger to load
     await page.waitForResponse(
@@ -249,7 +249,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('displays positive and negative cash impact values', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
 
     await page.waitForResponse(
       (res) =>
@@ -267,7 +267,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('shows total event count in results info', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
 
     await page.waitForResponse(
       (res) =>
@@ -282,7 +282,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('category filter buttons are present and All is selected by default', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
 
     await page.waitForResponse(
       (res) =>
@@ -310,7 +310,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('category filtering: clicking Trade filter shows only trade events', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -337,7 +337,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('category filtering: clicking Cash filter shows only deposit events', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -361,7 +361,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('empty filtered results show "No matching events." and Clear filter button', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -394,7 +394,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('pagination: shows Prev/Next controls and page info', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -423,7 +423,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('row expansion: expand to show debit and credit postings', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -452,7 +452,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('row expansion: shows idempotency key if present', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -476,7 +476,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('correction group: displays Corrected badge with expandable lineage', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -513,7 +513,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('no duplicate primary rows: correction group does not duplicate events', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -555,7 +555,7 @@ test.describe('Account Ledger Workspace', () => {
     const emptyAccount = await createAccount(page, emptyName);
 
     // Navigate to the ledger page
-    await page.goto(`/accounts/${emptyAccount.id}/ledger`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}/ledger`);
     await page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${emptyAccount.id}/ledger`) &&
@@ -573,7 +573,7 @@ test.describe('Account Ledger Workspace', () => {
   });
 
   test('negative: empty filter on populated account shows "No matching events." not a placeholder row', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
     await page.waitForResponse((res) =>
       res.url().includes(`/api/accounts/${accountId}/ledger`) && res.status() === 200,
     );
@@ -597,7 +597,7 @@ test.describe('Account Ledger Workspace', () => {
 
   test('Ledger tab is deep-linkable: direct URL renders the ledger workspace', async ({ page }) => {
     // Navigate directly to the ledger URL (not via tab click)
-    await page.goto(`/accounts/${accountId}/ledger`);
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
 
     // Should load the ledger workspace directly
     await page.waitForResponse(

@@ -100,7 +100,7 @@ test.describe('Accounting Performance — account valuation and performance flow
   });
 
   test('shows the Valuation & Performance section on the account page', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
     await expect(page.getByText('Valuation & Performance')).toBeVisible();
     await expect(page.getByText('Performance & Valuation')).toBeVisible();
     await expect(page.getByRole('button', { name: /Post valuation mark/i })).toBeVisible();
@@ -108,7 +108,7 @@ test.describe('Accounting Performance — account valuation and performance flow
   });
 
   test('shows empty state before any trades', async ({ page }) => {
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
     // Should show the empty state message
     await expect(page.getByText('No performance data yet.')).toBeVisible();
   });
@@ -138,7 +138,7 @@ test.describe('Accounting Performance — account valuation and performance flow
     expect(rebuildResult.positionCount).toBe(1);
 
     // Now navigate to the page and verify the warning is visible
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
     await expect(page.getByText('data quality warning')).toBeVisible();
     // The NAV card should be visible (the rebuild populated it)
     await expect(page.getByText('Net Asset Value')).toBeVisible();
@@ -205,7 +205,7 @@ test.describe('Accounting Performance — account valuation and performance flow
     expect(netExposure).toBeCloseTo(grossExposure, 1);
 
     // Navigate to the page and verify the UI
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // NAV should be visible
     await expect(page.getByText('Net Asset Value')).toBeVisible();
@@ -268,7 +268,7 @@ test.describe('Accounting Performance — account valuation and performance flow
     }
 
     // Navigate to the page
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // NAV should still be visible
     await expect(page.getByText('Net Asset Value')).toBeVisible();
@@ -300,7 +300,7 @@ test.describe('Accounting Performance — account valuation and performance flow
     expect(netCash).toBeGreaterThanOrEqual(50000);
 
     // Navigate to the page and verify the P&L display
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
     // Look for the Total P&L metric card
     await expect(page.getByText('Total P&L')).toBeVisible();
     // The NAV should show a realistic number

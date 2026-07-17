@@ -145,7 +145,7 @@ test.describe('Account Reconciliation Workspace', () => {
     expect(typeof migrationResult.rebuildFingerprint).toBe('string');
 
     // ── 3. Navigate to the reconciliation workspace via deep link ───
-    await page.goto(`/accounts/${account.id}/reconciliation`);
+    await page.goto(`/settings/accounts/${account.id}/reconciliation`);
 
     // ── 4. Wait for the reconciliation API response ─────────────────
     // The component fetches the report on mount. Wait for the 200 response.
@@ -280,7 +280,7 @@ test.describe('Account Reconciliation Workspace', () => {
 
     // ── 14. URL continuity — stays on the reconciliation route ─────
     await expect(page).toHaveURL(
-      new RegExp(`/accounts/${account.id}/reconciliation$`),
+      new RegExp(`/settings/accounts/${account.id}/reconciliation$`),
     );
 
     // ── 15. No fabricated zero values for unavailable data ──────────
@@ -317,7 +317,7 @@ test.describe('Account Reconciliation Workspace', () => {
     await activateAccount(page, account.id);
 
     // ── 2. Navigate direct to reconciliation deep link ──────────────
-    await page.goto(`/accounts/${account.id}/reconciliation`);
+    await page.goto(`/settings/accounts/${account.id}/reconciliation`);
 
     // ── 3. Wait for the reconciliation API 400 (no migration) ───────
     await page.waitForResponse(
@@ -396,7 +396,7 @@ test.describe('Account Reconciliation Workspace', () => {
 
     // ── 13. URL continuity — stays on the reconciliation route ─────
     await expect(page).toHaveURL(
-      new RegExp(`/accounts/${account.id}/reconciliation$`),
+      new RegExp(`/settings/accounts/${account.id}/reconciliation$`),
     );
 
     // ── 14. No console errors or failed network requests ────────────

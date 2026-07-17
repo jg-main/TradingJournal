@@ -191,7 +191,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
 
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // Account name should be visible
     await expect(page.getByText('Correction E2E')).toBeVisible();
@@ -261,7 +261,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     expect(nav).toBeGreaterThan(0);
 
     // ── Verify via page — the account performance component ─────────────
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // AAPL should be visible in the positions section
     await expect(page.getByText('AAPL').first()).toBeVisible();
@@ -362,7 +362,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     expect(correction.reason).toBe('E2E test: corrected price from $150 to $145');
 
     // ── Verify via page ─────────────────────────────────────────────────
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
 
     // AAPL should still show
     await expect(page.getByText('AAPL').first()).toBeVisible();
@@ -615,7 +615,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     expect(execData.total).toBeGreaterThanOrEqual(3);
 
     // ── Navigate to the account detail page ──────────────────────────────
-    await page.goto(`/accounts/${accountId}`, { waitUntil: 'networkidle' });
+    await page.goto(`/settings/accounts/${accountId}`, { waitUntil: 'networkidle' });
 
     // ── Verify account header remains intact ─────────────────────────────
     await expect(page.getByText('Correction E2E')).toBeVisible();

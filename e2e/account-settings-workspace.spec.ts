@@ -2,12 +2,12 @@
  * E2E browser test for the Account Settings workspace.
  *
  * Verifies:
- * 1. Deep-link to /accounts/[id]/settings renders identity & trading defaults
+ * 1. Deep-link to /settings/settings/accounts/[id]/settings renders identity & trading defaults
  * 2. No legacy performance/balance/transaction sections on the settings tab
  * 3. Edit identity and reload values (persistence)
  * 4. Close account with confirmation dialog and closure summary
  * 5. Reactivate account from inactive state
- * 6. Settings tab direct route: /accounts/[id]/settings renders identity, defaults, lifecycle
+ * 6. Settings tab direct route: /settings/settings/accounts/[id]/settings renders identity, defaults, lifecycle
  * 7. Unknown account 404 error state on the settings tab
  * 8. Console/request diagnostics
  *
@@ -126,7 +126,7 @@ test.describe('Account Settings Workspace', () => {
     });
 
     test('renders account identity section with name field and status badge', async ({ page }) => {
-      await page.goto(`/accounts/${accountId}/settings`);
+      await page.goto(`/settings/accounts/${accountId}/settings`);
 
       // Wait for the account data to load
       await page.waitForResponse(
@@ -146,7 +146,7 @@ test.describe('Account Settings Workspace', () => {
     });
 
     test('renders trading defaults section with per-account fields and null fallback', async ({ page }) => {
-      await page.goto(`/accounts/${accountId}/settings`);
+      await page.goto(`/settings/accounts/${accountId}/settings`);
 
       await page.waitForResponse(
         (res) => res.url().includes(`/api/accounts/${accountId}`) && res.status() === 200,
@@ -172,7 +172,7 @@ test.describe('Account Settings Workspace', () => {
     });
 
     test('does NOT show legacy performance, balance, or transaction sections', async ({ page }) => {
-      await page.goto(`/accounts/${accountId}/settings`);
+      await page.goto(`/settings/accounts/${accountId}/settings`);
 
       await page.waitForResponse(
         (res) => res.url().includes(`/api/accounts/${accountId}`) && res.status() === 200,
@@ -190,7 +190,7 @@ test.describe('Account Settings Workspace', () => {
     });
 
     test('renders lifecycle controls section with Close Account button', async ({ page }) => {
-      await page.goto(`/accounts/${accountId}/settings`);
+      await page.goto(`/settings/accounts/${accountId}/settings`);
 
       await page.waitForResponse(
         (res) => res.url().includes(`/api/accounts/${accountId}`) && res.status() === 200,
@@ -221,7 +221,7 @@ test.describe('Account Settings Workspace', () => {
     test('loads initial account values, then persists values via API and verifies after reload', async ({ page }) => {
       const errorCapture = setupErrorCapture(page);
 
-      await page.goto(`/accounts/${testAccountId}/settings`);
+      await page.goto(`/settings/accounts/${testAccountId}/settings`);
       await page.waitForResponse(
         (res) => res.url().includes(`/api/accounts/${testAccountId}`) && res.status() === 200,
       );
@@ -280,7 +280,7 @@ test.describe('Account Settings Workspace', () => {
     });
 
     test('close account with confirmation dialog and closure summary', async ({ page }) => {
-      await page.goto(`/accounts/${lifecycleAccountId}/settings`);
+      await page.goto(`/settings/accounts/${lifecycleAccountId}/settings`);
       await page.waitForResponse(
         (res) => res.url().includes(`/api/accounts/${lifecycleAccountId}`) && res.status() === 200,
       );
@@ -332,7 +332,7 @@ test.describe('Account Settings Workspace', () => {
     });
 
     test('reactivate previously closed account', async ({ page }) => {
-      await page.goto(`/accounts/${lifecycleAccountId}/settings`);
+      await page.goto(`/settings/accounts/${lifecycleAccountId}/settings`);
       await page.waitForResponse(
         (res) => res.url().includes(`/api/accounts/${lifecycleAccountId}`) && res.status() === 200,
       );
@@ -378,17 +378,17 @@ test.describe('Account Settings Workspace', () => {
   });
 
   test.describe('Settings tab direct route and unknown account', () => {
-    test('/accounts/[id]/settings renders identity and lifecycle controls', async ({ page }) => {
+    test('/settings/settings/accounts/[id]/settings renders identity and lifecycle controls', async ({ page }) => {
       // Use the account created in the first test group
       const ts = Date.now();
       const testAccount = await createAccount(page, `Direct Route E2E ${ts}`);
       await activateAccount(page, testAccount.id);
 
       // Navigate directly to the Settings tab
-      await page.goto(`/accounts/${testAccount.id}/settings`);
+      await page.goto(`/settings/accounts/${testAccount.id}/settings`);
 
       // Should land at the same URL (no redirect)
-      await expect(page).toHaveURL(`/accounts/${testAccount.id}/settings`);
+      await expect(page).toHaveURL(`/settings/accounts/${testAccount.id}/settings`);
 
       // Verify settings content rendered
       await page.waitForResponse(
@@ -399,7 +399,7 @@ test.describe('Account Settings Workspace', () => {
 
     test('shows not-found error for unknown account UUID', async ({ page }) => {
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
-      await page.goto(`/accounts/${nonExistentId}/settings`);
+      await page.goto(`/settings/accounts/${nonExistentId}/settings`);
 
       // Wait for the account API to return 404
       await page.waitForResponse(

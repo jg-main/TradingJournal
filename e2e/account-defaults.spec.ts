@@ -53,7 +53,7 @@ test('owns the default account and preserves truthful defaults through reload, r
   });
   expect(globalSettingsResponse.ok()).toBeTruthy();
 
-  await page.goto('/accounts');
+  await page.goto('/settings/accounts');
   const defaultAccount = page.getByLabel('Account used by default');
   await expect(defaultAccount).toBeVisible();
 
@@ -96,7 +96,7 @@ test('owns the default account and preserves truthful defaults through reload, r
   await expect(page.getByRole('row').filter({ hasText: account.name }).getByText('Default', { exact: true })).toBeVisible();
   await page.unroute('**/api/settings');
 
-  await page.goto(`/accounts/${account.id}/settings`);
+  await page.goto(`/settings/accounts/${account.id}/settings`);
   const maxRiskStatus = page.getByRole('status', { name: 'Effective max risk per trade' });
   const commissionStatus = page.getByRole('status', { name: 'Effective default commission' });
   await expect(maxRiskStatus).toContainText('Inherited');

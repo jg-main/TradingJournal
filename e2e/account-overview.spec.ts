@@ -94,7 +94,7 @@ test.describe('Account Overview Workspace', () => {
     await activateAccount(page, account.id);
 
     // Navigate to the account detail page (Overview default tab)
-    await page.goto(`/accounts/${account.id}`);
+    await page.goto(`/settings/accounts/${account.id}`);
 
     // Wait for the overview API response before asserting
     await page.waitForResponse(
@@ -157,7 +157,7 @@ test.describe('Account Overview Workspace', () => {
 
   test('Tab navigation: clicking Ledger tab navigates to the Ledger sub-route', async ({ page }) => {
     // Navigate to the known populated account
-    await page.goto(`/accounts/${populatedAccountId}`);
+    await page.goto(`/settings/accounts/${populatedAccountId}`);
 
     // Wait for the overview to finish loading
     await page.waitForResponse(
@@ -168,7 +168,7 @@ test.describe('Account Overview Workspace', () => {
     await page.getByRole('tab', { name: 'Ledger' }).click();
 
     // Verify URL changed to include /ledger, proving deep-linkable navigation
-    await expect(page).toHaveURL(new RegExp(`/accounts/${populatedAccountId}/ledger`));
+    await expect(page).toHaveURL(new RegExp(`/settings/accounts/${populatedAccountId}/ledger`));
   });
 
   test('Overview renders empty state for an account with no positions or events', async ({ page }) => {
@@ -177,7 +177,7 @@ test.describe('Account Overview Workspace', () => {
     await activateAccount(page, emptyAccount.id);
 
     // Navigate directly — no deposits, no trades, no events
-    await page.goto(`/accounts/${emptyAccount.id}`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}`);
 
     // Wait for the overview API response
     await page.waitForResponse(
@@ -215,7 +215,7 @@ test.describe('Account Overview Workspace', () => {
 
   test('returns 404 error state for non-existent account', async ({ page }) => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    await page.goto(`/accounts/${nonExistentId}`);
+    await page.goto(`/settings/accounts/${nonExistentId}`);
 
     // Wait for the account API to return 404
     await page.waitForResponse(

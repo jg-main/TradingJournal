@@ -97,7 +97,7 @@ test.describe('Accounting Activity — e2e', () => {
     expect(ssRes.status()).toBe(201);
 
     // ── 4. Navigate to the account page ──────────────────────────────
-    await page.goto(`/accounts/${accountId}`);
+    await page.goto(`/settings/accounts/${accountId}`);
     await page.waitForLoadState('networkidle');
 
     // ── 5. Verify the page loaded and activity table is visible ──────
@@ -251,7 +251,7 @@ test.describe('Accounting Activity — e2e', () => {
     const account = await accRes.json();
 
     // Navigate to the account page
-    await page.goto(`/accounts/${account.id}`);
+    await page.goto(`/settings/accounts/${account.id}`);
     await page.waitForLoadState('networkidle');
 
     // Verify empty state message
@@ -278,7 +278,7 @@ test.describe('Accounting Activity — e2e', () => {
     });
 
     // Navigate to account
-    await page.goto(`/accounts/${account.id}`);
+    await page.goto(`/settings/accounts/${account.id}`);
     await page.waitForLoadState('networkidle');
 
     // Post a positive manual adjustment

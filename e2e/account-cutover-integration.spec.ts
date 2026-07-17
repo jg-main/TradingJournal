@@ -20,7 +20,7 @@
  * 8. Settings tab: identity section, trading defaults, lifecycle controls,
  *    no legacy balance/performance sections
  * 9. Settings persistence: edit account name and verify after reload
- * 10. Settings tab direct route: /accounts/[id]/settings renders identity, defaults, lifecycle
+ * 10. Settings tab direct route: /settings/settings/accounts/[id]/settings renders identity, defaults, lifecycle
  * 11. Empty account: empty states on Overview, Ledger, Positions,
  *     Reconciliation (no migration), Settings with no fabricated defaults
  * 12. Console and request diagnostics: no unhandled errors or failures
@@ -256,7 +256,7 @@ test.describe('Account Cutover Integration', () => {
 
   test('base route shows all five workspace tabs with Overview selected', async ({ page }) => {
     // Navigate to the account base route (Overview default tab)
-    await page.goto(`/accounts/${populatedAccountId}`);
+    await page.goto(`/settings/accounts/${populatedAccountId}`);
 
     // Wait for the overview API response
     await page.waitForResponse(
@@ -294,7 +294,7 @@ test.describe('Account Cutover Integration', () => {
   // ═════════════════════════════════════════════════════════════════════
 
   test('Overview tab shows populated metrics, events preview, and no legacy headers', async ({ page }) => {
-    await page.goto(`/accounts/${populatedAccountId}`);
+    await page.goto(`/settings/accounts/${populatedAccountId}`);
 
     await page.waitForResponse(
       (res) =>
@@ -353,7 +353,7 @@ test.describe('Account Cutover Integration', () => {
   // ═════════════════════════════════════════════════════════════════════
 
   test('Ledger tab shows trade execution event with trade navigation link', async ({ page }) => {
-    await page.goto(`/accounts/${populatedAccountId}/ledger`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/ledger`);
 
     await page.waitForResponse(
       (res) =>
@@ -413,7 +413,7 @@ test.describe('Account Cutover Integration', () => {
     ).toBeVisible();
 
     // ── Navigate back to account workspace ──────────────────────────
-    await page.goto(`/accounts/${populatedAccountId}/ledger`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/ledger`);
     await page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}/ledger`) &&
@@ -436,7 +436,7 @@ test.describe('Account Cutover Integration', () => {
   // ═════════════════════════════════════════════════════════════════════
 
   test('Positions tab renders with populated signals and no fabricated data', async ({ page }) => {
-    await page.goto(`/accounts/${populatedAccountId}/positions`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/positions`);
 
     // Wait for positions API response
     await page.waitForResponse(
@@ -486,7 +486,7 @@ test.describe('Account Cutover Integration', () => {
 
     // ── URL continuity ──────────────────────────────────────────────
     await expect(page).toHaveURL(
-      new RegExp(`/accounts/${populatedAccountId}/positions$`),
+      new RegExp(`/settings/accounts/${populatedAccountId}/positions$`),
     );
   });
 
@@ -499,7 +499,7 @@ test.describe('Account Cutover Integration', () => {
   }) => {
     const { errors, failed } = setupErrorCapture(page);
 
-    await page.goto(`/accounts/${populatedAccountId}/reconciliation`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/reconciliation`);
 
     // Wait for reconciliation API response
     await page.waitForResponse(
@@ -565,7 +565,7 @@ test.describe('Account Cutover Integration', () => {
 
     // ── URL continuity ──────────────────────────────────────────────
     await expect(page).toHaveURL(
-      new RegExp(`/accounts/${populatedAccountId}/reconciliation$`),
+      new RegExp(`/settings/accounts/${populatedAccountId}/reconciliation$`),
     );
 
     // ── No console errors or failed requests (reconciliation 4xx filtered) ─
@@ -582,7 +582,7 @@ test.describe('Account Cutover Integration', () => {
   }) => {
     const { errors, failed } = setupErrorCapture(page);
 
-    await page.goto(`/accounts/${populatedAccountId}/settings`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/settings`);
 
     await page.waitForResponse(
       (res) =>
@@ -655,7 +655,7 @@ test.describe('Account Cutover Integration', () => {
   }) => {
     const { errors, failed } = setupErrorCapture(page);
 
-    await page.goto(`/accounts/${populatedAccountId}/settings`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/settings`);
 
     await page.waitForResponse(
       (res) =>
@@ -704,14 +704,14 @@ test.describe('Account Cutover Integration', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 8: Settings tab direct route — /accounts/[id]/settings renders
+  // Test 8: Settings tab direct route — /settings/settings/accounts/[id]/settings renders
   // ═════════════════════════════════════════════════════════════════════
 
-  test('/accounts/[id]/settings renders identity section and lifecycle controls', async ({
+  test('/settings/settings/accounts/[id]/settings renders identity section and lifecycle controls', async ({
     page,
   }) => {
     // Navigate directly to the Settings tab
-    await page.goto(`/accounts/${populatedAccountId}/settings`);
+    await page.goto(`/settings/accounts/${populatedAccountId}/settings`);
 
     // Should land at the same URL (no redirect needed)
     await expect(page).toHaveURL(
@@ -743,7 +743,7 @@ test.describe('Account Cutover Integration', () => {
     await activateAccount(page, emptyAccount.id);
 
     // ── Overview tab ───────────────────────────────────────────────
-    await page.goto(`/accounts/${emptyAccount.id}`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}`);
 
     await page.waitForResponse(
       (res) =>
@@ -765,7 +765,7 @@ test.describe('Account Cutover Integration', () => {
     ).toHaveCount(0);
 
     // ── Ledger tab ──────────────────────────────────────────────────
-    await page.goto(`/accounts/${emptyAccount.id}/ledger`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}/ledger`);
 
     await page.waitForResponse(
       (res) =>
@@ -778,7 +778,7 @@ test.describe('Account Cutover Integration', () => {
     ).toBeVisible();
 
     // ── Positions tab ───────────────────────────────────────────────
-    await page.goto(`/accounts/${emptyAccount.id}/positions`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}/positions`);
 
     await page.waitForResponse(
       (res) =>
@@ -795,7 +795,7 @@ test.describe('Account Cutover Integration', () => {
     ).toBeVisible();
 
     // ── Reconciliation tab (no migration — blocked state) ──────────
-    await page.goto(`/accounts/${emptyAccount.id}/reconciliation`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}/reconciliation`);
 
     await page.waitForResponse(
       (res) =>
@@ -814,7 +814,7 @@ test.describe('Account Cutover Integration', () => {
     ).not.toBeVisible();
 
     // ── Settings tab ────────────────────────────────────────────────
-    await page.goto(`/accounts/${emptyAccount.id}/settings`);
+    await page.goto(`/settings/accounts/${emptyAccount.id}/settings`);
 
     await page.waitForResponse(
       (res) =>
@@ -837,7 +837,7 @@ test.describe('Account Cutover Integration', () => {
 
     // ── Final URL sanity ────────────────────────────────────────────
     await expect(page).toHaveURL(
-      new RegExp(`/accounts/${emptyAccount.id}/settings$`),
+      new RegExp(`/settings/accounts/${emptyAccount.id}/settings$`),
     );
   });
 
@@ -847,7 +847,7 @@ test.describe('Account Cutover Integration', () => {
 
   test('returns 404 error for non-existent account', async ({ page }) => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    await page.goto(`/accounts/${nonExistentId}`);
+    await page.goto(`/settings/accounts/${nonExistentId}`);
 
     // Wait for the account API to return 404
     await page.waitForResponse(
