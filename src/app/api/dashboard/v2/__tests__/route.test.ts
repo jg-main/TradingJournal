@@ -386,11 +386,12 @@ describe('GET /api/dashboard/v2', () => {
     expect(reconciliation.comparisons).toBeNull();
     expect(reconciliation.totals).toBeNull();
 
-    // Integrity
+    // Integrity — reconciliation eligibility was removed from integrity (legacy cutover complete)
+    // A healthy account with all fresh marks has no warnings, so status is 'healthy'
     const integrity = body.integrity as { status: string; warnings: unknown[] };
-    expect(integrity.status).toBe('critical');
+    expect(integrity.status).toBe('healthy');
     expect(Array.isArray(integrity.warnings)).toBe(true);
-    expect(integrity.warnings.length).toBeGreaterThan(0);
+    expect(integrity.warnings.length).toBe(0);
 
     // Timestamp
     expect(typeof body.computedAt).toBe('string');
@@ -575,8 +576,9 @@ describe('GET /api/dashboard/v2', () => {
     const body = result.body as Record<string, unknown>;
     const integrity = body.integrity as Record<string, unknown>;
 
-    // Integrity status should be 'critical' because no reconciliation has run
-    expect(integrity.status).toBe('critical');
+    // Integrity status should be 'healthy' because no reconciliation warnings exist
+    // (reconciliation eligibility was removed from integrity — legacy cutover complete)
+    expect(integrity.status).toBe('healthy');
     expect(Array.isArray(integrity.warnings)).toBe(true);
   });
 });

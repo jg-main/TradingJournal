@@ -73,6 +73,7 @@ const EXPECTED_LABEL_KEYS = new Set([
   'account_rollforward',
   'weekly_reviews',
   'review_action_items',
+  'alert_log',
 ]);
 
 describe('Backup/Restore Table Consistency', () => {

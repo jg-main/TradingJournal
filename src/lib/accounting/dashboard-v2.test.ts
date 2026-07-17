@@ -579,13 +579,14 @@ describe('computeDashboardV2', () => {
     expect(result!.reconciliation.totals).toBeNull();
   });
 
-  it('reports integrity status as warning when no migration has run', () => {
+  it('reports integrity status as healthy when no reconciliation warnings exist', () => {
     const result = computeDashboardV2(ctx.sqlite, ctx.healthyAccountId);
     expect(result).toBeDefined();
 
-    // No reconciliation = critical because reconciliation is not eligible
-    expect(result!.integrity.status).toBe('critical');
-    expect(result!.integrity.warnings.length).toBeGreaterThan(0);
+    // Reconciliation eligibility was removed from integrity — legacy cutover complete
+    // A healthy account with all fresh marks has no warnings, so status is 'healthy'
+    expect(result!.integrity.status).toBe('healthy');
+    expect(result!.integrity.warnings.length).toBe(0);
   });
 
   it('reports integrity status as critical for missing marks', () => {

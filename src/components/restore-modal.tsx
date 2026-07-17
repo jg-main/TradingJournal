@@ -56,6 +56,7 @@ const TABLE_LABELS: Record<string, string> = {
   account_rollforward: 'Account Rollforward',
   weekly_reviews: 'Weekly Reviews',
   review_action_items: 'Review Action Items',
+  alert_log: 'Alert Log',
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
