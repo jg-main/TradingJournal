@@ -180,13 +180,13 @@ function classifyMarkStatus(
 }
 
 /**
- * Compute the integrity status based on performance warnings, valuation
- * completeness, and reconciliation eligibility.
+ * Compute the integrity status based on performance warnings and valuation
+ * completeness. Reconciliation eligibility is no longer checked here —
+ * legacy cutover is complete.
  */
 function deriveIntegrityStatus(
   performanceWarnings: string[],
   valuationCompleteness: ValuationCompleteness,
-  reconciliation: { eligible: boolean; refusalReasons: string[] },
 ): { status: IntegrityStatus; warnings: string[] } {
   const warnings: string[] = [];
   warnings.push(...performanceWarnings);
@@ -205,18 +205,10 @@ function deriveIntegrityStatus(
     );
   }
 
-  // Check reconciliation eligibility
-  if (!reconciliation.eligible && reconciliation.refusalReasons.length > 0) {
-    warnings.push(...reconciliation.refusalReasons.map((r) => `Reconciliation: ${r}`));
-  }
-
   let status: IntegrityStatus;
   if (warnings.length === 0) {
     status = 'healthy';
-  } else if (
-    valuationCompleteness.missing > 0 ||
-    (!reconciliation.eligible && reconciliation.refusalReasons.length > 0)
-  ) {
+  } else if (valuationCompleteness.missing > 0) {
     status = 'critical';
   } else if (valuationCompleteness.stale > 0 || performanceWarnings.length > 0) {
     status = 'warning';
@@ -480,7 +472,6 @@ export function computeDashboardV2(
   const integrity = deriveIntegrityStatus(
     perfWarnings,
     valuationCompleteness,
-    reconciliationSummary,
   );
 
   // ── Assemble response ───────────────────────────────────────────────

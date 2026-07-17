@@ -116,8 +116,7 @@ all data as plain function arguments.
   migration history or clean unrelated files.
 - Do not commit or rely on generated artifacts from `playwright-report/`,
   `test-results/`, `.next/`, `.trading-journal/`, `.test*db`, or `.gsd-*`.
-- `npm run clean:artifacts` removes `docs` in this repo. Do not place durable
-  project documentation under `docs/` unless you also update that cleanup
-  behavior intentionally.
+- The `docs/` directory is preserved by `npm run clean:artifacts`. It is safe to
+  place durable project documentation there.
 - `CLAUDE.md` is only a pointer to this file; keep operational agent guidance
   here.
