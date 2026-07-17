@@ -92,6 +92,7 @@ export default defineConfig({
       'src/components/dashboard/formatting.test.ts',
       'src/components/dashboard/kpi-card.test.tsx',
       'src/components/dashboard/kpi-widgets.test.tsx',
+      'src/components/dashboard/equity-drawdown-chart.test.tsx',
       'src/components/accounting/account-correction-form.test.tsx',
       'src/components/accounting/account-overview.test.tsx',
       'src/components/accounting/account-ledger.test.tsx',

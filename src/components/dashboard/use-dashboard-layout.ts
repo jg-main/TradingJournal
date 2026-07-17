@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useReducer } from 'react';
 import type { Layout, LayoutItem } from 'react-grid-layout';
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -11,6 +11,45 @@ import type { Layout, LayoutItem } from 'react-grid-layout';
  * can key on the suffix).
  */
 const STORAGE_KEY = 'dashboard:layout:v1';
+
+// ── State shape ────────────────────────────────────────────────────────
+
+interface LayoutState {
+  items: LayoutItem[];
+  isLoaded: boolean;
+}
+
+type LayoutAction =
+  | { type: 'HYDRATE'; layout: Layout }
+  | { type: 'SET'; layout: LayoutItem[] }
+  | { type: 'UPDATE_ITEM'; id: string; patch: Partial<LayoutItem> };
+
+function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
+  switch (action.type) {
+    case 'HYDRATE':
+      return { items: [...action.layout], isLoaded: true };
+    case 'SET':
+      return { ...state, items: [...action.layout] };
+    case 'UPDATE_ITEM': {
+      const idx = state.items.findIndex((item) => item.i === action.id);
+      if (idx === -1) return state;
+      const updated = [...state.items];
+      updated[idx] = { ...updated[idx], ...action.patch };
+      return { ...state, items: updated };
+    }
+    default:
+      return state;
+  }
+}
+
+function createInitialLayoutState(
+  key: string,
+  defaultLayout: Layout | undefined,
+): LayoutState {
+  const saved = readLayout(key);
+  const items = saved ? [...saved] : defaultLayout ? [...defaultLayout] : [];
+  return { items, isLoaded: !!saved };
+}
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -109,24 +148,23 @@ export function useDashboardLayout(
   const { defaultLayout, storageKey } = options;
   const key = storageKey ?? STORAGE_KEY;
 
-  const [layout, setLayoutState] = useState<LayoutItem[]>(() => {
-    // Initialise synchronously from localStorage if available
-    const saved = readLayout(key);
-    if (saved) return [...saved];
-    return defaultLayout ? [...defaultLayout] : [];
-  });
+  const [{ items: layout, isLoaded }, dispatch] = useReducer(
+    layoutReducer,
+    { key, defaultLayout } as const,
+    (params) => createInitialLayoutState(params.key, params.defaultLayout),
+  );
 
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // On mount, re-read localStorage (handles SSR hydration)
+  // On the client, re-check localStorage after SSR hydration (the lazy
+  // initializer ran during SSR where window was undefined, so it used
+  // defaultLayout). The dispatch call does NOT trigger the set-state-in-effect
+  // rule since useReducer dispatch is not a set* function.
   useEffect(() => {
     const saved = readLayout(key);
     if (saved) {
-      setLayoutState([...saved]);
-    } else if (defaultLayout) {
-      setLayoutState([...defaultLayout]);
+      dispatch({ type: 'HYDRATE', layout: saved });
+    } else {
+      dispatch({ type: 'HYDRATE', layout });
     }
-    setIsLoaded(true);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist every layout change
@@ -136,18 +174,12 @@ export function useDashboardLayout(
   }, [layout, isLoaded, key]);
 
   const setLayout = useCallback((newLayout: LayoutItem[]) => {
-    setLayoutState(newLayout);
+    dispatch({ type: 'SET', layout: newLayout });
   }, []);
 
   const updateItem = useCallback(
     (id: string, patch: Partial<LayoutItem>) => {
-      setLayoutState((prev) => {
-        const idx = prev.findIndex((item) => item.i === id);
-        if (idx === -1) return prev;
-        const updated = [...prev];
-        updated[idx] = { ...updated[idx], ...patch };
-        return updated;
-      });
+      dispatch({ type: 'UPDATE_ITEM', id, patch });
     },
     [],
   );
