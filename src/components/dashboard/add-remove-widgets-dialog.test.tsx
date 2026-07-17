@@ -3,7 +3,7 @@
  *
  * Covers: sheet open/close state, widget listing by category, toggle
  * switch state from hiddenWidgetIds, toggle callback invocation,
- * accessibility attributes on toggles, and all 13 registered widgets
+ * accessibility attributes on toggles, and all 14 registered widgets
  * appearing in the correct category groups.
  *
  * Run: npx vitest run src/components/dashboard/add-remove-widgets-dialog.test.tsx
@@ -70,7 +70,7 @@ describe('AddRemoveWidgetsDialog', () => {
     expect(screen.getByText('Valuation')).toBeTruthy();
   });
 
-  it('renders all 13 registered widgets', () => {
+  it('renders all 14 registered widgets', () => {
     renderDialog({ open: true });
     // Metrics (3)
     expect(screen.getByText('Account Performance')).toBeTruthy();
@@ -86,8 +86,9 @@ describe('AddRemoveWidgetsDialog', () => {
     expect(screen.getByText('Period Comparison')).toBeTruthy();
     expect(screen.getByText('Attention Insights')).toBeTruthy();
     expect(screen.getByText('Directional Performance')).toBeTruthy();
-    // Valuation (1)
+    // Valuation (2)
     expect(screen.getByText('Valuation Positions')).toBeTruthy();
+    expect(screen.getByText('Open Positions & Risk')).toBeTruthy();
   });
 
   // ── Widgets ordered correctly within categories ───────────────────
@@ -106,6 +107,7 @@ describe('AddRemoveWidgetsDialog', () => {
 
     // Valuation row
     expect(screen.getByTestId('widget-row-valuation-positions')).toBeTruthy();
+    expect(screen.getByTestId('widget-row-open-positions-risk')).toBeTruthy();
   });
 
   // ── Toggle Switch State ───────────────────────────────────────────
@@ -220,10 +222,10 @@ describe('AddRemoveWidgetsDialog', () => {
 
   // ── Snapshot: all widgets present ─────────────────────────────────
 
-  it('renders the correct number of toggle switches (13)', () => {
+  it('renders the correct number of toggle switches (14)', () => {
     renderDialog({ open: true });
     const toggles = screen.getAllByRole('switch');
-    expect(toggles.length).toBe(13);
+    expect(toggles.length).toBe(14);
   });
 
   // ── Edge Cases ───────────────────────────────────────────────────—
@@ -243,12 +245,14 @@ describe('AddRemoveWidgetsDialog', () => {
       'attention-insights',
       'directional-performance',
       'valuation-positions',
+      'open-positions-risk',
     ];
 
     renderDialog({ open: true, hiddenWidgetIds: allIds });
 
     // All toggles should be aria-checked="false"
     const toggles = screen.getAllByRole('switch');
+    expect(toggles.length).toBe(14);
     toggles.forEach((t) => {
       expect(t.getAttribute('aria-checked')).toBe('false');
     });
