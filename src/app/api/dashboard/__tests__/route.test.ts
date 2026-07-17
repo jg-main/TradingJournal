@@ -43,6 +43,8 @@ import {
 } from '@/lib/equity';
 import { computeCalendarHeatmap, type CalendarHeatmapTradeInput, type CalendarHeatmapYearData } from '@/lib/calendar-heatmap';
 import { computePeriodMatrix, type PeriodMatrixTradeInput, type PeriodMatrixResult } from '@/lib/period-matrix';
+import { computeSetupPerformance, type SetupPerfTradeInput } from '@/lib/review-dashboard';
+import { computeAttentionInsights, type AttentionInsightTradeInput, type AttentionInsightsResult } from '@/lib/attention-insights';
 
 let passed = 0;
 let failed = 0;
@@ -263,7 +265,7 @@ interface MtmResult {
 
 interface DashboardRouteResult {
   status: number;
-  body: { kpis?: KpiMetrics; mtm?: MtmResult; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; processScoreDistribution?: ProcessScoreBin[]; calendarHeatmap?: CalendarHeatmapYearData[]; periodMatrix?: { wow: PeriodMatrixResult; mom: PeriodMatrixResult; qoq: PeriodMatrixResult }; error?: string; details?: unknown };
+  body: { kpis?: KpiMetrics; mtm?: MtmResult; equityCurve?: EquityDataPoint[]; drawdown?: DrawdownDataPoint[]; monthlyPerformance?: MonthlyPerformanceItem[]; rDistribution?: RDistributionBin[]; directionalPerformance?: DirectionalPerformanceResult; processScoreDistribution?: ProcessScoreBin[]; calendarHeatmap?: CalendarHeatmapYearData[]; periodMatrix?: { wow: PeriodMatrixResult; mom: PeriodMatrixResult; qoq: PeriodMatrixResult }; setupRanking?: import('@/lib/review-dashboard').SetupPerfResult[]; attentionInsights?: AttentionInsightsResult; error?: string; details?: unknown };
 }
 
 function doGetDashboard(
@@ -597,7 +599,66 @@ function doGetDashboard(
       qoq: computePeriodMatrix(periodInputs, 'qoq'),
     };
 
-    return { status: 200, body: { kpis, mtm, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution, calendarHeatmap, periodMatrix } };
+    // Compute setup ranking (matching route.ts step 12)
+    const uniqueSetupIds = [...new Set(dateFilteredClosedTrades.map((t: Record<string, unknown>) => t.setupId).filter(Boolean))] as string[];
+    const setupNameMap: Record<string, string> = {};
+
+    if (uniqueSetupIds.length > 0) {
+      const placeholders = uniqueSetupIds.map(() => '?').join(',');
+      const setupLookups = sqlite.prepare(`SELECT * FROM lookup_values WHERE id IN (${placeholders})`).all(...uniqueSetupIds) as Record<string, unknown>[];
+      for (const lv of setupLookups) {
+        setupNameMap[lv.id as string] = lv.value as string;
+      }
+    }
+
+    const setupPerfInputs: SetupPerfTradeInput[] = dateFilteredClosedTrades.map((trade: Record<string, unknown>) => ({
+      id: trade.id as string,
+      direction: trade.direction as 'long' | 'short',
+      executions: (executionsMap.get(trade.id as string) ?? []).map((ex: Record<string, unknown>) => ({
+        action: ex.action as string,
+        quantity: ex.quantity as number,
+        price: ex.price as number,
+        fees: ex.fees as number ?? null,
+        executedAt: ex.executedAt as string ?? '',
+      })),
+      grade: (() => {
+        const g = gradesMap.get(trade.id as string);
+        return g?.totalScore != null ? { totalScore: g.totalScore } : null;
+      })(),
+      riskSnapshot: riskMap.has(trade.id as string)
+        ? { initialRiskAmount: riskMap.get(trade.id as string)!.initialRiskAmount ?? null }
+        : null,
+      setupId: trade.setupId as string | null,
+    }));
+
+    const dashboardMetrics = computeSetupPerformance(setupPerfInputs, setupNameMap, true);
+    const setupRanking = dashboardMetrics.setupPerformance;
+
+    // Compute attention insights (matching route.ts step 13)
+    const insightInputs: AttentionInsightTradeInput[] = dateFilteredClosedTrades.map((trade: Record<string, unknown>) => ({
+      id: trade.id as string,
+      direction: trade.direction as 'long' | 'short',
+      executions: (executionsMap.get(trade.id as string) ?? []).map((ex: Record<string, unknown>) => ({
+        action: ex.action as string,
+        quantity: ex.quantity as number,
+        price: ex.price as number,
+        fees: ex.fees as number ?? null,
+        executedAt: ex.executedAt as string ?? '',
+      })),
+      riskSnapshot: riskMap.has(trade.id as string)
+        ? { initialRiskAmount: riskMap.get(trade.id as string)!.initialRiskAmount ?? null }
+        : null,
+      grade: (() => {
+        const g = gradesMap.get(trade.id as string);
+        return g?.totalScore != null ? { totalScore: g.totalScore } : null;
+      })(),
+      closedAt: trade.closedAt as string | null,
+      setupId: trade.setupId as string | null,
+    }));
+
+    const attentionInsights = computeAttentionInsights(insightInputs);
+
+    return { status: 200, body: { kpis, mtm, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution, calendarHeatmap, periodMatrix, setupRanking, attentionInsights } };
   } catch (error) {
     return {
       status: 500,
@@ -642,21 +703,28 @@ function seedTrade(
   overrides?: Partial<typeof schema.trades.$inferInsert>,
 ): string {
   const id = overrides?.id ?? randomUUID();
-  const currentPrice = overrides?.currentPrice ?? null;
-  const currentPriceFetchedAt = overrides?.currentPriceFetchedAt ?? null;
-  db.insert(schema.trades).values({
+  // Spread overrides for optional trade-level fields (setupId, sectorId, marketConditionId, etc.)
+  const values: Record<string, unknown> = {
     id,
-    tradeCode: overrides?.tradeCode ?? `T-${id.slice(0, 4)}`,
+    tradeCode: `T-${id.slice(0, 4)}`,
     accountId,
-    symbol: overrides?.symbol ?? 'AAPL',
-    direction: overrides?.direction ?? 'long',
-    status: overrides?.status ?? 'closed',
-    closedAt: overrides?.closedAt ?? null,
-    currentPrice,
-    currentPriceFetchedAt,
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'closed',
+    closedAt: null,
+    currentPrice: null,
+    currentPriceFetchedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
-  }).run();
+  };
+  if (overrides) {
+    for (const key of Object.keys(overrides)) {
+      if (overrides[key as keyof typeof overrides] !== undefined) {
+        values[key] = overrides[key as keyof typeof overrides] as unknown;
+      }
+    }
+  }
+  db.insert(schema.trades).values(values as typeof schema.trades.$inferInsert).run();
   return id;
 }
 
@@ -729,6 +797,17 @@ function seedRollforward(
     }
   }
   db.insert(schema.accountRollforward).values(values as typeof schema.accountRollforward.$inferInsert).run();
+  return id;
+}
+
+function seedLookupValue(
+  id: string,
+  type: string,
+  value: string,
+): string {
+  sqlite.exec(
+    `INSERT INTO lookup_values (id, type, value, color, icon, sort_order, is_active, created_at, updated_at) VALUES ('${id}', '${type}', '${value}', NULL, NULL, 0, 1, '${NOW}', '${NOW}')`,
+  );
   return id;
 }
 
@@ -2365,7 +2444,181 @@ cleanup();
   assert(result.body.periodMatrix !== undefined, 'periodMatrix present alongside existing fields');
   assert(result.body.calendarHeatmap!.length > 0, 'calendarHeatmap has data');
   assert(result.body.periodMatrix!.mom.rows.length > 0, 'periodMatrix.mom has data');
+
+  // S04 new fields present
+  assert(Array.isArray(result.body.setupRanking), 'setupRanking present alongside existing fields');
+  assert(result.body.attentionInsights !== undefined, 'attentionInsights present alongside existing fields');
 }
+
+// ── Setup Ranking Tests ──────────────────────────────────────────────
+
+console.log('\n▶ Setup Ranking');
+
+// ── Test NN: setupRanking is empty array when no closed trades ─────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const result = doGetDashboard(accountId);
+  assert(Array.isArray(result.body.setupRanking), 'setupRanking is an array');
+  assert(result.body.setupRanking!.length === 0, 'setupRanking is empty when no trades');
+}
+
+// ── Test NN: setupRanking with trades with different setups ─────────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Create two setup lookup values
+  const setupBreakoutId = seedLookupValue('setup-breakout', 'setup', 'Breakout');
+  const setupPullbackId = seedLookupValue('setup-pullback', 'setup', 'Pullback');
+
+  // Trade 1: Breakout setup, winning trade
+  const t1 = seedTrade(accountId, {
+    symbol: 'BRK-WIN',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+    setupId: setupBreakoutId,
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+  seedRiskSnapshot(t1, 500);
+  seedGrade(t1, 85);
+
+  // Trade 2: Breakout setup, losing trade
+  const t2 = seedTrade(accountId, {
+    symbol: 'BRK-LOSS',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-16T10:00:00.000Z',
+    setupId: setupBreakoutId,
+  });
+  seedExecution(t2, { action: 'buy', quantity: 50, price: 200, fees: 5 });
+  seedExecution(t2, { action: 'sell', quantity: 50, price: 190, fees: 5 });
+  seedRiskSnapshot(t2, 250);
+  seedGrade(t2, 55);
+
+  // Trade 3: Pullback setup, winning trade
+  const t3 = seedTrade(accountId, {
+    symbol: 'PB-WIN',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-17T10:00:00.000Z',
+    setupId: setupPullbackId,
+  });
+  seedExecution(t3, { action: 'buy', quantity: 100, price: 50, fees: 3 });
+  seedExecution(t3, { action: 'sell', quantity: 100, price: 60, fees: 3 });
+  seedRiskSnapshot(t3, 300);
+  seedGrade(t3, 80);
+
+  // Trade 4: Trade without setup (null setupId)
+  const t4 = seedTrade(accountId, {
+    symbol: 'NO-SETUP',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-18T10:00:00.000Z',
+    setupId: null,
+  });
+  seedExecution(t4, { action: 'buy', quantity: 10, price: 100, fees: 1 });
+  seedExecution(t4, { action: 'sell', quantity: 10, price: 110, fees: 1 });
+  seedRiskSnapshot(t4, 100);
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(Array.isArray(result.body.setupRanking), 'setupRanking is an array');
+
+  // Should have 3 entries: Breakout (2), Pullback (1), Unknown (1)
+  const sr = result.body.setupRanking!;
+  // Sort by name for deterministic assertions
+  sr.sort((a, b) => a.setupName.localeCompare(b.setupName));
+
+  assert(sr.length === 3, 'setupRanking has 3 entries (Breakout, Pullback, Unknown)');
+
+  // Breakout: 2 trades, 1 win / 2 decisions = 0.5 WR
+  const breakout = sr.find((s) => s.setupName === 'Breakout');
+  assert(breakout !== undefined, 'Breakout setup present');
+  assert(breakout!.count === 2, 'Breakout has 2 trades');
+  assertClose(breakout!.winRate, 0.5, 'Breakout winRate = 1/2 = 0.5');
+  assert(breakout!.sampleSizeWarning === 'very_small', 'Breakout sample size = very_small (2 trades)');
+  assert(breakout!.setupId === setupBreakoutId, 'Breakout setupId maps correctly');
+
+  // Pullback: 1 trade, win
+  const pullback = sr.find((s) => s.setupName === 'Pullback');
+  assert(pullback !== undefined, 'Pullback setup present');
+  assert(pullback!.count === 1, 'Pullback has 1 trade');
+  assertClose(pullback!.winRate, 1, 'Pullback winRate = 1/1 = 1.0');
+  assert(pullback!.sampleSizeWarning === 'very_small', 'Pullback sample size = very_small (1 trade)');
+
+  // Unknown (null setupId): 1 trade, win
+  const unknown = sr.find((s) => s.setupName === 'Unknown');
+  assert(unknown !== undefined, 'Unknown setup present');
+  assert(unknown!.count === 1, 'Unknown has 1 trade');
+  assertClose(unknown!.winRate, 1, 'Unknown winRate = 1/1 = 1.0');
+  assert(unknown!.setupId === null, 'Unknown setupId is null');
+}
+
+// ── Attention Insights Tests ─────────────────────────────────────────
+
+console.log('\n▶ Attention Insights');
+
+// ── Test NN: attentionInsights has empty insights when no trades ────
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.attentionInsights !== undefined, 'attentionInsights present');
+  assert(Array.isArray(result.body.attentionInsights!.insights), 'attentionInsights.insights is array');
+  assert(result.body.attentionInsights!.insights.length === 0, 'insights empty when no trades');
+  assert(result.body.attentionInsights!.tradeCount === 0, 'tradeCount is 0 when no trades');
+}
+
+// ── Test NN: attentionInsights with trade data produces no-stop insight ──
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Trade without risk snapshot (no stop loss recorded)
+  const t1 = seedTrade(accountId, {
+    symbol: 'NO-STOP',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-15T10:00:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120, fees: 5 });
+
+  // Trade with risk snapshot
+  const t2 = seedTrade(accountId, {
+    symbol: 'WITH-STOP',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-06-16T10:00:00.000Z',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 50, price: 200, fees: 3 });
+  seedExecution(t2, { action: 'sell', quantity: 50, price: 210, fees: 3 });
+  seedRiskSnapshot(t2, 250);
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  const result = doGetDashboard(accountId);
+  assert(result.body.attentionInsights !== undefined, 'attentionInsights present with trades');
+  assert(result.body.attentionInsights!.tradeCount === 2, 'tradeCount = 2');
+  assert(result.body.attentionInsights!.insights.length > 0, 'insights generated from trade data');
+
+  // Should have a no-stop insight (1 trade without stop)
+  const noStopInsight = result.body.attentionInsights!.insights.find((i: { type: string }) => i.type === 'no_stop_loss');
+  assert(noStopInsight !== undefined, 'no_stop_loss insight present');
+  assert(noStopInsight!.value === 1, 'no_stop_loss value = 1');
+  assert(noStopInsight!.severity === 'warning', 'no_stop_loss severity = warning (1 trade)');
+}
+
 // ── Summary ────────────────────────────────────────────────────────────
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);

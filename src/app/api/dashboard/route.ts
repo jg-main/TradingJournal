@@ -13,8 +13,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts } from '@/db/schema';
-import { eq, inArray, desc } from 'drizzle-orm';
+import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts, lookupValues } from '@/db/schema';
+import { eq, inArray, desc, and } from 'drizzle-orm';
 import { type ExecutionData } from '@/lib/trade-calc';
 import { computeMarkToMarketSummary } from '@/lib/mark-to-market';
 import {
@@ -33,6 +33,8 @@ import {
 } from '@/lib/equity';
 import { computeCalendarHeatmap, type CalendarHeatmapTradeInput } from '@/lib/calendar-heatmap';
 import { computePeriodMatrix, type PeriodMatrixTradeInput } from '@/lib/period-matrix';
+import { computeSetupPerformance, type SetupPerfTradeInput } from '@/lib/review-dashboard';
+import { computeAttentionInsights, type AttentionInsightTradeInput } from '@/lib/attention-insights';
 
 /**
  * Chunk an array of IDs into batches of CHUNK_SIZE and run a query for each chunk,
@@ -338,6 +340,72 @@ export async function GET(request: NextRequest) {
       qoq: computePeriodMatrix(periodInputs, 'qoq'),
     };
 
+    // 12. Compute setup ranking (per-setup performance sorted by trade count)
+    const uniqueSetupIds = [...new Set(dateFilteredClosedTrades.map((t) => t.setupId).filter(Boolean))] as string[];
+    const setupNameMap: Record<string, string> = {};
+
+    if (uniqueSetupIds.length > 0) {
+      const setupLookups = batchInArray(uniqueSetupIds, (chunk) =>
+        db
+          .select()
+          .from(lookupValues)
+          .where(and(inArray(lookupValues.id, chunk), eq(lookupValues.type, 'setup')))
+          .all(),
+      );
+      for (const lv of setupLookups) {
+        setupNameMap[lv.id] = lv.value;
+      }
+    }
+
+    const setupPerfInputs: SetupPerfTradeInput[] = dateFilteredClosedTrades.map((trade) => ({
+      id: trade.id,
+      direction: trade.direction as 'long' | 'short',
+      executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
+        action: ex.action,
+        quantity: ex.quantity,
+        price: ex.price,
+        fees: ex.fees ?? null,
+        executedAt: ex.executedAt ?? '',
+      })),
+      grade: (() => {
+        const gradeRow = gradesMap.get(trade.id);
+        const totalScore = gradeRow?.totalScore;
+        return totalScore != null ? { totalScore } : null;
+      })(),
+      riskSnapshot: riskMap.has(trade.id)
+        ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
+        : null,
+      setupId: trade.setupId,
+    }));
+
+    const dashboardMetrics = computeSetupPerformance(setupPerfInputs, setupNameMap, true);
+    const setupRanking = dashboardMetrics.setupPerformance;
+
+    // 13. Compute attention insights from date-filtered closed trades
+    const insightInputs: AttentionInsightTradeInput[] = dateFilteredClosedTrades.map((trade) => ({
+      id: trade.id,
+      direction: trade.direction as 'long' | 'short',
+      executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
+        action: ex.action,
+        quantity: ex.quantity,
+        price: ex.price,
+        fees: ex.fees ?? null,
+        executedAt: ex.executedAt ?? '',
+      })),
+      riskSnapshot: riskMap.has(trade.id)
+        ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
+        : null,
+      grade: (() => {
+        const gradeRow = gradesMap.get(trade.id);
+        const totalScore = gradeRow?.totalScore;
+        return totalScore != null ? { totalScore } : null;
+      })(),
+      closedAt: trade.closedAt ?? null,
+      setupId: trade.setupId,
+    }));
+
+    const attentionInsights = computeAttentionInsights(insightInputs);
+
     return NextResponse.json({
       kpis,
       mtm,
@@ -350,6 +418,8 @@ export async function GET(request: NextRequest) {
       tradeMarkers,
       calendarHeatmap,
       periodMatrix,
+      setupRanking,
+      attentionInsights,
     });
   } catch (error) {
     return NextResponse.json(
