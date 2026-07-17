@@ -102,7 +102,7 @@ describe('AccountSettings — loading state', () => {
 
     render(<AccountSettings accountId="acct-loading" />);
 
-    expect(screen.getByText('Loading settings...')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain('Loading settings...');
   });
 });
 
@@ -173,41 +173,35 @@ describe('AccountSettings — populated state', () => {
 });
 
 describe('AccountSettings — NULL fallback display', () => {
-  it('shows "Per-account value" button for each null field (currently using global)', async () => {
+  it('shows explicit set-override actions for inherited fields', async () => {
     mockFetchSuccess(ACCT_NULL_DEFAULTS, GLOBAL_SETTINGS);
     render(<AccountSettings accountId="acct-002" />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Trading Defaults')).toBeTruthy();
-    });
+    await screen.findByText('Trading Defaults');
 
-    // Null fields show "Per-account value" buttons (they are currently using global default)
-    const perAccountButtons = screen.getAllByText('Per-account value');
-    expect(perAccountButtons.length).toBe(2);
-
-    // Each button has a descriptive aria-label
-    expect(screen.getByLabelText('Switch to per-account value')).toBeTruthy();
-    expect(screen.getByLabelText('Switch to per-account commission')).toBeTruthy();
+    expect(screen.getAllByText('Set override')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Set max risk account override' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Set commission account override' })).toBeTruthy();
   });
 
-  it('shows global default hint text for null fields when settings are available', async () => {
+  it('shows inherited effective values when global settings are available', async () => {
     mockFetchSuccess(ACCT_NULL_DEFAULTS, GLOBAL_SETTINGS);
     render(<AccountSettings accountId="acct-002" />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Using global default: 2%')).toBeTruthy();
-    });
+    const riskStatus = await screen.findByLabelText('Effective max risk per trade');
+    const commissionStatus = screen.getByLabelText('Effective default commission');
 
-    expect(screen.getByText('Using global default: 2%')).toBeTruthy();
-    expect(screen.getByText('Using global default: $0.50')).toBeTruthy();
+    expect(riskStatus.textContent).toContain('Inherited');
+    expect(riskStatus.textContent).toContain('2%');
+    expect(commissionStatus.textContent).toContain('Inherited');
+    expect(commissionStatus.textContent).toContain('$0.50');
   });
 });
 
 describe('AccountSettings — edit and save flow', () => {
   it('edits account name and saves successfully', async () => {
-    // First call: load data, second call: save (PUT), third call: reload
     const fetchMock = vi.fn()
-      // Load: account + settings
+      // Initial account and settings load
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ACCT_FULL,
@@ -216,12 +210,7 @@ describe('AccountSettings — edit and save flow', () => {
         ok: true,
         json: async () => GLOBAL_SETTINGS,
       })
-      // Save: PUT succeeds
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ ...ACCT_FULL, name: 'Updated Brokerage' }),
-      })
-      // Reload account after save
+      // The successful PUT response becomes the persisted display state.
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ...ACCT_FULL, name: 'Updated Brokerage' }),
@@ -246,6 +235,7 @@ describe('AccountSettings — edit and save flow', () => {
     await waitFor(() => {
       expect(screen.getByText('Settings saved successfully.')).toBeTruthy();
     });
+    expect(screen.getByText('Settings saved successfully.').closest('[role="status"]')).toBeTruthy();
 
     // Verify the PUT payload included name
     const putCall = fetchMock.mock.calls[2];
@@ -253,6 +243,7 @@ describe('AccountSettings — edit and save flow', () => {
     expect(putCall[1]).toBeDefined();
     const body = JSON.parse((putCall[1] as RequestInit).body as string);
     expect(body.name).toBe('Updated Brokerage');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('edits trading defaults and saves null values correctly', async () => {
@@ -266,17 +257,7 @@ describe('AccountSettings — edit and save flow', () => {
         ok: true,
         json: async () => GLOBAL_SETTINGS,
       })
-      // Save: PUT succeeds
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          ...ACCT_FULL,
-          maxRiskPerTradePct: 3.0,
-          defaultCommission: 2.00,
-          startingBalance: null,
-        }),
-      })
-      // Reload account after save
+      // Save: PUT succeeds and returns the persisted account.
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -316,6 +297,9 @@ describe('AccountSettings — edit and save flow', () => {
     expect(body.maxRiskPerTradePct).toBe(3.0);
     expect(body.defaultCommission).toBe(2);
     expect(body).not.toHaveProperty('startingBalance');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Overridden');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('3%');
   });
 });
 
@@ -375,6 +359,7 @@ describe('AccountSettings — API errors', () => {
       expect(screen.getByText('Failed to load account data.')).toBeTruthy();
     });
 
+    expect(screen.getByRole('alert').textContent).toContain('Failed to load account data.');
     expect(screen.getByText('Retry')).toBeTruthy();
   });
 
@@ -461,71 +446,39 @@ describe('AccountSettings — API errors', () => {
   });
 });
 
-describe('AccountSettings — "Use global default" toggle', () => {
-  it('toggles between per-account value and global default', async () => {
+describe('AccountSettings — explicit override and reset actions', () => {
+  it('stages a reset and can restore the persisted account value', async () => {
     mockFetchSuccess(ACCT_FULL, GLOBAL_SETTINGS);
     render(<AccountSettings accountId="acct-001" />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Trading Defaults')).toBeTruthy();
-    });
+    await screen.findByText('Trading Defaults');
 
-    // Initially values are populated - button says "Use global default"
-    const toggleButtons = screen.getAllByText('Use global default');
-    expect(toggleButtons.length).toBe(2);
-
-    // Click "Use global default" for max risk
     const maxRiskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
     expect(maxRiskInput.value).toBe('2.5');
-    fireEvent.click(toggleButtons[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset max risk to global default' }));
 
-    // Now the button should say "Per-account value"
-    expect(screen.getByText('Per-account value')).toBeTruthy();
+    expect(maxRiskInput.value).toBe('');
+    expect(screen.getByRole('button', { name: 'Set max risk account override' })).toBeTruthy();
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Overridden');
 
-    // The input should be empty
-    await waitFor(() => {
-      expect(maxRiskInput.value).toBe('');
-    });
-
-    // Should show global default hint
-    expect(screen.getByText('Using global default: 2%')).toBeTruthy();
-
-    // Click "Per-account value" to go back
-    fireEvent.click(screen.getByText('Per-account value'));
-
-    // Input should now show the original value again
-    await waitFor(() => {
-      expect(maxRiskInput.value).toBe('2.5');
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Set max risk account override' }));
+    expect(maxRiskInput.value).toBe('2.5');
   });
 
-  it('toggles from null to per-account value and back', async () => {
+  it('stages an override for an inherited field and can reset the draft', async () => {
     mockFetchSuccess(ACCT_NULL_DEFAULTS, GLOBAL_SETTINGS);
     render(<AccountSettings accountId="acct-002" />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Using global default: 2%')).toBeTruthy();
-    });
+    await screen.findByLabelText('Effective max risk per trade');
+    fireEvent.click(screen.getByRole('button', { name: 'Set max risk account override' }));
 
-    // Click "Per-account value" to allow entering a value
-    // (The account has null values, starting in "use global" mode.
-    //  Null fields all show "Per-account value" text, so use getAllByText.)
-    fireEvent.click(screen.getAllByText('Per-account value')[0]);
-
-    // Should no longer show "Using global default" hint since the account
-    // has no original per-account value to restore (was null)
-    expect(screen.queryByText('Using global default: 2%')).toBeNull();
-
-    // Enter a value
     const maxRiskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
     fireEvent.change(maxRiskInput, { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset max risk to global default' }));
 
-    // Now click "Use global default" to clear it
-    fireEvent.click(screen.getByText('Use global default'));
-
-    // Should show "Using global default" again
-    expect(screen.getByText('Using global default: 2%')).toBeTruthy();
     expect(maxRiskInput.value).toBe('');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Inherited');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('2%');
   });
 });
 
@@ -570,5 +523,146 @@ describe('AccountSettings — "Discard changes"', () => {
       const reloadedInput = screen.getByLabelText('Account Name') as HTMLInputElement;
       expect(reloadedInput.value).toBe('Main Brokerage');
     });
+  });
+});
+
+describe('AccountSettings — truthful effective defaults', () => {
+  it('renders valid zero inheritance and unavailable fields independently', async () => {
+    mockFetchSuccess(ACCT_NULL_DEFAULTS, {
+      ...GLOBAL_SETTINGS,
+      maxRiskPerTradePct: 0,
+      defaultCommission: null,
+    });
+
+    render(<AccountSettings accountId="acct-002" />);
+
+    const riskStatus = await screen.findByLabelText('Effective max risk per trade');
+    const commissionStatus = screen.getByLabelText('Effective default commission');
+
+    expect(riskStatus.textContent).toContain('Inherited');
+    expect(riskStatus.textContent).toContain('0%');
+    expect(commissionStatus.textContent).toContain('Unavailable');
+    expect(commissionStatus.textContent).toContain('Effective value unavailable');
+  });
+
+  it('keeps account overrides available when the global settings request fails', async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ACCT_FULL })
+      .mockRejectedValueOnce(new Error('Settings connection lost'));
+
+    render(<AccountSettings accountId="acct-001" />);
+
+    const riskStatus = await screen.findByLabelText('Effective max risk per trade');
+    const commissionStatus = screen.getByLabelText('Effective default commission');
+
+    expect(screen.getByLabelText('Account Name')).toBeTruthy();
+    expect(riskStatus.textContent).toContain('Overridden');
+    expect(riskStatus.textContent).toContain('2.5%');
+    expect(commissionStatus.textContent).toContain('Overridden');
+    expect(commissionStatus.textContent).toContain('$1.00');
+  });
+
+  it('retains a typed override and inherited persisted display after a failed save', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ACCT_NULL_DEFAULTS })
+      .mockResolvedValueOnce({ ok: true, json: async () => GLOBAL_SETTINGS })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: 'Validation failed', details: { fieldErrors: {} } }),
+      });
+    globalThis.fetch = fetchMock;
+
+    render(<AccountSettings accountId="acct-002" />);
+
+    await screen.findByLabelText('Effective max risk per trade');
+    fireEvent.click(screen.getByRole('button', { name: 'Set max risk account override' }));
+
+    const riskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
+    fireEvent.change(riskInput, { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await screen.findByText('Validation failed');
+    expect(riskInput.value).toBe('5');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Inherited');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('2%');
+  });
+
+  it('retains the persisted override display when resetting it fails', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ACCT_FULL })
+      .mockResolvedValueOnce({ ok: true, json: async () => GLOBAL_SETTINGS })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: 'Failed to update account', details: 'database unavailable' }),
+      });
+    globalThis.fetch = fetchMock;
+
+    render(<AccountSettings accountId="acct-001" />);
+
+    await screen.findByLabelText('Effective max risk per trade');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset max risk to global default' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await screen.findByText('Failed to update account');
+    expect((screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement).value).toBe('');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Overridden');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('2.5%');
+  });
+
+  it('reports inherited defaults unavailable when no settings row exists', async () => {
+    mockFetchSuccess(ACCT_NULL_DEFAULTS, {
+      message: 'No settings configured yet. Use PUT to create.',
+    });
+
+    render(<AccountSettings accountId="acct-002" />);
+
+    const riskStatus = await screen.findByLabelText('Effective max risk per trade');
+    const commissionStatus = screen.getByLabelText('Effective default commission');
+
+    expect(riskStatus.getAttribute('role')).toBe('status');
+    expect(riskStatus.textContent).toContain('Unavailable');
+    expect(riskStatus.textContent).toContain('Effective value unavailable');
+    expect(commissionStatus.textContent).toContain('Unavailable');
+  });
+
+  it('does not commit a malformed successful save response', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ACCT_FULL })
+      .mockResolvedValueOnce({ ok: true, json: async () => GLOBAL_SETTINGS })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'updated' }) });
+    globalThis.fetch = fetchMock;
+
+    render(<AccountSettings accountId="acct-001" />);
+
+    await screen.findByLabelText('Effective max risk per trade');
+    const riskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
+    fireEvent.change(riskInput, { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await screen.findByText('The server returned an invalid account response.');
+    expect(riskInput.value).toBe('4');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('2.5%');
+  });
+
+  it('retains drafts when the save connection is lost', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ACCT_NULL_DEFAULTS })
+      .mockResolvedValueOnce({ ok: true, json: async () => GLOBAL_SETTINGS })
+      .mockRejectedValueOnce(new Error('connection lost'));
+    globalThis.fetch = fetchMock;
+
+    render(<AccountSettings accountId="acct-002" />);
+
+    await screen.findByLabelText('Effective max risk per trade');
+    fireEvent.click(screen.getByRole('button', { name: 'Set max risk account override' }));
+    const riskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
+    fireEvent.change(riskInput, { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await screen.findByText('Failed to save settings.');
+    expect(riskInput.value).toBe('6');
+    expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Inherited');
   });
 });

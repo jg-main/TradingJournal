@@ -11,7 +11,9 @@ import {
   RotateCcw,
   Trash2,
 } from 'lucide-react';
+import { resolveAccountDefault, type EffectiveAccountDefault } from '@/lib/account-defaults';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -36,8 +38,8 @@ interface AccountData {
 }
 
 interface GlobalSettings {
-  maxRiskPerTradePct: number | null;
-  defaultCommission: number | null;
+  maxRiskPerTradePct?: number | null;
+  defaultCommission?: number | null;
 }
 
 interface ClosureSummary {
@@ -82,6 +84,69 @@ function formatPct(v: number | null | undefined): string {
   return `${v}%`;
 }
 
+function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function isAccountData(value: unknown): value is AccountData {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AccountData>;
+
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    (typeof candidate.broker === 'string' || candidate.broker === null) &&
+    typeof candidate.currency === 'string' &&
+    typeof candidate.isActive === 'boolean' &&
+    isNullableFiniteNumber(candidate.maxRiskPerTradePct) &&
+    isNullableFiniteNumber(candidate.defaultCommission)
+  );
+}
+
+function EffectiveDefaultStatus({
+  label,
+  result,
+  formatValue,
+}: {
+  label: string;
+  result: EffectiveAccountDefault;
+  formatValue: (value: number) => string;
+}) {
+  const status = result.source === 'overridden'
+    ? 'Overridden'
+    : result.source === 'inherited'
+      ? 'Inherited'
+      : 'Unavailable';
+
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className="mt-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Effective default</span>
+        <Badge
+          variant="outline"
+          className={cn(
+            'tabular-nums',
+            result.source === 'overridden' && 'border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300',
+            result.source === 'inherited' && 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300',
+            result.source === 'unavailable' && 'border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300',
+          )}
+        >
+          {status}
+        </Badge>
+      </div>
+      <p className="mt-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+        {result.source === 'unavailable'
+          ? 'Effective value unavailable'
+          : `Effective value: ${formatValue(result.value)}`}
+      </p>
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────
 
 export default function AccountSettings({ accountId }: AccountSettingsProps) {
@@ -107,35 +172,58 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
     setLoading(true);
     setError(null);
     setMessage(null);
+    setGlobalSettings(null);
 
     try {
-      const [acctRes, settingsRes] = await Promise.all([
+      const [accountResult, settingsResult] = await Promise.allSettled([
         fetch(`/api/accounts/${accountId}`),
         fetch('/api/settings'),
       ]);
 
-      // Handle account not found
-      if (!acctRes.ok) {
-        setError('Account not found.');
+      if (accountResult.status === 'rejected' || !accountResult.value) {
+        setError('Failed to load account data.');
         return;
       }
 
-      const acctData = (await acctRes.json()) as AccountData;
-      setAccount(acctData);
+      const acctRes = accountResult.value;
+      if (!acctRes.ok) {
+        setError(acctRes.status === 404 ? 'Account not found.' : 'Failed to load account data.');
+        return;
+      }
 
-      // Populate form fields from account data.
-      // Nullable fields initialize to "use global default" (clear* = true) when NULL.
+      const acctData: unknown = await acctRes.json();
+      if (!isAccountData(acctData)) {
+        setError('Failed to load account data.');
+        return;
+      }
+
+      setAccount(acctData);
       setName(acctData.name);
-      setMaxRisk(acctData.maxRiskPerTradePct != null ? String(acctData.maxRiskPerTradePct) : '');
-      setCommission(acctData.defaultCommission != null ? String(acctData.defaultCommission) : '');
+      setMaxRisk(acctData.maxRiskPerTradePct !== null ? String(acctData.maxRiskPerTradePct) : '');
+      setCommission(acctData.defaultCommission !== null ? String(acctData.defaultCommission) : '');
       setClearMaxRisk(acctData.maxRiskPerTradePct === null);
       setClearCommission(acctData.defaultCommission === null);
       setNameError(null);
 
-      // Load global settings (best-effort)
-      if (settingsRes.ok) {
-        const settingsData = (await settingsRes.json()) as GlobalSettings;
-        setGlobalSettings(settingsData);
+      // Global settings are optional context. Account overrides remain useful if
+      // this request fails, while inherited fields resolve to Unavailable.
+      if (settingsResult.status === 'fulfilled' && settingsResult.value?.ok) {
+        try {
+          const rawSettings: unknown = await settingsResult.value.json();
+          if (rawSettings && typeof rawSettings === 'object') {
+            const candidate = rawSettings as Record<string, unknown>;
+            const settingsData: GlobalSettings = {};
+            if (isNullableFiniteNumber(candidate.maxRiskPerTradePct)) {
+              settingsData.maxRiskPerTradePct = candidate.maxRiskPerTradePct;
+            }
+            if (isNullableFiniteNumber(candidate.defaultCommission)) {
+              settingsData.defaultCommission = candidate.defaultCommission;
+            }
+            setGlobalSettings(settingsData);
+          }
+        } catch {
+          // Per-field Unavailable status is the observable fallback.
+        }
       }
     } catch {
       setError('Failed to load account data.');
@@ -322,32 +410,35 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
         body: JSON.stringify(body),
       });
 
-      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      const data: unknown = await res.json().catch(() => null);
 
       if (!res.ok) {
+        const errorData = data && typeof data === 'object'
+          ? data as Record<string, unknown>
+          : null;
         const errMsg =
-          typeof data?.error === 'string'
-            ? data.error
-            : typeof data?.details === 'string'
-              ? data.details
+          typeof errorData?.error === 'string'
+            ? errorData.error
+            : typeof errorData?.details === 'string'
+              ? errorData.details
               : 'Failed to save settings.';
         setMessage({ type: 'error', text: errMsg });
         return;
       }
 
-      setMessage({ type: 'success', text: 'Settings saved successfully.' });
-
-      // Reload the account to reflect saved values
-      const updatedRes = await fetch(`/api/accounts/${accountId}`);
-      if (updatedRes.ok) {
-        const updated = (await updatedRes.json()) as AccountData;
-        setAccount(updated);
-        setName(updated.name);
-        setMaxRisk(updated.maxRiskPerTradePct != null ? String(updated.maxRiskPerTradePct) : '');
-        setCommission(updated.defaultCommission != null ? String(updated.defaultCommission) : '');
-        setClearMaxRisk(updated.maxRiskPerTradePct === null);
-        setClearCommission(updated.defaultCommission === null);
+      if (!isAccountData(data)) {
+        setMessage({ type: 'error', text: 'The server returned an invalid account response.' });
+        return;
       }
+
+      // Commit persisted state only from the successful validated response.
+      setAccount(data);
+      setName(data.name);
+      setMaxRisk(data.maxRiskPerTradePct !== null ? String(data.maxRiskPerTradePct) : '');
+      setCommission(data.defaultCommission !== null ? String(data.defaultCommission) : '');
+      setClearMaxRisk(data.maxRiskPerTradePct === null);
+      setClearCommission(data.defaultCommission === null);
+      setMessage({ type: 'success', text: 'Settings saved successfully.' });
     } catch {
       setMessage({ type: 'error', text: 'Failed to save settings.' });
     } finally {
@@ -358,8 +449,12 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
   // ── Loading state ──────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800">
-        <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
+      <div
+        role="status"
+        aria-live="polite"
+        className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800"
+      >
+        <RefreshCw aria-hidden="true" className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading settings...</p>
       </div>
     );
@@ -368,23 +463,29 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
   // ── Error / not-found state ────────────────────────────────────────
   if (!account || error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
-        <AlertTriangle className="mx-auto mb-2 size-5 text-red-500" />
+      <div
+        role="alert"
+        className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20"
+      >
+        <AlertTriangle aria-hidden="true" className="mx-auto mb-2 size-5 text-red-500" />
         <p className="text-sm text-red-700 dark:text-red-400">{error ?? 'Account not found.'}</p>
-        <button
-          onClick={fetchData}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-700 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-900/20"
-        >
-          <RefreshCw className="size-3" />
+        <Button type="button" variant="outline" size="sm" onClick={fetchData} className="mt-3">
+          <RefreshCw aria-hidden="true" className="size-3" />
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
 
   // ── Derived defaults ───────────────────────────────────────────────
-  const globalMaxRisk = globalSettings?.maxRiskPerTradePct ?? null;
-  const globalCommission = globalSettings?.defaultCommission ?? null;
+  const effectiveMaxRisk = resolveAccountDefault(
+    account.maxRiskPerTradePct,
+    globalSettings?.maxRiskPerTradePct,
+  );
+  const effectiveCommission = resolveAccountDefault(
+    account.defaultCommission,
+    globalSettings?.defaultCommission,
+  );
 
   // ── Render ─────────────────────────────────────────────────────────
   return (
@@ -398,7 +499,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
               : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400',
           )}
-          role="alert"
+          role={message.type === 'success' ? 'status' : 'alert'}
           aria-live="polite"
         >
           <div className="flex items-center gap-2">
@@ -491,44 +592,41 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
               Max Risk Per Trade (%)
             </label>
             <div className="flex items-start gap-3">
-              <div className="flex-1">
-                <Input
-                  id="settings-max-risk"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={maxRisk}
-                  onChange={(e) => handleFieldChange('maxRisk', e.target.value)}
-                  placeholder={clearMaxRisk ? '' : 'e.g. 2'}
-                  aria-describedby={
-                    clearMaxRisk && globalMaxRisk !== null
-                      ? 'settings-max-risk-default'
-                      : undefined
-                  }
-                />
-                {clearMaxRisk && globalMaxRisk !== null && (
-                  <p
-                    id="settings-max-risk-default"
-                    className="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
-                  >
-                    Using global default: {formatPct(globalMaxRisk)}
-                  </p>
-                )}
-              </div>
-              <button
+              <Input
+                id="settings-max-risk"
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                value={maxRisk}
+                onChange={(e) => handleFieldChange('maxRisk', e.target.value)}
+                placeholder={clearMaxRisk ? '' : 'e.g. 2'}
+                aria-describedby="settings-max-risk-effective"
+              />
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => handleToggleDefault('maxRisk')}
-                className={cn(
-                  'mt-1 shrink-0 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  clearMaxRisk
-                    ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                    : 'border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700',
-                )}
-                aria-label={clearMaxRisk ? 'Switch to per-account value' : 'Clear max risk per trade to use global default'}
+                className="mt-0.5 shrink-0"
+                aria-label={clearMaxRisk
+                  ? 'Set max risk account override'
+                  : 'Reset max risk to global default'}
               >
-                {clearMaxRisk ? 'Per-account value' : 'Use global default'}
-              </button>
+                {clearMaxRisk ? 'Set override' : 'Reset to global'}
+              </Button>
+            </div>
+            <div id="settings-max-risk-effective">
+              <EffectiveDefaultStatus
+                label="Effective max risk per trade"
+                result={effectiveMaxRisk}
+                formatValue={formatPct}
+              />
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                {clearMaxRisk
+                  ? 'Saving will store no account override and use the global value when available.'
+                  : 'Saving will store this value as the account override.'}
+              </p>
             </div>
           </div>
 
@@ -541,43 +639,40 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
               Default Commission ($)
             </label>
             <div className="flex items-start gap-3">
-              <div className="flex-1">
-                <Input
-                  id="settings-default-commission"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={commission}
-                  onChange={(e) => handleFieldChange('commission', e.target.value)}
-                  placeholder={clearCommission ? '' : 'e.g. 0.50'}
-                  aria-describedby={
-                    clearCommission && globalCommission !== null
-                      ? 'settings-commission-default'
-                      : undefined
-                  }
-                />
-                {clearCommission && globalCommission !== null && (
-                  <p
-                    id="settings-commission-default"
-                    className="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
-                  >
-                    Using global default: ${formatCurrency(globalCommission)}
-                  </p>
-                )}
-              </div>
-              <button
+              <Input
+                id="settings-default-commission"
+                type="number"
+                step="0.01"
+                min="0"
+                value={commission}
+                onChange={(e) => handleFieldChange('commission', e.target.value)}
+                placeholder={clearCommission ? '' : 'e.g. 0.50'}
+                aria-describedby="settings-commission-effective"
+              />
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => handleToggleDefault('commission')}
-                className={cn(
-                  'mt-1 shrink-0 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  clearCommission
-                    ? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                    : 'border border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700',
-                )}
-                aria-label={clearCommission ? 'Switch to per-account commission' : 'Clear default commission to use global default'}
+                className="mt-0.5 shrink-0"
+                aria-label={clearCommission
+                  ? 'Set commission account override'
+                  : 'Reset commission to global default'}
               >
-                {clearCommission ? 'Per-account value' : 'Use global default'}
-              </button>
+                {clearCommission ? 'Set override' : 'Reset to global'}
+              </Button>
+            </div>
+            <div id="settings-commission-effective">
+              <EffectiveDefaultStatus
+                label="Effective default commission"
+                result={effectiveCommission}
+                formatValue={(value) => `$${formatCurrency(value)}`}
+              />
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                {clearCommission
+                  ? 'Saving will store no account override and use the global value when available.'
+                  : 'Saving will store this value as the account override.'}
+              </p>
             </div>
           </div>
 
