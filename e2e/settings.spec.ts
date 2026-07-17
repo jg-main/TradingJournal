@@ -83,7 +83,7 @@ test.describe('Settings', () => {
 
       await expect(page).toHaveURL(/\/settings$/);
       await page.waitForLoadState('networkidle');
-      await expect(page.getByRole('link', { name: /continue setup/i })).toHaveAttribute('href', '/settings/accounts');
+      await expect(page.getByRole('link', { name: /continue setup/i })).toHaveAttribute('href', '/accounts');
     });
   });
 

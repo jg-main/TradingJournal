@@ -296,7 +296,7 @@ test.describe('M016 Checklist Flow', () => {
     expect(c3Res.ok()).toBeTruthy();
 
     // ── 3. Navigate to account settings page ─────────────────────────
-    await page.goto(`/settings/accounts/${account.id}`, { waitUntil: 'networkidle' });
+    await page.goto(`/accounts/${account.id}`, { waitUntil: 'networkidle' });
 
     // Wait for checks to load
     await expect(page.getByText('Account Entry Checks')).toBeVisible();

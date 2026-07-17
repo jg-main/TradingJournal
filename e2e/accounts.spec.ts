@@ -71,7 +71,7 @@ test.describe('Accounts', () => {
     const account = await createAccount(page, accountName);
 
     await page.goto('/account');
-    await expect(page).toHaveURL(/\/settings\/accounts/);
+    await expect(page).toHaveURL(/\/accounts/);
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
     // Account name is rendered inside a clickable <TableRow>, not an <a>/<Link> element.
     // Use a cell or row locator instead of getByRole('link').
@@ -84,8 +84,8 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-deposit-withdrawal`;
     const account = await createAccount(page, accountName);
 
-    await page.goto('/settings/accounts');
-    await expect(page).toHaveURL(/\/settings\/accounts$/);
+    await page.goto('/accounts');
+    await expect(page).toHaveURL(/\/accounts$/);
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
 
@@ -127,7 +127,7 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-withdrawal-guard`;
     const account = await createAccount(page, accountName);
 
-    await page.goto(`/settings/accounts/${account.id}`);
+    await page.goto(`/accounts/${account.id}`);
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
 
     await page.getByRole('button', { name: 'Withdraw' }).click();
@@ -142,7 +142,7 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-reactivate-inactive`;
     const account = await createAccount(page, accountName);
 
-    await page.goto(`/settings/accounts/${account.id}`);
+    await page.goto(`/accounts/${account.id}`);
     await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
@@ -153,7 +153,7 @@ test.describe('Accounts', () => {
     await expect(page.getByText('Closed')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reactivate Account' })).toBeVisible();
 
-    await page.goto('/settings/accounts');
+    await page.goto('/accounts');
     await page.getByText(/Inactive accounts/).click();
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
     const accountCell = page.getByRole('cell', { name: accountName, exact: true });
@@ -168,7 +168,7 @@ test.describe('Accounts', () => {
 
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
-    await page.goto('/settings/accounts');
+    await page.goto('/accounts');
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
   });
 
@@ -177,7 +177,7 @@ test.describe('Accounts', () => {
     const account = await createAccount(page, accountName);
     await createOpenTrade(page, account.id);
 
-    await page.goto(`/settings/accounts/${account.id}`);
+    await page.goto(`/accounts/${account.id}`);
     await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
 
@@ -206,7 +206,7 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-cancel-close`;
     const account = await createAccount(page, accountName);
 
-    await page.goto(`/settings/accounts/${account.id}`);
+    await page.goto(`/accounts/${account.id}`);
     await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}`));
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
 
@@ -224,7 +224,7 @@ test.describe('Accounts', () => {
     const accountName = `Settings Workflow ${Date.now()}-delete-no-trades`;
     await createAccount(page, accountName);
 
-    await page.goto('/settings/accounts');
+    await page.goto('/accounts');
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
 
     // Target the deactivate button in THIS account's row, not the first one in the list

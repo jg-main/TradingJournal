@@ -82,7 +82,7 @@ test.describe('Accounting Executions — Setup account and verify access', () =>
   });
 
   test('shows the Trade Executions section on the settings account page', async ({ page }) => {
-    await page.goto(`/settings/accounts/${accountId}`);
+    await page.goto(`/accounts/${accountId}`);
     await expect(page.getByText('Trade Executions')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Post Execution' })).toBeVisible();
     await expect(page.getByText('Current Positions')).toBeVisible();
@@ -90,7 +90,7 @@ test.describe('Accounting Executions — Setup account and verify access', () =>
   });
 
   test('opens the Post Execution form and shows required fields', async ({ page }) => {
-    await page.goto(`/settings/accounts/${accountId}`);
+    await page.goto(`/accounts/${accountId}`);
     await page.getByRole('button', { name: 'Post Execution' }).click();
 
     // Check all form fields are visible
@@ -129,7 +129,7 @@ test.describe('Accounting Executions — Setup account and verify access', () =>
     expect((aaplPos.openLots as Array<unknown>).length).toBe(1);
 
     // Verify the UI reflects the position
-    await page.goto(`/settings/accounts/${accountId}`);
+    await page.goto(`/accounts/${accountId}`);
     // Use first() for AAPL since it appears in both the positions card and execution activity table
     await expect(page.getByText('AAPL').first()).toBeVisible();
     await expect(page.getByText('long').first()).toBeVisible();
@@ -163,7 +163,7 @@ test.describe('Accounting Executions — Setup account and verify access', () =>
     expect(aaplPos2.realizedNetPnl).toBeDefined();
 
     // Verify the UI shows reduced position and P&L
-    await page.goto(`/settings/accounts/${accountId}`);
+    await page.goto(`/accounts/${accountId}`);
     await expect(page.getByText('AAPL').first()).toBeVisible();
     await expect(page.getByText('70').first()).toBeVisible();
   });

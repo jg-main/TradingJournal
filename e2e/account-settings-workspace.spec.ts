@@ -7,7 +7,7 @@
  * 3. Edit identity and reload values (persistence)
  * 4. Close account with confirmation dialog and closure summary
  * 5. Reactivate account from inactive state
- * 6. /settings/accounts/[id] redirects to /accounts/[id]/settings (307)
+ * 6. Settings tab direct route: /accounts/[id]/settings renders identity, defaults, lifecycle
  * 7. Unknown account 404 error state on the settings tab
  * 8. Console/request diagnostics
  *
@@ -377,17 +377,17 @@ test.describe('Account Settings Workspace', () => {
     });
   });
 
-  test.describe('Legacy settings redirect and unknown account', () => {
-    test('/settings/accounts/[id] redirects to /accounts/[id]/settings', async ({ page }) => {
+  test.describe('Settings tab direct route and unknown account', () => {
+    test('/accounts/[id]/settings renders identity and lifecycle controls', async ({ page }) => {
       // Use the account created in the first test group
       const ts = Date.now();
-      const testAccount = await createAccount(page, `Redirect E2E ${ts}`);
+      const testAccount = await createAccount(page, `Direct Route E2E ${ts}`);
       await activateAccount(page, testAccount.id);
 
-      // Navigate to the legacy URL
-      await page.goto(`/settings/accounts/${testAccount.id}`);
+      // Navigate directly to the Settings tab
+      await page.goto(`/accounts/${testAccount.id}/settings`);
 
-      // Should land at the new URL with a 307 redirect
+      // Should land at the same URL (no redirect)
       await expect(page).toHaveURL(`/accounts/${testAccount.id}/settings`);
 
       // Verify settings content rendered

@@ -20,7 +20,7 @@
  * 8. Settings tab: identity section, trading defaults, lifecycle controls,
  *    no legacy balance/performance sections
  * 9. Settings persistence: edit account name and verify after reload
- * 10. Legacy redirect: /settings/accounts/[id] → /accounts/[id]/settings
+ * 10. Settings tab direct route: /accounts/[id]/settings renders identity, defaults, lifecycle
  * 11. Empty account: empty states on Overview, Ledger, Positions,
  *     Reconciliation (no migration), Settings with no fabricated defaults
  * 12. Console and request diagnostics: no unhandled errors or failures
@@ -704,16 +704,16 @@ test.describe('Account Cutover Integration', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 8: Legacy redirect — /settings/accounts/[id] → /accounts/[id]/settings
+  // Test 8: Settings tab direct route — /accounts/[id]/settings renders
   // ═════════════════════════════════════════════════════════════════════
 
-  test('legacy /settings/accounts/[id] redirects to /accounts/[id]/settings', async ({
+  test('/accounts/[id]/settings renders identity section and lifecycle controls', async ({
     page,
   }) => {
-    // Navigate to the legacy settings URL
-    await page.goto(`/settings/accounts/${populatedAccountId}`);
+    // Navigate directly to the Settings tab
+    await page.goto(`/accounts/${populatedAccountId}/settings`);
 
-    // Should land at the new URL (307 redirect)
+    // Should land at the same URL (no redirect needed)
     await expect(page).toHaveURL(
       `/accounts/${populatedAccountId}/settings`,
     );

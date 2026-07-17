@@ -45,7 +45,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/account",
-        destination: "/settings/accounts",
+        destination: "/accounts",
         permanent: false,
       },
     ];
