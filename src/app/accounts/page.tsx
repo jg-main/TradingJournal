@@ -18,6 +18,10 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [persistedDefaultAccountId, setPersistedDefaultAccountId] = useState<string | null>(null);
+  const [defaultAccountDraft, setDefaultAccountDraft] = useState('');
+  const [defaultSettingsStatus, setDefaultSettingsStatus] = useState<'ready' | 'unavailable'>('unavailable');
+  const [savingDefault, setSavingDefault] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -25,11 +29,48 @@ export default function AccountsPage() {
 
   const fetchAccounts = async () => {
     try {
-      const res = await fetch('/api/accounts');
-      const data = await res.json();
-      if (Array.isArray(data)) setAccounts(data);
+      const [accountsResult, settingsResult] = await Promise.allSettled([
+        fetch('/api/accounts'),
+        fetch('/api/settings'),
+      ]);
+
+      if (accountsResult.status === 'rejected' || !accountsResult.value.ok) {
+        setAccounts([]);
+        setMessage({ type: 'error', text: 'Failed to load accounts.' });
+      } else {
+        const accountsData: unknown = await accountsResult.value.json();
+        if (Array.isArray(accountsData)) {
+          setAccounts(accountsData);
+        } else {
+          setAccounts([]);
+          setMessage({ type: 'error', text: 'The server returned invalid account data.' });
+        }
+      }
+
+      if (settingsResult.status === 'rejected' || !settingsResult.value.ok) {
+        setDefaultSettingsStatus('unavailable');
+      } else {
+        const settingsData: unknown = await settingsResult.value.json();
+        if (settingsData && typeof settingsData === 'object') {
+          const candidate = settingsData as Record<string, unknown>;
+          const value = candidate.defaultAccountId;
+          const noSettingsRow = typeof candidate.message === 'string' && value === undefined;
+
+          if (value === null || typeof value === 'string' || noSettingsRow) {
+            const defaultAccountId = typeof value === 'string' ? value : null;
+            setPersistedDefaultAccountId(defaultAccountId);
+            setDefaultAccountDraft(defaultAccountId ?? '');
+            setDefaultSettingsStatus('ready');
+          } else {
+            setDefaultSettingsStatus('unavailable');
+          }
+        } else {
+          setDefaultSettingsStatus('unavailable');
+        }
+      }
     } catch {
       setMessage({ type: 'error', text: 'Failed to load accounts.' });
+      setDefaultSettingsStatus('unavailable');
     } finally {
       setLoading(false);
     }
@@ -89,6 +130,54 @@ export default function AccountsPage() {
     }
   };
 
+  const handleDefaultAccountSave = async () => {
+    setSavingDefault(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultAccountId: defaultAccountDraft || null }),
+      });
+      const data: unknown = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const errorData = data && typeof data === 'object'
+          ? data as Record<string, unknown>
+          : null;
+        const details = errorData?.details;
+        const text = typeof errorData?.error === 'string'
+          ? errorData.error
+          : typeof details === 'string'
+            ? details
+            : 'Failed to save the default account.';
+        setMessage({ type: 'error', text });
+        return;
+      }
+
+      if (!data || typeof data !== 'object') {
+        setMessage({ type: 'error', text: 'The server returned an invalid settings response.' });
+        return;
+      }
+
+      const value = (data as Record<string, unknown>).defaultAccountId;
+      if (value !== null && typeof value !== 'string') {
+        setMessage({ type: 'error', text: 'The server returned an invalid settings response.' });
+        return;
+      }
+
+      setPersistedDefaultAccountId(value);
+      setDefaultAccountDraft(value ?? '');
+      setDefaultSettingsStatus('ready');
+      setMessage({ type: 'success', text: 'Default account saved.' });
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save the default account.' });
+    } finally {
+      setSavingDefault(false);
+    }
+  };
+
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Deactivate account "${name}"? This cannot be undone.`)) return;
 
@@ -106,7 +195,11 @@ export default function AccountsPage() {
   };
 
   if (loading) {
-    return <div className="p-8"><p className="text-zinc-500">Loading accounts...</p></div>;
+    return (
+      <div className="p-8" role="status" aria-live="polite">
+        <p className="text-zinc-500">Loading accounts...</p>
+      </div>
+    );
   }
 
   return (
@@ -127,6 +220,8 @@ export default function AccountsPage() {
 
       {message && (
         <div
+          role={message.type === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
@@ -136,6 +231,61 @@ export default function AccountsPage() {
           {message.text}
         </div>
       )}
+
+      <section
+        aria-labelledby="default-account-heading"
+        className="mb-8 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <h2 id="default-account-heading" className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Default account
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              New trades use this account unless you choose another one.
+            </p>
+            <label htmlFor="default-account" className="mt-4 mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Account used by default
+            </label>
+            <select
+              id="default-account"
+              value={defaultAccountDraft}
+              onChange={(event) => setDefaultAccountDraft(event.target.value)}
+              aria-describedby="default-account-status"
+              className="min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-500/30 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            >
+              <option value="">No default account</option>
+              {accounts.filter((account) => account.isActive).map((account) => (
+                <option key={account.id} value={account.id}>{account.name}</option>
+              ))}
+              {persistedDefaultAccountId &&
+                !accounts.some((account) => account.id === persistedDefaultAccountId && account.isActive) && (
+                  <option value={persistedDefaultAccountId} disabled>
+                    Current default is inactive or unavailable
+                  </option>
+                )}
+            </select>
+            <p id="default-account-status" className="mt-2 text-xs text-zinc-500 dark:text-zinc-400" role="status">
+              {defaultSettingsStatus === 'unavailable'
+                ? 'Saved default unavailable. Choose an account and save to retry.'
+                : persistedDefaultAccountId
+                  ? `Saved default: ${accounts.find((account) => account.id === persistedDefaultAccountId)?.name ?? 'Unavailable account'}`
+                  : 'No default account is saved.'}
+              {defaultSettingsStatus === 'ready' && defaultAccountDraft !== (persistedDefaultAccountId ?? '')
+                ? ' Selection not saved.'
+                : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleDefaultAccountSave}
+            disabled={savingDefault}
+            className="min-h-10 shrink-0 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            {savingDefault ? 'Saving default...' : 'Save default'}
+          </button>
+        </div>
+      </section>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
@@ -227,6 +377,11 @@ export default function AccountsPage() {
                     >
                       {account.name}
                     </Link>
+                    {persistedDefaultAccountId === account.id && (
+                      <span className="ml-2 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                        Default
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{account.broker ?? '-'}</td>
                   <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{account.currency}</td>

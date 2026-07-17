@@ -48,11 +48,6 @@ const nextConfig: NextConfig = {
         destination: "/settings/accounts",
         permanent: false,
       },
-      {
-        source: "/accounts",
-        destination: "/settings/accounts",
-        permanent: false,
-      },
     ];
   },
 };
