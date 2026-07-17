@@ -7,6 +7,10 @@ import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 
 import { useCustomizationMode } from '@/hooks/use-customization-mode';
 import { AddRemoveWidgetsDialog } from '@/components/dashboard/add-remove-widgets-dialog';
+import { ViewSwitcher } from '@/components/dashboard/view-switcher';
+import { ManageViewsDialog } from '@/components/dashboard/manage-views-dialog';
+import { useDashboardViews } from '@/hooks/use-dashboard-views';
+import { createDashboardView } from '@/types/dashboard-view';
 import { CustomizingProvider } from '@/lib/customizing-context';
 import { DashboardFilters } from '@/components/dashboard-filters';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
@@ -49,6 +53,7 @@ import type {
 } from '@/lib/dashboard';
 import type { SetupPerfResult } from '@/lib/review-dashboard';
 import type { AttentionInsight } from '@/lib/attention-insights';
+import type { DashboardView } from '@/types/dashboard-view';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -87,6 +92,40 @@ function SkeletonGrid() {
   );
 }
 
+// ── System Views ──────────────────────────────────────────────────────
+
+const SYSTEM_VIEWS: DashboardView[] = [
+  createDashboardView({
+    id: 'system-default',
+    name: 'Default',
+    layout: DEFAULT_UNIFIED_LAYOUT,
+    hiddenWidgetIds: [],
+    isSystem: true,
+    isDefault: true,
+  }),
+  createDashboardView({
+    id: 'system-trading-risk',
+    name: 'Trading Risk',
+    layout: DEFAULT_UNIFIED_LAYOUT,
+    hiddenWidgetIds: [],
+    isSystem: true,
+  }),
+  createDashboardView({
+    id: 'system-performance',
+    name: 'Performance',
+    layout: DEFAULT_UNIFIED_LAYOUT,
+    hiddenWidgetIds: [],
+    isSystem: true,
+  }),
+  createDashboardView({
+    id: 'system-process-review',
+    name: 'Process Review',
+    layout: DEFAULT_UNIFIED_LAYOUT,
+    hiddenWidgetIds: [],
+    isSystem: true,
+  }),
+];
+
 // ── Page Content ───────────────────────────────────────────────────────
 
 function HomeContent() {
@@ -114,6 +153,42 @@ function HomeContent() {
     defaultLayout: DEFAULT_UNIFIED_LAYOUT,
     storageKey: 'dashboard:layout:v2',
   });
+
+  // ── Dashboard Views ────────────────────────────────────────────────
+
+  const {
+    views,
+    activeView,
+    activeViewId,
+    isLoaded: viewsLoaded,
+    writeFailed,
+    setActiveView,
+    createView,
+    renameView,
+    deleteView,
+    duplicateView,
+    setDefaultView,
+    updateViewLayout,
+  } = useDashboardViews({
+    defaultViews: SYSTEM_VIEWS,
+  });
+
+  const [manageViewsOpen, setManageViewsOpen] = useState(false);
+  const prevActiveViewIdRef = useRef(activeViewId);
+  const activeViewIdRef = useRef(activeViewId);
+  activeViewIdRef.current = activeViewId;
+
+  // Sync layout and hidden widgets when the active view changes.
+  // Handles both post-hydration sync from localStorage and user-driven
+  // view switches (e.g., via handleSelectView or duplicate/create).
+  useEffect(() => {
+    if (!viewsLoaded || !activeView) return;
+    if (prevActiveViewIdRef.current === activeViewId) return;
+    prevActiveViewIdRef.current = activeViewId;
+
+    setUnifiedLayout(activeView.layout);
+    setStoredHiddenWidgetIds([...activeView.hiddenWidgetIds]);
+  }, [viewsLoaded, activeView, activeViewId, setUnifiedLayout]);
 
   // ── Customization Mode ──────────────────────────────────────────────
 
@@ -172,9 +247,11 @@ function HomeContent() {
     const saved = cm.saveCustomization(unifiedLayout);
     if (saved) {
       setStoredHiddenWidgetIds(saved.hiddenWidgetIds);
+      // Persist the saved layout to the active view in the views store
+      updateViewLayout(activeViewIdRef.current, saved.layout, saved.hiddenWidgetIds);
     }
     setDialogOpen(false);
-  }, [unifiedLayout, cm]);
+  }, [unifiedLayout, cm, updateViewLayout]);
 
   const handleCancel = useCallback(() => {
     const restored = cm.cancelCustomization();
@@ -188,15 +265,52 @@ function HomeContent() {
   const handleReset = useCallback(() => {
     const defaults = cm.resetToDefaults();
     setUnifiedLayout(defaults);
-    setStoredHiddenWidgetIds([]);
+    const emptyHidden: string[] = [];
+    setStoredHiddenWidgetIds(emptyHidden);
+    // Persist the reset to the active view in the views store
+    updateViewLayout(activeViewIdRef.current, defaults, emptyHidden);
     setDialogOpen(false);
-  }, [cm, setUnifiedLayout]);
+  }, [cm, setUnifiedLayout, updateViewLayout]);
 
   const handleToggleWidget = useCallback(
     (widgetId: WidgetId) => {
       cm.toggleWidgetVisibility(widgetId);
     },
     [cm],
+  );
+
+  // ── View Management Handlers ───────────────────────────────────────
+
+  const handleSelectView = useCallback(
+    (id: string) => {
+      const target = views.find((v) => v.id === id);
+      if (!target) return;
+
+      // Exit customization first if active (must-have requirement)
+      if (cm.isCustomizing) {
+        cm.cancelCustomization();
+        setDialogOpen(false);
+      }
+
+      // Set the view active in the views store
+      setActiveView(id);
+
+      // Immediately sync the layout and hidden widgets
+      setUnifiedLayout(target.layout);
+      setStoredHiddenWidgetIds([...target.hiddenWidgetIds]);
+    },
+    [views, cm, setActiveView, setUnifiedLayout],
+  );
+
+  const handleCreateView = useCallback(
+    (name: string) => {
+      // Create a new view cloning the current layout and hidden widgets.
+      // createView dispatches CREATE which sets activeViewId to the new view.
+      // The sync effect in the Dashboard Views section will update the
+      // layout + hiddenWidgetIds (same values, so it's a no-op sync).
+      createView(name, unifiedLayout, storedHiddenWidgetIds);
+    },
+    [createView, unifiedLayout, storedHiddenWidgetIds],
   );
 
   // ── Data Fetch: /api/dashboard ──────────────────────────────────────
@@ -496,6 +610,14 @@ function HomeContent() {
           Dashboard
         </h1>
         <div className="flex items-center gap-2">
+          <ViewSwitcher
+            views={views}
+            activeViewId={activeViewId}
+            onSelectView={handleSelectView}
+            onCreateView={handleCreateView}
+            onManageViews={() => setManageViewsOpen(true)}
+            writeFailed={writeFailed}
+          />
           {cm.isCustomizing ? (
             <>
               <button
@@ -619,6 +741,19 @@ function HomeContent() {
         onOpenChange={setDialogOpen}
         hiddenWidgetIds={cm.hiddenWidgetIds}
         onToggleWidget={handleToggleWidget}
+      />
+
+      {/* Manage Views Dialog — view CRUD operations */}
+      <ManageViewsDialog
+        open={manageViewsOpen}
+        onOpenChange={setManageViewsOpen}
+        views={views}
+        activeViewId={activeViewId}
+        onRename={renameView}
+        onDuplicate={duplicateView}
+        onDelete={deleteView}
+        onSetDefault={setDefaultView}
+        onSwitchView={handleSelectView}
       />
     </div>
   );
