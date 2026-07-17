@@ -1,10 +1,13 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { AlertTriangle } from 'lucide-react';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 
+import { useCustomizationMode } from '@/hooks/use-customization-mode';
+import { AddRemoveWidgetsDialog } from '@/components/dashboard/add-remove-widgets-dialog';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import { DashboardFilters } from '@/components/dashboard-filters';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
 import { EquityDrawdownChart } from '@/components/dashboard/equity-drawdown-chart';
@@ -28,6 +31,7 @@ import {
 } from '@/components/dashboard/filter-context';
 import {
   WIDGET_IDS,
+  WIDGET_REGISTRY,
   DEFAULT_UNIFIED_LAYOUT,
 } from '@/components/dashboard/widget-registry';
 import type { WidgetId } from '@/components/dashboard/widget-registry';
@@ -110,6 +114,90 @@ function HomeContent() {
     defaultLayout: DEFAULT_UNIFIED_LAYOUT,
     storageKey: 'dashboard:layout:v2',
   });
+
+  // ── Customization Mode ──────────────────────────────────────────────
+
+  /** Persisted hidden widget IDs — survives page reloads. */
+  const [storedHiddenWidgetIds, setStoredHiddenWidgetIds] = useState<string[]>(
+    () => {
+      if (typeof window === 'undefined') return [];
+      try {
+        const raw = localStorage.getItem('dashboard:hidden-widgets:v2');
+        return raw ? (JSON.parse(raw) as string[]) : [];
+      } catch {
+        return [];
+      }
+    },
+  );
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const preEditHiddenRef = useRef<string[]>([]);
+
+  const cm = useCustomizationMode({
+    defaultLayout: DEFAULT_UNIFIED_LAYOUT,
+    allWidgetIds: Object.values(WIDGET_IDS) as string[],
+  });
+
+  /** Persist hidden widget IDs to localStorage whenever they change. */
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'dashboard:hidden-widgets:v2',
+        JSON.stringify(storedHiddenWidgetIds),
+      );
+    } catch {
+      /* localStorage may be full or disabled — silently ignore */
+    }
+  }, [storedHiddenWidgetIds]);
+
+  /**
+   * Filter layout items based on the current visibility state.
+   * During customization, the hook tracks toggled-off widgets.
+   * Outside customization, persisted hidden IDs apply.
+   */
+  const visibleLayout = useMemo(() => {
+    const hidden = cm.isCustomizing
+      ? cm.hiddenWidgetIds
+      : storedHiddenWidgetIds;
+    return unifiedLayout.filter((item) => !hidden.includes(item.i));
+  }, [unifiedLayout, cm.isCustomizing, cm.hiddenWidgetIds, storedHiddenWidgetIds]);
+
+  const handleEnterCustomization = useCallback(() => {
+    preEditHiddenRef.current = storedHiddenWidgetIds;
+    cm.enterCustomization(unifiedLayout);
+    setDialogOpen(true);
+  }, [storedHiddenWidgetIds, unifiedLayout, cm]);
+
+  const handleSave = useCallback(() => {
+    const saved = cm.saveCustomization(unifiedLayout);
+    if (saved) {
+      setStoredHiddenWidgetIds(saved.hiddenWidgetIds);
+    }
+    setDialogOpen(false);
+  }, [unifiedLayout, cm]);
+
+  const handleCancel = useCallback(() => {
+    const restored = cm.cancelCustomization();
+    if (restored) {
+      setUnifiedLayout(restored);
+      setStoredHiddenWidgetIds(preEditHiddenRef.current);
+    }
+    setDialogOpen(false);
+  }, [cm, setUnifiedLayout]);
+
+  const handleReset = useCallback(() => {
+    const defaults = cm.resetToDefaults();
+    setUnifiedLayout(defaults);
+    setStoredHiddenWidgetIds([]);
+    setDialogOpen(false);
+  }, [cm, setUnifiedLayout]);
+
+  const handleToggleWidget = useCallback(
+    (widgetId: WidgetId) => {
+      cm.toggleWidgetVisibility(widgetId);
+    },
+    [cm],
+  );
 
   // ── Data Fetch: /api/dashboard ──────────────────────────────────────
 
@@ -407,7 +495,44 @@ function HomeContent() {
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
           Dashboard
         </h1>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          {cm.isCustomizing ? (
+            <>
+              <button
+                onClick={() => setDialogOpen(true)}
+                className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Add Widget
+              </button>
+              <button
+                onClick={handleSave}
+                className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Save
+              </button>
+              <button
+                onClick={handleCancel}
+                className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReset}
+                className="rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-900/30"
+              >
+                Reset
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleEnterCustomization}
+              className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            >
+              Edit Layout
+            </button>
+          )}
+          <ThemeToggle />
+        </div>
       </div>
       <p className="mb-8 text-sm text-zinc-500 dark:text-zinc-400">
         Overview of your trading performance and activity.
@@ -472,18 +597,29 @@ function HomeContent() {
       {/* Unified Widget Grid — renders all registered widgets through a
           single DashboardLayout driven by the WidgetRegistry. */}
       {unifiedLoaded && (
-        <DashboardLayout
-          layout={unifiedLayout}
-          onLayoutChange={(newLayout: Layout) => setUnifiedLayout([...newLayout])}
-          cols={12}
-          rowHeight={80}
-          margin={[12, 12]}
-        >
-          {unifiedLayout.map((item) => (
-            <div key={item.i}>{renderWidget(item.i as WidgetId)}</div>
-          ))}
-        </DashboardLayout>
+        <CustomizingProvider value={cm.isCustomizing}>
+          <DashboardLayout
+            layout={visibleLayout}
+            onLayoutChange={(newLayout: Layout) => setUnifiedLayout([...newLayout])}
+            cols={12}
+            rowHeight={80}
+            margin={[12, 12]}
+            isCustomizing={cm.isCustomizing}
+          >
+            {visibleLayout.map((item) => (
+              <div key={item.i}>{renderWidget(item.i as WidgetId)}</div>
+            ))}
+          </DashboardLayout>
+        </CustomizingProvider>
       )}
+
+      {/* Add/Remove Widgets Dialog — only relevant during customization */}
+      <AddRemoveWidgetsDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        hiddenWidgetIds={cm.hiddenWidgetIds}
+        onToggleWidget={handleToggleWidget}
+      />
     </div>
   );
 }

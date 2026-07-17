@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { SetupRankingWidget } from './setup-ranking-widget';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { SetupPerfResult } from '@/lib/review-dashboard';
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -375,9 +376,11 @@ describe('SetupRankingWidget', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <SetupRankingWidget
-        setupRanking={ALL_SETUPS}
-      />,
+      <CustomizingProvider value={true}>
+        <SetupRankingWidget
+          setupRanking={ALL_SETUPS}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { AttentionInsightsWidget } from './attention-insights-widget';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { AttentionInsight } from '@/lib/attention-insights';
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -300,9 +301,11 @@ describe('AttentionInsightsWidget', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <AttentionInsightsWidget
-        insights={ALL_SEVERITIES}
-      />,
+      <CustomizingProvider value={true}>
+        <AttentionInsightsWidget
+          insights={ALL_SEVERITIES}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { ProcessDisciplineWidget, getGradeColor, buildChartOption } from './process-discipline-widget';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { ProcessScoreBin } from '@/lib/dashboard';
 
 // ── Mocks ──────────────────────────────────────────────────────────────
@@ -386,9 +387,11 @@ describe('ProcessDisciplineWidget', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <ProcessDisciplineWidget
-        processScoreDistribution={SAMPLE_BINS}
-      />,
+      <CustomizingProvider value={true}>
+        <ProcessDisciplineWidget
+          processScoreDistribution={SAMPLE_BINS}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { MonthlyPerformanceChart } from './monthly-performance-chart';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { MonthlyPerformanceItem } from '@/lib/dashboard';
 
 // ── Mocks ──────────────────────────────────────────────────────────────
@@ -234,9 +235,11 @@ describe('MonthlyPerformanceChart', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <MonthlyPerformanceChart
-        monthlyPerformance={SAMPLE_MONTHLY}
-      />,
+      <CustomizingProvider value={true}>
+        <MonthlyPerformanceChart
+          monthlyPerformance={SAMPLE_MONTHLY}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

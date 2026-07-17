@@ -5,6 +5,7 @@ import { GripVertical, CircleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCustomizing } from '@/lib/customizing-context';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -90,8 +91,15 @@ export function DashboardWidget({
   children,
   className,
   testId,
-  isCustomizing = false,
+  isCustomizing: isCustomizingProp,
 }: DashboardWidgetProps) {
+  /**
+   * Fall back to the CustomizingContext value when the prop is not explicitly passed.
+   * Widget components that render DashboardWidget directly do not need to forward
+   * isCustomizing — the context (set by page.tsx around the grid) handles it.
+   */
+  const contextCustomizing = useCustomizing();
+  const isCustomizing = isCustomizingProp ?? contextCustomizing;
   return (
     <Card
       className={cn('h-full overflow-hidden', className)}

@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { CalendarHeatmapWidget } from './calendar-heatmap-widget';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { CalendarHeatmapYearData } from '@/lib/calendar-heatmap';
 
 // ── Mocks ──────────────────────────────────────────────────────────────
@@ -394,9 +395,11 @@ describe('CalendarHeatmapWidget', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <CalendarHeatmapWidget
-        heatmapData={SINGLE_YEAR_DATA}
-      />,
+      <CustomizingProvider value={true}>
+        <CalendarHeatmapWidget
+          heatmapData={SINGLE_YEAR_DATA}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

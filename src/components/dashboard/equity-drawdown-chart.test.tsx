@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
 
 // ── Mocks ──────────────────────────────────────────────────────────────
@@ -376,11 +377,13 @@ describe('EquityDrawdownChart', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <EquityDrawdownChart
-        equityCurve={SAMPLE_EQUITY}
-        drawdown={SAMPLE_DRAWDOWN}
-        tradeMarkers={SAMPLE_MARKERS}
-      />,
+      <CustomizingProvider value={true}>
+        <EquityDrawdownChart
+          equityCurve={SAMPLE_EQUITY}
+          drawdown={SAMPLE_DRAWDOWN}
+          tradeMarkers={SAMPLE_MARKERS}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { PeriodMatrixWidget } from './period-matrix-widget';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { PeriodMatrixResult } from '@/lib/period-matrix';
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -622,9 +623,11 @@ describe('PeriodMatrixWidget', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <PeriodMatrixWidget
-        periodMatrixData={ALL_TYPES_DATA}
-      />,
+      <CustomizingProvider value={true}>
+        <PeriodMatrixWidget
+          periodMatrixData={ALL_TYPES_DATA}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

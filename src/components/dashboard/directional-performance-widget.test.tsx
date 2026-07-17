@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { DirectionalPerformanceWidget } from './directional-performance-widget';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { DirectionalPerformanceResult } from '@/lib/dashboard';
 
 // ── Fixtures ───────────────────────────────────────────────────────────
@@ -242,9 +243,11 @@ describe('DirectionalPerformanceWidget', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <DirectionalPerformanceWidget
-        directionalPerformance={SAMPLE_DIRECTIONAL}
-      />,
+      <CustomizingProvider value={true}>
+        <DirectionalPerformanceWidget
+          directionalPerformance={SAMPLE_DIRECTIONAL}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();

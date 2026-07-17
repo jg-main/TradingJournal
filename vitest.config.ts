@@ -53,6 +53,8 @@ export default defineConfig({
       'src/lib/alert-polling.test.ts',
       'src/hooks/use-visibility-polling.test.ts',
       'src/hooks/use-customization-mode.test.ts',
+      'src/hooks/use-dashboard-views.test.ts',
+      'src/types/dashboard-view.test.ts',
       'src/lib/accounting/decimal.test.ts',
       'src/lib/accounting/legacy-migration.test.ts',
       'src/lib/accounting/legacy-migration-runner.test.ts',

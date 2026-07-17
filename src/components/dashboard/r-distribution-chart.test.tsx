@@ -12,6 +12,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { RDistributionChart } from './r-distribution-chart';
+import { CustomizingProvider } from '@/lib/customizing-context';
 import type { RDistributionBin } from '@/lib/dashboard';
 
 // ── Mocks ──────────────────────────────────────────────────────────────
@@ -257,9 +258,11 @@ describe('RDistributionChart', () => {
 
   it('renders the drag handle element via DashboardWidget', () => {
     const { container } = render(
-      <RDistributionChart
-        rDistribution={SAMPLE_R_DISTRIBUTION}
-      />,
+      <CustomizingProvider value={true}>
+        <RDistributionChart
+          rDistribution={SAMPLE_R_DISTRIBUTION}
+        />
+      </CustomizingProvider>,
     );
     const dragHandle = container.querySelector('.dashboard-widget-drag-handle');
     expect(dragHandle).toBeTruthy();
