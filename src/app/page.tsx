@@ -16,6 +16,7 @@ import { DashboardChart } from '@/components/dashboard-chart';
 import { DashboardFilters } from '@/components/dashboard-filters';
 import { DashboardV2 } from '@/components/dashboard-v2';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
+import { EquityDrawdownChart } from '@/components/dashboard/equity-drawdown-chart';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { useDashboardLayout } from '@/components/dashboard/use-dashboard-layout';
 import {
@@ -46,13 +47,6 @@ import type {
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-/** Minimal ECharts tooltip parameter shape used in dashboard charts. */
-interface EChartsTooltipParam {
-  seriesName?: string;
-  data: number[];
-  value: number[];
-  dataIndex: number;
-}
 
 interface DashboardResponse {
   kpis: KpiMetrics;
@@ -69,8 +63,7 @@ interface DashboardResponse {
 // ── Default chart layout (12 cols: 2 charts per row) ──────────────────
 
 const CHART_WIDGET_IDS = [
-  'equity-curve',
-  'drawdown-chart',
+  'equity-drawdown',
   'monthly-performance',
   'r-distribution',
   'directional-performance',
@@ -78,8 +71,7 @@ const CHART_WIDGET_IDS = [
 ] as const;
 
 const DEFAULT_CHART_LAYOUT = [
-  { i: 'equity-curve', x: 0, y: 0, w: 6, h: 5, minW: 4, minH: 4 },
-  { i: 'drawdown-chart', x: 6, y: 0, w: 6, h: 5, minW: 4, minH: 4 },
+  { i: 'equity-drawdown', x: 0, y: 0, w: 12, h: 5, minW: 6, minH: 4 },
   { i: 'monthly-performance', x: 0, y: 5, w: 6, h: 5, minW: 4, minH: 4 },
   { i: 'r-distribution', x: 6, y: 5, w: 6, h: 5, minW: 4, minH: 4 },
   { i: 'directional-performance', x: 0, y: 10, w: 12, h: 3, minW: 6, minH: 3 },
@@ -87,8 +79,7 @@ const DEFAULT_CHART_LAYOUT = [
 ];
 
 const CHART_TITLES: Record<string, string> = {
-  'equity-curve': 'Equity Curve',
-  'drawdown-chart': 'Drawdown',
+  'equity-drawdown': 'Equity & Drawdown',
   'monthly-performance': 'Monthly Performance',
   'r-distribution': 'R Distribution',
   'directional-performance': 'Directional Performance',
@@ -237,112 +228,7 @@ function HomeContent() {
     kpis.currentDrawdown === null &&
     kpis.accountValue === null;
 
-  // Chart option builders (memoized with the data they depend on)
-  const equityCurveOption = equityCurve.length > 0
-    ? {
-        xAxis: { type: 'time' as const },
-        yAxis: { type: 'value' as const, axisLabel: { formatter: '${value}' } },
-        series: [
-          {
-            type: 'line' as const,
-            smooth: true,
-            showSymbol: false,
-            lineStyle: { width: 2 },
-            color: '#2563eb',
-            areaStyle: {
-              color: {
-                type: 'linear' as const,
-                x: 0, y: 0, x2: 0, y2: 1,
-                colorStops: [
-                  { offset: 0, color: 'rgba(37, 99, 235, 0.25)' },
-                  { offset: 1, color: 'rgba(37, 99, 235, 0.01)' },
-                ],
-              },
-            },
-            data: equityCurve.map(
-              (dp) => [Date.parse(dp.date), dp.equity] as [number, number],
-            ),
-          },
-          {
-            name: 'Entry',
-            type: 'scatter' as const,
-            symbol: 'triangle',
-            symbolRotate: 0,
-            symbolSize: 12,
-            color: '#22c55e',
-            data: tradeMarkers
-              .filter((m) => m.markerType === 'entry')
-              .map((m) => [Date.parse(m.date), m.equity]),
-          },
-          {
-            name: 'Exit',
-            type: 'scatter' as const,
-            symbol: 'triangle',
-            symbolRotate: 180,
-            symbolSize: 12,
-            color: '#ef4444',
-            data: tradeMarkers
-              .filter((m) => m.markerType === 'exit')
-              .map((m) => [Date.parse(m.date), m.equity]),
-          },
-        ],
-        tooltip: {
-          trigger: 'axis',
-          formatter: (params: EChartsTooltipParam[]) => {
-            if (!Array.isArray(params) || params.length === 0) return '';
-            const markerParam = params.find(
-              (p: EChartsTooltipParam) => p.seriesName === 'Entry' || p.seriesName === 'Exit',
-            );
-            if (markerParam) {
-              const marker = tradeMarkers.find(
-                (m) => Date.parse(m.date) === markerParam.data[0] &&
-                       m.equity === markerParam.data[1],
-              );
-              if (marker) {
-                const dirLabel = marker.direction === 'long' ? 'Long' : 'Short';
-                const typeLabel = marker.markerType === 'entry' ? 'Entry' : 'Exit';
-                return [
-                  `<strong>${typeLabel} #${marker.tradeId}</strong>`,
-                  `Direction: ${dirLabel}`,
-                  `Price: $${marker.price.toFixed(2)}`,
-                  `P&amp;L: $${marker.pnl.toFixed(2)}`,
-                  `Equity: $${marker.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-                ].join('<br/>');
-              }
-            }
-            const lineParam = params.find((p: EChartsTooltipParam) => p.seriesName === undefined || p.seriesName === 'Equity Curve');
-            if (lineParam) {
-              return `$${lineParam.value[1]?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-            }
-            return '';
-          },
-        },
-        grid: { left: '10%', right: '5%', top: 20, bottom: 25 },
-      }
-    : null;
 
-  const drawdownOption = drawdown.length > 0
-    ? {
-        xAxis: { type: 'time' as const },
-        yAxis: { type: 'value' as const, axisLabel: { formatter: '{value}%' } },
-        series: [{
-          type: 'line' as const,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { width: 2 },
-          color: '#ef4444',
-          areaStyle: { color: 'rgba(239, 68, 68, 0.15)' },
-          data: drawdown.map(
-            (dp) => [Date.parse(dp.date), dp.drawdownPct * 100] as [number, number],
-          ),
-        }],
-        tooltip: {
-          trigger: 'axis',
-          valueFormatter: (v: number) => `${v.toFixed(1)}%`,
-        },
-        grid: { left: '10%', right: '5%', top: 20, bottom: 25 },
-      }
-    : null;
 
   const monthlyPerformanceOption = monthlyPerformance.length > 0
     ? {
@@ -481,30 +367,17 @@ function HomeContent() {
 
   const renderChartContent = (id: string) => {
     switch (id) {
-      case 'equity-curve':
-        return equityCurve.length === 0 ? (
-          <div className="px-(--card-spacing) pb-(--card-spacing)">
-            <EmptyState
-              icon={<TrendingUp className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
-              title="No equity data available"
-              description="Start trading to see your equity curve."
-            />
-          </div>
-        ) : equityCurveOption ? (
-          <DashboardChart option={equityCurveOption} height={280} />
-        ) : null;
-      case 'drawdown-chart':
-        return drawdown.length === 0 ? (
-          <div className="px-(--card-spacing) pb-(--card-spacing)">
-            <EmptyState
-              icon={<TrendingUp className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
-              title="No drawdown data available"
-              description="Your drawdown chart will appear here after you start trading."
-            />
-          </div>
-        ) : drawdownOption ? (
-          <DashboardChart option={drawdownOption} height={280} />
-        ) : null;
+      case 'equity-drawdown':
+        return (
+          <EquityDrawdownChart
+            equityCurve={equityCurve}
+            drawdown={drawdown}
+            tradeMarkers={tradeMarkers}
+            isLoading={isRefetching}
+            error={isRefetching && error ? error : null}
+            testId="dashboard-widget-equity-drawdown"
+          />
+        );
       case 'monthly-performance':
         return monthlyPerformance.length === 0 ? (
           <div className="px-(--card-spacing) pb-(--card-spacing)">
@@ -824,13 +697,19 @@ function HomeContent() {
           >
             {chartLayout
               .filter((l) => CHART_WIDGET_IDS.includes(l.i as typeof CHART_WIDGET_IDS[number]))
-              .map((item) => (
-                <div key={item.i}>
-                  <DashboardWidget title={CHART_TITLES[item.i] ?? item.i} isLoading={isRefetching} error={isRefetching && error ? error : null}>
-                    {renderChartContent(item.i)}
-                  </DashboardWidget>
-                </div>
-              ))}
+              .map((item) => {
+                const content = renderChartContent(item.i);
+                if (item.i === 'equity-drawdown') {
+                  return <div key={item.i}>{content}</div>;
+                }
+                return (
+                  <div key={item.i}>
+                    <DashboardWidget title={CHART_TITLES[item.i] ?? item.i} isLoading={isRefetching} error={isRefetching && error ? error : null}>
+                      {content}
+                    </DashboardWidget>
+                  </div>
+                );
+              })}
           </DashboardLayout>
         </section>
       )}
