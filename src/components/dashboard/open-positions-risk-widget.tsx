@@ -159,7 +159,7 @@ function RiskSummaryRow({
   const missingStopsBadge = risk.missingStops > 0 ? 'destructive' : 'secondary';
 
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-3">
+    <div className="mb-2 flex flex-wrap items-center gap-2">
       {/* Open P&L */}
       <div className="flex items-center gap-1.5">
         <span className="text-xs text-zinc-500 dark:text-zinc-400">

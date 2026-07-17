@@ -106,13 +106,13 @@ export function DashboardWidget({
       data-testid={testId}
       size="sm"
     >
-      <CardHeader className="flex flex-row items-center gap-0 border-b pb-2">
+      <CardHeader className="flex flex-row items-center gap-0 border-b pb-1">
         {isCustomizing && <DragHandle />}
         <CardTitle className="flex-1 truncate text-sm font-medium">
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 pt-3">
+      <CardContent className="flex-1 pt-2">
         {error ? (
           <WidgetError message={error} />
         ) : isLoading ? (

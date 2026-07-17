@@ -69,7 +69,7 @@ function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) 
     <div className="flex flex-col">
       <span
         className={cn(
-          'text-lg font-bold tabular-nums leading-tight text-zinc-900 dark:text-zinc-100',
+          'text-base font-bold tabular-nums leading-tight text-zinc-900 dark:text-zinc-100',
           valueClassName,
         )}
       >
@@ -162,7 +162,7 @@ export function CurrentRiskPanel({
       ) : (
         <div className="flex h-full flex-col gap-2">
           {/* ── Metrics Grid (3 columns, 1 row = 3 metrics) ───────────── */}
-          <div className="grid grid-cols-3 gap-x-4 gap-y-2 rounded-lg border border-zinc-100 bg-zinc-50/50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/30">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50/50 px-2 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
             <MetricCell
               value={formatCurrency(data.accountValue)}
               label="Account Value"
