@@ -247,6 +247,25 @@ describe('NetPnlWidget', () => {
     );
     expect(screen.getByText('Failed to load')).toBeTruthy();
   });
+
+  // ── Refetch state scenarios ──────────────────────────────────────
+
+  it('shows skeleton when isLoading with valid kpis (refetch)', () => {
+    renderWithTooltip(<NetPnlWidget kpis={SAMPLE_KPIS} isLoading />);
+    const skeleton = document.querySelector('[aria-busy="true"]');
+    expect(skeleton).toBeTruthy();
+    // Content should not render while loading
+    expect(screen.queryByText(/\$2,500/)).toBeNull();
+  });
+
+  it('shows error when error prop with valid kpis (refetch error)', () => {
+    renderWithTooltip(
+      <NetPnlWidget kpis={SAMPLE_KPIS} error="API unavailable" />,
+    );
+    expect(screen.getByText('API unavailable')).toBeTruthy();
+    // Content should not render when error is shown
+    expect(screen.queryByText(/\$2,500/)).toBeNull();
+  });
 });
 
 // ── TotalTradesWidget ──────────────────────────────────────────────

@@ -612,7 +612,10 @@ function HomeContent() {
     }
   };
 
-  const kpisAvailable = !loading && kpis !== null && !isEmpty;
+  /** Whether we have dashboard data (used to show/hide widget sections) */
+  const hasData = kpis !== null && !isEmpty;
+  /** Whether we're refetching while stale data is still visible */
+  const isRefetching = loading && hasData;
 
   // ── Render ─────────────────────────────────────────────────────────
 
@@ -665,7 +668,7 @@ function HomeContent() {
       </div>
 
       {/* Error state */}
-      {error && (
+      {error && !data && (
         <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           <AlertTriangle className="size-4 shrink-0" />
           <span className="flex-1">{error}</span>
@@ -679,7 +682,7 @@ function HomeContent() {
       )}
 
       {/* Loading state — pulse-animated skeleton rectangles */}
-      {loading && (
+      {loading && !data && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
             {Array.from({ length: 11 }).map((_, i) => (
@@ -705,7 +708,7 @@ function HomeContent() {
       <DashboardV2 initialAccountId={filters.accountId ?? undefined} />
 
       {/* KPI Widgets — Journal Performance section */}
-      {kpisAvailable && (
+      {hasData && (
         <>
           {/* Period-to-Date Section */}
           <div className={SECTION_TINTS.PTD + ' rounded-lg mb-6'}>
@@ -736,6 +739,8 @@ function HomeContent() {
                         <Widget
                           kpis={kpis}
                           mtm={mtm}
+                          isLoading={isRefetching}
+                          error={isRefetching && error ? error : null}
                           onRefresh={item.i === 'unrealized-pnl' ? handleRefreshPrices : undefined}
                           isRefreshing={item.i === 'unrealized-pnl' ? refreshing : undefined}
                         />
@@ -775,6 +780,8 @@ function HomeContent() {
                         <Widget
                           kpis={kpis}
                           mtm={mtm}
+                          isLoading={isRefetching}
+                          error={isRefetching && error ? error : null}
                           onRefresh={item.i === 'unrealized-pnl' ? handleRefreshPrices : undefined}
                           isRefreshing={item.i === 'unrealized-pnl' ? refreshing : undefined}
                         />
@@ -797,7 +804,7 @@ function HomeContent() {
       )}
 
       {/* Chart Widgets Grid */}
-      {kpisAvailable && chartLoaded && (
+      {hasData && chartLoaded && (
         <section className="mb-6">
           <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
             Performance Charts
@@ -813,7 +820,7 @@ function HomeContent() {
               .filter((l) => CHART_WIDGET_IDS.includes(l.i as typeof CHART_WIDGET_IDS[number]))
               .map((item) => (
                 <div key={item.i}>
-                  <DashboardWidget title={CHART_TITLES[item.i] ?? item.i}>
+                  <DashboardWidget title={CHART_TITLES[item.i] ?? item.i} isLoading={isRefetching} error={isRefetching && error ? error : null}>
                     {renderChartContent(item.i)}
                   </DashboardWidget>
                 </div>
@@ -823,7 +830,7 @@ function HomeContent() {
       )}
 
       {/* Toggle for additional analytics */}
-      {kpisAvailable && (
+      {hasData && (
         <div className="mb-6 flex justify-center">
           <button
             onClick={() => setShowMoreAnalytics(!showMoreAnalytics)}
@@ -835,7 +842,7 @@ function HomeContent() {
       )}
 
       {/* Directional Performance (shown when toggled) */}
-      {showMoreAnalytics && kpisAvailable && directionalPerformance && chartLoaded && (
+      {showMoreAnalytics && hasData && directionalPerformance && chartLoaded && (
         <section className="mb-6">
           <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
             Directional Performance
@@ -851,7 +858,7 @@ function HomeContent() {
             margin={[12, 12]}
           >
             <div key="directional-performance">
-              <DashboardWidget title="Directional Performance">
+              <DashboardWidget title="Directional Performance" isLoading={isRefetching} error={isRefetching && error ? error : null}>
                 {renderChartContent('directional-performance')}
               </DashboardWidget>
             </div>
@@ -860,7 +867,7 @@ function HomeContent() {
       )}
 
       {/* Process Quality Score Distribution (shown when toggled) */}
-      {showMoreAnalytics && kpisAvailable && processScoreDistribution !== null && chartLoaded && (
+      {showMoreAnalytics && hasData && processScoreDistribution !== null && chartLoaded && (
         <section className="mb-6">
           <h2 className="mb-4 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
             Process Quality Score Distribution
@@ -876,7 +883,7 @@ function HomeContent() {
             margin={[12, 12]}
           >
             <div key="process-score-dist">
-              <DashboardWidget title="Score Distribution">
+              <DashboardWidget title="Score Distribution" isLoading={isRefetching} error={isRefetching && error ? error : null}>
                 {renderChartContent('process-score-dist')}
               </DashboardWidget>
             </div>
