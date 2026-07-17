@@ -47,25 +47,25 @@ function DirectionColumn({ label, netPnl, winRate, tradeCount }: DirectionColumn
 
   return (
     <Card size="sm">
-      <CardContent className="flex flex-col gap-3 p-5">
+      <CardContent className="flex flex-col gap-1.5 p-3">
         <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           {label}
         </p>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2">
           <div>
-            <p className={`text-xl font-bold tabular-nums ${pnlClass}`}>
+            <p className={`text-base font-bold tabular-nums ${pnlClass}`}>
               {formatCurrency(netPnl, { sign: true })}
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
           </div>
           <div>
-            <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+            <p className="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
               {formatPercent(winRate)}
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">Win Rate</p>
           </div>
           <div>
-            <p className="text-xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+            <p className="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
               {tradeCount}
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">Trades</p>
@@ -116,7 +116,7 @@ export function DirectionalPerformanceWidget({
       testId={testId}
     >
       {!hasData && !isLoading && (
-        <div className="flex items-center justify-center py-8">
+        <div className="flex items-center justify-center py-6">
           <EmptyState
             icon={
               <TrendingUp
@@ -130,7 +130,7 @@ export function DirectionalPerformanceWidget({
         </div>
       )}
       {hasData && (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           <DirectionColumn
             label="Long"
             netPnl={directionalPerformance.long.netPnl}

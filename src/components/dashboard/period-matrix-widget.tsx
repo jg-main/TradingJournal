@@ -189,7 +189,7 @@ export function PeriodMatrixWidget({
       {hasAnyData && (
         <>
           {/* Period type selector */}
-          <div className="mb-3 flex flex-wrap gap-1 px-(--card-spacing)">
+          <div className="mb-2 flex flex-wrap gap-1 px-(--card-spacing)">
             {PERIOD_TYPE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -230,7 +230,7 @@ export function PeriodMatrixWidget({
                         <TableRow className="border-0">
                           <TableCell
                             colSpan={5}
-                            className="px-0 pb-0 pt-3 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
+                            className="px-0 pb-0 pt-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
                           >
                             {pairLabel}
                           </TableCell>

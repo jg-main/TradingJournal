@@ -262,7 +262,7 @@ export function CalendarHeatmapWidget({
         <>
           {/* Year selector for multi-year data */}
           {heatmapData.length > 1 && (
-            <div className="mb-3 flex flex-wrap gap-1 px-(--card-spacing)">
+            <div className="mb-2 flex flex-wrap gap-1 px-(--card-spacing)">
               {heatmapData.map((yd, idx) => (
                 <button
                   key={yd.year}
@@ -281,7 +281,7 @@ export function CalendarHeatmapWidget({
 
           {/* Quick stats row */}
           {stats && (
-            <div className="mb-3 grid grid-cols-4 gap-2 px-(--card-spacing) text-center text-xs">
+            <div className="mb-2 grid grid-cols-4 gap-2 px-(--card-spacing) text-center text-xs">
               <div>
                 <span className="block font-semibold tabular-nums text-green-600 dark:text-green-400">
                   {stats.profitDays}
@@ -313,7 +313,7 @@ export function CalendarHeatmapWidget({
 
           {/* Calendar heatmap chart */}
           {chartOption && (
-            <DashboardChart option={chartOption} height={300} />
+            <DashboardChart option={chartOption} height={260} />
           )}
         </>
       )}

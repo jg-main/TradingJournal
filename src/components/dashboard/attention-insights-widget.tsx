@@ -131,13 +131,13 @@ function InsightCard({ insight }: { insight: AttentionInsight }) {
   return (
     <div
       className={cn(
-        'flex gap-3 border-l-4 p-3',
+        'flex gap-2 border-l-4 p-2',
         config.borderColor,
         config.bgColor,
       )}
     >
       <div className={cn('mt-0.5 shrink-0', config.iconColor)}>
-        <Icon className="size-5" />
+        <Icon className="size-4" />
       </div>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-start justify-between gap-2">
