@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Download, NotebookPen, Trash2, Columns3 } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { Download, NotebookPen, Trash2, Columns3, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select';
 
 import { useAppTimezone } from '@/lib/timezone-context';
+import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -88,6 +89,10 @@ export default function TradesPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [showColumns, setShowColumns] = useState(false);
 
+  const refreshingRef = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const lastRefreshRef = useRef<number>(0);
+
   const [colVisibility, setColVisibility] = useState<Record<string, boolean>>(() => {
     try { const raw = localStorage.getItem('trades:visibility'); return raw ? JSON.parse(raw) : {}; }
     catch { return {}; }
@@ -110,6 +115,27 @@ export default function TradesPage() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchItems(1, statusFilter); }, [fetchItems, statusFilter]);
+
+  // ── Auto-refresh prices for open trades ────────────────────────────
+  const hasOpenTrades = data.some(t => t.status === 'open');
+
+  const refreshPrices = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await fetch('/api/trades/mtm/refresh', { method: 'POST' });
+      lastRefreshRef.current = Date.now();
+      await fetchItems(page, statusFilter);
+    } catch {
+      // Silently retry on next poll tick
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [page, statusFilter, fetchItems]);
+
+  useVisibilityPolling(refreshPrices, 30000, hasOpenTrades);
 
   const handleDelete = useCallback(async (id: string, tradeCode: string) => {
     if (!confirm(`Delete trade ${tradeCode}?`)) return;
@@ -207,7 +233,18 @@ export default function TradesPage() {
     <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trade Log</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trade Log</h1>
+          {hasOpenTrades && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+              title={lastRefreshRef.current ? `Last auto-refresh: ${new Date(lastRefreshRef.current).toLocaleTimeString()}` : 'Auto-refreshing prices for open trades'}
+            >
+              <span className={`size-1.5 rounded-full ${refreshing ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-500'}`} />
+              Live
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <div className="relative">
             <button type="button" onClick={() => setShowColumns(!showColumns)}
