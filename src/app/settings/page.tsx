@@ -6,17 +6,15 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   BookOpen,
-  Building2,
   CircleCheck,
   CircleDashed,
   Database,
   Gamepad2,
+  Globe,
   HardDrive,
   Loader2,
   Play,
   ShieldCheck,
-  Sparkles,
-  User,
   X,
 } from 'lucide-react';
 import type { ReadinessState } from '@/lib/readiness';
@@ -43,28 +41,16 @@ const cards: HubCard[] = [
     icon: <Gamepad2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
-    title: 'App Preferences',
-    description: 'Configure display name, timezone, and default currency.',
-    href: '/settings/app',
-    icon: <User className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+    title: 'Workspace',
+    description: 'Configure workspace timezone and regional preferences.',
+    href: '/settings/workspace',
+    icon: <Globe className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
-    title: 'Risk Settings',
-    description: 'Set max risk per trade, default commission, and starting account value.',
-    href: '/settings/risk',
+    title: 'Risk Defaults',
+    description: 'Set global risk defaults that apply as fallbacks for all accounts.',
+    href: '/settings/risk-defaults',
     icon: <ShieldCheck className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
-  },
-  {
-    title: 'AI',
-    description: 'Configure AI provider for trade quality assessments.',
-    href: '/settings/ai',
-    icon: <Sparkles className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
-  },
-  {
-    title: 'Accounts',
-    description: 'Manage your brokerage accounts, deposits, and withdrawals.',
-    href: '/settings/accounts',
-    icon: <Building2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
   {
     title: 'Mistake Types',
@@ -84,7 +70,6 @@ const cards: HubCard[] = [
     href: '/settings/backup',
     icon: <HardDrive className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
   },
-
 ];
 
 // ── Skeleton ────────────────────────────────────────────────────────────
@@ -108,9 +93,8 @@ function SetupChecklist({ readiness }: { readiness: ReadinessState }) {
   const stepMap = new Map(steps.map((step, index) => [step.id, { ...step, stepNumber: index + 1 }]));
 
   const orderedSteps = [
-    { id: 'app_profile', label: 'App Profile', href: '/settings/app' },
-    { id: 'settings', label: 'Risk Settings', href: '/settings/risk' },
-    { id: 'accounts', label: 'Accounts', href: '/settings/accounts' },
+    { id: 'app_profile', label: 'Workspace', href: '/settings/workspace' },
+    { id: 'settings', label: 'Risk Defaults', href: '/settings/risk-defaults' },
     { id: 'setups', label: 'Trading Setups', href: '/settings/plays' },
   ].map((step, index) => {
     const missing = stepMap.get(step.id);
@@ -120,12 +104,10 @@ function SetupChecklist({ readiness }: { readiness: ReadinessState }) {
       isMissing: Boolean(missing),
       description:
         step.id === 'app_profile'
-          ? 'Set your display name and profile details.'
+          ? 'Set your workspace timezone and regional preferences.'
           : step.id === 'settings'
-            ? 'Choose your journal start date and risk defaults.'
-            : step.id === 'accounts'
-              ? 'Add at least one active brokerage account.'
-              : 'Create at least one active trading setup.',
+            ? 'Choose your global risk defaults.'
+            : 'Create at least one active trading setup.',
     };
   });
 
