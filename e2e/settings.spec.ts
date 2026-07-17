@@ -153,10 +153,11 @@ test.describe('Settings', () => {
       // The browser also triggers a download via the <a download> attribute.
       // We catch the download event gracefully; success in our test is the
       // state change, not the file landing on disk.
+      // Scope to the dialog to avoid ambiguity with Backup card description text
       const downloadPromise = page
         .waitForEvent('download', { timeout: 5000 })
         .catch(() => null);
-      await page.getByText('Download Backup').click();
+      await resetDialog.getByRole('link', { name: 'Download Backup', exact: true }).click();
       await downloadPromise;
 
       // Verify backup downloaded indicator appears
@@ -237,17 +238,17 @@ test.describe('Settings', () => {
       });
       expect(setupRes.ok()).toBeTruthy();
 
-      // Navigate to Settings
-      await page.goto('/settings');
-      await page.waitForLoadState('networkidle');
-
       // Download backup ZIP for restore source
       const response = await page.request.get('/api/backup');
       expect(response.ok()).toBeTruthy();
       const zipBuffer = await response.body();
 
-      // Click Restore button (the non-Link card in the grid)
-      await page.locator('button').filter({ has: page.locator('h2:text-is("Restore")') }).click();
+      // Navigate to Backup page (Restore is now accessed via Backup)
+      await page.goto('/settings/backup');
+      await page.waitForLoadState('networkidle');
+
+      // Click Upload Backup button to open restore dialog
+      await page.getByRole('button', { name: /upload backup/i }).click();
 
       // Scope all further locators to the dialog
       const restoreDialog = page.getByRole('dialog', { name: 'Restore backup' });
@@ -607,13 +608,20 @@ test.describe('Settings', () => {
       await page.goto('/settings');
       await page.waitForLoadState('networkidle');
 
-      // Set up download listener before clicking the link
+      // Click the Backup card (Next.js Link -> /settings/backup)
+      // Use .first() to disambiguate from "Backup Settings" link
+      await page.getByRole('link', { name: /backup/i }).first().click();
+
+      // Wait for backup page to load
+      await expect(page).toHaveURL(/\/settings\/backup$/);
+
+      // Set up download listener before clicking the download button
       const downloadPromise = page
         .waitForEvent('download', { timeout: 10000 })
         .catch(() => null);
 
-      // Click the Export & Backup card (Next.js Link -> /api/backup)
-      await page.getByRole('link', { name: /export.*backup/i }).click();
+      // Click Download Backup button on the backup page
+      await page.getByRole('button', { name: /download backup/i }).click();
 
       // Verify download was triggered
       const download = await downloadPromise;
