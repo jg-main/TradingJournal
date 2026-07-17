@@ -179,7 +179,7 @@ test.describe('first-run readiness', () => {
     expect(missingStepIds).toContain('settings');
     expect(missingStepIds).toContain('setups');
     const accountsAlreadyDone = !missingStepIds.includes('accounts');
-    let accountsStepDone = accountsAlreadyDone;
+    const accountsStepDone = accountsAlreadyDone;
 
     // Helper: assert readiness missing set after a step completes
     async function checkMissingAfterStep(page: Page, expectedKnown: string[]) {
