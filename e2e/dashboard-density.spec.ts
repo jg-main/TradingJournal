@@ -148,14 +148,9 @@ const ALL_VISIBLE_WIDGET_IDS = [
   'widget-current-risk',
   'widget-open-positions-risk',
   'dashboard-widget-equity-drawdown',
-  'dashboard-widget-calendar-heatmap',
   'dashboard-widget-setup-ranking',
-  'dashboard-widget-process-discipline',
-  'dashboard-widget-monthly-performance',
-  'dashboard-widget-r-distribution',
   'dashboard-widget-period-matrix',
   'dashboard-widget-attention-insights',
-  'dashboard-widget-directional-performance',
 ];
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -279,21 +274,21 @@ test.describe('Dashboard Density', () => {
     await page.getByRole('button', { name: 'Edit Layout' }).click();
     await page.waitForTimeout(200);
 
-    // The Add/Remove dialog should be open — find the calendar-heatmap toggle and hide it
-    const heatmapToggle = page.getByTestId('toggle-calendar-heatmap');
-    await expect(heatmapToggle).toBeVisible();
+    // The Add/Remove dialog should be open — find the equity-drawdown toggle and hide it
+    const drawdownToggle = page.getByTestId('toggle-equity-drawdown');
+    await expect(drawdownToggle).toBeVisible();
 
-    // Calendar Heatmap is currently visible (toggle is checked)
-    const isVisibleInitially = await heatmapToggle.getAttribute('aria-checked');
+    // Equity & Drawdown is currently visible (toggle is checked)
+    const isVisibleInitially = await drawdownToggle.getAttribute('aria-checked');
     expect(isVisibleInitially).toBe('true');
 
-    // Toggle it off to hide the calendar heatmap
-    await heatmapToggle.click();
+    // Toggle it off to hide the Equity & Drawdown widget
+    await drawdownToggle.click();
     await page.waitForTimeout(200);
 
-    // After toggling, the calendar heatmap widget should no longer be in the grid
+    // After toggling, the equity drawdown widget should no longer be in the grid
     // (it's removed from visibleLayout during customization)
-    const ariaChecked = await heatmapToggle.getAttribute('aria-checked');
+    const ariaChecked = await drawdownToggle.getAttribute('aria-checked');
     expect(ariaChecked).toBe('false');
 
     // Close the dialog
@@ -304,9 +299,9 @@ test.describe('Dashboard Density', () => {
     await page.getByRole('button', { name: 'Save' }).click();
     await page.waitForTimeout(300);
 
-    // After saving, the calendar heatmap widget should not be visible in the grid
-    const calendarWidget = page.getByTestId('dashboard-widget-calendar-heatmap');
-    await expect(calendarWidget).not.toBeVisible();
+    // After saving, the equity drawdown widget should not be visible in the grid
+    const drawdownWidget = page.getByTestId('dashboard-widget-equity-drawdown');
+    await expect(drawdownWidget).not.toBeVisible();
 
     // The widget count should be one fewer than initial
     const afterCount = await page.getByTestId(/dashboard-widget-/).count();
@@ -325,8 +320,8 @@ test.describe('Dashboard Density', () => {
     await page.getByRole('button', { name: 'Edit Layout' }).click();
     await page.waitForTimeout(200);
 
-    // Hide a few widgets via the dialog
-    const toHide = ['toggle-setup-ranking', 'toggle-process-discipline'];
+    // Hide a few chart widgets via the dialog
+    const toHide = ['toggle-equity-drawdown', 'toggle-period-matrix'];
     for (const toggleId of toHide) {
       await page.getByTestId(toggleId).click();
       await page.waitForTimeout(100);
