@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import React from 'react';
 
 import { useChartResize, CHART_RESIZE_FINAL_EVENT } from './use-chart-resize';
@@ -37,6 +37,7 @@ class ResizeObserverMock {
 
   constructor(callback: (entries: ResizeObserverEntry[]) => void) {
     resizeObserverCallback = callback;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     resizeObserverInstance = this;
   }
 }
