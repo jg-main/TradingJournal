@@ -85,14 +85,6 @@ const SAMPLE_VALUATION: ValuationCompleteness = {
   ],
 };
 
-const NULL_VALUATION: ValuationCompleteness = {
-  positionsTotal: 0,
-  fresh: 0,
-  stale: 0,
-  missing: 0,
-  positions: [],
-};
-
 /** RiskSummary with negative Open P&L to test red coloring */
 const NEGATIVE_RISK_SUMMARY: RiskSummary = {
   openPnl: '-350.00',
