@@ -241,7 +241,7 @@ function PositionTable({
 }) {
   return (
     <div
-      className="overflow-x-auto"
+      className="overflow-x-auto [&_tr]:h-7 [&_th]:h-7"
       tabIndex={0}
       role="region"
       aria-label="Open positions detail"
@@ -259,21 +259,21 @@ function PositionTable({
         <TableBody>
           {positions.map((pos) => (
             <TableRow key={pos.instrumentId}>
-              <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">
+              <TableCell className="py-0.5 font-medium text-zinc-900 dark:text-zinc-100">
                 {pos.symbol}
               </TableCell>
-              <TableCell>
+              <TableCell className="py-0.5">
                 <DirectionIcon direction={pos.direction} />
               </TableCell>
-              <TableCell className="text-zinc-700 dark:text-zinc-300">
+              <TableCell className="py-0.5 text-zinc-700 dark:text-zinc-300">
                 {pos.quantity}
               </TableCell>
-              <TableCell className={pnlColor(pos.unrealizedPnl)}>
+              <TableCell className={cn('py-0.5', pnlColor(pos.unrealizedPnl))}>
                 {pos.unrealizedPnl !== null
                   ? fmtSigned(pos.unrealizedPnl)
                   : '--'}
               </TableCell>
-              <TableCell>
+              <TableCell className="py-0.5">
                 <ValuationBadge status={pos.markStatus} />
               </TableCell>
             </TableRow>
