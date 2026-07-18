@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from 'rea
 import { useSearchParams, useRouter } from 'next/navigation';
 import { AlertTriangle } from 'lucide-react';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
+import { CHART_RESIZE_FINAL_EVENT } from '@/hooks/use-chart-resize';
 
 import { useCustomizationMode } from '@/hooks/use-customization-mode';
 import { AddRemoveWidgetsDialog } from '@/components/dashboard/add-remove-widgets-dialog';
@@ -153,6 +154,17 @@ function HomeContent() {
     defaultLayout: DEFAULT_UNIFIED_LAYOUT,
     storageKey: 'dashboard:layout:v2',
   });
+
+  // ── Final Resize Sync Handler ───────────────────────────────────────
+
+  /**
+   * Called when an RGL resize operation finishes (user releases the handle).
+   * Dispatches a custom DOM event that useChartResize hooks listen for,
+   * triggering immediate echarts.resize() to correct any throttle delay.
+   */
+  const handleResizeStop = useCallback(() => {
+    document.dispatchEvent(new CustomEvent(CHART_RESIZE_FINAL_EVENT));
+  }, []);
 
   // ── Dashboard Views ────────────────────────────────────────────────
 
@@ -718,6 +730,7 @@ function HomeContent() {
           <DashboardLayout
             layout={visibleLayout}
             onLayoutChange={(newLayout: Layout) => setUnifiedLayout([...newLayout])}
+            onResizeStop={handleResizeStop}
             cols={12}
             rowHeight={44}
             margin={[8, 8]}

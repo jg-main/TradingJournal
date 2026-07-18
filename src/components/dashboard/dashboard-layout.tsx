@@ -23,6 +23,12 @@ export interface DashboardLayoutProps {
    * When false (default), the grid is locked and non-interactive.
    */
   isCustomizing?: boolean;
+  /**
+   * Called when a widget resize finishes (user releases the resize handle).
+   * Provides the updated layout so the parent can trigger final chart resize
+   * synchronization, correcting any debounce delay from ResizeObserver.
+   */
+  onResizeStop?: (layout: Layout) => void;
 }
 
 /**
@@ -34,6 +40,7 @@ export interface DashboardLayoutProps {
 export function DashboardLayout({
   layout,
   onLayoutChange,
+  onResizeStop,
   cols = 12,
   rowHeight = 44,
   margin = [8, 8] as const,
@@ -49,6 +56,14 @@ export function DashboardLayout({
     [onLayoutChange],
   );
 
+  const handleResizeStop = useCallback(
+    (_layout: Layout) => {
+      // Pass only the layout to the consumer — strips the extra EventCallback args
+      onResizeStop?.(_layout);
+    },
+    [onResizeStop],
+  );
+
   return (
     <div ref={containerRef} className="dashboard-grid-container w-full">
       {mounted && (
@@ -56,6 +71,7 @@ export function DashboardLayout({
           width={width}
           layout={layout}
           onLayoutChange={handleLayoutChange}
+          onResizeStop={handleResizeStop}
           gridConfig={{ cols, rowHeight, margin }}
           dragConfig={{ enabled: isCustomizing, handle: ".dashboard-widget-drag-handle", bounded: true, cancel: ".dashboard-widget-interactive" }}
           resizeConfig={{ enabled: isCustomizing, handles: ["se"] }}

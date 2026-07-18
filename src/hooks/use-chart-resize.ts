@@ -3,6 +3,15 @@
 import { useEffect, useRef } from 'react';
 import type { ECharts } from 'echarts';
 
+// ── Custom Event Name ───────────────────────────────────────────────────
+
+/**
+ * Custom DOM event dispatched by the dashboard's onResizeStop handler
+ * to signal chart containers that a final sync resize should fire
+ * immediately, bypassing any pending throttle delay.
+ */
+export const CHART_RESIZE_FINAL_EVENT = 'chart:resize-final';
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface UseChartResizeOptions {
@@ -22,6 +31,11 @@ export interface UseChartResizeOptions {
  * Observes a container element and calls `echartsInstance.resize()` when
  * the container's dimensions change, throttled to avoid excessive calls
  * during active drag/resize.
+ *
+ * Also listens for a custom `chart:resize-final` DOM event dispatched by
+ * the DashboardLayout's `onResizeStop` callback. When received, it calls
+ * `instance.resize()` immediately (bypassing the throttle) to correct
+ * any debounce delay after the user releases an RGL resize handle.
  *
  * The ECharts instance is read from the mutable ref at resize time, so
  * the hook works correctly even when the instance is set after the
@@ -74,6 +88,16 @@ export function useChartResize(
       }
     };
 
+    // ── Immediate resize for onResizeStop sync ──────────────────
+    const handleFinalResize = () => {
+      // Cancel any pending throttled resize — the final one is immediate
+      if (throttleTimeoutRef.current !== null) {
+        clearTimeout(throttleTimeoutRef.current);
+        throttleTimeoutRef.current = null;
+      }
+      handleResize();
+    };
+
     // ── Throttled wrapper ───────────────────────────────────────
     const throttledHandler = () => {
       if (throttleTimeoutRef.current !== null) return;
@@ -95,8 +119,15 @@ export function useChartResize(
       return;
     }
 
+    // ── Custom event listener for onResizeStop sync ─────────────
+    // The DashboardLayout dispatches `chart:resize-final` when the user
+    // releases an RGL resize handle. We listen on document and resize
+    // immediately, bypassing the throttle, to correct any debounce delay.
+    document.addEventListener(CHART_RESIZE_FINAL_EVENT, handleFinalResize);
+
     return () => {
       observer.disconnect();
+      document.removeEventListener(CHART_RESIZE_FINAL_EVENT, handleFinalResize);
       if (throttleTimeoutRef.current !== null) {
         clearTimeout(throttleTimeoutRef.current);
         throttleTimeoutRef.current = null;
