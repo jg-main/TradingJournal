@@ -92,6 +92,7 @@ export default defineConfig({
       'src/components/dashboard-v2.test.tsx',
       'src/components/dashboard/filter-context.test.tsx',
       'src/components/dashboard/dashboard-widget.test.tsx',
+      'src/components/dashboard/dashboard-toolbar.test.tsx',
       'src/components/dashboard/use-dashboard-layout.test.ts',
       'src/components/dashboard/account-selector.test.tsx',
       'src/components/dashboard/formatting.test.ts',
