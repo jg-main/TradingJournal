@@ -440,6 +440,40 @@ function HomeContent() {
     fetchDashboardV2();
   }, [fetchDashboardV2]);
 
+  /**
+   * Lightweight MTM polling callback.
+   * Fetches only riskSummary and valuation from /api/dashboard/v2 and
+   * merges them into the existing v2Data state. Does not set loading
+   * or error state — this is a background operation.
+   * Errors are silently logged to the console.
+   */
+  const fetchLiveMtm = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.accountId) params.set('accountId', filters.accountId);
+      params.set('fields', 'riskSummary,valuation');
+      const qs = params.toString();
+      const url = `/api/dashboard/v2${qs ? `?${qs}` : ''}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error('Live MTM poll error: HTTP', res.status);
+        return;
+      }
+      const result: DashboardV2Response = await res.json();
+      setV2Data(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          riskSummary: result.riskSummary ?? prev.riskSummary,
+          valuation: result.valuation ?? prev.valuation,
+          computedAt: result.computedAt,
+        };
+      });
+    } catch (err) {
+      console.error('Live MTM poll error:', err);
+    }
+  }, [filters]);
+
   // ── Derived State ───────────────────────────────────────────────────
 
   const kpis = data?.kpis ?? null;
@@ -470,10 +504,13 @@ function HomeContent() {
   const isRefetching = loading && hasData;
   const hasV2Data = v2Data !== null;
   const isV2Refetching = v2Loading && hasV2Data;
+  const hasOpenPositions = v2Data !== null && v2Data.valuation.positionsTotal > 0;
 
-  // Wire visibility-aware MTM polling: refetch every 30s while the tab is visible,
-  // pause when backgrounded. Only active after initial data has loaded.
-  useVisibilityPolling(fetchDashboard, 30000, hasData);
+  // Wire visibility-aware live MTM polling: fetch lightweight riskSummary
+  // and valuation from /api/dashboard/v2 every 30s while the tab is visible
+  // and open positions exist. Historical data (/api/dashboard) only refreshes
+  // on account change, date/filter change, trade mutation, or manual refresh.
+  useVisibilityPolling(fetchLiveMtm, 30000, hasOpenPositions);
 
   // ── Widget Renderer ─────────────────────────────────────────────────
 
