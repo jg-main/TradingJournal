@@ -106,7 +106,7 @@ export function DashboardWidget({
       data-testid={testId}
       size="sm"
     >
-      <CardHeader className="flex flex-row items-center gap-0 border-b pb-1">
+      <CardHeader className="flex flex-row items-center gap-0 border-b pb-0">
         {isCustomizing && <DragHandle />}
         <CardTitle className="flex-1 truncate text-sm font-medium">
           {title}

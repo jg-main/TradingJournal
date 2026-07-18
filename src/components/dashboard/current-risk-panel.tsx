@@ -94,7 +94,7 @@ interface MetricCellProps {
 
 function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) {
   const content = (
-    <div className="flex flex-col">
+    <div className="flex flex-col h-10 items-center justify-center">
       <span
         className={cn(
           'text-base font-bold tabular-nums leading-tight text-zinc-900 dark:text-zinc-100',
@@ -103,7 +103,7 @@ function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) 
       >
         {value}
       </span>
-      <span className="mt-0.5 text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
+      <span className="mt-0.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
         {label}
       </span>
     </div>
