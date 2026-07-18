@@ -8,18 +8,17 @@ import { CHART_RESIZE_FINAL_EVENT } from '@/hooks/use-chart-resize';
 
 import { useCustomizationMode } from '@/hooks/use-customization-mode';
 import { AddRemoveWidgetsDialog } from '@/components/dashboard/add-remove-widgets-dialog';
-import { ViewSwitcher } from '@/components/dashboard/view-switcher';
+import { DashboardToolbar } from '@/components/dashboard/dashboard-toolbar';
 import { ManageViewsDialog } from '@/components/dashboard/manage-views-dialog';
 import { useDashboardViews } from '@/hooks/use-dashboard-views';
 import { createDashboardView } from '@/types/dashboard-view';
 import { CustomizingProvider } from '@/lib/customizing-context';
-import { DashboardFilters } from '@/components/dashboard-filters';
 import { DashboardLayout } from '@/components/dashboard/dashboard-layout';
 import { EquityDrawdownChart } from '@/components/dashboard/equity-drawdown-chart';
 import { CalendarHeatmapWidget } from '@/components/dashboard/calendar-heatmap-widget';
 import { PeriodMatrixWidget } from '@/components/dashboard/period-matrix-widget';
 import { SetupRankingWidget } from '@/components/dashboard/setup-ranking-widget';
-import { ThemeToggle } from '@/components/theme-toggle';
+
 import { ProcessDisciplineWidget } from '@/components/dashboard/process-discipline-widget';
 import { AttentionInsightsWidget } from '@/components/dashboard/attention-insights-widget';
 import { MonthlyPerformanceChart } from '@/components/dashboard/monthly-performance-chart';
@@ -616,95 +615,30 @@ function HomeContent() {
 
   return (
     <div className="px-3 py-2 sm:px-6 sm:py-3">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 [text-wrap:balance]">
-          Dashboard
-        </h1>
-        <div className="flex items-center gap-2">
-          <ViewSwitcher
-            views={views}
-            activeViewId={activeViewId}
-            onSelectView={handleSelectView}
-            onCreateView={handleCreateView}
-            onManageViews={() => setManageViewsOpen(true)}
-            writeFailed={writeFailed}
-          />
-          {cm.isCustomizing ? (
-            <>
-              <button
-                onClick={() => setDialogOpen(true)}
-                className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-              >
-                Add Widget
-              </button>
-              <button
-                onClick={handleSave}
-                className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Save
-              </button>
-              <button
-                onClick={handleCancel}
-                className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReset}
-                className="rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-900/30"
-              >
-                Reset
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleEnterCustomization}
-              className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-            >
-              Edit Layout
-            </button>
-          )}
-          <ThemeToggle />
-        </div>
-      </div>
-      {/* Global Filter Bar */}
-      <DashboardFilters
+      <DashboardToolbar
         dateFrom={filters.dateFrom}
         dateTo={filters.dateTo}
         accountId={filters.accountId}
         onDateFromChange={actions.setDateFrom}
         onDateToChange={actions.setDateTo}
         onAccountIdChange={actions.setAccountId}
+        onDatePreset={actions.setDatePreset}
+        views={views}
+        activeViewId={activeViewId}
+        onSelectView={handleSelectView}
+        onCreateView={handleCreateView}
+        onManageViews={() => setManageViewsOpen(true)}
+        writeFailed={writeFailed}
+        isCustomizing={cm.isCustomizing}
+        onEnterCustomization={handleEnterCustomization}
+        onSaveCustomization={handleSave}
+        onCancelCustomization={handleCancel}
+        onResetLayout={handleReset}
+        onAddWidget={() => setDialogOpen(true)}
+        refreshing={refreshing}
+        cooldownSeconds={cooldownSeconds}
+        onRefreshPrices={handleRefreshPrices}
       />
-
-      {/* Quick date filters — wired to FilterProvider actions */}
-      <div className="mb-2 flex flex-wrap gap-1">
-        {[
-          { label: '1W', days: 7 },
-          { label: '1M', days: 30 },
-          { label: '3M', days: 90 },
-          { label: '6M', days: 180 },
-          { label: 'YTD', days: null },
-          { label: 'All', days: null, clear: true },
-        ].map((preset) => (
-          <button
-            key={preset.label}
-            onClick={() => {
-              if (preset.clear) {
-                actions.setDatePreset('All');
-              } else if (preset.label === 'YTD') {
-                actions.setDatePreset('YTD');
-              } else if (preset.days) {
-                const key = preset.label as '1W' | '1M' | '3M' | '6M';
-                actions.setDatePreset(key);
-              }
-            }}
-            className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
 
       {/* Error state — initial load failure */}
       {error && !data && (
