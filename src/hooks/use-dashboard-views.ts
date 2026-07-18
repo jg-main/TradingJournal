@@ -4,6 +4,13 @@ import { useEffect, useCallback, useReducer, useRef } from 'react';
 import type { LayoutItem } from 'react-grid-layout';
 import type { DashboardView } from '@/types/dashboard-view';
 import { createDashboardView, generateViewId } from '@/types/dashboard-view';
+import {
+  fetchViewsApi,
+  saveViewApi,
+  deleteViewApi,
+  migrateViewsApi,
+  serializeViewForApi,
+} from './use-dashboard-views-api';
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -246,6 +253,17 @@ function resolveDefaultViewId(views: DashboardView[]): string {
   return views[0]?.id ?? '';
 }
 
+/**
+ * Deep-clone a DashboardView (layout items are copied by spread).
+ */
+function deepCloneView(v: DashboardView): DashboardView {
+  return {
+    ...v,
+    layout: v.layout.map((item) => ({ ...item })),
+    hiddenWidgetIds: [...v.hiddenWidgetIds],
+  };
+}
+
 // ── Options / Result Types ─────────────────────────────────────────────
 
 export interface UseDashboardViewsOptions {
@@ -307,7 +325,20 @@ export interface UseDashboardViewsResult {
 // ── Hook ───────────────────────────────────────────────────────────────
 
 /**
- * Manage dashboard views with full CRUD and localStorage persistence.
+ * Manage dashboard views with full CRUD, API persistence, and localStorage
+ * fallback persistence.
+ *
+ * On mount:
+ * 1. Synchronously hydrates from localStorage (fast, offline-capable)
+ * 2. Asynchronously fetches from the API; if data is available, overrides
+ *    the localStorage data
+ * 3. If the API returns empty and localStorage has data, migrates the
+ *    localStorage data to SQLite (fire-and-forget)
+ *
+ * On state changes:
+ * - Always persists to localStorage (synchronous, offline backup)
+ * - Also persists to the API (fire-and-forget, non-blocking)
+ * - Write failures set the writeFailed flag
  *
  * System views are provided via `defaultViews` and are always read-only
  * (cannot be renamed, duplicated [in-place], or deleted). User views are
@@ -352,8 +383,12 @@ export function useDashboardViews(
     createInitialState,
   );
 
-  // Hydrate from localStorage after SSR (the lazy initializer runs during SSR
-  // where window is undefined, so it used defaultViews).
+  // ── Hydration effects ─────────────────────────────────────────────
+
+  // Ref for cancellation of async API hydration
+  const apiHydrationCancelledRef = useRef(false);
+
+  // 1. Synchronous localStorage hydration (preserves existing behavior)
   useEffect(() => {
     const saved = readViews(key);
     if (saved) {
@@ -364,14 +399,47 @@ export function useDashboardViews(
       const activeId = resolveDefaultViewId(currentDefs);
       dispatch({
         type: 'HYDRATE',
-        views: currentDefs.map((v) => ({
-          ...v,
-          layout: v.layout.map((item) => ({ ...item })),
-          hiddenWidgetIds: [...v.hiddenWidgetIds],
-        })),
+        views: currentDefs.map(deepCloneView),
         activeViewId: activeId,
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  // 2. Async API fetch — overrides localStorage data when API is available
+  useEffect(() => {
+    apiHydrationCancelledRef.current = false;
+
+    fetchViewsApi()
+      .then((fetchedViews) => {
+        if (apiHydrationCancelledRef.current) return;
+
+        if (fetchedViews.length > 0) {
+          // API has data — override localStorage with API data
+          const viewId = resolveDefaultViewId(fetchedViews);
+          dispatch({ type: 'HYDRATE', views: fetchedViews, activeViewId: viewId });
+        } else {
+          // API returned empty — check localStorage for migration
+          const localStorageData = readViews(key);
+          if (localStorageData && localStorageData.views.length > 0) {
+            // Migrate existing localStorage data to SQLite (fire-and-forget)
+            migrateViewsApi({
+              views: localStorageData.views,
+              activeViewId: localStorageData.activeViewId,
+            }).catch(() => {
+              // Migration failure is non-critical — localStorage data is already loaded
+            });
+          }
+        }
+      })
+      .catch(() => {
+        // API unavailable — localStorage data is already loaded via the synchronous path.
+        // No migration attempt; the user's views are safe in localStorage.
+      });
+
+    return () => {
+      apiHydrationCancelledRef.current = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
@@ -383,13 +451,24 @@ export function useDashboardViews(
   const defaultViewsRef = useRef(defaultViews);
   defaultViewsRef.current = defaultViews;
 
-  // Persist every state change after hydration
+  // Track IDs of views that were deleted and need API sync
+  const pendingDeletionIdsRef = useRef<Set<string>>(new Set());
+
+  // Persist every state change after hydration (dual-write: localStorage + API)
   useEffect(() => {
     if (!state.isLoaded) return;
+
+    // 1. Always persist to localStorage (synchronous fallback)
     const ok = writeViews(key, state);
     if (!ok) {
       dispatch({ type: 'MARK_WRITE_FAILED' });
     }
+
+    // 2. Sync to API (fire-and-forget, non-blocking)
+    syncStateToApi(state, pendingDeletionIdsRef).catch(() => {
+      // API write failures are non-blocking — localStorage backup exists.
+      // The writeFailed flag is reserved for localStorage failures only.
+    });
   }, [state, key]);
 
   // ── Actions ──────────────────────────────────────────────────────────
@@ -437,6 +516,8 @@ export function useDashboardViews(
   );
 
   const deleteView = useCallback((id: string) => {
+    // Track for API sync
+    pendingDeletionIdsRef.current.add(id);
     dispatch({ type: 'DELETE', id });
   }, []);
 
@@ -469,4 +550,34 @@ export function useDashboardViews(
     setDefaultView,
     updateViewLayout,
   };
+}
+
+// ── API Sync ───────────────────────────────────────────────────────────
+
+/**
+ * Synchronise the current state to the SQLite API.
+ *
+ * 1. Deletes views that were removed from state (pending deletions)
+ * 2. Upserts all current views
+ *
+ * All API calls use the fire-and-forget pattern. Errors propagate for the
+ * caller to catch silently.
+ */
+async function syncStateToApi(
+  state: ViewsState,
+  pendingDeletionIdsRef: React.MutableRefObject<Set<string>>,
+): Promise<void> {
+  // Process pending deletions first
+  const deletions = pendingDeletionIdsRef.current;
+  if (deletions.size > 0) {
+    const deletePromises = Array.from(deletions).map((id) => deleteViewApi(id));
+    await Promise.allSettled(deletePromises);
+    pendingDeletionIdsRef.current = new Set();
+  }
+
+  // Upsert all current views
+  const savePromises = state.views.map((view) =>
+    saveViewApi(serializeViewForApi(view)),
+  );
+  await Promise.allSettled(savePromises);
 }

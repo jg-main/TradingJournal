@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { renderHook, act, cleanup } from '@testing-library/react';
+import { renderHook, act, cleanup, waitFor } from '@testing-library/react';
 import { useDashboardViews } from './use-dashboard-views';
 
 // ── localStorage mock ───────────────────────────────────────────────
@@ -112,6 +112,29 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
 });
+
+function mockFetchOnce(data: unknown) {
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve(data),
+  });
+}
+
+function mockFetchToFail() {
+  globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
+}
+
+function mockFetchWithSequence(responses: Array<{ ok: boolean; data: unknown }>) {
+  let callIndex = 0;
+  globalThis.fetch = vi.fn().mockImplementation(() => {
+    const r = responses[callIndex] ?? responses[responses.length - 1];
+    callIndex++;
+    return Promise.resolve({
+      ok: r.ok,
+      json: () => Promise.resolve(r.data),
+    });
+  });
+}
 
 function flush() {
   act(() => {});
@@ -354,5 +377,215 @@ describe('useDashboardViews', () => {
     );
     flush();
     expect(result.current.views).toHaveLength(4);
+  });
+
+  // ── API Hydration & Migration Tests ──────────────────────────────
+  //
+  // These tests verify the hook's API hydration and migration behavior.
+  // The existing tests above verify the localStorage-only fallback path
+  // (fetch naturally fails in the test environment, so the synchronous
+  // localStorage hydration path provides all data).
+
+  describe('API hydration and migration', () => {
+    afterEach(() => {
+      // Restore fetch to its natural state (fails in test env)
+      globalThis.fetch = undefined as unknown as typeof globalThis.fetch;
+      delete (globalThis as any).fetch;
+    });
+
+    it('hydrates from API when fetch succeeds', async () => {
+      const apiData = [
+        {
+          id: 'api-default',
+          name: 'API View',
+          layout: [],
+          hiddenWidgetIds: [],
+          createdAt: NOW,
+          updatedAt: NOW,
+          isSystem: true,
+          isDefault: true,
+        },
+      ];
+      mockFetchOnce(apiData);
+
+      const { result } = renderHook(() =>
+        useDashboardViews({ defaultViews: SV as any }),
+      );
+
+      // Wait for the async API hydration to override the synchronous defaults
+      await waitFor(() => {
+        expect(result.current.views).toHaveLength(1);
+      });
+
+      expect(result.current.views[0].name).toBe('API View');
+      expect(result.current.activeViewId).toBe('api-default');
+      expect(result.current.isLoaded).toBe(true);
+    });
+
+    it('API data overrides localStorage data when both exist', async () => {
+      // Set localStorage with stale data
+      store.set(
+        'dashboard:views:v2',
+        JSON.stringify({
+          version: 2,
+          views: [
+            {
+              id: 'ls-old',
+              name: 'Stale LS View',
+              layout: [],
+              hiddenWidgetIds: [],
+              createdAt: NOW,
+              updatedAt: NOW,
+              isSystem: false,
+              isDefault: true,
+            },
+          ],
+          activeViewId: 'ls-old',
+        }),
+      );
+
+      const apiData = [
+        {
+          id: 'api-fresh',
+          name: 'Fresh API View',
+          layout: [],
+          hiddenWidgetIds: [],
+          createdAt: NOW,
+          updatedAt: NOW,
+          isSystem: true,
+          isDefault: true,
+        },
+      ];
+      mockFetchOnce(apiData);
+
+      const { result } = renderHook(() =>
+        useDashboardViews({ defaultViews: SV as any }),
+      );
+
+      // Wait for the async API hydration to override localStorage data
+      await waitFor(() => {
+        expect(result.current.views).toHaveLength(1);
+      });
+
+      expect(result.current.views[0].name).toBe('Fresh API View');
+    });
+
+    it('calls migrate endpoint on first load when API is empty and localStorage has data', async () => {
+      // Set localStorage with views to migrate
+      store.set(
+        'dashboard:views:v2',
+        JSON.stringify({
+          version: 2,
+          views: [
+            {
+              id: 'mig-me',
+              name: 'Migrate Me',
+              layout: [],
+              hiddenWidgetIds: [],
+              createdAt: NOW,
+              updatedAt: NOW,
+              isSystem: false,
+              isDefault: true,
+            },
+          ],
+          activeViewId: 'mig-me',
+        }),
+      );
+
+      // Track whether the migrate endpoint was called
+      let migrateCalled = false;
+
+      // Use URL-based mock to handle both GET, persistence POST, and migrate calls
+      globalThis.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : String(url);
+
+        if (urlStr.includes('/migrate')) {
+          migrateCalled = true;
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true, migratedCount: 1 }),
+          });
+        }
+
+        // GET /api/dashboard/views — return empty to trigger migration
+        if (!options || options.method === 'GET' || options.method === undefined) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([]),
+          });
+        }
+
+        // POST /api/dashboard/views (persistence effect) — return a dummy view
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              id: 'dummy',
+              name: 'Dummy',
+              layout: [],
+              hiddenWidgetIds: [],
+              createdAt: NOW,
+              updatedAt: NOW,
+              isSystem: false,
+              isDefault: false,
+            }),
+        });
+      });
+
+      const { result } = renderHook(() =>
+        useDashboardViews({ defaultViews: SV as any }),
+      );
+
+      // Wait for hydration (synchronous localStorage path sets data first)
+      await waitFor(() => {
+        expect(result.current.isLoaded).toBe(true);
+      });
+
+      // Data should come from localStorage (the synchronous fallback)
+      expect(result.current.views).toHaveLength(1);
+      expect(result.current.views[0].name).toBe('Migrate Me');
+
+      // The migrate endpoint should have been called
+      await waitFor(() => {
+        expect(migrateCalled).toBe(true);
+      });
+    });
+
+    it('falls back to localStorage data when API fetch fails', async () => {
+      // Set localStorage with saved views
+      store.set(
+        'dashboard:views:v2',
+        JSON.stringify({
+          version: 2,
+          views: [
+            {
+              id: 'ls-safe',
+              name: 'Safe LS View',
+              layout: [],
+              hiddenWidgetIds: [],
+              createdAt: NOW,
+              updatedAt: NOW,
+              isSystem: false,
+              isDefault: true,
+            },
+          ],
+          activeViewId: 'ls-safe',
+        }),
+      );
+
+      // Mock fetch to fail
+      mockFetchToFail();
+
+      const { result } = renderHook(() =>
+        useDashboardViews({ defaultViews: SV as any }),
+      );
+
+      // localStorage hydration is synchronous, so flush is sufficient
+      flush();
+
+      expect(result.current.views).toHaveLength(1);
+      expect(result.current.views[0].name).toBe('Safe LS View');
+      expect(result.current.isLoaded).toBe(true);
+    });
   });
 });
