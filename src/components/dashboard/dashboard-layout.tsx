@@ -3,6 +3,7 @@
 import React, { useCallback } from "react";
 import { GridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 
 export interface DashboardLayoutProps {
   /** The current layout configuration */
@@ -13,9 +14,9 @@ export interface DashboardLayoutProps {
   children: React.ReactNode;
   /** Column count (default: 12) */
   cols?: number;
-  /** Row height in pixels (default: 120) */
+  /** Row height in pixels (default: 44) */
   rowHeight?: number;
-  /** Horizontal and vertical margin in pixels (default: [16, 16]) */
+  /** Horizontal and vertical margin in pixels (default: [8, 8]) */
   margin?: readonly [number, number];
   /**
    * When true, drag-to-reorder and resize are enabled.
@@ -34,7 +35,7 @@ export function DashboardLayout({
   layout,
   onLayoutChange,
   cols = 12,
-  rowHeight = 60,
+  rowHeight = 44,
   margin = [8, 8] as const,
   children,
   isCustomizing = false,
@@ -56,8 +57,8 @@ export function DashboardLayout({
           layout={layout}
           onLayoutChange={handleLayoutChange}
           gridConfig={{ cols, rowHeight, margin }}
-          dragConfig={{ enabled: isCustomizing, handle: ".dashboard-widget-drag-handle" }}
-          resizeConfig={{ enabled: isCustomizing }}
+          dragConfig={{ enabled: isCustomizing, handle: ".dashboard-widget-drag-handle", bounded: true, cancel: ".dashboard-widget-interactive" }}
+          resizeConfig={{ enabled: isCustomizing, handles: ["se"] }}
           autoSize
           className="dashboard-grid"
         >

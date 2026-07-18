@@ -721,7 +721,7 @@ function HomeContent() {
             layout={visibleLayout}
             onLayoutChange={(newLayout: Layout) => setUnifiedLayout([...newLayout])}
             cols={12}
-            rowHeight={60}
+            rowHeight={44}
             margin={[8, 8]}
             isCustomizing={cm.isCustomizing}
           >
