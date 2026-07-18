@@ -54,11 +54,35 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('showLoading'), 'accepts showLoading prop');
   assert(source.includes('onChartReady'), 'accepts onChartReady prop');
   assert(source.includes('onEvents'), 'accepts onEvents prop');
+  assert(source.includes('flexHeight'), 'accepts flexHeight prop');
+  assert(source.includes('flexHeight = false'), 'flexHeight defaults to false');
   assert(source.includes('autoResize'), 'autoResize enabled in echarts-for-react');
   assert(source.includes("renderer: 'canvas'"), 'canvas renderer configured');
   assert(source.includes("'use client'"), 'has use client directive');
   assert(source.includes('DashboardChartProps'), 'exports typed DashboardChartProps interface');
   assert(source.includes('Omit<EChartsReactProps'), 'extends from EChartsReactProps');
+  assert(source.includes('min-h-0 flex-1 h-full w-full'), 'flexHeight mode applies flex container classes');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// flexHeight mode checks
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## flexHeight mode');
+
+  const source = fs.readFileSync(chartSourcePath, 'utf-8');
+
+  assert(source.includes('useChartResize'), 'imports useChartResize hook');
+  assert(source.includes("@/hooks/use-chart-resize'"), 'useChartResize imported from correct path');
+  assert(source.includes('useRef'), 'imports useRef from react');
+  assert(source.includes('useCallback'), 'imports useCallback from react');
+  assert(source.includes("from 'echarts'"), 'imports ECharts type from echarts');
+  assert(source.includes('echartsInstanceRef'), 'stores echarts instance in a ref');
+  assert(source.includes('handleChartReady'), 'wraps onChartReady to capture instance');
+  assert(
+    source.includes('if (flexHeight)'),
+    'conditionally renders flex container when flexHeight is true'
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────

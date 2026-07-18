@@ -1,8 +1,11 @@
 'use client';
 
+import { useCallback, useRef } from 'react';
+import type { ECharts } from 'echarts';
 import type { EChartsReactProps, EChartsOption } from 'echarts-for-react';
 import ReactECharts from 'echarts-for-react';
 import { cn } from '@/lib/utils';
+import { useChartResize } from '@/hooks/use-chart-resize';
 
 export interface DashboardChartProps
   extends Omit<EChartsReactProps, 'option' | 'opts'> {
@@ -14,6 +17,14 @@ export interface DashboardChartProps
   width?: string | number;
   /** Optional className for the container div */
   className?: string;
+  /**
+   * When true, uses flex-based layout (h-full) instead of fixed pixel height.
+   * The chart fills its parent container via min-h-0 flex-1 h-full w-full classes.
+   * A ResizeObserver (via useChartResize hook) keeps echarts in sync with the
+   * container dimensions during RGL drag and resize.
+   * Default: false.
+   */
+  flexHeight?: boolean;
 }
 
 /**
@@ -39,8 +50,48 @@ export function DashboardChart({
   notMerge,
   lazyUpdate,
   style,
+  flexHeight = false,
   ...divProps
 }: DashboardChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const echartsInstanceRef = useRef<ECharts | null>(null);
+
+  // ResizeObserver keeps chart in sync with container during RGL drag
+  useChartResize(containerRef, echartsInstanceRef);
+
+  const handleChartReady = useCallback(
+    (instance: ECharts) => {
+      echartsInstanceRef.current = instance;
+      onChartReady?.(instance);
+    },
+    [onChartReady],
+  );
+
+  if (flexHeight) {
+    return (
+      <div
+        ref={containerRef}
+        className={cn('dashboard-chart min-h-0 flex-1 h-full w-full', className)}
+        style={{ width, ...style }}
+        {...divProps}
+      >
+        <ReactECharts
+          option={option}
+          theme={theme}
+          notMerge={notMerge}
+          lazyUpdate={lazyUpdate}
+          showLoading={showLoading}
+          loadingOption={loadingOption}
+          onChartReady={handleChartReady}
+          onEvents={onEvents}
+          opts={{ renderer: 'canvas' }}
+          autoResize
+          style={{ width: '100%', height: '100%' }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn('dashboard-chart', className)}
