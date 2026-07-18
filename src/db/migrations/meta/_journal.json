@@ -211,6 +211,13 @@
       "when": 1788000000000,
       "tag": "0029_correction_lineage",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1790000000000,
+      "tag": "0030_dashboard_views",
+      "breakpoints": true
     }
   ]
 }

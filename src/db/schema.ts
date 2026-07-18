@@ -788,3 +788,26 @@ export const lotMatches = sqliteTable('lot_matches', {
   index('idx_lot_matches_closing_execution_id').on(t.closingExecutionId),
   index('idx_lot_matches_lot_id').on(t.lotId),
 ]);
+
+// ── Dashboard Views ──────────────────────────────────────────────────────
+//
+// Persisted dashboard view configurations. Each row stores the widget layout
+// (JSON) and hidden-widget state so switching views instantly restores a
+// different arrangement. System views have is_system = 1 and use a system-*
+// id prefix; they are read-only in the Manage Views dialog.
+//
+// This table replaces localStorage-only persistence (key dashboard:views:v2).
+// Views written here survive localStorage.clear().
+
+export const dashboardViews = sqliteTable('dashboard_views', {
+  id: text('id').primaryKey().notNull(),
+  name: text('name').notNull(),
+  /** JSON-serialized LayoutItem[] — the react-grid-layout configuration. */
+  layout: text('layout').notNull().default('[]'),
+  /** JSON-serialized string[] — widget IDs hidden in this view. */
+  hiddenWidgetIds: text('hidden_widget_ids').notNull().default('[]'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  isSystem: integer('is_system', { mode: 'boolean' }).notNull().default(false),
+  isDefault: integer('is_default', { mode: 'boolean' }).notNull().default(false),
+});
