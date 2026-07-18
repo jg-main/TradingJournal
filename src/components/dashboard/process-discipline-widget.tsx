@@ -180,7 +180,7 @@ export function ProcessDisciplineWidget({
         </div>
       )}
       {hasData && chartOption && (
-        <DashboardChart option={chartOption} height={280} />
+        <DashboardChart option={chartOption} flexHeight />
       )}
     </DashboardWidget>
   );

@@ -259,7 +259,7 @@ export function CalendarHeatmapWidget({
         </div>
       )}
       {hasData && (
-        <>
+        <div className="flex min-h-0 flex-col">
           {/* Year selector for multi-year data */}
           {heatmapData.length > 1 && (
             <div className="mb-2 flex flex-wrap gap-1 px-(--card-spacing)">
@@ -313,9 +313,9 @@ export function CalendarHeatmapWidget({
 
           {/* Calendar heatmap chart */}
           {chartOption && (
-            <DashboardChart option={chartOption} height={260} />
+            <DashboardChart option={chartOption} flexHeight />
           )}
-        </>
+        </div>
       )}
     </DashboardWidget>
   );
