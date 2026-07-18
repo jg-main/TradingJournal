@@ -84,13 +84,18 @@ interface RouteResult {
 }
 
 import { accountExists } from '@/db/accounting-repository';
-import { computeDashboardV2 } from '@/lib/accounting/dashboard-v2';
+import {
+  ALL_DASHBOARD_V2_FIELDS,
+  computeDashboardV2,
+} from '@/lib/accounting/dashboard-v2';
+import type { DashboardV2Field } from '@/lib/accounting/dashboard-v2';
 
 function doGetDashboardV2(
   sqlite: Database.Database,
   overrides?: {
     accountId?: string;
     freshnessThresholdMinutes?: number;
+    fields?: DashboardV2Field[];
   },
 ): RouteResult {
   try {
@@ -138,6 +143,7 @@ function doGetDashboardV2(
 
     const dashboard = computeDashboardV2(sqlite, accountId, {
       freshnessThresholdMinutes: overrides?.freshnessThresholdMinutes,
+      fields: overrides?.fields,
     });
 
     if (!dashboard) {
@@ -573,7 +579,115 @@ describe('GET /api/dashboard/v2', () => {
     expect(positions[0].unrealizedPnl).toBeNull();
   });
 
-  // ── Integrity status for healthy account with no warnings ─────────────
+  // ── Fields parameter ──────────────────────────────────────────────────
+
+  it('returns only requested fields when fields parameter is specified', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Fields Test', 'Test', 'USD', now, now);
+
+    seedHealthyAccount(sqlite, accountId);
+
+    const result = doGetDashboardV2(sqlite, {
+      accountId,
+      fields: ['riskSummary', 'valuation'],
+    });
+    expect(result.status).toBe(200);
+
+    const body = result.body as Record<string, unknown>;
+
+    // Should have only riskSummary, valuation, and computedAt
+    expect(body).toHaveProperty('riskSummary');
+    expect(body).toHaveProperty('valuation');
+    expect(body).toHaveProperty('computedAt');
+
+    // Should NOT have these fields
+    expect(body).not.toHaveProperty('account');
+    expect(body).not.toHaveProperty('metrics');
+    expect(body).not.toHaveProperty('journalAttribution');
+    expect(body).not.toHaveProperty('reconciliation');
+    expect(body).not.toHaveProperty('integrity');
+
+    // Validate returned fields still have correct structure
+    const valuation = body.valuation as Record<string, unknown>;
+    expect(valuation.positionsTotal).toBe(2);
+
+    const riskSummary = body.riskSummary as Record<string, unknown>;
+    expect(riskSummary.openPnl).toBe('120.00');
+    expect(typeof body.computedAt).toBe('string');
+  });
+
+  it('returns only a single requested field when fields has one element', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Single Field Test', 'Test', 'USD', now, now);
+
+    seedHealthyAccount(sqlite, accountId);
+
+    const result = doGetDashboardV2(sqlite, {
+      accountId,
+      fields: ['account'],
+    });
+    expect(result.status).toBe(200);
+
+    const body = result.body as Record<string, unknown>;
+
+    // Should have only account and computedAt
+    expect(body).toHaveProperty('account');
+    expect(body).toHaveProperty('computedAt');
+    expect(Object.keys(body).length).toBe(2);
+
+    // Should NOT have other fields
+    expect(body).not.toHaveProperty('metrics');
+    expect(body).not.toHaveProperty('valuation');
+    expect(body).not.toHaveProperty('riskSummary');
+    expect(body).not.toHaveProperty('integrity');
+
+    const account = body.account as Record<string, string>;
+    expect(account.name).toBe('Single Field Test');
+  });
+
+  it('returns full response when fields parameter is omitted (backward compatible)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Omitted Fields Test', 'Test', 'USD', now, now);
+
+    seedHealthyAccount(sqlite, accountId);
+
+    // Omit fields entirely
+    const result = doGetDashboardV2(sqlite, { accountId });
+    expect(result.status).toBe(200);
+
+    const body = result.body as Record<string, unknown>;
+
+    // All 8 top-level keys should be present (7 fields + computedAt)
+    expect(body).toHaveProperty('account');
+    expect(body).toHaveProperty('metrics');
+    expect(body).toHaveProperty('valuation');
+    expect(body).toHaveProperty('journalAttribution');
+    expect(body).toHaveProperty('reconciliation');
+    expect(body).toHaveProperty('riskSummary');
+    expect(body).toHaveProperty('integrity');
+    expect(body).toHaveProperty('computedAt');
+    expect(Object.keys(body).length).toBe(8);
+  });
+
+  // ── Integrity status for healthy account with no warnings ────────────
 
   it('reports healthy integrity when no warnings exist', () => {
     const accountId = randomUUID();

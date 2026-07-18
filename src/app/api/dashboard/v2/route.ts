@@ -14,10 +14,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSqliteHandle } from '@/db';
-import { computeDashboardV2 } from '@/lib/accounting/dashboard-v2';
+import { ALL_DASHBOARD_V2_FIELDS, computeDashboardV2 } from '@/lib/accounting/dashboard-v2';
+import type { DashboardV2Field } from '@/lib/accounting/dashboard-v2';
 import { accountExists } from '@/db/accounting-repository';
 
 // ── Query Schema ────────────────────────────────────────────────────────
+
+const FIELD_NAMES = ALL_DASHBOARD_V2_FIELDS as unknown as [string, ...string[]];
 
 const dashboardV2QuerySchema = z.object({
   accountId: z.string().uuid('Account ID must be a valid UUID').optional(),
@@ -30,6 +33,19 @@ const dashboardV2QuerySchema = z.object({
         .number()
         .int()
         .positive('Freshness threshold must be a positive integer')
+        .optional(),
+    ),
+  fields: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (!val) return undefined;
+      const parts = val.split(',').map((f) => f.trim()).filter(Boolean);
+      return parts.length > 0 ? parts : undefined;
+    })
+    .pipe(
+      z
+        .array(z.enum(FIELD_NAMES))
         .optional(),
     ),
 });
@@ -74,6 +90,10 @@ function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | 
  *   settings.defaultAccountId, then the first active account.
  * - freshnessThresholdMinutes (number, optional): max age in minutes
  *   for a fresh valuation mark (default 1440 = 24h).
+ * - fields (comma-separated, optional): subset of fields to return.
+ *   Valid values: account, metrics, valuation, journalAttribution,
+ *   reconciliation, riskSummary, integrity. When omitted, the full
+ *   response is returned (backward compatible).
  *
  * Responses:
  * - 200: Dashboard V2 aggregation (see DashboardV2Response)
@@ -128,6 +148,7 @@ export async function GET(request: NextRequest) {
     // 3. Compute the Dashboard V2 aggregation
     const dashboard = computeDashboardV2(sqlite, accountId, {
       freshnessThresholdMinutes: parsedQuery.data.freshnessThresholdMinutes,
+      fields: parsedQuery.data.fields as DashboardV2Field[] | undefined,
     });
 
     if (!dashboard) {

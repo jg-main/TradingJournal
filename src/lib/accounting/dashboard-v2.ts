@@ -111,6 +111,22 @@ export interface RiskSummary {
   positionsWithStop: number;
 }
 
+export type DashboardV2Field = keyof Omit<DashboardV2Response, 'computedAt'>;
+
+/**
+ * All valid dashboard V2 field names, in their canonical order.
+ * Used for fields-parameter validation and response filtering.
+ */
+export const ALL_DASHBOARD_V2_FIELDS: readonly DashboardV2Field[] = [
+  'account',
+  'metrics',
+  'valuation',
+  'journalAttribution',
+  'reconciliation',
+  'riskSummary',
+  'integrity',
+] as const;
+
 /** Dashboard V2 aggregation for one account. */
 export interface DashboardV2Response {
   account: {
@@ -270,6 +286,11 @@ function resolvePositionSymbols(
  * @param accountId                     - The account to aggregate.
  * @param options.freshnessThresholdMinutes - Max age in minutes for a fresh
  *                                          mark (default 1440 = 24h).
+ * @param options.fields                   - Optional subset of fields to return.
+ *                                          When specified, only those sections
+ *                                          plus computedAt are returned.
+ *                                          When omitted, the full response
+ *                                          is returned (backward compatible).
  * @returns                               - DashboardV2Response, or undefined
  *                                         if the account does not exist.
  */
@@ -278,6 +299,7 @@ export function computeDashboardV2(
   accountId: string,
   options?: {
     freshnessThresholdMinutes?: number;
+    fields?: DashboardV2Field[];
   },
 ): DashboardV2Response | undefined {
   const computedAt = new Date().toISOString();
@@ -537,7 +559,7 @@ export function computeDashboardV2(
   );
 
   // ── Assemble response ───────────────────────────────────────────────
-  return {
+  const fullResponse: DashboardV2Response = {
     account: {
       id: accountRow.id,
       name: accountRow.name,
@@ -568,4 +590,16 @@ export function computeDashboardV2(
     integrity,
     computedAt,
   };
+
+  // ── Filter by fields if specified ──────────────────────────────────
+  if (options?.fields && options.fields.length < ALL_DASHBOARD_V2_FIELDS.length) {
+    const response = fullResponse as unknown as Record<string, unknown>;
+    const filtered: Record<string, unknown> = { computedAt };
+    for (const field of options.fields) {
+      filtered[field] = response[field];
+    }
+    return filtered as unknown as DashboardV2Response;
+  }
+
+  return fullResponse;
 }
