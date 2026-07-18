@@ -687,6 +687,167 @@ describe('GET /api/dashboard/v2', () => {
     expect(Object.keys(body).length).toBe(8);
   });
 
+  // ── Field combinations (MTM polling and must-have coverage) ─────────
+
+  it('returns riskSummary, valuation, and metrics for a three-field combination (must-have)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Three Field Combo', 'Test', 'USD', now, now);
+
+    seedHealthyAccount(sqlite, accountId);
+
+    const result = doGetDashboardV2(sqlite, {
+      accountId,
+      fields: ['riskSummary', 'valuation', 'metrics'],
+    });
+    expect(result.status).toBe(200);
+
+    const body = result.body as Record<string, unknown>;
+
+    // Should have only requested fields plus computedAt
+    expect(body).toHaveProperty('riskSummary');
+    expect(body).toHaveProperty('valuation');
+    expect(body).toHaveProperty('metrics');
+    expect(body).toHaveProperty('computedAt');
+
+    // Should NOT have the non-requested fields
+    expect(body).not.toHaveProperty('account');
+    expect(body).not.toHaveProperty('journalAttribution');
+    expect(body).not.toHaveProperty('reconciliation');
+    expect(body).not.toHaveProperty('integrity');
+
+    // Validate structure of returned fields
+    const metrics = body.metrics as Record<string, unknown>;
+    expect(metrics.cash).toBe('9985.00');
+    expect(metrics.nav).toBe('17045.00');
+
+    const valuation = body.valuation as Record<string, unknown>;
+    expect(valuation.positionsTotal).toBe(2);
+
+    const riskSummary = body.riskSummary as Record<string, unknown>;
+    expect(riskSummary.openPnl).toBe('120.00');
+    expect(typeof body.computedAt).toBe('string');
+  });
+
+  it('returns full response when all fields are explicitly listed', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'All Fields Explicit', 'Test', 'USD', now, now);
+
+    seedHealthyAccount(sqlite, accountId);
+
+    const result = doGetDashboardV2(sqlite, {
+      accountId,
+      fields: [...ALL_DASHBOARD_V2_FIELDS],
+    });
+    expect(result.status).toBe(200);
+
+    const body = result.body as Record<string, unknown>;
+
+    // All 8 top-level keys should be present (7 fields + computedAt)
+    expect(body).toHaveProperty('account');
+    expect(body).toHaveProperty('metrics');
+    expect(body).toHaveProperty('valuation');
+    expect(body).toHaveProperty('journalAttribution');
+    expect(body).toHaveProperty('reconciliation');
+    expect(body).toHaveProperty('riskSummary');
+    expect(body).toHaveProperty('integrity');
+    expect(body).toHaveProperty('computedAt');
+    expect(Object.keys(body).length).toBe(8);
+
+    // Validate structural equivalence with full response
+    const account = body.account as Record<string, unknown>;
+    expect(account.name).toBe('All Fields Explicit');
+  });
+
+  it('returns a non-adjacent field combination (metrics, account, journalAttribution)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Non-Adjacent Fields', 'Test', 'USD', now, now);
+
+    seedHealthyAccount(sqlite, accountId);
+
+    const result = doGetDashboardV2(sqlite, {
+      accountId,
+      fields: ['metrics', 'account', 'journalAttribution'],
+    });
+    expect(result.status).toBe(200);
+
+    const body = result.body as Record<string, unknown>;
+
+    // Should have only requested fields plus computedAt
+    expect(body).toHaveProperty('metrics');
+    expect(body).toHaveProperty('account');
+    expect(body).toHaveProperty('journalAttribution');
+    expect(body).toHaveProperty('computedAt');
+
+    // Should NOT have the non-requested fields
+    expect(body).not.toHaveProperty('valuation');
+    expect(body).not.toHaveProperty('riskSummary');
+    expect(body).not.toHaveProperty('integrity');
+    expect(body).not.toHaveProperty('reconciliation');
+
+    // Validate returned fields have correct structure
+    const metrics = body.metrics as Record<string, unknown>;
+    expect(metrics.cash).toBe('9985.00');
+
+    const account = body.account as Record<string, unknown>;
+    expect(account.name).toBe('Non-Adjacent Fields');
+
+    const journalAttribution = body.journalAttribution as Record<string, unknown>;
+    expect(journalAttribution.hasJournalTrades).toBe(true);
+  });
+
+  it('returns only computedAt when fields is an empty array (edge case)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Empty Fields Arr', 'Test', 'USD', now, now);
+
+    seedHealthyAccount(sqlite, accountId);
+
+    const result = doGetDashboardV2(sqlite, {
+      accountId,
+      fields: [],
+    });
+    expect(result.status).toBe(200);
+
+    const body = result.body as Record<string, unknown>;
+
+    // Only computedAt should be present
+    expect(Object.keys(body).length).toBe(1);
+    expect(body).toHaveProperty('computedAt');
+    expect(typeof body.computedAt).toBe('string');
+
+    // Should NOT have any data fields
+    expect(body).not.toHaveProperty('account');
+    expect(body).not.toHaveProperty('metrics');
+    expect(body).not.toHaveProperty('valuation');
+    expect(body).not.toHaveProperty('journalAttribution');
+    expect(body).not.toHaveProperty('reconciliation');
+    expect(body).not.toHaveProperty('riskSummary');
+    expect(body).not.toHaveProperty('integrity');
+  });
+
   // ── Integrity status for healthy account with no warnings ────────────
 
   it('reports healthy integrity when no warnings exist', () => {
