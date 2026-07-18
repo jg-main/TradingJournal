@@ -504,7 +504,7 @@ function HomeContent() {
   const isRefetching = loading && hasData;
   const hasV2Data = v2Data !== null;
   const isV2Refetching = v2Loading && hasV2Data;
-  const hasOpenPositions = v2Data !== null && v2Data.valuation.positionsTotal > 0;
+  const hasOpenPositions = (v2Data?.valuation?.positionsTotal ?? 0) > 0;
 
   // Wire visibility-aware live MTM polling: fetch lightweight riskSummary
   // and valuation from /api/dashboard/v2 every 30s while the tab is visible
