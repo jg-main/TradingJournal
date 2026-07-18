@@ -1,18 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AccountSelector } from '@/components/dashboard/account-selector';
 
 // ── Types ──────────────────────────────────────────────────────────────
-
-interface Account {
-  id: string;
-  name: string;
-  broker: string | null;
-  currency: string;
-  isActive: boolean | number;
-}
 
 interface DashboardFiltersProps {
   dateFrom: string;
@@ -33,37 +23,6 @@ export function DashboardFilters({
   onDateToChange,
   onAccountIdChange,
 }: DashboardFiltersProps) {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    setError(null);
-
-    fetch('/api/accounts')
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to load accounts');
-        return res.json() as Promise<Account[]>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setAccounts(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load accounts');
-        setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   return (
     <div className="mb-6 flex flex-wrap items-end gap-4">
       {/* Date From */}
@@ -108,30 +67,11 @@ export function DashboardFilters({
         >
           Account
         </label>
-        {loading ? (
-          <div className="h-8 w-40 animate-pulse rounded-lg bg-zinc-200 dark:bg-zinc-700" />
-        ) : error ? (
-          <div className="flex h-8 items-center rounded-lg border border-red-200 bg-red-50 px-3 text-xs text-red-600 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
-            {error}
-          </div>
-        ) : (
-          <Select
-            value={accountId ?? ''}
-            onValueChange={(v: string) => onAccountIdChange(v || null)}
-          >
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="All accounts" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((acc) => (
-                <SelectItem key={acc.id} value={acc.id}>
-                  {acc.name}
-                  {acc.broker ? ` (${acc.broker})` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <AccountSelector
+          value={accountId}
+          onValueChange={onAccountIdChange}
+          className="w-40"
+        />
       </div>
     </div>
   );

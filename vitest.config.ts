@@ -93,6 +93,7 @@ export default defineConfig({
       'src/components/dashboard/filter-context.test.tsx',
       'src/components/dashboard/dashboard-widget.test.tsx',
       'src/components/dashboard/use-dashboard-layout.test.ts',
+      'src/components/dashboard/account-selector.test.tsx',
       'src/components/dashboard/formatting.test.ts',
       'src/components/dashboard/kpi-card.test.tsx',
       'src/components/dashboard/account-performance-panel.test.tsx',
