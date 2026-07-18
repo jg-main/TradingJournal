@@ -491,12 +491,10 @@ function HomeContent() {
       case WIDGET_IDS.CURRENT_RISK:
         return (
           <CurrentRiskPanel
-            data={kpis}
-            mtm={mtm}
-            isLoading={isRefetching}
-            error={isRefetching && error ? error : null}
-            onRefresh={handleRefreshPrices}
-            isRefreshing={refreshing}
+            riskSummary={v2Data?.riskSummary ?? null}
+            valuation={v2Data?.valuation ?? null}
+            isLoading={isV2Refetching}
+            error={v2Error}
           />
         );
 

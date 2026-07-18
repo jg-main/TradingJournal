@@ -1,14 +1,13 @@
 /**
- * CurrentRiskPanel — compact grouped metric panel replacing the 3
- * individual current-state KPI widgets.
+ * CurrentRiskPanel — compact 9-metric risk panel from /api/dashboard/v2.
  *
- * Groups all current-state metrics (Account Value, Current Drawdown,
- * Unrealized P&L) into a single dense 3-column grid with no per-metric
- * icons.
+ * Displays a dense 3x3 grid of live risk metrics using RiskSummary and
+ * ValuationCompleteness from the v2 API endpoint. Metrics include: Open
+ * Positions, Open P&L, Open Risk, Portfolio Heat, Positions Without Stops,
+ * Fresh/Stale/Missing Prices, and Largest Exposure.
  *
- * Accepts KpiMetrics for Account Value / Drawdown, and MtmData for
- * Unrealized P&L (including special "Awaiting prices" / "No open positions"
- * states). The parent component coordinates fetch and passes data down.
+ * No standalone refresh button — live MTM refresh is handled by the parent
+ * via visibility polling (S05).
  *
  * Run: npx vitest run src/components/dashboard/current-risk-panel.test.tsx
  */
@@ -16,7 +15,7 @@
 'use client';
 
 import React from 'react';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { DashboardWidget } from './dashboard-widget';
@@ -30,27 +29,56 @@ import {
   formatPercent,
   pnlColorClass,
 } from './formatting';
-import type { KpiMetrics, MtmData } from './kpi-widgets';
+import type {
+  RiskSummary,
+  ValuationCompleteness,
+  DashboardPositionSummary,
+} from '@/components/dashboard-v2';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Public Types
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface CurrentRiskPanelProps {
-  /** KPI metrics data — when null, shows loading or empty */
-  data: KpiMetrics | null;
-  /** MTM data for the Unrealized P&L row */
-  mtm?: MtmData | null;
+  /** Risk summary data from /api/dashboard/v2 — when null, shows empty state */
+  riskSummary: RiskSummary | null;
+  /** Valuation completeness data from /api/dashboard/v2 */
+  valuation: ValuationCompleteness | null;
   /** Whether data is currently loading */
   isLoading?: boolean;
   /** Error message to display */
   error?: string | null;
-  /** Callback for refresh action (triggers MTM re-fetch) */
-  onRefresh?: () => void;
-  /** Whether a refresh is currently in progress */
-  isRefreshing?: boolean;
   /** Additional CSS class override */
   className?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pure Helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Compute the largest exposure (max markedValue) from an array of positions.
+ * Returns null for empty positions or when no positions have a parsable marked value.
+ */
+export function computeLargestExposure(
+  positions: DashboardPositionSummary[],
+): number | null {
+  if (!positions || positions.length === 0) return null;
+  const values = positions
+    .map((p) => (p.markedValue !== null ? parseFloat(p.markedValue) : null))
+    .filter((v): v is number => v !== null && !isNaN(v));
+  if (values.length === 0) return null;
+  return Math.max(...values);
+}
+
+/**
+ * Safely parse a canonical decimal string to a number.
+ * Returns null for null/undefined/NaN inputs.
+ */
+function parseDecimal(v: string | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -102,48 +130,33 @@ function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) 
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Compact grouped metric panel for current risk / state data.
+ * Compact 3x3 risk metric panel driven by /api/dashboard/v2 data.
  *
- * Displays 3 key metrics in a single 3-column row:
- * - Account Value, Current Drawdown, Unrealized P&L
+ * Row 1: Open Positions | Open P&L | Open Risk
+ * Row 2: Portfolio Heat | Positions Without Stops | Largest Exposure
+ * Row 3: Fresh Prices | Stale Prices | Missing Prices
  *
- * Unrealized P&L supports three states: formatted P&L, "Awaiting prices"
- * (open positions with no price data), and "No open positions".
+ * No standalone refresh button — live MTM comes from parent visibility polling.
  */
 export function CurrentRiskPanel({
-  data,
-  mtm,
+  riskSummary,
+  valuation,
   isLoading = false,
   error = null,
-  onRefresh,
-  isRefreshing = false,
   className,
 }: CurrentRiskPanelProps) {
-  // ── Derive the Unrealized P&L value node ─────────────────────────
-  const unrealizedValue = React.useMemo(() => {
-    if (!mtm) return '--';
-    if (mtm.netUnrealizedPnl !== null && mtm.netUnrealizedPnl !== undefined) {
-      return formatCurrency(mtm.netUnrealizedPnl, { sign: true });
-    }
-    if (mtm.openTradeCount > 0) {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500 italic">
-          <AlertCircle className="size-3 shrink-0" />
-          Awaiting prices
-        </span>
-      );
-    }
-    return (
-      <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">
-        No open positions
-      </span>
-    );
-  }, [mtm]);
+  // ── Derive values ────────────────────────────────────────────────
 
-  const unrealizedValueClass =
-    mtm?.netUnrealizedPnl !== null && mtm?.netUnrealizedPnl !== undefined
-      ? pnlColorClass(mtm.netUnrealizedPnl)
-      : '';
+  const openPnlNum = parseDecimal(riskSummary?.openPnl ?? null);
+  const openRiskNum = parseDecimal(riskSummary?.openRisk ?? null);
+  const portfolioHeatNum = parseDecimal(riskSummary?.portfolioHeat ?? null);
+  const largestExposure = valuation?.positions
+    ? computeLargestExposure(valuation.positions)
+    : null;
+
+  // ── Empty state ──────────────────────────────────────────────────
+
+  const showEmpty = !riskSummary;
 
   return (
     <DashboardWidget
@@ -153,7 +166,7 @@ export function CurrentRiskPanel({
       error={error}
       className={cn('h-full', className)}
     >
-      {!data ? (
+      {showEmpty ? (
         <div className="flex h-32 items-center justify-center">
           <p className="text-sm text-zinc-400 dark:text-zinc-500">
             No risk data available
@@ -161,37 +174,116 @@ export function CurrentRiskPanel({
         </div>
       ) : (
         <div className="flex h-full flex-col gap-2">
-          {/* ── Metrics Grid (3 columns, 1 row = 3 metrics) ───────────── */}
+          {/* ── 3x3 Metrics Grid ─────────────────────────────────────── */}
           <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50/50 px-2 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
+            {/* Row 1: Open Positions */}
             <MetricCell
-              value={formatCurrency(data.accountValue)}
-              label="Account Value"
-              tooltip="Current total value of your trading account."
+              value={valuation?.positionsTotal ?? '--'}
+              label="Open Positions"
+              tooltip="Total number of open positions across all instruments."
             />
+
+            {/* Row 1: Open P&L */}
             <MetricCell
               value={
-                data.currentDrawdown !== null && data.currentDrawdown !== undefined
-                  ? `${formatCurrency(Math.abs(data.currentDrawdown))}${
-                      data.currentDrawdownPct !== null && data.currentDrawdownPct !== undefined
-                        ? ` (${formatPercent(Math.abs(data.currentDrawdownPct))})`
-                        : ''
-                    }`
+                openPnlNum !== null
+                  ? formatCurrency(openPnlNum, { sign: true })
                   : '--'
               }
-              label="Current Drawdown"
-              valueClassName="text-red-600 dark:text-red-400"
-              tooltip="Peak-to-trough decline from your highest account value."
+              label="Open P&amp;L"
+              valueClassName={
+                openPnlNum !== null ? pnlColorClass(openPnlNum) : ''
+              }
+              tooltip="Total unrealized profit/loss across all open positions."
             />
+
+            {/* Row 1: Open Risk */}
             <MetricCell
-              value={unrealizedValue}
-              label="Unrealized P&amp;L"
-              valueClassName={unrealizedValueClass}
-              tooltip="Total unrealized profit/loss across all open positions based on current market prices."
+              value={
+                openRiskNum !== null
+                  ? formatCurrency(openRiskNum)
+                  : '--'
+              }
+              label="Open Risk"
+              tooltip="Total initial risk (R) across all open journal trades."
+            />
+
+            {/* Row 2: Portfolio Heat */}
+            <MetricCell
+              value={
+                portfolioHeatNum !== null
+                  ? formatPercent(portfolioHeatNum)
+                  : '--'
+              }
+              label="Portfolio Heat"
+              tooltip="Open risk as a percentage of net asset value."
+            />
+
+            {/* Row 2: Positions Without Stops */}
+            <MetricCell
+              value={
+                <Badge
+                  variant={
+                    (riskSummary?.missingStops ?? 0) > 0
+                      ? 'destructive'
+                      : 'outline'
+                  }
+                  className="text-xs"
+                >
+                  {riskSummary?.missingStops ?? '--'}
+                </Badge>
+              }
+              label="Positions Without Stops"
+              tooltip="Number of open trades without a planned stop loss."
+            />
+
+            {/* Row 2: Largest Exposure */}
+            <MetricCell
+              value={
+                largestExposure !== null
+                  ? formatCurrency(largestExposure)
+                  : '--'
+              }
+              label="Largest Exposure"
+              tooltip="Largest single position by marked value."
+            />
+
+            {/* Row 3: Fresh Prices */}
+            <MetricCell
+              value={
+                <Badge variant="default" className="text-xs">
+                  {valuation?.fresh ?? '--'}
+                </Badge>
+              }
+              label="Fresh Prices"
+              tooltip="Number of positions with current market prices."
+            />
+
+            {/* Row 3: Stale Prices */}
+            <MetricCell
+              value={
+                <Badge variant="secondary" className="text-xs">
+                  {valuation?.stale ?? '--'}
+                </Badge>
+              }
+              label="Stale Prices"
+              tooltip="Number of positions with prices older than the freshness threshold."
+            />
+
+            {/* Row 3: Missing Prices */}
+            <MetricCell
+              value={
+                <Badge variant="destructive" className="text-xs">
+                  {valuation?.missing ?? '--'}
+                </Badge>
+              }
+              label="Missing Prices"
+              tooltip="Number of positions with no price data available."
             />
           </div>
 
-          {/* ── Footer: Attribution + MTM Refresh ────────────────────── */}
-          <div className="flex flex-wrap items-center justify-between gap-1">
+          {/* ── Footer: Attribution Badge ────────────────────────────── */}
+          <div className="flex flex-wrap items-center gap-1">
             <Badge
               variant="outline"
               className="gap-1 px-1.5 py-0 text-[10px] font-normal"
@@ -199,24 +291,6 @@ export function CurrentRiskPanel({
               <AlertCircle className="size-2.5" />
               Current state
             </Badge>
-
-            {onRefresh && (
-              <button
-                onClick={onRefresh}
-                disabled={isRefreshing}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
-                title={
-                  isRefreshing
-                    ? 'Refreshing...'
-                    : 'Refresh prices from market data'
-                }
-              >
-                <RefreshCw
-                  className={cn('size-3', isRefreshing && 'animate-spin')}
-                />
-                {isRefreshing ? 'Refreshing...' : 'Refresh'}
-              </button>
-            )}
           </div>
         </div>
       )}
