@@ -18,7 +18,6 @@ import {
   WORKSTATION_SCENARIO_IDS,
   WORKSTATION_WATCHLIST_STATUSES,
   type DashboardResponse,
-  type WorkstationFixtures,
 } from '@/lib/workstation-fixtures';
 import type { DashboardV2Response } from '@/lib/accounting/dashboard-v2';
 

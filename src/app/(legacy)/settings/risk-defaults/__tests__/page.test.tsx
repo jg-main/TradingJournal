@@ -48,7 +48,7 @@ vi.mock('next/link', () => ({
 }));
 
 beforeAll(async () => {
-  const mod = await import('@/app/settings/risk-defaults/page');
+  const mod = await import('@/app/(legacy)/settings/risk-defaults/page');
   RiskDefaultsPage = mod.default;
 });
 

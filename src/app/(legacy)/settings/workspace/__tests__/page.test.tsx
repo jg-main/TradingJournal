@@ -46,7 +46,7 @@ vi.mock('next/link', () => ({
 }));
 
 beforeAll(async () => {
-  const mod = await import('@/app/settings/workspace/page');
+  const mod = await import('@/app/(legacy)/settings/workspace/page');
   WorkspacePage = mod.default;
 });
 
