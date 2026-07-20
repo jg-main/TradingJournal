@@ -1,18 +1,111 @@
-# Trading Journal Agent Guide
+# TradingJournal Agent Guide
+
+## Authority and Operating Model
+
+- This guide applies to every coding agent, model family, provider, and harness
+  used in the repository.
+- `AGENTS.md` is the authoritative repository engineering and product guide.
+  Runtime-specific files such as `CLAUDE.md` may point here but must not contain
+  conflicting durable instructions.
+- GSD-Pi selects models through the active session, global preferences, and
+  routing policy. Do not introduce provider-specific prompts, architectural
+  conventions, or workarounds unless a task explicitly documents a real
+  compatibility requirement.
+- Before planned work, read the active GSD milestone, slice, task context,
+  decisions, and prior verification evidence.
+- When instructions conflict, follow this order:
+  1. Safety and data integrity.
+  2. Explicit user requirements.
+  3. Active GSD milestone, slice, and task context.
+  4. This file and documented domain invariants.
+  5. Applicable project skills.
+  6. General framework or design conventions.
 
 ## Project Shape
 
-- This is a local-first trading journal app built with Next.js App Router under
-  `src/app`, React client pages/components, API route handlers, Drizzle ORM, and
-  SQLite via `better-sqlite3`.
-- Main product areas are trades, executions, risk snapshots, stop adjustments,
-  mistakes, assets, grading, watchlist promotion, accounts, app/risk settings,
-  setup definitions, lookup values, dashboard metrics, weekly reviews, and
-  backup/export flows.
-- Shared business logic lives in `src/lib/*.ts`; keep calculations and
-  aggregation logic there when it needs unit coverage or reuse.
-- Database access is centralized through `src/db/index.ts` and schema lives in
-  `src/db/schema.ts`. Migrations are committed in `src/db/migrations`.
+- This is a local-first trading journal built with Next.js App Router under
+  `src/app`, React client pages and components, API route handlers, Drizzle ORM,
+  and SQLite via `better-sqlite3`.
+- Main product areas include trades, executions, risk snapshots, stop
+  adjustments, mistakes, assets, grading, watchlist promotion, accounts,
+  ledger and cash activity, app/risk settings, setup definitions, lookup
+  values, dashboard metrics, weekly reviews, and backup/export flows.
+- Shared business logic belongs in `src/lib/*.ts` when it requires unit coverage
+  or reuse.
+- Database access is centralized through `src/db/index.ts`; schema lives in
+  `src/db/schema.ts`; migrations are committed in `src/db/migrations`.
+
+## GSD Delivery Discipline
+
+- Use the GSD hierarchy: milestone → slice → task.
+- Prefer reviewable vertical slices that deliver a complete user-visible or
+  domain outcome.
+- Do not create vague slices such as “improve styling,” “build components,” or
+  “refactor UI.” Tie the slice to a route, workflow, domain contract, or
+  verifiable behavior.
+- Reassess the remaining roadmap after each slice when evidence invalidates
+  earlier assumptions.
+- Keep changes scoped to the active slice. Broad refactors are permitted only
+  when the approved milestone or slice requires them.
+- Record unmet acceptance criteria rather than silently weakening them.
+
+## UX Redesign Policy
+
+Use the project-local `trading-product-ux-redesign` skill for substantial
+changes to:
+
+- Navigation and information architecture.
+- Dashboards and trading workstations.
+- Trade planning, entry, journal, and review workflows.
+- Account, ledger, cash, and reconciliation surfaces.
+- Tables, forms, dialogs, settings, empty states, and cross-page journeys.
+
+At milestone or slice start, declare the applicable skill mode, such as:
+
+- `full-application-greenfield`
+- `surface-greenfield`
+- `evolutionary-redesign`
+- `dashboard-workstation`
+- `workflow-redesign`
+- `visual-critique`
+- `implementation`
+- `migration-cutover`
+
+Use progressive disclosure: load the core skill and only the mode/reference
+files needed for the active unit. Do not inject the complete standalone skill
+into every task.
+
+### Greenfield and parallel work
+
+When the active milestone selects a greenfield or parallel mode:
+
+- Reuse authoritative data, schemas, APIs, domain services, and pure
+  calculations.
+- Do not reuse legacy information architecture, layout, visual components, or
+  state boundaries unless the milestone explicitly approves them.
+- Preserve the existing experience until a separate cutover slice is approved.
+- Namespace routes, persisted preferences, and saved layouts so the legacy and
+  replacement experiences can coexist.
+- Build realistic fixture-data prototypes and obtain browser evidence before
+  completing deep production integration.
+
+### Evolutionary work
+
+Reuse existing components when their responsibilities and interaction model
+support the approved UX. Do not preserve a structurally wrong surface merely to
+minimize the diff; switch to a greenfield mode when evidence shows incremental
+changes would retain the defect.
+
+### Design-skill hierarchy
+
+- `trading-product-ux-redesign` owns workflow, information architecture,
+  density, hierarchy, and visual acceptance.
+- `frontend-design`, Impeccable, and similar skills may implement or refine an
+  approved direction.
+- General design skills must not transform the product into a generic SaaS,
+  executive-dashboard, marketing, or mobile-first interface.
+- Passing tests does not constitute visual acceptance. Use realistic data,
+  browser evidence, and exact viewport review.
 
 ## Commands
 
@@ -21,6 +114,7 @@
 - Lint: `make lint`
 - Typecheck: `make typecheck`
 - Unit tests: `make test`
+- Complete test orchestrator: `make test-all`
 - E2E tests: `make playwright`
 - Production build: `make build`
 - Run migrations: `make db-migrate`
@@ -30,93 +124,160 @@
 For small changes, run the narrowest relevant command first, then broaden when
 the change touches shared contracts, database schema, or cross-page workflows.
 
-## Database And Data Rules
+The slice-completion quality gate is:
+
+```bash
+make lint
+make typecheck
+make build
+make test-all
+```
+
+Run targeted Playwright or browser verification for every changed user-facing
+workflow.
+
+## Database and Data Rules
 
 - The default runtime database is `./.trading-journal/journal.db`; tests may use
-  `.test*db` files. Do not commit local database files, WAL/SHM files, reports,
-  or generated backups.
-- `src/db/index.ts` auto-applies pending migrations at startup. Schema changes
-  should update `src/db/schema.ts`, generate a migration, and include focused API
-  or library tests for the affected behavior.
-- API routes should validate request bodies with `zod`, return JSON through
-  `NextResponse`, and preserve existing error payload shapes unless a task
-  explicitly changes the contract.
-- Keep lookup/setup behavior consistent with `src/lib/setup-resolver.ts`; trades
-  accept setup names at the UI/API edge but store resolved setup ids.
+  `.test*db` files.
+- Do not commit local database files, WAL/SHM files, reports, or generated
+  backups.
+- `src/db/index.ts` auto-applies pending migrations at startup.
+- Schema changes must update `src/db/schema.ts`, generate a migration, and
+  include focused API or library tests for the affected behavior.
+- API routes must validate request bodies with `zod`, return JSON through
+  `NextResponse`, and preserve existing error payload shapes unless an approved
+  task changes the contract.
+- Keep lookup/setup behavior consistent with `src/lib/setup-resolver.ts`;
+  trades accept setup names at the UI/API edge but store resolved setup IDs.
+- Treat database and API contracts as authoritative domain interfaces, not as
+  instructions for screen layout. New UX surfaces may use typed adapters.
+
+## State and Data-Fetching Rules
+
+- Give shared state one clear owner.
+- Avoid duplicate account selectors, filters, P&L calculations, position state,
+  review state, and validation rules.
+- Do not let multiple widgets or panels independently fetch the same shared
+  domain data.
+- Separate live market-state refresh from historical analytics.
+- Keep business calculations outside visual components.
+- Validate persisted user configuration and saved layouts with explicit schemas.
+- During parallel redesigns, namespace new persisted state so it cannot
+  overwrite legacy preferences.
 
 ## Frontend Conventions
 
-- Use the existing shadcn/radix-style components in `src/components/ui` before
-  adding new component primitives.
-- Use `lucide-react` icons for icon buttons and actions where an icon exists.
-- The app is an operational journal, so prefer dense, scannable interfaces over
-  marketing-style layouts. Keep tables, forms, dialogs, filters, and dashboards
-  predictable.
-- Match existing Tailwind v4/global token usage in `src/app/globals.css`.
-  Avoid one-off color systems unless the design task requires it.
-- Many pages are client components because they manage forms and fetch API data.
-  Add `'use client'` only where browser state/effects/events require it.
-
-## Testing Expectations
-
-- Add or update Vitest tests beside shared logic and API routes using the
-  existing `*.test.ts` patterns.
-- Add or update Playwright specs in `e2e/` for user-facing flows that span pages,
-  dialogs, navigation, or persisted browser behavior.
-- For database-affecting work, verify migrations and at least one runtime path
-  that exercises the new schema.
-- For UI-only work, verify with lint/typecheck and a targeted Playwright test or
-  manual dev-server inspection when a browser behavior could regress.
+- Use existing shadcn/Radix-style components in `src/components/ui` before
+  adding generic primitives.
+- A greenfield UX milestone may introduce product-specific primitives when the
+  existing component structure cannot express the approved interaction or
+  density. Document the limitation before adding them.
+- Use `lucide-react` for icon buttons and actions where an icon adds meaning.
+  Do not add icons merely to decorate routine metrics or labels.
+- The app is an operational journal. Prefer dense, scannable, predictable
+  interfaces over marketing-style or executive-summary layouts.
+- Match Tailwind v4 and global token usage in `src/app/globals.css`. Avoid
+  unrelated one-off color systems.
+- Add `'use client'` only where browser state, effects, or events require it.
+- Preserve keyboard access, visible focus, semantic controls, and accessible
+  labels.
+- Tables should use compact rows, aligned numeric columns, tabular numerals,
+  useful sorting/filtering, and bounded internal scrolling where appropriate.
+- Charts must respond to their container dimensions; do not use fixed chart
+  heights inside resizable containers without an explicit resize mechanism.
+- Loading, empty, stale, missing-data, validation, and error states are part of
+  the feature and must be designed deliberately.
 
 ## Computation Ownership
 
-The milestone M026 (vfox76) consolidated 6 pure computation libraries under `src/lib/`
-that were previously duplicated across API route handlers.  Every library follows the
-same pattern: **pure functions only, no database imports, no NextResponse**, taking
-all data as plain function arguments.
+Milestone M026 (`vfox76`) consolidated six pure computation libraries under
+`src/lib/`. These libraries are canonical domain logic. They use plain
+arguments and must not import database access or `NextResponse`.
 
 ### Library Map
 
 | Library | Responsibility | Depends On | API Callers |
-|---------|---------------|------------|-------------|
-| `trade-calc.ts` | Foundation: P&L, R-multiple, trade status derivation, average cost, realized P&L | — | All downstream libs |
-| `risk-snapshot.ts` | Equity-at-open computation, initial risk amount derivation, risk snapshot values | `trade-calc` | `POST /api/trades/[id]/executions`, `POST /api/trades/[id]/execute` |
-| `account-summary.ts` | Account KPIs (trade count, net P&L, win rate, avg R, avg grade), balance rollforward, dates active | `trade-calc` | `GET /api/accounts/[id]`, `POST /api/accounts/[id]/close` |
-| `metrics.ts` | Win-rate policy engine (includeZeroAsLoss, excludeScratches, allDecisions), averages, process scores | — | `dashboard.ts`, `weekly-review.ts`, `review-dashboard.ts` |
-| `mark-to-market.ts` | MTM unrealized P&L, open position computation, aggregate summary with FeePolicy parameter | `trade-calc` | `GET /api/dashboard`, `GET /api/trades/[id]` |
-| `position-sizing.ts` | Position size, risk/reward preview, plan-trade risk calculator | — | Plan Trade form (`plan-trade-form.tsx`) |
+|---|---|---|---|
+| `trade-calc.ts` | P&L, R-multiple, trade status derivation, average cost, realized P&L | — | Downstream calculation libraries |
+| `risk-snapshot.ts` | Equity-at-open computation, initial risk derivation, risk snapshot values | `trade-calc` | Execution creation routes |
+| `account-summary.ts` | Account KPIs, balance rollforward, dates active | `trade-calc` | Account detail and close routes |
+| `metrics.ts` | Win-rate policies, averages, process scores | — | Dashboard and review routes |
+| `mark-to-market.ts` | Open positions, unrealized P&L, aggregate MTM with `FeePolicy` | `trade-calc` | Dashboard and trade-detail routes |
+| `position-sizing.ts` | Position size and risk/reward preview | — | Plan Trade workflow |
 
 ### Naming Convention
 
-- **File**: `snake-case.ts` matching the domain concept (e.g. `risk-snapshot.ts`, `position-sizing.ts`)
-- **Exported types**: PascalCase interfaces (e.g. `EquityAtOpenInput`, `PositionSizingParams`)
-- **Exported functions**: `camelCase` verbs prefixed with `compute`, `calculate`, `derive`, or `classify`
-- **Test file**: `src/lib/<name>.test.ts` alongside the library (vitest) or standalone tsx entry
-- Each library declares its own input/output types rather than importing Drizzle schema types — this keeps tests database-free
+- Files use kebab-case domain names, such as `risk-snapshot.ts`.
+- Exported types use PascalCase.
+- Exported functions use camelCase verbs prefixed with `compute`, `calculate`,
+  `derive`, or `classify`.
+- Tests live beside the library using existing Vitest or standalone TSX
+  patterns.
+- Pure libraries declare their own input/output types instead of importing
+  Drizzle schema types.
 
-### Key Domain Invariants
+### Domain Invariants
 
-1. **Fee policy divergence**: `mark-to-market.ts` exposes a `FeePolicy` parameter (`include_entry_fees` vs `exclude_entry_fees`) preserving the existing discrepancy between the dashboard route (subtracts entry fees) and the trade detail route (no subtraction).
-2. **Win rate policy**: `metrics.ts` defines 3 named policies (`includeZeroAsLoss`, `excludeScratches`, `allDecisions`) matching the distinct denominator semantics of Dashboard, Review Dashboard, and Weekly Review.
-3. **Account equity cascade**: `risk-snapshot.ts`'s `computeEquityAtOpen` uses: effective equity > 0 → global fallback setting → null. This cascade is used by both execution creation routes.
-4. **R-multiple guard**: All R-multiple computation guards against `initialRiskAmount <= 0` (returns `null`), preventing division-by-zero errors.
-5. **Validation guards**: `position-sizing.ts` validates all numeric inputs pre-computation, throwing descriptive `Position sizing error:` messages for invalid parameters.
+1. **Fee-policy divergence:** `mark-to-market.ts` exposes
+   `include_entry_fees` and `exclude_entry_fees`, preserving the established
+   dashboard/trade-detail behavior until an approved domain change reconciles
+   it.
+2. **Win-rate policy:** `metrics.ts` defines `includeZeroAsLoss`,
+   `excludeScratches`, and `allDecisions`; each caller must use its intended
+   denominator semantics.
+3. **Account-equity cascade:** `computeEquityAtOpen` uses effective equity above
+   zero, then the global fallback setting, then `null`.
+4. **R-multiple guard:** R calculations return `null` when
+   `initialRiskAmount <= 0`.
+5. **Position-sizing validation:** invalid numeric inputs throw descriptive
+   `Position sizing error:` messages.
 
-### Test Registration
+Do not duplicate or reinterpret these calculations inside UI components or API
+routes. Change an invariant only through an explicit domain task with tests and
+contract review.
 
-- Vitest runs via `make test` (includes unit tests listed in `vitest.config.ts`)
-- Standalone tsx tests run via `make test-all` (orchestrated by `scripts/run-all-tests.ts`)
-- Cross-library consistency verified by `src/lib/__fixtures__/golden-scenarios.test.tsx`
-- API response shape regression detected by `src/lib/__fixtures__/response-contracts.test.ts`
-- Full quality gate: `make lint && make typecheck && make build && make test-all`
+## Testing and Evidence
 
-## Repo Hygiene
+- Add or update Vitest tests beside shared logic and API routes using existing
+  `*.test.ts` patterns.
+- Standalone TSX tests run through `make test-all` and
+  `scripts/run-all-tests.ts`.
+- Cross-library consistency is covered by
+  `src/lib/__fixtures__/golden-scenarios.test.tsx`.
+- API response-shape regression is covered by
+  `src/lib/__fixtures__/response-contracts.test.ts`.
+- Add or update Playwright specs in `e2e/` for workflows spanning pages,
+  dialogs, navigation, persistence, keyboard behavior, or saved browser state.
+- For database-affecting work, verify migrations and at least one runtime path
+  exercising the new schema.
+- For user-facing work, use realistic populated data and inspect the rendered
+  result at the target viewport.
+- Preserve screenshots or equivalent browser evidence when the active
+  milestone requires visual acceptance.
+- Report tests not run, evidence not captured, and acceptance criteria not met.
 
-- Keep edits scoped to the requested feature or fix. Do not rewrite generated
-  migration history or clean unrelated files.
+## Documentation
+
+Update durable documentation when a change affects:
+
+- Architecture.
+- Domain contracts.
+- User workflows.
+- Setup or operational commands.
+- Migration or cutover behavior.
+- New project-local skills.
+
+Place durable project documentation under `docs/`. Keep GSD milestone and slice
+artifacts aligned with the implementation.
+
+## Repository Hygiene
+
+- Do not rewrite generated migration history.
+- Do not clean or reformat unrelated files.
 - Do not commit or rely on generated artifacts from `playwright-report/`,
   `test-results/`, `.next/`, `.trading-journal/`, `.test*db`, or `.gsd-*`.
-- The `docs/` directory is preserved by `npm run clean:artifacts`. It is safe to
-  place durable project documentation there.
-- `CLAUDE.md` is only a pointer to this file; keep operational agent guidance
-  here.
+- Do not modify a preserved legacy surface during a parallel greenfield slice
+  unless the slice explicitly includes compatibility work.
+- The `docs/` directory is preserved by `npm run clean:artifacts`.
+- `CLAUDE.md` is a compatibility pointer only; keep operational guidance here.

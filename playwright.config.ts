@@ -16,7 +16,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     port: 3000,
-    reuseExistingServer: false,
+    reuseExistingServer: true,
     timeout: 30_000,
     env: {
       DB_FILE_NAME: process.env.DB_FILE_NAME,

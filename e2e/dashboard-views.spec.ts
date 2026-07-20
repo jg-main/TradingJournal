@@ -59,6 +59,14 @@ function emptyDashboardV2Response(): Record<string, unknown> {
     accountPeriod: null,
     accounts: [],
     totalAccounts: 0,
+    account: null,
+    metrics: null,
+    valuation: null,
+    journalAttribution: null,
+    reconciliation: null,
+    riskSummary: null,
+    integrity: null,
+    computedAt: new Date().toISOString(),
   };
 }
 
