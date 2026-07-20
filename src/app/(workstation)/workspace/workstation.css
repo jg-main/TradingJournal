@@ -1,0 +1,101 @@
+/*
+ * Workstation density tokens.
+ *
+ * Scoped under `.ws` so nothing leaks into the legacy dashboard. The
+ * workstation reuses the global color custom properties from globals.css
+ * (theme-aware) but defines its own density, spacing, and type scale for a
+ * terminal-dense, desktop-first surface at 1440x900.
+ */
+
+.ws {
+  /* Density scale */
+  --ws-row-xs: 18px; /* dense table row */
+  --ws-row-sm: 22px; /* standard table row */
+  --ws-row-md: 28px; /* comfortable row / list item */
+  --ws-toolbar-h: 40px; /* top toolbar height */
+  --ws-panel-header-h: 26px; /* panel title bar */
+
+  /* Spacing scale (half of the legacy default) */
+  --ws-space-1: 2px;
+  --ws-space-2: 4px;
+  --ws-space-3: 6px;
+  --ws-space-4: 8px;
+  --ws-space-5: 12px;
+  --ws-space-6: 16px;
+
+  /* Type scale (compact, terminal-like) */
+  --ws-text-xs: 10px;
+  --ws-text-sm: 11px;
+  --ws-text-md: 12px;
+  --ws-text-lg: 14px;
+
+  /* Fine borders for panel chrome */
+  --ws-border: 1px solid var(--border);
+  --ws-border-strong: 1px solid var(--muted-foreground);
+  --ws-radius: 2px;
+
+  /* Numeric rendering: tabular numerals everywhere in the workstation */
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ws-text-md);
+  line-height: 1.35;
+
+  /* Fixed, non-scrolling surface: panels scroll internally */
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Utility classes consumed by workstation components (T03+). */
+.ws-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-panel {
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  background: var(--card);
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ws-panel-header {
+  height: var(--ws-panel-header-h);
+  display: flex;
+  align-items: center;
+  gap: var(--ws-space-3);
+  padding: 0 var(--ws-space-4);
+  border-bottom: var(--ws-border);
+  font-size: var(--ws-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  flex: none;
+}
+
+.ws-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ws-space-3);
+}
+
+.ws-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ws-pos {
+  color: var(--chart-2);
+}
+
+.ws-neg {
+  color: var(--destructive);
+}

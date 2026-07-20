@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/sidebar";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
 import { TimezoneProvider } from "@/lib/timezone-context";
-import "./globals.css";
+import "../globals.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
