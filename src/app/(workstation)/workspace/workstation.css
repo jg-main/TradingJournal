@@ -99,3 +99,202 @@
 .ws-neg {
   color: var(--destructive);
 }
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.ws-toolbar {
+  height: var(--ws-toolbar-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--ws-space-5);
+  padding: 0 var(--ws-space-5);
+  border-bottom: var(--ws-border);
+  background: var(--card);
+}
+
+.ws-toolbar-brand {
+  font-size: var(--ws-text-lg);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ws-toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: var(--ws-space-3);
+}
+
+.ws-toolbar-label {
+  font-size: var(--ws-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+
+.ws-select {
+  height: var(--ws-row-sm);
+  font-size: var(--ws-text-md);
+  background: var(--background);
+  color: var(--foreground);
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  padding: 0 var(--ws-space-3);
+}
+
+.ws-select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ws-toolbar-spacer {
+  flex: 1;
+}
+
+.ws-toolbar-meta {
+  font-size: var(--ws-text-sm);
+  color: var(--muted-foreground);
+}
+
+.ws-fixture-badge {
+  font-size: var(--ws-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: var(--ws-space-1) var(--ws-space-3);
+  border: 1px solid var(--chart-4, var(--muted-foreground));
+  border-radius: var(--ws-radius);
+  color: var(--chart-4, var(--muted-foreground));
+  background: transparent;
+}
+
+/* ── CSS Grid shell ──────────────────────────────────────────────────────── */
+/*
+ * Fixed terminal layout at 1440x900: KPI strip across the top, equity curve
+ * dominant on the left, positions/watchlist stacked in the middle, risk and
+ * insights on the right rail. Panels never move; content scrolls inside them.
+ */
+.ws-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: var(--ws-space-3);
+  padding: var(--ws-space-3);
+  grid-template-columns: 3fr 2fr 2fr 1.5fr;
+  grid-template-rows: auto 1fr 1fr;
+  grid-template-areas:
+    "kpis     kpis      kpis      kpis"
+    "equity   positions watchlist risk"
+    "equity   positions watchlist insights";
+}
+
+.ws-panel-meta {
+  margin-left: auto;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* KPI strip */
+.ws-kpi-strip {
+  flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.ws-kpi {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--ws-space-1);
+  padding: var(--ws-space-3) var(--ws-space-4);
+}
+
+.ws-kpi + .ws-kpi {
+  border-left: var(--ws-border);
+}
+
+.ws-kpi-value {
+  font-size: var(--ws-text-lg);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-kpi-label {
+  font-size: var(--ws-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+/* Dense data table */
+.ws-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ws-text-md);
+}
+
+.ws-table th {
+  text-align: left;
+  font-size: var(--ws-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  font-weight: 600;
+  padding: var(--ws-space-1) var(--ws-space-2);
+  border-bottom: var(--ws-border);
+  position: sticky;
+  top: calc(-1 * var(--ws-space-3));
+  background: var(--card);
+}
+
+.ws-table th.ws-num,
+.ws-table td.ws-num {
+  text-align: right;
+}
+
+.ws-table td {
+  padding: var(--ws-space-1) var(--ws-space-2);
+  border-bottom: var(--ws-border);
+  height: var(--ws-row-sm);
+  white-space: nowrap;
+}
+
+/* Stat rows (risk / insights panels) */
+.ws-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: var(--ws-row-sm);
+  padding: 0 var(--ws-space-2);
+  border-bottom: var(--ws-border);
+  font-size: var(--ws-text-md);
+}
+
+.ws-stat-row > span:first-child {
+  color: var(--muted-foreground);
+}
+
+/* Empty states */
+.ws-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted-foreground);
+  font-size: var(--ws-text-md);
+}
+
+/* Sparkline fills its panel body */
+.ws-sparkline {
+  width: 100%;
+  height: 72px;
+  display: block;
+  border-bottom: var(--ws-border);
+  margin-bottom: var(--ws-space-2);
+}

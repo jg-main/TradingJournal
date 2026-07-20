@@ -1,24 +1,26 @@
 // /workspace — greenfield workstation entry point.
 //
-// T01 ships the route shell only: the layout group, density tokens, and a
-// minimal placeholder proving the route renders isolated from the legacy
-// dashboard. T03 replaces this page with the full WorkstationShell (CSS
-// Grid, WorkstationContext, toolbar).
-export default function WorkspacePage() {
+// T03 ships the full shell: WorkstationProvider (single owner of account +
+// scenario state), the compact toolbar, and the terminal-dense CSS Grid with
+// fixture-populated panels. T04 adds Playwright browser evidence at
+// 1440x900; S06 swaps fixtures for live API data inside the context without
+// touching panels.
+
+import { WorkstationProvider } from '@/components/workstation/workstation-context';
+import { WorkstationToolbar } from '@/components/workstation/workstation-toolbar';
+import { WorkstationShell } from '@/components/workstation/workstation-shell';
+
+export default async function WorkspacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ scenario?: string }>;
+}) {
+  const { scenario } = await searchParams;
+
   return (
-    <>
-      <header
-        style={{ height: "var(--ws-toolbar-h)" }}
-        className="flex items-center gap-2 border-b border-border px-3 text-sm"
-      >
-        <span className="font-semibold">Workstation</span>
-        <span className="rounded border border-border px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Shell
-        </span>
-      </header>
-      <main className="ws-mono flex-1 p-2 text-muted-foreground">
-        Workstation shell placeholder — grid panels arrive in T03.
-      </main>
-    </>
+    <WorkstationProvider initialScenario={scenario}>
+      <WorkstationToolbar />
+      <WorkstationShell />
+    </WorkstationProvider>
   );
 }
