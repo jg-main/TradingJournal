@@ -412,3 +412,19 @@
   background: color-mix(in srgb, var(--muted-foreground) 10%, transparent);
   color: var(--muted-foreground);
 }
+
+/* ── Positions Panel ─────────────────────────────────────────────────────── */
+
+/* Stale / missing mark indicator — small amber dot rendered inline before
+   the mark price when markStatus is 'stale' or 'missing'. */
+.ws-mark-stale-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  border-radius: 50%;
+  background: var(--ws-amber, #d4a017);
+  margin-right: 3px;
+  vertical-align: middle;
+  flex: none;
+}
