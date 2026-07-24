@@ -10,6 +10,7 @@
 // for live API data without touching these panels.
 
 import { useWorkstation } from './workstation-context';
+import { WatchlistPanel } from './watchlist-panel';
 
 function fmtCurrency(value: number | string | null | undefined): string {
   if (value === null || value === undefined) return '—';
@@ -110,7 +111,7 @@ function Panel({
 
 export function WorkstationShell() {
   const { fixtures } = useWorkstation();
-  const { dashboard, dashboardV2, watchlist } = fixtures;
+  const { dashboard, dashboardV2 } = fixtures;
   const { kpis } = dashboard;
   const { metrics, riskSummary, valuation } = dashboardV2;
 
@@ -198,35 +199,8 @@ export function WorkstationShell() {
         )}
       </Panel>
 
-      {/* Watchlist */}
-      <Panel area="watchlist" title="Watchlist" meta={`${watchlist.length} items`}>
-        {watchlist.length === 0 ? (
-          <div className="ws-empty">Watchlist is empty</div>
-        ) : (
-          <table className="ws-table">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Dir</th>
-                <th>Status</th>
-                <th className="ws-num">Trigger</th>
-              </tr>
-            </thead>
-            <tbody>
-              {watchlist.map((w) => (
-                <tr key={w.id}>
-                  <td className="ws-mono">{w.symbol}</td>
-                  <td>{w.direction}</td>
-                  <td>{w.status}</td>
-                  <td className="ws-num">
-                    {w.triggerPrice === null ? '—' : fmtCurrency(w.triggerPrice)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Panel>
+      {/* Watchlist — enhanced 7-column table with MarketStrip sub-ribbon */}
+      <WatchlistPanel />
 
       {/* Risk + reconciliation */}
       <Panel area="risk" title="Risk" meta={dashboardV2.integrity.status}>
