@@ -14,6 +14,8 @@ import { PositionsPanel } from './positions-panel';
 import { RiskPanel } from './risk-panel';
 import { WatchlistPanel } from './watchlist-panel';
 import { SetupsPanel } from './setups-panel';
+import { EquityChart } from './equity-chart';
+import { PerformanceSummary } from './performance-summary';
 
 function fmtCurrency(value: number | string | null | undefined): string {
   if (value === null || value === undefined) return '—';
@@ -49,44 +51,6 @@ function KpiCell({ label, value, className }: { label: string; value: string; cl
       <div className={`ws-kpi-value ws-num ${className ?? ''}`}>{value}</div>
       <div className="ws-kpi-label">{label}</div>
     </div>
-  );
-}
-
-/** Minimal inline SVG sparkline for the equity curve placeholder. */
-function EquitySparkline({ points }: { points: { equity: number }[] }) {
-  if (points.length < 2) {
-    return <div className="ws-empty">No equity history</div>;
-  }
-  const values = points.map((p) => p.equity);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const W = 100;
-  const H = 28;
-  const path = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * W;
-      const y = H - ((v - min) / range) * H;
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-  const rising = values[values.length - 1] >= values[0];
-  return (
-    <svg
-      className="ws-sparkline"
-      viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="Equity curve sparkline"
-    >
-      <path
-        d={path}
-        fill="none"
-        stroke={rising ? 'var(--chart-2)' : 'var(--destructive)'}
-        strokeWidth="1"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
   );
 }
 
@@ -140,7 +104,7 @@ export function WorkstationShell() {
         <KpiCell label="NAV (V2)" value={fmtCurrency(metrics.nav)} />
       </section>
 
-      {/* Equity curve */}
+      {/* Equity curve — ECharts chart + monthly performance summary */}
       <Panel
         area="equity"
         title="Equity"
@@ -150,21 +114,17 @@ export function WorkstationShell() {
             : undefined
         }
       >
-        <EquitySparkline points={dashboard.equityCurve} />
-        <div className="ws-stat-row">
-          <span>Equity</span>
-          <span className="ws-num">{lastEquity ? fmtCurrency(lastEquity.equity) : '—'}</span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Cum P&L</span>
-          <span className={`ws-num ${lastEquity ? pnlClass(lastEquity.cumulativePnl) : ''}`}>
-            {lastEquity ? fmtCurrency(lastEquity.cumulativePnl) : '—'}
-          </span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Points</span>
-          <span className="ws-num">{dashboard.equityCurve.length}</span>
-        </div>
+        <EquityChart
+          equityCurve={dashboard.equityCurve}
+          drawdown={dashboard.drawdown}
+          tradeMarkers={dashboard.tradeMarkers ?? []}
+        />
+        <PerformanceSummary
+          monthlyPerformance={dashboard.monthlyPerformance}
+          drawdown={dashboard.drawdown}
+          currentDrawdown={kpis.currentDrawdown}
+          currentDrawdownPct={kpis.currentDrawdownPct}
+        />
       </Panel>
 
       {/* Open positions — standalone 7-column terminal-dense table */}

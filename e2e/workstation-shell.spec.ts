@@ -27,6 +27,10 @@
  * 13. S03: RiskPanel PTD/current-state visual separation with metric content
  * 14. S03: All 4 scenarios render positions and risk panels without viewport overflow
  * 15. S03: Empty/unavailable states across zero-positions and large-drawdown
+ * 16. S05: ECharts equity/drawdown chart renders with canvas at ws-equity-chart inside equity panel
+ * 17. S05: Monthly performance table (ws-perf-monthly-table) with 4 columns and populated rows
+ * 18. S05: Drawdown summary (ws-perf-drawdown-summary) with max DD, current DD, and color coding
+ * 19. S05: All 4 scenarios render the chart + summary without console/page errors
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -132,10 +136,11 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(watchlist.locator('tbody tr').first()).toBeVisible();
     await expect(watchlist.getByText('AAPL')).toBeVisible();
 
-    // Equity panel shows the sparkline and stat rows.
+    // Equity panel shows the ECharts chart + performance summary.
     const equity = page.getByTestId('ws-panel-equity');
-    await expect(equity.getByRole('img', { name: 'Equity curve sparkline' })).toBeVisible();
-    await expect(equity.getByText('Cum P&L')).toBeVisible();
+    await expect(equity.getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(equity.getByTestId('ws-perf-monthly-table')).toBeVisible();
+    await expect(equity.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
 
     // Risk panel shows its section headers and stat rows.
     await expect(page.getByTestId('ws-risk-panel').getByText('Portfolio Heat')).toBeVisible();
@@ -956,5 +961,179 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
       body: drawdownShot,
       contentType: 'image/png',
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// S05: EquityChart and PerformanceSummary
+// ═══════════════════════════════════════════════════════════════════════════
+
+test.describe('S05 EquityChart — ECharts dual-Y-axis equity/drawdown chart', () => {
+  test('renders ECharts canvas inside equity panel at ws-equity-chart', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+
+    const chartContainer = page.getByTestId('ws-equity-chart');
+    await expect(chartContainer).toBeVisible();
+
+    // ECharts renders a <canvas> inside the container.
+    const canvas = chartContainer.locator('canvas');
+    await expect(canvas).toBeVisible();
+    expect(await canvas.count()).toBe(1);
+
+    // Inside the equity panel (not floating elsewhere).
+    const equityPanel = page.getByTestId('ws-panel-equity');
+    await expect(equityPanel.getByTestId('ws-equity-chart')).toBeVisible();
+
+    // Empty state must not render when equityCurve has data (all scenarios have data).
+    await expect(page.getByTestId('ws-equity-chart-empty')).toHaveCount(0);
+  });
+
+  test('chart re-renders after scenario switch without console errors', async ({
+    page,
+  }) => {
+    const { consoleErrors, pageErrors } = watchForErrors(page);
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(page.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
+
+    // Switch to large-drawdown: chart and canvas re-render.
+    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
+    await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(page.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
+
+    expect(pageErrors, 'uncaught page errors after scenario switch').toEqual([]);
+    expect(consoleErrors, 'console.error after scenario switch').toEqual([]);
+  });
+
+  test('renders across all 4 fixture scenarios', async ({ page }) => {
+    for (const scenario of [
+      'default',
+      'zero-positions',
+      'large-drawdown',
+      'many-watchlist',
+    ]) {
+      await page.goto(`/workspace?scenario=${scenario}`);
+      await expect(page.getByTestId('ws-grid')).toBeVisible();
+      await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
+      await expect(
+        page.getByTestId('ws-equity-chart').locator('canvas'),
+      ).toBeVisible();
+      // Empty state must not render when data is present.
+      await expect(page.getByTestId('ws-equity-chart-empty')).toHaveCount(0);
+    }
+  });
+});
+
+test.describe('S05 PerformanceSummary — monthly table and drawdown block', () => {
+  test('monthly performance table renders with 4 columns and populated rows', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
+
+    const table = page.getByTestId('ws-perf-monthly-table');
+    const headers = table.locator('thead th');
+    await expect(headers).toHaveCount(4);
+    await expect(headers.nth(0)).toHaveText('Month');
+    await expect(headers.nth(1)).toHaveText('P&L');
+    await expect(headers.nth(2)).toHaveText('Win %');
+    await expect(headers.nth(3)).toHaveText('Trades');
+
+    // Default scenario has 3 months (Apr–Jun 2026).
+    const rows = table.locator('tbody tr');
+    await expect(rows).toHaveCount(3);
+
+    // First row has populated numeric columns.
+    const firstRow = rows.first();
+    await expect(firstRow.locator('td').nth(0)).toHaveText(/Apr|May|Jun/);
+    await expect(firstRow.locator('td').nth(1)).toContainText('$');
+    await expect(firstRow.locator('td').nth(2)).toContainText('%');
+    await expect(firstRow.locator('td').nth(3)).toHaveText(/^\d+$/);
+  });
+
+  test('monthly table shows negative P&L with ws-neg class in large-drawdown', async ({
+    page,
+  }) => {
+    await page.goto('/workspace?scenario=large-drawdown');
+    await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
+
+    const table = page.getByTestId('ws-perf-monthly-table');
+    expect(await table.locator('tbody tr').count()).toBe(3);
+
+    // All months in large-drawdown have negative P&L.
+    const negCells = table.locator('tbody td.ws-num.ws-neg').first();
+    await expect(negCells).toBeVisible();
+    await expect(negCells).toContainText('-');
+    await expect(negCells).toContainText('$');
+  });
+
+  test('drawdown summary shows max DD, max DD %, current DD, current DD %', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
+
+    const drawdown = page.getByTestId('ws-perf-drawdown-summary');
+
+    // Section header.
+    await expect(drawdown.locator('.ws-risk-section-header')).toHaveText(
+      'Drawdown',
+    );
+
+    // All four stat rows present (exact to avoid 'Max DD' matching 'Max DD %').
+    await expect(drawdown.getByText('Max DD', { exact: true })).toBeVisible();
+    await expect(drawdown.getByText('Max DD %')).toBeVisible();
+    await expect(drawdown.getByText('Current DD', { exact: true })).toBeVisible();
+    await expect(drawdown.getByText('Current DD %')).toBeVisible();
+
+    // 4 stat rows.
+    const statRows = drawdown.locator('.ws-stat-row');
+    await expect(statRows).toHaveCount(4);
+
+    // Max DD values use ws-neg (drawdown is always negative).
+    await expect(drawdown.locator('.ws-num.ws-neg').first()).toBeVisible();
+  });
+
+  test('performance summary renders across all 4 scenarios without console errors', async ({
+    page,
+  }) => {
+    const { consoleErrors, pageErrors } = watchForErrors(page);
+
+    for (const scenario of [
+      'default',
+      'zero-positions',
+      'large-drawdown',
+      'many-watchlist',
+    ]) {
+      await page.goto(`/workspace?scenario=${scenario}`);
+      await expect(page.getByTestId('ws-grid')).toBeVisible();
+      await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
+      await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
+    }
+
+    expect(pageErrors, 'uncaught page errors').toEqual([]);
+    expect(consoleErrors, 'console.error output').toEqual([]);
+  });
+
+  test('performance summary fits inside viewport at 1440x900 without page scroll', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+
+    // Both S05 elements exist in the DOM.
+    await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
+    await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
+
+    // Workstation surface itself never scrolls.
+    const scroll = await page.evaluate(() => ({
+      scrollHeight: document.documentElement.scrollHeight,
+      clientHeight: document.documentElement.clientHeight,
+    }));
+    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
   });
 });
