@@ -139,7 +139,10 @@ test.describe('workstation shell at 1440x900', () => {
 
     // Risk panel shows its section headers and stat rows.
     await expect(page.getByTestId('ws-risk-panel').getByText('Portfolio Heat')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-insights').getByText('Avg Win')).toBeVisible();
+    // S04: SetupsPanel replaces the legacy placeholder insights panel.
+    const insightsPanel = page.getByTestId('ws-panel-insights');
+    await expect(insightsPanel.getByText('Setups & Ideas')).toBeVisible();
+    await expect(insightsPanel.getByText('Setup Ranking')).toBeVisible();
   });
 
   test('fixture mode emits console.warn runtime signal', async ({ page }) => {
@@ -632,5 +635,326 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
       clientHeight: document.documentElement.clientHeight,
     }));
     expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// S04: SetupsPanel — Setup Ranking, Attention Insights, Trade Ideas
+// ═══════════════════════════════════════════════════════════════════════════
+
+test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
+  test('renders all three sub-panels with data-testid attributes', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+
+    const insights = page.getByTestId('ws-panel-insights');
+    await expect(insights).toBeVisible();
+
+    // Sub-panel data-testids.
+    await expect(insights.getByTestId('ws-setup-ranking-table')).toBeVisible();
+    await expect(insights.getByTestId('ws-attention-insights-list')).toBeVisible();
+    await expect(insights.getByTestId('ws-ideas-table')).toBeVisible();
+  });
+
+  test('setup ranking table has 5 columns in correct order', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
+
+    const headers = page
+      .getByTestId('ws-setup-ranking-table')
+      .locator('thead th');
+    await expect(headers).toHaveCount(5);
+    await expect(headers.nth(0)).toHaveText('Setup');
+    await expect(headers.nth(1)).toHaveText('Win %');
+    await expect(headers.nth(2)).toHaveText('N');
+    await expect(headers.nth(3)).toHaveText('Avg R');
+    await expect(headers.nth(4)).toHaveText('Score');
+  });
+
+  test('setup ranking shows per-setup rows with data-testid and populated numeric columns', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
+
+    // 4 setup rows.
+    const rows = page
+      .getByTestId('ws-setup-ranking-table')
+      .locator('tbody tr');
+    await expect(rows).toHaveCount(4);
+
+    // Each known setup has a per-setup id row.
+    const setupIds = ['setup-breakout', 'setup-pullback', 'setup-reversal', 'setup-gap'];
+    for (const sid of setupIds) {
+      await expect(page.getByTestId(`ws-setup-row-${sid}`)).toBeVisible();
+    }
+
+    // Opening Range Breakout: first row, all numeric columns are non-dash.
+    const breakoutRow = page.getByTestId('ws-setup-row-setup-breakout');
+    await expect(breakoutRow.locator('td').nth(0)).toHaveText('Opening Range Breakout');
+    // Win % contains a number + %.
+    await expect(breakoutRow.locator('td').nth(1)).toContainText('%');
+    // N column is an integer count (no % sign).
+    await expect(breakoutRow.locator('td').nth(2)).toHaveText(/^\d+$/);
+    // Score is a number.
+    const score = breakoutRow.locator('td').nth(4);
+    const scoreText = await score.textContent();
+    expect(parseFloat(scoreText!)).not.toBeNaN();
+  });
+
+  test('sample-size warnings render for very_small and small setups only', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
+
+    // Gap Continuation (setup-gap) has very_small → ws-severity-critical class.
+    const gapRow = page.getByTestId('ws-setup-row-setup-gap');
+    const gapWarning = gapRow.locator('[data-testid="ws-sample-size-warning"]');
+    await expect(gapWarning).toBeVisible();
+    const gapWarningClass = await gapWarning.evaluate((el) => el.className);
+    expect(gapWarningClass).toMatch(/ws-severity-critical/);
+    await expect(gapWarning).toContainText('<10');
+
+    // Exhaustion Reversal (setup-reversal) has small → ws-severity-warning class.
+    const revRow = page.getByTestId('ws-setup-row-setup-reversal');
+    const revWarning = revRow.locator('[data-testid="ws-sample-size-warning"]');
+    await expect(revWarning).toBeVisible();
+    const revWarningClass = await revWarning.evaluate((el) => el.className);
+    expect(revWarningClass).toMatch(/ws-severity-warning/);
+    await expect(revWarning).toContainText('<30');
+
+    // Opening Range Breakout (adequate) and Trend Pullback (moderate) have no warnings.
+    for (const sid of ['setup-breakout', 'setup-pullback']) {
+      const row = page.getByTestId(`ws-setup-row-${sid}`);
+      await expect(
+        row.locator('[data-testid="ws-sample-size-warning"]'),
+      ).toHaveCount(0);
+    }
+  });
+
+  test('large-drawdown reorders setup ranking and shows different data', async ({
+    page,
+  }) => {
+    await page.goto('/workspace?scenario=large-drawdown');
+    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
+
+    const rows = page
+      .getByTestId('ws-setup-ranking-table')
+      .locator('tbody tr');
+    await expect(rows).toHaveCount(4);
+
+    // First row: Exhaustion Reversal (reordered, most trades in drawdown).
+    const firstRow = rows.nth(0);
+    await expect(firstRow.locator('td').nth(0)).toContainText('Exhaustion');
+
+    // Opening Range Breakout has small → ws-severity-warning.
+    const breakoutRow = page.getByTestId('ws-setup-row-setup-breakout');
+    const breakoutWarning = breakoutRow.locator(
+      '[data-testid="ws-sample-size-warning"]',
+    );
+    await expect(breakoutWarning).toBeVisible();
+    await expect(breakoutWarning).toContainText('<30');
+  });
+
+  test('attention insights list renders with severity badges and correct classes', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
+
+    const list = page.getByTestId('ws-attention-insights-list');
+    const items = list.locator('li');
+    await expect(items).toHaveCount(2);
+
+    // First insight: best_day → info severity.
+    await expect(page.getByTestId('ws-insight-item-best_day')).toBeVisible();
+    const infoBadge = page.getByTestId('ws-severity-info');
+    await expect(infoBadge.first()).toBeVisible();
+    await expect(infoBadge.first()).toHaveText('INFO');
+    const infoBadgeClass = await infoBadge
+      .first()
+      .evaluate((el) => el.className);
+    expect(infoBadgeClass).toMatch(/ws-severity-info/);
+
+    // Second insight: oversizing → warning severity.
+    await expect(page.getByTestId('ws-insight-item-oversizing')).toBeVisible();
+    const warnBadge = page.getByTestId('ws-severity-warning');
+    await expect(warnBadge.first()).toBeVisible();
+    await expect(warnBadge.first()).toHaveText('WARN');
+
+    // Messages are visible (non-empty).
+    const messages = list.locator('.ws-insight-message');
+    for (const msg of await messages.all()) {
+      const text = await msg.textContent();
+      expect(text?.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  test('large-drawdown scenario shows critical severity insight', async ({
+    page,
+  }) => {
+    await page.goto('/workspace?scenario=large-drawdown');
+    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
+
+    // drawdown insight → critical.
+    await expect(page.getByTestId('ws-insight-item-drawdown')).toBeVisible();
+    const critBadge = page.getByTestId('ws-severity-critical');
+    await expect(critBadge.first()).toBeVisible();
+    await expect(critBadge.first()).toHaveText('CRIT');
+    const critBadgeClass = await critBadge
+      .first()
+      .evaluate((el) => el.className);
+    expect(critBadgeClass).toMatch(/ws-severity-critical/);
+
+    // revenge_trading → warning.
+    await expect(page.getByTestId('ws-insight-item-revenge_trading')).toBeVisible();
+  });
+
+  test('trade ideas table has 7 columns in correct order', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
+
+    const headers = page.getByTestId('ws-ideas-table').locator('thead th');
+    await expect(headers).toHaveCount(7);
+    await expect(headers.nth(0)).toHaveText('Symbol');
+    await expect(headers.nth(1)).toHaveText('Setup');
+    await expect(headers.nth(2)).toHaveText('Dir');
+    await expect(headers.nth(3)).toHaveText('Entry');
+    await expect(headers.nth(4)).toHaveText('Stop');
+    await expect(headers.nth(5)).toHaveText('Target');
+    await expect(headers.nth(6)).toHaveText('R/R');
+  });
+
+  test('trade ideas rows have per-symbol data-testid and direction badges', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
+
+    const rows = page.getByTestId('ws-ideas-table').locator('tbody tr');
+    const count = await rows.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Each row has a per-symbol data-testid.
+    const rowSymbols = await page
+      .getByTestId('ws-ideas-table')
+      .locator('[data-testid^="ws-idea-row-"]')
+      .all();
+    for (const row of rowSymbols) {
+      const testId = await row.getAttribute('data-testid');
+      expect(testId).toMatch(/^ws-idea-row-[A-Z]+$/);
+    }
+
+    // Direction column uses L/S with color class.
+    const firstRow = rows.first();
+    const dirCell = firstRow.locator('td').nth(2);
+    const dirText = (await dirCell.textContent())?.trim();
+    expect(['L', 'S']).toContain(dirText);
+    expect(await dirCell.evaluate((el) => el.className)).toMatch(
+      /ws-dir-(long|short)/,
+    );
+  });
+
+  test('many-watchlist scenario yields more trade ideas than default', async ({
+    page,
+  }) => {
+    await page.goto('/workspace?scenario=many-watchlist');
+    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
+    const manyCount = await page
+      .getByTestId('ws-ideas-table')
+      .locator('tbody tr')
+      .count();
+
+    await page.goto('/workspace?scenario=default');
+    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
+    const defaultCount = await page
+      .getByTestId('ws-ideas-table')
+      .locator('tbody tr')
+      .count();
+
+    expect(manyCount).toBeGreaterThan(defaultCount);
+  });
+
+  test('zero-positions scenario still renders setup ranking and insights (historical data)', async ({
+    page,
+  }) => {
+    await page.goto('/workspace?scenario=zero-positions');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+
+    // Setup ranking and insights persist — they are historical, not position-dependent.
+    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
+    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
+    await expect(page.getByTestId('ws-setup-row-setup-breakout')).toBeVisible();
+  });
+
+  test('panel fits inside the viewport at 1440x900 without page scroll', async ({
+    page,
+  }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
+
+    const insights = page.getByTestId('ws-panel-insights');
+    const box = await insights.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(900);
+
+    // Workstation surface itself never scrolls.
+    const scroll = await page.evaluate(() => ({
+      scrollHeight: document.documentElement.scrollHeight,
+      clientHeight: document.documentElement.clientHeight,
+    }));
+    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+  });
+
+  test('no console errors or page errors across all 4 scenarios', async ({
+    page,
+  }) => {
+    const { consoleErrors, pageErrors } = watchForErrors(page);
+
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
+    await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
+    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
+    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
+    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
+    await page.getByTestId('ws-scenario-select').selectOption('many-watchlist');
+    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
+
+    expect(pageErrors, 'uncaught page errors').toEqual([]);
+    expect(consoleErrors, 'console.error output').toEqual([]);
+  });
+
+  test('screenshot evidence at 1440x900 for S04 setups and ideas', async ({
+    page,
+  }, testInfo) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+    await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
+    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
+
+    const shot = await page.screenshot({ fullPage: false });
+    await testInfo.attach('s04-setups-ideas-1440x900.png', {
+      body: shot,
+      contentType: 'image/png',
+    });
+
+    // Also capture large-drawdown for negative-data evidence.
+    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
+    await expect(page.getByTestId('ws-insight-item-drawdown')).toBeVisible();
+    const drawdownShot = await page.screenshot({ fullPage: false });
+    await testInfo.attach('s04-large-drawdown-1440x900.png', {
+      body: drawdownShot,
+      contentType: 'image/png',
+    });
   });
 });
