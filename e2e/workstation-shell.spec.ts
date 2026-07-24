@@ -93,12 +93,9 @@ test.describe('workstation shell at 1440x900', () => {
     const grid = page.getByTestId('ws-grid');
     await expect(grid).toBeVisible();
 
-    // S03: risk panel uses ws-risk-panel (PositionsPanel and RiskPanel are
-    // standalone components that render their own chrome; the legacy
-    // ws-panel-{area} pattern is preserved for positions, equity, kpis,
-    // watchlist, and insights but risk follows the slice contract at ws-risk-panel).
+    // All standalone panels now use the unified ws-panel-{area} pattern.
     for (const area of GRID_AREAS) {
-      const testId = area === 'risk' ? 'ws-risk-panel' : `ws-panel-${area}`;
+      const testId = `ws-panel-${area}`;
       const panel = page.getByTestId(testId);
       await expect(panel).toBeVisible();
       const box = await panel.boundingBox();
@@ -143,7 +140,7 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(equity.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
 
     // Risk panel shows its section headers and stat rows.
-    await expect(page.getByTestId('ws-risk-panel').getByText('Portfolio Heat')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk').getByText('Portfolio Heat')).toBeVisible();
     // S04: SetupsPanel replaces the legacy placeholder insights panel.
     const insightsPanel = page.getByTestId('ws-panel-insights');
     await expect(insightsPanel.getByText('Setups & Ideas')).toBeVisible();
@@ -516,7 +513,7 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
     page,
   }) => {
     await page.goto('/workspace');
-    await expect(page.getByTestId('ws-risk-panel')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
     // PTD section.
     const ptdSection = page.getByTestId('ws-risk-ptd-section');
@@ -603,7 +600,7 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
 
   test('zero-positions scenario shows zeroed risk metrics', async ({ page }) => {
     await page.goto('/workspace?scenario=zero-positions');
-    await expect(page.getByTestId('ws-risk-panel')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
     // Open P&L is $0.00.
     const openPnlRow = page
@@ -627,7 +624,7 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
   }) => {
     await page.goto('/workspace?scenario=many-watchlist');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
-    await expect(page.getByTestId('ws-risk-panel')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
     // 3 positions (same as default).
     await expect(

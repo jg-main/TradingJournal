@@ -672,3 +672,143 @@
   min-height: 0;
   width: 100%;
 }
+
+/* ── Panel Focus Ring ──────────────────────────────────────────────────── */
+/*
+ * Programmatic focus via keyboard shortcuts (1-6 keys) lands on the
+ * panel section element.  A visible focus ring communicates which
+ * panel is active to sighted users; screen-reader users hear the ARIA
+ * role change.
+ */
+
+.ws-panel:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+  border-color: var(--ring);
+}
+
+/* ── Reduced Motion ────────────────────────────────────────────────────── */
+/*
+ * When the user has prefers-reduced-motion: reduce set at the OS level,
+ * disable all workstation CSS animations: MTM pulse, overlay fade-in,
+ * loading pulsation.  Non-animated visual treatments (static colors,
+ * dots) are preserved.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  .ws,
+  .ws *,
+  .ws *::before,
+  .ws *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Keyboard Shortcut Overlay ──────────────────────────────────────────── */
+/*
+ * Terminal-dense overlay listing every available workstation keyboard
+ * shortcut.  Rendered inside the .ws scope so it inherits workstation
+ * density tokens.  No portal — it sits as a sibling inside the provider.
+ */
+
+.ws-keynav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  background: rgba(0, 0, 0, 0.45);
+  animation: ws-keynav-fade-in 120ms ease-out;
+}
+
+@keyframes ws-keynav-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ws-keynav-overlay {
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  background: var(--card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.ws-keynav-header {
+  display: flex;
+  align-items: center;
+  height: var(--ws-toolbar-h);
+  padding: 0 var(--ws-space-4);
+  border-bottom: var(--ws-border);
+}
+
+.ws-keynav-title {
+  font-size: var(--ws-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+.ws-keynav-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--ws-text-md);
+  color: var(--muted-foreground);
+  line-height: 1;
+  padding: var(--ws-space-2);
+  border-radius: var(--ws-radius);
+}
+
+.ws-keynav-close:hover {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.ws-keynav-close:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+}
+
+.ws-keynav-body {
+  padding: var(--ws-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-3);
+}
+
+.ws-keynav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--ws-row-sm);
+}
+
+.ws-keynav-label {
+  font-size: var(--ws-text-md);
+  color: var(--foreground);
+}
+
+.ws-keynav-kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 0 4px;
+  height: var(--ws-row-xs);
+  line-height: var(--ws-row-xs);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--ws-text-xs);
+  font-weight: 600;
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}

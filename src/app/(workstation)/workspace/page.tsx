@@ -9,6 +9,7 @@
 import { WorkstationProvider } from '@/components/workstation/workstation-context';
 import { WorkstationToolbar } from '@/components/workstation/workstation-toolbar';
 import { WorkstationShell } from '@/components/workstation/workstation-shell';
+import { WorkstationKeyboardShortcuts } from '@/components/workstation/workstation-keyboard-shortcuts';
 
 export default async function WorkspacePage({
   searchParams,
@@ -20,6 +21,7 @@ export default async function WorkspacePage({
 
   return (
     <WorkstationProvider initialScenario={scenario} liveMode={liveMode}>
+      <WorkstationKeyboardShortcuts />
       <WorkstationToolbar />
       <WorkstationShell />
     </WorkstationProvider>

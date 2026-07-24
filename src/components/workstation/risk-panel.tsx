@@ -14,7 +14,7 @@
 // so T04 can drop <RiskPanel /> directly into the grid.
 //
 // Data-testid attributes per slice verification contract:
-//   ws-risk-panel, ws-risk-ptd-section, ws-risk-current-section
+//   ws-panel-risk, ws-risk-ptd-section, ws-risk-current-section
 
 import { useWorkstation } from './workstation-context';
 import type { WorkstationRisk } from '@/lib/workstation-fixtures';
@@ -89,7 +89,7 @@ export function RiskPanel() {
     <section
       className="ws-panel"
       style={{ gridArea: 'risk' }}
-      data-testid="ws-risk-panel"
+      data-testid="ws-panel-risk"
     >
       <div className="ws-panel-header">
         <span>Risk</span>

@@ -228,7 +228,7 @@ test.describe('Live Mode E2E', () => {
 
     const GRID_AREAS = ['kpis', 'equity', 'positions', 'watchlist', 'risk', 'insights'] as const;
     for (const area of GRID_AREAS) {
-      const testId = area === 'risk' ? 'ws-risk-panel' : `ws-panel-${area}`;
+      const testId = area === 'risk' ? 'ws-panel-risk' : `ws-panel-${area}`;
       const panel = page.getByTestId(testId);
       await expect(panel).toBeVisible();
       const box = await panel.boundingBox();
@@ -286,7 +286,7 @@ test.describe('Live Mode E2E', () => {
     // For an account with history, at least the drawdown summary should appear.
 
     // Risk panel has metric content.
-    const risk = page.getByTestId('ws-risk-panel');
+    const risk = page.getByTestId('ws-panel-risk');
     await expect(risk.getByText('Portfolio Heat')).toBeVisible({ timeout: 10000 });
     const riskRows = risk.locator('.ws-stat-row');
     const riskRowCount = await riskRows.count();
@@ -448,7 +448,7 @@ test.describe('Live Mode E2E', () => {
     ).not.toBeVisible();
 
     for (const area of ['kpis', 'equity', 'positions', 'watchlist', 'risk', 'insights']) {
-      const testId = area === 'risk' ? 'ws-risk-panel' : `ws-panel-${area}`;
+      const testId = area === 'risk' ? 'ws-panel-risk' : `ws-panel-${area}`;
       await expect(page.getByTestId(testId)).toBeVisible();
     }
 
