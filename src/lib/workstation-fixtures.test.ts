@@ -21,6 +21,7 @@ import {
   type DashboardResponse,
   type MarketIndexSnapshot,
   type SymbolPriceData,
+  type TradeIdea,
   type WorkstationPosition,
   type WorkstationRisk,
 } from '@/lib/workstation-fixtures';
@@ -599,6 +600,264 @@ describe('symbol prices', () => {
         expect(price.distanceToTriggerPct).toBeNull();
       }
     }
+  });
+});
+
+// ── Trade ideas (derived from watchlist with trigger prices) ────────────
+
+describe('trade ideas', () => {
+  it('default scenario has trade ideas derived from watchlist', () => {
+    const fixtures = getWorkstationFixtures('default');
+    expect(Array.isArray(fixtures.tradeIdeas)).toBe(true);
+    expect(fixtures.tradeIdeas.length).toBeGreaterThan(0);
+    expect(fixtures.tradeIdeas.length).toBeLessThanOrEqual(
+      fixtures.watchlist.length,
+    );
+  });
+
+  it('every trade idea conforms to the TradeIdea shape', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      for (const idea of fixtures.tradeIdeas) {
+        expect(typeof idea.watchlistItemId).toBe('string');
+        expect(idea.watchlistItemId.length).toBeGreaterThan(0);
+        expect(typeof idea.symbol).toBe('string');
+        expect(idea.symbol.length).toBeGreaterThan(0);
+        expect(idea.name === null || typeof idea.name === 'string').toBe(true);
+        expect(['long', 'short']).toContain(idea.direction);
+        expect(
+          typeof idea.setupId === 'string' || idea.setupId === null,
+        ).toBe(true);
+        expect(
+          typeof idea.setupName === 'string' || idea.setupName === null,
+        ).toBe(true);
+        // Entry price must be present and positive
+        expect(typeof idea.entryPrice).toBe('number');
+        expect(Number.isFinite(idea.entryPrice!)).toBe(true);
+        expect(idea.entryPrice!).toBeGreaterThan(0);
+        // Stop price must be present
+        expect(typeof idea.stopPrice).toBe('number');
+        expect(Number.isFinite(idea.stopPrice!)).toBe(true);
+        // Target price may be null
+        expect(
+          typeof idea.targetPrice === 'number' || idea.targetPrice === null,
+        ).toBe(true);
+        if (idea.targetPrice !== null) {
+          expect(Number.isFinite(idea.targetPrice)).toBe(true);
+        }
+        // Risk per share must be present and positive
+        expect(idea.riskPerShare).not.toBeNull();
+        expect(idea.riskPerShare!).toBeGreaterThan(0);
+        // Reward may be null (when target is null)
+        expect(
+          typeof idea.rewardPerShare === 'number' ||
+            idea.rewardPerShare === null,
+        ).toBe(true);
+        // riskRewardRatio: null when data incomplete, a finite number otherwise
+        expect(
+          idea.riskRewardRatio === null ||
+            typeof idea.riskRewardRatio === 'number',
+        ).toBe(true);
+        if (idea.riskRewardRatio !== null) {
+          expect(Number.isFinite(idea.riskRewardRatio)).toBe(true);
+        }
+        // Status must be a valid watchlist status
+        expect(WORKSTATION_WATCHLIST_STATUSES).toContain(idea.status);
+        // lastPrice may be null or a number
+        expect(
+          typeof idea.lastPrice === 'number' || idea.lastPrice === null,
+        ).toBe(true);
+        if (idea.lastPrice !== null) {
+          expect(Number.isFinite(idea.lastPrice)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('entry price matches the watchlist triggerPrice', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      const watchlistById = new Map(
+        fixtures.watchlist.map((w) => [w.id, w]),
+      );
+      for (const idea of fixtures.tradeIdeas) {
+        const item = watchlistById.get(idea.watchlistItemId);
+        expect(item).toBeDefined();
+        expect(idea.entryPrice).toBe(item!.triggerPrice);
+      }
+    }
+  });
+
+  it('stop price matches the watchlist plannedStop', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      const watchlistById = new Map(
+        fixtures.watchlist.map((w) => [w.id, w]),
+      );
+      for (const idea of fixtures.tradeIdeas) {
+        const item = watchlistById.get(idea.watchlistItemId);
+        expect(idea.stopPrice).toBe(item!.plannedStop);
+      }
+    }
+  });
+
+  it('target price matches the watchlist targetPrice', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      const watchlistById = new Map(
+        fixtures.watchlist.map((w) => [w.id, w]),
+      );
+      for (const idea of fixtures.tradeIdeas) {
+        const item = watchlistById.get(idea.watchlistItemId);
+        expect(idea.targetPrice).toBe(item!.targetPrice);
+      }
+    }
+  });
+
+  it('only derives ideas from non-promoted items with trigger prices', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      const qualifying = fixtures.watchlist.filter(
+        (item) =>
+          item.triggerPrice !== null && item.promotedTradeId === null,
+      );
+      expect(fixtures.tradeIdeas.length).toBe(qualifying.length);
+      // Every qualifying item has a corresponding trade idea
+      const ideaIds = new Set(
+        fixtures.tradeIdeas.map((idea) => idea.watchlistItemId),
+      );
+      for (const item of qualifying) {
+        expect(ideaIds.has(item.id)).toBe(true);
+      }
+    }
+  });
+
+  it('no trade idea comes from an item without a trigger price', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      const noTriggerIds = new Set(
+        fixtures.watchlist
+          .filter((item) => item.triggerPrice === null)
+          .map((item) => item.id),
+      );
+      for (const idea of fixtures.tradeIdeas) {
+        expect(noTriggerIds.has(idea.watchlistItemId)).toBe(false);
+      }
+    }
+  });
+
+  it('no trade idea comes from a promoted item', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      const promotedIds = new Set(
+        fixtures.watchlist
+          .filter((item) => item.promotedTradeId !== null)
+          .map((item) => item.id),
+      );
+      for (const idea of fixtures.tradeIdeas) {
+        expect(promotedIds.has(idea.watchlistItemId)).toBe(false);
+      }
+    }
+  });
+
+  it('risk/reward is direction-aware: long risk = entry - stop', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      for (const idea of fixtures.tradeIdeas) {
+        if (idea.direction === 'long' && idea.riskPerShare !== null) {
+          // Tolerance of 0.01 because round2 may differ from raw subtraction
+          expect(idea.riskPerShare).toBeCloseTo(
+            idea.entryPrice! - idea.stopPrice!,
+            1,
+          );
+          if (
+            idea.rewardPerShare !== null &&
+            idea.targetPrice !== null
+          ) {
+            expect(idea.rewardPerShare).toBeCloseTo(
+              idea.targetPrice - idea.entryPrice!,
+              1,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('risk/reward is direction-aware: short risk = stop - entry', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      for (const idea of fixtures.tradeIdeas) {
+        if (idea.direction === 'short' && idea.riskPerShare !== null) {
+          expect(idea.riskPerShare).toBeCloseTo(
+            idea.stopPrice! - idea.entryPrice!,
+            1,
+          );
+          if (
+            idea.rewardPerShare !== null &&
+            idea.targetPrice !== null
+          ) {
+            expect(idea.rewardPerShare).toBeCloseTo(
+              idea.entryPrice! - idea.targetPrice,
+              1,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('riskRewardRatio is rewardPerShare / riskPerShare (when both present)', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      for (const idea of fixtures.tradeIdeas) {
+        if (
+          idea.riskRewardRatio !== null &&
+          idea.rewardPerShare !== null &&
+          idea.riskPerShare !== null &&
+          idea.riskPerShare > 0
+        ) {
+          const expected =
+            Math.round(
+              (idea.rewardPerShare / idea.riskPerShare) * 100,
+            ) / 100;
+          expect(idea.riskRewardRatio).toBeCloseTo(expected, 2);
+        }
+      }
+    }
+  });
+
+  it('setupName resolves from the SETUPS constant', () => {
+    const fixtures = getWorkstationFixtures('default');
+    for (const idea of fixtures.tradeIdeas) {
+      if (idea.setupId !== null) {
+        expect(idea.setupName).not.toBeNull();
+        expect(typeof idea.setupName).toBe('string');
+      }
+    }
+  });
+
+  it('lastPrice matches the corresponding symbolPrices entry', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const fixtures = getWorkstationFixtures(id);
+      for (const idea of fixtures.tradeIdeas) {
+        const price = fixtures.symbolPrices[idea.symbol];
+        expect(price).toBeDefined();
+        expect(idea.lastPrice).toBe(price.lastPrice);
+      }
+    }
+  });
+
+  it('many-watchlist scenario has more trade ideas than default', () => {
+    const many = getWorkstationFixtures('many-watchlist');
+    const def = getWorkstationFixtures('default');
+    expect(many.tradeIdeas.length).toBeGreaterThan(def.tradeIdeas.length);
+  });
+
+  it('zero-positions scenario may have trade ideas (watchlist items exist)', () => {
+    const fixtures = getWorkstationFixtures('zero-positions');
+    expect(fixtures.watchlist.length).toBe(4);
+    expect(Array.isArray(fixtures.tradeIdeas)).toBe(true);
   });
 });
 

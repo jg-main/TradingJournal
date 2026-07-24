@@ -129,6 +129,36 @@ export interface SymbolPriceData {
   distanceToTriggerPct: number | null;
 }
 
+/** A trade idea derived from a watchlist item that has a trigger price and
+ *  hasn't been promoted to a trade yet. Entry/stop/target come directly from
+ *  the watchlist item; risk/reward is computed from those values. */
+export interface TradeIdea {
+  watchlistItemId: string;
+  symbol: string;
+  name: string | null;
+  direction: 'long' | 'short';
+  setupId: string | null;
+  setupName: string | null;
+  /** Entry price — the watchlist triggerPrice. */
+  entryPrice: number | null;
+  /** Stop price — the watchlist plannedStop. */
+  stopPrice: number | null;
+  /** Target price — the watchlist targetPrice. */
+  targetPrice: number | null;
+  /** Absolute risk per share: |entryPrice - stopPrice|, direction-aware.
+   *  Null when entryPrice or stopPrice is null. */
+  riskPerShare: number | null;
+  /** Absolute reward per share: |targetPrice - entryPrice|, direction-aware.
+   *  Null when targetPrice or entryPrice is null. */
+  rewardPerShare: number | null;
+  /** Risk/reward ratio: rewardPerShare / riskPerShare (null when riskPerShare ≤ 0). */
+  riskRewardRatio: number | null;
+  /** Watchlist status at generation time. */
+  status: string;
+  /** Most recent available price for this symbol from symbolPrices. */
+  lastPrice: number | null;
+}
+
 /** Known market indices rendered by the MarketStrip component. */
 export const MARKET_INDEX_SYMBOLS = ['SPX', 'NDX', 'RUT', 'VIX'] as const;
 
@@ -211,6 +241,9 @@ export interface WorkstationFixtures {
   positions: WorkstationPosition[];
   /** Risk-deck data for the RiskPanel (PTD + current-state sections). */
   risk: WorkstationRisk;
+  /** Trade ideas derived from watchlist items with trigger prices
+   *  that haven't been promoted to trades yet. */
+  tradeIdeas: TradeIdea[];
 }
 
 /**
@@ -526,6 +559,65 @@ function buildSymbolPrices(
   }
 
   return result;
+}
+
+/** Derive trade ideas from watchlist items that have a trigger price and
+ *  haven't been promoted to a trade yet. Computes direction-aware risk/reward
+ *  from entry (triggerPrice), stop (plannedStop), and target (targetPrice). */
+function buildTradeIdeas(
+  watchlist: WorkstationWatchlistItem[],
+  symbolPrices: Record<string, SymbolPriceData>,
+): TradeIdea[] {
+  return watchlist
+    .filter((item) => item.triggerPrice !== null && item.promotedTradeId === null)
+    .map((item) => {
+      const price = symbolPrices[item.symbol];
+      const setup = SETUPS.find((s) => s.id === item.setupId);
+      const entryPrice = item.triggerPrice;
+      const stopPrice = item.plannedStop;
+      const targetPrice = item.targetPrice;
+
+      let riskPerShare: number | null = null;
+      let rewardPerShare: number | null = null;
+      let riskRewardRatio: number | null = null;
+
+      if (entryPrice !== null && stopPrice !== null) {
+        // Direction-aware risk: for a long the risk is how far below entry the stop sits.
+        if (item.direction === 'long') {
+          riskPerShare = round2(entryPrice - stopPrice);
+          if (targetPrice !== null) {
+            rewardPerShare = round2(targetPrice - entryPrice);
+          }
+        } else {
+          riskPerShare = round2(stopPrice - entryPrice);
+          if (targetPrice !== null) {
+            rewardPerShare = round2(entryPrice - targetPrice);
+          }
+        }
+        // Guard: riskPerShare may be ≤0 when a stop is placed above a long entry
+        // (data error). Treat that case the same as null — no ratio.
+        if (riskPerShare > 0 && rewardPerShare !== null) {
+          riskRewardRatio = round2(rewardPerShare / riskPerShare);
+        }
+      }
+
+      return {
+        watchlistItemId: item.id,
+        symbol: item.symbol,
+        name: item.name,
+        direction: item.direction,
+        setupId: item.setupId,
+        setupName: setup?.name ?? null,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        riskPerShare,
+        rewardPerShare,
+        riskRewardRatio,
+        status: item.status,
+        lastPrice: price?.lastPrice ?? null,
+      };
+    });
 }
 
 function buildTradeMarkers(
@@ -887,6 +979,7 @@ function buildDefaultScenario(): WorkstationFixtures {
   });
 
   const watchlist = buildWatchlistItems(12);
+  const symbolPrices = buildSymbolPrices(watchlist, 'default');
 
   const positions: WorkstationPosition[] = [
     {
@@ -960,7 +1053,8 @@ function buildDefaultScenario(): WorkstationFixtures {
     dashboardV2,
     watchlist,
     marketIndices: buildMarketIndices('default'),
-    symbolPrices: buildSymbolPrices(watchlist, 'default'),
+    symbolPrices,
+    tradeIdeas: buildTradeIdeas(watchlist, symbolPrices),
     positions,
     risk,
   };
@@ -1011,6 +1105,7 @@ function buildZeroPositionsScenario(): WorkstationFixtures {
   };
 
   const watchlist = buildWatchlistItems(4);
+  const symbolPrices = buildSymbolPrices(watchlist, 'zero-positions');
 
   return {
     ...base,
@@ -1019,7 +1114,8 @@ function buildZeroPositionsScenario(): WorkstationFixtures {
     dashboardV2,
     watchlist,
     marketIndices: buildMarketIndices('zero-positions'),
-    symbolPrices: buildSymbolPrices(watchlist, 'zero-positions'),
+    symbolPrices,
+    tradeIdeas: buildTradeIdeas(watchlist, symbolPrices),
     positions: [],
     risk: {
       ptd: {
@@ -1159,6 +1255,7 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
   });
 
   const watchlist = buildWatchlistItems(8);
+  const symbolPrices = buildSymbolPrices(watchlist, 'large-drawdown');
 
   const positions: WorkstationPosition[] = [
     {
@@ -1200,7 +1297,8 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
     dashboardV2,
     watchlist,
     marketIndices: buildMarketIndices('large-drawdown'),
-    symbolPrices: buildSymbolPrices(watchlist, 'large-drawdown'),
+    symbolPrices,
+    tradeIdeas: buildTradeIdeas(watchlist, symbolPrices),
     positions,
     risk: {
       ptd: {
@@ -1224,13 +1322,15 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
 function buildManyWatchlistScenario(): WorkstationFixtures {
   const base = buildDefaultScenario();
   const watchlist = buildWatchlistItems(28);
+  const symbolPrices = buildSymbolPrices(watchlist, 'many-watchlist');
 
   return {
     ...base,
     scenario: 'many-watchlist',
     watchlist,
     marketIndices: buildMarketIndices('many-watchlist'),
-    symbolPrices: buildSymbolPrices(watchlist, 'many-watchlist'),
+    symbolPrices,
+    tradeIdeas: buildTradeIdeas(watchlist, symbolPrices),
     positions: base.positions,
     risk: base.risk,
   };
