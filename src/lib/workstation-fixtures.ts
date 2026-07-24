@@ -104,6 +104,34 @@ export const WORKSTATION_WATCHLIST_STATUSES = [
   'expired',
 ] as const;
 
+/** Snapshot of a major market index at the current minute. */
+export interface MarketIndexSnapshot {
+  symbol: string;
+  lastPrice: number;
+  change: number;
+  changePct: number;
+}
+
+/** Per-symbol price data for enhanced watchlist rendering.
+ *  gap / gapPct: difference between lastPrice and previousClose.
+ *  distanceToTrigger / distanceToTriggerPct: how far lastPrice is from triggerPrice,
+ *  expressed as absolute percentages so components can apply proximity CSS classes
+ *  (ws-approaching < 2%, ws-urgent < 0.5%) without recomputing.
+ */
+export interface SymbolPriceData {
+  symbol: string;
+  lastPrice: number;
+  previousClose: number;
+  gap: number;
+  gapPct: number;
+  triggerPrice: number | null;
+  distanceToTrigger: number | null;
+  distanceToTriggerPct: number | null;
+}
+
+/** Known market indices rendered by the MarketStrip component. */
+export const MARKET_INDEX_SYMBOLS = ['SPX', 'NDX', 'RUT', 'VIX'] as const;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Scenarios
 // ═══════════════════════════════════════════════════════════════════════════
@@ -128,6 +156,10 @@ export interface WorkstationFixtures {
   dashboard: DashboardResponse;
   dashboardV2: DashboardV2Response;
   watchlist: WorkstationWatchlistItem[];
+  /** Market index snapshots (SPX, NDX, RUT, VIX) for the MarketStrip. */
+  marketIndices: MarketIndexSnapshot[];
+  /** Per-symbol price data keyed by symbol for the WatchlistPanel. */
+  symbolPrices: Record<string, SymbolPriceData>;
 }
 
 /**
@@ -322,6 +354,111 @@ function buildWatchlistItems(count: number): WorkstationWatchlistItem[] {
   }
 
   return items;
+}
+
+/**
+ * Generate deterministic market index snapshots (SPX, NDX, RUT, VIX).
+ * Each scenario gets its own seed so market conditions match scenario mood
+ * (bullish for default, flat for zero-positions, bearish for large-drawdown).
+ */
+function buildMarketIndices(scenario: WorkstationScenarioId): MarketIndexSnapshot[] {
+  const SEEDS: Record<WorkstationScenarioId, number> = {
+    default: 100,
+    'zero-positions': 200,
+    'large-drawdown': 300,
+    'many-watchlist': 400,
+  };
+  const rand = mulberry32(SEEDS[scenario]);
+
+  // Base prices: [SPX, NDX, RUT, VIX]
+  const bases: { symbol: string; basePrice: number; tickSize: number; volatilityPct: number }[] = [
+    { symbol: 'SPX', basePrice: 5700, tickSize: 0.1, volatilityPct: 0.012 },
+    { symbol: 'NDX', basePrice: 20000, tickSize: 0.25, volatilityPct: 0.015 },
+    { symbol: 'RUT', basePrice: 2100, tickSize: 0.01, volatilityPct: 0.018 },
+    { symbol: 'VIX', basePrice: 16, tickSize: 0.01, volatilityPct: 0.08 },
+  ];
+
+  // Scenario-specific drift multipliers
+  const driftMultipliers: Record<WorkstationScenarioId, number> = {
+    default: 0.3,
+    'zero-positions': 0.0,
+    'large-drawdown': -0.8,
+    'many-watchlist': 0.25,
+  };
+  const driftMul = driftMultipliers[scenario];
+
+  return bases.map(({ symbol, basePrice, volatilityPct }) => {
+    const u1 = Math.max(rand(), 1e-9);
+    const u2 = rand();
+    const normal = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const changePct = round2(normal * volatilityPct * 100 + driftMul * 0.3);
+    const change = round2(basePrice * (changePct / 100));
+    const lastPrice = round2(basePrice + change);
+
+    return { symbol, lastPrice, change, changePct };
+  });
+}
+
+/**
+ * Generate deterministic per-symbol price data from a watchlist.
+ * Derives lastPrice around each item's keyLevel (or a random base if null),
+ * computes a believable previousClose, and computes gap + distance-to-trigger.
+ *
+ * The distanceToTriggerPct is stored as an absolute percentage so the
+ * WatchlistPanel can apply `ws-approaching` (< 2%) and `ws-urgent` (< 0.5%)
+ * CSS classes without recalculating.
+ */
+function buildSymbolPrices(
+  watchlist: WorkstationWatchlistItem[],
+  scenario: WorkstationScenarioId,
+): Record<string, SymbolPriceData> {
+  const SEEDS: Record<WorkstationScenarioId, number> = {
+    default: 500,
+    'zero-positions': 600,
+    'large-drawdown': 700,
+    'many-watchlist': 800,
+  };
+  const rand = mulberry32(SEEDS[scenario]);
+
+  const result: Record<string, SymbolPriceData> = {};
+
+  for (const item of watchlist) {
+    // Anchor around keyLevel (or a fallback range if missing)
+    const anchor = item.keyLevel ?? round2(50 + rand() * 200);
+    // Small random jitter: ±2% around anchor to simulate intraday movement
+    const jitter = round2(anchor * (rand() - 0.5) * 0.04);
+    const lastPrice = round2(anchor + jitter);
+
+    // Previous close: offset from last price by -1.5% to +1.5%
+    const prevCloseJitter = round2(anchor * (rand() - 0.5) * 0.03);
+    const previousClose = round2(anchor + prevCloseJitter);
+
+    const gap = round2(lastPrice - previousClose);
+    const gapPct = previousClose !== 0
+      ? round2((gap / previousClose) * 100)
+      : 0;
+
+    const triggerPrice = item.triggerPrice;
+    const distanceToTrigger = triggerPrice !== null
+      ? round2(lastPrice - triggerPrice)
+      : null;
+    const distanceToTriggerPct = triggerPrice !== null && triggerPrice !== 0
+      ? round2(Math.abs((distanceToTrigger! / triggerPrice) * 100))
+      : null;
+
+    result[item.symbol] = {
+      symbol: item.symbol,
+      lastPrice,
+      previousClose,
+      gap,
+      gapPct,
+      triggerPrice,
+      distanceToTrigger,
+      distanceToTriggerPct,
+    };
+  }
+
+  return result;
 }
 
 function buildTradeMarkers(
@@ -682,12 +819,16 @@ function buildDefaultScenario(): WorkstationFixtures {
     },
   });
 
+  const watchlist = buildWatchlistItems(12);
+
   return {
     scenario: 'default',
     account: { ...FIXTURE_ACCOUNT },
     dashboard,
     dashboardV2,
-    watchlist: buildWatchlistItems(12),
+    watchlist,
+    marketIndices: buildMarketIndices('default'),
+    symbolPrices: buildSymbolPrices(watchlist, 'default'),
   };
 }
 
@@ -735,12 +876,16 @@ function buildZeroPositionsScenario(): WorkstationFixtures {
     accountOnlyExecutionCount: 0,
   };
 
+  const watchlist = buildWatchlistItems(4);
+
   return {
     ...base,
     scenario: 'zero-positions',
     dashboard,
     dashboardV2,
-    watchlist: buildWatchlistItems(4),
+    watchlist,
+    marketIndices: buildMarketIndices('zero-positions'),
+    symbolPrices: buildSymbolPrices(watchlist, 'zero-positions'),
   };
 }
 
@@ -862,21 +1007,29 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
     },
   });
 
+  const watchlist = buildWatchlistItems(8);
+
   return {
     scenario: 'large-drawdown',
     account: { ...FIXTURE_ACCOUNT },
     dashboard,
     dashboardV2,
-    watchlist: buildWatchlistItems(8),
+    watchlist,
+    marketIndices: buildMarketIndices('large-drawdown'),
+    symbolPrices: buildSymbolPrices(watchlist, 'large-drawdown'),
   };
 }
 
 function buildManyWatchlistScenario(): WorkstationFixtures {
   const base = buildDefaultScenario();
+  const watchlist = buildWatchlistItems(28);
+
   return {
     ...base,
     scenario: 'many-watchlist',
-    watchlist: buildWatchlistItems(28),
+    watchlist,
+    marketIndices: buildMarketIndices('many-watchlist'),
+    symbolPrices: buildSymbolPrices(watchlist, 'many-watchlist'),
   };
 }
 

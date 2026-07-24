@@ -17,7 +17,10 @@ import {
   warnFixtureMode,
   WORKSTATION_SCENARIO_IDS,
   WORKSTATION_WATCHLIST_STATUSES,
+  MARKET_INDEX_SYMBOLS,
   type DashboardResponse,
+  type MarketIndexSnapshot,
+  type SymbolPriceData,
 } from '@/lib/workstation-fixtures';
 import type { DashboardV2Response } from '@/lib/accounting/dashboard-v2';
 
@@ -75,6 +78,56 @@ function expectValidDashboard(dashboard: DashboardResponse): void {
   }
 }
 
+function expectValidMarketIndices(indices: MarketIndexSnapshot[]): void {
+  expect(indices).toHaveLength(MARKET_INDEX_SYMBOLS.length);
+  const symbols = indices.map((i) => i.symbol);
+  for (const sym of MARKET_INDEX_SYMBOLS) {
+    expect(symbols).toContain(sym);
+  }
+  for (const idx of indices) {
+    expect(Number.isFinite(idx.lastPrice)).toBe(true);
+    expect(idx.lastPrice).toBeGreaterThan(0);
+    expect(Number.isFinite(idx.change)).toBe(true);
+    expect(Number.isFinite(idx.changePct)).toBe(true);
+    // changePct should respect the sign of change
+    if (idx.change > 0) expect(idx.changePct).toBeGreaterThanOrEqual(0);
+    if (idx.change < 0) expect(idx.changePct).toBeLessThanOrEqual(0);
+  }
+}
+
+function expectValidSymbolPrices(
+  prices: Record<string, SymbolPriceData>,
+  watchlist: { symbol: string }[],
+): void {
+  // Every watchlist symbol has a price entry
+  for (const item of watchlist) {
+    const price = prices[item.symbol];
+    expect(price, `missing price for ${item.symbol}`).toBeDefined();
+    expect(price.symbol).toBe(item.symbol);
+    expect(Number.isFinite(price.lastPrice)).toBe(true);
+    expect(price.lastPrice).toBeGreaterThan(0);
+    expect(Number.isFinite(price.previousClose)).toBe(true);
+    expect(Number.isFinite(price.gap)).toBe(true);
+    expect(Number.isFinite(price.gapPct)).toBe(true);
+    // gap consistency: gap = lastPrice - previousClose
+    expect(price.gap).toBeCloseTo(price.lastPrice - price.previousClose, 1);
+    // If triggerPrice is set, distanceToTrigger must be set
+    if (price.triggerPrice !== null) {
+      expect(price.distanceToTrigger).not.toBeNull();
+      expect(price.distanceToTriggerPct).not.toBeNull();
+      expect(Number.isFinite(price.distanceToTrigger!)).toBe(true);
+      expect(Number.isFinite(price.distanceToTriggerPct!)).toBe(true);
+      // distanceToTriggerPct is absolute
+      expect(price.distanceToTriggerPct!).toBeGreaterThanOrEqual(0);
+      // distanceToTrigger consistency
+      expect(price.distanceToTrigger!).toBeCloseTo(
+        price.lastPrice - price.triggerPrice!,
+        1,
+      );
+    }
+  }
+}
+
 function expectValidDashboardV2(v2: DashboardV2Response): void {
   expect(v2.account.id).toBeTruthy();
   expect(v2.account.currency).toBe('USD');
@@ -116,6 +169,8 @@ describe('scenario registry', () => {
       expectValidDashboard(fixtures.dashboard);
       expectValidDashboardV2(fixtures.dashboardV2);
       expect(fixtures.watchlist.length).toBeGreaterThan(0);
+      expectValidMarketIndices(fixtures.marketIndices);
+      expectValidSymbolPrices(fixtures.symbolPrices, fixtures.watchlist);
     }
   });
 });
@@ -275,7 +330,157 @@ describe('negative inputs', () => {
   });
 });
 
-// ── Fixture-mode observability ───────────────────────────────────────────
+// ── Market indices ──────────────────────────────────────────────────────
+
+describe('market indices', () => {
+  it('exposes the four canonical index symbols', () => {
+    expect(MARKET_INDEX_SYMBOLS).toEqual(['SPX', 'NDX', 'RUT', 'VIX']);
+  });
+
+  it('generates realistic index values for the default scenario', () => {
+    const { marketIndices } = getWorkstationFixtures('default');
+    expectValidMarketIndices(marketIndices);
+    const spx = marketIndices.find((i) => i.symbol === 'SPX')!;
+    expect(spx.lastPrice).toBeGreaterThan(5000);
+    expect(spx.lastPrice).toBeLessThan(6500);
+    const ndx = marketIndices.find((i) => i.symbol === 'NDX')!;
+    expect(ndx.lastPrice).toBeGreaterThan(18000);
+    expect(ndx.lastPrice).toBeLessThan(22000);
+    const rut = marketIndices.find((i) => i.symbol === 'RUT')!;
+    expect(rut.lastPrice).toBeGreaterThan(1800);
+    expect(rut.lastPrice).toBeLessThan(2500);
+    const vix = marketIndices.find((i) => i.symbol === 'VIX')!;
+    expect(vix.lastPrice).toBeGreaterThan(8);
+    expect(vix.lastPrice).toBeLessThan(35);
+  });
+
+  it('generates bearish index values for large-drawdown scenario', () => {
+    const { marketIndices } = getWorkstationFixtures('large-drawdown');
+    expectValidMarketIndices(marketIndices);
+    // In a drawdown scenario, the VIX should be elevated
+    const vix = marketIndices.find((i) => i.symbol === 'VIX')!;
+    expect(vix.lastPrice).toBeGreaterThan(12);
+  });
+
+  it('generates flat index values for zero-positions scenario', () => {
+    const { marketIndices } = getWorkstationFixtures('zero-positions');
+    expectValidMarketIndices(marketIndices);
+    // Changes should be near zero (drift multiplier is 0)
+    const totalAbsChange = marketIndices.reduce(
+      (sum, i) => sum + Math.abs(i.changePct),
+      0,
+    );
+    expect(totalAbsChange).toBeLessThan(10);
+  });
+});
+
+// ── Symbol prices ───────────────────────────────────────────────────────
+
+describe('symbol prices', () => {
+  it('generates price data for every watchlist symbol in default scenario', () => {
+    const fixtures = getWorkstationFixtures('default');
+    expectValidSymbolPrices(fixtures.symbolPrices, fixtures.watchlist);
+    // Price map should have exactly one entry per watchlist item
+    expect(Object.keys(fixtures.symbolPrices)).toHaveLength(
+      fixtures.watchlist.length,
+    );
+  });
+
+  it('generates realistic price ranges around key levels', () => {
+    const fixtures = getWorkstationFixtures('default');
+    for (const item of fixtures.watchlist) {
+      const price = fixtures.symbolPrices[item.symbol];
+      expect(price).toBeDefined();
+      if (item.keyLevel !== null) {
+        // lastPrice should be within ±5% of keyLevel
+        const deviation = Math.abs(price.lastPrice - item.keyLevel) / item.keyLevel;
+        expect(deviation).toBeLessThan(0.05);
+      }
+    }
+  });
+
+  it('preserves trigger price from watchlist items', () => {
+    const fixtures = getWorkstationFixtures('many-watchlist');
+    for (const item of fixtures.watchlist) {
+      const price = fixtures.symbolPrices[item.symbol];
+      expect(price.triggerPrice).toBe(item.triggerPrice);
+    }
+  });
+
+  it('generates price data for the many-watchlist scenario (28 entries)', () => {
+    const fixtures = getWorkstationFixtures('many-watchlist');
+    expect(Object.keys(fixtures.symbolPrices)).toHaveLength(28);
+    expectValidSymbolPrices(fixtures.symbolPrices, fixtures.watchlist);
+  });
+
+  it('generates price data for the zero-positions scenario (4 entries)', () => {
+    const fixtures = getWorkstationFixtures('zero-positions');
+    expect(Object.keys(fixtures.symbolPrices)).toHaveLength(4);
+    expectValidSymbolPrices(fixtures.symbolPrices, fixtures.watchlist);
+  });
+
+  it('computes positive and negative gap values across symbols', () => {
+    const fixtures = getWorkstationFixtures('many-watchlist');
+    const gaps = Object.values(fixtures.symbolPrices).map((p) => p.gap);
+    const positiveGaps = gaps.filter((g) => g > 0);
+    const negativeGaps = gaps.filter((g) => g < 0);
+    // With 28 entries and random generation, both signs should appear
+    expect(positiveGaps.length).toBeGreaterThan(0);
+    expect(negativeGaps.length).toBeGreaterThan(0);
+  });
+
+  it('computes distanceToTriggerPct as an absolute percentage', () => {
+    const fixtures = getWorkstationFixtures('default');
+    for (const price of Object.values(fixtures.symbolPrices)) {
+      if (price.distanceToTriggerPct !== null) {
+        expect(price.distanceToTriggerPct).toBeGreaterThanOrEqual(0);
+        expect(Number.isFinite(price.distanceToTriggerPct)).toBe(true);
+      }
+    }
+  });
+
+  it('leaves distanceToTrigger null when triggerPrice is null', () => {
+    const fixtures = getWorkstationFixtures('many-watchlist');
+    for (const item of fixtures.watchlist) {
+      if (item.triggerPrice === null) {
+        const price = fixtures.symbolPrices[item.symbol];
+        expect(price.distanceToTrigger).toBeNull();
+        expect(price.distanceToTriggerPct).toBeNull();
+      }
+    }
+  });
+});
+
+// ── Determinism extension ───────────────────────────────────────────────
+
+describe('determinism (new fields)', () => {
+  it('produces identical marketIndices across calls', () => {
+    const a = getWorkstationFixtures('default');
+    const b = getWorkstationFixtures('default');
+    expect(a.marketIndices).toEqual(b.marketIndices);
+  });
+
+  it('produces identical symbolPrices across calls', () => {
+    const a = getWorkstationFixtures('default');
+    const b = getWorkstationFixtures('default');
+    expect(a.symbolPrices).toEqual(b.symbolPrices);
+  });
+
+  it('different scenarios produce different market indices', () => {
+    const def = getWorkstationFixtures('default');
+    const dd = getWorkstationFixtures('large-drawdown');
+    expect(def.marketIndices).not.toEqual(dd.marketIndices);
+  });
+
+  it('different scenarios produce different symbol prices', () => {
+    const def = getWorkstationFixtures('default');
+    const zp = getWorkstationFixtures('zero-positions');
+    // Different watchlist sizes → different symbolPrices
+    expect(Object.keys(def.symbolPrices)).not.toEqual(
+      Object.keys(zp.symbolPrices),
+    );
+  });
+});
 
 describe('warnFixtureMode', () => {
   afterEach(() => {
