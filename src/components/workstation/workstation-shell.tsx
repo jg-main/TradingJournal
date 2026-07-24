@@ -13,6 +13,7 @@ import { useWorkstation } from './workstation-context';
 import { PositionsPanel } from './positions-panel';
 import { RiskPanel } from './risk-panel';
 import { WatchlistPanel } from './watchlist-panel';
+import { SetupsPanel } from './setups-panel';
 
 function fmtCurrency(value: number | string | null | undefined): string {
   if (value === null || value === undefined) return '—';
@@ -175,33 +176,8 @@ export function WorkstationShell() {
       {/* Risk — PTD/current-state visual separation */}
       <RiskPanel />
 
-      {/* Insights / activity */}
-      <Panel
-        area="insights"
-        title="Insights"
-        meta={`${dashboard.attentionInsights.insights.length} flags`}
-      >
-        <div className="ws-stat-row">
-          <span>Trades analyzed</span>
-          <span className="ws-num">{dashboard.attentionInsights.tradeCount}</span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Setups ranked</span>
-          <span className="ws-num">{dashboard.setupRanking.length}</span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Avg Win</span>
-          <span className="ws-num ws-pos">{fmtCurrency(kpis.avgWin)}</span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Avg Loss</span>
-          <span className="ws-num ws-neg">{fmtCurrency(kpis.avgLoss)}</span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Avg Grade</span>
-          <span className="ws-num">{fmtFixed(kpis.avgGrade, 1)}</span>
-        </div>
-      </Panel>
+      {/* Setups & Ideas — setup ranking, attention insights, trade ideas */}
+      <SetupsPanel />
     </main>
   );
 }
