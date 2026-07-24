@@ -132,6 +132,53 @@ export interface SymbolPriceData {
 /** Known market indices rendered by the MarketStrip component. */
 export const MARKET_INDEX_SYMBOLS = ['SPX', 'NDX', 'RUT', 'VIX'] as const;
 
+/**
+ * A single open position enriched with risk-deck data for the
+ * PositionsPanel 7-column terminal-dense table.
+ */
+export interface WorkstationPosition {
+  instrumentId: string;
+  symbol: string;
+  direction: string | null;
+  quantity: string;
+  averageCost: string;
+  markStatus: string;
+  markPrice: string | null;
+  markedValue: string | null;
+  unrealizedPnl: string | null;
+  markTimestamp: string | null;
+  markAgeMinutes: number | null;
+  /** Initial risk amount (1R) for this position in account currency. */
+  initialRiskAmount: string | null;
+  /** R-multiple: unrealizedPnl / initialRiskAmount, formatted to 2 decimal places.
+   *  Null when either operand is null or initialRiskAmount <= 0. */
+  rMultiple: string | null;
+}
+
+/**
+ * Risk-deck data consumed by the RiskPanel with PTD and current-state
+ * visual sections.
+ */
+export interface WorkstationRisk {
+  /** Period-to-Date (PTD) metrics. */
+  ptd: {
+    realizedPnl: string;
+    realizedFees: string;
+    drawdown: string | null;
+    drawdownPct: string | null;
+  };
+  /** Current-state metrics. */
+  current: {
+    openPnl: string;
+    openRisk: string;
+    portfolioHeat: string | null;
+    missingStops: number;
+    positionsWithStop: number;
+    /** Gross exposure as a canonical decimal string. */
+    exposure: string;
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Scenarios
 // ═══════════════════════════════════════════════════════════════════════════
@@ -160,6 +207,10 @@ export interface WorkstationFixtures {
   marketIndices: MarketIndexSnapshot[];
   /** Per-symbol price data keyed by symbol for the WatchlistPanel. */
   symbolPrices: Record<string, SymbolPriceData>;
+  /** Open positions enriched with risk-deck data for the PositionsPanel. */
+  positions: WorkstationPosition[];
+  /** Risk-deck data for the RiskPanel (PTD + current-state sections). */
+  risk: WorkstationRisk;
 }
 
 /**
@@ -194,6 +245,22 @@ function mulberry32(seed: number): () => number {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * Compute R-multiple from unrealized P&L and initial risk amount.
+ * Returns null when either value is null, non-finite, or when
+ * initialRiskAmount <= 0 (the guard from the trade-calc R-multiple contract).
+ */
+function computeRMultiple(
+  unrealizedPnl: string | null,
+  initialRiskAmount: string | null,
+): string | null {
+  if (unrealizedPnl === null || initialRiskAmount === null) return null;
+  const pnl = parseFloat(unrealizedPnl);
+  const risk = parseFloat(initialRiskAmount);
+  if (!isFinite(pnl) || !isFinite(risk) || risk <= 0) return null;
+  return (pnl / risk).toFixed(2);
 }
 
 /** Format a Date as YYYY-MM-DD (UTC). */
@@ -821,6 +888,71 @@ function buildDefaultScenario(): WorkstationFixtures {
 
   const watchlist = buildWatchlistItems(12);
 
+  const positions: WorkstationPosition[] = [
+    {
+      instrumentId: 'inst-nvda',
+      symbol: 'NVDA',
+      direction: 'long',
+      quantity: '120',
+      averageCost: '128.40',
+      markStatus: 'fresh',
+      markPrice: '131.85',
+      markedValue: '15822.00',
+      unrealizedPnl: '414.00',
+      markTimestamp: '2026-07-17T19:58:00.000Z',
+      markAgeMinutes: 17,
+      initialRiskAmount: '300.00',
+      rMultiple: computeRMultiple('414.00', '300.00'),
+    },
+    {
+      instrumentId: 'inst-amd',
+      symbol: 'AMD',
+      direction: 'long',
+      quantity: '80',
+      averageCost: '112.10',
+      markStatus: 'fresh',
+      markPrice: '118.42',
+      markedValue: '9473.60',
+      unrealizedPnl: '505.60',
+      markTimestamp: '2026-07-17T19:58:00.000Z',
+      markAgeMinutes: 17,
+      initialRiskAmount: '250.00',
+      rMultiple: computeRMultiple('505.60', '250.00'),
+    },
+    {
+      instrumentId: 'inst-tsla',
+      symbol: 'TSLA',
+      direction: 'short',
+      quantity: '25',
+      averageCost: '246.80',
+      markStatus: 'stale',
+      markPrice: '249.93',
+      markedValue: '6248.25',
+      unrealizedPnl: '-78.25',
+      markTimestamp: '2026-07-16T20:00:00.000Z',
+      markAgeMinutes: 1455,
+      initialRiskAmount: '200.00',
+      rMultiple: computeRMultiple('-78.25', '200.00'),
+    },
+  ];
+
+  const risk: WorkstationRisk = {
+    ptd: {
+      realizedPnl: '11596.40',
+      realizedFees: '512.30',
+      drawdown: String(lastDrawdown.drawdownAmount.toFixed(2)),
+      drawdownPct: String((lastDrawdown.drawdownPct * 100).toFixed(2)),
+    },
+    current: {
+      openPnl: '841.35',
+      openRisk: '1450.00',
+      portfolioHeat: '2.80',
+      missingStops: 1,
+      positionsWithStop: 2,
+      exposure: '31543.85',
+    },
+  };
+
   return {
     scenario: 'default',
     account: { ...FIXTURE_ACCOUNT },
@@ -829,6 +961,8 @@ function buildDefaultScenario(): WorkstationFixtures {
     watchlist,
     marketIndices: buildMarketIndices('default'),
     symbolPrices: buildSymbolPrices(watchlist, 'default'),
+    positions,
+    risk,
   };
 }
 
@@ -886,6 +1020,23 @@ function buildZeroPositionsScenario(): WorkstationFixtures {
     watchlist,
     marketIndices: buildMarketIndices('zero-positions'),
     symbolPrices: buildSymbolPrices(watchlist, 'zero-positions'),
+    positions: [],
+    risk: {
+      ptd: {
+        realizedPnl: '12437.75',
+        realizedFees: '512.30',
+        drawdown: '0.00',
+        drawdownPct: '0.00',
+      },
+      current: {
+        openPnl: '0.00',
+        openRisk: '0.00',
+        portfolioHeat: '0.00',
+        missingStops: 0,
+        positionsWithStop: 0,
+        exposure: '0.00',
+      },
+    },
   };
 }
 
@@ -1009,6 +1160,39 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
 
   const watchlist = buildWatchlistItems(8);
 
+  const positions: WorkstationPosition[] = [
+    {
+      instrumentId: 'inst-nvda',
+      symbol: 'NVDA',
+      direction: 'long',
+      quantity: '120',
+      averageCost: '128.40',
+      markStatus: 'missing',
+      markPrice: null,
+      markedValue: null,
+      unrealizedPnl: null,
+      markTimestamp: null,
+      markAgeMinutes: null,
+      initialRiskAmount: '350.00',
+      rMultiple: computeRMultiple(null, '350.00'),
+    },
+    {
+      instrumentId: 'inst-amd',
+      symbol: 'AMD',
+      direction: 'long',
+      quantity: '80',
+      averageCost: '112.10',
+      markStatus: 'missing',
+      markPrice: null,
+      markedValue: null,
+      unrealizedPnl: null,
+      markTimestamp: null,
+      markAgeMinutes: null,
+      initialRiskAmount: '280.00',
+      rMultiple: computeRMultiple(null, '280.00'),
+    },
+  ];
+
   return {
     scenario: 'large-drawdown',
     account: { ...FIXTURE_ACCOUNT },
@@ -1017,6 +1201,23 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
     watchlist,
     marketIndices: buildMarketIndices('large-drawdown'),
     symbolPrices: buildSymbolPrices(watchlist, 'large-drawdown'),
+    positions,
+    risk: {
+      ptd: {
+        realizedPnl: '-8005.20',
+        realizedFees: '512.30',
+        drawdown: String(worstDrawdown.drawdownAmount.toFixed(2)),
+        drawdownPct: String((worstDrawdown.drawdownPct * 100).toFixed(2)),
+      },
+      current: {
+        openPnl: '-1234.80',
+        openRisk: '2100.00',
+        portfolioHeat: '5.15',
+        missingStops: 2,
+        positionsWithStop: 0,
+        exposure: '22549.60',
+      },
+    },
   };
 }
 
@@ -1030,6 +1231,8 @@ function buildManyWatchlistScenario(): WorkstationFixtures {
     watchlist,
     marketIndices: buildMarketIndices('many-watchlist'),
     symbolPrices: buildSymbolPrices(watchlist, 'many-watchlist'),
+    positions: base.positions,
+    risk: base.risk,
   };
 }
 

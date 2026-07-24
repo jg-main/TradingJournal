@@ -21,6 +21,8 @@ import {
   type DashboardResponse,
   type MarketIndexSnapshot,
   type SymbolPriceData,
+  type WorkstationPosition,
+  type WorkstationRisk,
 } from '@/lib/workstation-fixtures';
 import type { DashboardV2Response } from '@/lib/accounting/dashboard-v2';
 
@@ -288,6 +290,143 @@ describe('many-watchlist scenario', () => {
   });
 });
 
+// ── Workstation positions ───────────────────────────────────────────────
+
+describe('workstation positions', () => {
+  it('default scenario has 3 positions with R-multiples', () => {
+    const { positions } = getWorkstationFixtures('default');
+    expect(positions).toHaveLength(3);
+    for (const pos of positions) {
+      expect(pos.symbol).toBeTruthy();
+      expect(pos.direction).toBeTruthy();
+      expect(pos.initialRiskAmount).toBeTruthy();
+      expect(pos.rMultiple).not.toBeNull();
+      expect(pos.rMultiple!).toMatch(/^-?\d+\.\d{2}$/);
+    }
+    // Verify computed R-multiple values against fixture data.
+    expect(positions[0].symbol).toBe('NVDA');
+    expect(positions[0].initialRiskAmount).toBe('300.00');
+    expect(positions[0].rMultiple).toBe('1.38');
+    expect(positions[1].symbol).toBe('AMD');
+    expect(positions[1].initialRiskAmount).toBe('250.00');
+    expect(positions[1].rMultiple).toBe('2.02');
+    expect(positions[2].symbol).toBe('TSLA');
+    expect(positions[2].initialRiskAmount).toBe('200.00');
+    expect(positions[2].rMultiple).toBe('-0.39');
+  });
+
+  it('zero-positions scenario has empty positions array', () => {
+    const { positions } = getWorkstationFixtures('zero-positions');
+    expect(positions).toEqual([]);
+  });
+
+  it('large-drawdown scenario has 2 positions with null rMultiples (missing marks)', () => {
+    const { positions } = getWorkstationFixtures('large-drawdown');
+    expect(positions).toHaveLength(2);
+    for (const pos of positions) {
+      expect(pos.markStatus).toBe('missing');
+      expect(pos.markPrice).toBeNull();
+      expect(pos.markedValue).toBeNull();
+      expect(pos.unrealizedPnl).toBeNull();
+      // rMultiple is null because unrealizedPnl is null (cannot compute)
+      expect(pos.rMultiple).toBeNull();
+      // initialRiskAmount is still known — risk exists even without a mark
+      expect(pos.initialRiskAmount).not.toBeNull();
+    }
+  });
+
+  it('many-watchlist scenario positions match default', () => {
+    const many = getWorkstationFixtures('many-watchlist');
+    const def = getWorkstationFixtures('default');
+    expect(many.positions).toEqual(def.positions);
+  });
+
+  it('every position has the 7 canonical columns the table needs', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const { positions } = getWorkstationFixtures(id);
+      for (const pos of positions) {
+        expect(typeof pos.symbol).toBe('string');
+        expect(['long', 'short', null]).toContain(pos.direction);
+        expect(typeof pos.quantity).toBe('string');
+        expect(typeof pos.averageCost).toBe('string');
+        expect(['fresh', 'stale', 'missing']).toContain(pos.markStatus);
+        expect(typeof pos.unrealizedPnl === 'string' || pos.unrealizedPnl === null).toBe(true);
+        // rMultiple: null-safe column — null when data is missing, string otherwise
+        expect(pos.rMultiple === null || typeof pos.rMultiple === 'string').toBe(true);
+        if (pos.rMultiple !== null) {
+          expect(pos.rMultiple).toMatch(/^-?\d+\.\d{2}$/);
+        }
+      }
+    }
+  });
+});
+
+// ── Workstation risk ────────────────────────────────────────────────────
+
+describe('workstation risk', () => {
+  it('default scenario has PTD and current risk sections', () => {
+    const { risk } = getWorkstationFixtures('default');
+    expect(risk.ptd.realizedPnl).toBe('11596.40');
+    expect(risk.ptd.realizedFees).toBe('512.30');
+    expect(risk.ptd.drawdown).not.toBeNull();
+    expect(risk.ptd.drawdownPct).not.toBeNull();
+    expect(risk.current.openPnl).toBe('841.35');
+    expect(risk.current.openRisk).toBe('1450.00');
+    expect(risk.current.portfolioHeat).not.toBeNull();
+    expect(risk.current.missingStops).toBe(1);
+    expect(risk.current.positionsWithStop).toBe(2);
+    expect(risk.current.exposure).toBe('31543.85');
+  });
+
+  it('zero-positions scenario has zeroed risk metrics', () => {
+    const { risk } = getWorkstationFixtures('zero-positions');
+    expect(risk.current.openPnl).toBe('0.00');
+    expect(risk.current.openRisk).toBe('0.00');
+    expect(risk.current.portfolioHeat).toBe('0.00');
+    expect(risk.current.missingStops).toBe(0);
+    expect(risk.current.positionsWithStop).toBe(0);
+    expect(risk.current.exposure).toBe('0.00');
+    expect(risk.ptd.drawdown).toBe('0.00');
+    expect(risk.ptd.drawdownPct).toBe('0.00');
+  });
+
+  it('large-drawdown scenario has negative risk metrics', () => {
+    const { risk } = getWorkstationFixtures('large-drawdown');
+    expect(risk.current.openPnl).toBe('-1234.80');
+    expect(parseFloat(risk.ptd.drawdown!)).toBeLessThan(0);
+    expect(parseFloat(risk.ptd.drawdownPct!)).toBeLessThan(0);
+    expect(risk.current.missingStops).toBe(2);
+    expect(risk.current.positionsWithStop).toBe(0);
+    expect(risk.current.exposure).toBe('22549.60');
+  });
+
+  it('all scenarios have structurally valid risk sections', () => {
+    for (const id of WORKSTATION_SCENARIO_IDS) {
+      const { risk } = getWorkstationFixtures(id);
+      // PTD section must be present
+      expect(typeof risk.ptd.realizedPnl).toBe('string');
+      expect(typeof risk.ptd.realizedFees).toBe('string');
+      expect(
+        risk.ptd.drawdown === null || typeof risk.ptd.drawdown === 'string',
+      ).toBe(true);
+      expect(
+        risk.ptd.drawdownPct === null ||
+          typeof risk.ptd.drawdownPct === 'string',
+      ).toBe(true);
+      // Current section must be present
+      expect(typeof risk.current.openPnl).toBe('string');
+      expect(typeof risk.current.openRisk).toBe('string');
+      expect(
+        risk.current.portfolioHeat === null ||
+          typeof risk.current.portfolioHeat === 'string',
+      ).toBe(true);
+      expect(typeof risk.current.missingStops).toBe('number');
+      expect(typeof risk.current.positionsWithStop).toBe('number');
+      expect(typeof risk.current.exposure).toBe('string');
+    }
+  });
+});
+
 // ── Determinism and isolation ────────────────────────────────────────────
 
 describe('determinism', () => {
@@ -304,6 +443,18 @@ describe('determinism', () => {
     const b = getWorkstationFixtures('default');
     expect(b.dashboard.kpis.totalTrades).not.toBe(-999);
     expect(b.watchlist[0].symbol).not.toBe('MUTATED');
+  });
+
+  it('produces identical positions across calls', () => {
+    const a = getWorkstationFixtures('default');
+    const b = getWorkstationFixtures('default');
+    expect(a.positions).toEqual(b.positions);
+  });
+
+  it('produces identical risk across calls', () => {
+    const a = getWorkstationFixtures('default');
+    const b = getWorkstationFixtures('default');
+    expect(a.risk).toEqual(b.risk);
   });
 });
 
