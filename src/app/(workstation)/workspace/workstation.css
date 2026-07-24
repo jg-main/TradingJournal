@@ -428,3 +428,28 @@
   vertical-align: middle;
   flex: none;
 }
+
+/* ── Risk Panel ──────────────────────────────────────────────────────────── */
+
+/* Section group — separates PTD and Current State metric blocks with a gap.
+   Each section carries a sub-header followed by ws-stat-row children. */
+.ws-risk-section {
+  margin-bottom: var(--ws-space-4);
+}
+
+.ws-risk-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Section sub-header — uppercase label visually lighter than the panel
+   header so the hierarchy reads: panel → section → row. */
+.ws-risk-section-header {
+  font-size: var(--ws-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  padding: var(--ws-space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--muted-foreground) 18%, transparent);
+  margin-bottom: var(--ws-space-1);
+}
