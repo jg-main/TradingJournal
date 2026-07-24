@@ -21,6 +21,9 @@ export default async function WorkspacePage({
 
   return (
     <WorkstationProvider initialScenario={scenario} liveMode={liveMode}>
+      <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
+        Skip to main content
+      </a>
       <WorkstationKeyboardShortcuts />
       <WorkstationToolbar />
       <WorkstationShell />

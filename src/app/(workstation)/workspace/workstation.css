@@ -687,6 +687,70 @@
   border-color: var(--ring);
 }
 
+/* ── Table Row Navigation ──────────────────────────────────────────────── */
+/*
+ * ws-row-active: keyboard navigation cursor applied by
+ * WorkstationKeyboardShortcuts when ArrowUp/ArrowDown moves through
+ * table rows within a focused Positions or Watchlist panel.
+ */
+
+.ws-row-active {
+  background: color-mix(in srgb, var(--ring) 10%, transparent) !important;
+}
+
+/*
+ * ws-row-highlighted: Enter-pinned persistent highlight. Toggled by
+ * pressing Enter on the active row.  Stronger indicator with left
+ * accent border so pinned rows remain visible even after navigating away.
+ */
+
+.ws-row-highlighted {
+  background: color-mix(in srgb, var(--ring) 20%, transparent) !important;
+  border-left: 2px solid var(--ring);
+}
+
+/* ── Accessibility ────────────────────────────────────────────────────── */
+
+/* Visually hidden ARIA live announcer for screen reader announcements
+   (account switches, row highlight toggles).  Invisible to sighted users
+   but read aloud by assistive technology. */
+.ws-a11y-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip-to-content link — hidden off-screen until focused via Tab.
+   Rendered as the first focusable element on the workspace page so
+   keyboard users can skip the toolbar chrome. */
+.ws-skip-link {
+  position: absolute;
+  top: -40px;
+  left: var(--ws-space-4);
+  z-index: 200;
+  padding: var(--ws-space-2) var(--ws-space-4);
+  background: var(--card);
+  color: var(--foreground);
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  font-size: var(--ws-text-md);
+  font-family: var(--font-mono);
+  text-decoration: none;
+  transition: top 120ms ease-out;
+}
+
+.ws-skip-link:focus {
+  top: var(--ws-space-2);
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 /* ── Reduced Motion ────────────────────────────────────────────────────── */
 /*
  * When the user has prefers-reduced-motion: reduce set at the OS level,

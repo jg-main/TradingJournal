@@ -86,7 +86,7 @@ export function WorkstationShell() {
   const lastEquity = dashboard.equityCurve[dashboard.equityCurve.length - 1];
 
   return (
-    <main className="ws-grid" data-testid="ws-grid">
+    <main className="ws-grid" data-testid="ws-grid" id="ws-main-content" tabIndex={-1}>
       {/* KPI strip — account overview at a glance */}
       <section className="ws-panel ws-kpi-strip" style={{ gridArea: 'kpis' }} data-testid="ws-panel-kpis">
         <KpiCell label="Net P&L" value={fmtCurrency(kpis.netPnl)} className={pnlClass(kpis.netPnl)} />

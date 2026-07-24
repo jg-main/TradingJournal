@@ -1,11 +1,11 @@
 /**
- * M005 S07 T01 — Workstation Keyboard Navigation System E2E spec.
+ * M005 S07 T01 + T02 — Workstation Keyboard Navigation System E2E spec.
  *
  * Verifies that the WorkstationKeyboardShortcuts component handles all
  * documented shortcuts and that the overlay renders correctly with
  * proper accessibility attributes.
  *
- * Coverage:
+ * T01 Coverage (original):
  * 1. Shortcut overlay opens on '?' and dismisses on Escape
  * 2. Shortcut overlay dismisses on backdrop click
  * 3. Shortcut overlay dismisses on close button click
@@ -15,6 +15,17 @@
  * 7. Shortcuts are suppressed when modifier keys are held (Ctrl, Meta)
  * 8. Account cycling '[',']' is a no-op in single-account fixture mode (no error)
  * 9. Console error audit during all keyboard operations
+ *
+ * T02 Coverage (table row navigation + accessibility):
+ * 10. ArrowDown navigates rows in Positions panel table
+ * 11. ArrowDown navigates rows in Watchlist panel table
+ * 12. ArrowUp returns to previous row
+ * 13. ArrowDown at last row stays on last row (clamping)
+ * 14. ArrowUp at first row stays on first row (clamping)
+ * 15. Enter highlights (then unhighlights) a table row
+ * 16. ArrowUp/Down in non-table panel (KPIs) is ignored
+ * 17. Skip link is present and focusable
+ * 18. ARIA live announcer is present
  */
 
 import { test, expect } from '@playwright/test';
@@ -309,5 +320,280 @@ test.describe('Workstation Keyboard Navigation', () => {
     await page.keyboard.press('?');
     await page.waitForTimeout(200);
     await expect(page.getByTestId('ws-keynav-backdrop')).toBeVisible();
+  });
+
+  // ═════════════════════════════════════════════════════════════════════
+  // T02 — Table Row Navigation
+  // ═════════════════════════════════════════════════════════════════════
+
+  // ── 11. ArrowDown navigates rows in Positions table ──────────────
+
+  test('ArrowDown navigates rows in Positions panel', async ({ page }) => {
+    // Focus the positions panel
+    await page.keyboard.press('3');
+    await page.waitForTimeout(200);
+
+    // Verify first row has ws-row-active
+    const rows = page.locator('#ws-main-content [data-testid^="ws-position-row-"]');
+    const firstRow = rows.first();
+    await expect(firstRow).toHaveClass(/ws-row-active/);
+
+    // ArrowDown
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(100);
+
+    // First row should have lost ws-row-active, second should have it
+    const secondRow = rows.nth(1);
+    await expect(secondRow).toHaveClass(/ws-row-active/);
+    await expect(firstRow).not.toHaveClass(/ws-row-active/);
+  });
+
+  // ── 12. ArrowDown navigates rows in Watchlist table ──────────────
+
+  test('ArrowDown navigates rows in Watchlist panel', async ({ page }) => {
+    // Focus the watchlist panel
+    await page.keyboard.press('4');
+    await page.waitForTimeout(200);
+
+    // Verify first row has ws-row-active
+    const rows = page.locator('#ws-main-content [data-testid^="ws-watchlist-row-"]');
+    const firstRow = rows.first();
+    await expect(firstRow).toHaveClass(/ws-row-active/);
+
+    // ArrowDown
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(100);
+
+    // First row should have lost ws-row-active, second should have it
+    const secondRow = rows.nth(1);
+    await expect(secondRow).toHaveClass(/ws-row-active/);
+    await expect(firstRow).not.toHaveClass(/ws-row-active/);
+  });
+
+  // ── 13. ArrowUp returns to previous row ─────────────────────────
+
+  test('ArrowUp returns to previous row in Positions panel', async ({ page }) => {
+    // Focus the positions panel
+    await page.keyboard.press('3');
+    await page.waitForTimeout(200);
+
+    const rows = page.locator('#ws-main-content [data-testid^="ws-position-row-"]');
+
+    // Navigate down twice
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(50);
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(50);
+
+    // Verify we're on row 2 (0-indexed)
+    const thirdRow = rows.nth(2);
+    await expect(thirdRow).toHaveClass(/ws-row-active/);
+
+    // Navigate back up
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(50);
+
+    // Should be back on row 1
+    const secondRow = rows.nth(1);
+    await expect(secondRow).toHaveClass(/ws-row-active/);
+    await expect(thirdRow).not.toHaveClass(/ws-row-active/);
+  });
+
+  // ── 14. ArrowDown clamps at last row ────────────────────────────
+
+  test('ArrowDown at last row stays on last row', async ({ page }) => {
+    // Focus the positions panel
+    await page.keyboard.press('3');
+    await page.waitForTimeout(200);
+
+    const rows = page.locator('#ws-main-content [data-testid^="ws-position-row-"]');
+    const rowCount = await rows.count();
+
+    // Navigate way past the end (rowCount * 3 to be safe)
+    for (let i = 0; i < rowCount * 3; i++) {
+      await page.keyboard.press('ArrowDown');
+    }
+    await page.waitForTimeout(100);
+
+    // Last row should still have ws-row-active (not past end)
+    const lastRow = rows.nth(rowCount - 1);
+    await expect(lastRow).toHaveClass(/ws-row-active/);
+  });
+
+  // ── 15. ArrowUp clamps at first row ─────────────────────────────
+
+  test('ArrowUp at first row stays on first row', async ({ page }) => {
+    // Focus the positions panel
+    await page.keyboard.press('3');
+    await page.waitForTimeout(200);
+
+    const rows = page.locator('#ws-main-content [data-testid^="ws-position-row-"]');
+    const firstRow = rows.first();
+
+    // Navigate down once then up once
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(50);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(50);
+
+    // Should be back on first row
+    await expect(firstRow).toHaveClass(/ws-row-active/);
+
+    // Navigate up further — should stay on first row
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(50);
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(50);
+
+    await expect(firstRow).toHaveClass(/ws-row-active/);
+  });
+
+  // ── 16. Enter toggles highlight on active row ───────────────────
+
+  test('Enter highlights and unhighlights a Positions row', async ({ page }) => {
+    // Focus the positions panel
+    await page.keyboard.press('3');
+    await page.waitForTimeout(200);
+
+    const rows = page.locator('#ws-main-content [data-testid^="ws-position-row-"]');
+    const firstRow = rows.first();
+
+    // First row should have ws-row-active but not ws-row-highlighted yet
+    await expect(firstRow).toHaveClass(/ws-row-active/);
+
+    // Press Enter to highlight
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(100);
+
+    // First row should now have ws-row-highlighted
+    await expect(firstRow).toHaveClass(/ws-row-highlighted/);
+    await expect(firstRow).toHaveClass(/ws-row-active/);
+
+    // Press Enter again to unhighlight
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(100);
+
+    // First row should have lost ws-row-highlighted but keep ws-row-active
+    await expect(firstRow).toHaveClass(/ws-row-active/);
+    await expect(firstRow).not.toHaveClass(/ws-row-highlighted/);
+  });
+
+  // ── 17. Arrow keys in non-table panel (KPIs) are ignored ────────
+
+  test('Arrow keys do not navigate rows when non-table panel is focused', async ({ page }) => {
+    // Focus the KPIs panel (not a table panel)
+    await page.keyboard.press('1');
+    await page.waitForTimeout(200);
+
+    // Press ArrowDown — should not throw errors or change any rows
+    // (if it did, Positions panel rows might get ws-row-active despite
+    // being in a different focused panel)
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(100);
+
+    // No position rows should have ws-row-active
+    const activePositions = page.locator(
+      '#ws-main-content [data-testid^="ws-position-row-"].ws-row-active',
+    );
+    await expect(activePositions).toHaveCount(0);
+  });
+
+  // ── 18. Row highlight persists across panel refocus ────────────
+
+  test('highlighted row persists after refocusing the same panel', async ({ page }) => {
+    // Focus positions and highlight first row
+    await page.keyboard.press('3');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(100);
+
+    const firstRow = page.locator('#ws-main-content [data-testid^="ws-position-row-"]').first();
+    await expect(firstRow).toHaveClass(/ws-row-highlighted/);
+
+    // Focus a different panel, then refocus positions
+    await page.keyboard.press('4'); // watchlist
+    await page.waitForTimeout(100);
+    await page.keyboard.press('3'); // positions again
+    await page.waitForTimeout(200);
+
+    // The highlighted row should still have its class
+    await expect(firstRow).toHaveClass(/ws-row-highlighted/);
+  });
+
+  // ================================================================
+  // T02 — Accessibility
+  // ================================================================
+
+  // ── 19. Skip link is present ──────────────────────────────────────
+
+  test('skip link is present and hidden off-screen by default', async ({ page }) => {
+    const skipLink = page.getByTestId('ws-skip-link');
+    await expect(skipLink).toBeAttached();
+    await expect(skipLink).toHaveAttribute('href', '#ws-main-content');
+
+    // Verify it starts off-screen (top is negative via CSS)
+    const top = await skipLink.evaluate((el) => {
+      return window.getComputedStyle(el).top;
+    });
+    expect(top).toBe('-40px');
+  });
+
+  // ── 20. Skip link becomes visible on focus ───────────────────────
+
+  test('skip link becomes visible when focused', async ({ page }) => {
+    const skipLink = page.getByTestId('ws-skip-link');
+
+    // Verify it starts off-screen
+    let top = await skipLink.evaluate((el) => {
+      return window.getComputedStyle(el).top;
+    });
+    expect(top).toBe('-40px');
+
+    // Focus the skip link directly
+    await skipLink.focus();
+    await page.waitForTimeout(200);
+
+    // Skip link should now be focused
+    await expect(skipLink).toBeFocused();
+
+    // When focused, the top property should change (CSS :focus rule)
+    top = await skipLink.evaluate((el) => {
+      return window.getComputedStyle(el).top;
+    });
+    expect(top).not.toBe('-40px');
+  });
+
+  // ── 21. Skip link click focuses the main content grid ────────────
+
+  test('skip link click focuses the main content grid', async ({ page }) => {
+    const skipLink = page.getByTestId('ws-skip-link');
+    await skipLink.focus();
+    await page.waitForTimeout(100);
+    await expect(skipLink).toBeFocused();
+
+    // Click the skip link
+    await skipLink.click();
+    await page.waitForTimeout(200);
+
+    // The main content element should now be focused
+    const mainEl = page.locator('#ws-main-content');
+    await expect(mainEl).toBeFocused();
+  });
+
+  // ── 22. ARIA live announcer is present ───────────────────────────
+
+  test('ARIA live announcer is present and hidden', async ({ page }) => {
+    const announcer = page.getByTestId('ws-a11y-announcer');
+    await expect(announcer).toBeAttached();
+    await expect(announcer).toHaveAttribute('aria-live', 'polite');
+    await expect(announcer).toHaveAttribute('aria-atomic', 'true');
+
+    // Verify it's visually hidden (0×0 effective size)
+    const clip = await announcer.evaluate((el) => {
+      return window.getComputedStyle(el).clip;
+    });
+    expect(clip).toContain('rect(0');
   });
 });

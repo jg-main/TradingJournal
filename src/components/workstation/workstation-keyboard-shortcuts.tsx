@@ -6,6 +6,8 @@
 // Handles high-frequency workstation operations without modifier keys:
 //   [ / ]  — cycle through accounts (previous / next)
 //   1 – 6   — focus panels (KPIs, Equity, Positions, Watchlist, Risk, Setups)
+//   ↑ / ↓   — navigate table rows within focused Positions / Watchlist panels
+//   Enter   — highlight/unhighlight the active row
 //   ?       — toggle keyboard shortcut overlay
 //   Escape  — dismiss the overlay
 //
@@ -52,12 +54,26 @@ const SHORTCUT_ENTRIES: { keys: string; label: string }[] = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+/** Table panel areas that support row navigation. */
+const TABLE_PANELS = new Set(['positions', 'watchlist']);
+
 function isEditableTarget(el: EventTarget | null): boolean {
   if (!el || !(el instanceof HTMLElement)) return false;
   const tag = el.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
   if (el.isContentEditable) return true;
   return false;
+}
+
+/** Determine which panel area (if any) currently holds focus. */
+function getFocusedTablePanel(): { area: string; el: HTMLElement; tbody: HTMLTableSectionElement } | null {
+  const el = document.activeElement;
+  if (!el || !(el instanceof HTMLElement)) return null;
+  const area = el.getAttribute('data-testid')?.replace('ws-panel-', '') ?? null;
+  if (!area || !TABLE_PANELS.has(area)) return null;
+  const tbody = el.querySelector('tbody');
+  if (!tbody) return null;
+  return { area, el, tbody };
 }
 
 // ── Shortcut overlay ──────────────────────────────────────────────────────
@@ -110,6 +126,14 @@ export function WorkstationKeyboardShortcuts() {
   // Ref so the event handler always reads the latest overlay state without
   // re-registering the listener on every toggle.
   const overlayRef = useRef(false);
+  // Table row navigation state.
+  const focusedPanelRef = useRef<string | null>(null);
+  const activeRowIndexRef = useRef<number>(0);
+  const activeRowCountRef = useRef<number>(0);
+  // Track highlighted rows (Enter-pinned) by row element dataset.
+  const highlightedRowsRef = useRef<Set<string>>(new Set());
+  // Announcer ref for ARIA live announcements.
+  const announcerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     overlayRef.current = overlayVisible;
@@ -131,6 +155,16 @@ export function WorkstationKeyboardShortcuts() {
   // ── Panel focus ─────────────────────────────────────────────────────
 
   const focusPanel = useCallback((area: string) => {
+    // 1. Clear prior row-active class on any currently-focused panel.
+    const priorPanel = document.activeElement;
+    if (priorPanel && priorPanel instanceof HTMLElement) {
+      const priorArea = priorPanel.getAttribute('data-testid')?.replace('ws-panel-', '');
+      if (priorArea && TABLE_PANELS.has(priorArea)) {
+        const priorRows = priorPanel.querySelectorAll<HTMLElement>('.ws-row-active');
+        priorRows.forEach((r) => r.classList.remove('ws-row-active'));
+      }
+    }
+
     const el = document.querySelector<HTMLElement>(
       `[data-testid="ws-panel-${area}"]`,
     );
@@ -141,7 +175,45 @@ export function WorkstationKeyboardShortcuts() {
       el.setAttribute('tabindex', '-1');
     }
     el.focus({ preventScroll: false });
+
+    // 2. If it's a table panel, reset row navigation to first row.
+    if (TABLE_PANELS.has(area)) {
+      activeRowIndexRef.current = 0;
+      // Schedule DOM update after React / browser render cycle.
+      requestAnimationFrame(() => {
+        const tbody = el.querySelector('tbody');
+        if (!tbody) return;
+        const rows = tbody.querySelectorAll<HTMLTableRowElement>('tr');
+        if (rows.length > 0) {
+          rows[0].classList.add('ws-row-active');
+          activeRowCountRef.current = rows.length;
+          focusedPanelRef.current = area;
+        }
+      });
+    } else {
+      focusedPanelRef.current = null;
+    }
   }, []);
+
+  // ── Announce helper ────────────────────────────────────────────────
+
+  const announce = useCallback((message: string) => {
+    const el = announcerRef.current;
+    if (!el) return;
+    // Clear first so repeated identical messages are re-announced.
+    el.textContent = '';
+    requestAnimationFrame(() => {
+      el.textContent = message;
+    });
+  }, []);
+
+  // Announce account changes via the ARIA live region.
+  useEffect(() => {
+    const account = accounts.find((a) => a.id === activeAccountId);
+    if (account) {
+      announce(`Active account: ${account.name}`);
+    }
+  }, [activeAccountId, accounts, announce]);
 
   // ── Keydown listener ────────────────────────────────────────────────
 
@@ -152,6 +224,7 @@ export function WorkstationKeyboardShortcuts() {
 
       const { key } = e;
 
+      // ── Overlay / account / panel shortcuts ───────────────────────
       // Escape: dismiss overlay (only when it is visible)
       if (key === 'Escape') {
         if (overlayRef.current) {
@@ -187,16 +260,96 @@ export function WorkstationKeyboardShortcuts() {
       if (panel) {
         e.preventDefault();
         focusPanel(panel.area);
+        return;
+      }
+
+      // ── Table row navigation (ArrowUp / ArrowDown / Enter) ─────────
+      // Only when focus is on a table panel (positions / watchlist).
+      const focused = getFocusedTablePanel();
+      if (!focused) return;
+
+      if (key === 'ArrowDown') {
+        e.preventDefault();
+        const rows = focused.tbody.querySelectorAll<HTMLTableRowElement>('tr');
+        if (rows.length === 0) return;
+        const maxIdx = rows.length - 1;
+        const curIdx = activeRowIndexRef.current;
+        // Remove active class from current row
+        if (curIdx >= 0 && curIdx < rows.length) {
+          rows[curIdx].classList.remove('ws-row-active');
+        }
+        // Advance, clamp
+        const nextIdx = Math.min(curIdx + 1, maxIdx);
+        rows[nextIdx].classList.add('ws-row-active');
+        activeRowIndexRef.current = nextIdx;
+        activeRowCountRef.current = rows.length;
+        focusedPanelRef.current = focused.area;
+        return;
+      }
+
+      if (key === 'ArrowUp') {
+        e.preventDefault();
+        const rows = focused.tbody.querySelectorAll<HTMLTableRowElement>('tr');
+        if (rows.length === 0) return;
+        const curIdx = activeRowIndexRef.current;
+        // Remove active class from current row
+        if (curIdx >= 0 && curIdx < rows.length) {
+          rows[curIdx].classList.remove('ws-row-active');
+        }
+        // Retreat, clamp
+        const nextIdx = Math.max(curIdx - 1, 0);
+        rows[nextIdx].classList.add('ws-row-active');
+        activeRowIndexRef.current = nextIdx;
+        activeRowCountRef.current = rows.length;
+        focusedPanelRef.current = focused.area;
+        return;
+      }
+
+      if (key === 'Enter') {
+        e.preventDefault();
+        const rows = focused.tbody.querySelectorAll<HTMLTableRowElement>('tr');
+        if (rows.length === 0) return;
+        const curIdx = activeRowIndexRef.current;
+        if (curIdx < 0 || curIdx >= rows.length) return;
+        const row = rows[curIdx];
+        const isHighlighted = row.classList.toggle('ws-row-highlighted');
+
+        // Track in ref set for persistence across scenario changes.
+        const rowKey =
+          row.getAttribute('data-testid') ?? `${focused.area}-row-${curIdx}`;
+        if (isHighlighted) {
+          highlightedRowsRef.current.add(rowKey);
+          announce(`Row highlighted: ${row.textContent?.trim().split(/\s+/)[0] ?? 'unknown'}`);
+        } else {
+          highlightedRowsRef.current.delete(rowKey);
+        }
+        return;
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [cycleAccount, focusPanel]);
+  }, [cycleAccount, focusPanel, announce]);
 
-  // ── Overlay (conditional) ───────────────────────────────────────────
+  // ── Overlay (conditional) / ARIA announcer ──────────────────────────
 
-  if (!overlayVisible) return null;
-
-  return <KeyboardShortcutOverlay onDismiss={() => setOverlayVisible(false)} />;
+  // The announcer is always rendered (visually hidden) so screen readers
+  // can announce account switches and row highlight toggles.
+  // The overlay renders only when visible.
+  return (
+    <>
+      <div
+        ref={announcerRef}
+        className="ws-a11y-announcer"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="ws-a11y-announcer"
+      />
+      {overlayVisible && (
+        <KeyboardShortcutOverlay
+          onDismiss={() => setOverlayVisible(false)}
+        />
+      )}
+    </>
+  );
 }
