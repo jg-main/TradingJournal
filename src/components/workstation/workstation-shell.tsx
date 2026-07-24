@@ -10,6 +10,8 @@
 // for live API data without touching these panels.
 
 import { useWorkstation } from './workstation-context';
+import { PositionsPanel } from './positions-panel';
+import { RiskPanel } from './risk-panel';
 import { WatchlistPanel } from './watchlist-panel';
 
 function fmtCurrency(value: number | string | null | undefined): string {
@@ -113,7 +115,7 @@ export function WorkstationShell() {
   const { fixtures } = useWorkstation();
   const { dashboard, dashboardV2 } = fixtures;
   const { kpis } = dashboard;
-  const { metrics, riskSummary, valuation } = dashboardV2;
+  const { metrics } = dashboardV2;
 
   const firstEquity = dashboard.equityCurve[0];
   const lastEquity = dashboard.equityCurve[dashboard.equityCurve.length - 1];
@@ -164,77 +166,14 @@ export function WorkstationShell() {
         </div>
       </Panel>
 
-      {/* Open positions (V2 ledger view) */}
-      <Panel area="positions" title="Positions" meta={`${valuation.positions.length} open`}>
-        {valuation.positions.length === 0 ? (
-          <div className="ws-empty">No open positions</div>
-        ) : (
-          <table className="ws-table">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th className="ws-num">Qty</th>
-                <th className="ws-num">Avg Cost</th>
-                <th className="ws-num">Mark</th>
-                <th className="ws-num">uP&L</th>
-              </tr>
-            </thead>
-            <tbody>
-              {valuation.positions.map((p) => {
-                const upl = p.unrealizedPnl === null ? null : Number(p.unrealizedPnl);
-                return (
-                  <tr key={p.instrumentId}>
-                    <td className="ws-mono">{p.symbol}</td>
-                    <td className="ws-num">{p.quantity}</td>
-                    <td className="ws-num">{fmtCurrency(p.averageCost)}</td>
-                    <td className="ws-num">{p.markPrice === null ? '—' : fmtCurrency(p.markPrice)}</td>
-                    <td className={`ws-num ${upl === null ? '' : pnlClass(upl)}`}>
-                      {upl === null ? '—' : fmtCurrency(upl)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </Panel>
+      {/* Open positions — standalone 7-column terminal-dense table */}
+      <PositionsPanel />
 
       {/* Watchlist — enhanced 7-column table with MarketStrip sub-ribbon */}
       <WatchlistPanel />
 
-      {/* Risk + reconciliation */}
-      <Panel area="risk" title="Risk" meta={dashboardV2.integrity.status}>
-        <div className="ws-stat-row">
-          <span>Open P&L</span>
-          <span className={`ws-num ${pnlClass(Number(riskSummary.openPnl))}`}>
-            {fmtCurrency(riskSummary.openPnl)}
-          </span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Open Risk</span>
-          <span className="ws-num">{fmtCurrency(riskSummary.openRisk)}</span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Portfolio Heat</span>
-          <span className="ws-num">
-            {riskSummary.portfolioHeat === null ? '—' : `${Number(riskSummary.portfolioHeat).toFixed(2)}%`}
-          </span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Missing Stops</span>
-          <span className={`ws-num ${riskSummary.missingStops > 0 ? 'ws-neg' : ''}`}>
-            {riskSummary.missingStops}
-          </span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Realized Fees</span>
-          <span className="ws-num">{fmtCurrency(metrics.realizedFees)}</span>
-        </div>
-        <div className="ws-stat-row">
-          <span>Net Exposure</span>
-          <span className="ws-num">{fmtCurrency(metrics.netExposure)}</span>
-        </div>
-      </Panel>
+      {/* Risk — PTD/current-state visual separation */}
+      <RiskPanel />
 
       {/* Insights / activity */}
       <Panel
