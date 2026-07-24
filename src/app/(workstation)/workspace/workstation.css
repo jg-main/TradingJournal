@@ -349,3 +349,66 @@
   font-size: var(--ws-text-xs);
   line-height: 1.2;
 }
+
+/* ── Watchlist Panel ─────────────────────────────────────────────────────── */
+
+/* Direction indicators (Dir column) */
+.ws-dir-long {
+  color: var(--chart-2);
+  font-weight: 700;
+  text-align: center;
+}
+
+.ws-dir-short {
+  color: var(--destructive);
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Proximity indicators (Dist% column) */
+.ws-approaching {
+  color: var(--ws-amber, #d4a017);
+  font-weight: 600;
+}
+
+.ws-urgent {
+  color: var(--ws-urgent, #f97316);
+  font-weight: 700;
+}
+
+/* Status badges */
+.ws-status {
+  display: inline-block;
+  font-size: var(--ws-text-xs);
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.ws-status-triggered {
+  background: color-mix(in srgb, var(--chart-2) 15%, transparent);
+  color: var(--chart-2);
+}
+
+.ws-status-watching {
+  background: color-mix(in srgb, var(--chart-1) 15%, transparent);
+  color: var(--chart-1);
+}
+
+.ws-status-pending {
+  background: color-mix(in srgb, var(--muted-foreground) 12%, transparent);
+  color: var(--muted-foreground);
+}
+
+.ws-status-skipped {
+  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent);
+  color: var(--muted-foreground);
+}
+
+.ws-status-expired {
+  background: color-mix(in srgb, var(--muted-foreground) 10%, transparent);
+  color: var(--muted-foreground);
+}
