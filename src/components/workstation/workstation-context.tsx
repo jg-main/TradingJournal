@@ -32,6 +32,7 @@ import {
   isWorkstationScenarioId,
   warnFixtureMode,
   WORKSTATION_SCENARIO_IDS,
+  MARKET_INDEX_SYMBOLS,
   type WorkstationFixtures,
   type WorkstationScenarioId,
 } from '@/lib/workstation-fixtures';
@@ -39,7 +40,11 @@ import {
 import {
   fetchAllLiveDashboardData,
   fetchAccountsLive,
+  fetchWatchlistPricesLive,
   adaptV2Account,
+  adaptMarketIndices,
+  adaptSymbolPrices,
+  buildTradeIdeasFromWatchlist,
   type LiveDashboardData,
   type WorkstationAccount,
 } from '@/lib/workstation-live-adapter';
@@ -52,22 +57,45 @@ export type { WorkstationAccount } from '@/lib/workstation-live-adapter';
 export type MtmPollingState = 'active' | 'paused' | 'error';
 
 /** Derive a WorkstationFixtures payload from live dashboard data.
- *  Fields without live equivalents (market indices, symbol prices,
- *  trade ideas) are left empty — those surfaces render their
- *  built-in empty/loading states. */
-function liveDataToFixtures(data: LiveDashboardData): WorkstationFixtures {
+ *  Populates marketIndices, symbolPrices, and tradeIdeas from the
+ *  live price data when available; empty arrays/sets when not. */
+function liveDataToFixtures(
+  data: LiveDashboardData,
+  prices: Record<string, import('@/lib/market-quote').QuoteResult> | null,
+): WorkstationFixtures {
   const account = adaptV2Account(data.dashboardV2.account);
+
+  // Derive market indices and symbol prices from live price data.
+  const marketIndices = prices ? adaptMarketIndices(prices) : [];
+  const symbolPrices = prices
+    ? adaptSymbolPrices(prices, data.watchlist)
+    : {};
+
+  // Build a setup name lookup from the dashboard's setup ranking.
+  const setupNames: Record<string, string> = {};
+  for (const sr of data.dashboard.setupRanking) {
+    if (sr.setupId) {
+      setupNames[sr.setupId] = sr.setupName;
+    }
+  }
+
+  const tradeIdeas = buildTradeIdeasFromWatchlist(
+    data.watchlist,
+    symbolPrices,
+    setupNames,
+  );
+
   return {
     scenario: 'default',
     account,
     dashboard: data.dashboard,
     dashboardV2: data.dashboardV2,
     watchlist: data.watchlist,
-    marketIndices: [],
-    symbolPrices: {},
+    marketIndices,
+    symbolPrices,
     positions: data.positions,
     risk: data.risk,
-    tradeIdeas: [],
+    tradeIdeas,
   };
 }
 
@@ -116,6 +144,7 @@ export function WorkstationProvider({
   // Live-mode state
   const [liveData, setLiveData] = useState<LiveDashboardData | null>(null);
   const [liveAccounts, setLiveAccounts] = useState<WorkstationAccount[]>([]);
+  const [livePrices, setLivePrices] = useState<Record<string, import('@/lib/market-quote').QuoteResult> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mtmPollingState, setMtmPollingState] = useState<MtmPollingState>('paused');
@@ -132,8 +161,8 @@ export function WorkstationProvider({
   // ── Live-mode data ─────────────────────────────────────────────────
   const liveFixtures = useMemo<WorkstationFixtures | null>(() => {
     if (!liveData) return null;
-    return liveDataToFixtures(liveData);
-  }, [liveData]);
+    return liveDataToFixtures(liveData, livePrices);
+  }, [liveData, livePrices]);
 
   // ── fixturves expose either live or fixture data ───────────────────
   const fixtures: WorkstationFixtures = liveMode && liveFixtures
@@ -232,6 +261,53 @@ export function WorkstationProvider({
       controller.abort();
     };
   }, [liveMode, activeAccountId]);
+
+  // ── Live price fetching (fills marketIndices, symbolPrices, tradeIdeas) ─
+  // Fetches prices for market indices + watchlist symbols when liveData
+  // changes.  Best-effort: a failure leaves marketIndices/symbolPrices
+  // empty but doesn't break the rest of the workstation.
+  useEffect(() => {
+    if (!liveMode || !liveData) {
+      setLivePrices(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchPrices = async () => {
+      // Collect all symbols we need prices for: indices + watchlist
+      const wlSymbols = liveData.watchlist
+        .map((w) => w.symbol)
+        .filter(Boolean);
+      const symbols = [
+        ...MARKET_INDEX_SYMBOLS,
+        ...wlSymbols,
+      ];
+
+      // Deduplicate while preserving order
+      const unique = [...new Set(symbols)];
+      if (unique.length === 0) return;
+
+      console.info(
+        `[workstation] fetching live prices for ${unique.length} symbol(s)`,
+      );
+      const result = await fetchWatchlistPricesLive(unique);
+      if (cancelled) return;
+
+      if (result.success) {
+        setLivePrices(result.data);
+      } else {
+        console.error(
+          '[workstation] live price fetch failed:',
+          result.error,
+        );
+        setLivePrices(null);
+      }
+    };
+
+    fetchPrices();
+    return () => { cancelled = true; };
+  }, [liveMode, liveData]);
 
   // ── MTM polling (live mode only) ─────────────────────────────────
   // Polls at 30s when live mode is active, tab is visible, and positions > 0.

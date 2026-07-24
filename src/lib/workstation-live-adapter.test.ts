@@ -31,15 +31,17 @@ import {
   fetchWatchlistLive,
   fetchAccountsLive,
   fetchAllLiveDashboardData,
+  fetchWatchlistPricesLive,
   adaptAccounts,
   adaptPositions,
   adaptRisk,
   adaptV2Account,
-  type LiveFetchResult,
+  adaptMarketIndices,
+  adaptSymbolPrices,
+  buildTradeIdeasFromWatchlist,
   type LiveDashboardData,
-  type WorkstationAccount,
 } from '@/lib/workstation-live-adapter';
-import type { DashboardResponse, WorkstationPosition, WorkstationRisk, WorkstationWatchlistItem } from '@/lib/workstation-fixtures';
+import type { DashboardResponse, WorkstationPosition, WorkstationWatchlistItem, SymbolPriceData } from '@/lib/workstation-fixtures';
 import type { DashboardV2Response, DashboardPositionSummary } from '@/lib/accounting/dashboard-v2';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1015,5 +1017,279 @@ describe('LiveFetchResult type narrowing', () => {
       expect(data.positions).toHaveLength(3);
       expect(data.risk.ptd.realizedPnl).toBe('12437.75');
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Market price adapter functions (M005 remediation)
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { MARKET_INDEX_SYMBOLS } from '@/lib/workstation-fixtures';
+import type { QuoteResult } from '@/lib/market-quote';
+
+// ── QuoteResult helpers ────────────────────────────────────────────────
+
+function makeQuoteResult(symbol: string, price: number, overrides: Partial<QuoteResult> = {}): QuoteResult {
+  return {
+    symbol,
+    price,
+    marketState: 'REGULAR',
+    fetchedAt: '2026-07-24T12:00:00.000Z',
+    source: 'mock' as const,
+    previousClose: price - 0.50,
+    change: 0.50,
+    changePercent: (0.50 / (price - 0.50)) * 100,
+    ...overrides,
+  };
+}
+
+function makeWlItem(symbol: string, overrides: Partial<WorkstationWatchlistItem> = {}): WorkstationWatchlistItem {
+  return {
+    id: `wl-${symbol.toLowerCase()}`,
+    dateAdded: '2026-01-01',
+    symbol,
+    sectorId: null,
+    name: `${symbol} Corp`,
+    sector: null,
+    industry: null,
+    setupId: null,
+    direction: 'long',
+    thesis: null,
+    marketContext: null,
+    keyLevel: null,
+    triggerPrice: null,
+    plannedStop: null,
+    targetPrice: null,
+    status: 'watching',
+    notes: null,
+    promotedTradeId: null,
+    alertConfig: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('adaptMarketIndices', () => {
+  it('returns MarketIndexSnapshot for each index symbol with a valid price', () => {
+    const prices: Record<string, QuoteResult> = {};
+    for (const sym of MARKET_INDEX_SYMBOLS) {
+      prices[sym] = makeQuoteResult(sym, sym === 'SPX' ? 6000 : 500);
+    }
+    const result = adaptMarketIndices(prices);
+    expect(result).toHaveLength(4);
+    expect(result[0]).toMatchObject({ symbol: 'SPX', lastPrice: 6000 });
+    expect(result[0].change).toBe(0.50);
+  });
+
+  it('omits index symbols with null prices', () => {
+    const prices: Record<string, QuoteResult> = {
+      SPX: makeQuoteResult('SPX', 6000),
+      NDX: { ...makeQuoteResult('NDX', 500), price: null },
+    };
+    const result = adaptMarketIndices(prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].symbol).toBe('SPX');
+  });
+
+  it('omits missing index symbols entirely', () => {
+    const prices: Record<string, QuoteResult> = {};
+    const result = adaptMarketIndices(prices);
+    expect(result).toHaveLength(0);
+  });
+
+  it('handles missing change/changePercent gracefully', () => {
+    const prices: Record<string, QuoteResult> = {
+      SPX: { ...makeQuoteResult('SPX', 6000), change: undefined, changePercent: undefined },
+    };
+    const result = adaptMarketIndices(prices);
+    expect(result).toHaveLength(1);
+    expect(result[0].change).toBe(0);
+    expect(result[0].changePct).toBe(0);
+  });
+});
+
+describe('adaptSymbolPrices', () => {
+  it('returns SymbolPriceData for watchlist symbols with valid prices', () => {
+    const watchlist = [makeWlItem('AAPL'), makeWlItem('MSFT')];
+    const prices: Record<string, QuoteResult> = {
+      AAPL: makeQuoteResult('AAPL', 178.50),
+      MSFT: makeQuoteResult('MSFT', 420.00),
+    };
+    const result = adaptSymbolPrices(prices, watchlist);
+    expect(Object.keys(result)).toHaveLength(2);
+    expect(result.AAPL).toMatchObject({ symbol: 'AAPL', lastPrice: 178.50, gap: 0.50 });
+  });
+
+  it('skips symbols not in the watchlist', () => {
+    const watchlist = [makeWlItem('AAPL')];
+    const prices: Record<string, QuoteResult> = {
+      AAPL: makeQuoteResult('AAPL', 178.50),
+      TSLA: makeQuoteResult('TSLA', 250.00),
+    };
+    const result = adaptSymbolPrices(prices, watchlist);
+    expect(Object.keys(result)).toHaveLength(1);
+    expect(result.AAPL).toBeDefined();
+    expect(result.TSLA).toBeUndefined();
+  });
+
+  it('skips prices with null price value', () => {
+    const watchlist = [makeWlItem('AAPL')];
+    const prices: Record<string, QuoteResult> = {
+      AAPL: { ...makeQuoteResult('AAPL', 178.50), price: null },
+    };
+    const result = adaptSymbolPrices(prices, watchlist);
+    expect(Object.keys(result)).toHaveLength(0);
+  });
+
+  it('computes distanceToTrigger from watchlist triggerPrice', () => {
+    const watchlist = [makeWlItem('AAPL', { triggerPrice: 175.00 })];
+    const prices: Record<string, QuoteResult> = {
+      AAPL: makeQuoteResult('AAPL', 178.50),
+    };
+    const result = adaptSymbolPrices(prices, watchlist);
+    expect(result.AAPL.distanceToTrigger).toBe(3.50); // |178.50 - 175.00|
+    expect(result.AAPL.distanceToTriggerPct).toBe(3.50 / 175.00);
+  });
+
+  it('handles missing triggerPrice gracefully', () => {
+    const watchlist = [makeWlItem('AAPL', { triggerPrice: null })];
+    const prices: Record<string, QuoteResult> = {
+      AAPL: makeQuoteResult('AAPL', 178.50),
+    };
+    const result = adaptSymbolPrices(prices, watchlist);
+    expect(result.AAPL.distanceToTrigger).toBeNull();
+  });
+});
+
+describe('buildTradeIdeasFromWatchlist', () => {
+  it('derives trade ideas from watchlist items with triggerPrice and no promotedTradeId', () => {
+    const watchlist: WorkstationWatchlistItem[] = [
+      makeWlItem('AAPL', { triggerPrice: 175, plannedStop: 170, targetPrice: 190, direction: 'long' }),
+      makeWlItem('MSFT', { triggerPrice: 420, plannedStop: 415, targetPrice: 440, direction: 'long' }),
+      makeWlItem('GOOGL', { triggerPrice: null }), // no trigger — should be filtered out
+      makeWlItem('TSLA', { triggerPrice: 250, plannedStop: 255, targetPrice: 230, direction: 'short' }),
+    ];
+    const symbolPrices: Record<string, SymbolPriceData> = {
+      AAPL: { symbol: 'AAPL', lastPrice: 178.50, previousClose: 178, gap: 0.50, gapPct: 0.0028, triggerPrice: 175, distanceToTrigger: 3.50, distanceToTriggerPct: 0.02 },
+      MSFT: { symbol: 'MSFT', lastPrice: 420.00, previousClose: 419.5, gap: 0.50, gapPct: 0.0012, triggerPrice: 420, distanceToTrigger: 0, distanceToTriggerPct: 0 },
+      TSLA: { symbol: 'TSLA', lastPrice: 250.00, previousClose: 249.5, gap: 0.50, gapPct: 0.0020, triggerPrice: 250, distanceToTrigger: 0, distanceToTriggerPct: 0 },
+    };
+
+    const result = buildTradeIdeasFromWatchlist(watchlist, symbolPrices);
+
+    // 3 eligible items: AAPL, MSFT, TSLA (GOOGL has no triggerPrice)
+    expect(result).toHaveLength(3);
+
+    // Long AAPL: entry=175, stop=170, target=190
+    const aapl = result.find((i) => i.symbol === 'AAPL')!;
+    expect(aapl.direction).toBe('long');
+    expect(aapl.entryPrice).toBe(175);
+    expect(aapl.stopPrice).toBe(170);
+    expect(aapl.targetPrice).toBe(190);
+    expect(aapl.riskPerShare).toBe(5); // 175 - 170
+    expect(aapl.rewardPerShare).toBe(15); // 190 - 175
+    expect(aapl.riskRewardRatio).toBe(3); // 15/5
+
+    // Short TSLA: entry=250, stop=255, target=230
+    const tsla = result.find((i) => i.symbol === 'TSLA')!;
+    expect(tsla.direction).toBe('short');
+    expect(tsla.riskPerShare).toBe(5); // 255 - 250
+    expect(tsla.rewardPerShare).toBe(20); // 250 - 230
+    expect(tsla.riskRewardRatio).toBe(4); // 20/5
+  });
+
+  it('returns null ratio when riskPerShare <= 0', () => {
+    // Stop above entry for a long — data error, risk is negative
+    const watchlist = [makeWlItem('AAPL', { triggerPrice: 175, plannedStop: 180, targetPrice: 190, direction: 'long' })];
+    const symbolPrices: Record<string, SymbolPriceData> = {};
+    const result = buildTradeIdeasFromWatchlist(watchlist, symbolPrices);
+    expect(result).toHaveLength(1);
+    expect(result[0].riskPerShare).toBe(-5);
+    expect(result[0].riskRewardRatio).toBeNull();
+  });
+
+  it('filters out promoted items (active trades)', () => {
+    const watchlist = [
+      makeWlItem('AAPL', { triggerPrice: 175, promotedTradeId: 'trade-1' }),
+      makeWlItem('MSFT', { triggerPrice: 420, promotedTradeId: null }),
+    ];
+    const symbolPrices: Record<string, SymbolPriceData> = {};
+    const result = buildTradeIdeasFromWatchlist(watchlist, symbolPrices);
+    expect(result).toHaveLength(1);
+    expect(result[0].symbol).toBe('MSFT');
+  });
+
+  it('looks up setup names from the provided map', () => {
+    const watchlist = [makeWlItem('AAPL', { triggerPrice: 175, setupId: 'setup-1', plannedStop: 170 })];
+    const symbolPrices: Record<string, SymbolPriceData> = {};
+    const setupNames: Record<string, string> = { 'setup-1': 'Breakout' };
+    const result = buildTradeIdeasFromWatchlist(watchlist, symbolPrices, setupNames);
+    expect(result[0].setupName).toBe('Breakout');
+  });
+
+  it('returns null setupName when setupId is not in the map', () => {
+    const watchlist = [makeWlItem('AAPL', { triggerPrice: 175, setupId: 'unknown', plannedStop: 170 })];
+    const symbolPrices: Record<string, SymbolPriceData> = {};
+    const result = buildTradeIdeasFromWatchlist(watchlist, symbolPrices);
+    expect(result[0].setupName).toBeNull();
+  });
+
+  it('uses lastPrice from symbolPrices', () => {
+    const watchlist = [makeWlItem('AAPL', { triggerPrice: 175, plannedStop: 170 })];
+    const symbolPrices: Record<string, SymbolPriceData> = {
+      AAPL: { symbol: 'AAPL', lastPrice: 178.50, previousClose: 178, gap: 0.50, gapPct: 0.0028, triggerPrice: 175, distanceToTrigger: 3.50, distanceToTriggerPct: 0.02 },
+    };
+    const result = buildTradeIdeasFromWatchlist(watchlist, symbolPrices);
+    expect(result[0].lastPrice).toBe(178.50);
+  });
+
+  it('returns null lastPrice when symbol not in price data', () => {
+    const watchlist = [makeWlItem('AAPL', { triggerPrice: 175, plannedStop: 170 })];
+    const result = buildTradeIdeasFromWatchlist(watchlist, {});
+    expect(result[0].lastPrice).toBeNull();
+  });
+
+  it('handles empty inputs', () => {
+    expect(buildTradeIdeasFromWatchlist([], {})).toHaveLength(0);
+  });
+});
+
+describe('fetchWatchlistPricesLive', () => {
+  it('fetches prices and returns Record<string, QuoteResult>', async () => {
+    const pricesPayload = {
+      prices: {
+        AAPL: makeQuoteResult('AAPL', 178.50),
+        MSFT: makeQuoteResult('MSFT', 420.00),
+      },
+      fetchedAt: '2026-07-24T12:00:00.000Z',
+    };
+    mockFetchResponse(200, pricesPayload);
+
+    const result = await fetchWatchlistPricesLive(['AAPL', 'MSFT']);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(Object.keys(result.data)).toHaveLength(2);
+      expect(result.data.AAPL.price).toBe(178.50);
+      expect(result.data.MSFT.price).toBe(420.00);
+    }
+  });
+
+  it('propagates HTTP errors', async () => {
+    mockFetchResponse(500, { error: 'provider down' });
+    const result = await fetchWatchlistPricesLive(['AAPL']);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('provider down');
+    }
+  });
+
+  it('constructs correct URL with symbols', async () => {
+    mockFetchResponse(200, { prices: {}, fetchedAt: '' });
+    const result = await fetchWatchlistPricesLive(['SPX', 'AAPL']);
+    expect(result.success).toBe(true);
+    // Verify the URL was constructed correctly via the mock
+    const url = mockFetch.mock.calls.at(-1)?.[0] as string;
+    expect(url).toContain('/api/watchlist/prices?symbols=SPX%2CAAPL');
   });
 });

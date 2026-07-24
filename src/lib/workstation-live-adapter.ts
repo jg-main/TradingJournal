@@ -19,8 +19,18 @@
  * @module workstation-live-adapter
  */
 
-import type { DashboardResponse, WorkstationPosition, WorkstationRisk, WorkstationWatchlistItem } from '@/lib/workstation-fixtures';
+import type {
+  DashboardResponse,
+  MarketIndexSnapshot,
+  SymbolPriceData,
+  TradeIdea,
+  WorkstationPosition,
+  WorkstationRisk,
+  WorkstationWatchlistItem,
+} from '@/lib/workstation-fixtures';
+import { MARKET_INDEX_SYMBOLS } from '@/lib/workstation-fixtures';
 import type { DashboardV2Response, DashboardPositionSummary } from '@/lib/accounting/dashboard-v2';
+import type { QuoteResult } from '@/lib/market-quote';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Result types
@@ -285,6 +295,178 @@ export function adaptV2Account(
     name: v2Account.name,
     currency: v2Account.currency,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Live market prices (M005 remediation — fills marketIndices, symbolPrices,
+// tradeIdeas gaps in liveDataToFixtures)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Fetch live prices for a set of symbols from /api/watchlist/prices.
+ *
+ * Used for both market indices (SPX, NDX, RUT, VIX) and individual
+ * watchlist symbols.  Returns a Record<symbol, QuoteResult> or an error.
+ */
+export async function fetchWatchlistPricesLive(
+  symbols: string[],
+  signal?: AbortSignal,
+): Promise<LiveFetchResult<Record<string, QuoteResult>>> {
+  // Build URL directly — small symbol lists keep the URL under size limits.
+  const params = new URLSearchParams({ symbols: symbols.join(',') });
+
+  const result = await fetchJson<{ prices: Record<string, QuoteResult> }>(
+    `/api/watchlist/prices?${params.toString()}`,
+    signal,
+  );
+  if (!result.success) return result;
+  return { success: true, data: result.data.prices };
+}
+
+/**
+ * Convert live market quotes for index symbols into MarketIndexSnapshot[].
+ *
+ * Fills lastPrice, change, and changePct from the QuoteResult.  When a quote
+ * is missing or has a null price the index is omitted rather than rendered
+ * as a fake zero — this prevents misleading displays.
+ */
+export function adaptMarketIndices(
+  prices: Record<string, QuoteResult>,
+): MarketIndexSnapshot[] {
+  const indices: MarketIndexSnapshot[] = [];
+  for (const symbol of MARKET_INDEX_SYMBOLS) {
+    const quote = prices[symbol];
+    if (!quote || quote.price === null) continue;
+    indices.push({
+      symbol: quote.symbol,
+      lastPrice: quote.price,
+      change: quote.change ?? 0,
+      changePct: quote.changePercent ?? 0,
+    });
+  }
+  return indices;
+}
+
+/** Derive gap and trigger-distance metrics from a single quote and a set of
+ *  watchlist items for that symbol.  Returns null when the price is
+ *  unavailable. */
+function buildSingleSymbolPrice(
+  quote: QuoteResult,
+  watchlistForSymbol: WorkstationWatchlistItem[],
+): SymbolPriceData | null {
+  if (quote.price === null) return null;
+  const lastPrice = quote.price;
+  const previousClose = quote.previousClose ?? lastPrice;
+  const gap = lastPrice - previousClose;
+  const gapPct = previousClose !== 0 ? gap / previousClose : 0;
+
+  const item = watchlistForSymbol[0];
+  const triggerPrice = item?.triggerPrice ?? null;
+  let distanceToTrigger: number | null = null;
+  let distanceToTriggerPct: number | null = null;
+  if (triggerPrice !== null && triggerPrice > 0 && lastPrice > 0) {
+    distanceToTrigger = Math.abs(lastPrice - triggerPrice);
+    distanceToTriggerPct = distanceToTrigger / triggerPrice;
+  }
+
+  return {
+    symbol: quote.symbol,
+    lastPrice,
+    previousClose,
+    gap,
+    gapPct,
+    triggerPrice,
+    distanceToTrigger,
+    distanceToTriggerPct,
+  };
+}
+
+/**
+ * Convert a batch of market quotes into per-symbol price data with gap
+ * and trigger-distance metrics for the watchlist proximity indicators.
+ */
+export function adaptSymbolPrices(
+  prices: Record<string, QuoteResult>,
+  watchlist: WorkstationWatchlistItem[],
+): Record<string, SymbolPriceData> {
+  const result: Record<string, SymbolPriceData> = {};
+  for (const [symbol, quote] of Object.entries(prices)) {
+    const wlItems = watchlist.filter(
+      (w) => w.symbol.toUpperCase() === symbol.toUpperCase(),
+    );
+    if (wlItems.length === 0) continue;
+    const data = buildSingleSymbolPrice(quote, wlItems);
+    if (data) result[symbol] = data;
+  }
+  return result;
+}
+
+/** Round to 2 decimal places (same helper as fixture system). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Derive trade ideas from watchlist items with trigger prices that haven't
+ * been promoted to a trade yet.  Ported from the fixture `buildTradeIdeas`
+ * in src/lib/workstation-fixtures.ts — direction-aware risk/reward calculation.
+ */
+export function buildTradeIdeasFromWatchlist(
+  watchlist: WorkstationWatchlistItem[],
+  symbolPrices: Record<string, SymbolPriceData>,
+  setupNames: Record<string, string> = {},
+): TradeIdea[] {
+  return watchlist
+    .filter((item) => item.triggerPrice !== null && item.promotedTradeId === null)
+    .map((item) => {
+      const price = symbolPrices[item.symbol];
+      const entryPrice = item.triggerPrice;
+      const stopPrice = item.plannedStop;
+      const targetPrice = item.targetPrice;
+
+      let riskPerShare: number | null = null;
+      let rewardPerShare: number | null = null;
+      let riskRewardRatio: number | null = null;
+
+      if (entryPrice !== null && stopPrice !== null) {
+        if (item.direction === 'long') {
+          riskPerShare = round2(entryPrice - stopPrice);
+          if (targetPrice !== null) {
+            rewardPerShare = round2(targetPrice - entryPrice);
+          }
+        } else {
+          riskPerShare = round2(stopPrice - entryPrice);
+          if (targetPrice !== null) {
+            rewardPerShare = round2(entryPrice - targetPrice);
+          }
+        }
+        if (riskPerShare > 0 && rewardPerShare !== null) {
+          riskRewardRatio = round2(rewardPerShare / riskPerShare);
+        }
+      }
+
+      const setupName =
+        item.setupId && setupNames[item.setupId]
+          ? setupNames[item.setupId]
+          : null;
+
+      return {
+        watchlistItemId: item.id,
+        symbol: item.symbol,
+        name: item.name,
+        direction: item.direction,
+        setupId: item.setupId,
+        setupName,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        riskPerShare,
+        rewardPerShare,
+        riskRewardRatio,
+        status: item.status,
+        lastPrice: price?.lastPrice ?? null,
+      };
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
