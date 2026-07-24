@@ -573,3 +573,13 @@
 .ws-setups-empty {
   padding: var(--ws-space-4) 0;
 }
+
+/* ── Equity Chart ───────────────────────────────────────────────────────── */
+
+/* Flex-based container that fills the equity panel body so the ECharts
+   canvas sizes correctly via ResizeObserver (useChartResize). */
+.ws-chart-container {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
