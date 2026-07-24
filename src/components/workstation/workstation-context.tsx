@@ -48,6 +48,9 @@ import {
  *  can rely on a single source of truth. */
 export type { WorkstationAccount } from '@/lib/workstation-live-adapter';
 
+/** MTM polling lifecycle states exposed for the toolbar indicator. */
+export type MtmPollingState = 'active' | 'paused' | 'error';
+
 /** Derive a WorkstationFixtures payload from live dashboard data.
  *  Fields without live equivalents (market indices, symbol prices,
  *  trade ideas) are left empty — those surfaces render their
@@ -84,6 +87,9 @@ export interface WorkstationContextValue {
   isLoading: boolean;
   /** Last fetch error message, or null when the last fetch succeeded. */
   error: string | null;
+  /** MTM polling state: active (polling with open positions), paused
+   *  (tab hidden or no open positions), or error (last poll failed). */
+  mtmPollingState: MtmPollingState;
 }
 
 const WorkstationContext = createContext<WorkstationContextValue | null>(null);
@@ -112,7 +118,10 @@ export function WorkstationProvider({
   const [liveAccounts, setLiveAccounts] = useState<WorkstationAccount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mtmPollingState, setMtmPollingState] = useState<MtmPollingState>('paused');
   const fetchAbortRef = useRef<AbortController | null>(null);
+  const mtmIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mtmAbortRef = useRef<AbortController | null>(null);
 
   // ── Fixture-mode data ──────────────────────────────────────────────
   const fixtureData = useMemo(
@@ -224,6 +233,97 @@ export function WorkstationProvider({
     };
   }, [liveMode, activeAccountId]);
 
+  // ── MTM polling (live mode only) ─────────────────────────────────
+  // Polls at 30s when live mode is active, tab is visible, and positions > 0.
+  // Pauses when tab is hidden or positions reach zero.  Sets mtmPollingState
+  // so the toolbar can render the active/paused/error indicator.
+  useEffect(() => {
+    if (!liveMode || !activeAccountId) {
+      setMtmPollingState('paused');
+      return;
+    }
+
+    const hasPositions = liveData !== null && liveData.positions.length > 0;
+
+    const startPolling = () => {
+      if (mtmIntervalRef.current) return; // already polling
+
+      setMtmPollingState('active');
+      console.info('[workstation] MTM polling started (30s)');
+
+      const tick = async () => {
+        if (mtmAbortRef.current) {
+          mtmAbortRef.current.abort();
+        }
+        const controller = new AbortController();
+        mtmAbortRef.current = controller;
+
+        console.info('[workstation] MTM poll fired');
+        const result = await fetchAllLiveDashboardData(
+          activeAccountId,
+          controller.signal,
+        );
+
+        if (!result.success) {
+          console.error(
+            '[workstation] MTM poll failed:',
+            result.error,
+          );
+          setMtmPollingState('error');
+          return;
+        }
+
+        console.info(
+          `[workstation] MTM poll OK: ${result.data.positions.length} position(s)`,
+        );
+        setLiveData(result.data);
+        setLiveAccounts(result.data.accounts);
+        setMtmPollingState('active');
+      };
+
+      // Fire one poll immediately, then every 30s.
+      tick();
+      mtmIntervalRef.current = setInterval(tick, 30_000);
+    };
+
+    const stopPolling = () => {
+      if (mtmIntervalRef.current) {
+        clearInterval(mtmIntervalRef.current);
+        mtmIntervalRef.current = null;
+      }
+      if (mtmAbortRef.current) {
+        mtmAbortRef.current.abort();
+        mtmAbortRef.current = null;
+      }
+      setMtmPollingState('paused');
+      console.info('[workstation] MTM polling paused');
+    };
+
+    const onVisibilityChange = () => {
+      if (!hasPositions) return;
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        startPolling();
+      }
+    };
+
+    if (hasPositions && !document.hidden) {
+      startPolling();
+    } else {
+      setMtmPollingState('paused');
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      stopPolling();
+      // Resolve any pending interval — use a shallow check to avoid
+      // stale-closure issues with hasPositions.
+    };
+  }, [liveMode, activeAccountId, liveData?.positions.length]);
+
   // ── Fixture-mode signal ───────────────────────────────────────────
   useEffect(() => {
     if (!liveMode) {
@@ -248,6 +348,7 @@ export function WorkstationProvider({
       liveMode,
       isLoading,
       error,
+      mtmPollingState,
     }),
     [
       liveMode,
@@ -258,6 +359,7 @@ export function WorkstationProvider({
       activeAccountId,
       isLoading,
       error,
+      mtmPollingState,
     ],
   );
 
