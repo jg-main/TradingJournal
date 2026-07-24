@@ -298,3 +298,54 @@
   border-bottom: var(--ws-border);
   margin-bottom: var(--ws-space-2);
 }
+
+/* ── Market Strip ────────────────────────────────────────────────────────── */
+/*
+ * Compact horizontal ribbon above the watchlist table showing major index
+ * levels at a glance. Designed as a thin sub-element inside the watchlist
+ * panel body — never a standalone panel with header chrome.
+ */
+.ws-market-strip {
+  display: flex;
+  flex: none;
+  gap: 0;
+  border-bottom: var(--ws-border);
+  margin-bottom: var(--ws-space-3);
+  min-height: 42px;
+}
+
+.ws-market-index {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  padding: var(--ws-space-2) var(--ws-space-3);
+}
+
+.ws-market-index + .ws-market-index {
+  border-left: var(--ws-border);
+}
+
+.ws-market-index-symbol {
+  font-size: var(--ws-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  line-height: 1;
+}
+
+.ws-market-index-value {
+  font-size: var(--ws-text-lg);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.ws-market-index-change,
+.ws-market-index-change-pct {
+  font-size: var(--ws-text-xs);
+  line-height: 1.2;
+}
