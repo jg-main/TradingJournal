@@ -11,6 +11,7 @@ export default defineConfig({
     include: [
       'src/lib/account-lifecycle.test.ts',
       'src/lib/workstation-fixtures.test.ts',
+      'src/lib/workstation-live-adapter.test.ts',
       'src/lib/account-defaults.test.ts',
       'src/lib/readiness.test.ts',
       'src/lib/restore.test.ts',
