@@ -492,7 +492,7 @@ describe('adaptAccounts', () => {
 
   it('preserves all other fields through mapping', () => {
     const result = adaptAccounts([
-      { id: 'a1', name: 'Main', currency: 'GBP', extra: 'ignored' },
+      { id: 'a1', name: 'Main', currency: 'GBP' },
     ]);
     expect(result[0].id).toBe('a1');
     expect(result[0].name).toBe('Main');

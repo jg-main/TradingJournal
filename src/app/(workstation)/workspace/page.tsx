@@ -13,12 +13,13 @@ import { WorkstationShell } from '@/components/workstation/workstation-shell';
 export default async function WorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ scenario?: string }>;
+  searchParams: Promise<{ scenario?: string; live?: string }>;
 }) {
-  const { scenario } = await searchParams;
+  const { scenario, live } = await searchParams;
+  const liveMode = live === 'true';
 
   return (
-    <WorkstationProvider initialScenario={scenario}>
+    <WorkstationProvider initialScenario={scenario} liveMode={liveMode}>
       <WorkstationToolbar />
       <WorkstationShell />
     </WorkstationProvider>
