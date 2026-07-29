@@ -81,6 +81,29 @@ const testCtx = vi.hoisted(() => {
       fetched_at TEXT NOT NULL,
       created_at TEXT DEFAULT (current_timestamp)
     );
+    CREATE TABLE IF NOT EXISTS instruments (
+      id TEXT PRIMARY KEY NOT NULL,
+      symbol TEXT NOT NULL UNIQUE,
+      name TEXT,
+      type TEXT DEFAULT 'stock' NOT NULL,
+      currency TEXT DEFAULT 'USD' NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (current_timestamp),
+      updated_at TEXT DEFAULT (current_timestamp)
+    );
+    CREATE TABLE IF NOT EXISTS valuation_marks (
+      id TEXT PRIMARY KEY NOT NULL,
+      account_id TEXT NOT NULL,
+      instrument_id TEXT NOT NULL,
+      price TEXT NOT NULL,
+      price_micros INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      mark_timestamp TEXT NOT NULL,
+      idempotency_key TEXT,
+      created_at TEXT DEFAULT (current_timestamp)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_valuation_marks_idempotency
+      ON valuation_marks(idempotency_key);
     CREATE INDEX IF NOT EXISTS idx_snapshots_trade_fetched
       ON position_price_snapshots(trade_id, fetched_at);
   `);
@@ -208,8 +231,10 @@ import { createMockQuoteResult } from '@/lib/market-quote';
 const TEST_ACCOUNT_ID = 'test-account-id';
 
 function cleanup() {
+  testCtx.sqlite.exec('DELETE FROM valuation_marks;');
   testCtx.sqlite.exec('DELETE FROM position_price_snapshots;');
   testCtx.sqlite.exec('DELETE FROM trades;');
+  testCtx.sqlite.exec('DELETE FROM instruments;');
   testCtx.sqlite.exec('DELETE FROM accounts;');
 }
 
@@ -221,6 +246,22 @@ function seedAccount(id = TEST_ACCOUNT_ID) {
       name: 'Test Account',
       createdAt: now,
       updatedAt: now,
+    })
+    .run();
+}
+
+function seedInstrument(symbol: string, overrides: Record<string, unknown> = {}) {
+  const now = new Date().toISOString();
+  db.insert(schema.instruments)
+    .values({
+      id: randomUUID(),
+      symbol,
+      name: symbol,
+      type: 'stock',
+      currency: 'USD',
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
     })
     .run();
 }
@@ -419,6 +460,102 @@ describe('POST /api/trades/mtm/refresh', () => {
     const r2 = await callPost();
     expect(r2.status).toBe(200);
     expect(r2.data.updated).toBe(1);
+  });
+
+  it('writes valuation_marks when instrument exists', async () => {
+    seedAccount();
+    seedOpenTrade({ symbol: 'AAPL' });
+    seedInstrument('AAPL');
+
+    mockProviderCtx.setQuotes(
+      new Map([['AAPL', createMockQuoteResult('AAPL', 150.25, 'REGULAR')]]),
+    );
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(1);
+
+    // Verify valuation_marks row was created
+    const marks = testCtx.sqlite.prepare(
+      `SELECT price, price_micros, source, idempotency_key, mark_timestamp
+       FROM valuation_marks`,
+    ).all() as Array<{
+      price: string;
+      price_micros: number;
+      source: string;
+      idempotency_key: string;
+      mark_timestamp: string;
+    }>;
+    expect(marks).toHaveLength(1);
+    expect(marks[0].price).toBe('150.25');
+    expect(marks[0].price_micros).toBe(150250000);
+    expect(marks[0].source).toBe('market_data');
+    expect(marks[0].idempotency_key).toMatch(/^mtm-refresh:.+:.+$/);
+    // mark_timestamp should be within the last minute
+    const markTime = new Date(marks[0].mark_timestamp).getTime();
+    const now = Date.now();
+    expect(now - markTime).toBeLessThan(60_000);
+  });
+
+  it('handles missing instrument without error', async () => {
+    seedAccount();
+    seedOpenTrade({ symbol: 'SPY' });
+    // No instrument seeded for SPY
+
+    mockProviderCtx.setQuotes(
+      new Map([['SPY', createMockQuoteResult('SPY', 500.0, 'REGULAR')]]),
+    );
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(1);
+
+    // No valuation_marks rows (instrument not found)
+    const markCount = (testCtx.sqlite.prepare(
+      'SELECT COUNT(*) as cnt FROM valuation_marks',
+    ).get() as { cnt: number }).cnt;
+    expect(markCount).toBe(0);
+
+    // Trade price was still updated
+    const tradeId = (testCtx.sqlite.prepare(
+      'SELECT id FROM trades WHERE symbol = ?',
+    ).get('SPY') as { id: string }).id;
+    const trade = db
+      .select({ cp: schema.trades.currentPrice })
+      .from(schema.trades)
+      .where(eq(schema.trades.id, tradeId))
+      .get() as { cp: number | null };
+    expect(trade.cp).toBe(500.0);
+  });
+
+  it('writes valuation_marks for multiple trades with instruments', async () => {
+    seedAccount();
+    seedOpenTrade({ symbol: 'AAPL' });
+    seedOpenTrade({ symbol: 'MSFT' });
+    seedInstrument('AAPL');
+    seedInstrument('MSFT');
+
+    mockProviderCtx.setQuotes(
+      new Map([
+        ['AAPL', createMockQuoteResult('AAPL', 178.5, 'REGULAR')],
+        ['MSFT', createMockQuoteResult('MSFT', 415.2, 'REGULAR')],
+      ]),
+    );
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(2);
+
+    const markCount = (testCtx.sqlite.prepare(
+      'SELECT COUNT(*) as cnt FROM valuation_marks',
+    ).get() as { cnt: number }).cnt;
+    expect(markCount).toBe(2);
+
+    // Each mark has a unique idempotency key
+    const keys = testCtx.sqlite.prepare(
+      'SELECT idempotency_key FROM valuation_marks',
+    ).all() as Array<{ idempotency_key: string }>;
+    expect(keys[0].idempotency_key).not.toBe(keys[1].idempotency_key);
   });
 
   it('handles duplicate symbols without double-counting', async () => {

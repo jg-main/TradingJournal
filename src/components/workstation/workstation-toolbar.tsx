@@ -2,13 +2,11 @@
 
 // WorkstationToolbar — compact top chrome for the workstation.
 //
-// Deliberately minimal: product mark, account switcher, scenario switcher
-// (fixture-era control; removed or repurposed in S06), and the FIXTURE badge
-// required by the slice verification contract. No legacy nav, no sidebar
-// toggle — the workstation owns the full viewport.
+// Production toolbar: account selector, loading/error indicators,
+// MTM polling status, and LIVE badge. No fixture controls — the
+// workstation is always live against the real database.
 
 import { useWorkstation, type MtmPollingState } from './workstation-context';
-import type { WorkstationScenarioId } from '@/lib/workstation-fixtures';
 
 /** Compact label + semantic description for the MTM polling indicator. */
 function mtmLabel(state: MtmPollingState): string {
@@ -38,11 +36,6 @@ export function WorkstationToolbar() {
     accounts,
     activeAccountId,
     setActiveAccountId,
-    scenario,
-    setScenario,
-    scenarios,
-    fixtureMode,
-    liveMode,
     isLoading,
     error,
     mtmPollingState,
@@ -74,30 +67,10 @@ export function WorkstationToolbar() {
         </select>
       </label>
 
-      {/* Scenario switcher — only visible in fixture mode (live mode hides it). */}
-      {!liveMode && (
-        <label className="ws-toolbar-field">
-          <span className="ws-toolbar-label">Scenario</span>
-          <select
-            className="ws-select"
-            aria-label="Fixture scenario"
-            data-testid="ws-scenario-select"
-            value={scenario}
-            onChange={(e) => setScenario(e.target.value as WorkstationScenarioId)}
-          >
-            {scenarios.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
       <div className="ws-toolbar-spacer" />
 
-      {/* Loading indicator (live mode only). */}
-      {liveMode && isLoading && (
+      {/* Loading indicator. */}
+      {isLoading && (
         <span
           className="ws-loading-indicator"
           data-testid="ws-loading-indicator"
@@ -108,8 +81,8 @@ export function WorkstationToolbar() {
         </span>
       )}
 
-      {/* Error indicator (live mode only, shown when a fetch fails). */}
-      {liveMode && error && (
+      {/* Error indicator. */}
+      {error && (
         <span
           className="ws-error-indicator"
           data-testid="ws-error-indicator"
@@ -120,19 +93,17 @@ export function WorkstationToolbar() {
         </span>
       )}
 
-      {/* MTM polling indicator (live mode only). */}
-      {liveMode && (
-        <span
-          className={`ws-mtm-indicator ws-mtm-${mtmPollingState}`}
-          data-testid={`ws-mtm-${mtmPollingState}`}
-          role="status"
-          aria-label={mtmLabel(mtmPollingState)}
-          title={mtmTitle(mtmPollingState)}
-        >
-          <span className="ws-mtm-dot" aria-hidden="true" />
-          {mtmLabel(mtmPollingState)}
-        </span>
-      )}
+      {/* MTM polling indicator. */}
+      <span
+        className={`ws-mtm-indicator ws-mtm-${mtmPollingState}`}
+        data-testid={`ws-mtm-${mtmPollingState}`}
+        role="status"
+        aria-label={mtmLabel(mtmPollingState)}
+        title={mtmTitle(mtmPollingState)}
+      >
+        <span className="ws-mtm-dot" aria-hidden="true" />
+        {mtmLabel(mtmPollingState)}
+      </span>
 
       {activeAccount && (
         <span className="ws-toolbar-meta ws-mono">
@@ -140,26 +111,13 @@ export function WorkstationToolbar() {
         </span>
       )}
 
-      {/* LIVE badge (live mode) or FIXTURE badge (fixture mode). */}
-      {liveMode && (
-        <span
-          className="ws-live-badge"
-          data-testid="ws-live-badge"
-          role="status"
-        >
-          LIVE
-        </span>
-      )}
-
-      {fixtureMode && (
-        <span
-          className="ws-fixture-badge"
-          data-testid="ws-fixture-badge"
-          role="status"
-        >
-          Fixture
-        </span>
-      )}
+      <span
+        className="ws-live-badge"
+        data-testid="ws-live-badge"
+        role="status"
+      >
+        LIVE
+      </span>
     </header>
   );
 }

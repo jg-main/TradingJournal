@@ -89,6 +89,7 @@ vi.mock('../schwab-auth', () => ({
   getAuthClient: mockAuthFns.mockGetAuthClient,
   schwabIsConfigured: mockAuthFns.mockSchwabIsConfigured,
   resetAuthClient: vi.fn(),
+  ensureTokenFreshness: vi.fn().mockResolvedValue(true),
 }));
 
 // ── Import after mocks ─────────────────────────────────────────────

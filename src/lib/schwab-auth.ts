@@ -342,6 +342,129 @@ export async function getTokenStatus(): Promise<TokenStatus> {
   }
 }
 
+// ── Token Freshness ────────────────────────────────────────────────────
+
+/** Refresh threshold: tokens expiring within this window trigger a refresh. */
+const TOKEN_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Minimum interval between refresh attempts (success or failure). */
+const REFRESH_COOLDOWN_BASE_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Maximum cooldown after repeated failures (30 minutes). */
+const REFRESH_COOLDOWN_MAX_MS = 30 * 60 * 1000; // 30 minutes
+
+/**
+ * Refresh attempt state — module-level to survive across requests.
+ * Tracks last attempt time and failure count for exponential backoff.
+ */
+interface RefreshAttemptState {
+  lastAttemptMs: number;
+  consecutiveFailures: number;
+}
+
+let refreshState: RefreshAttemptState | null = null;
+
+/**
+ * Ensure the Schwab access token is fresh before making API calls.
+ *
+ * Checks the DB-stored expiresAt (authoritative, set at token acquisition time)
+ * and forces a refresh when the token is expired or within the refresh threshold.
+ *
+ * Cooldown mechanism: after a failed refresh, subsequent calls skip the refresh
+ * attempt for an exponentially increasing interval (base 5 min, max 30 min),
+ * preventing bursts of failing auth calls that can trigger Schwab bans.
+ * Successful refreshes reset the failure counter.
+ *
+ * This function exists because the @sudowealth/schwab-api library's
+ * EnhancedTokenManager.getTokenData() recomputes expiresAt as
+ * Date.now() + expires_in when tokens are in its in-memory cache (this.tokenSet),
+ * making expired tokens appear fresh indefinitely. The DB stores the actual
+ * expiresAt, which we use as the source of truth.
+ *
+ * @returns true if tokens are fresh (or successfully refreshed), false otherwise
+ */
+export async function ensureTokenFreshness(): Promise<boolean> {
+  const client = getClient();
+  if (!client) return false;
+
+  try {
+    // Read the authoritative expiresAt from the database
+    const row = db
+      .select()
+      .from(schwabTokens)
+      .where(eq(schwabTokens.status, 'active'))
+      .get();
+
+    if (!row || !row.expiresAt) return false;
+
+    const expiresAt = new Date(row.expiresAt).getTime();
+    const now = Date.now();
+
+    // Token is still fresh — reset failure state and return
+    if (expiresAt - now > TOKEN_REFRESH_THRESHOLD_MS) {
+      if (refreshState && refreshState.consecutiveFailures > 0) {
+        refreshState = null;
+      }
+      return true;
+    }
+
+    // Check refresh cooldown to avoid hammering Schwab's token endpoint
+    if (refreshState) {
+      const cooldownMs = Math.min(
+        REFRESH_COOLDOWN_BASE_MS * Math.pow(2, refreshState.consecutiveFailures),
+        REFRESH_COOLDOWN_MAX_MS,
+      );
+      const msSinceLastAttempt = now - refreshState.lastAttemptMs;
+
+      if (msSinceLastAttempt < cooldownMs) {
+        // Still in cooldown — skip this refresh attempt
+        return false;
+      }
+    }
+
+    // Token expired or within threshold — force a refresh.
+    // refreshIfNeeded with force:true bypasses the in-memory expiresAt check
+    // and performs a real OAuth refresh against Schwab.
+    await client.refreshIfNeeded({ force: true });
+
+    // Success — reset failure state
+    refreshState = null;
+
+    console.log(
+      JSON.stringify({
+        event: 'schwab_token_refreshed',
+        previousExpiresAt: row.expiresAt,
+        reason:
+          expiresAt <= now ? 'token_expired' : 'within_refresh_threshold',
+      }),
+    );
+
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const now = Date.now();
+
+    // Track failure with exponential backoff
+    const failures = (refreshState?.consecutiveFailures ?? 0) + 1;
+    refreshState = { lastAttemptMs: now, consecutiveFailures: failures };
+
+    const cooldownMs = Math.min(
+      REFRESH_COOLDOWN_BASE_MS * Math.pow(2, failures),
+      REFRESH_COOLDOWN_MAX_MS,
+    );
+
+    console.error(
+      JSON.stringify({
+        event: 'schwab_token_refresh_failed',
+        error: message,
+        consecutiveFailures: failures,
+        cooldownMinutes: Math.round(cooldownMs / 60_000),
+      }),
+    );
+    return false;
+  }
+}
+
 // ── Token Clearing ──────────────────────────────────────────────────────
 
 /**

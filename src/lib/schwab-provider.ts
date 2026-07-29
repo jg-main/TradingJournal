@@ -27,7 +27,7 @@
 
 import { createApiClient } from '@sudowealth/schwab-api';
 import type { SchwabApiClient } from '@sudowealth/schwab-api';
-import { getAuthClient, schwabIsConfigured } from './schwab-auth';
+import { getAuthClient, schwabIsConfigured, ensureTokenFreshness } from './schwab-auth';
 import type {
   MarketOhlcProvider,
   OhlcQueryParams,
@@ -176,6 +176,11 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
    */
   async getQuote(symbols: string[]): Promise<QuoteResult[]> {
     if (symbols.length === 0) return [];
+
+    // Ensure tokens are fresh before making the API call.
+    // The in-memory token cache can become stale when the server stays
+    // running across browser sessions.
+    await ensureTokenFreshness();
 
     const now = new Date().toISOString();
 
@@ -326,6 +331,9 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
     const endMs = new Date(params.endDate + 'T23:59:59Z').getTime();
 
     const isIntraday = params.frequency === '10m';
+
+    // Ensure tokens are fresh before making the API call
+    await ensureTokenFreshness();
 
     try {
       const response = (await this.apiClient.marketData.priceHistory.getPriceHistory(

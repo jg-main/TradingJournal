@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { db } from '@/db';
-import { trades, positionPriceSnapshots } from '@/db/schema';
+import { trades, positionPriceSnapshots, valuationMarks, instruments } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { resolveQuoteProvider } from '@/lib/market-data-resolver';
 import { fetchYahooProfiles } from '@/lib/profile-enricher';
@@ -40,7 +40,7 @@ export async function POST(_request: NextRequest) {
 
     // ── Find open trades ──────────────────────────────────────────
     const openTrades = db
-      .select({ id: trades.id, symbol: trades.symbol, direction: trades.direction })
+      .select({ id: trades.id, symbol: trades.symbol, direction: trades.direction, accountId: trades.accountId })
       .from(trades)
       .where(eq(trades.status, 'open'))
       .all();
@@ -114,6 +114,66 @@ export async function POST(_request: NextRequest) {
           .run();
 
         updated++;
+
+        // ── Write valuation_marks row ──────────────────────────────
+        try {
+          const instrument = db
+            .select({ id: instruments.id })
+            .from(instruments)
+            .where(eq(instruments.symbol, trade.symbol))
+            .get();
+
+          if (instrument) {
+            const priceDecimal = String(quote.price);
+            const micros = Math.round(quote.price * 1_000_000);
+
+            db.insert(valuationMarks)
+              .values({
+                id: randomUUID(),
+                accountId: trade.accountId,
+                instrumentId: instrument.id,
+                price: priceDecimal,
+                priceMicros: micros,
+                source: 'market_data',
+                markTimestamp: nowISO,
+                idempotencyKey: `mtm-refresh:${trade.id}:${nowISO}`,
+                createdAt: nowISO,
+              })
+              .run();
+
+            console.log(
+              JSON.stringify({
+                event: 'mtm-refresh.valuation-mark',
+                tradeId: trade.id,
+                instrumentId: instrument.id,
+                price: quote.price,
+                source: 'market_data',
+                timestamp: nowISO,
+              }),
+            );
+          } else {
+            console.log(
+              JSON.stringify({
+                event: 'mtm-refresh.valuation-mark.skipped',
+                tradeId: trade.id,
+                symbol: trade.symbol,
+                reason: 'instrument_not_found',
+                timestamp: nowISO,
+              }),
+            );
+          }
+        } catch (valuationErr) {
+          // Non-fatal — valuation_marks insertion failure does not
+          // block the price refresh. Log and continue.
+          console.log(
+            JSON.stringify({
+              event: 'mtm-refresh.valuation-mark.error',
+              tradeId: trade.id,
+              error: String(valuationErr),
+              timestamp: nowISO,
+            }),
+          );
+        }
       } catch {
         failed.push(trade.symbol);
       }
