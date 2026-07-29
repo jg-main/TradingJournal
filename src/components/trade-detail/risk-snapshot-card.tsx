@@ -91,6 +91,19 @@ export default function RiskSnapshotCard({
       : ((planStop - mtmData!.price!) / (planStop - planEntry)).toFixed(2)
     : null;
 
+  // ── Market-column metrics for Price Levels table ──
+  const mtmPrice = hasMtm ? mtmData!.price! : null;
+  function mtmDistTo(level: number | null | undefined): { dollar: number; pct: number } | null {
+    if (mtmPrice == null || level == null || level === 0) return null;
+    const dollar = Math.abs(mtmPrice - level);
+    const pct = (dollar / level) * 100;
+    return { dollar, pct };
+  }
+  const mtmDistStop = mtmDistTo(actualStop);
+  const mtmDistTarget1 = mtmDistTo(planTarget1);
+  const mtmDistTarget2 = mtmDistTo(planTarget2);
+  const mtmMarketValue = hasMtm && actualQty != null ? mtmPrice! * actualQty : null;
+
   const T = 'text-zinc-500 dark:text-zinc-400';
   const V = 'tabular-nums text-zinc-900 dark:text-zinc-100';
   const D = 'tabular-nums text-zinc-500 dark:text-zinc-400';
@@ -122,6 +135,7 @@ export default function RiskSnapshotCard({
                   <th className="pb-1.5 text-left text-xs font-normal text-zinc-400 dark:text-zinc-500"></th>
                   {hasPlan && <th className="pb-1.5 text-right text-xs font-normal text-zinc-400 dark:text-zinc-500">Plan</th>}
                   <th className="pb-1.5 text-right text-xs font-normal text-zinc-400 dark:text-zinc-500">Actual</th>
+                  {hasMtm && <th className="pb-1.5 text-right text-xs font-normal text-amber-600 dark:text-amber-400">Market</th>}
                 </tr>
               </thead>
               <tbody>
@@ -129,26 +143,31 @@ export default function RiskSnapshotCard({
                   <td className={'py-1.5 ' + T}>Entry</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planEntry)}</td>}
                   <td className={'py-1.5 text-right ' + (actualEntry != null ? V : D)}>{actualEntry != null ? formatPrice(actualEntry) : '—'}</td>
+                  {hasMtm && <td className={'py-1.5 text-right ' + mtmPositiveClass}>{formatPrice(mtmPrice)}{mtmBadge}</td>}
                 </tr>
                 <tr className="border-b border-zinc-100 dark:border-zinc-800">
                   <td className={'py-1.5 ' + T}>Stop</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planStop)}</td>}
                   <td className={'py-1.5 text-right ' + D}>{formatPrice(actualStop)}</td>
+                  {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistStop != null ? `${formatPrice(mtmDistStop.dollar)} (${mtmDistStop.pct.toFixed(1)}%)` : '—'}</td>}
                 </tr>
                 <tr className="border-b border-zinc-100 dark:border-zinc-800">
                   <td className={'py-1.5 ' + T}>Target 1</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planTarget1)}</td>}
                   <td className={'py-1.5 text-right ' + D}>{actualExit ? formatPrice(actualExit) : '—'}</td>
+                  {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistTarget1 != null ? `${formatPrice(mtmDistTarget1.dollar)} (${mtmDistTarget1.pct.toFixed(1)}%)` : '—'}</td>}
                 </tr>
                 <tr className="border-b border-zinc-100 dark:border-zinc-800">
                   <td className={'py-1.5 ' + T}>Target 2</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planTarget2)}</td>}
                   <td className={'py-1.5 text-right ' + D}>—</td>
+                  {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistTarget2 != null ? `${formatPrice(mtmDistTarget2.dollar)} (${mtmDistTarget2.pct.toFixed(1)}%)` : '—'}</td>}
                 </tr>
                 <tr>
                   <td className={'py-1.5 ' + T}>Qty</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{planQty ?? '—'}</td>}
                   <td className={'py-1.5 text-right ' + V}>{actualQty != null ? actualQty.toLocaleString() : '—'}</td>
+                  {hasMtm && <td className={'py-1.5 text-right ' + V}>{mtmMarketValue != null ? formatCurrency(mtmMarketValue) : '—'}</td>}
                 </tr>
               </tbody>
             </table>
