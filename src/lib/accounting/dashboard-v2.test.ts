@@ -788,4 +788,199 @@ describe('computeDashboardV2', () => {
     expect(pos.markStatus).toBe('stale');
     expect(pos.markPrice).toBe('260.00');
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // MTM Refresh Integration Tests
+  // ══════════════════════════════════════════════════════════════════════════
+
+  it('reads fresh market_data valuation_marks written by MTM refresh', () => {
+    // Simulates the full path: MTM refresh writes valuation_marks with
+    // source="market_data" → V2 dashboard reads them via listLatestValuationMarks
+    // → reports fresh marks with matching prices
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    const instrumentId = randomUUID();
+    const tradeId = randomUUID();
+
+    // Expected values matching what MTM refresh would write
+    const markPrice = '152.50';
+    const markPriceMicros = 152_500_000;
+    const avgCost = '150.00';
+    const quantity = '10.00';
+    const totalCostBasis = '1500.00';
+    // Expected unrealizedPnl = (markPrice - averageCost) × quantity
+    //   = (152500000 - 150000000) × 10000000 / 1000000 micros
+    //   = 2500000 × 10000000 / 1000000 = 25000000 micros = "25.00"
+    const expectedUnrealizedPnl = '25.00';
+
+    // ── 1. Create account ────────────────────────────────────────────────
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'MTM Refresh Test Account', 'Test', 'USD', now, now);
+
+    // ── 2. Post opening balance ──────────────────────────────────────────
+    postOpeningBalance(ctx.sqlite, {
+      accountId,
+      amount: '10000.00',
+      idempotencyKey: randomUUID(),
+      description: 'Initial funding',
+    });
+
+    // ── 3. Create instrument (matches the trade symbol) ───────────────────
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(instrumentId, 'META', 'Meta Platforms Inc.', 'stock', now, now);
+
+    // ── 4. Create accounting execution (simulates the buy) ───────────────
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounting_executions
+         (id, account_id, instrument_id, action, quantity, price, fees, idempotency_key,
+          journal_trade_id, description, posted_at)
+         VALUES (?, ?, ?, 'buy', ?, ?, 0.00, ?, NULL, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, instrumentId, quantity, avgCost, randomUUID(), 'Buy 10 META', now);
+
+    // ── 5. Create account position (10 META, avg cost $150) ──────────────
+    const positionId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO account_positions
+         (id, account_id, instrument_id, direction, quantity, average_cost,
+          total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+          last_updated, created_at, updated_at)
+         VALUES (?, ?, ?, 'long', ?, ?, ?, '0.00', '0.00', '0.00', ?, ?, ?)`,
+      )
+      .run(positionId, accountId, instrumentId, quantity, avgCost, totalCostBasis, now, now, now);
+
+    // ── 6. Insert trade with current_price matching the mark (simulates MTM refresh) ─
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trades
+         (id, trade_code, account_id, symbol, direction, status, current_price,
+          current_price_fetched_at, created_at, updated_at)
+         VALUES (?, ?, ?, 'META', 'long', 'open', ?, ?, ?, ?)`,
+      )
+      .run(tradeId, `INT-TEST-${randomUUID().slice(0, 8)}`, accountId, 152.50, now, now, now);
+
+    // ── 7. Insert a very fresh valuation mark (seconds old, source='market_data') ─
+    // This simulates what the MTM refresh endpoint does after updating trades.current_price
+    const markTimestamp = new Date().toISOString();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO valuation_marks
+         (id, account_id, instrument_id, price, price_micros, source, mark_timestamp, created_at)
+         VALUES (?, ?, ?, ?, ?, 'market_data', ?, ?)`,
+      )
+      .run(randomUUID(), accountId, instrumentId, markPrice, markPriceMicros, markTimestamp, now);
+
+    // ── 8. Insert account performance projection ─────────────────────────
+    const nav = (Number(totalCostBasis) + 10000 - Number(totalCostBasis)).toFixed(2); // $10,000 NAV (funded $10k, bought $1.5k)
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO account_performance
+         (id, account_id, computed_as_of, net_cash, nav, marked_positions,
+          realized_pnl, unrealized_pnl, total_pnl, realized_fees,
+          gross_exposure, net_exposure, modified_dietz_return, twr,
+          high_water_mark, drawdown, drawdown_pct, warnings, positions_json,
+          rebuild_count, last_rebuilt_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        randomUUID(),
+        accountId,
+        now,
+        '8500.00',
+        '10025.00',
+        '1525.00',
+        '0.00',
+        expectedUnrealizedPnl,
+        expectedUnrealizedPnl,
+        '0.00',
+        '1525.00',
+        '1525.00',
+        null,
+        null,
+        null,
+        null,
+        null,
+        '[]',
+        JSON.stringify([
+          {
+            instrumentId,
+            direction: 'long',
+            quantity,
+            averageCost: avgCost,
+            totalCostBasis,
+            realizedPnl: '0.00',
+            realizedFees: '0.00',
+            realizedNetPnl: '0.00',
+            markPrice,
+            markStatus: 'fresh',
+            markedValue: '1525.00',
+            unrealizedPnl: expectedUnrealizedPnl,
+            markTimestamp,
+            markSource: 'market_data',
+            markAgeMinutes: 0,
+          },
+        ]),
+        1,
+        now,
+        now,
+        now,
+      );
+
+    // ── 9. Call computeDashboardV2 (the V2 dashboard aggregation) ─────────
+    const dashboard = computeDashboardV2(ctx.sqlite, accountId);
+    expect(dashboard).toBeDefined();
+
+    // ── 10. Verify mark age — must be < 1 minute (just written by MTM refresh) ─
+    const metaPos = dashboard!.valuation.positions.find((p) => p.symbol === 'META');
+    expect(metaPos).toBeDefined();
+    expect(metaPos!.markStatus).toBe('fresh');
+    expect(metaPos!.markAgeMinutes).toBeLessThan(1);
+
+    // ── 11. Verify markPrice matches what MTM refresh wrote ──────────────
+    expect(metaPos!.markPrice).toBe(markPrice);
+
+    // ── 12. Verify unrealizedPnl = (markPrice - avgCost) × quantity ──────
+    expect(metaPos!.unrealizedPnl).toBe(expectedUnrealizedPnl);
+    expect(metaPos!.averageCost).toBe(avgCost);
+    expect(metaPos!.quantity).toBe(quantity);
+
+    // ── 13. Verify valuation completeness ───────────────────────────────
+    expect(dashboard!.valuation.fresh).toBe(1);
+    expect(dashboard!.valuation.stale).toBe(0);
+    expect(dashboard!.valuation.missing).toBe(0);
+    expect(dashboard!.valuation.positionsTotal).toBe(1);
+
+    // ── 14. Verify integrity — fresh marks with no warnings → healthy ───
+    expect(dashboard!.integrity.status).toBe('healthy');
+    expect(dashboard!.integrity.warnings.length).toBe(0);
+
+    // ── 15. Cross-check: markPrice matches trades.current_price ─────────
+    // MTM refresh updates both trades.current_price and valuation_marks.price
+    // to the same value. Verify they match.
+    const trade = ctx.sqlite
+      .prepare('SELECT current_price FROM trades WHERE id = ?')
+      .get(tradeId) as { current_price: number | null };
+    expect(trade.current_price).toBe(152.50);
+    expect(Number(metaPos!.markPrice)).toBe(trade.current_price);
+
+    // ── 16. Verify riskSummary.openPnl matches computed unrealized P&L ───
+    // (riskSummary.openPnl is the sum of unrealizedPnl across all positions)
+    expect(dashboard!.riskSummary.openPnl).toBe(expectedUnrealizedPnl);
+
+    // ── 17. Verify the valuation_mark has source='market_data' (written by MTM refresh) ─
+    const valuationMark = ctx.sqlite
+      .prepare('SELECT source FROM valuation_marks WHERE account_id = ?')
+      .get(accountId) as { source: string };
+    expect(valuationMark.source).toBe('market_data');
+  });
 });
