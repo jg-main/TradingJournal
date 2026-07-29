@@ -102,6 +102,34 @@ const testCtx = vi.hoisted(() => {
       idempotency_key TEXT,
       created_at TEXT DEFAULT (current_timestamp)
     );
+    CREATE TABLE IF NOT EXISTS trade_executions (
+      id TEXT PRIMARY KEY NOT NULL,
+      trade_id TEXT NOT NULL,
+      executed_at TEXT,
+      action TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      price REAL NOT NULL,
+      fees REAL DEFAULT 0,
+      reason_id TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (current_timestamp)
+    );
+    CREATE TABLE IF NOT EXISTS account_positions (
+      id TEXT PRIMARY KEY NOT NULL,
+      account_id TEXT NOT NULL,
+      instrument_id TEXT NOT NULL,
+      direction TEXT,
+      quantity TEXT NOT NULL DEFAULT '0.00',
+      average_cost TEXT NOT NULL DEFAULT '0.00',
+      total_cost_basis TEXT NOT NULL DEFAULT '0.00',
+      realized_gross_pnl TEXT NOT NULL DEFAULT '0.00',
+      realized_fees TEXT NOT NULL DEFAULT '0.00',
+      realized_net_pnl TEXT NOT NULL DEFAULT '0.00',
+      last_updated TEXT NOT NULL,
+      created_at TEXT DEFAULT (current_timestamp),
+      updated_at TEXT DEFAULT (current_timestamp),
+      UNIQUE(account_id, instrument_id)
+    );
     CREATE UNIQUE INDEX IF NOT EXISTS uq_valuation_marks_idempotency
       ON valuation_marks(idempotency_key);
     CREATE INDEX IF NOT EXISTS idx_snapshots_trade_fetched
@@ -234,6 +262,8 @@ function cleanup() {
   testCtx.sqlite.exec('DELETE FROM valuation_marks;');
   testCtx.sqlite.exec('DELETE FROM position_price_snapshots;');
   testCtx.sqlite.exec('DELETE FROM trades;');
+  testCtx.sqlite.exec('DELETE FROM account_positions;');
+  testCtx.sqlite.exec('DELETE FROM trade_executions;');
   testCtx.sqlite.exec('DELETE FROM instruments;');
   testCtx.sqlite.exec('DELETE FROM accounts;');
 }
@@ -285,6 +315,22 @@ function seedOpenTrade(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return id;
+}
+
+function seedTradeExecution(tradeId: string, overrides: Record<string, unknown> = {}) {
+  const now = new Date().toISOString();
+  db.insert(schema.tradeExecutions)
+    .values({
+      id: randomUUID(),
+      tradeId,
+      action: 'buy',
+      quantity: 100,
+      price: 50.0,
+      fees: 0,
+      executedAt: now,
+      ...overrides,
+    })
+    .run();
 }
 
 async function callPost(): Promise<{
@@ -661,5 +707,131 @@ describe('POST /api/trades/mtm/refresh', () => {
       .where(eq(schema.trades.id, tradeId))
       .get() as { cp: number | null };
     expect(trade.cp).toBe(150.0);
+  });
+
+  it('auto-creates account position when missing during refresh', async () => {
+    seedAccount();
+    const tradeId = seedOpenTrade({ symbol: 'AAPL' });
+    seedInstrument('AAPL');
+    // Seed two buy executions: 100 @ $50 and 50 @ $52
+    seedTradeExecution(tradeId, { action: 'buy', quantity: 100, price: 50.0 });
+    seedTradeExecution(tradeId, { action: 'buy', quantity: 50, price: 52.0 });
+    // No account_position seeded — should be auto-created
+
+    mockProviderCtx.setQuotes(
+      new Map([['AAPL', createMockQuoteResult('AAPL', 60.0, 'REGULAR')]]),
+    );
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(1);
+    expect((data.failed as unknown[]).length).toBe(0);
+
+    // Verify account_position was auto-created
+    const instrument = testCtx.sqlite.prepare(
+      'SELECT id FROM instruments WHERE symbol = ?',
+    ).get('AAPL') as { id: string };
+
+    const position = testCtx.sqlite.prepare(
+      `SELECT direction, quantity, average_cost, total_cost_basis,
+              realized_gross_pnl, realized_fees, realized_net_pnl
+       FROM account_positions
+       WHERE account_id = ? AND instrument_id = ?`,
+    ).get(TEST_ACCOUNT_ID, instrument.id) as Record<string, unknown> | undefined;
+    expect(position).toBeDefined();
+    expect(position!.direction).toBe('long');
+    // totalQty = 100 + 50 = 150
+    expect(position!.quantity).toBe('150');
+    // avgCost = (100*50 + 50*52) / 150 = (5000 + 2600) / 150 = 7600 / 150 = 50.666...
+    expect(position!.average_cost).toBe(String((100 * 50 + 50 * 52) / 150));
+    // totalCostBasis = 150 * 50.666...
+    expect(position!.total_cost_basis).toBe(String(150 * (100 * 50 + 50 * 52) / 150));
+    // Realized fields should be zero for a new position
+    expect(position!.realized_gross_pnl).toBe('0.00');
+    expect(position!.realized_fees).toBe('0.00');
+    expect(position!.realized_net_pnl).toBe('0.00');
+
+    // Valuation_mark should still be written
+    const markCount = (testCtx.sqlite.prepare(
+      'SELECT COUNT(*) as cnt FROM valuation_marks',
+    ).get() as { cnt: number }).cnt;
+    expect(markCount).toBe(1);
+  });
+
+  it('does not create duplicate account position if one already exists', async () => {
+    seedAccount();
+    const tradeId = seedOpenTrade({ symbol: 'AAPL' });
+    seedInstrument('AAPL');
+    seedTradeExecution(tradeId, { action: 'buy', quantity: 100, price: 50.0 });
+
+    // Pre-seed an existing account position
+    const instrument = testCtx.sqlite.prepare(
+      'SELECT id FROM instruments WHERE symbol = ?',
+    ).get('AAPL') as { id: string };
+    const now = new Date().toISOString();
+    db.insert(schema.accountPositions)
+      .values({
+        id: randomUUID(),
+        accountId: TEST_ACCOUNT_ID,
+        instrumentId: instrument.id,
+        direction: 'long',
+        quantity: '100',
+        averageCost: '50.00',
+        totalCostBasis: '5000.00',
+        realizedGrossPnl: '0.00',
+        realizedFees: '0.00',
+        realizedNetPnl: '0.00',
+        lastUpdated: now,
+      })
+      .run();
+
+    mockProviderCtx.setQuotes(
+      new Map([['AAPL', createMockQuoteResult('AAPL', 60.0, 'REGULAR')]]),
+    );
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(1);
+
+    // Verify no duplicate position was created — only 1 row
+    const positionCount = (testCtx.sqlite.prepare(
+      'SELECT COUNT(*) as cnt FROM account_positions WHERE account_id = ?',
+    ).get(TEST_ACCOUNT_ID) as { cnt: number }).cnt;
+    expect(positionCount).toBe(1);
+
+    // Position should retain its original data
+    const pos = testCtx.sqlite.prepare(
+      'SELECT quantity, average_cost FROM account_positions WHERE account_id = ?',
+    ).get(TEST_ACCOUNT_ID) as { quantity: string; average_cost: string };
+    expect(pos.quantity).toBe('100');
+    expect(pos.average_cost).toBe('50.00');
+  });
+
+  it('handles trade with no executions gracefully (no position created)', async () => {
+    seedAccount();
+    seedOpenTrade({ symbol: 'AAPL' });
+    seedInstrument('AAPL');
+    // No trade_executions seeded — trade has no fills
+
+    mockProviderCtx.setQuotes(
+      new Map([['AAPL', createMockQuoteResult('AAPL', 150.0, 'REGULAR')]]),
+    );
+
+    const { status, data } = await callPost();
+    expect(status).toBe(200);
+    expect(data.updated).toBe(1);
+    expect((data.failed as unknown[]).length).toBe(0);
+
+    // No account_position should exist
+    const posCount = (testCtx.sqlite.prepare(
+      'SELECT COUNT(*) as cnt FROM account_positions',
+    ).get() as { cnt: number }).cnt;
+    expect(posCount).toBe(0);
+
+    // Valuation_mark should still be written
+    const markCount = (testCtx.sqlite.prepare(
+      'SELECT COUNT(*) as cnt FROM valuation_marks',
+    ).get() as { cnt: number }).cnt;
+    expect(markCount).toBe(1);
   });
 });

@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { db } from '@/db';
-import { trades, positionPriceSnapshots, valuationMarks, instruments } from '@/db/schema';
+import { trades, positionPriceSnapshots, valuationMarks, instruments, accountPositions, tradeExecutions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { resolveQuoteProvider } from '@/lib/market-data-resolver';
 import { fetchYahooProfiles } from '@/lib/profile-enricher';
@@ -152,6 +152,94 @@ export async function POST(_request: NextRequest) {
             );
 
             instrument = { id: instrumentId };
+          }
+
+          // ── Auto-create account position if none exists ────────────
+          // When the instrument exists (found or created) but no
+          // account_position row exists for (accountId, instrumentId),
+          // compute the open position from trade_executions and create one.
+          // Non-fatal: position creation errors do not block the
+          // valuation_mark write or price refresh.
+          try {
+            const existingPos = db
+              .select({ id: accountPositions.id })
+              .from(accountPositions)
+              .where(
+                and(
+                  eq(accountPositions.accountId, trade.accountId),
+                  eq(accountPositions.instrumentId, instrument.id),
+                ),
+              )
+              .get();
+
+            if (!existingPos) {
+              const executions = db
+                .select({
+                  action: tradeExecutions.action,
+                  quantity: tradeExecutions.quantity,
+                  price: tradeExecutions.price,
+                })
+                .from(tradeExecutions)
+                .where(eq(tradeExecutions.tradeId, trade.id))
+                .all();
+
+              const isLong = trade.direction === 'long';
+              const entryActions = executions.filter(
+                (e) => isLong
+                  ? (e.action === 'buy' || e.action === 'add')
+                  : e.action === 'sell_short',
+              );
+
+              const totalQty = entryActions.reduce((s, e) => s + e.quantity, 0);
+              const weightedCost = entryActions.reduce(
+                (s, e) => s + e.price * e.quantity,
+                0,
+              );
+              const avgCost = totalQty > 0 ? weightedCost / totalQty : quote.price;
+
+              if (totalQty > 0) {
+                db.insert(accountPositions)
+                  .values({
+                    id: randomUUID(),
+                    accountId: trade.accountId,
+                    instrumentId: instrument.id,
+                    direction: trade.direction,
+                    quantity: String(totalQty),
+                    averageCost: String(avgCost),
+                    totalCostBasis: String(totalQty * avgCost),
+                    realizedGrossPnl: '0.00',
+                    realizedFees: '0.00',
+                    realizedNetPnl: '0.00',
+                    lastUpdated: nowISO,
+                  })
+                  .run();
+
+                console.log(
+                  JSON.stringify({
+                    event: 'mtm-refresh.position.created',
+                    accountId: trade.accountId,
+                    instrumentId: instrument.id,
+                    tradeId: trade.id,
+                    quantity: totalQty,
+                    averageCost: avgCost,
+                    direction: trade.direction,
+                    timestamp: nowISO,
+                  }),
+                );
+              }
+            }
+          } catch (posErr) {
+            // Non-fatal — position creation failure does not block the
+            // valuation_mark write or price refresh. Log and continue.
+            console.log(
+              JSON.stringify({
+                event: 'mtm-refresh.position.error',
+                tradeId: trade.id,
+                instrumentId: instrument.id,
+                error: String(posErr),
+                timestamp: nowISO,
+              }),
+            );
           }
 
           const priceDecimal = String(quote.price);
