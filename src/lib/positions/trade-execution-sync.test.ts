@@ -241,11 +241,11 @@ describe('syncAndRebuildPositions integration round-trip', () => {
     expect(success.rebuildResult.matchCount).toBe(0);
 
     // Store execution id for idempotency test
-    (ctx as Record<string, unknown>)._buyExecId = exec.id;
+    (ctx as unknown as Record<string, unknown>)._buyExecId = exec.id;
   });
 
   it('2. is idempotent: same execution returns existing accounting_execution without duplicate', () => {
-    const execId = (ctx as Record<string, unknown>)._buyExecId as string;
+    const execId = (ctx as unknown as Record<string, unknown>)._buyExecId as string;
     expect(execId).toBeDefined();
 
     const exec = makeTradeExec({
@@ -345,7 +345,7 @@ describe('syncAndRebuildPositions integration round-trip', () => {
     expect(success.rebuildResult.executionCount).toBe(2);
 
     // Store for next test
-    (ctx as Record<string, unknown>)._addExecId = exec.id;
+    (ctx as unknown as Record<string, unknown>)._addExecId = exec.id;
   });
 
   it('4. reduce execution records realized P&L and decreases position', () => {
@@ -419,7 +419,7 @@ describe('syncAndRebuildPositions integration round-trip', () => {
     expect(success.rebuildResult.matchCount).toBe(1);
 
     // Store for next test
-    (ctx as Record<string, unknown>)._reduceExecId = exec.id;
+    (ctx as unknown as Record<string, unknown>)._reduceExecId = exec.id;
   });
 
   it('5. full sell closes the position and records complete P&L', () => {
