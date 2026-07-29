@@ -16,6 +16,8 @@ import {
   computeRiskSnapshotValues,
   type PriorClosedTradeData,
 } from '@/lib/risk-snapshot';
+import { syncAndRebuildPositions } from '@/lib/positions/trade-execution-sync';
+import { getSqliteHandle } from '@/db';
 
 const executeTradeSchema = z.object({
   entryPrice: z.number().positive(),
@@ -527,6 +529,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       return { executions: createdExecutions, trade: updatedTrade };
     });
+
+    // ── Sync positions to accounting (non-fatal) ────────────────
+    try {
+      const sqlite = getSqliteHandle();
+      for (const execution of result.executions) {
+        syncAndRebuildPositions(
+          sqlite,
+          {
+            id: execution.id,
+            tradeId: execution.tradeId,
+            action: execution.action,
+            quantity: execution.quantity,
+            price: execution.price,
+            fees: execution.fees,
+            executedAt: execution.executedAt,
+          },
+          trade.accountId,
+          trade.symbol,
+        );
+      }
+    } catch (_syncErr) {
+      // Non-fatal: sync failures are logged by syncAndRebuildPositions
+      // and do not affect the trade execution response.
+    }
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
