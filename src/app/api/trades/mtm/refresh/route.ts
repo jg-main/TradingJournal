@@ -117,51 +117,70 @@ export async function POST(_request: NextRequest) {
 
         // ── Write valuation_marks row ──────────────────────────────
         try {
-          const instrument = db
+          let instrument = db
             .select({ id: instruments.id })
             .from(instruments)
             .where(eq(instruments.symbol, trade.symbol))
             .get();
 
-          if (instrument) {
-            const priceDecimal = String(quote.price);
-            const micros = Math.round(quote.price * 1_000_000);
-
-            db.insert(valuationMarks)
+          if (!instrument) {
+            // Auto-create instrument for symbols not yet in the instruments table.
+            // This can happen when a new trade uses a symbol that has never been
+            // seen before. The instrument is created with sensible defaults;
+            // users can update the name/type/currency later via the instrument
+            // management surface.
+            const instrumentId = randomUUID();
+            db.insert(instruments)
               .values({
-                id: randomUUID(),
-                accountId: trade.accountId,
-                instrumentId: instrument.id,
-                price: priceDecimal,
-                priceMicros: micros,
-                source: 'market_data',
-                markTimestamp: nowISO,
-                idempotencyKey: `mtm-refresh:${trade.id}:${nowISO}`,
+                id: instrumentId,
+                symbol: trade.symbol,
+                name: quote.shortName ?? trade.symbol,
+                type: 'stock',
+                currency: 'USD',
                 createdAt: nowISO,
+                updatedAt: nowISO,
               })
               .run();
 
             console.log(
               JSON.stringify({
-                event: 'mtm-refresh.valuation-mark',
-                tradeId: trade.id,
-                instrumentId: instrument.id,
-                price: quote.price,
-                source: 'market_data',
-                timestamp: nowISO,
-              }),
-            );
-          } else {
-            console.log(
-              JSON.stringify({
-                event: 'mtm-refresh.valuation-mark.skipped',
-                tradeId: trade.id,
+                event: 'mtm-refresh.instrument.created',
                 symbol: trade.symbol,
-                reason: 'instrument_not_found',
+                instrumentId,
                 timestamp: nowISO,
               }),
             );
+
+            instrument = { id: instrumentId };
           }
+
+          const priceDecimal = String(quote.price);
+          const micros = Math.round(quote.price * 1_000_000);
+
+          db.insert(valuationMarks)
+            .values({
+              id: randomUUID(),
+              accountId: trade.accountId,
+              instrumentId: instrument.id,
+              price: priceDecimal,
+              priceMicros: micros,
+              source: 'market_data',
+              markTimestamp: nowISO,
+              idempotencyKey: `mtm-refresh:${trade.id}:${nowISO}`,
+              createdAt: nowISO,
+            })
+            .run();
+
+          console.log(
+            JSON.stringify({
+              event: 'mtm-refresh.valuation-mark',
+              tradeId: trade.id,
+              instrumentId: instrument.id,
+              price: quote.price,
+              source: 'market_data',
+              timestamp: nowISO,
+            }),
+          );
         } catch (valuationErr) {
           // Non-fatal — valuation_marks insertion failure does not
           // block the price refresh. Log and continue.

@@ -497,10 +497,10 @@ describe('POST /api/trades/mtm/refresh', () => {
     expect(now - markTime).toBeLessThan(60_000);
   });
 
-  it('handles missing instrument without error', async () => {
+  it('auto-creates instrument when missing during refresh', async () => {
     seedAccount();
     seedOpenTrade({ symbol: 'SPY' });
-    // No instrument seeded for SPY
+    // No instrument seeded for SPY — should be auto-created
 
     mockProviderCtx.setQuotes(
       new Map([['SPY', createMockQuoteResult('SPY', 500.0, 'REGULAR')]]),
@@ -510,11 +510,22 @@ describe('POST /api/trades/mtm/refresh', () => {
     expect(status).toBe(200);
     expect(data.updated).toBe(1);
 
-    // No valuation_marks rows (instrument not found)
+    // Verify instrument was auto-created with sensible defaults
+    const instrument = testCtx.sqlite.prepare(
+      'SELECT id, symbol, name, type, currency, is_active FROM instruments WHERE symbol = ?',
+    ).get('SPY') as Record<string, unknown> | undefined;
+    expect(instrument).toBeDefined();
+    expect(instrument!.symbol).toBe('SPY');
+    expect(instrument!.name).toBe('SPY');
+    expect(instrument!.type).toBe('stock');
+    expect(instrument!.currency).toBe('USD');
+    expect(instrument!.is_active).toBe(1);
+
+    // Valuation_mark should now be written (instrument exists)
     const markCount = (testCtx.sqlite.prepare(
       'SELECT COUNT(*) as cnt FROM valuation_marks',
     ).get() as { cnt: number }).cnt;
-    expect(markCount).toBe(0);
+    expect(markCount).toBe(1);
 
     // Trade price was still updated
     const tradeId = (testCtx.sqlite.prepare(
