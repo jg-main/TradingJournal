@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransactions, settings as settingsTable } from '@/db/schema';
 import { eq, and, lte } from 'drizzle-orm';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ import {
   computeRiskSnapshotValues,
   type PriorClosedTradeData,
 } from '@/lib/risk-snapshot';
+import { syncAndRebuildPositions } from '@/lib/positions/trade-execution-sync';
 
 const createExecutionSchema = z.object({
   action: z.enum([
@@ -316,6 +317,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           }
         }
       }
+    }
+
+    // ── Sync positions to accounting (non-fatal) ────────────────
+    try {
+      const sqlite = getSqliteHandle();
+      syncAndRebuildPositions(
+        sqlite,
+        {
+          id: executionId,
+          tradeId: id,
+          action: parsed.data.action,
+          quantity: parsed.data.quantity,
+          price: parsed.data.price,
+          fees: parsed.data.fees,
+          executedAt: parsed.data.executedAt ?? now,
+        },
+        trade.accountId,
+        trade.symbol,
+      );
+    } catch (_syncErr) {
+      // Non-fatal: sync failures are logged by syncAndRebuildPositions
+      // and do not affect the trade execution response.
     }
 
     const created = db
