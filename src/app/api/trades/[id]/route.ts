@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions } from '@/db/schema';
+import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, settings, accounts } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
-import { calculateUnrealizedPnL } from '@/lib/mark-to-market';
-import type { ExecutionData, Direction } from '@/lib/trade-calc';
+import { computeTradeMetrics } from '@/lib/trade-metrics';
+import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
 const updateTradeSchema = z.object({
   symbol: z.string().min(1).max(20).optional(),
@@ -73,42 +73,88 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Compute unrealized PnL for non-closed trades with a current price
-    // Uses exclude_entry_fees to match existing behavior — entry fees are not
-    // subtracted from unrealized P&L in the trade detail view.
-    let unrealizedPnl: number | null = null;
-    if (row.status !== 'closed' && row.currentPrice !== null && row.currentPrice !== undefined) {
-      const executions = db
-        .select({
-          action: tradeExecutions.action,
-          quantity: tradeExecutions.quantity,
-          price: tradeExecutions.price,
-          fees: tradeExecutions.fees,
-          executedAt: tradeExecutions.executedAt,
-        })
-        .from(tradeExecutions)
-        .where(eq(tradeExecutions.tradeId, id))
-        .all();
+    // ── Fetch related data for trade metrics computation ───────────────
 
-      if (executions.length > 0) {
-        const executionData: ExecutionData[] = executions.map((e) => ({
-          action: e.action,
-          quantity: e.quantity,
-          price: e.price,
-          fees: e.fees,
-          executedAt: e.executedAt ?? '',
-        }));
+    const executionRows = db
+      .select()
+      .from(tradeExecutions)
+      .where(eq(tradeExecutions.tradeId, id))
+      .all();
 
-        unrealizedPnl = calculateUnrealizedPnL({
-          executions: executionData,
-          direction: row.direction as Direction,
-          currentPrice: row.currentPrice,
-          feePolicy: 'exclude_entry_fees',
-        });
-      }
-    }
+    const riskSnapshotRow = db
+      .select()
+      .from(tradeRiskSnapshots)
+      .where(eq(tradeRiskSnapshots.tradeId, id))
+      .get();
 
-    return NextResponse.json({ ...row, unrealizedPnl });
+    const stopAdjustmentRows = db
+      .select()
+      .from(tradeStopAdjustments)
+      .where(eq(tradeStopAdjustments.tradeId, id))
+      .all();
+
+    // Derive current account equity: account startingBalance, then settings fallback, then null
+    const account = db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, row.accountId))
+      .get();
+
+    const settingsRow = db
+      .select()
+      .from(settings)
+      .where(eq(settings.id, 'default'))
+      .get();
+
+    const currentAccountEquity =
+      account?.startingBalance ?? settingsRow?.startingAccountValue ?? null;
+
+    // ── Build TradeMetricsInput ───────────────────────────────────────
+
+    const metricsInput: TradeMetricsInput = {
+      executions: executionRows.map((e) => ({
+        id: e.id,
+        action: e.action,
+        quantity: e.quantity,
+        price: e.price,
+        fees: e.fees,
+        executedAt: e.executedAt ?? '',
+      })),
+      direction: row.direction as 'long' | 'short',
+      riskSnapshot: riskSnapshotRow
+        ? {
+            initialRiskAmount: riskSnapshotRow.initialRiskAmount,
+            accountEquityAtOpen: riskSnapshotRow.accountEquityAtOpen,
+          }
+        : null,
+      stopAdjustments: stopAdjustmentRows
+        .filter((s): s is typeof s & { newStop: number } => s.newStop != null)
+        .map((s) => ({
+          stopPrice: s.newStop,
+          adjustedAt: s.adjustedAt ?? '',
+        })),
+      currentMark:
+        row.currentPrice != null
+          ? {
+              price: row.currentPrice,
+              markedAt: row.currentPriceFetchedAt ?? new Date().toISOString(),
+            }
+          : null,
+      currentAccountEquity,
+    };
+
+    const metrics = computeTradeMetrics(metricsInput);
+
+    // Backward-compatible shape: flat fields preserved at top level + nested metrics
+    // Flat unrealizedPnl uses grossUnrealizedPnl to match old exclude_entry_fees behavior
+    return NextResponse.json({
+      ...row,
+      realizedPnl: metrics.realizedPnl.netRealizedPnl,
+      unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
+      returnPct: metrics.returnMetrics.returnPct,
+      riskPct: metrics.risk.riskToAccount,
+      metrics,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch trade', details: String(error) },
