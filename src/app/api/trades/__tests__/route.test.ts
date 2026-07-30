@@ -359,7 +359,7 @@ function doGetTrades(params: {
         currentAccountEquity > 0
       ) {
         const plannedRiskAmount = Math.abs(row.plannedEntry - row.plannedStop) * row.plannedQuantity;
-        plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity) * 100;
+        plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity);
       }
 
       return {
@@ -1169,9 +1169,9 @@ console.log('\n22. GET uses rollforward.endingEquity as primary equity source:')
   const m = row.metrics as Record<string, unknown>;
   const risk = m.risk as Record<string, unknown>;
 
-  // With rollforward.endingEquity=12500, riskToAccount = 1000/12500 = 8%
+  // With rollforward.endingEquity=12500, riskToAccount = 1000/12500 = 0.08
   assertNotNull(risk.riskToAccount, 'riskToAccount is not null (rollforward equity was used)');
-  assertApprox(risk.riskToAccount as number, 8, 1, `riskToAccount ≈ 8% (1000/12500) got ${risk.riskToAccount}`);
+  assertApprox(risk.riskToAccount as number, 0.08, 0.01, `riskToAccount ≈ 0.08 (1000/12500) got ${risk.riskToAccount}`);
   assertNotNull(risk.openRisk, 'openRisk is computed');
 }
 
@@ -1304,7 +1304,7 @@ console.log('\n26. GET plannedRiskToAccount computed for planned trades:');
 
   // Planned trade with plannedEntry=105, plannedStop=95, plannedQuantity=100
   // plannedRiskAmount = |105 - 95| * 100 = 1000
-  // plannedRiskToAccount = 1000 / 12500 * 100 = 8%
+  // plannedRiskToAccount = 1000 / 12500 = 0.08
   seedTrade({
     accountId: 'test-account-id',
     symbol: 'MSFT',
@@ -1335,7 +1335,7 @@ console.log('\n26. GET plannedRiskToAccount computed for planned trades:');
   const msftRow = d.data.find((r: Record<string, unknown>) => r.symbol === 'MSFT') as Record<string, unknown>;
   assertNotNull(msftRow, 'MSFT row found');
   assertNotNull(msftRow.plannedRiskToAccount, 'plannedRiskToAccount is computed for MSFT');
-  assertApprox(msftRow.plannedRiskToAccount as number, 8, 1, 'plannedRiskToAccount ≈ 8% (1000/12500) for MSFT');
+  assertApprox(msftRow.plannedRiskToAccount as number, 0.08, 0.01, 'plannedRiskToAccount ≈ 0.08 (1000/12500) for MSFT');
 
   // AAPL: missing plannedStop → plannedRiskToAccount should be null
   const aaplRow = d.data.find((r: Record<string, unknown>) => r.symbol === 'AAPL') as Record<string, unknown>;

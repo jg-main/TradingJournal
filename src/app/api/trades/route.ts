@@ -281,7 +281,7 @@ export async function GET(request: NextRequest) {
         currentAccountEquity > 0
       ) {
         const plannedRiskAmount = Math.abs(row.plannedEntry - row.plannedStop) * row.plannedQuantity;
-        plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity) * 100;
+        plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity);
       }
 
       // Strip FIFO debugging detail for the list view; full metrics remain available
