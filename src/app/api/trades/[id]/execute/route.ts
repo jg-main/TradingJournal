@@ -86,7 +86,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             },
           },
         },
-        { status: 400 },
+        { status: 409 },
       );
     }
 

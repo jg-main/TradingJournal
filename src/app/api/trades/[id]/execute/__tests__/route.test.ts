@@ -104,6 +104,11 @@ sqlite.exec(`
     closed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -127,6 +132,11 @@ sqlite.exec(`
     default_commission REAL,
     journal_start_date TEXT,
     currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -243,7 +253,7 @@ function doExecuteTrade(tradeId: string, body: Record<string, unknown>): { statu
     const exitQty2 = exit2Quantity ?? 0;
     if (exitQty1 + exitQty2 > entryQuantity) {
       return {
-        status: 400,
+        status: 409,
         data: {
           error: 'Validation failed',
           details: {
@@ -708,9 +718,9 @@ console.log('\n4. Entry + two exits sums to full exit:');
   assertEqual(updatedTrade.status, 'closed', 'trade status is closed (full exit)');
 }
 
-// ── 5. Exit overflow returns 400 ─────────────────────────────────────
+// ── 5. Exit overflow returns 409 ─────────────────────────────────────
 
-console.log('\n5. Exit overflow returns 400:');
+console.log('\n5. Exit overflow returns 409:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
@@ -725,7 +735,7 @@ console.log('\n5. Exit overflow returns 400:');
     exit2Quantity: 30,
   });
 
-  assert(result.status === 400, 'returns 400 for exit overflow');
+  assert(result.status === 409, 'returns 409 for exit overflow (over-exit)');
 }
 
 // ── 6. Short trade: sell_short entry → open ─────────────────────────
