@@ -138,6 +138,50 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   );
 }
 
+/** Pagination controls — Previous/Next with Page X of Y */
+function PaginationControls({
+  currentPage,
+  totalPages,
+  total,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-muted-foreground">
+        Page {currentPage} of {totalPages}{" "}
+        <span className="text-xs">({total.toLocaleString()} total)</span>
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 bg-muted text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
+          aria-label="Previous page"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          disabled={currentPage >= totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 bg-muted text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
+          aria-label="Next page"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Ellipsis actions button (placeholder for future action menus) */
 function ActionsCell() {
   return (
@@ -909,6 +953,11 @@ function TradesPageInner() {
     closed: null,
     planned: null,
   });
+  const [tabPage, setTabPage] = useState<Record<TabId, number>>({
+    open: 1,
+    closed: 1,
+    planned: 1,
+  });
   const [activeTab, setActiveTab] = useState<TabId>('open');
 
   // Filter state
@@ -1063,12 +1112,29 @@ function TradesPageInner() {
     }
   }, [fromDate, toDate, accountId]);
 
+  // Page change handler — fetches a single tab at the given page
+  const handlePageChange = useCallback((tabId: TabId, newPage: number) => {
+    setTabPage((prev) => ({ ...prev, [tabId]: newPage }));
+    const tabDef = TABS.find((t) => t.id === tabId);
+    if (tabDef) fetchTab(tabDef, newPage);
+  }, [fetchTab]);
+
+  // Tab switch handler — fetches the new tab at its stored page
+  const handleTabChange = useCallback((v: string) => {
+    const tabId = v as TabId;
+    setActiveTab(tabId);
+    const tabDef = TABS.find((t) => t.id === tabId);
+    if (tabDef) fetchTab(tabDef, tabPage[tabId]);
+  }, [fetchTab, tabPage]);
+
   // Fetch all tabs — fires when filters change (debounced)
   useEffect(() => {
     // Clear any pending debounce
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(() => {
+      // Reset all pages to 1 when filters change
+      setTabPage({ open: 1, closed: 1, planned: 1 });
       TABS.forEach((tab) => fetchTab(tab, 1));
     }, 300);
 
@@ -1093,6 +1159,8 @@ function TradesPageInner() {
     const error = tabError[tab.id];
     const rows = tabData[tab.id];
     const total = tabTotal[tab.id];
+    const page = tabPage[tab.id];
+    const totalPages = Math.ceil(total / PAGE_SIZE);
     const totals = tabTotals[tab.id];
 
     if (error) {
@@ -1137,6 +1205,11 @@ function TradesPageInner() {
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">
           Showing {rows.length} of {total.toLocaleString()} {tab.label.toLowerCase()} trades.
+          {totalPages > 1 && (
+            <span className="ml-1">
+              (Page {page} of {totalPages})
+            </span>
+          )}
         </p>
         <DynamicTable<TradeRow>
           data={rows}
@@ -1147,6 +1220,14 @@ function TradesPageInner() {
           alwaysVisible={['symbol', 'actions']}
           initialVisibility={visibilityDefaults[tab.id]}
         />
+        {totalPages > 1 && (
+          <PaginationControls
+            currentPage={page}
+            totalPages={totalPages}
+            total={total}
+            onPageChange={(p) => handlePageChange(tab.id, p)}
+          />
+        )}
         <TotalsFooter totals={totals} tabId={tab.id} />
       </div>
     );
@@ -1255,7 +1336,7 @@ function TradesPageInner() {
       {/* ── Tabs ────────────────────────────────────────────────── */}
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as TabId)}
+        onValueChange={handleTabChange}
       >
         <TabsList>
           {TABS.map((tab) => (
