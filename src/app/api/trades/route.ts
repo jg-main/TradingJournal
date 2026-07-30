@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments } from '@/db/schema';
+import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward } from '@/db/schema';
 import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -197,6 +197,23 @@ export async function GET(request: NextRequest) {
       .all();
     const accountMap = new Map(accountRows.map((a) => [a.id, a]));
 
+    // Batch-fetch latest account_rollforward per unique account — endingEquity is
+    // the primary source for current account equity (more accurate than startingBalance).
+    const latestRollforwardMap = new Map<string, typeof accountRollforward.$inferSelect>();
+    for (const accId of uniqueAccountIds) {
+      if (!accId) continue;
+      const rf = db
+        .select()
+        .from(accountRollforward)
+        .where(eq(accountRollforward.accountId, accId))
+        .orderBy(desc(accountRollforward.date))
+        .limit(1)
+        .get();
+      if (rf) {
+        latestRollforwardMap.set(accId, rf);
+      }
+    }
+
     // Single settings row for equity fallback
     const settingsRow = db
       .select()
@@ -210,10 +227,14 @@ export async function GET(request: NextRequest) {
       const riskSnapshot = riskMap.get(row.id) ?? null;
       const stopAdjustments = stopMap.get(row.id) ?? [];
 
-      // Account equity cascade: account.startingBalance → settings.startingAccountValue → null
+      // Account equity cascade: latest rollforward.endingEquity → account.startingBalance → settings.startingAccountValue → null
       const account = accountMap.get(row.accountId);
+      const latestRollforward = latestRollforwardMap.get(row.accountId);
       const currentAccountEquity =
-        account?.startingBalance ?? settingsRow?.startingAccountValue ?? null;
+        latestRollforward?.endingEquity ??
+        account?.startingBalance ??
+        settingsRow?.startingAccountValue ??
+        null;
 
       const metricsInput: TradeMetricsInput = {
         executions: executions.map((e) => ({
@@ -315,6 +336,22 @@ export async function GET(request: NextRequest) {
         .all();
       const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
 
+      // Batch-fetch latest rollforward per account for totals computation
+      const allLatestRollforwardMap = new Map<string, typeof accountRollforward.$inferSelect>();
+      for (const accId of allUniqueAccountIds) {
+        if (!accId) continue;
+        const rf = db
+          .select()
+          .from(accountRollforward)
+          .where(eq(accountRollforward.accountId, accId))
+          .orderBy(desc(accountRollforward.date))
+          .limit(1)
+          .get();
+        if (rf) {
+          allLatestRollforwardMap.set(accId, rf);
+        }
+      }
+
       // Compute metrics for every matching trade and aggregate
       fullTotals = allMatchingIdsR.reduce(
         (acc, row) => {
@@ -322,8 +359,12 @@ export async function GET(request: NextRequest) {
           const riskSnapshot = allRiskMap.get(row.id) ?? null;
           const stopAdjustments = allStopMap.get(row.id) ?? [];
           const account = allAccountMap.get(row.accountId);
+          const latestRollforward = allLatestRollforwardMap.get(row.accountId);
           const currentAccountEquity =
-            account?.startingBalance ?? settingsRow?.startingAccountValue ?? null;
+            latestRollforward?.endingEquity ??
+            account?.startingBalance ??
+            settingsRow?.startingAccountValue ??
+            null;
 
           const metricsInput: TradeMetricsInput = {
             executions: executions.map((e) => ({

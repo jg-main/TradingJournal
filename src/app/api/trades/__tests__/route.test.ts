@@ -121,6 +121,24 @@ sqlite.exec(`
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
+  CREATE TABLE IF NOT EXISTS account_rollforward (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    beginning_equity REAL,
+    deposits_withdrawals REAL DEFAULT 0,
+    realized_gross_pnl REAL DEFAULT 0,
+    fees REAL DEFAULT 0,
+    ending_equity REAL,
+    cumulative_pnl REAL,
+    high_water_mark REAL,
+    drawdown_amount REAL DEFAULT 0,
+    drawdown_pct REAL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp),
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+  );
   CREATE TABLE IF NOT EXISTS trade_risk_snapshots (
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT NOT NULL UNIQUE,
@@ -275,10 +293,33 @@ function doGetTrades(params: {
       riskMap.set(risk.tradeId, risk);
     }
 
+    // Batch-fetch latest account_rollforward per unique account
+    const uniqueAccountIds = [...new Set(dbRows.map((r) => r.accountId))];
+    const latestRollforwardMap = new Map<string, typeof schema.accountRollforward.$inferSelect>();
+    for (const accId of uniqueAccountIds) {
+      if (!accId) continue;
+      const rf = db
+        .select()
+        .from(schema.accountRollforward)
+        .where(eq(schema.accountRollforward.accountId, accId))
+        .orderBy(desc(schema.accountRollforward.date))
+        .limit(1)
+        .get();
+      if (rf) {
+        latestRollforwardMap.set(accId, rf);
+      }
+    }
+
     // Compute enriched rows with computeTradeMetrics()
     const enhancedRows = dbRows.map((row) => {
       const executions = execMap.get(row.id) ?? [];
       const riskSnapshot = riskMap.get(row.id) ?? null;
+
+      // Account equity cascade: latest rollforward.endingEquity → account.startingBalance → null
+      const latestRollforward = latestRollforwardMap.get(row.accountId);
+      const currentAccountEquity =
+        latestRollforward?.endingEquity ??
+        null;
 
       const metricsInput: TradeMetricsInput = {
         executions: executions.map((e) => ({
@@ -301,7 +342,7 @@ function doGetTrades(params: {
           row.currentPrice != null
             ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
             : null,
-        currentAccountEquity: null,
+        currentAccountEquity,
       };
 
       const metrics = computeTradeMetrics(metricsInput);
@@ -425,6 +466,7 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function cleanup() {
+  sqlite.exec('DELETE FROM account_rollforward');
   sqlite.exec('DELETE FROM trade_risk_snapshots');
   sqlite.exec('DELETE FROM trade_executions');
   sqlite.exec('DELETE FROM trades;');
@@ -520,6 +562,24 @@ function seedExecution(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return id;
+}
+
+function seedRollforward(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.accountRollforward)
+    .values({
+      id,
+      accountId: 'test-account-id',
+      date: new Date().toISOString().slice(0, 10),
+      beginningEquity: 10000,
+      endingEquity: 12500,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.accountRollforward).where(eq(schema.accountRollforward.id, id)).get() as Record<string, unknown>;
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -941,6 +1001,97 @@ console.log('\n21. GET status-aware: planned trades filtered by createdAt:');
   const d3 = q3.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
   assertEqual(d3.data.length, 1, '1 trade returned with default openedAt filter (no status)');
   assertEqual(d3.data[0].symbol, 'GOOGL', 'default filter matches GOOGL (openedAt=March)');
+}
+
+// ── 22. GET: Equity uses rollforward.endingEquity ──────────────────
+
+console.log('\n22. GET uses rollforward.endingEquity as primary equity source:');
+{
+  cleanup();
+  // Account with startingBalance 10000 but rollforward endingEquity 12500
+  const acc = seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedRollforward({
+    accountId: 'test-account-id',
+    date: new Date().toISOString().slice(0, 10),
+    endingEquity: 12500,
+  });
+
+  // Open trade with a risk snapshot so riskToAccount is computed
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'open',
+    currentPrice: 110,
+  });
+  const tId = trade.id as string;
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0 });
+
+  // Risk snapshot: risk at $100 for 100 shares = 1000 initial risk
+  const rsId = randomUUID();
+  db.insert(schema.tradeRiskSnapshots)
+    .values({
+      id: rsId,
+      tradeId: tId,
+      initialRiskAmount: 1000,
+      accountEquityAtOpen: 10000,
+    })
+    .run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+  assertEqual(d.data.length, 1, '1 trade returned');
+
+  const row = d.data[0] as Record<string, unknown>;
+  const m = row.metrics as Record<string, unknown>;
+  const risk = m.risk as Record<string, unknown>;
+
+  // With rollforward.endingEquity=12500, riskToAccount = 1000/12500 = 8%
+  assertNotNull(risk.riskToAccount, 'riskToAccount is not null (rollforward equity was used)');
+  assertApprox(risk.riskToAccount as number, 8, 1, `riskToAccount ≈ 8% (1000/12500) got ${risk.riskToAccount}`);
+  assertNotNull(risk.openRisk, 'openRisk is computed');
+}
+
+// ── 23. GET: Falls back when no rollforward exists ──────────────────
+
+console.log('\n23. GET equity falls back when no rollforward exists:');
+{
+  cleanup();
+  // Account with startingBalance but NO rollforward row
+  seedAccount({ id: 'test-account-id', startingBalance: 50000 });
+
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'open',
+    currentPrice: 110,
+  });
+  const tId = trade.id as string;
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0 });
+
+  const rsId = randomUUID();
+  db.insert(schema.tradeRiskSnapshots)
+    .values({
+      id: rsId,
+      tradeId: tId,
+      initialRiskAmount: 1000,
+      accountEquityAtOpen: 50000,
+    })
+    .run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+  assertEqual(d.data.length, 1, '1 trade returned');
+
+  const row = d.data[0] as Record<string, unknown>;
+  const m = row.metrics as Record<string, unknown>;
+  const risk = m.risk as Record<string, unknown>;
+
+  // No rollforward → equity null → riskToAccount is null (no denominator)
+  assertEqual(risk.riskToAccount, null, 'riskToAccount is null when no equity source available');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
