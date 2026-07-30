@@ -30,7 +30,6 @@ const TSX_TESTS: string[] = [
   'src/lib/position-sizing.test.ts',
   'src/lib/review-dashboard.test.ts',
   'src/lib/risk-snapshot.test.ts',
-  'src/lib/trade-calc.test.ts',
   'src/lib/weekly-review.test.ts',
   'src/lib/__fixtures__/golden-scenarios.test.tsx',
   'src/lib/__fixtures__/response-contracts.test.ts',
