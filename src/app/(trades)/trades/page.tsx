@@ -2,10 +2,17 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { NotebookPen, EllipsisVertical } from 'lucide-react';
+import { NotebookPen, EllipsisVertical, Eye, Pencil, PlusCircle, SlidersHorizontal, RefreshCw, Star, AlertTriangle } from 'lucide-react';
 import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -195,17 +202,78 @@ function PaginationControls({
   );
 }
 
-/** Ellipsis actions button (placeholder for future action menus) */
-function ActionsCell() {
+/** Status-aware actions dropdown menu */
+function ActionsCell({ row }: { row: TradeRow }) {
+  const router = useRouter();
+
+  const viewTrade = () => router.push(`/trades/${row.id}`);
+  const editTrade = () => router.push(`/trades/${row.id}`);
+  const addExit = () => router.push(`/trades/${row.id}`);
+  const adjustStop = () => router.push(`/trades/${row.id}`);
+  const gradeTrade = () => router.push(`/trades/${row.id}`);
+  const logMistake = () => router.push(`/trades/${row.id}`);
+
+  const statusActions = useMemo(() => {
+    switch (row.status) {
+      case 'planned':
+        return (
+          <DropdownMenuItem onClick={editTrade}>
+            <Pencil className="size-4" />
+            Edit
+          </DropdownMenuItem>
+        );
+      case 'open':
+        return (
+          <>
+            <DropdownMenuItem onClick={addExit}>
+              <PlusCircle className="size-4" />
+              Add Exit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={adjustStop}>
+              <SlidersHorizontal className="size-4" />
+              Adjust Stop
+            </DropdownMenuItem>
+          </>
+        );
+      case 'closed':
+        return (
+          <>
+            <DropdownMenuItem onClick={gradeTrade}>
+              <Star className="size-4" />
+              Grade
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={logMistake}>
+              <AlertTriangle className="size-4" />
+              Log Mistake
+            </DropdownMenuItem>
+          </>
+        );
+      default:
+        return null;
+    }
+  }, [row.status]);
+
   return (
-    <button
-      type="button"
-      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-      aria-label="Trade actions"
-      tabIndex={0}
-    >
-      <EllipsisVertical className="size-4" />
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label="Trade actions"
+          tabIndex={0}
+        >
+          <EllipsisVertical className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={viewTrade}>
+          <Eye className="size-4" />
+          View Details
+        </DropdownMenuItem>
+        {statusActions && <DropdownMenuSeparator />}
+        {statusActions}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -507,7 +575,7 @@ const openColumns: ColumnDef<TradeRow>[] = [
     id: 'actions',
     header: '',
     accessorFn: () => null,
-    cell: () => <ActionsCell />,
+    cell: ({ row }) => <ActionsCell row={row.original} />,
     enableSorting: false,
   },
 ];
@@ -733,7 +801,7 @@ const closedColumns: ColumnDef<TradeRow>[] = [
     id: 'actions',
     header: '',
     accessorFn: () => null,
-    cell: () => <ActionsCell />,
+    cell: ({ row }) => <ActionsCell row={row.original} />,
     enableSorting: false,
   },
 ];
@@ -936,7 +1004,7 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
     id: 'actions',
     header: '',
     accessorFn: () => null,
-    cell: () => <ActionsCell />,
+    cell: ({ row }) => <ActionsCell row={row.original} />,
     enableSorting: false,
   },
 ];
