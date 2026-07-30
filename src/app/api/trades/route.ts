@@ -271,7 +271,7 @@ export async function GET(request: NextRequest) {
       return {
         ...row,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
-        unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
+        unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,
         riskPct: metrics.risk.riskToAccount,
         metrics,

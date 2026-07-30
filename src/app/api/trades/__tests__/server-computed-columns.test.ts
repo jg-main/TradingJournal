@@ -214,7 +214,7 @@ function doEnhancedGetTrades(): { status: number; data: unknown } {
       return {
         ...row,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
-        unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
+        unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,
         riskPct: metrics.risk.riskToAccount,
         metrics,
@@ -392,7 +392,7 @@ console.log('\n3. Open trade with currentPrice returns unrealizedPnl:');
   const trade = data[0] as Record<string, unknown>;
 
   // Unrealized P&L = (420 - 400) * 100 = 2000 (gross, exclude_entry_fees)
-  assertApprox(trade.unrealizedPnl as number, 2000, 0.01, 'unrealizedPnl = 2000');
+  assertApprox(trade.unrealizedPnl as number, 1995, 0.01, 'unrealizedPnl = 1995 (net of $5 open fees)');
   // returnPct = totalNetPnl / totalEntryNotional * 100
   // totalNetPnl = 0 (realized) + (2000 - 5) (net unrealized) = 1995
   // returnPct = 1995 / (400 * 100) * 100 = 4.9875
