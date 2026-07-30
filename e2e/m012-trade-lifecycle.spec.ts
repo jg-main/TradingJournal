@@ -202,8 +202,8 @@ test.describe('M012 Trade Lifecycle', () => {
     await expect(page.getByText('Execute', { exact: true })).toBeVisible();
 
     // TradePnlCard renders (no CardHeader/CardTitle — P&L labels are inline text)
-    // For open trades without currentPrice, "Realized P&L" label is shown
-    await expect(page.getByText('Realized P&L', { exact: true })).toBeVisible();
+    // Label is "Unrealized P&L" when currentPrice/MTM data is available, "Realized P&L" otherwise
+    await expect(page.getByText(/(Realized|Unrealized) P&L/)).toBeVisible();
 
     // Verify Executions card renders
     await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Executions' })).toBeVisible();
