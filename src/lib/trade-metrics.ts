@@ -178,10 +178,12 @@ export interface UnrealizedPnlMetrics {
 
 /** Risk-related metrics (Section 6). */
 export interface RiskMetrics {
-  /** Active stop price (latest adjustment, or initial stop). */
+  /** Active stop price (latest adjustment, or initial stop from risk snapshot). */
   activeStop: number | null;
-  /** Open risk: potential loss on remaining position at active stop. */
+  /** Open risk: potential loss on remaining position at active stop (clamped to 0). */
   openRisk: number | null;
+  /** Locked-in profit when the active stop is past the entry price (0 when none). */
+  lockedPnl: number | null;
   /** Open risk as percentage of current account equity. */
   riskToAccount: number | null;
   /** Initial risk amount (from risk snapshot). */
@@ -438,18 +440,44 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
       : null;
 
   // Risk metrics (Section 6)
-  const activeStop =
-    stopAdjustments.length > 0
-      ? stopAdjustments[stopAdjustments.length - 1].stopPrice
-      : null;
+  // Active stop: latest adjustment, or fall back to derived initial stop from risk snapshot
+  // When deriving from risk snapshot:
+  //   initialRiskAmount = |avgEntryPrice - initialStopPrice| * entryQuantity
+  //   so initialStopPrice = avgEntryPrice - (initialRiskAmount / entryQuantity) for long
+  //   or  initialStopPrice = avgEntryPrice + (initialRiskAmount / entryQuantity) for short
+  let activeStop: number | null = null;
 
-  const openRisk =
-    activeStop != null && openAvgCost != null && openQuantity > 0
-      ? (direction === 'long'
-          ? new Decimal(openAvgCost).minus(new Decimal(activeStop))
-          : new Decimal(activeStop).minus(new Decimal(openAvgCost))
-        ).mul(new Decimal(openQuantity)).toNumber()
-      : null;
+  if (stopAdjustments.length > 0) {
+    activeStop = stopAdjustments[stopAdjustments.length - 1].stopPrice;
+  } else if (
+    riskSnapshot?.initialRiskAmount != null &&
+    avgEntryPrice != null &&
+    entryQuantity.gt(0)
+  ) {
+    const riskPerShare = new Decimal(riskSnapshot.initialRiskAmount).div(entryQuantity);
+    activeStop = direction === 'long'
+      ? new Decimal(avgEntryPrice).minus(riskPerShare).toNumber()
+      : new Decimal(avgEntryPrice).plus(riskPerShare).toNumber();
+  }
+
+  // Open risk: clamped to 0 (never negative), with separate lockedPnl
+  // When stop has moved past entry (e.g. stop above avg cost for a long trade),
+  // the position has no risk — openRisk = 0 and lockedPnl captures the locked profit.
+  let openRisk: number | null = null;
+  let lockedPnl: number | null = null;
+
+  if (activeStop != null && openAvgCost != null && openQuantity > 0) {
+    const riskPerUnit = direction === 'long'
+      ? new Decimal(openAvgCost).minus(new Decimal(activeStop))
+      : new Decimal(activeStop).minus(new Decimal(openAvgCost));
+
+    const lockPerUnit = direction === 'long'
+      ? new Decimal(activeStop).minus(new Decimal(openAvgCost))
+      : new Decimal(openAvgCost).minus(new Decimal(activeStop));
+
+    openRisk = Decimal.max(0, riskPerUnit).mul(new Decimal(openQuantity)).toNumber();
+    lockedPnl = Decimal.max(0, lockPerUnit).mul(new Decimal(openQuantity)).toNumber();
+  }
 
   const riskToAccount =
     openRisk != null && currentAccountEquity != null && currentAccountEquity > 0
@@ -532,6 +560,7 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
     risk: {
       activeStop,
       openRisk,
+      lockedPnl,
       riskToAccount,
       initialRisk,
       initialRiskPct,
