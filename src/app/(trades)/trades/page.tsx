@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { NotebookPen, EllipsisVertical } from 'lucide-react';
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/empty-state';
@@ -22,6 +22,7 @@ import {
   DirectionBadge,
   computePlannedRisk,
   computePlannedRR,
+  formatNumber,
 } from '@/lib/trade-formatters';
 import type { TradeMetricsResult } from '@/lib/trade-metrics';
 
@@ -290,6 +291,85 @@ const openColumns: ColumnDef<TradeRow>[] = [
     accessorFn: (row) => row.metrics?.risk?.riskToAccount,
     cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
   },
+  // ── Optional hidden-by-default columns ───────────────────────────
+  {
+    id: 'tradeCode',
+    header: 'Trade Code',
+    accessorKey: 'tradeCode',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'account',
+    header: 'Account',
+    accessorKey: 'accountId',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'sector',
+    header: 'Sector',
+    accessorKey: 'sectorId',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'entryQty',
+    header: 'Entry Qty',
+    accessorFn: (row) => row.metrics?.size?.entryQuantity,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatNumber(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'openQty',
+    header: 'Open Qty',
+    accessorFn: (row) => row.metrics?.size?.openQuantity,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatNumber(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'avgEntryPrice',
+    header: 'Avg Entry',
+    accessorFn: (row) => row.metrics?.averagePrices?.avgEntryPrice,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'marketValue',
+    header: 'Market Value',
+    accessorFn: (row) => row.metrics?.position?.marketValue,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'positionWeight',
+    header: 'Pos Weight',
+    accessorFn: (row) => row.metrics?.position?.positionWeight,
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'initialRisk',
+    header: 'Initial Risk',
+    accessorFn: (row) => row.metrics?.risk?.initialRisk,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'created',
+    header: 'Created',
+    accessorKey: 'createdAt',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
   {
     id: 'actions',
     header: '',
@@ -513,6 +593,27 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
     enableSorting: false,
   },
 ];
+
+// ── Per-tab default visibility (optional columns hidden by default) ──────
+
+const openDefaultVisibility: VisibilityState = {
+  tradeCode: false,
+  account: false,
+  sector: false,
+  entryQty: false,
+  openQty: false,
+  avgEntryPrice: false,
+  marketValue: false,
+  positionWeight: false,
+  initialRisk: false,
+  created: false,
+};
+
+const visibilityDefaults: Record<TabId, VisibilityState> = {
+  open: openDefaultVisibility,
+  closed: {},
+  planned: {},
+};
 
 // ── Page Component ─────────────────────────────────────────────────────
 
@@ -795,6 +896,7 @@ function TradesPageInner() {
           onRowClick={(row) => router.push(`/trades/${row.original.id}`)}
           columnSelector
           alwaysVisible={['symbol', 'actions']}
+          initialVisibility={visibilityDefaults[tab.id]}
         />
         <TotalsFooter totals={totals} tabId={tab.id} />
       </div>
