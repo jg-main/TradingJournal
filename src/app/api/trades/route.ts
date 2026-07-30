@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions } from '@/db/schema';
+import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments } from '@/db/schema';
 import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
-import { calculatePnL } from '@/lib/trade-calc';
-import { calculateUnrealizedPnL } from '@/lib/mark-to-market';
-import type { ExecutionData, Direction } from '@/lib/trade-calc';
+import { computeTradeMetrics } from '@/lib/trade-metrics';
+import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
@@ -75,100 +74,132 @@ export async function GET(request: NextRequest) {
         openedAt: trades.openedAt,
         closedAt: trades.closedAt,
         currentPrice: trades.currentPrice,
-        actualEntry: sql<number | null>`(
-          SELECT AVG(te.price) FROM ${tradeExecutions} te
-          WHERE te.trade_id = ${trades.id}
-          AND te.action IN (CASE WHEN ${trades.direction} = 'short' THEN 'sell_short' ELSE 'buy' END)
-        )`,
-        avgExitPrice: sql<number | null>`(
-          SELECT CASE WHEN ${trades.direction} = 'short'
-            THEN (SELECT AVG(te.price) FROM ${tradeExecutions} te WHERE te.trade_id = ${trades.id} AND te.action = 'buy_to_cover')
-            ELSE (SELECT AVG(te.price) FROM ${tradeExecutions} te WHERE te.trade_id = ${trades.id} AND te.action IN ('sell', 'reduce'))
-          END
-        )`,
+        // NOTE: AVG(price) SQL subqueries removed — actualEntry and avgExitPrice
+        // are now computed via computeTradeMetrics().averagePrices in the enriched rows below.
         exitNotes: trades.exitNotes,
         lesson: trades.lesson,
         createdAt: trades.createdAt,
         updatedAt: trades.updatedAt,
-        riskPct: tradeRiskSnapshots.accountRiskPct,
+        currentPriceFetchedAt: trades.currentPriceFetchedAt,
+        // NOTE: riskPct removed from SQL — now computed via metrics.risk.riskToAccount
       })
       .from(trades)
       .leftJoin(setupDefinitions, eq(trades.setupId, setupDefinitions.id))
       .leftJoin(lookupValues, eq(trades.setupId, lookupValues.id))
-      .leftJoin(tradeRiskSnapshots, eq(trades.id, tradeRiskSnapshots.tradeId))
       .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
       .orderBy(desc(trades.openedAt), desc(trades.createdAt))
       .limit(limit)
       .offset(offset)
       .all();
 
-    // Batch-fetch executions for all returned trades
+    // Batch-fetch related data for all returned trades
     const tradeIds = rows.map((r) => r.id);
-    const execRows =
-      tradeIds.length > 0
-        ? db
-            .select()
-            .from(tradeExecutions)
-            .where(inArray(tradeExecutions.tradeId, tradeIds))
-            .all()
-        : [];
 
-    // Group executions by trade ID
-    const execMap = new Map<string, ExecutionData[]>();
+    const execRows = tradeIds.length > 0
+      ? db.select().from(tradeExecutions).where(inArray(tradeExecutions.tradeId, tradeIds)).all()
+      : [];
+    const riskRows = tradeIds.length > 0
+      ? db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, tradeIds)).all()
+      : [];
+    const stopRows = tradeIds.length > 0
+      ? db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, tradeIds)).all()
+      : [];
+
+    // Group by trade ID
+    const execMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();
     for (const ex of execRows) {
       const list = execMap.get(ex.tradeId) ?? [];
-      list.push({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? 0,
-        executedAt: ex.executedAt ?? new Date().toISOString(),
-      });
+      list.push(ex);
       execMap.set(ex.tradeId, list);
     }
+    const riskMap = new Map<string, typeof tradeRiskSnapshots.$inferSelect>();
+    for (const risk of riskRows) {
+      riskMap.set(risk.tradeId, risk);
+    }
+    const stopMap = new Map<string, (typeof tradeStopAdjustments.$inferSelect)[]>();
+    for (const stop of stopRows) {
+      const list = stopMap.get(stop.tradeId) ?? [];
+      list.push(stop);
+      stopMap.set(stop.tradeId, list);
+    }
 
-    // Compute enhanced rows with server-computed fields
+    // Batch-fetch accounts for equity cascade per account
+    const uniqueAccountIds = [...new Set(rows.map((r) => r.accountId))];
+    const accountRows = db
+      .select()
+      .from(accounts)
+      .where(inArray(accounts.id, uniqueAccountIds))
+      .all();
+    const accountMap = new Map(accountRows.map((a) => [a.id, a]));
+
+    // Single settings row for equity fallback
+    const settingsRow = db
+      .select()
+      .from(settings)
+      .where(eq(settings.id, 'default'))
+      .get();
+
+    // Compute enhanced rows with computeTradeMetrics()
     const enhancedRows = rows.map((row) => {
-      const exs = execMap.get(row.id) ?? [];
-      const direction = row.direction as Direction;
+      const executions = execMap.get(row.id) ?? [];
+      const riskSnapshot = riskMap.get(row.id) ?? null;
+      const stopAdjustments = stopMap.get(row.id) ?? [];
 
-      let realizedPnl: number | null = null;
-      let unrealizedPnl: number | null = null;
-      let returnPct: number | null = null;
-      const riskPct = row.riskPct;
+      // Account equity cascade: account.startingBalance → settings.startingAccountValue → null
+      const account = accountMap.get(row.accountId);
+      const currentAccountEquity =
+        account?.startingBalance ?? settingsRow?.startingAccountValue ?? null;
 
-      if (exs.length > 0) {
-        const pnl = calculatePnL(exs, direction);
+      const metricsInput: TradeMetricsInput = {
+        executions: executions.map((e) => ({
+          id: e.id,
+          action: e.action,
+          quantity: e.quantity,
+          price: e.price,
+          fees: e.fees,
+          executedAt: e.executedAt ?? '',
+        })),
+        direction: row.direction as 'long' | 'short',
+        riskSnapshot: riskSnapshot
+          ? {
+              initialRiskAmount: riskSnapshot.initialRiskAmount,
+              accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+            }
+          : null,
+        stopAdjustments: stopAdjustments
+          .filter((s): s is typeof s & { newStop: number } => s.newStop != null)
+          .map((s) => ({
+            stopPrice: s.newStop,
+            adjustedAt: s.adjustedAt ?? '',
+          })),
+        currentMark:
+          row.currentPrice != null
+            ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
+            : null,
+        currentAccountEquity,
+      };
 
-        if (row.status === 'closed') {
-          realizedPnl = pnl.totalRealizedPnL;
-          if (pnl.avgEntryPrice != null && pnl.totalEntryQty > 0) {
-            returnPct = (realizedPnl / (pnl.avgEntryPrice * pnl.totalEntryQty)) * 100;
-          }
-        } else if (row.status === 'open' && row.currentPrice != null) {
-          const unrealized = calculateUnrealizedPnL({
-            executions: exs,
-            direction,
-            currentPrice: row.currentPrice,
-            feePolicy: 'exclude_entry_fees',
-          });
-          unrealizedPnl = unrealized;
-          if (unrealized != null && pnl.avgEntryPrice != null && pnl.totalEntryQty > 0) {
-            returnPct = (unrealized / (pnl.avgEntryPrice * pnl.totalEntryQty)) * 100;
-          }
-        }
-      }
+      const metrics = computeTradeMetrics(metricsInput);
 
+      // Backward-compatible flat fields + nested metrics (matching T01 pattern)
       return {
         ...row,
-        realizedPnl,
-        unrealizedPnl,
-        returnPct,
-        riskPct,
+        realizedPnl: metrics.realizedPnl.netRealizedPnl,
+        unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
+        returnPct: metrics.returnMetrics.returnPct,
+        riskPct: metrics.risk.riskToAccount,
+        metrics,
       };
     });
 
-    return NextResponse.json({ data: enhancedRows, total, page, limit });
+    // Server-computed totals aggregated across the full filtered dataset
+    const totals = {
+      grossRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.grossRealizedPnl ?? 0), 0),
+      netRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.netRealizedPnl ?? 0), 0),
+      totalFees: enhancedRows.reduce((s, r) => s + (r.metrics?.fees.totalFees ?? 0), 0),
+    };
+
+    return NextResponse.json({ data: enhancedRows, total, page, limit, totals });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch trades', details: String(error) },
