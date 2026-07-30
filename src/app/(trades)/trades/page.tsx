@@ -71,6 +71,13 @@ interface TotalsShape {
   grossUnrealizedPnl: number;
   netUnrealizedPnl: number;
   totalOpenRisk: number;
+  portfolioHeat?: number;
+}
+
+interface PlannedTotalsShape {
+  totalPlannedRisk: number;
+  totalPlannedCapital: number;
+  count: number;
 }
 
 interface TradesResponse {
@@ -80,6 +87,7 @@ interface TradesResponse {
   limit: number;
   totals: TotalsShape;
   totalsByCurrency?: Record<string, TotalsShape>;
+  plannedTotals?: PlannedTotalsShape;
 }
 
 interface AccountOption {
@@ -212,11 +220,16 @@ function TotalsGroup({
   isOpen: boolean;
   totals: TradesResponse['totals'];
 }) {
+  const openItems = [
+    { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
+    { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span> },
+  ];
+  const portfolioHeatItem = totals.portfolioHeat != null
+    ? [{ label: 'Portfolio Heat', content: <span className="tabular-nums">{totals.portfolioHeat.toFixed(2)}%</span> }]
+    : [];
+
   const items = isOpen
-    ? [
-        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
-        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span> },
-      ]
+    ? [...openItems, ...portfolioHeatItem]
     : [
         { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} /> },
         { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees)}</span> },
@@ -247,12 +260,36 @@ function TotalsFooter({
   totals,
   totalsByCurrency,
   tabId,
+  plannedTotals,
 }: {
   totals: TradesResponse['totals'];
   totalsByCurrency?: Record<string, TradesResponse['totals']>;
   tabId: TabId;
+  plannedTotals: PlannedTotalsShape;
 }) {
-  if (tabId === 'planned') return null;
+  if (tabId === 'planned') {
+    return (
+      <div className="mt-3 rounded-lg border bg-muted/30 p-4">
+        <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Planned Totals
+        </div>
+        <div className="flex flex-wrap gap-x-10 gap-y-3">
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Planned Risk</span>
+            <span className="text-lg font-semibold tabular-nums">{formatCurrency(plannedTotals.totalPlannedRisk)}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Planned Capital</span>
+            <span className="text-lg font-semibold tabular-nums">{formatCurrency(plannedTotals.totalPlannedCapital)}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Trades</span>
+            <span className="text-lg font-semibold tabular-nums">{plannedTotals.count}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isOpen = tabId === 'open';
   const currencies = Object.keys(totalsByCurrency ?? {});
@@ -995,6 +1032,11 @@ function TradesPageInner() {
     closed: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
     planned: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
   });
+  const [plannedTotalsState, setPlannedTotalsState] = useState<PlannedTotalsShape>({
+    totalPlannedRisk: 0,
+    totalPlannedCapital: 0,
+    count: 0,
+  });
   const [tabTotalsByCurrency, setTabTotalsByCurrency] = useState<Record<TabId, Record<string, TradesResponse['totals']>>>({
     open: {},
     closed: {},
@@ -1160,6 +1202,9 @@ function TradesPageInner() {
       setTabTotal((prev) => ({ ...prev, [tab.id]: result.total }));
       setTabTotals((prev) => ({ ...prev, [tab.id]: result.totals }));
       setTabTotalsByCurrency((prev) => ({ ...prev, [tab.id]: result.totalsByCurrency ?? {} }));
+      if (result.plannedTotals) {
+        setPlannedTotalsState(result.plannedTotals);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error';
       setTabError((prev) => ({ ...prev, [tab.id]: msg }));
@@ -1286,7 +1331,7 @@ function TradesPageInner() {
             onPageChange={(p) => handlePageChange(tab.id, p)}
           />
         )}
-        <TotalsFooter totals={totals} totalsByCurrency={tabTotalsByCurrency[tab.id]} tabId={tab.id} />
+        <TotalsFooter totals={totals} totalsByCurrency={tabTotalsByCurrency[tab.id]} tabId={tab.id} plannedTotals={plannedTotalsState} />
       </div>
     );
   }
