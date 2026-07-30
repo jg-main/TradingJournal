@@ -116,6 +116,32 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   // Total fees across all executions: $1 + $1 + $1 = $3
   assertApprox(r.fees.totalFees, 3, 'totalFees = $3');
 
+  // Unrealized P&L: (22 - 20) × 10 = $20, net = $20 - $1 = $19
+  assertApprox(r.unrealizedPnl.grossUnrealizedPnl, 20, 'grossUnrealizedPnl = $20');
+  assertApprox(r.unrealizedPnl.netUnrealizedPnl, 19, 'netUnrealizedPnl = $19');
+
+  // Risk: no stop adjustments
+  assert(r.risk.activeStop === null, 'activeStop = null');
+  assert(r.risk.openRisk === null, 'openRisk = null');
+  assert(r.risk.riskToAccount === null, 'riskToAccount = null');
+
+  // Total net P&L: $48 + $19 = $67
+  assertApprox(r.position.totalNetPnl, 67, 'totalNetPnl = $67');
+
+  // Holding period: 3 hours = 0.125 days
+  assertApprox(r.position.holdingPeriodDays, 0.125, 'holdingPeriodDays = 0.125');
+
+  // Market value: $22 × 10 = $220
+  assertApprox(r.position.marketValue, 220, 'marketValue = $220');
+
+  // Position weight: $220 / $10,000 × 100 = 2.2%
+  assertApprox(r.position.positionWeight, 2.2, 'positionWeight = 2.2%');
+
+  // Return metrics: total net P&L / total entry notional
+  // totalEntryNotional = (10×10)+(10×20) = $300
+  assertApprox(r.returnMetrics.returnPct, 67 / 300 * 100, 'returnPct = 22.333%');
+  assert(r.returnMetrics.rMultiple === null, 'rMultiple = null (no initialRisk)');
+
   // Status: open (20 entries, 10 exits)
   assert(r.position.status === 'open', 'status = open');
   assert(r.position.openedAt === '2026-01-10T10:00:00Z', 'openedAt = first entry');
@@ -165,6 +191,17 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assert(r.position.openedAt === '2026-01-10T10:00:00Z', 'openedAt = first entry');
   assert(r.position.closedAt === '2026-01-10T14:00:00Z', 'closedAt = last exit');
   assert(r.remainingLots.length === 0, '0 remaining lots');
+
+  // Derived fields: closed trade with mark (but openQty=0 so unrealized=null)
+  assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'grossUnrealizedPnl = null (closed)');
+  assert(r.unrealizedPnl.netUnrealizedPnl === null, 'netUnrealizedPnl = null (closed)');
+  assertApprox(r.position.totalNetPnl, 1000, 'totalNetPnl = $1000');
+  assertApprox(r.position.holdingPeriodDays, 4 / 24, 'holdingPeriodDays = 0.167 (4h)');
+  assert(r.position.marketValue === null, 'marketValue = null (closed)');
+  assert(r.position.positionWeight === null, 'positionWeight = null');
+  // totalEntryNotional = 100×50 = 5000
+  assertApprox(r.returnMetrics.returnPct, 1000 / 5000 * 100, 'returnPct = 20%');
+  assert(r.returnMetrics.rMultiple === null, 'rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -197,6 +234,16 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertMatchesCount(r, 1, '1 FIFO match');
   assert(r.position.status === 'closed', 'status = closed');
   assert(r.remainingLots.length === 0, '0 remaining lots');
+
+  // Derived fields: closed short trade
+  assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'S2: grossUnrealizedPnl = null (closed)');
+  assert(r.unrealizedPnl.netUnrealizedPnl === null, 'S2: netUnrealizedPnl = null (closed)');
+  assertApprox(r.position.totalNetPnl, 1000, 'S2: totalNetPnl = $1000');
+  assertApprox(r.position.holdingPeriodDays, 4 / 24, 'S2: holdingPeriodDays = 0.167');
+  assert(r.position.marketValue === null, 'S2: marketValue = null');
+  // totalEntryNotional = 100×60 = 6000
+  assertApprox(r.returnMetrics.returnPct, 1000 / 6000 * 100, 'S2: returnPct = 16.667%');
+  assert(r.returnMetrics.rMultiple === null, 'S2: rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -351,6 +398,19 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assert(r.remainingLots.length === 2, '2 remaining lots');
   assertApprox(Number(r.remainingLots[0].quantityRemaining), 5, 'lot 0 remaining = 5');
   assertApprox(Number(r.remainingLots[0].entryFeeRemaining), 2.50, 'lot 0 remaining fee = $2.50');
+
+  // Derived fields: open trade with currentMark=$22, equity=null
+  // openAvgCost = (5×10+10×20)/15 = 250/15 ≈ 16.667
+  // grossUnrealizedPnl(long) = (22-16.667)×15 = $80
+  assertApprox(r.unrealizedPnl.grossUnrealizedPnl, 80, 'S6: grossUnrealizedPnl = $80');
+  assertApprox(r.unrealizedPnl.netUnrealizedPnl, 72.50, 'S6: netUnrealizedPnl = $72.50');
+  assertApprox(r.position.totalNetPnl, 93, 'S6: totalNetPnl = $93');
+  assertApprox(r.position.holdingPeriodDays, 0.125, 'S6: holdingPeriodDays = 0.125');
+  assertApprox(r.position.marketValue, 330, 'S6: marketValue = $330');
+  assert(r.position.positionWeight === null, 'S6: positionWeight = null (no equity)');
+  // totalEntryNotional = (10×10)+(10×20) = $300
+  assertApprox(r.returnMetrics.returnPct, 93 / 300 * 100, 'S6: returnPct = 31%');
+  assert(r.returnMetrics.rMultiple === null, 'S6: rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -422,6 +482,15 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.fees.realizedFees, 4, 'realizedFees = $4');
   assertApprox(r.realizedPnl.netRealizedPnl, -504, 'netRealizedPnl = -$504');
   assert(r.position.status === 'closed', 'status = closed');
+
+  // Derived fields: closed short trade (no mark, but closed so holdingPeriodDays uses closedAt)
+  assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'S8: grossUnrealizedPnl = null (closed)');
+  assert(r.unrealizedPnl.netUnrealizedPnl === null, 'S8: netUnrealizedPnl = null (closed)');
+  assertApprox(r.position.totalNetPnl, -504, 'S8: totalNetPnl = -$504');
+  assertApprox(r.position.holdingPeriodDays, 4 / 24, 'S8: holdingPeriodDays = 0.167');
+  // totalEntryNotional = 50×100 = 5000
+  assertApprox(r.returnMetrics.returnPct, -504 / 5000 * 100, 'S8: returnPct = -10.08%');
+  assert(r.returnMetrics.rMultiple === null, 'S8: rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -454,6 +523,15 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.size.exitQuantity, 200, 'exitQuantity = 200 (all exits recorded)');
   // openQuantity = max(0, 100 - 200) = 0
   assertApprox(r.size.openQuantity, 0, 'openQuantity = 0 (capped by max(0))');
+
+  // Derived fields: over-exit, no mark (but closed, so holdingPeriodDays uses closedAt)
+  assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'S9: grossUnrealizedPnl = null');
+  assert(r.unrealizedPnl.netUnrealizedPnl === null, 'S9: netUnrealizedPnl = null');
+  assertApprox(r.position.totalNetPnl, 500, 'S9: totalNetPnl = $500');
+  assertApprox(r.position.holdingPeriodDays, 4 / 24, 'S9: holdingPeriodDays = 0.167');
+  // totalEntryNotional = 100×50 = 5000
+  assertApprox(r.returnMetrics.returnPct, 500 / 5000 * 100, 'S9: returnPct = 10%');
+  assert(r.returnMetrics.rMultiple === null, 'S9: rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -605,6 +683,19 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(Number(r.remainingLots[0].quantityRemaining), 20, 'lot 0 remaining = 20');
   assertApprox(Number(r.remainingLots[1].quantityRemaining), 50, 'lot 1 remaining = 50');
   assertApprox(r.fees.openFees, 1.40, 'openFees = $1.40');
+
+  // Derived fields: open trade with mark=$60, equity=null
+  // openAvgCost = (20×40+50×50)/70 = 3300/70 ≈ 47.143
+  // grossUnrealizedPnl(long) = (60-3300/70)×70 = $900
+  assertApprox(r.unrealizedPnl.grossUnrealizedPnl, 900, 'S13: grossUnrealizedPnl = $900');
+  assertApprox(r.unrealizedPnl.netUnrealizedPnl, 898.60, 'S13: netUnrealizedPnl = $898.60');
+  assertApprox(r.position.totalNetPnl, 1347.50, 'S13: totalNetPnl = $1,347.50');
+  assertApprox(r.position.holdingPeriodDays, 0.125, 'S13: holdingPeriodDays = 0.125');
+  assertApprox(r.position.marketValue, 4200, 'S13: marketValue = $4,200');
+  assert(r.position.positionWeight === null, 'S13: positionWeight = null (no equity)');
+  // totalEntryNotional = 50×40+50×50 = 4500
+  assertApprox(r.returnMetrics.returnPct, 1347.50 / 4500 * 100, 'S13: returnPct = 29.944%');
+  assert(r.returnMetrics.rMultiple === null, 'S13: rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -636,6 +727,21 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assert(r.averagePrices.openAvgCost === null, 'openAvgCost = null');
   assertApprox(r.fees.totalFees, 0, 'totalFees = 0');
   assertApprox(r.realizedPnl.grossRealizedPnl, 0, 'grossRealizedPnl = 0');
+
+  // Derived fields: planned trade — all should be null/zero
+  assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'Planned: grossUnrealizedPnl = null');
+  assert(r.unrealizedPnl.netUnrealizedPnl === null, 'Planned: netUnrealizedPnl = null');
+  assert(r.risk.activeStop === null, 'Planned: activeStop = null');
+  assert(r.risk.openRisk === null, 'Planned: openRisk = null');
+  assert(r.risk.riskToAccount === null, 'Planned: riskToAccount = null');
+  assert(r.risk.initialRisk === null, 'Planned: initialRisk = null');
+  assert(r.risk.initialRiskPct === null, 'Planned: initialRiskPct = null');
+  assertApprox(r.position.totalNetPnl, 0, 'Planned: totalNetPnl = 0');
+  assert(r.position.holdingPeriodDays === null, 'Planned: holdingPeriodDays = null');
+  assert(r.position.marketValue === null, 'Planned: marketValue = null');
+  assert(r.position.positionWeight === null, 'Planned: positionWeight = null');
+  assert(r.returnMetrics.returnPct === null, 'Planned: returnPct = null (no notional)');
+  assert(r.returnMetrics.rMultiple === null, 'Planned: rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -668,6 +774,16 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.fees.openFees, 8, 'openFees = $8 (all entry fees)');
   assertApprox(r.fees.totalFees, 8, 'totalFees = $8');
   assertApprox(r.realizedPnl.grossRealizedPnl, 0, 'grossRealizedPnl = 0');
+
+  // Derived fields: entry only, no mark — unrealized=null, totalNetPnl=0
+  assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'EntryOnly: grossUnrealizedPnl = null');
+  assert(r.unrealizedPnl.netUnrealizedPnl === null, 'EntryOnly: netUnrealizedPnl = null');
+  assertApprox(r.position.totalNetPnl, 0, 'EntryOnly: totalNetPnl = 0');
+  assert(r.position.holdingPeriodDays === null, 'EntryOnly: holdingPeriodDays = null (no mark)');
+  assert(r.position.marketValue === null, 'EntryOnly: marketValue = null (no mark)');
+  assert(r.position.positionWeight === null, 'EntryOnly: positionWeight = null');
+  assertApprox(r.returnMetrics.returnPct, 0, 'EntryOnly: returnPct = 0 (totalNetPnl=0)');
+  assert(r.returnMetrics.rMultiple === null, 'EntryOnly: rMultiple = null');
 }
 
 // ────────────────────────────────────────────────────────────────────────

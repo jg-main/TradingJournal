@@ -408,6 +408,89 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
     ? totalExitNotional.div(exitQuantity).toNumber()
     : null;
 
+  // ── Derived fields (T03) ────────────────────────────────────────
+
+  // Unrealized P&L (Section 5.8)
+  const grossUnrealizedPnl =
+    currentMark != null && openAvgCost != null && openQuantity > 0
+      ? (direction === 'long'
+          ? new Decimal(currentMark.price).minus(new Decimal(openAvgCost))
+          : new Decimal(openAvgCost).minus(new Decimal(currentMark.price))
+        ).mul(new Decimal(openQuantity)).toNumber()
+      : null;
+
+  const netUnrealizedPnl =
+    grossUnrealizedPnl != null
+      ? new Decimal(grossUnrealizedPnl).minus(new Decimal(openFeesDec)).toNumber()
+      : null;
+
+  // Risk metrics (Section 6)
+  const activeStop =
+    stopAdjustments.length > 0
+      ? stopAdjustments[stopAdjustments.length - 1].stopPrice
+      : null;
+
+  const openRisk =
+    activeStop != null && openAvgCost != null && openQuantity > 0
+      ? (direction === 'long'
+          ? new Decimal(openAvgCost).minus(new Decimal(activeStop))
+          : new Decimal(activeStop).minus(new Decimal(openAvgCost))
+        ).mul(new Decimal(openQuantity)).toNumber()
+      : null;
+
+  const riskToAccount =
+    openRisk != null && currentAccountEquity != null && currentAccountEquity > 0
+      ? (new Decimal(openRisk).div(new Decimal(currentAccountEquity)).mul(100)).toNumber()
+      : null;
+
+  const initialRisk = riskSnapshot?.initialRiskAmount ?? null;
+  const initialRiskPct =
+    riskSnapshot?.initialRiskAmount != null &&
+    riskSnapshot?.accountEquityAtOpen != null &&
+    riskSnapshot.accountEquityAtOpen > 0
+      ? (new Decimal(riskSnapshot.initialRiskAmount).div(new Decimal(riskSnapshot.accountEquityAtOpen)).mul(100)).toNumber()
+      : null;
+
+  // Position fields
+  const status = deriveStatus(entryQuantity, exitQuantity);
+  const openedAt = entries.length > 0 ? entries[0].executedAt : null;
+  const closedAt =
+    exits.length > 0 && cappedExitQuantity.gte(entryQuantity)
+      ? exits[exits.length - 1].executedAt
+      : null;
+
+  const totalNetPnl = new Decimal(netRealizedPnlNum).plus(
+    netUnrealizedPnl != null ? new Decimal(netUnrealizedPnl) : new Decimal(0),
+  ).toNumber();
+
+  const holdingPeriodDays =
+    openedAt != null && closedAt != null
+      ? (new Date(closedAt).getTime() - new Date(openedAt).getTime()) / (1000 * 60 * 60 * 24)
+      : openedAt != null && currentMark != null
+        ? (new Date(currentMark.markedAt).getTime() - new Date(openedAt).getTime()) / (1000 * 60 * 60 * 24)
+        : null;
+
+  const marketValue =
+    currentMark != null && openQuantity > 0
+      ? new Decimal(currentMark.price).mul(new Decimal(openQuantity)).toNumber()
+      : null;
+
+  const positionWeight =
+    marketValue != null && currentAccountEquity != null && currentAccountEquity > 0
+      ? new Decimal(marketValue).div(new Decimal(currentAccountEquity)).mul(100).toNumber()
+      : null;
+
+  // Return metrics (Section 5.10)
+  const returnPct =
+    totalEntryNotional.gt(0)
+      ? new Decimal(totalNetPnl).div(totalEntryNotional).mul(100).toNumber()
+      : null;
+
+  const rMultiple =
+    initialRisk != null && initialRisk > 0
+      ? new Decimal(totalNetPnl).div(new Decimal(initialRisk)).toNumber()
+      : null;
+
   return {
     size: {
       entryQuantity: entryQuantity.toNumber(),
@@ -430,36 +513,33 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
       netRealizedPnl: netRealizedPnlNum,
     },
     unrealizedPnl: {
-      grossUnrealizedPnl: null,
-      netUnrealizedPnl: null,
+      grossUnrealizedPnl,
+      netUnrealizedPnl,
     },
     risk: {
-      activeStop: null,
-      openRisk: null,
-      riskToAccount: null,
-      initialRisk: riskSnapshot?.initialRiskAmount ?? null,
-      initialRiskPct: riskSnapshot?.initialRiskAmount != null && riskSnapshot?.accountEquityAtOpen != null && riskSnapshot.accountEquityAtOpen > 0
-        ? (riskSnapshot.initialRiskAmount / riskSnapshot.accountEquityAtOpen) * 100
-        : null,
+      activeStop,
+      openRisk,
+      riskToAccount,
+      initialRisk,
+      initialRiskPct,
     },
     returnMetrics: {
-      returnPct: null,
-      rMultiple: null,
+      returnPct,
+      rMultiple,
     },
     position: {
-      totalNetPnl: null,
-      holdingPeriodDays: null,
-      status: deriveStatus(entryQuantity, exitQuantity),
-      openedAt: entries.length > 0 ? entries[0].executedAt : null,
-      closedAt: exits.length > 0 && cappedExitQuantity.gte(entryQuantity)
-        ? exits[exits.length - 1].executedAt
-        : null,
-      marketValue: null,
-      positionWeight: null,
+      totalNetPnl,
+      holdingPeriodDays,
+      status,
+      openedAt,
+      closedAt,
+      marketValue,
+      positionWeight,
     },
     remainingLots: lots,
     matches,
   };
+
 }
 
 /**
