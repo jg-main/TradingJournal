@@ -28,8 +28,19 @@ import {
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { GripVertical, ArrowUpDown, ArrowUp, ArrowDown, Columns3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -42,6 +53,10 @@ export interface DynamicTableProps<TData> {
   emptyState?: React.ReactNode;
   className?: string;
   initialVisibility?: VisibilityState;
+  /** Enable the column visibility dropdown selector */
+  columnSelector?: boolean;
+  /** Column IDs that cannot be hidden via the dropdown or persistence */
+  alwaysVisible?: string[];
 }
 
 // ── Draggable header ───────────────────────────────────────────────────
@@ -101,6 +116,17 @@ function DraggableHeader<TData>({ header }: { header: Header<TData, unknown> }) 
 
 // ── Main component ─────────────────────────────────────────────────────
 
+/** Derive a human-readable label for a column from its header text or id. */
+function getColumnLabel(col: { id: string; columnDef: { header?: unknown } }): string {
+  const header = col.columnDef.header;
+  if (typeof header === 'string' && header.trim().length > 0) return header;
+  // Fallback: title-case the id
+  return col.id
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (s) => s.toUpperCase())
+    .trim();
+}
+
 export default function DynamicTable<TData>({
   data,
   columns,
@@ -110,8 +136,19 @@ export default function DynamicTable<TData>({
   emptyState,
   className,
   initialVisibility,
+  columnSelector,
+  alwaysVisible,
 }: DynamicTableProps<TData>) {
   const router = useRouter();
+
+  // Ensure alwaysVisible columns are never hidden
+  const safeInitialVisibility = useMemo(() => {
+    if (!alwaysVisible) return initialVisibility ?? {};
+    return {
+      ...initialVisibility,
+      ...Object.fromEntries(alwaysVisible.map((id) => [id, true])),
+    };
+  }, [initialVisibility, alwaysVisible]);
 
   // Load saved state from localStorage
   const [sorting, setSorting] = useState<SortingState>(() => {
@@ -121,12 +158,18 @@ export default function DynamicTable<TData>({
     } catch { return []; }
   });
 
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
+  const [columnVisibility, _setColumnVisibility] = useState<VisibilityState>(() => {
     try {
       const raw = localStorage.getItem(`${storageKey}:visibility`);
       const saved = raw ? JSON.parse(raw) : {};
-      return { ...initialVisibility, ...saved };
-    } catch { return initialVisibility ?? {}; }
+      // Guard: strip any hidden overrides for alwaysVisible columns from saved data
+      if (alwaysVisible) {
+        for (const id of alwaysVisible) {
+          if (saved[id] === false) delete saved[id];
+        }
+      }
+      return { ...safeInitialVisibility, ...saved };
+    } catch { return safeInitialVisibility; }
   });
 
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => {
@@ -135,6 +178,22 @@ export default function DynamicTable<TData>({
       return raw ? JSON.parse(raw) : columns.map(c => c.id!);
     } catch { return columns.map(c => c.id!); }
   });
+
+  // Wrapped setter that prevents hiding alwaysVisible columns
+  const setColumnVisibility = useCallback(
+    (updater: React.SetStateAction<VisibilityState>) => {
+      _setColumnVisibility((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        if (alwaysVisible) {
+          for (const id of alwaysVisible) {
+            if (next[id] === false) delete next[id];
+          }
+        }
+        return next;
+      });
+    },
+    [alwaysVisible],
+  );
 
   // Persist changes
   useEffect(() => { localStorage.setItem(`${storageKey}:sorting`, JSON.stringify(sorting)); }, [sorting, storageKey]);
@@ -171,12 +230,61 @@ export default function DynamicTable<TData>({
     columnResizeMode: 'onChange',
   });
 
+  const hideableLeafColumns = useMemo(() => {
+    return table
+      .getAllLeafColumns()
+      .filter((col) => !alwaysVisible?.includes(col.id));
+  }, [table, alwaysVisible]);
+
   if (data.length === 0 && emptyState) {
     return <>{emptyState}</>;
   }
 
   return (
-    <div className={cn('overflow-x-auto rounded-lg border', className)}>
+    <div className="space-y-2">
+      {/* ── Column selector toolbar ───────────────────────────── */}
+      {columnSelector && hideableLeafColumns.length > 0 && (
+        <div className="flex items-center justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                <Columns3 className="size-3.5" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {hideableLeafColumns.map((col) => (
+                <DropdownMenuCheckboxItem
+                  key={col.id}
+                  checked={col.getIsVisible()}
+                  onCheckedChange={(checked) => col.toggleVisibility(!!checked)}
+                >
+                  {getColumnLabel(col)}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => {
+                table.getAllLeafColumns().forEach((col) => {
+                  if (!alwaysVisible?.includes(col.id)) {
+                    col.toggleVisibility(true);
+                  }
+                });
+              }}>
+                Show All
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => {
+                setColumnVisibility(safeInitialVisibility);
+              }}>
+                Reset to Defaults
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+
+      <div className={cn('overflow-x-auto rounded-lg border', className)}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <table className="w-full text-sm">
           <SortableContext items={table.getState().columnOrder} strategy={horizontalListSortingStrategy}>
@@ -212,6 +320,7 @@ export default function DynamicTable<TData>({
         </tbody>
       </table>
       </DndContext>
+    </div>
     </div>
   );
 }

@@ -791,8 +791,10 @@ function TradesPageInner() {
         <DynamicTable<TradeRow>
           data={rows}
           columns={colMap[tab.id]}
-          storageKey={`trades:${tab.id}`}
+          storageKey={`trades:${tab.id}:v2`}
           onRowClick={(row) => router.push(`/trades/${row.original.id}`)}
+          columnSelector
+          alwaysVisible={['symbol', 'actions']}
         />
         <TotalsFooter totals={totals} tabId={tab.id} />
       </div>
