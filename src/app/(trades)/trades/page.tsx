@@ -1,11 +1,26 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { NotebookPen } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { NotebookPen, EllipsisVertical } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import DynamicTable from '@/components/dynamic-table';
+import {
+  formatCurrency,
+  formatPrice,
+  formatDateShort,
+  formatHoldingPeriod,
+  PnlCell,
+  PercentCell,
+  RCell,
+  DirectionBadge,
+  computePlannedRisk,
+  computePlannedRR,
+} from '@/lib/trade-formatters';
+import type { TradeMetricsResult } from '@/lib/trade-metrics';
 
 // ── Types (mirrors the S02 API response shape) ─────────────────────────
 
@@ -34,11 +49,13 @@ interface TradeRow {
   createdAt: string | null;
   updatedAt: string | null;
   currentPriceFetchedAt: string | null;
+  // Convenience flat fields from metrics
   realizedPnl: number | null;
   unrealizedPnl: number | null;
   returnPct: number | null;
   riskPct: number | null;
-  metrics: unknown;
+  // Nested metrics
+  metrics: TradeMetricsResult;
 }
 
 interface TradesResponse {
@@ -98,6 +115,344 @@ function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () =>
   );
 }
 
+/** Ellipsis actions button (placeholder for future action menus) */
+function ActionsCell() {
+  return (
+    <button
+      type="button"
+      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+      aria-label="Trade actions"
+      tabIndex={0}
+    >
+      <EllipsisVertical className="size-4" />
+    </button>
+  );
+}
+
+// ── Column Definitions per Spec Sections 7.1-7.3 ───────────────────────
+
+/** Open tab columns (Section 7.1) */
+const openColumns: ColumnDef<TradeRow>[] = [
+  {
+    id: 'symbol',
+    header: 'Symbol',
+    accessorKey: 'symbol',
+    cell: ({ getValue }) => (
+      <span className="font-medium">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'direction',
+    header: 'Direction',
+    accessorKey: 'direction',
+    cell: ({ getValue }) => <DirectionBadge direction={getValue<string>()} />,
+  },
+  {
+    id: 'setup',
+    header: 'Setup',
+    accessorKey: 'setupName',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'opened',
+    header: 'Opened',
+    accessorFn: (row) => row.openedAt,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'holdingPeriod',
+    header: 'Holding Period',
+    accessorFn: (row) => row.metrics?.position?.holdingPeriodDays,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatHoldingPeriod(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'size',
+    header: 'Size',
+    accessorFn: (row) => row.metrics?.size?.sizeDisplay,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'openAvgCost',
+    header: 'Open Avg Cost',
+    accessorFn: (row) => row.metrics?.averagePrices?.openAvgCost,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'market',
+    header: 'Market',
+    accessorKey: 'currentPrice',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'activeStop',
+    header: 'Active Stop',
+    accessorFn: (row) => row.metrics?.risk?.activeStop,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'unrealizedPnl',
+    header: 'Unrealized P&L',
+    accessorKey: 'unrealizedPnl',
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'totalPnl',
+    header: 'Total P&L',
+    accessorFn: (row) => row.metrics?.position?.totalNetPnl,
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'openRisk',
+    header: 'Open Risk',
+    accessorFn: (row) => row.metrics?.risk?.openRisk,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'riskToAccount',
+    header: 'Risk to Account',
+    accessorFn: (row) => row.metrics?.risk?.riskToAccount,
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'actions',
+    header: '',
+    accessorFn: () => null,
+    cell: () => <ActionsCell />,
+    enableSorting: false,
+  },
+];
+
+/** Closed tab columns (Section 7.2) */
+const closedColumns: ColumnDef<TradeRow>[] = [
+  {
+    id: 'symbol',
+    header: 'Symbol',
+    accessorKey: 'symbol',
+    cell: ({ getValue }) => (
+      <span className="font-medium">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'direction',
+    header: 'Direction',
+    accessorKey: 'direction',
+    cell: ({ getValue }) => <DirectionBadge direction={getValue<string>()} />,
+  },
+  {
+    id: 'setup',
+    header: 'Setup',
+    accessorKey: 'setupName',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'entryDate',
+    header: 'Entry Date',
+    accessorFn: (row) => row.metrics?.position?.openedAt,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'exitDate',
+    header: 'Exit Date',
+    accessorFn: (row) => row.metrics?.position?.closedAt ?? row.closedAt,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'holdingPeriod',
+    header: 'Holding Period',
+    accessorFn: (row) => row.metrics?.position?.holdingPeriodDays,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatHoldingPeriod(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'size',
+    header: 'Size',
+    accessorFn: (row) => row.metrics?.size?.sizeDisplay,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'avgEntry',
+    header: 'Avg Entry',
+    accessorFn: (row) => row.metrics?.averagePrices?.avgEntryPrice,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'avgExit',
+    header: 'Avg Exit',
+    accessorFn: (row) => row.metrics?.averagePrices?.avgExitPrice,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'grossPnl',
+    header: 'Gross P&L',
+    accessorFn: (row) => row.metrics?.realizedPnl?.grossRealizedPnl,
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'fees',
+    header: 'Fees',
+    accessorFn: (row) => row.metrics?.fees?.totalFees,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'netPnl',
+    header: 'Net P&L',
+    accessorKey: 'realizedPnl',
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'returnPct',
+    header: 'Return %',
+    accessorKey: 'returnPct',
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'rMultiple',
+    header: 'R-Multiple',
+    accessorFn: (row) => row.metrics?.returnMetrics?.rMultiple,
+    cell: ({ getValue }) => <RCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'actions',
+    header: '',
+    accessorFn: () => null,
+    cell: () => <ActionsCell />,
+    enableSorting: false,
+  },
+];
+
+/** Planned tab columns (Section 7.3) */
+const plannedColumns: ColumnDef<TradeRow>[] = [
+  {
+    id: 'symbol',
+    header: 'Symbol',
+    accessorKey: 'symbol',
+    cell: ({ getValue }) => (
+      <span className="font-medium">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'direction',
+    header: 'Direction',
+    accessorKey: 'direction',
+    cell: ({ getValue }) => <DirectionBadge direction={getValue<string>()} />,
+  },
+  {
+    id: 'setup',
+    header: 'Setup',
+    accessorKey: 'setupName',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'plannedDate',
+    header: 'Planned Date',
+    accessorKey: 'createdAt',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'plannedSize',
+    header: 'Planned Size',
+    accessorKey: 'plannedQuantity',
+    cell: ({ getValue }) => {
+      const qty = getValue<number | null>();
+      return <span className="tabular-nums text-muted-foreground">{qty != null ? qty.toLocaleString() : '—'}</span>;
+    },
+  },
+  {
+    id: 'entryTrigger',
+    header: 'Entry Trigger',
+    accessorKey: 'plannedEntry',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'stop',
+    header: 'Stop',
+    accessorKey: 'plannedStop',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'target',
+    header: 'Target',
+    accessorKey: 'plannedTarget1',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'plannedRisk',
+    header: 'Planned Risk',
+    accessorFn: (row) =>
+      computePlannedRisk(row.direction, row.plannedEntry, row.plannedStop, row.plannedQuantity),
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'riskToAccount',
+    header: 'Risk to Account',
+    accessorFn: (row) => row.metrics?.risk?.riskToAccount,
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'plannedRR',
+    header: 'Planned R:R',
+    accessorFn: (row) => {
+      const rr = computePlannedRR(row.direction, row.plannedEntry, row.plannedStop, row.plannedTarget1);
+      return rr != null ? rr : null;
+    },
+    cell: ({ getValue }) => {
+      const rr = getValue<number | null>();
+      if (rr == null || rr <= 0) return <span className="text-muted-foreground">—</span>;
+      return <span className="tabular-nums">1:{rr.toFixed(1)}</span>;
+    },
+  },
+  {
+    id: 'actions',
+    header: '',
+    accessorFn: () => null,
+    cell: () => <ActionsCell />,
+    enableSorting: false,
+  },
+];
+
 // ── Page Component ─────────────────────────────────────────────────────
 
 export default function TradesPage() {
@@ -127,13 +482,13 @@ export default function TradesPage() {
   });
   const [activeTab, setActiveTab] = useState<TabId>('open');
 
-  const fetchTab = useCallback(async (tab: TabDef) => {
+  const fetchTab = useCallback(async (tab: TabDef, page: number = 1) => {
     setTabLoading((prev) => ({ ...prev, [tab.id]: true }));
     setTabError((prev) => ({ ...prev, [tab.id]: null }));
     try {
       const params = new URLSearchParams();
       params.set('status', tab.apiStatus);
-      params.set('page', '1');
+      params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
       const res = await fetch(`/api/trades?${params.toString()}`);
       if (!res.ok) {
@@ -155,9 +510,17 @@ export default function TradesPage() {
 
   // Fetch all tabs on mount
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    TABS.forEach((tab) => fetchTab(tab));
+    TABS.forEach((tab) => fetchTab(tab, 1));
   }, [fetchTab]);
+
+  // Memoized column definitions per tab
+  const colMap = useMemo<
+    Record<TabId, ColumnDef<TradeRow>[]>
+  >(() => ({
+    open: openColumns,
+    closed: closedColumns,
+    planned: plannedColumns,
+  }), []);
 
   // ── Render per-tab content ───────────────────────────────────────
 
@@ -205,22 +568,16 @@ export default function TradesPage() {
       );
     }
 
-    // Table will be built in T02
     return (
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">
           Showing {rows.length} of {total.toLocaleString()} {tab.label.toLowerCase()} trades.
         </p>
-        {/* Table placeholder — replaced in T02 */}
-        {rows.slice(0, 5).map((trade) => (
-          <div
-            key={trade.id}
-            className="flex items-center justify-between rounded-md border px-4 py-2 text-sm"
-          >
-            <span className="font-medium">{trade.symbol}</span>
-            <span className="text-muted-foreground">{trade.tradeCode}</span>
-          </div>
-        ))}
+        <DynamicTable<TradeRow>
+          data={rows}
+          columns={colMap[tab.id]}
+          storageKey={`trades:${tab.id}`}
+        />
       </div>
     );
   }
