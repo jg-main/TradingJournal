@@ -483,6 +483,119 @@ const closedColumns: ColumnDef<TradeRow>[] = [
     accessorFn: (row) => row.metrics?.returnMetrics?.rMultiple,
     cell: ({ getValue }) => <RCell value={getValue<number | null>()} />,
   },
+  // ── Optional hidden-by-default columns (Section 2.2) ──────────────
+  {
+    id: 'initialRisk',
+    header: 'Initial Risk',
+    accessorFn: (row) => row.metrics?.risk?.initialRisk,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'initialRiskPct',
+    header: 'Initial Risk %',
+    accessorFn: (row) => row.metrics?.risk?.initialRiskPct,
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'totalEntryNotional',
+    header: 'Tot Entry Notional',
+    accessorFn: (row) => {
+      const qty = row.metrics?.size?.entryQuantity;
+      const price = row.metrics?.averagePrices?.avgEntryPrice;
+      if (qty != null && price != null) return qty * price;
+      return null;
+    },
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'executionCount',
+    header: 'Execution Count',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'entryFillCount',
+    header: 'Entry Fill Count',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'exitFillCount',
+    header: 'Exit Fill Count',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'mfe',
+    header: 'MFE',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'mae',
+    header: 'MAE',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'account',
+    header: 'Account',
+    accessorKey: 'accountId',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'sector',
+    header: 'Sector',
+    accessorKey: 'sectorId',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'grade',
+    header: 'Grade',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'followedPlan',
+    header: 'Followed Plan',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'ruleViolation',
+    header: 'Rule Violation',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'highestMistakeSeverity',
+    header: 'Mistake Severity',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'thesis',
+    header: 'Thesis',
+    accessorKey: 'thesis',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'exitNotes',
+    header: 'Exit Notes',
+    accessorKey: 'exitNotes',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'lesson',
+    header: 'Lesson',
+    accessorKey: 'lesson',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
   {
     id: 'actions',
     header: '',
@@ -585,6 +698,107 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
       return <span className="tabular-nums">1:{rr.toFixed(1)}</span>;
     },
   },
+  // ── Optional hidden-by-default columns (Section 2.3) ──────────────
+  {
+    id: 'account',
+    header: 'Account',
+    accessorKey: 'accountId',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'sector',
+    header: 'Sector',
+    accessorKey: 'sectorId',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'thesis',
+    header: 'Thesis',
+    accessorKey: 'thesis',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'invalidation',
+    header: 'Invalidation',
+    accessorKey: 'invalidationCondition',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'preTradePlan',
+    header: 'Pre-trade Plan',
+    accessorKey: 'preTradePlan',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'plannedCapital',
+    header: 'Planned Capital',
+    accessorFn: (row) => {
+      const entry = row.plannedEntry;
+      const qty = row.plannedQuantity;
+      if (entry != null && qty != null) return entry * qty;
+      return null;
+    },
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'target2',
+    header: 'Target 2',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'marketCondition',
+    header: 'Market Condition',
+    accessorKey: 'marketConditionId',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'dateAdded',
+    header: 'Date Added',
+    accessorKey: 'createdAt',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'expirationDate',
+    header: 'Expiration Date',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'distanceToTrigger',
+    header: 'Dist to Trigger',
+    accessorFn: (row) => {
+      const current = row.currentPrice;
+      const trigger = row.plannedEntry;
+      if (current != null && trigger != null && trigger !== 0) {
+        return ((current - trigger) / trigger) * 100;
+      }
+      return null;
+    },
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'currentMarketPrice',
+    header: 'Market Price',
+    accessorKey: 'currentPrice',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
   {
     id: 'actions',
     header: '',
@@ -609,10 +823,45 @@ const openDefaultVisibility: VisibilityState = {
   created: false,
 };
 
+const closedDefaultVisibility: VisibilityState = {
+  initialRisk: false,
+  initialRiskPct: false,
+  totalEntryNotional: false,
+  executionCount: false,
+  entryFillCount: false,
+  exitFillCount: false,
+  mfe: false,
+  mae: false,
+  account: false,
+  sector: false,
+  grade: false,
+  followedPlan: false,
+  ruleViolation: false,
+  highestMistakeSeverity: false,
+  thesis: false,
+  exitNotes: false,
+  lesson: false,
+};
+
+const plannedDefaultVisibility: VisibilityState = {
+  account: false,
+  sector: false,
+  thesis: false,
+  invalidation: false,
+  preTradePlan: false,
+  plannedCapital: false,
+  target2: false,
+  marketCondition: false,
+  dateAdded: false,
+  expirationDate: false,
+  distanceToTrigger: false,
+  currentMarketPrice: false,
+};
+
 const visibilityDefaults: Record<TabId, VisibilityState> = {
   open: openDefaultVisibility,
-  closed: {},
-  planned: {},
+  closed: closedDefaultVisibility,
+  planned: plannedDefaultVisibility,
 };
 
 // ── Page Component ─────────────────────────────────────────────────────
