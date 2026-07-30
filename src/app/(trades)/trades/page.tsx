@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { NotebookPen, EllipsisVertical } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -150,7 +151,7 @@ function ActionsCell() {
   );
 }
 
-/** Totals footer row rendered below the DynamicTable */
+/** Totals summary card rendered below the DynamicTable */
 function TotalsFooter({
   totals,
   tabId,
@@ -158,40 +159,35 @@ function TotalsFooter({
   totals: TradesResponse['totals'];
   tabId: TabId;
 }) {
-  if (tabId === 'open') {
-    return (
-      <div className="flex items-center gap-6 border-t px-3 py-2 text-xs text-muted-foreground">
-        <span>
-          Unrealized P&L:{' '}
-          <PnlCell value={totals.netUnrealizedPnl} />
-        </span>
-        <span>
-          Open Risk: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span>
-        </span>
-      </div>
-    );
-  }
+  if (tabId === 'planned') return null;
 
-  if (tabId === 'closed') {
-    return (
-      <div className="flex items-center gap-6 border-t px-3 py-2 text-xs text-muted-foreground">
-        <span>
-          Gross Realized P&L:{' '}
-          <PnlCell value={totals.grossRealizedPnl} />
-        </span>
-        <span>
-          Fees: <span className="tabular-nums">{formatCurrency(totals.totalFees)}</span>
-        </span>
-        <span>
-          Net Realized P&L:{' '}
-          <PnlCell value={totals.netRealizedPnl} />
-        </span>
-      </div>
-    );
-  }
+  const isOpen = tabId === 'open';
+  const items = isOpen
+    ? [
+        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} />, value: totals.netUnrealizedPnl },
+        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span>, value: totals.totalOpenRisk },
+      ]
+    : [
+        { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} />, value: totals.grossRealizedPnl },
+        { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees)}</span>, value: totals.totalFees },
+        { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} />, value: totals.netRealizedPnl },
+      ];
 
-  // Planned tab — no meaningful monetary totals
-  return null;
+  return (
+    <div className="mt-3 rounded-lg border bg-muted/30 p-4">
+      <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {isOpen ? 'Open Positions Total' : 'Closed Totals'}
+      </div>
+      <div className="flex flex-wrap gap-x-8 gap-y-2">
+        {items.map((item) => (
+          <div key={item.label} className="flex flex-col">
+            <span className="text-xs text-muted-foreground">{item.label}</span>
+            <span className="text-lg font-semibold tabular-nums">{item.content}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── Column Definitions per Spec Sections 7.1-7.3 ───────────────────────
@@ -521,6 +517,17 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
 // ── Page Component ─────────────────────────────────────────────────────
 
 export default function TradesPage() {
+  return (
+    <Suspense fallback={<div className="px-4 py-3 sm:px-8 sm:py-10"><div className="mb-6 text-2xl font-semibold">Trades</div></div>}>
+      <TradesPageInner />
+    </Suspense>
+  );
+}
+
+function TradesPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   useEffect(() => {
     document.title = 'Trades — Trading Journal';
   }, []);
@@ -555,9 +562,96 @@ export default function TradesPage() {
   const [activeTab, setActiveTab] = useState<TabId>('open');
 
   // Filter state
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [accountId, setAccountId] = useState('all');
+  // Filter state — initialised from URL search params, falling back to localStorage
+  const [fromDate, setFromDate] = useState(() => {
+    const urlVal = searchParams.get('from');
+    if (urlVal) return urlVal;
+    try { return localStorage.getItem('trades:fromDate') ?? ''; } catch { return ''; }
+  });
+  const [toDate, setToDate] = useState(() => {
+    const urlVal = searchParams.get('to');
+    if (urlVal) return urlVal;
+    try { return localStorage.getItem('trades:toDate') ?? ''; } catch { return ''; }
+  });
+  const [accountId, setAccountId] = useState(() => {
+    const urlVal = searchParams.get('accountId');
+    if (urlVal) return urlVal;
+    try { return localStorage.getItem('trades:accountId') ?? 'all'; } catch { return 'all'; }
+  });
+  const [activePreset, setActivePreset] = useState<string | null>(() => {
+    const urlVal = searchParams.get('preset');
+    if (urlVal) return urlVal;
+    try { return localStorage.getItem('trades:preset') || null; } catch { return null; }
+  });
+
+  // Date-range presets
+  const datePresets = useMemo(() => {
+    const today = new Date();
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const startOfYear = new Date(today.getFullYear(), 0, 1);
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthsAgo = (n: number) => {
+      const d = new Date(today.getFullYear(), today.getMonth() - n, 1);
+      return d;
+    };
+    return [
+      { label: 'Max', from: '' },
+      { label: 'YTD', from: fmt(startOfYear) },
+      { label: '1Y', from: fmt(new Date(today.getFullYear() - 1, today.getMonth(), today.getDate())) },
+      { label: '6M', from: fmt(monthsAgo(6)) },
+      { label: '3M', from: fmt(monthsAgo(3)) },
+      { label: 'MTD', from: fmt(startOfMonth) },
+      { label: '1M', from: fmt(monthsAgo(1)) },
+    ];
+  }, []);
+
+  const clearDates = useCallback(() => {
+    setFromDate('');
+    setToDate('');
+    setActivePreset(null);
+  }, []);
+
+  const applyDatePreset = useCallback((preset: { label: string; from: string }) => {
+    if (preset.label === 'Max') {
+      clearDates();
+      setActivePreset(preset.label);
+    } else {
+      setFromDate(preset.from);
+      setToDate('');
+      setActivePreset(preset.label);
+    }
+  }, [clearDates]);
+
+  // Clear preset highlight when user manually edits dates
+  const handleFromDateChange = useCallback((value: string) => {
+    setFromDate(value);
+    setActivePreset(null);
+  }, []);
+
+  const handleToDateChange = useCallback((value: string) => {
+    setToDate(value);
+    setActivePreset(null);
+  }, []);
+
+  // Sync filter state to URL search params and localStorage for persistence
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (fromDate) params.set('from', fromDate);
+    if (toDate) params.set('to', toDate);
+    if (accountId && accountId !== 'all') params.set('accountId', accountId);
+    if (activePreset) params.set('preset', activePreset);
+    const qs = params.toString();
+    const newUrl = qs ? `?${qs}` : window.location.pathname;
+    router.replace(newUrl, { scroll: false });
+    // Also persist to localStorage — survives plain sidebar link navigation
+    try {
+      localStorage.setItem('trades:fromDate', fromDate);
+      localStorage.setItem('trades:toDate', toDate);
+      localStorage.setItem('trades:accountId', accountId);
+      if (activePreset) localStorage.setItem('trades:preset', activePreset);
+      else localStorage.removeItem('trades:preset');
+    } catch { /* localStorage unavailable */ }
+  }, [fromDate, toDate, accountId, activePreset, router]);
 
   // Account options for the filter dropdown
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -698,6 +792,7 @@ export default function TradesPage() {
           data={rows}
           columns={colMap[tab.id]}
           storageKey={`trades:${tab.id}`}
+          onRowClick={(row) => router.push(`/trades/${row.original.id}`)}
         />
         <TotalsFooter totals={totals} tabId={tab.id} />
       </div>
@@ -707,64 +802,100 @@ export default function TradesPage() {
   // ── Render ───────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
+    <div className="px-4 py-3 sm:px-8 sm:py-10">
       <h1 className="mb-6 text-2xl font-semibold tracking-tight text-foreground">
         Trades
       </h1>
 
       {/* ── Filter controls ─────────────────────────────────────── */}
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        {/* From date */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-from" className="text-xs font-medium text-muted-foreground">
-            From
-          </label>
-          <Input
-            id="filter-from"
-            type="date"
-            className="h-8 w-44"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-          />
-        </div>
+      <div className="mb-6 rounded-lg border p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          {/* Date section */}
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">Dates</div>
+            <div className="flex flex-wrap items-end gap-3">
+              {/* From date */}
+              <div className="flex flex-col gap-1">
+                <label htmlFor="filter-from" className="text-xs text-muted-foreground">
+                  From
+                </label>
+                <Input
+                  id="filter-from"
+                  type="date"
+                  className="h-8 w-44"
+                  value={fromDate}
+                  onChange={(e) => handleFromDateChange(e.target.value)}
+                />
+              </div>
 
-        {/* To date */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-to" className="text-xs font-medium text-muted-foreground">
-            To
-          </label>
-          <Input
-            id="filter-to"
-            type="date"
-            className="h-8 w-44"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-          />
-        </div>
+              {/* To date */}
+              <div className="flex flex-col gap-1">
+                <label htmlFor="filter-to" className="text-xs text-muted-foreground">
+                  To
+                </label>
+                <Input
+                  id="filter-to"
+                  type="date"
+                  className="h-8 w-44"
+                  value={toDate}
+                  onChange={(e) => handleToDateChange(e.target.value)}
+                />
+              </div>
+            </div>
 
-        {/* Account filter */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-account" className="text-xs font-medium text-muted-foreground">
-            Account
-          </label>
-          <Select
-            value={accountId}
-            onValueChange={(v) => setAccountId(v)}
-            disabled={accountsLoading}
-          >
-            <SelectTrigger id="filter-account" className="h-8 w-48">
-              <SelectValue placeholder={accountsLoading ? 'Loading...' : 'All accounts'} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All accounts</SelectItem>
-              {accounts.map((acct) => (
-                <SelectItem key={acct.id} value={acct.id}>
-                  {acct.name}
-                  {acct.broker ? ` (${acct.broker})` : ''}
-                </SelectItem>
+            {/* Date-range presets */}
+            <div className="mt-3 flex flex-wrap items-center gap-1">
+              {datePresets.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => applyDatePreset(p)}
+                  className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                    activePreset === p.label
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground'
+                  }`}
+                >
+                  {p.label}
+                </button>
               ))}
-            </SelectContent>
-          </Select>
+              {(activePreset || fromDate) && (
+                <button
+                  type="button"
+                  onClick={clearDates}
+                  className="ml-0.5 h-7 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="Clear date filter"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Account filter */}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-account" className="text-xs font-medium text-muted-foreground">
+              Account
+            </label>
+            <Select
+              value={accountId}
+              onValueChange={(v) => setAccountId(v)}
+              disabled={accountsLoading}
+            >
+              <SelectTrigger id="filter-account" className="h-8 w-48">
+                <SelectValue placeholder={accountsLoading ? 'Loading...' : 'All accounts'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All accounts</SelectItem>
+                {accounts.map((acct) => (
+                  <SelectItem key={acct.id} value={acct.id}>
+                    {acct.name}
+                    {acct.broker ? ` (${acct.broker})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

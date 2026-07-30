@@ -4,53 +4,6 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useAccount } from '@/lib/account-context';
 
-// ── Types ───────────────────────────────────────────────────────────────
-
-interface AccountSummaryResponse {
-  accounts: {
-    id: string;
-    name: string;
-    broker: string | null;
-    currency: string;
-    currentBalance: string | null;
-    asOf: string | null;
-  }[];
-  totalBalance: string | null;
-  openTradeCount: number;
-}
-
-// ── Formatting ──────────────────────────────────────────────────────────
-
-function formatCurrency(value: string | null, currency: string): string {
-  if (value === null) return '—';
-  const num = parseFloat(value);
-  if (isNaN(num)) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
-}
-
-function formatCompact(value: string | null, currency: string): string {
-  if (value === null) return '-';
-  const num = parseFloat(value);
-  if (isNaN(num)) return '-';
-  // Compact: $12.3k or $1.2M
-  const abs = Math.abs(num);
-  let compact: string;
-  if (abs >= 1_000_000) {
-    compact = (num / 1_000_000).toFixed(1) + 'M';
-  } else if (abs >= 1_000) {
-    compact = (num / 1_000).toFixed(1) + 'k';
-  } else {
-    compact = num.toFixed(0);
-  }
-  const sym = currency === 'USD' ? '$' : currency + ' ';
-  return sym + compact;
-}
-
 // ── Component ───────────────────────────────────────────────────────────
 
 interface SidebarValueProps {
@@ -58,15 +11,15 @@ interface SidebarValueProps {
 }
 
 /**
- * Sidebar value block: shows total account balance in compact format
- * with a Live dot when open trades exist (M007 S03).
+ * Sidebar value block: shows a Live badge when open trades exist.
+ * No monetary total displayed (removed per user request).
  *
- * Fetches /api/accounts/summary. Loading: skeleton pulse.
- * Error: muted dash. Empty accounts: nothing.
+ * Fetches /api/accounts/summary for open trade count only.
+ * Loading: skeleton pulse. Error: muted dash. No open trades: nothing.
  */
 export function SidebarValue({ collapsed = false }: SidebarValueProps) {
   const { accounts: accountMeta } = useAccount();
-  const [summary, setSummary] = useState<AccountSummaryResponse | null>(null);
+  const [openCount, setOpenCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,11 +29,11 @@ export function SidebarValue({ collapsed = false }: SidebarValueProps) {
     fetch('/api/accounts/summary')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to load account summary');
-        return res.json() as Promise<AccountSummaryResponse>;
+        return res.json() as Promise<{ openTradeCount: number }>;
       })
       .then((data) => {
         if (cancelled) return;
-        setSummary(data);
+        setOpenCount(data.openTradeCount);
         setLoading(false);
       })
       .catch((err) => {
@@ -106,25 +59,10 @@ export function SidebarValue({ collapsed = false }: SidebarValueProps) {
     );
   }
 
-  // Error
-  if (error) {
-    return (
-      <div className="border-t px-3 py-2 text-xs text-muted-foreground" data-testid="sidebar-value">
-        {collapsed ? (
-          <span title={error}>—</span>
-        ) : (
-          <span>&mdash;</span>
-        )}
-      </div>
-    );
-  }
+  // Error — render nothing (non-critical)
+  if (error) return null;
 
-  if (!summary) return null;
-
-  const total = summary.totalBalance;
-  const openCount = summary.openTradeCount;
-  const hasLive = openCount > 0;
-  const currency = summary.accounts[0]?.currency ?? 'USD';
+  if (openCount === 0) return null;
 
   return (
     <div
@@ -135,46 +73,16 @@ export function SidebarValue({ collapsed = false }: SidebarValueProps) {
       data-testid="sidebar-value"
     >
       {collapsed ? (
-        <div className="relative flex items-center">
-          {hasLive && (
-            <span
-              className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-500"
-              data-testid="sidebar-value-live-dot"
-            />
-          )}
-          <span
-            className="text-[11px] font-medium tabular-nums text-foreground"
-            title={`Total: ${formatCurrency(total, currency)}`}
-          >
-            {formatCompact(total, currency)}
-          </span>
-        </div>
+        <span
+          className="size-1.5 rounded-full bg-emerald-500"
+          data-testid="sidebar-value-live-dot"
+        />
       ) : (
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                Equity
-              </span>
-              {hasLive && (
-                <span
-                  className="size-1.5 rounded-full bg-emerald-500"
-                  data-testid="sidebar-value-live-dot"
-                />
-              )}
-            </div>
-            <span
-              className="text-sm font-medium tabular-nums text-foreground"
-              data-testid="sidebar-value-total"
-            >
-              {formatCurrency(total, currency)}
-            </span>
-          </div>
-          {hasLive && (
-            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-              LIVE
-            </span>
-          )}
+        <div className="flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+            LIVE
+          </span>
         </div>
       )}
     </div>
