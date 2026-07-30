@@ -8,14 +8,8 @@ import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import type { CheckResult, MtmData } from '@/components/trade-detail/types';
 import { EmptyState } from '@/components/empty-state';
 
-import {
-  calculatePnL,
-  calculateRMultiple,
-  deriveTradeStatus,
-  type ExecutionData,
-} from '@/lib/trade-calc';
+import { computeTradeMetrics, type ExecutionData } from '@/lib/trade-metrics';
 import { computePerfMetrics, type PerfMetrics } from '@/lib/perf-metrics';
-import { deriveInitialRiskAmount } from '@/lib/risk-snapshot';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
 
@@ -352,15 +346,44 @@ export default function TradeDetailPage() {
   );
 
   const execData = trade ? toExecutionData(executions) : [];
-  const pnlResult = trade && executions.length > 0 ? calculatePnL(execData, trade.direction) : null;
-  const derivedRiskAmount = riskSnapshot
-    ? deriveInitialRiskAmount(riskSnapshot)
+  const computedRiskAmount = riskSnapshot
+    ? (riskSnapshot.initialRiskAmount ??
+        (riskSnapshot.initialEntryPrice != null && riskSnapshot.initialStopPrice != null && riskSnapshot.initialQuantity != null
+          ? Math.abs(riskSnapshot.initialEntryPrice - riskSnapshot.initialStopPrice) * riskSnapshot.initialQuantity
+          : null))
     : null;
-  const rMultiple = pnlResult && derivedRiskAmount
-    ? calculateRMultiple(pnlResult.totalRealizedPnL, derivedRiskAmount)
+  const metrics = trade && executions.length > 0
+    ? computeTradeMetrics({
+        executions: execData,
+        direction: trade.direction,
+        riskSnapshot: computedRiskAmount != null
+          ? { initialRiskAmount: computedRiskAmount, accountEquityAtOpen: riskSnapshot?.accountEquityAtOpen ?? null }
+          : null,
+        stopAdjustments: [],
+        currentMark: null,
+        currentAccountEquity: null,
+      })
     : null;
-  const derivedStatus = trade && executions.length > 0
-    ? deriveTradeStatus(execData, trade.direction)
+  const derivedStatus = metrics
+    ? {
+        status: metrics.position.status,
+        openedAt: metrics.position.openedAt,
+        closedAt: metrics.position.closedAt,
+        openQuantity: metrics.size.openQuantity,
+        totalEntryQty: metrics.size.entryQuantity,
+        totalExitQty: metrics.size.exitQuantity,
+      }
+    : null;
+  const pnlResult = metrics
+    ? {
+        totalRealizedPnL: metrics.realizedPnl.netRealizedPnl,
+        avgEntryPrice: metrics.averagePrices.avgEntryPrice,
+        totalEntryQty: metrics.size.entryQuantity,
+        totalExitQty: metrics.size.exitQuantity,
+      }
+    : null;
+  const rMultiple = metrics
+    ? { rMultiple: metrics.returnMetrics.rMultiple, initialRiskUsed: metrics.risk.initialRisk != null }
     : null;
 
   const perfMetrics: PerfMetrics | null = trade && executions.length > 0 && pnlResult

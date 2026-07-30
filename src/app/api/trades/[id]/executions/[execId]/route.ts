@@ -3,10 +3,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { trades, tradeExecutions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import {
-  deriveTradeStatus,
-  type ExecutionData,
-} from '@/lib/trade-calc';
+import { computeTradeMetrics, type ExecutionData, type Direction } from '@/lib/trade-metrics';
 
 type RouteParams = { params: Promise<{ id: string; execId: string }> };
 
@@ -93,14 +90,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .all();
 
     const execData = toExecutionData(allExecutions);
-    const derived = deriveTradeStatus(execData, trade.direction as 'long' | 'short');
+    const metrics = computeTradeMetrics({
+      executions: execData,
+      direction: trade.direction as Direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
     const now = new Date().toISOString();
 
     db.update(trades)
       .set({
-        status: derived.status,
-        openedAt: derived.openedAt,
-        closedAt: derived.closedAt,
+        status: metrics.position.status,
+        openedAt: metrics.position.openedAt,
+        closedAt: metrics.position.closedAt,
         updatedAt: now,
       })
       .where(eq(trades.id, id))
@@ -165,13 +169,20 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       .all();
 
     const execData = toExecutionData(remaining);
-    const derived = deriveTradeStatus(execData, trade.direction as 'long' | 'short');
+    const metrics = computeTradeMetrics({
+      executions: execData,
+      direction: trade.direction as Direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
 
     db.update(trades)
       .set({
-        status: derived.status,
-        openedAt: derived.openedAt,
-        closedAt: derived.closedAt,
+        status: metrics.position.status,
+        openedAt: metrics.position.openedAt,
+        closedAt: metrics.position.closedAt,
         updatedAt: new Date().toISOString(),
       })
       .where(eq(trades.id, id))

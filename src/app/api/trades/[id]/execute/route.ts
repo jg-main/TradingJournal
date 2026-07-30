@@ -4,12 +4,7 @@ import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransacti
 import { eq, and, lte, asc, or, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
-import {
-  deriveTradeStatus,
-  calculateAvgCost,
-  type ExecutionData,
-  type Direction,
-} from '@/lib/trade-calc';
+import { computeTradeMetrics, type ExecutionData, type Direction } from '@/lib/trade-metrics';
 import {
   computeEquityAtOpen,
   computeRealizedPnLFromClosedTrades,
@@ -344,21 +339,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .all();
 
       const execData = toExecutionData(allExecutions);
-      const derived = deriveTradeStatus(execData, trade.direction as 'long' | 'short');
+      const metrics = computeTradeMetrics({
+        executions: execData,
+        direction: trade.direction as Direction,
+        riskSnapshot: null,
+        stopAdjustments: [],
+        currentMark: null,
+        currentAccountEquity: null,
+      });
 
       // 5. Update trade row
       tx.update(trades)
         .set({
-          status: derived.status,
-          openedAt: derived.openedAt,
-          closedAt: derived.closedAt,
+          status: metrics.position.status,
+          openedAt: metrics.position.openedAt,
+          closedAt: metrics.position.closedAt,
           updatedAt: now,
         })
         .where(eq(trades.id, id))
         .run();
 
       // 6. Upsert risk snapshot on first entry (skip if one exists)
-      if (derived.totalEntryQty > 0) {
+      if (metrics.size.entryQuantity > 0) {
         const existingSnapshot = tx
           .select()
           .from(tradeRiskSnapshots)
@@ -373,22 +375,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           );
 
           if (entryExecs.length > 0) {
-            const { avgEntryPrice } = calculateAvgCost(
-              entryExecs.map((e) => ({
-                action: e.action,
-                quantity: e.quantity,
-                price: e.price,
-                fees: e.fees ?? 0,
-                executedAt: e.executedAt ?? e.createdAt ?? '',
-              })),
-            );
+            const avgEntryPrice = metrics.averagePrices.avgEntryPrice;
 
             if (avgEntryPrice !== null) {
               const snapshotValues: Record<string, unknown> = {
                 id: randomUUID(),
                 tradeId: id,
                 initialEntryPrice: avgEntryPrice,
-                initialQuantity: derived.totalEntryQty,
+                initialQuantity: metrics.size.entryQuantity,
                 createdAt: now,
               };
 
@@ -476,7 +470,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                   // Compute derived risk snapshot values
                   const riskValues = computeRiskSnapshotValues({
                     avgEntryPrice,
-                    initialQuantity: derived.totalEntryQty,
+                    initialQuantity: metrics.size.entryQuantity,
                     initialStopPrice: effectiveStopPrice ?? null,
                     direction: trade.direction as Direction,
                     accountEquityAtOpen: equityAtOpen,
