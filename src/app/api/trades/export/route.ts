@@ -238,8 +238,12 @@ export async function GET(request: NextRequest) {
 
         // Computed P&L (from computeTradeMetrics)
         realizedPnL: metrics.realizedPnl.netRealizedPnl,
+        grossRealizedPnl: metrics.realizedPnl.grossRealizedPnl,
+        netRealizedPnl: metrics.realizedPnl.netRealizedPnl,
+        realizedFees: metrics.fees.realizedFees,
         rMultiple: metrics.returnMetrics.rMultiple,
         avgEntryPrice: metrics.averagePrices.avgEntryPrice,
+        openAvgCost: metrics.averagePrices.openAvgCost,
         totalEntryQty: metrics.size.entryQuantity,
         totalExitQty: metrics.size.exitQuantity,
         openQuantity: metrics.size.openQuantity,

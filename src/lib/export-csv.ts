@@ -51,8 +51,12 @@ export interface ExportTradeRow {
 
   // Computed P&L (via trade-calc.ts calculatePnL)
   realizedPnL: number | null;
+  grossRealizedPnl: number | null;
+  netRealizedPnl: number | null;
+  realizedFees: number | null;
   rMultiple: number | null;
   avgEntryPrice: number | null;
+  openAvgCost: number | null;
   totalEntryQty: number | null;
   totalExitQty: number | null;
   openQuantity: number | null;
@@ -178,9 +182,12 @@ export const CSV_COLUMNS: CsvColumn<ExportTradeRow>[] = [
   { key: 'updatedAt', label: 'Updated At' },
 
   // Computed P&L
-  { key: 'realizedPnL', label: 'Realized P&L', format: formatNumber },
+  { key: 'grossRealizedPnl', label: 'Gross Realized P&L', format: formatNumber },
+  { key: 'netRealizedPnl', label: 'Net Realized P&L', format: formatNumber },
+  { key: 'realizedFees', label: 'Realized Fees', format: formatNumber },
   { key: 'rMultiple', label: 'R Multiple', format: formatNumber },
   { key: 'avgEntryPrice', label: 'Avg Entry Price', format: formatNumber },
+  { key: 'openAvgCost', label: 'Open Avg Cost', format: formatNumber },
   { key: 'totalEntryQty', label: 'Total Entry Qty', format: formatNumber },
   { key: 'totalExitQty', label: 'Total Exit Qty', format: formatNumber },
   { key: 'openQuantity', label: 'Open Quantity', format: formatNumber },

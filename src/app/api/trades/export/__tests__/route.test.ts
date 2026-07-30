@@ -463,8 +463,12 @@ function doGetExport(queryAccountId?: string | null): ExportRouteResult {
         createdAt: trade.createdAt ?? null,
         updatedAt: trade.updatedAt ?? null,
         realizedPnL: metrics.realizedPnl.netRealizedPnl,
+        grossRealizedPnl: metrics.realizedPnl.grossRealizedPnl,
+        netRealizedPnl: metrics.realizedPnl.netRealizedPnl,
+        realizedFees: metrics.fees.realizedFees,
         rMultiple: metrics.returnMetrics.rMultiple,
         avgEntryPrice: metrics.averagePrices.avgEntryPrice,
+        openAvgCost: metrics.averagePrices.openAvgCost,
         totalEntryQty: metrics.size.entryQuantity,
         totalExitQty: metrics.size.exitQuantity,
         openQuantity: metrics.size.openQuantity,
@@ -857,6 +861,8 @@ cleanup();
   assert(t1Row.includes('Technology'), 'Trade 1: sector resolved from lookup');
   assert(t1Row.includes('Bull Market'), 'Trade 1: market condition resolved from lookup');
   assert(t1Row.includes('1990.00'), 'Trade 1: realizedPnL = 1990.00');
+  assert(t1Row.includes('2000.00'), 'Trade 1: grossRealizedPnl = 2000.00');
+  assert(t1Row.includes('10.00'), 'Trade 1: realizedFees = 10.00');
   assert(t1Row.includes('3.98'), 'Trade 1: rMultiple = 3.98');
 
   // Grade columns

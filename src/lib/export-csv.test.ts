@@ -143,8 +143,12 @@ function assert(condition: boolean, msg: string) {
       createdAt: '2026-01-10T09:00:00Z',
       updatedAt: '2026-01-10T14:30:00Z',
       realizedPnL: 1500.00,
+      grossRealizedPnl: 1500.00,
+      netRealizedPnl: 1500.00,
+      realizedFees: 4.50,
       rMultiple: 3.0,
       avgEntryPrice: 150.00,
+      openAvgCost: 0.00,
       totalEntryQty: 100,
       totalExitQty: 100,
       openQuantity: 0,
@@ -202,7 +206,7 @@ function assert(condition: boolean, msg: string) {
         plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
-        realizedPnL: null, rMultiple: null, avgEntryPrice: null,
+        realizedPnL: null, grossRealizedPnl: null, netRealizedPnl: null, realizedFees: null, rMultiple: null, avgEntryPrice: null, openAvgCost: null,
         totalEntryQty: null, totalExitQty: null, openQuantity: null, totalFees: null,
         setupQualityScore: null, riskQualityScore: null, entryQualityScore: null,
         managementQualityScore: null, exitQualityScore: null, reviewQualityScore: null,
@@ -216,7 +220,7 @@ function assert(condition: boolean, msg: string) {
         plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
-        realizedPnL: null, rMultiple: null, avgEntryPrice: null,
+        realizedPnL: null, grossRealizedPnl: null, netRealizedPnl: null, realizedFees: null, rMultiple: null, avgEntryPrice: null, openAvgCost: null,
         totalEntryQty: null, totalExitQty: null, openQuantity: null, totalFees: null,
         setupQualityScore: null, riskQualityScore: null, entryQualityScore: null,
         managementQualityScore: null, exitQualityScore: null, reviewQualityScore: null,
@@ -244,7 +248,7 @@ function assert(condition: boolean, msg: string) {
       preTradePlan: 'Plan A:\nEnter at open\nPlan B:\nWait for pullback', // contains newlines
       exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
-      realizedPnL: null, rMultiple: null, avgEntryPrice: null,
+      realizedPnL: null, grossRealizedPnl: null, netRealizedPnl: null, realizedFees: null, rMultiple: null, avgEntryPrice: null, openAvgCost: null,
       totalEntryQty: null, totalExitQty: null, openQuantity: null, totalFees: null,
       setupQualityScore: null, riskQualityScore: null, entryQualityScore: null,
       managementQualityScore: null, exitQualityScore: null, reviewQualityScore: null,
@@ -306,7 +310,7 @@ function assert(condition: boolean, msg: string) {
         plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
         thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
         openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
-        realizedPnL: null, rMultiple: null, avgEntryPrice: null,
+        realizedPnL: null, grossRealizedPnl: null, netRealizedPnl: null, realizedFees: null, rMultiple: null, avgEntryPrice: null, openAvgCost: null,
         totalEntryQty: null, totalExitQty: null, openQuantity: null, totalFees: null,
         setupQualityScore: null, riskQualityScore: null, entryQualityScore: null,
         managementQualityScore: null, exitQualityScore: null, reviewQualityScore: null,
@@ -335,7 +339,7 @@ function assert(condition: boolean, msg: string) {
       plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
-      realizedPnL: null, rMultiple: null, avgEntryPrice: null,
+      realizedPnL: null, grossRealizedPnl: null, netRealizedPnl: null, realizedFees: null, rMultiple: null, avgEntryPrice: null, openAvgCost: null,
       totalEntryQty: null, totalExitQty: null, openQuantity: null, totalFees: null,
       setupQualityScore: null, riskQualityScore: null, entryQualityScore: null,
       managementQualityScore: null, exitQualityScore: null, reviewQualityScore: null,
@@ -377,7 +381,7 @@ function assert(condition: boolean, msg: string) {
       plannedEntry: 150.5, plannedStop: 145, plannedTarget1: 165.75, plannedQuantity: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
-      realizedPnL: 1500, rMultiple: 3, avgEntryPrice: 150.5,
+      realizedPnL: 1500, grossRealizedPnl: 1500, netRealizedPnl: 1500, realizedFees: 4.5, rMultiple: 3, avgEntryPrice: 150.5, openAvgCost: 0,
       totalEntryQty: 100, totalExitQty: 100, openQuantity: 0, totalFees: 4.5,
       setupQualityScore: 8, riskQualityScore: 7, entryQualityScore: 9,
       managementQualityScore: null, exitQualityScore: null, reviewQualityScore: null,
@@ -397,7 +401,9 @@ function assert(condition: boolean, msg: string) {
     assert(valueFor('Planned Entry') === '150.50', 'number format → plannedEntry is 150.50');
     assert(valueFor('Planned Stop') === '145.00', 'number format → plannedStop is 145.00');
     assert(valueFor('Planned Target 1') === '165.75', 'number format → plannedTarget1 is 165.75');
-    assert(valueFor('Realized P&L') === '1500.00', 'number format → realizedPnL is 1500.00');
+    assert(valueFor('Gross Realized P&L') === '1500.00', 'number format → grossRealizedPnl is 1500.00');
+    assert(valueFor('Net Realized P&L') === '1500.00', 'number format → netRealizedPnl is 1500.00');
+    assert(valueFor('Realized Fees') === '4.50', 'number format → realizedFees is 4.50');
     assert(valueFor('R Multiple') === '3.00', 'number format → rMultiple is 3.00');
   }
 
@@ -409,7 +415,7 @@ function assert(condition: boolean, msg: string) {
       plannedEntry: null, plannedStop: null, plannedTarget1: null, plannedQuantity: null,
       thesis: null, invalidationCondition: null, preTradePlan: null, exitNotes: null, lesson: null,
       openedAt: null, closedAt: null, createdAt: null, updatedAt: null,
-      realizedPnL: null, rMultiple: null, avgEntryPrice: null,
+      realizedPnL: null, grossRealizedPnl: null, netRealizedPnl: null, realizedFees: null, rMultiple: null, avgEntryPrice: null, openAvgCost: null,
       totalEntryQty: null, totalExitQty: null, openQuantity: null, totalFees: null,
       setupQualityScore: null, riskQualityScore: null, entryQualityScore: null,
       managementQualityScore: null, exitQualityScore: null, reviewQualityScore: null,
