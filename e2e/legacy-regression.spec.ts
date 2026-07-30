@@ -47,10 +47,10 @@ function assertNoConsoleErrors(errors: string[]): void {
 
 const LEGACY_ROUTES = [
   { path: '/', heading: 'Dashboard', family: 'dashboard' },
-  { path: '/trades', heading: 'Trade Log', family: 'trades' },
+  { path: '/trades', heading: 'Trades', family: 'trades' },
   { path: '/watchlist', heading: 'Watchlist', family: 'watchlist' },
   { path: '/alerts', heading: 'Alerts', family: 'alerts' },
-  { path: '/sizing', heading: 'Position Sizing', family: 'sizing' },
+  { path: '/sizing', heading: 'Sizing', family: 'sizing' },
   { path: '/reviews', heading: 'Reviews', family: 'reviews' },
   { path: '/checks', heading: 'Checks & Validation', family: 'checks' },
   { path: '/help', heading: 'Help & Documentation', family: 'help' },
@@ -130,11 +130,11 @@ test.describe('Legacy Keyboard Shortcut Navigation', () => {
     await expect(page.locator('h1')).toContainText('Dashboard');
   });
 
-  test('"t" key navigates to Trade Log', async ({ page }) => {
+  test('"t" key navigates to Trades', async ({ page }) => {
     await page.keyboard.press('t');
     await page.waitForURL('/trades');
     await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
   });
 
   test('"w" key navigates to Watchlist', async ({ page }) => {

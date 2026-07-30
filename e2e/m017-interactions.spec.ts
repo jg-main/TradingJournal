@@ -7,7 +7,7 @@ test.describe('M017 Interactions', () => {
 
   test('Plan Trade button navigates to /trades/new', async ({ page }) => {
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Find the Plan Trade link by role (more reliable than text selector on all browsers)
     const planTradeBtn = page.getByRole('link', { name: /plan trade/i });
@@ -38,7 +38,7 @@ test.describe('M017 Interactions', () => {
 
     // Navigate to trade log
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Find the trade row by symbol
     const row = page.locator('tr').filter({ hasText: `M017PT${TS}` }).first();
@@ -68,7 +68,7 @@ test.describe('M017 Interactions', () => {
 
     // Navigate to trade log
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Verify no button with text "Edit" exists
     await expect(page.getByRole('button', { name: /edit/i })).toHaveCount(0);
@@ -104,7 +104,7 @@ test.describe('M017 Interactions', () => {
 
     // Navigate to trade log
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Find the trade row and click it
     const row = page.locator('tr').filter({ hasText: `M017RC${TS}` }).first();
@@ -133,7 +133,7 @@ test.describe('M017 Interactions', () => {
 
     // Navigate to trade log
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Verify the trade row appears
     const row = page.locator('tr').filter({ hasText: `M017DEL${TS}` }).first();
@@ -227,21 +227,21 @@ test.describe('M017 Interactions', () => {
     // Click the Cancel button
     await page.getByRole('button', { name: 'Cancel' }).click();
 
-    // Verify URL is /trades and page shows Trade Log heading
+    // Verify URL is /trades and page shows Trades heading
     await expect(page).toHaveURL('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
   });
 
-  test('Back to Trade Log link works', async ({ page }) => {
+  test('Back to Trades link works', async ({ page }) => {
     await page.goto('/trades/new');
     await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Plan Trade' })).toBeVisible();
 
-    // Click the "Back to Trade Log" link
-    await page.getByText('Back to Trade Log').click();
+    // Click the "Back to Trades" link
+    await page.getByText('Back to Trades').click();
 
-    // Verify navigation to /trades with Trade Log heading
+    // Verify navigation to /trades with Trades heading
     await expect(page).toHaveURL('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
   });
 
   test('Empty form submission shows validation error', async ({ page }) => {
@@ -291,7 +291,7 @@ test.describe('M017 Interactions', () => {
 
     // Navigate to trade log
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Verify the trade row appears
     const row = page.locator('tr').filter({ hasText: `M017DIM${TS}` }).first();

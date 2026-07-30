@@ -1,15 +1,15 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Smoke tests — new M002 pages', () => {
-  test('/sizing renders with Position Sizing heading', async ({ page }) => {
+  test('/sizing renders with Sizing heading', async ({ page }) => {
     await page.goto('/sizing');
-    await expect(page.locator('h1')).toContainText('Position Sizing');
+    await expect(page.locator('h1')).toContainText('Sizing');
     // No JS errors should have occurred
   });
 
   test('/trades renders without crash', async ({ page }) => {
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
     // Page should load even with empty or populated trade list
   });
 

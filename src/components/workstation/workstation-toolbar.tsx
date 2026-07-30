@@ -36,6 +36,7 @@ export function WorkstationToolbar() {
     accounts,
     activeAccountId,
     setActiveAccountId,
+    accountSelectionExternal,
     isLoading,
     error,
     mtmPollingState,
@@ -51,21 +52,31 @@ export function WorkstationToolbar() {
     >
       <span className="ws-toolbar-brand">Workstation</span>
 
-      <label className="ws-toolbar-field">
-        <span className="ws-toolbar-label">Account</span>
-        <select
-          className="ws-select"
-          aria-label="Active account"
-          value={activeAccountId}
-          onChange={(e) => setActiveAccountId(e.target.value)}
-        >
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {accountSelectionExternal ? (
+        // Account selection lives in the sidebar (global AccountProvider).
+        // Show read-only context instead of a duplicate selector.
+        activeAccount && (
+          <span className="ws-toolbar-label" data-testid="ws-external-account">
+            {activeAccount.name}
+          </span>
+        )
+      ) : (
+        <label className="ws-toolbar-field">
+          <span className="ws-toolbar-label">Account</span>
+          <select
+            className="ws-select"
+            aria-label="Active account"
+            value={activeAccountId}
+            onChange={(e) => setActiveAccountId(e.target.value)}
+          >
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="ws-toolbar-spacer" />
 

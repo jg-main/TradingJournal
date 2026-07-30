@@ -234,7 +234,7 @@ export default function TradesPage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trade Log</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trades</h1>
           {hasOpenTrades && (
             <span
               className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"

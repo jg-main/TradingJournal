@@ -20,7 +20,7 @@ test.describe('M012 Trade Lifecycle', () => {
 
     // Navigate to the trade log page
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Verify the trade row appears with "Planned" status badge
     // Use first() because leftover data from prior runs may create multiple rows
@@ -161,7 +161,7 @@ test.describe('M012 Trade Lifecycle', () => {
 
     // Navigate to trade log → verify Open badge
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
     const row = page.locator('tr').filter({ hasText: 'META' }).first();
     await expect(row).toBeVisible();
     await expect(row.getByText('Open')).toBeVisible();
@@ -216,7 +216,7 @@ test.describe('M012 Trade Lifecycle', () => {
 
     // Navigate to trade log
     await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Set up dialog handler BEFORE clicking Remove (accepts the confirm dialog)
     page.on('dialog', (dialog) => {

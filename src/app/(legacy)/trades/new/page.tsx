@@ -98,7 +98,7 @@ export default function NewTradePage() {
           className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
         >
           <ArrowLeft className="size-4" />
-          Back to Trade Log
+          Back to Trades
         </Link>
         <EmptyState
           icon={<AlertCircle className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
@@ -110,7 +110,7 @@ export default function NewTradePage() {
               className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
               <ArrowLeft className="size-4" />
-              Back to Trade Log
+              Back to Trades
             </Link>
           }
         />
@@ -125,7 +125,7 @@ export default function NewTradePage() {
         className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
         <ArrowLeft className="size-4" />
-        Back to Trade Log
+        Back to Trades
       </Link>
 
       <p className="mb-6 text-sm text-zinc-500 dark:text-zinc-400">

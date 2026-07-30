@@ -484,12 +484,20 @@ export function buildTradeIdeasFromWatchlist(
 export async function fetchAllLiveDashboardData(
   accountId: string,
   signal?: AbortSignal,
+  options?: { skipAccounts?: boolean },
 ): Promise<LiveFetchResult<LiveDashboardData>> {
+  // When the caller owns the accounts list (e.g. the global AccountProvider
+  // in the legacy shell, M007/D037), the accounts leg is redundant — skip it
+  // so MTM polling does not re-fetch /api/accounts every 30s.
+  const skipAccounts = options?.skipAccounts === true;
+
   const [dashResult, v2Result, wlResult, acctResult] = await Promise.all([
     fetchDashboardLive(accountId, signal),
     fetchDashboardV2Live(accountId, signal),
     fetchWatchlistLive(signal),
-    fetchAccountsLive(signal),
+    skipAccounts
+      ? Promise.resolve({ success: true as const, data: [] as WorkstationAccount[] })
+      : fetchAccountsLive(signal),
   ]);
 
   // Collect errors in order of priority

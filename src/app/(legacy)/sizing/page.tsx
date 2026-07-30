@@ -62,7 +62,7 @@ function formatCurrency(v: number | null | undefined): string {
 // ── Page ───────────────────────────────────────────────────────────────
 
 export default function SizingPage() {
-  useEffect(() => { document.title = "Position Sizing — Trading Journal"; }, []);
+  useEffect(() => { document.title = "Sizing — Trading Journal"; }, []);
   // ── Settings state ──────────────────────────────────────────────────
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -311,7 +311,7 @@ export default function SizingPage() {
   return (
     <div className="mx-auto max-w-4xl px-8 py-10">
       <h1 className="mb-8 text-2xl font-semibold tracking-tight text-foreground">
-        Position Sizing
+        Sizing
       </h1>
 
       {/* Calculator Card */}

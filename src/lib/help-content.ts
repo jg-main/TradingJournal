@@ -42,7 +42,7 @@ export const helpSections: HelpSection[] = [
           'Go to Settings > Risk Settings and configure your max risk per trade, default commission, and journal start date.',
           'Go to Settings > Accounts and add at least one active brokerage account.',
           'Go to Settings > Plays and create at least one active trading setup (these appear in the trade planning form).',
-          'Start logging trades from the Trade Log page using the "Plan Trade" button.',
+          'Start logging trades from the Trades page using the "Plan Trade" button.',
         ],
       },
       {
@@ -66,7 +66,7 @@ export const helpSections: HelpSection[] = [
       },
       {
         type: 'paragraph',
-        text: 'Open the Plan Trade dialog from the Trade Log page. Select the setup, instrument, direction (long/short), and entry criteria. The position sizing calculator will estimate your share quantity based on your risk settings.',
+        text: 'Open the Plan Trade dialog from the Trades page. Select the setup, instrument, direction (long/short), and entry criteria. The position sizing calculator will estimate your share quantity based on your risk settings.',
       },
       {
         type: 'strong',

@@ -243,7 +243,7 @@ test.describe('M004 review system flow', () => {
     // Verify /trades still renders (M002 page)
     await page.goto('/trades');
     await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Trade Log');
+    await expect(page.locator('h1')).toContainText('Trades');
 
     // Verify /checks still renders (M003 page)
     await page.goto('/checks');

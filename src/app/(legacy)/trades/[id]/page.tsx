@@ -455,8 +455,8 @@ export default function TradeDetailPage() {
 
   if (error || !trade) return (
     <div className="mx-auto max-w-4xl px-8 py-10">
-      <Link href="/trades" className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Back to Trade Log</Link>
-      <EmptyState icon={<AlertCircle className="size-12 text-muted-foreground" strokeWidth={1} />} title={error ?? 'Trade not found'} description="The trade you are looking for does not exist or could not be loaded." action={<Link href="/trades" className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"><ArrowLeft className="size-4" />Back to Trade Log</Link>} />
+      <Link href="/trades" className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Back to Trades</Link>
+      <EmptyState icon={<AlertCircle className="size-12 text-muted-foreground" strokeWidth={1} />} title={error ?? 'Trade not found'} description="The trade you are looking for does not exist or could not be loaded." action={<Link href="/trades" className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"><ArrowLeft className="size-4" />Back to Trades</Link>} />
     </div>
   );
 
@@ -465,7 +465,7 @@ export default function TradeDetailPage() {
       <div className="mb-6 flex items-center justify-between">
         <Link href="/trades" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" />
-          Back to Trade Log
+          Back to Trades
         </Link>
       </div>
 

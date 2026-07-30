@@ -13,11 +13,22 @@ import { WorkstationProvider } from '@/components/workstation/workstation-contex
 import { WorkstationToolbar } from '@/components/workstation/workstation-toolbar';
 import { WorkstationShell } from '@/components/workstation/workstation-shell';
 import { WorkstationKeyboardShortcuts } from '@/components/workstation/workstation-keyboard-shortcuts';
+import { useAccount } from '@/lib/account-context';
 
 export default function DashboardPage() {
+  // Global account selection (M007/D037): the sidebar owns the selector;
+  // the workstation consumes it as controlled props. /workspace keeps its
+  // own uncontrolled provider for isolation.
+  const { accounts, accountId, setAccountId } = useAccount();
+
   return (
     <div className="ws">
-      <WorkstationProvider liveMode={true}>
+      <WorkstationProvider
+        liveMode={true}
+        accounts={accounts}
+        accountId={accountId}
+        onAccountIdChange={setAccountId}
+      >
         <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
           Skip to main content
         </a>

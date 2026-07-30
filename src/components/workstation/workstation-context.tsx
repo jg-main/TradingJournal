@@ -107,6 +107,11 @@ export interface WorkstationContextValue {
   accounts: { id: string; name: string; currency: string }[];
   activeAccountId: string;
   setActiveAccountId: (id: string) => void;
+  /** True when account selection is owned by an external provider
+   *  (e.g. the global AccountProvider in the legacy shell). The toolbar
+   *  hides its own account selector in this mode to avoid duplicate
+   *  selectors (AGENTS.md state rules). */
+  accountSelectionExternal: boolean;
   /** True while panels render synthetic fixture data (pre-S06). */
   fixtureMode: boolean;
   /** True when the workstation is connected to live /api endpoints. */
@@ -130,10 +135,19 @@ function normalizeScenario(value: string | undefined): WorkstationScenarioId {
 export function WorkstationProvider({
   initialScenario,
   liveMode = false,
+  accounts: controlledAccounts,
+  accountId: controlledAccountId,
+  onAccountIdChange,
   children,
 }: {
   initialScenario?: string;
   liveMode?: boolean;
+  /** M007/D037: optional controlled account props. When accountId is
+   *  provided, selection and the accounts list are owned externally
+   *  (global AccountProvider) and the internal bootstrap fetch is skipped. */
+  accounts?: { id: string; name: string; currency: string }[];
+  accountId?: string;
+  onAccountIdChange?: (id: string) => void;
   children: ReactNode;
 }) {
   const [scenario, setScenarioState] = useState<WorkstationScenarioId>(() =>
@@ -170,18 +184,40 @@ export function WorkstationProvider({
     : fixtureData;
 
   // ── accounts ──────────────────────────────────────────────────────
+  const isAccountControlled = controlledAccountId !== undefined;
+
   const accounts = useMemo(
-    () => (liveMode ? liveAccounts : [fixtureData.account]),
-    [liveMode, liveAccounts, fixtureData],
+    () =>
+      isAccountControlled
+        ? (controlledAccounts ?? [])
+        : liveMode
+          ? liveAccounts
+          : [fixtureData.account],
+    [isAccountControlled, controlledAccounts, liveMode, liveAccounts, fixtureData],
   );
 
-  const activeAccountId = accounts.some((a) => a.id === selectedAccountId)
-    ? selectedAccountId
-    : (accounts[0]?.id ?? '');
+  const activeAccountId = isAccountControlled
+    ? accounts.some((a) => a.id === controlledAccountId)
+      ? controlledAccountId
+      : (accounts[0]?.id ?? '')
+    : accounts.some((a) => a.id === selectedAccountId)
+      ? selectedAccountId
+      : (accounts[0]?.id ?? '');
+
+  const setActiveAccountId = useCallback(
+    (id: string) => {
+      if (isAccountControlled) {
+        onAccountIdChange?.(id);
+      } else {
+        setSelectedAccountId(id);
+      }
+    },
+    [isAccountControlled, onAccountIdChange],
+  );
 
   // ── Fetch accounts (live mode bootstrap) ───────────────────────────
   useEffect(() => {
-    if (!liveMode) return;
+    if (!liveMode || isAccountControlled) return;
 
     let cancelled = false;
 
@@ -204,7 +240,7 @@ export function WorkstationProvider({
 
     bootAccounts();
     return () => { cancelled = true; };
-  }, [liveMode]);
+  }, [liveMode, isAccountControlled]);
 
   // ── Fetch dashboard data (live mode, on account resolved) ──────────
   useEffect(() => {
@@ -227,6 +263,7 @@ export function WorkstationProvider({
       const result = await fetchAllLiveDashboardData(
         activeAccountId,
         controller.signal,
+        { skipAccounts: isAccountControlled },
       );
 
       if (cancelled) return;
@@ -248,8 +285,9 @@ export function WorkstationProvider({
       );
 
       // Update accounts list from the fresh fetch (may include different
-      // accounts than the initial fetchAccountsLive call).
-      setLiveAccounts(result.data.accounts);
+      // accounts than the initial fetchAccountsLive call). Skipped when
+      // account selection is controlled externally (M007/D037).
+      if (!isAccountControlled) setLiveAccounts(result.data.accounts);
       setLiveData(result.data);
       setIsLoading(false);
     };
@@ -260,7 +298,7 @@ export function WorkstationProvider({
       cancelled = true;
       controller.abort();
     };
-  }, [liveMode, activeAccountId]);
+  }, [liveMode, activeAccountId, isAccountControlled]);
 
   // ── Live price fetching (fills marketIndices, symbolPrices, tradeIdeas) ─
   // Fetches prices for market indices + watchlist symbols when liveData
@@ -338,6 +376,7 @@ export function WorkstationProvider({
         const result = await fetchAllLiveDashboardData(
           activeAccountId,
           controller.signal,
+          { skipAccounts: isAccountControlled },
         );
 
         if (!result.success) {
@@ -353,7 +392,7 @@ export function WorkstationProvider({
           `[workstation] MTM poll OK: ${result.data.positions.length} position(s)`,
         );
         setLiveData(result.data);
-        setLiveAccounts(result.data.accounts);
+        if (!isAccountControlled) setLiveAccounts(result.data.accounts);
         setMtmPollingState('active');
       };
 
@@ -398,7 +437,7 @@ export function WorkstationProvider({
       // Resolve any pending interval — use a shallow check to avoid
       // stale-closure issues with hasPositions.
     };
-  }, [liveMode, activeAccountId, liveData?.positions.length]);
+  }, [liveMode, activeAccountId, liveData?.positions.length, isAccountControlled]);
 
   // ── Fixture-mode signal ───────────────────────────────────────────
   useEffect(() => {
@@ -419,7 +458,8 @@ export function WorkstationProvider({
       fixtures,
       accounts,
       activeAccountId,
-      setActiveAccountId: setSelectedAccountId,
+      setActiveAccountId,
+      accountSelectionExternal: isAccountControlled,
       fixtureMode: !liveMode,
       liveMode,
       isLoading,
@@ -433,6 +473,8 @@ export function WorkstationProvider({
       fixtures,
       accounts,
       activeAccountId,
+      setActiveAccountId,
+      isAccountControlled,
       isLoading,
       error,
       mtmPollingState,

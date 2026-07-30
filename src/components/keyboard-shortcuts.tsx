@@ -10,7 +10,7 @@ interface Shortcut {
 
 const SHORTCUTS: Shortcut[] = [
   { key: 'd', label: 'Dashboard' },
-  { key: 't', label: 'Trade Log' },
+  { key: 't', label: 'Trades' },
   { key: 'w', label: 'Watchlist' },
   { key: 's', label: 'Settings' },
   { key: 'r', label: 'Reviews' },
