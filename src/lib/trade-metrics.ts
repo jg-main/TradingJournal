@@ -488,7 +488,7 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
 
   const riskToAccount =
     openRisk != null && currentAccountEquity != null && currentAccountEquity > 0
-      ? (new Decimal(openRisk).div(new Decimal(currentAccountEquity)).mul(100)).toNumber()
+      ? (new Decimal(openRisk).div(new Decimal(currentAccountEquity))).toNumber()
       : null;
 
   const initialRisk = riskSnapshot?.initialRiskAmount ?? null;
@@ -496,7 +496,7 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
     riskSnapshot?.initialRiskAmount != null &&
     riskSnapshot?.accountEquityAtOpen != null &&
     riskSnapshot.accountEquityAtOpen > 0
-      ? (new Decimal(riskSnapshot.initialRiskAmount).div(new Decimal(riskSnapshot.accountEquityAtOpen)).mul(100)).toNumber()
+      ? (new Decimal(riskSnapshot.initialRiskAmount).div(new Decimal(riskSnapshot.accountEquityAtOpen))).toNumber()
       : null;
 
   // Position fields
@@ -525,13 +525,13 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
 
   const positionWeight =
     marketValue != null && currentAccountEquity != null && currentAccountEquity > 0
-      ? new Decimal(marketValue).div(new Decimal(currentAccountEquity)).mul(100).toNumber()
+      ? new Decimal(marketValue).div(new Decimal(currentAccountEquity)).toNumber()
       : null;
 
   // Return metrics (Section 5.10)
   const returnPct =
     totalEntryNotional.gt(0)
-      ? new Decimal(totalNetPnl).div(totalEntryNotional).mul(100).toNumber()
+      ? new Decimal(totalNetPnl).div(totalEntryNotional).toNumber()
       : null;
 
   const rMultiple =

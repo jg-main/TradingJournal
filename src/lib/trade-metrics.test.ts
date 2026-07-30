@@ -134,12 +134,13 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   // Market value: $22 × 10 = $220
   assertApprox(r.position.marketValue, 220, 'marketValue = $220');
 
-  // Position weight: $220 / $10,000 × 100 = 2.2%
-  assertApprox(r.position.positionWeight, 2.2, 'positionWeight = 2.2%');
+  // Position weight: $220 / $10,000 = 0.022 (decimal fraction)
+  assertApprox(r.position.positionWeight, 0.022, 'positionWeight = 0.022 (2.2%)');
 
   // Return metrics: total net P&L / total entry notional
   // totalEntryNotional = (10×10)+(10×20) = $300
-  assertApprox(r.returnMetrics.returnPct, 67 / 300 * 100, 'returnPct = 22.333%');
+  // totalNetPnl = $67 → returnPct = 67/300 ≈ 0.22333 (decimal fraction)
+  assertApprox(r.returnMetrics.returnPct, 67 / 300, 'returnPct = 0.2233 (22.33%)');
   assert(r.returnMetrics.rMultiple === null, 'rMultiple = null (no initialRisk)');
 
   // Status: open (20 entries, 10 exits)
@@ -200,7 +201,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assert(r.position.marketValue === null, 'marketValue = null (closed)');
   assert(r.position.positionWeight === null, 'positionWeight = null');
   // totalEntryNotional = 100×50 = 5000
-  assertApprox(r.returnMetrics.returnPct, 1000 / 5000 * 100, 'returnPct = 20%');
+  assertApprox(r.returnMetrics.returnPct, 1000 / 5000, 'returnPct = 0.20 (20%)');
   assert(r.returnMetrics.rMultiple === null, 'rMultiple = null');
 }
 
@@ -242,7 +243,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.position.holdingPeriodDays, 4 / 24, 'S2: holdingPeriodDays = 0.167');
   assert(r.position.marketValue === null, 'S2: marketValue = null');
   // totalEntryNotional = 100×60 = 6000
-  assertApprox(r.returnMetrics.returnPct, 1000 / 6000 * 100, 'S2: returnPct = 16.667%');
+  assertApprox(r.returnMetrics.returnPct, 1000 / 6000, 'S2: returnPct = 0.1667 (16.67%)');
   assert(r.returnMetrics.rMultiple === null, 'S2: rMultiple = null');
 }
 
@@ -409,7 +410,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.position.marketValue, 330, 'S6: marketValue = $330');
   assert(r.position.positionWeight === null, 'S6: positionWeight = null (no equity)');
   // totalEntryNotional = (10×10)+(10×20) = $300
-  assertApprox(r.returnMetrics.returnPct, 93 / 300 * 100, 'S6: returnPct = 31%');
+  assertApprox(r.returnMetrics.returnPct, 93 / 300, 'S6: returnPct = 0.31 (31%)');
   assert(r.returnMetrics.rMultiple === null, 'S6: rMultiple = null');
 }
 
@@ -489,7 +490,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.position.totalNetPnl, -504, 'S8: totalNetPnl = -$504');
   assertApprox(r.position.holdingPeriodDays, 4 / 24, 'S8: holdingPeriodDays = 0.167');
   // totalEntryNotional = 50×100 = 5000
-  assertApprox(r.returnMetrics.returnPct, -504 / 5000 * 100, 'S8: returnPct = -10.08%');
+  assertApprox(r.returnMetrics.returnPct, -504 / 5000, 'S8: returnPct = -0.1008 (-10.08%)');
   assert(r.returnMetrics.rMultiple === null, 'S8: rMultiple = null');
 }
 
@@ -530,7 +531,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.position.totalNetPnl, 500, 'S9: totalNetPnl = $500');
   assertApprox(r.position.holdingPeriodDays, 4 / 24, 'S9: holdingPeriodDays = 0.167');
   // totalEntryNotional = 100×50 = 5000
-  assertApprox(r.returnMetrics.returnPct, 500 / 5000 * 100, 'S9: returnPct = 10%');
+  assertApprox(r.returnMetrics.returnPct, 500 / 5000, 'S9: returnPct = 0.10 (10%)');
   assert(r.returnMetrics.rMultiple === null, 'S9: rMultiple = null');
 }
 
@@ -694,7 +695,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.position.marketValue, 4200, 'S13: marketValue = $4,200');
   assert(r.position.positionWeight === null, 'S13: positionWeight = null (no equity)');
   // totalEntryNotional = 50×40+50×50 = 4500
-  assertApprox(r.returnMetrics.returnPct, 1347.50 / 4500 * 100, 'S13: returnPct = 29.944%');
+  assertApprox(r.returnMetrics.returnPct, 1347.50 / 4500, 'S13: returnPct = 0.2994 (29.94%)');
   assert(r.returnMetrics.rMultiple === null, 'S13: rMultiple = null');
 }
 
@@ -854,7 +855,8 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.risk.openRisk, 200, 'T02-1: openRisk = $200');
   assertApprox(r.risk.lockedPnl, 0, 'T02-1: lockedPnl = $0 (no profit locked)');
   assertApprox(r.risk.initialRisk, 200, 'T02-1: initialRisk = $200');
-  assertApprox(r.risk.initialRiskPct, 2.0, 'T02-1: initialRiskPct = 2.0% ($200 / $10000)');
+  // $200 / $10000 = 0.02 (decimal fraction, not percentage)
+  assertApprox(r.risk.initialRiskPct, 0.02, 'T02-1: initialRiskPct = 0.02 (2.0%)');
 }
 
 // --- T02 Test 2: Active Stop falls back to riskSnapshot (short) ---
