@@ -312,7 +312,7 @@ export async function GET(request: NextRequest) {
       .where(whereClause)
       .all();
 
-    let fullTotals = {
+    let fullTotals: Record<string, number> = {
       grossRealizedPnl: 0,
       netRealizedPnl: 0,
       totalFees: 0,
@@ -331,6 +331,7 @@ export async function GET(request: NextRequest) {
         grossUnrealizedPnl: number;
         netUnrealizedPnl: number;
         totalOpenRisk: number;
+        portfolioHeat: number;
       }
     > = {};
 
@@ -384,6 +385,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // Track unique account equities for portfolioHeat denominator
+      // (one equity per account to avoid double-counting)
+      const totalEquityByAccount = new Map<string, number>();
+      const currencyEquityByAccount = new Map<string, Map<string, number>>();
+
       // Compute metrics for every matching trade and aggregate
       fullTotals = allMatchingIdsR.reduce(
         (acc, row) => {
@@ -427,6 +433,16 @@ export async function GET(request: NextRequest) {
           const metrics = computeTradeMetrics(metricsInput);
 
           const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
+
+          // Track unique per-account equity for portfolioHeat denominator
+          if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
+            totalEquityByAccount.set(row.accountId, currentAccountEquity);
+            if (!currencyEquityByAccount.has(currency)) {
+              currencyEquityByAccount.set(currency, new Map());
+            }
+            currencyEquityByAccount.get(currency)!.set(row.accountId, currentAccountEquity);
+          }
+
           if (!totalsByCurrency[currency]) {
             totalsByCurrency[currency] = {
               grossRealizedPnl: 0,
@@ -435,6 +451,7 @@ export async function GET(request: NextRequest) {
               grossUnrealizedPnl: 0,
               netUnrealizedPnl: 0,
               totalOpenRisk: 0,
+              portfolioHeat: 0,
             };
           }
 
@@ -464,7 +481,62 @@ export async function GET(request: NextRequest) {
         },
         { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
       );
+
+      // Compute portfolioHeat from unique account equities tracked during reduce
+      const totalUniqueEquity = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
+      const portfolioHeat = totalUniqueEquity > 0 && fullTotals.totalOpenRisk > 0
+        ? (fullTotals.totalOpenRisk / totalUniqueEquity) * 100
+        : 0;
+      fullTotals = { ...fullTotals, portfolioHeat };
+
+      // Compute per-currency portfolioHeat
+      for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
+        const currencyEquities = currencyEquityByAccount.get(currency);
+        const currencyTotalEquity = currencyEquities
+          ? [...currencyEquities.values()].reduce((s, v) => s + v, 0)
+          : 0;
+        bucket.portfolioHeat = currencyTotalEquity > 0 && bucket.totalOpenRisk > 0
+          ? (bucket.totalOpenRisk / currencyTotalEquity) * 100
+          : 0;
+      }
     }
+
+    // ── plannedTotals: aggregate risk/capital across all planned trades ──
+    // Respects accountId and direction filters but not date/status filters.
+    const plannedFilters: any[] = [eq(trades.status, 'planned')];
+    if (accountIdFilter) {
+      plannedFilters.push(eq(trades.accountId, accountIdFilter));
+    }
+    if (directionFilter) {
+      plannedFilters.push(eq(trades.direction, directionFilter as 'long' | 'short'));
+    }
+    const plannedWhere = plannedFilters.length > 0 ? and(...plannedFilters) : undefined;
+
+    const plannedRows = db
+      .select({
+        plannedEntry: trades.plannedEntry,
+        plannedStop: trades.plannedStop,
+        plannedQuantity: trades.plannedQuantity,
+      })
+      .from(trades)
+      .where(plannedWhere)
+      .all();
+
+    const plannedTotals = {
+      totalPlannedRisk: plannedRows.reduce((sum, r) => {
+        if (r.plannedEntry != null && r.plannedStop != null && r.plannedQuantity != null && r.plannedQuantity > 0) {
+          return sum + Math.abs(r.plannedEntry - r.plannedStop) * r.plannedQuantity;
+        }
+        return sum;
+      }, 0),
+      totalPlannedCapital: plannedRows.reduce((sum, r) => {
+        if (r.plannedEntry != null && r.plannedQuantity != null && r.plannedQuantity > 0) {
+          return sum + r.plannedEntry * r.plannedQuantity;
+        }
+        return sum;
+      }, 0),
+      count: plannedRows.length,
+    };
 
     return NextResponse.json({
       data: enhancedRows,
@@ -473,6 +545,7 @@ export async function GET(request: NextRequest) {
       limit,
       totals: fullTotals,
       totalsByCurrency,
+      plannedTotals,
     });
   } catch (error) {
     return NextResponse.json(

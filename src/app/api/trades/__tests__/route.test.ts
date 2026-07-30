@@ -381,7 +381,7 @@ function doGetTrades(params: {
     }
 
     // Server-computed totals aggregated across the full filtered dataset
-    const totals = {
+    const totals: Record<string, number> = {
       grossRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.grossRealizedPnl ?? 0), 0),
       netRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.netRealizedPnl ?? 0), 0),
       totalFees: enhancedRows.reduce((s, r) => s + (r.metrics?.fees.totalFees ?? 0), 0),
@@ -415,11 +415,15 @@ function doGetTrades(params: {
         .all();
     })();
 
-    const totalsByCurrency: Record<string, typeof totals> = {};
+    const totalsByCurrency: Record<string, Record<string, number>> = {};
+    // Track unique account equities for portfolioHeat denominator
+    const totalEquityByAccount = new Map<string, number>();
+    const currencyEquityByAccount = new Map<string, Map<string, number>>();
+
     for (const row of enhancedRows) {
       const currency = accountCurrencyMap.get(row.accountId) ?? 'USD';
       if (!totalsByCurrency[currency]) {
-        totalsByCurrency[currency] = { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 };
+        totalsByCurrency[currency] = { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, portfolioHeat: 0 };
       }
       totalsByCurrency[currency].grossRealizedPnl += row.metrics?.realizedPnl.grossRealizedPnl ?? 0;
       totalsByCurrency[currency].netRealizedPnl += row.metrics?.realizedPnl.netRealizedPnl ?? 0;
@@ -427,9 +431,62 @@ function doGetTrades(params: {
       totalsByCurrency[currency].grossUnrealizedPnl += row.metrics?.unrealizedPnl.grossUnrealizedPnl ?? 0;
       totalsByCurrency[currency].netUnrealizedPnl += row.metrics?.unrealizedPnl.netUnrealizedPnl ?? 0;
       totalsByCurrency[currency].totalOpenRisk += row.metrics?.risk.openRisk ?? 0;
+
+      // Track unique account equities for portfolioHeat denominator
+      if (!totalEquityByAccount.has(row.accountId)) {
+        const latestRf = latestRollforwardMap.get(row.accountId);
+        const a = allDbAccounts.find(acc => acc.id === row.accountId);
+        const equity = latestRf?.endingEquity ?? a?.startingBalance ?? null;
+        if (equity != null) {
+          totalEquityByAccount.set(row.accountId, equity);
+          if (!currencyEquityByAccount.has(currency)) {
+            currencyEquityByAccount.set(currency, new Map());
+          }
+          currencyEquityByAccount.get(currency)!.set(row.accountId, equity);
+        }
+      }
     }
 
-    return { status: 200, data: { data: enhancedRows, total, page, limit, totals, totalsByCurrency } };
+    // Compute portfolioHeat values (totalOpenRisk / totalUniqueAccountEquity * 100)
+    const totalUniqueEquity = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
+    totals.portfolioHeat = totalUniqueEquity > 0 && totals.totalOpenRisk > 0
+      ? (totals.totalOpenRisk / totalUniqueEquity) * 100
+      : 0;
+
+    for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
+      const currencyEquities = currencyEquityByAccount.get(currency);
+      const currencyTotalEquity = currencyEquities
+        ? [...currencyEquities.values()].reduce((s, v) => s + v, 0)
+        : 0;
+      bucket.portfolioHeat = currencyTotalEquity > 0 && bucket.totalOpenRisk > 0
+        ? (bucket.totalOpenRisk / currencyTotalEquity) * 100
+        : 0;
+    }
+
+    // ── plannedTotals: aggregate risk/capital across all planned trades ──
+    const plannedRows = db
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.status, 'planned'))
+      .all();
+
+    const plannedTotals = {
+      totalPlannedRisk: plannedRows.reduce((sum, r) => {
+        if (r.plannedEntry != null && r.plannedStop != null && r.plannedQuantity != null && r.plannedQuantity > 0) {
+          return sum + Math.abs(r.plannedEntry - r.plannedStop) * r.plannedQuantity;
+        }
+        return sum;
+      }, 0),
+      totalPlannedCapital: plannedRows.reduce((sum, r) => {
+        if (r.plannedEntry != null && r.plannedQuantity != null && r.plannedQuantity > 0) {
+          return sum + r.plannedEntry * r.plannedQuantity;
+        }
+        return sum;
+      }, 0),
+      count: plannedRows.length,
+    };
+
+    return { status: 200, data: { data: enhancedRows, total, page, limit, totals, totalsByCurrency, plannedTotals } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch trades', details: String(error) } };
   }
@@ -1284,6 +1341,185 @@ console.log('\n26. GET plannedRiskToAccount computed for planned trades:');
   const aaplRow = d.data.find((r: Record<string, unknown>) => r.symbol === 'AAPL') as Record<string, unknown>;
   assertNotNull(aaplRow, 'AAPL row found');
   assertEqual(aaplRow.plannedRiskToAccount, null, 'plannedRiskToAccount is null when plannedStop is missing');
+}
+
+// ── 27. GET: portfolioHeat in totals and totalsByCurrency ────────────
+
+console.log('\n27. GET returns portfolioHeat in totals and totalsByCurrency:');
+{
+  cleanup();
+  // Account 1 (USD) with rollforward: equity 25000
+  const usdAcc = seedAccount({ id: 'usd-heat-acc', name: 'USD Heat', currency: 'USD' });
+  seedRollforward({ accountId: 'usd-heat-acc', endingEquity: 25000 });
+  // Account 2 (EUR) with rollforward: equity 40000
+  const eurAcc = seedAccount({ id: 'eur-heat-acc', name: 'EUR Heat', currency: 'EUR' });
+  seedRollforward({ accountId: 'eur-heat-acc', endingEquity: 40000 });
+
+  // USD open trade with open risk ~1000 (100 shares * $10 risk)
+  const trade1 = seedTrade({ accountId: 'usd-heat-acc', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  seedExecution({ tradeId: trade1.id as string, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: trade1.id as string, initialRiskAmount: 1000, accountEquityAtOpen: 25000 }).run();
+
+  // EUR open trade with open risk ~500 (50 shares * $10 risk)
+  const trade2 = seedTrade({ accountId: 'eur-heat-acc', symbol: 'TSLA', direction: 'long', status: 'open', currentPrice: 210 });
+  seedExecution({ tradeId: trade2.id as string, action: 'buy', quantity: 50, price: 200, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: trade2.id as string, initialRiskAmount: 500, accountEquityAtOpen: 40000 }).run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { totals: Record<string, unknown>; totalsByCurrency: Record<string, Record<string, unknown>> };
+
+  assertNotNull(d.totals, 'totals object is present');
+  assert('portfolioHeat' in d.totals, 'portfolioHeat field exists in totals');
+  // Total open risk = 1000 (USD) + 500 (EUR) = 1500
+  // Total unique equity = 25000 (USD) + 40000 (EUR) = 65000
+  // portfolioHeat = 1500 / 65000 * 100 ≈ 2.3077%
+  assertApprox(d.totals.portfolioHeat as number, 2.3077, 0.01, 'totals.portfolioHeat ≈ 2.3077% (1500/65000)');
+
+  assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
+  // USD: openRisk = 1000, equity = 25000 → 1000/25000 * 100 = 4%
+  assertApprox(d.totalsByCurrency['USD'].portfolioHeat as number, 4, 0.01, 'USD portfolioHeat = 4% (1000/25000)');
+  // EUR: openRisk = 500, equity = 40000 → 500/40000 * 100 = 1.25%
+  assertApprox(d.totalsByCurrency['EUR'].portfolioHeat as number, 1.25, 0.01, 'EUR portfolioHeat = 1.25% (500/40000)');
+}
+
+// ── 28. GET: portfolioHeat is 0 for closed and planned tabs ────────
+
+console.log('\n28. GET returns portfolioHeat=0 for closed and planned tabs:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+
+  // Closed trade — no open risk
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
+  seedExecution({ tradeId: trade.id as string, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  seedExecution({ tradeId: trade.id as string, action: 'sell', quantity: 100, price: 105, fees: 0 });
+
+  const closedResult = doGetTrades({ status: 'closed' });
+  assert(closedResult.status === 200, 'closed returns 200');
+  const cd = closedResult.data as { totals: Record<string, unknown> };
+  assertEqual(cd.totals.portfolioHeat as number, 0, 'closed totals.portfolioHeat = 0 (no open risk)');
+
+  // Planned trade — no open risk
+  const plannedResult = doGetTrades({ status: 'planned' });
+  assert(plannedResult.status === 200, 'planned returns 200');
+  const pd = plannedResult.data as { totals: Record<string, unknown> };
+  assertEqual(pd.totals.portfolioHeat as number, 0, 'planned totals.portfolioHeat = 0 (no open risk)');
+}
+
+// ── 29. GET: plannedTotals in response ──────────────────────────────
+
+console.log('\n29. GET returns plannedTotals with aggregate risk/capital:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+
+  // Planned trade 1: plannedEntry=105, plannedStop=95, plannedQuantity=100
+  // plannedRisk = |105-95| * 100 = 1000, plannedCapital = 105 * 100 = 10500
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'MSFT',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 105,
+    plannedStop: 95,
+    plannedQuantity: 100,
+  });
+
+  // Planned trade 2: plannedEntry=50, plannedStop=45, plannedQuantity=200
+  // plannedRisk = |50-45| * 200 = 1000, plannedCapital = 50 * 200 = 10000
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 50,
+    plannedStop: 45,
+    plannedQuantity: 200,
+  });
+
+  // Planned trade 3: missing plannedStop → partial (contributes capital but not risk)
+  // plannedCapital = 2000 * 30 = 60000
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'GOOGL',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 2000,
+    plannedStop: null,
+    plannedQuantity: 30,
+  });
+
+  // Open trade — should NOT be counted in plannedTotals
+  seedTrade({ accountId: 'test-account-id', symbol: 'NVDA', direction: 'long', status: 'open' });
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { plannedTotals: { totalPlannedRisk: number; totalPlannedCapital: number; count: number } };
+
+  assertNotNull(d.plannedTotals, 'plannedTotals object is present');
+  // totalPlannedRisk = 1000 (MSFT) + 1000 (AAPL) + 0 (GOOGL, missing stop) = 2000
+  assertEqual(d.plannedTotals.totalPlannedRisk, 2000, 'plannedTotals.totalPlannedRisk = 2000');
+  // totalPlannedCapital = 10500 (MSFT) + 10000 (AAPL) + 60000 (GOOGL) = 80500
+  assertEqual(d.plannedTotals.totalPlannedCapital, 80500, 'plannedTotals.totalPlannedCapital = 80500');
+  // count = 3 planned trades (NVDA is open, not counted)
+  assertEqual(d.plannedTotals.count, 3, 'plannedTotals.count = 3');
+}
+
+// ── 30. GET: plannedTotals present when status=planned filter ───────
+
+console.log('\n30. GET plannedTotals present with status=planned filter:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 100,
+    plannedStop: 90,
+    plannedQuantity: 50,
+  });
+
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'TSLA',
+    direction: 'long',
+    status: 'open',
+  });
+
+  const result = doGetTrades({ status: 'planned' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { plannedTotals: { totalPlannedRisk: number; totalPlannedCapital: number; count: number } };
+
+  assertNotNull(d.plannedTotals, 'plannedTotals present in planned-filtered response');
+  // totalPlannedRisk = |100-90| * 50 = 500
+  assertEqual(d.plannedTotals.totalPlannedRisk, 500, 'plannedTotals.totalPlannedRisk = 500');
+  // totalPlannedCapital = 100 * 50 = 5000
+  assertEqual(d.plannedTotals.totalPlannedCapital, 5000, 'plannedTotals.totalPlannedCapital = 5000');
+  // count = 1 (only AAPL planned, TSLA is open)
+  assertEqual(d.plannedTotals.count, 1, 'plannedTotals.count = 1');
+}
+
+// ── 31. GET: plannedTotals empty when no planned trades exist ───────
+
+console.log('\n31. GET plannedTotals returns zeros when no planned trades:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', direction: 'long', status: 'closed' });
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { plannedTotals: { totalPlannedRisk: number; totalPlannedCapital: number; count: number } };
+
+  assertNotNull(d.plannedTotals, 'plannedTotals present even with no planned trades');
+  assertEqual(d.plannedTotals.totalPlannedRisk, 0, 'plannedTotals.totalPlannedRisk = 0 when no planned trades');
+  assertEqual(d.plannedTotals.totalPlannedCapital, 0, 'plannedTotals.totalPlannedCapital = 0 when no planned trades');
+  assertEqual(d.plannedTotals.count, 0, 'plannedTotals.count = 0 when no planned trades');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
