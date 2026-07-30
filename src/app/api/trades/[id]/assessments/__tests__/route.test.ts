@@ -91,6 +91,9 @@ const testCtx = vi.hoisted(() => {
       lesson TEXT,
       current_price REAL,
       current_price_fetched_at TEXT,
+      gross_realized_pnl REAL,
+      net_realized_pnl REAL,
+      realized_fees REAL,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)
     );
