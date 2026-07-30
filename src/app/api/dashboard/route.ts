@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts, lookupValues } from '@/db/schema';
 import { eq, inArray, desc, and } from 'drizzle-orm';
-import { type ExecutionData } from '@/lib/trade-calc';
+import { type ExecutionData } from '@/lib/trade-metrics';
 import { computeMarkToMarketSummary } from '@/lib/mark-to-market';
 import {
   computeKpiMetrics,
@@ -230,7 +230,7 @@ export async function GET(request: NextRequest) {
         currentPrice: trade.currentPrice ?? null,
       }));
 
-    const mtm = computeMarkToMarketSummary(openTrades, 'include_entry_fees');
+    const mtm = computeMarkToMarketSummary(openTrades);
 
     // 6. Fetch latest account_rollforward row for this account
     const rollforwardRow = db

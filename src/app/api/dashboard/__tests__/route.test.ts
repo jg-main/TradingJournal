@@ -34,7 +34,6 @@ import {
   type DirectionalPerformanceResult,
   type ProcessScoreBin,
 } from '@/lib/dashboard';
-import { calculateAvgCost } from '@/lib/trade-calc';
 import {
   computeEquityCurve,
   computeDrawdown,
@@ -466,16 +465,11 @@ function doGetDashboard(
           return e.action === 'sell_short';
         });
 
-        // Compute avg entry price using existing pattern
-        const { avgEntryPrice, totalEntryQty } = calculateAvgCost(
-          entryActions.map((e) => ({
-            action: e.action,
-            quantity: e.quantity,
-            price: e.price,
-            fees: e.fees ?? null,
-            executedAt: e.executedAt ?? '',
-          })),
-        );
+        // Compute avg entry price (inline weighted average)
+        const totalEntryQty = entryActions.reduce((s, e) => s + e.quantity, 0);
+        const avgEntryPrice = totalEntryQty > 0
+          ? entryActions.reduce((s, e) => s + e.price * e.quantity, 0) / totalEntryQty
+          : null;
 
         if (avgEntryPrice === null || totalEntryQty === 0) continue;
 
