@@ -1144,6 +1144,11 @@ function TradesPageInner() {
     if (urlVal) return urlVal;
     try { return localStorage.getItem('trades:accountId') ?? 'all'; } catch { return 'all'; }
   });
+  const [direction, setDirection] = useState(() => {
+    const urlVal = searchParams.get('direction');
+    if (urlVal) return urlVal;
+    try { return localStorage.getItem('trades:direction') ?? 'all'; } catch { return 'all'; }
+  });
   const [activePreset, setActivePreset] = useState<string | null>(() => {
     const urlVal = searchParams.get('preset');
     if (urlVal) return urlVal;
@@ -1205,6 +1210,7 @@ function TradesPageInner() {
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
     if (accountId && accountId !== 'all') params.set('accountId', accountId);
+    if (direction && direction !== 'all') params.set('direction', direction);
     if (activePreset) params.set('preset', activePreset);
     const qs = params.toString();
     const newUrl = qs ? `?${qs}` : window.location.pathname;
@@ -1214,10 +1220,11 @@ function TradesPageInner() {
       localStorage.setItem('trades:fromDate', fromDate);
       localStorage.setItem('trades:toDate', toDate);
       localStorage.setItem('trades:accountId', accountId);
+      localStorage.setItem('trades:direction', direction);
       if (activePreset) localStorage.setItem('trades:preset', activePreset);
       else localStorage.removeItem('trades:preset');
     } catch { /* localStorage unavailable */ }
-  }, [fromDate, toDate, accountId, activePreset, router]);
+  }, [fromDate, toDate, accountId, direction, activePreset, router]);
 
   // Account options for the filter dropdown
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -1259,6 +1266,7 @@ function TradesPageInner() {
       if (fromDate) params.set('from', toFromIso(fromDate));
       if (toDate) params.set('to', toToIso(toDate));
       if (accountId && accountId !== 'all') params.set('accountId', accountId);
+      if (direction && direction !== 'all') params.set('direction', direction);
 
       const res = await fetch(`/api/trades?${params.toString()}`);
       if (!res.ok) {
@@ -1281,7 +1289,7 @@ function TradesPageInner() {
     } finally {
       setTabLoading((prev) => ({ ...prev, [tab.id]: false }));
     }
-  }, [fromDate, toDate, accountId]);
+  }, [fromDate, toDate, accountId, direction]);
 
   // Page change handler — fetches a single tab at the given page
   const handlePageChange = useCallback((tabId: TabId, newPage: number) => {
@@ -1498,6 +1506,25 @@ function TradesPageInner() {
                     {acct.broker ? ` (${acct.broker})` : ''}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Direction filter */}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-direction" className="text-xs font-medium text-muted-foreground">
+              Direction
+            </label>
+            <Select
+              value={direction}
+              onValueChange={(v) => setDirection(v)}
+            >
+              <SelectTrigger id="filter-direction" className="h-8 w-36">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="long">Long</SelectItem>
+                <SelectItem value="short">Short</SelectItem>
               </SelectContent>
             </Select>
           </div>
