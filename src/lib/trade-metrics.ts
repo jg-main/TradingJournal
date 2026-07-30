@@ -283,7 +283,130 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
 
   const sizeDisplay = `${entryQuantity.toNumber()} / ${exitQuantity.toNumber()}`;
 
-  // ── Placeholder results (to be implemented) ────────────────────────
+  // ── Build FIFO lot queue from entries ──────────────────────────
+  // Each entry execution creates a lot with remaining quantity, entry price,
+  // and proportional entry fees. Lots are ordered chronologically (FIFO).
+
+  const lots: FifoLot[] = entries.map((e) => ({
+    executionId: e.id ?? '',
+    quantityRemaining: new Decimal(e.quantity),
+    entryPrice: new Decimal(e.price),
+    entryFeeRemaining: new Decimal(e.fees ?? 0),
+    executedAt: e.executedAt,
+  }));
+
+  // ── FIFO matching: process exits against oldest lots ───────────
+  // Per spec Section 4:
+  //   - Each exit consumes the oldest available lot.
+  //   - Long: gross P&L = (exitPrice − entryPrice) × matchedQty
+  //   - Short: gross P&L = (entryPrice − exitPrice) × matchedQty
+  //   - Entry fees allocated proportionally to matched quantity.
+  //   - Exit fees allocated proportionally across matched portions.
+
+  const matches: FifoMatch[] = [];
+  let totalGrossRealizedPnl = new Decimal(0);
+  let totalRealizedFees = new Decimal(0);
+
+  for (const exit of exits) {
+    const exitQty = new Decimal(exit.quantity);
+    const exitFee = new Decimal(exit.fees ?? 0);
+    const exitPriceDec = new Decimal(exit.price);
+    let remainingExitQty = exitQty;
+
+    while (remainingExitQty.gt(0) && lots.length > 0) {
+      const lot = lots[0];
+
+      // Quantity available to match from this lot
+      const matchedQty = Decimal.min(remainingExitQty, lot.quantityRemaining);
+
+      if (matchedQty.isZero()) {
+        lots.shift();
+        continue;
+      }
+
+      // Proportional entry fee allocation
+      // The portion of this lot's remaining entry fee that travels with the matched quantity
+      const feeRatio = lot.quantityRemaining.gt(0)
+        ? matchedQty.div(lot.quantityRemaining)
+        : new Decimal(0);
+      const allocatedEntryFee = lot.entryFeeRemaining.mul(feeRatio);
+
+      // Proportional exit fee allocation for this matched portion
+      // The exit execution's total fee is split across matched portions
+      const allocatedExitFee = exitFee.mul(matchedQty).div(exitQty);
+
+      // Gross realized P&L for this matched portion per direction
+      const pnl = direction === 'long'
+        ? exitPriceDec.sub(lot.entryPrice).mul(matchedQty)
+        : lot.entryPrice.sub(exitPriceDec).mul(matchedQty);
+
+      totalGrossRealizedPnl = totalGrossRealizedPnl.add(pnl);
+      totalRealizedFees = totalRealizedFees.add(allocatedEntryFee).add(allocatedExitFee);
+
+      matches.push({
+        lotExecutionId: lot.executionId,
+        matchedQuantity: matchedQty,
+        entryPrice: lot.entryPrice,
+        exitPrice: exitPriceDec,
+        allocatedEntryFee,
+        allocatedExitFee,
+      });
+
+      // Update the lot: reduce remaining quantity and entry fees
+      lot.quantityRemaining = lot.quantityRemaining.sub(matchedQty);
+      lot.entryFeeRemaining = lot.entryFeeRemaining.sub(allocatedEntryFee);
+      remainingExitQty = remainingExitQty.sub(matchedQty);
+
+      // Remove fully consumed lot
+      if (lot.quantityRemaining.isZero()) {
+        lots.shift();
+      }
+    }
+  }
+
+  // ── Remaining lots after all matching ──────────────────────────
+
+  const fifoOpenQty = lots.reduce(
+    (s, lot) => s.add(lot.quantityRemaining),
+    new Decimal(0),
+  );
+
+  const totalOpenCost = lots.reduce(
+    (s, lot) => s.add(lot.entryPrice.mul(lot.quantityRemaining)),
+    new Decimal(0),
+  );
+
+  const openAvgCost = fifoOpenQty.gt(0)
+    ? totalOpenCost.div(fifoOpenQty).toNumber()
+    : null;
+
+  const openFeesDec = lots.reduce(
+    (s, lot) => s.add(lot.entryFeeRemaining),
+    new Decimal(0),
+  );
+
+  const grossRealizedPnlNum = totalGrossRealizedPnl.toNumber();
+  const realizedFeesNum = totalRealizedFees.toNumber();
+  const netRealizedPnlNum = grossRealizedPnlNum - realizedFeesNum;
+  const totalFeesNum = executions.reduce((s, e) => s + (e.fees ?? 0), 0);
+
+  // ── Quantity-weighted average prices ───────────────────────────
+
+  const totalEntryNotional = entries.reduce(
+    (s, e) => s.add(new Decimal(e.price).mul(new Decimal(e.quantity))),
+    new Decimal(0),
+  );
+  const avgEntryPrice = entryQuantity.gt(0)
+    ? totalEntryNotional.div(entryQuantity).toNumber()
+    : null;
+
+  const totalExitNotional = exits.reduce(
+    (s, e) => s.add(new Decimal(e.price).mul(new Decimal(e.quantity))),
+    new Decimal(0),
+  );
+  const avgExitPrice = exitQuantity.gt(0)
+    ? totalExitNotional.div(exitQuantity).toNumber()
+    : null;
 
   return {
     size: {
@@ -293,18 +416,18 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
       sizeDisplay,
     },
     averagePrices: {
-      avgEntryPrice: null,
-      avgExitPrice: null,
-      openAvgCost: null,
+      avgEntryPrice,
+      avgExitPrice,
+      openAvgCost,
     },
     fees: {
-      totalFees: executions.reduce((s, e) => s + (e.fees ?? 0), 0),
-      realizedFees: 0,
-      openFees: 0,
+      totalFees: totalFeesNum,
+      realizedFees: realizedFeesNum,
+      openFees: openFeesDec.toNumber(),
     },
     realizedPnl: {
-      grossRealizedPnl: 0,
-      netRealizedPnl: 0,
+      grossRealizedPnl: grossRealizedPnlNum,
+      netRealizedPnl: netRealizedPnlNum,
     },
     unrealizedPnl: {
       grossUnrealizedPnl: null,
@@ -334,8 +457,8 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
       marketValue: null,
       positionWeight: null,
     },
-    remainingLots: [],
-    matches: [],
+    remainingLots: lots,
+    matches,
   };
 }
 
