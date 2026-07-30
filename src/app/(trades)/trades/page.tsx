@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { NotebookPen, EllipsisVertical, Eye, Pencil, PlusCircle, SlidersHorizontal, RefreshCw, Download, Star, AlertTriangle } from 'lucide-react';
+import { NotebookPen, EllipsisVertical, Eye, Pencil, PlusCircle, SlidersHorizontal, RefreshCw, Download, Star, AlertTriangle, Clock } from 'lucide-react';
 import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -564,6 +564,119 @@ const openColumns: ColumnDef<TradeRow>[] = [
     ),
   },
   {
+    id: 'initialRiskPct',
+    header: 'Initial Risk %',
+    accessorFn: (row) => row.metrics?.risk?.initialRiskPct,
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'avgExit',
+    header: 'Avg Exit',
+    accessorFn: (row) => row.metrics?.averagePrices?.avgExitPrice,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'grossUnrealizedPnl',
+    header: 'Gross Unrealized P&L',
+    accessorFn: (row) => row.metrics?.unrealizedPnl?.grossUnrealizedPnl,
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'lockedPnl',
+    header: 'Locked-in P&L',
+    accessorFn: (row) => row.metrics?.risk?.lockedPnl,
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'returnPctCol',
+    header: 'Return %',
+    accessorKey: 'returnPct',
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'rMultiple',
+    header: 'R-Multiple',
+    accessorFn: (row) => row.metrics?.returnMetrics?.rMultiple,
+    cell: ({ getValue }) => <RCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'distanceToStop',
+    header: 'Dist to Stop %',
+    accessorFn: (row) => {
+      const price = row.currentPrice;
+      const stop = row.metrics?.risk?.activeStop;
+      if (price != null && stop != null && price !== 0) {
+        return ((price - stop) / price) * 100;
+      }
+      return null;
+    },
+    cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'grossRealizedPnlToDate',
+    header: 'Gross Realized P&L to Date',
+    accessorFn: (row) => row.metrics?.realizedPnl?.grossRealizedPnl,
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'netRealizedPnlToDate',
+    header: 'Net Realized P&L to Date',
+    accessorKey: 'realizedPnl',
+    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+  },
+  {
+    id: 'realizedFees',
+    header: 'Realized Fees to Date',
+    accessorFn: (row) => row.metrics?.fees?.realizedFees,
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'entryFillCount',
+    header: 'Entry Fills',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'exitFillCount',
+    header: 'Exit Fills',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'grade',
+    header: 'Grade',
+    cell: () => <span className="text-muted-foreground">—</span>,
+  },
+  {
+    id: 'priceTimestamp',
+    header: 'Price Timestamp',
+    accessorKey: 'currentPriceFetchedAt',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground text-xs">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'priceAge',
+    header: 'Price Age',
+    accessorFn: (row) => {
+      const fetchedAt = row.currentPriceFetchedAt;
+      if (!fetchedAt) return null;
+      const diffMs = Date.now() - new Date(fetchedAt).getTime();
+      const diffMin = Math.floor(diffMs / 60_000);
+      if (diffMin < 1) return 0;
+      return diffMin;
+    },
+    cell: ({ getValue }) => {
+      const minutes = getValue<number | null>();
+      if (minutes == null) return <span className="text-muted-foreground">—</span>;
+      if (minutes < 1) return <span className="inline-flex items-center gap-1 text-xs text-green-600"><Clock className="size-3" /> fresh</span>;
+      if (minutes < 5) return <span className="inline-flex items-center gap-1 text-xs text-amber-600"><Clock className="size-3" /> {minutes}m ago</span>;
+      return <span className="inline-flex items-center gap-1 text-xs text-red-600"><Clock className="size-3" /> {minutes}m ago</span>;
+    },
+  },
+  {
     id: 'created',
     header: 'Created',
     accessorKey: 'createdAt',
@@ -1021,6 +1134,21 @@ const openDefaultVisibility: VisibilityState = {
   marketValue: false,
   positionWeight: false,
   initialRisk: false,
+  initialRiskPct: false,
+  avgExit: false,
+  grossUnrealizedPnl: false,
+  lockedPnl: false,
+  returnPctCol: false,
+  rMultiple: false,
+  distanceToStop: false,
+  grossRealizedPnlToDate: false,
+  netRealizedPnlToDate: false,
+  realizedFees: false,
+  entryFillCount: false,
+  exitFillCount: false,
+  grade: false,
+  priceTimestamp: false,
+  priceAge: false,
   created: false,
 };
 
