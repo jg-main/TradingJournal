@@ -385,6 +385,9 @@ function doGetTrades(params: {
       grossRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.grossRealizedPnl ?? 0), 0),
       netRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.netRealizedPnl ?? 0), 0),
       totalFees: enhancedRows.reduce((s, r) => s + (r.metrics?.fees.totalFees ?? 0), 0),
+      grossUnrealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.unrealizedPnl.grossUnrealizedPnl ?? 0), 0),
+      netUnrealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.unrealizedPnl.netUnrealizedPnl ?? 0), 0),
+      totalOpenRisk: enhancedRows.reduce((s, r) => s + (r.metrics?.risk.openRisk ?? 0), 0),
     };
 
     // Compute totalsByCurrency from the full dataset
