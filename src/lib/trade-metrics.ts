@@ -41,6 +41,19 @@ export type Direction = 'long' | 'short';
 /** Derived trade status. */
 export type TradeStatus = 'planned' | 'open' | 'closed';
 
+/**
+ * Result of deriving trade status from executions.
+ * Mirrors the shape from trade-calc.ts for backward compatibility.
+ */
+export interface DeriveStatusResult {
+  status: TradeStatus;
+  openedAt: string | null;
+  closedAt: string | null;
+  openQuantity: number;
+  totalEntryQty: number;
+  totalExitQty: number;
+}
+
 /** Initial risk snapshot recorded at first execution. */
 export interface RiskSnapshotData {
   /** Dollar amount of initial risk. */

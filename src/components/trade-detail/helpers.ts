@@ -4,7 +4,7 @@
  * source for all trade-detail sub-components.
  */
 
-import type { ExecutionData } from '@/lib/trade-calc';
+import type { ExecutionData } from '@/lib/trade-metrics';
 import type { Trade, Execution } from './types';
 
 /**

@@ -21,7 +21,7 @@ import {
   type CalendarHeatmapDay,
   type CalendarHeatmapYearData,
 } from './calendar-heatmap';
-import { type ExecutionData } from './trade-calc';
+import { type ExecutionData } from './trade-metrics';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

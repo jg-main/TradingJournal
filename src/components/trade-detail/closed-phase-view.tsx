@@ -26,7 +26,7 @@ import AssessmentCard from './assessment-card';
 import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
-import type { DeriveStatusResult } from '@/lib/trade-calc';
+import type { DeriveStatusResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 
 interface ClosedPhaseViewProps {

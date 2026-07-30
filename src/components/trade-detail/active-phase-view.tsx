@@ -21,7 +21,7 @@ import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import TradeAssetsCard from './trade-assets-card';
 import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset, CheckResult, MtmData } from './types';
-import type { DeriveStatusResult } from '@/lib/trade-calc';
+import type { DeriveStatusResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 
 interface ActivePhaseViewProps {

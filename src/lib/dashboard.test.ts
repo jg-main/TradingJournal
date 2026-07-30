@@ -23,7 +23,7 @@ import {
   type KpiTradeInput,
   type RollforwardRow,
 } from './dashboard';
-import { type ExecutionData } from './trade-calc';
+import { type ExecutionData } from './trade-metrics';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
