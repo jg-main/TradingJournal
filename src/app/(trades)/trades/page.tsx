@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { NotebookPen, EllipsisVertical, Eye, Pencil, PlusCircle, SlidersHorizontal, RefreshCw, Star, AlertTriangle } from 'lucide-react';
+import { NotebookPen, EllipsisVertical, Eye, Pencil, PlusCircle, SlidersHorizontal, RefreshCw, Download, Star, AlertTriangle } from 'lucide-react';
 import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -1149,6 +1149,7 @@ function TradesPageInner() {
     if (urlVal) return urlVal;
     try { return localStorage.getItem('trades:direction') ?? 'all'; } catch { return 'all'; }
   });
+  const [refreshing, setRefreshing] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(() => {
     const urlVal = searchParams.get('preset');
     if (urlVal) return urlVal;
@@ -1291,6 +1292,54 @@ function TradesPageInner() {
     }
   }, [fromDate, toDate, accountId, direction]);
 
+  // ── Page header button handlers ──────────────────────────────────────
+
+  const handlePlanTrade = useCallback(() => {
+    router.push('/trades/new');
+  }, [router]);
+
+  const handleExportCsv = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (accountId && accountId !== 'all') params.set('accountId', accountId);
+    const url = `/api/trades/export?${params.toString()}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error('Export CSV failed:', res.status, res.statusText);
+        return;
+      }
+      const blob = await res.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `trades-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Export CSV failed:', err);
+    }
+  }, [accountId]);
+
+  const handleRefreshPrices = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/trades/mtm/refresh', { method: 'POST' });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        console.error('Refresh prices failed:', res.status, errBody.error ?? res.statusText);
+        return;
+      }
+      await res.json();
+      // Re-fetch the current tab's data after prices are refreshed
+      const tabDef = TABS.find((t) => t.id === activeTab);
+      if (tabDef) fetchTab(tabDef, tabPage[activeTab]);
+    } catch (err) {
+      console.error('Refresh prices failed:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [activeTab, tabPage, fetchTab]);
+
   // Page change handler — fetches a single tab at the given page
   const handlePageChange = useCallback((tabId: TabId, newPage: number) => {
     setTabPage((prev) => ({ ...prev, [tabId]: newPage }));
@@ -1419,6 +1468,35 @@ function TradesPageInner() {
       <h1 className="mb-6 text-2xl font-semibold tracking-tight text-foreground">
         Trades
       </h1>
+
+      {/* ── Page header buttons ─────────────────────────────────── */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handlePlanTrade}
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          <PlusCircle className="size-4" />
+          Plan Trade
+        </button>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground transition-colors"
+        >
+          <Download className="size-4" />
+          Export CSV
+        </button>
+        <button
+          type="button"
+          onClick={handleRefreshPrices}
+          disabled={refreshing}
+          className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh Prices'}
+        </button>
+      </div>
 
       {/* ── Filter controls ─────────────────────────────────────── */}
       <div className="mb-6 rounded-lg border p-4">
