@@ -357,6 +357,13 @@ function doGetTrades(params: {
       };
     });
 
+    // Build account currency map from DB accounts
+    const allDbAccounts = db.select().from(schema.accounts).all();
+    const accountCurrencyMap = new Map<string, string>();
+    for (const a of allDbAccounts) {
+      accountCurrencyMap.set(a.id, a.currency ?? 'USD');
+    }
+
     // Server-computed totals aggregated across the full filtered dataset
     const totals = {
       grossRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.grossRealizedPnl ?? 0), 0),
@@ -364,7 +371,46 @@ function doGetTrades(params: {
       totalFees: enhancedRows.reduce((s, r) => s + (r.metrics?.fees.totalFees ?? 0), 0),
     };
 
-    return { status: 200, data: { data: enhancedRows, total, page, limit, totals } };
+    // Compute totalsByCurrency from the full dataset
+    // Re-query all matching trades (no pagination) to compute per-currency totals
+    const allMatchingIdsForCurrency = (() => {
+      const fullFilters: any[] = [];
+      if (statusFilter) fullFilters.push(eq(schema.trades.status, statusFilter));
+      if (params.accountId) fullFilters.push(eq(schema.trades.accountId, params.accountId));
+      if (params.direction) fullFilters.push(eq(schema.trades.direction, params.direction as 'long' | 'short'));
+      // Date filtering uses the same pattern as above
+      if (statusFilter !== 'open') {
+        const fullDateColumn = statusFilter === 'closed'
+          ? schema.trades.closedAt
+          : statusFilter === 'planned'
+            ? schema.trades.createdAt
+            : schema.trades.openedAt;
+        if (params.from) fullFilters.push(sql`${fullDateColumn} >= ${params.from}`);
+        if (params.to) fullFilters.push(sql`${fullDateColumn} <= ${params.to}`);
+      }
+      const fullWhere = fullFilters.length > 0 ? and(...fullFilters) : undefined;
+      return db
+        .select({ id: schema.trades.id, accountId: schema.trades.accountId })
+        .from(schema.trades)
+        .where(fullWhere)
+        .all();
+    })();
+
+    const totalsByCurrency: Record<string, typeof totals> = {};
+    for (const row of enhancedRows) {
+      const currency = accountCurrencyMap.get(row.accountId) ?? 'USD';
+      if (!totalsByCurrency[currency]) {
+        totalsByCurrency[currency] = { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 };
+      }
+      totalsByCurrency[currency].grossRealizedPnl += row.metrics?.realizedPnl.grossRealizedPnl ?? 0;
+      totalsByCurrency[currency].netRealizedPnl += row.metrics?.realizedPnl.netRealizedPnl ?? 0;
+      totalsByCurrency[currency].totalFees += row.metrics?.fees.totalFees ?? 0;
+      totalsByCurrency[currency].grossUnrealizedPnl += row.metrics?.unrealizedPnl.grossUnrealizedPnl ?? 0;
+      totalsByCurrency[currency].netUnrealizedPnl += row.metrics?.unrealizedPnl.netUnrealizedPnl ?? 0;
+      totalsByCurrency[currency].totalOpenRisk += row.metrics?.risk.openRisk ?? 0;
+    }
+
+    return { status: 200, data: { data: enhancedRows, total, page, limit, totals, totalsByCurrency } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch trades', details: String(error) } };
   }
@@ -1092,6 +1138,80 @@ console.log('\n23. GET equity falls back when no rollforward exists:');
 
   // No rollforward → equity null → riskToAccount is null (no denominator)
   assertEqual(risk.riskToAccount, null, 'riskToAccount is null when no equity source available');
+}
+
+// ── 24. GET: totalsByCurrency multi-currency grouping ─────────────
+
+console.log('\n24. GET returns totals grouped by account currency:');
+{
+  cleanup();
+  // Account 1: USD
+  const usdAcc = seedAccount({ id: 'usd-acc-id', name: 'USD Account', currency: 'USD' });
+  // Account 2: EUR
+  const eurAcc = seedAccount({ id: 'eur-acc-id', name: 'EUR Account', currency: 'EUR' });
+  // Account 3: USD (another one, to verify USD aggregation)
+  const usdAcc2 = seedAccount({ id: 'usd-acc-2', name: 'USD Account 2', currency: 'USD' });
+
+  // USD trade 1: closed long, gross 1000, net 992, fees 8
+  const trade1 = seedTrade({ accountId: 'usd-acc-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
+  const t1Id = trade1.id as string;
+  seedExecution({ tradeId: t1Id, action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution({ tradeId: t1Id, action: 'sell', quantity: 100, price: 110, fees: 3 });
+
+  // USD trade 2: closed short, gross 500, net 494, fees 6
+  const trade2 = seedTrade({ accountId: 'usd-acc-2', symbol: 'MSFT', direction: 'short', status: 'closed' });
+  const t2Id = trade2.id as string;
+  seedExecution({ tradeId: t2Id, action: 'sell_short', quantity: 25, price: 200, fees: 4 });
+  seedExecution({ tradeId: t2Id, action: 'buy_to_cover', quantity: 25, price: 180, fees: 2 });
+
+  // EUR trade: closed short, gross 1000, net 994, fees 6
+  const trade3 = seedTrade({ accountId: 'eur-acc-id', symbol: 'TSLA', direction: 'short', status: 'closed' });
+  const t3Id = trade3.id as string;
+  seedExecution({ tradeId: t3Id, action: 'sell_short', quantity: 50, price: 200, fees: 4 });
+  seedExecution({ tradeId: t3Id, action: 'buy_to_cover', quantity: 50, price: 180, fees: 2 });
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { totalsByCurrency: Record<string, Record<string, number>> };
+
+  assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
+  assertEqual(Object.keys(d.totalsByCurrency).length, 2, '2 currencies in totalsByCurrency');
+
+  // USD: trade1 (gross 1000, net 992, fees 8) + trade2 (gross 500, net 494, fees 6) = gross 1500, net 1486, fees 14
+  assertEqual(d.totalsByCurrency['USD'].grossRealizedPnl, 1500, 'USD grossRealizedPnl = 1500 (1000 + 500)');
+  assertEqual(d.totalsByCurrency['USD'].netRealizedPnl, 1486, 'USD netRealizedPnl = 1486 (992 + 494)');
+  assertEqual(d.totalsByCurrency['USD'].totalFees, 14, 'USD totalFees = 14 (8 + 6)');
+
+  // EUR: trade3 (gross 1000, net 994, fees 6)
+  assertEqual(d.totalsByCurrency['EUR'].grossRealizedPnl, 1000, 'EUR grossRealizedPnl = 1000');
+  assertEqual(d.totalsByCurrency['EUR'].netRealizedPnl, 994, 'EUR netRealizedPnl = 994');
+  assertEqual(d.totalsByCurrency['EUR'].totalFees, 6, 'EUR totalFees = 6');
+
+  // Overall totals should match pre-computed values
+  assertEqual(d.totalsByCurrency['USD'].grossRealizedPnl + d.totalsByCurrency['EUR'].grossRealizedPnl, 2500, 'combined gross = 2500 (1500 + 1000)');
+}
+
+// ── 25. GET: totalsByCurrency for single currency ─────────────────
+
+console.log('\n25. GET totalsByCurrency present with single currency:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+
+  // Closed long: realize 992 (P&L 1000 - fees 8)
+  const trade1 = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
+  const t1Id = trade1.id as string;
+  seedExecution({ tradeId: t1Id, action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution({ tradeId: t1Id, action: 'sell', quantity: 100, price: 110, fees: 3 });
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { totalsByCurrency: Record<string, Record<string, number>> };
+
+  assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
+  assertEqual(Object.keys(d.totalsByCurrency).length, 1, '1 currency in totalsByCurrency');
+  assertNotNull(d.totalsByCurrency['USD'], 'USD key is present');
+  assertEqual(d.totalsByCurrency['USD'].netRealizedPnl, 992, 'USD netRealizedPnl = 992');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

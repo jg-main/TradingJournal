@@ -303,6 +303,19 @@ export async function GET(request: NextRequest) {
       totalOpenRisk: 0,
     };
 
+    // Per-currency totals buckets — hoisted outside the if-block for response access
+    const totalsByCurrency: Record<
+      string,
+      {
+        grossRealizedPnl: number;
+        netRealizedPnl: number;
+        totalFees: number;
+        grossUnrealizedPnl: number;
+        netUnrealizedPnl: number;
+        totalOpenRisk: number;
+      }
+    > = {};
+
     if (allMatchingIdsR.length > 0) {
       const allTradeIds = allMatchingIdsR.map((r) => r.id);
       const allUniqueAccountIds = [...new Set(allMatchingIdsR.map((r) => r.accountId))];
@@ -335,6 +348,7 @@ export async function GET(request: NextRequest) {
         .where(inArray(accounts.id, allUniqueAccountIds.filter(Boolean)))
         .all();
       const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
+      const allAccountCurrencyMap = new Map(allAccountRows.map((a) => [a.id, a.currency ?? 'USD']));
 
       // Batch-fetch latest rollforward per account for totals computation
       const allLatestRollforwardMap = new Map<string, typeof accountRollforward.$inferSelect>();
@@ -394,16 +408,41 @@ export async function GET(request: NextRequest) {
 
           const metrics = computeTradeMetrics(metricsInput);
 
-          return {
-            grossRealizedPnl: acc.grossRealizedPnl + (metrics.realizedPnl.grossRealizedPnl ?? 0),
-            netRealizedPnl: acc.netRealizedPnl + (metrics.realizedPnl.netRealizedPnl ?? 0),
-            totalFees: acc.totalFees + (metrics.fees.totalFees ?? 0),
-            grossUnrealizedPnl:
-              acc.grossUnrealizedPnl + (metrics.unrealizedPnl.grossUnrealizedPnl ?? 0),
-            netUnrealizedPnl:
-              acc.netUnrealizedPnl + (metrics.unrealizedPnl.netUnrealizedPnl ?? 0),
-            totalOpenRisk: acc.totalOpenRisk + (metrics.risk.openRisk ?? 0),
-          };
+          const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
+          if (!totalsByCurrency[currency]) {
+            totalsByCurrency[currency] = {
+              grossRealizedPnl: 0,
+              netRealizedPnl: 0,
+              totalFees: 0,
+              grossUnrealizedPnl: 0,
+              netUnrealizedPnl: 0,
+              totalOpenRisk: 0,
+            };
+          }
+
+          const gRP = metrics.realizedPnl.grossRealizedPnl ?? 0;
+          const nRP = metrics.realizedPnl.netRealizedPnl ?? 0;
+          const tF = metrics.fees.totalFees ?? 0;
+          const gUP = metrics.unrealizedPnl.grossUnrealizedPnl ?? 0;
+          const nUP = metrics.unrealizedPnl.netUnrealizedPnl ?? 0;
+          const oR = metrics.risk.openRisk ?? 0;
+
+          acc.grossRealizedPnl += gRP;
+          acc.netRealizedPnl += nRP;
+          acc.totalFees += tF;
+          acc.grossUnrealizedPnl += gUP;
+          acc.netUnrealizedPnl += nUP;
+          acc.totalOpenRisk += oR;
+
+          const bucket = totalsByCurrency[currency];
+          bucket.grossRealizedPnl += gRP;
+          bucket.netRealizedPnl += nRP;
+          bucket.totalFees += tF;
+          bucket.grossUnrealizedPnl += gUP;
+          bucket.netUnrealizedPnl += nUP;
+          bucket.totalOpenRisk += oR;
+
+          return acc;
         },
         { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
       );
@@ -415,6 +454,7 @@ export async function GET(request: NextRequest) {
       page,
       limit,
       totals: fullTotals,
+      totalsByCurrency,
     });
   } catch (error) {
     return NextResponse.json(

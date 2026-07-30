@@ -62,19 +62,22 @@ interface TradeRow {
   metrics: TradeMetricsResult;
 }
 
+interface TotalsShape {
+  grossRealizedPnl: number;
+  netRealizedPnl: number;
+  totalFees: number;
+  grossUnrealizedPnl: number;
+  netUnrealizedPnl: number;
+  totalOpenRisk: number;
+}
+
 interface TradesResponse {
   data: TradeRow[];
   total: number;
   page: number;
   limit: number;
-  totals: {
-    grossRealizedPnl: number;
-    netRealizedPnl: number;
-    totalFees: number;
-    grossUnrealizedPnl: number;
-    netUnrealizedPnl: number;
-    totalOpenRisk: number;
-  };
+  totals: TotalsShape;
+  totalsByCurrency?: Record<string, TotalsShape>;
 }
 
 interface AccountOption {
@@ -197,32 +200,34 @@ function ActionsCell() {
 }
 
 /** Totals summary card rendered below the DynamicTable */
-function TotalsFooter({
+/** A single totals group rendered as labelled items */
+function TotalsGroup({
+  label,
+  isOpen,
   totals,
-  tabId,
 }: {
+  label?: string;
+  isOpen: boolean;
   totals: TradesResponse['totals'];
-  tabId: TabId;
 }) {
-  if (tabId === 'planned') return null;
-
-  const isOpen = tabId === 'open';
   const items = isOpen
     ? [
-        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} />, value: totals.netUnrealizedPnl },
-        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span>, value: totals.totalOpenRisk },
+        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
+        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span> },
       ]
     : [
-        { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} />, value: totals.grossRealizedPnl },
-        { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees)}</span>, value: totals.totalFees },
-        { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} />, value: totals.netRealizedPnl },
+        { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} /> },
+        { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees)}</span> },
+        { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} /> },
       ];
 
   return (
-    <div className="mt-3 rounded-lg border bg-muted/30 p-4">
-      <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        {isOpen ? 'Open Positions Total' : 'Closed Totals'}
-      </div>
+    <div>
+      {label && (
+        <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {label}
+        </div>
+      )}
       <div className="flex flex-wrap gap-x-8 gap-y-2">
         {items.map((item) => (
           <div key={item.label} className="flex flex-col">
@@ -231,6 +236,51 @@ function TotalsFooter({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Totals summary card rendered below the DynamicTable */
+function TotalsFooter({
+  totals,
+  totalsByCurrency,
+  tabId,
+}: {
+  totals: TradesResponse['totals'];
+  totalsByCurrency?: Record<string, TradesResponse['totals']>;
+  tabId: TabId;
+}) {
+  if (tabId === 'planned') return null;
+
+  const isOpen = tabId === 'open';
+  const currencies = Object.keys(totalsByCurrency ?? {});
+  const hasMultipleCurrencies = currencies.length > 1;
+
+  return (
+    <div className="mt-3 rounded-lg border bg-muted/30 p-4">
+      <TotalsGroup
+        label={isOpen ? 'Open Positions Total' : 'Closed Totals'}
+        isOpen={isOpen}
+        totals={totals}
+      />
+      {hasMultipleCurrencies && (
+        <>
+          <hr className="my-4 border-border" />
+          <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            By Currency
+          </div>
+          <div className="space-y-4">
+            {currencies.map((currency) => (
+              <TotalsGroup
+                key={currency}
+                label={currency}
+                isOpen={isOpen}
+                totals={totalsByCurrency![currency]}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -943,6 +993,11 @@ function TradesPageInner() {
     closed: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
     planned: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
   });
+  const [tabTotalsByCurrency, setTabTotalsByCurrency] = useState<Record<TabId, Record<string, TradesResponse['totals']>>>({
+    open: {},
+    closed: {},
+    planned: {},
+  });
   const [tabLoading, setTabLoading] = useState<Record<TabId, boolean>>({
     open: true,
     closed: true,
@@ -1102,6 +1157,7 @@ function TradesPageInner() {
       setTabData((prev) => ({ ...prev, [tab.id]: result.data }));
       setTabTotal((prev) => ({ ...prev, [tab.id]: result.total }));
       setTabTotals((prev) => ({ ...prev, [tab.id]: result.totals }));
+      setTabTotalsByCurrency((prev) => ({ ...prev, [tab.id]: result.totalsByCurrency ?? {} }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error';
       setTabError((prev) => ({ ...prev, [tab.id]: msg }));
@@ -1228,7 +1284,7 @@ function TradesPageInner() {
             onPageChange={(p) => handlePageChange(tab.id, p)}
           />
         )}
-        <TotalsFooter totals={totals} tabId={tab.id} />
+        <TotalsFooter totals={totals} totalsByCurrency={tabTotalsByCurrency[tab.id]} tabId={tab.id} />
       </div>
     );
   }
