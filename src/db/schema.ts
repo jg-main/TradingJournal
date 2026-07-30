@@ -110,6 +110,9 @@ export const trades = sqliteTable('trades', {
   lesson: text('lesson'),
   currentPrice: real('current_price'),
   currentPriceFetchedAt: text('current_price_fetched_at'),
+  grossRealizedPnl: real('gross_realized_pnl'),
+  netRealizedPnl: real('net_realized_pnl'),
+  realizedFees: real('realized_fees'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });
