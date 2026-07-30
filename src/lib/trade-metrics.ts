@@ -234,6 +234,13 @@ export interface TradeMetricsResult {
   matches: FifoMatch[];
 }
 
+/**
+ * Compact trade metrics result for list views, excluding FIFO debugging detail.
+ * The full `TradeMetricsResult` (with `remainingLots` and `matches`) remains
+ * available for the trade-detail endpoint and other consumers that need it.
+ */
+export type TradeListMetrics = Omit<TradeMetricsResult, 'remainingLots' | 'matches'>;
+
 // ── Helper functions ───────────────────────────────────────────────────
 
 /**

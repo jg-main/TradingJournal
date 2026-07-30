@@ -5,7 +5,7 @@ import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
-import type { TradeMetricsInput } from '@/lib/trade-metrics';
+import type { TradeMetricsInput, TradeListMetrics } from '@/lib/trade-metrics';
 
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
@@ -284,7 +284,11 @@ export async function GET(request: NextRequest) {
         plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity) * 100;
       }
 
-      // Backward-compatible flat fields + nested metrics (matching T01 pattern)
+      // Strip FIFO debugging detail for the list view; full metrics remain available
+      // for the trade-detail endpoint via GET /api/trades/[id]
+      const { remainingLots: _remainingLots, matches: _matches, ...metricsForList } = metrics;
+
+      // Backward-compatible flat fields + compact nested metrics
       return {
         ...row,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
@@ -292,7 +296,7 @@ export async function GET(request: NextRequest) {
         returnPct: metrics.returnMetrics.returnPct,
         riskPct: metrics.risk.riskToAccount,
         plannedRiskToAccount,
-        metrics,
+        metrics: metricsForList satisfies TradeListMetrics,
       };
     });
 

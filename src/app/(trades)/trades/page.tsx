@@ -31,7 +31,7 @@ import {
   computePlannedRR,
   formatNumber,
 } from '@/lib/trade-formatters';
-import type { TradeMetricsResult } from '@/lib/trade-metrics';
+import type { TradeListMetrics } from '@/lib/trade-metrics';
 
 // ── Types (mirrors the S02 API response shape) ─────────────────────────
 
@@ -67,8 +67,8 @@ interface TradeRow {
   riskPct: number | null;
   // Planned risk-to-account (computed from plannedEntry/plannedStop/plannedQuantity)
   plannedRiskToAccount?: number | null;
-  // Nested metrics
-  metrics: TradeMetricsResult;
+  // Nested metrics (compact for list view; FIFO debugging detail excluded)
+  metrics: TradeListMetrics;
 }
 
 interface TotalsShape {
