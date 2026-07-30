@@ -34,7 +34,7 @@
 
 /* ── Imports for library-based contract verification ────────────────── */
 
-import { calculatePnL, calculateRMultiple, deriveTradeStatus, type ExecutionData, type Direction } from '../trade-calc';
+import { type ExecutionData, type Direction } from '../trade-metrics';
 import {
   computeEquityAtOpen,
   deriveInitialRiskAmount,
@@ -252,10 +252,9 @@ section('API 1: Dashboard');
 
   // Compute KPIs through the library (same function the route uses)
   const kpis: KpiMetrics = computeKpiMetrics(allInputs, closedInputs, rollforwardRow, null);
-  const mtm = computeMarkToMarketSummary(
-    [{ executions: trade3Open, direction: 'long', currentPrice: 82 }],
-    'include_entry_fees',
-  );
+  const mtm = computeMarkToMarketSummary([
+    { executions: trade3Open, direction: 'long', currentPrice: 82 },
+  ]);
   const monthlyPerformance = computeMonthlyPerformance(closedInputs);
   const rDistribution = computeRDistribution(closedInputs);
   const directionalPerformance = computeDirectionalPerformance(closedInputs);
@@ -740,9 +739,9 @@ section('API 4: Trade Detail');
     executions: openExecs,
     direction: 'long',
     currentPrice: 82,
-    feePolicy: 'exclude_entry_fees',
   });
-  assertClose('  open trade unrealized P&L = 1050', unrealized!, (82 - 75) * 150);
+  // Gross: (82-75)*150 = 1050, net after fees = 1035
+  assertClose('  open trade unrealized P&L = 1035', unrealized!, (82 - 75) * 150 - 15);
 })();
 
 /* ════════════════════════════════════════════════════════════════════════ */

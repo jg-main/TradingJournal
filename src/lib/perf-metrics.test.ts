@@ -14,7 +14,7 @@ import {
   calculateTotalFees,
   computePerfMetrics,
 } from './perf-metrics';
-import type { ExecutionData } from './trade-calc';
+import type { ExecutionData } from './trade-metrics';
 
 let passed = 0;
 let failed = 0;

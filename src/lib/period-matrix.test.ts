@@ -19,7 +19,7 @@ import {
   type PeriodMatrixTradeInput,
   type PeriodDescriptor,
 } from './period-matrix';
-import { type ExecutionData } from './trade-calc';
+import { type ExecutionData } from './trade-metrics';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

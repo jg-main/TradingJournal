@@ -8,7 +8,7 @@
  */
 
 import { computeSetupPerformance, type SetupPerfTradeInput } from './review-dashboard';
-import { type ExecutionData } from './trade-calc';
+import { type ExecutionData } from './trade-metrics';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 

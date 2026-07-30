@@ -30,7 +30,7 @@
 
 /* ── Imports ──────────────────────────────────────────────────────────── */
 
-import { calculatePnL, calculateRMultiple, deriveTradeStatus, type ExecutionData, type Direction } from '../trade-calc';
+import { computeTradeMetrics, type ExecutionData, type Direction } from '../trade-metrics';
 import {
   computeEquityAtOpen,
   deriveInitialRiskAmount,
@@ -56,7 +56,6 @@ import {
   computeOpenPosition,
   computeMarkToMarketSummary,
   calculateUnrealizedPnL,
-  type FeePolicy,
 } from '../mark-to-market';
 import {
   calculatePositionSize,
@@ -150,34 +149,36 @@ scenario('Long winner');
   ];
   const allExecs = [...entries, ...exits];
 
-  // trade-calc: P&L derivation
-  const pnlResult = calculatePnL(allExecs, dir);
-  assertClose('  P&L: avgEntryPrice', pnlResult.avgEntryPrice, 50);
-  assertClose('  P&L: totalRealizedPnL', pnlResult.totalRealizedPnL, 1000 - 10); // $1000 - $10 fees
-  assert('  P&L: openQuantity === 0', pnlResult.openQuantity === 0);
-  assert('  P&L: totalEntryQty === 100', pnlResult.totalEntryQty === 100);
-  assert('  P&L: totalExitQty === 100', pnlResult.totalExitQty === 100);
+  // trade-metrics: computeTradeMetrics replaces calculatePnL + deriveTradeStatus + calculateRMultiple
+  const metrics = computeTradeMetrics({
+    executions: allExecs,
+    direction: dir,
+    riskSnapshot: { initialRiskAmount: 200, accountEquityAtOpen: null },
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assertClose('  P&L: avgEntryPrice', metrics.averagePrices.avgEntryPrice, 50);
+  assertClose('  P&L: totalRealizedPnL', metrics.realizedPnl.netRealizedPnl, 1000 - 10); // $1000 - $10 fees
+  assert('  P&L: openQuantity === 0', metrics.size.openQuantity === 0);
+  assert('  P&L: totalEntryQty === 100', metrics.size.entryQuantity === 100);
+  assert('  P&L: totalExitQty === 100', metrics.size.exitQuantity === 100);
 
-  // trade-calc: status derivation
-  const status = deriveTradeStatus(allExecs, dir);
-  assert('  Status: closed', status.status === 'closed');
-  assert('  Status: openedAt set', status.openedAt !== null);
-  assert('  Status: closedAt set', status.closedAt !== null);
-  assert('  Status: openQuantity === 0', status.openQuantity === 0);
+  assert('  Status: closed', metrics.position.status === 'closed');
+  assert('  Status: openedAt set', metrics.position.openedAt !== null);
+  assert('  Status: closedAt set', metrics.position.closedAt !== null);
+  assert('  Status: openQuantity === 0', metrics.size.openQuantity === 0);
 
-  // trade-calc: R-multiple with initialRiskAmount = $200
-  const rMult = calculateRMultiple(pnlResult.totalRealizedPnL, 200);
-  assertClose('  R-multiple', rMult.rMultiple, 990 / 200); // 4.95
-  assert('  R-multiple: initialRiskUsed', rMult.initialRiskUsed === true);
+  assertClose('  R-multiple', metrics.returnMetrics.rMultiple!, 990 / 200); // 4.95
 
   // metrics: win rate classification
-  const winRate = computeWinRate([pnlResult.totalRealizedPnL], 'includeZeroAsLoss');
+  const winRate = computeWinRate([metrics.realizedPnl.netRealizedPnl], 'includeZeroAsLoss');
   assertClose('  Win rate (includeZeroAsLoss)', winRate, 1.0);
-  const winRateExcl = computeWinRate([pnlResult.totalRealizedPnL], 'excludeScratches');
+  const winRateExcl = computeWinRate([metrics.realizedPnl.netRealizedPnl], 'excludeScratches');
   assertClose('  Win rate (excludeScratches)', winRateExcl, 1.0);
 
   // metrics: average R-multiple
-  const avgR = averageRMultiples([rMult.rMultiple!]);
+  const avgR = averageRMultiples([metrics.returnMetrics.rMultiple!]);
   assertClose('  Avg R-multiple', avgR, 4.95);
 
   // risk-snapshot: risk snapshot values at trade open
@@ -251,25 +252,26 @@ scenario('Short winner');
   ];
   const allExecs = [...entries, ...exits];
 
-  // trade-calc: P&L for short (entryPrice=80, exitPrice=70, qty=200)
-  // short P&L = (80 - 70) * 200 - fees = 2000 - 16 = 1984
-  const pnlResult = calculatePnL(allExecs, dir);
-  assertClose('  P&L: avgEntryPrice', pnlResult.avgEntryPrice, 80);
-  assertClose('  P&L: totalRealizedPnL', pnlResult.totalRealizedPnL, 2000 - 16);
-  assert('  P&L: openQuantity === 0', pnlResult.openQuantity === 0);
+  // trade-metrics: computeTradeMetrics replaces calculatePnL + deriveTradeStatus + calculateRMultiple
+  const metrics = computeTradeMetrics({
+    executions: allExecs,
+    direction: dir,
+    riskSnapshot: { initialRiskAmount: 500, accountEquityAtOpen: null },
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assertClose('  P&L: avgEntryPrice', metrics.averagePrices.avgEntryPrice, 80);
+  assertClose('  P&L: totalRealizedPnL', metrics.realizedPnl.netRealizedPnl, 2000 - 16);
+  assert('  P&L: openQuantity === 0', metrics.size.openQuantity === 0);
 
-  // trade-calc: status for short
-  const status = deriveTradeStatus(allExecs, dir);
-  assert('  Status: closed', status.status === 'closed');
-  assert('  Status: openQuantity === 0', status.openQuantity === 0);
+  assert('  Status: closed', metrics.position.status === 'closed');
+  assert('  Status: openQuantity === 0', metrics.size.openQuantity === 0);
 
-  // trade-calc: R-multiple with initialRisk = $500 (stop at $82.50)
-  // risk = |80 - 82.50| * 200 = 500
-  const rMult = calculateRMultiple(pnlResult.totalRealizedPnL, 500);
-  assertClose('  R-multiple', rMult.rMultiple, 1984 / 500);
+  assertClose('  R-multiple', metrics.returnMetrics.rMultiple!, 1984 / 500);
 
   // metrics: win rate classification
-  const winRate = computeWinRate([pnlResult.totalRealizedPnL], 'allDecisions');
+  const winRate = computeWinRate([metrics.realizedPnl.netRealizedPnl], 'allDecisions');
   assertClose('  Win rate (allDecisions)', winRate, 1.0);
 
   // risk-snapshot: risk snapshot values for short trade
@@ -321,26 +323,31 @@ scenario('Scratch with fees');
   // Gross P&L = (40.10 - 40) * 50 = $5.00
   // Total fees = 10 + 5 = $15
   // Net P&L = 5 - 15 = -$10
-  const pnlResult = calculatePnL(allExecs, dir);
-  assertClose('  P&L: avgEntryPrice', pnlResult.avgEntryPrice, 40);
-  assertClose('  P&L: totalRealizedPnL', pnlResult.totalRealizedPnL, -10);
-  assert('  P&L: openQuantity === 0', pnlResult.openQuantity === 0);
+  const metrics = computeTradeMetrics({
+    executions: allExecs,
+    direction: dir,
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assertClose('  P&L: avgEntryPrice', metrics.averagePrices.avgEntryPrice, 40);
+  assertClose('  P&L: totalRealizedPnL', metrics.realizedPnl.netRealizedPnl, -10);
+  assert('  P&L: openQuantity === 0', metrics.size.openQuantity === 0);
 
   // metrics: win rate classification
   // includeZeroAsLoss: P&L <= 0 → loss
-  const wrLoss = computeWinRate([pnlResult.totalRealizedPnL], 'includeZeroAsLoss');
+  const wrLoss = computeWinRate([metrics.realizedPnl.netRealizedPnl], 'includeZeroAsLoss');
   assertClose('  Win rate (includeZeroAsLoss)', wrLoss, 0);
   // excludeScratches: P&L < 0 → loss
-  const wrExcl = computeWinRate([pnlResult.totalRealizedPnL], 'excludeScratches');
+  const wrExcl = computeWinRate([metrics.realizedPnl.netRealizedPnl], 'excludeScratches');
   assertClose('  Win rate (excludeScratches)', wrExcl, 0);
   // allDecisions: P&L <= 0 → loss
-  const wrAll = computeWinRate([pnlResult.totalRealizedPnL], 'allDecisions');
+  const wrAll = computeWinRate([metrics.realizedPnl.netRealizedPnl], 'allDecisions');
   assertClose('  Win rate (allDecisions)', wrAll, 0);
 
-  // R-multiple: initialRisk = $0 (no real risk — small move)
-  const rMultNull = calculateRMultiple(pnlResult.totalRealizedPnL, 0);
-  assert('  R-multiple: null with zero risk', rMultNull.rMultiple === null);
-  assert('  R-multiple: initialRiskUsed === false', rMultNull.initialRiskUsed === false);
+  // R-multiple: null when riskSnapshot is null
+  assert('  R-multiple: null with no risk snapshot', metrics.returnMetrics.rMultiple === null);
 })();
 
 /* ════════════════════════════════════════════════════════════════════════ */
@@ -358,9 +365,16 @@ scenario('Missing risk snapshot');
     makeExec('sell', 100, 30, 3, '2025-06-22T12:00:00Z'),
   ];
 
-  // trade-calc: P&L (gross = $500, fees = $6, net = $494)
-  const pnlResult = calculatePnL(allExecs, dir);
-  assertClose('  P&L: totalRealizedPnL', pnlResult.totalRealizedPnL, 500 - 6);
+  // computeTradeMetrics: returns realized P&L and R-multiple
+  const metrics = computeTradeMetrics({
+    executions: allExecs,
+    direction: dir,
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assertClose('  P&L: totalRealizedPnL', metrics.realizedPnl.netRealizedPnl, 500 - 6);
 
   // risk-snapshot: deriveInitialRiskAmount with null values (no snapshot)
   // When all fields are null → returns null (cannot derive)
@@ -381,10 +395,8 @@ scenario('Missing risk snapshot');
   });
   assertClose('  Derive risk: from raw fields', derivedFromRaw, 200); // |25-23|*100 = 200
 
-  // R-multiple with null initialRiskAmount → null
-  const rMultNull = calculateRMultiple(pnlResult.totalRealizedPnL, null);
-  assert('  R-multiple: null when risk null', rMultNull.rMultiple === null);
-  assert('  R-multiple: initialRiskUsed === false', rMultNull.initialRiskUsed === false);
+  // R-multiple: null when riskSnapshot is null
+  assert('  R-multiple: null with no risk snapshot', metrics.returnMetrics.rMultiple === null);
 
   // account-summary: KPI with missing risk snapshot
   const tradeId = 'trade-missing-rs-01';
@@ -427,8 +439,15 @@ scenario('Null initialRiskAmount');
   ];
 
   // P&L (gross = $500, fees = $10, net = $490)
-  const pnlResult = calculatePnL(allExecs, dir);
-  assertClose('  P&L: totalRealizedPnL', pnlResult.totalRealizedPnL, 490);
+  const metrics = computeTradeMetrics({
+    executions: allExecs,
+    direction: dir,
+    riskSnapshot: { initialRiskAmount: 100, accountEquityAtOpen: null },
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assertClose('  P&L: totalRealizedPnL', metrics.realizedPnl.netRealizedPnl, 490);
 
   // risk-snapshot: null stored, but raw fields available
   const derived = deriveInitialRiskAmount({
@@ -439,10 +458,8 @@ scenario('Null initialRiskAmount');
   });
   assertClose('  Derive risk: from raw fields', derived, 100); // |100-98|*50 = 100
 
-  // R-multiple using the derived risk
-  const rMult = calculateRMultiple(490, 100);
-  assertClose('  R-multiple: using derived risk', rMult.rMultiple, 4.9);
-  assert('  R-multiple: initialRiskUsed === true', rMult.initialRiskUsed === true);
+  // R-multiple from computeTradeMetrics with riskSnapshot
+  assertClose('  R-multiple: using derived risk', metrics.returnMetrics.rMultiple!, 4.9);
 
   // risk-snapshot: when initialRiskAmount is non-null, that value is used directly
   const derivedStored = deriveInitialRiskAmount({
@@ -500,12 +517,26 @@ scenario('Account lifecycle');
     makeExec('buy_to_cover', 50, 210, 5, '2025-06-25T12:00:00Z'),
   ]; // short loss: (200-210)*50 - 10 = -510
 
-  // Compute per-trade P&L via trade-calc
-  const pnlA = calculatePnL(tradeAExecs, 'long');
-  const pnlB = calculatePnL(tradeBExecs, 'short');
+  // Compute per-trade P&L via computeTradeMetrics
+  const metricsA = computeTradeMetrics({
+    executions: tradeAExecs,
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  const metricsB = computeTradeMetrics({
+    executions: tradeBExecs,
+    direction: 'short',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
 
-  assertClose('  Trade A P&L (long winner)', pnlA.totalRealizedPnL, 980);
-  assertClose('  Trade B P&L (short loser)', pnlB.totalRealizedPnL, -510);
+  assertClose('  Trade A P&L (long winner)', metricsA.realizedPnl.netRealizedPnl, 980);
+  assertClose('  Trade B P&L (short loser)', metricsB.realizedPnl.netRealizedPnl, -510);
 
   // risk-snapshot: computeRealizedPnLFromClosedTrades (aggregation)
   const priorTrades = [
@@ -591,67 +622,57 @@ scenario('Open positions');
     makeExec('buy', 150, 75, 15, '2025-07-05T10:00:00Z'),
   ];
 
-  // trade-calc: P&L for open trade (no exits yet) — should show openQuantity > 0
-  const pnlResult = calculatePnL(openTradeExecs, dir);
-  assert('  P&L: openQuantity === 150', pnlResult.openQuantity === 150);
-  assertClose('  P&L: avgEntryPrice', pnlResult.avgEntryPrice, 75);
-  assert('  P&L: totalRealizedPnL === -$15 (fees)', Math.abs(pnlResult.totalRealizedPnL - (-15)) < 0.001);
+  // computeTradeMetrics for open trade (no exits yet) — should show openQuantity > 0
+  const metrics = computeTradeMetrics({
+    executions: openTradeExecs,
+    direction: dir,
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assert('  P&L: openQuantity === 150', metrics.size.openQuantity === 150);
+  assertClose('  P&L: avgEntryPrice', metrics.averagePrices.avgEntryPrice, 75);
+  assert('  P&L: totalRealizedPnL === 0 (no exits — fees not yet realized)', metrics.realizedPnl.netRealizedPnl === 0);
+  assert('  P&L: total fees === 15', metrics.fees.totalFees === 15);
 
-  // trade-calc: status derivation
-  const status = deriveTradeStatus(openTradeExecs, dir);
-  assert('  Status: open', status.status === 'open');
-  assert('  Status: openQuantity === 150', status.openQuantity === 150);
+  assert('  Status: open', metrics.position.status === 'open');
+  assert('  Status: openQuantity === 150', metrics.size.openQuantity === 150);
 
   // mark-to-market: computeOpenPosition
   const openPos = computeOpenPosition(openTradeExecs, dir);
   assertClose('  MTM: avgEntryPrice', openPos.avgEntryPrice, 75);
   assert('  MTM: openQuantity === 150', openPos.openQuantity === 150);
 
-  // mark-to-market: calculateUnrealizedPnL with feePolicy=include_entry_fees
-  const unrealizedWithFees = calculateUnrealizedPnL({
+  // mark-to-market: calculateUnrealizedPnL (always includes fee effects)
+  const unrealized = calculateUnrealizedPnL({
     executions: openTradeExecs,
     direction: 'long',
     currentPrice: 82,
-    feePolicy: 'include_entry_fees',
   });
-  // Gross: (82-75)*150 = 1050, minus entry fees $15 = 1035
-  assertClose('  MTM: unrealizedP&L (include fees)', unrealizedWithFees, 1050 - 15);
-
-  // mark-to-market: calculateUnrealizedPnL with feePolicy=exclude_entry_fees
-  const unrealizedNoFees = calculateUnrealizedPnL({
-    executions: openTradeExecs,
-    direction: 'long',
-    currentPrice: 82,
-    feePolicy: 'exclude_entry_fees',
-  });
-  // Gross: (82-75)*150 = 1050, no fee subtraction
-  assertClose('  MTM: unrealizedP&L (exclude fees)', unrealizedNoFees, 1050);
-  // The two policies must differ by entry fees
-  assertClose('  MTM: fee policy difference equals entry fees', unrealizedWithFees! - unrealizedNoFees!, -15);
+  // Gross: (82-75)*150 = 1050, net after fees = 1035
+  assertClose('  MTM: unrealizedP&L (after fees)', unrealized!, 1050 - 15);
 
   // mark-to-market: computeMarkToMarketSummary with multiple open trades
-  const summary = computeMarkToMarketSummary(
-    [
-      { executions: openTradeExecs, direction: 'long', currentPrice: 82 },
-      // Second open trade: short 100 shares at $200, current price $195
-      {
-        executions: [
-          makeExec('sell_short', 100, 200, 10, '2025-07-06T10:00:00Z'),
-        ],
-        direction: 'short',
-        currentPrice: 195,
-      },
-      // Third trade: no current price (awaiting data)
-      {
-        executions: [
-          makeExec('buy', 50, 120, 5, '2025-07-07T10:00:00Z'),
-        ],
-        direction: 'long',
-        currentPrice: null,
-      },
-    ],
-    'include_entry_fees',
-  );
+  const summary = computeMarkToMarketSummary([
+    { executions: openTradeExecs, direction: 'long', currentPrice: 82 },
+    // Second open trade: short 100 shares at $200, current price $195
+    {
+      executions: [
+        makeExec('sell_short', 100, 200, 10, '2025-07-06T10:00:00Z'),
+      ],
+      direction: 'short',
+      currentPrice: 195,
+    },
+    // Third trade: no current price (awaiting data)
+    {
+      executions: [
+        makeExec('buy', 50, 120, 5, '2025-07-07T10:00:00Z'),
+      ],
+      direction: 'long',
+      currentPrice: null,
+    },
+  ]);
   // Long: (82-75)*150 - 15 = 1035
   // Short: (200-195)*100 - 10 = 490
   // Total: 1035 + 490 = 1525
@@ -661,7 +682,7 @@ scenario('Open positions');
   assert('  MTM: openTradeCount === 3', summary.openTradeCount === 3);
 
   // Empty open trades → null net
-  const emptySummary = computeMarkToMarketSummary([], 'include_entry_fees');
+  const emptySummary = computeMarkToMarketSummary([]);
   assert('  MTM: empty summary has null net', emptySummary.netUnrealizedPnl === null);
   assert('  MTM: empty summary has 0 trades', emptySummary.openTradeCount === 0);
 })();
@@ -709,9 +730,19 @@ scenario('Cross-library consistency');
   const wrExcl = computeWinRate(pnls, 'excludeScratches');
   assertClose('  Win rate (exclude) 1/2 = 0.5', wrExcl, 0.5);
 
-  // 5. R-multiple of 0 from scratch trade
-  const rMult = calculateRMultiple(-5, 100);
-  assert('  R-multiple negative on loss', rMult.rMultiple! < 0);
+  // 5. R-multiple of 0 from scratch trade via computeTradeMetrics
+  const scratchMetrics = computeTradeMetrics({
+    executions: [
+      { action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: '2025-06-01T10:00:00Z' },
+      { action: 'sell', quantity: 10, price: 99.5, fees: 0, executedAt: '2025-06-01T14:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: { initialRiskAmount: 100, accountEquityAtOpen: null },
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assert('  R-multiple negative on loss', scratchMetrics.returnMetrics.rMultiple! < 0);
 
   // 6. computeAccountBalance should match risk-snapshot equity computation
   // Both add startingBalance + deposits - withdrawals + realizedPnL
