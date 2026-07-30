@@ -1,14 +1,42 @@
 import { test, expect } from '@playwright/test';
 
+/**
+ * Create a fully usable test account: creates the account, sets risk params,
+ * activates it, and posts opening cash. Returns { id, name }.
+ */
+async function setupAccount(page: import('@playwright/test').Page, name: string) {
+  const createResp = await page.request.post('/api/accounts', {
+    data: { name, currency: 'USD' },
+  });
+  expect(createResp.status()).toBe(201);
+  const account = (await createResp.json()) as { id: string; name: string };
+
+  // Set risk parameters
+  const configResp = await page.request.put(`/api/accounts/${account.id}`, {
+    data: { maxRiskPerTradePct: 2, defaultCommission: 1 },
+  });
+  expect(configResp.status()).toBe(200);
+
+  // Activate the account
+  const activateResp = await page.request.put(`/api/accounts/${account.id}`, {
+    data: { isActive: true },
+  });
+  expect(activateResp.status()).toBe(200);
+
+  // Post opening balance (the trade creation API requires a financial event)
+  const cashResp = await page.request.post(`/api/accounts/${account.id}/financial-events`, {
+    data: { eventType: 'opening_balance', amount: '50000.00' },
+  });
+  expect(cashResp.status()).toBe(201);
+
+  return account;
+}
+
 test.describe('M012 Trade Lifecycle', () => {
   test.describe.configure({ mode: 'serial' });
   test('plan a trade via API and verify Planned status on trade log', async ({ page }) => {
-    // Create a test account
-    const accRes = await page.request.post('/api/accounts', {
-      data: { name: 'E2E Plan Test', isActive: true, startingBalance: 50000 },
-    });
-    expect(accRes.ok()).toBeTruthy();
-    const account = await accRes.json();
+    // Create a test account with full setup
+    const account = await setupAccount(page, 'E2E Plan Test');
 
     // Create a trade via API — should default to "planned" status
     const tradeRes = await page.request.post('/api/trades', {
@@ -22,20 +50,22 @@ test.describe('M012 Trade Lifecycle', () => {
     await page.goto('/trades');
     await expect(page.locator('h1')).toContainText('Trades');
 
-    // Verify the trade row appears with "Planned" status badge
+    // Switch to Planned tab (page defaults to Open tab)
+    await page.getByRole('tab', { name: /planned/i }).click();
+
+    // Verify the trade row appears in the Planned tab
+    // (The Planned tab only shows planned trades, so no status badge is rendered)
     // Use first() because leftover data from prior runs may create multiple rows
     const row = page.locator('tr').filter({ hasText: 'TSLA' }).first();
-    await expect(row).toBeVisible();
-    await expect(row.getByText('Planned')).toBeVisible();
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText('short')).toBeVisible({
+      timeout: 5_000,
+    });
   });
 
   test('execute a planned trade via API and verify Open status on log and detail', async ({ page }) => {
-    // Create a test account
-    const accRes = await page.request.post('/api/accounts', {
-      data: { name: 'E2E Execute Test', isActive: true, startingBalance: 50000 },
-    });
-    expect(accRes.ok()).toBeTruthy();
-    const account = await accRes.json();
+    // Create a test account with full setup
+    const account = await setupAccount(page, 'E2E Execute Test');
 
     // Create a planned trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -58,12 +88,13 @@ test.describe('M012 Trade Lifecycle', () => {
     const execData = await execRes.json();
     expect(execData.trade.status).toBe('open');
 
-    // Navigate to trade log and verify "Open" badge
+    // Navigate to trade log and verify the row appears in the Open tab (default)
     // Use first() because leftover data from prior runs may create multiple rows
     await page.goto('/trades');
     const row = page.locator('tr').filter({ hasText: 'NVDA' }).first();
     await expect(row).toBeVisible();
-    await expect(row.getByText('Open')).toBeVisible();
+    // The Open tab only shows open trades, so the presence of the symbol confirms status
+    await expect(row.getByText('long')).toBeVisible();
 
     // Navigate to the trade detail page for the open trade
     await page.goto(`/trades/${trade.id}`);
@@ -83,12 +114,8 @@ test.describe('M012 Trade Lifecycle', () => {
   });
 
   test('closed trade detail page renders correctly', async ({ page }) => {
-    // Create a test account
-    const accRes = await page.request.post('/api/accounts', {
-      data: { name: 'E2E Closed Test', isActive: true, startingBalance: 50000 },
-    });
-    expect(accRes.ok()).toBeTruthy();
-    const account = await accRes.json();
+    // Create a test account with full setup
+    const account = await setupAccount(page, 'E2E Closed Test');
 
     // Create a trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -125,18 +152,15 @@ test.describe('M012 Trade Lifecycle', () => {
     // Closed trades render TradeGradeCard (always rendered, even without grade data)
     // CardTitle renders as a <div data-slot="card-title">, not a heading role
     await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Trade Grade' })).toBeVisible();
-    // P&L-R Metrics is always present for closed trades with executions
+    // TradePnlCard is always present for closed trades with executions;
+    // it renders without a CardHeader/CardTitle, showing "Realized P&L" as a label
+    await expect(page.getByText('Realized P&L', { exact: true })).toBeVisible();
     // Exit Notes is conditionally rendered only when exitNotes or lesson exist
-    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' })).toBeVisible();
   });
 
   test('open trade detail page renders and full lifecycle flows correctly', async ({ page }) => {
-    // Create a test account
-    const accRes = await page.request.post('/api/accounts', {
-      data: { name: 'E2E Lifecycle Test', isActive: true, startingBalance: 50000 },
-    });
-    expect(accRes.ok()).toBeTruthy();
-    const account = await accRes.json();
+    // Create a test account with full setup
+    const account = await setupAccount(page, 'E2E Lifecycle Test');
 
     // Create a planned trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -159,12 +183,13 @@ test.describe('M012 Trade Lifecycle', () => {
     const execData = await execRes.json();
     expect(execData.trade.status).toBe('open');
 
-    // Navigate to trade log → verify Open badge
+    // Navigate to trade log → verify row appears in the Open tab (default)
     await page.goto('/trades');
     await expect(page.locator('h1')).toContainText('Trades');
     const row = page.locator('tr').filter({ hasText: 'META' }).first();
     await expect(row).toBeVisible();
-    await expect(row.getByText('Open')).toBeVisible();
+    // The Open tab only shows open trades, so the presence of the direction confirms status
+    await expect(row.getByText('long')).toBeVisible();
 
     // Navigate to trade detail → verify h1 contains 'META' (proves no ERR_ABORTED crash)
     await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
@@ -176,8 +201,9 @@ test.describe('M012 Trade Lifecycle', () => {
     // Verify lifecycle stepper shows Execute step
     await expect(page.getByText('Execute', { exact: true })).toBeVisible();
 
-    // Verify P&L-R Metrics card renders
-    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' })).toBeVisible();
+    // TradePnlCard renders (no CardHeader/CardTitle — P&L labels are inline text)
+    // For open trades without currentPrice, "Realized P&L" label is shown
+    await expect(page.getByText('Realized P&L', { exact: true })).toBeVisible();
 
     // Verify Executions card renders
     await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Executions' })).toBeVisible();
@@ -199,44 +225,34 @@ test.describe('M012 Trade Lifecycle', () => {
     await expect(page.locator('[data-slot="badge"]').filter({ hasText: 'Closed' }).first()).toBeVisible();
   });
 
-  test('delete a trade with confirmation and verify removal', async ({ page }) => {
-    // Create a test account
-    const accRes = await page.request.post('/api/accounts', {
-      data: { name: 'E2E Delete Test', isActive: true, startingBalance: 50000 },
-    });
-    expect(accRes.ok()).toBeTruthy();
-    const account = await accRes.json();
+  test('delete a trade via API and verify removal from UI', async ({ page }) => {
+    // Create a test account with full setup
+    const account = await setupAccount(page, 'E2E Delete Test');
 
-    // Create a trade
+    // Create a planned trade
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: 'M012-DEL', direction: 'long', accountId: account.id },
     });
     expect(tradeRes.ok()).toBeTruthy();
     const trade = await tradeRes.json();
 
-    // Navigate to trade log
+    // Navigate to trade log and switch to Planned tab
     await page.goto('/trades');
     await expect(page.locator('h1')).toContainText('Trades');
+    await page.getByRole('tab', { name: /planned/i }).click();
 
-    // Set up dialog handler BEFORE clicking Remove (accepts the confirm dialog)
-    page.on('dialog', (dialog) => {
-      expect(dialog.message()).toContain('Delete trade');
-      dialog.accept();
-    });
+    // Verify the trade row appears
+    const row = page.locator('tr').filter({ hasText: 'M012-DEL' }).first();
+    await expect(row).toBeVisible({ timeout: 10_000 });
 
-    // Wait for the subsequent GET refresh from fetchItems
-    const refreshPromise = page.waitForResponse(
-      (resp) =>
-        resp.url().includes('/api/trades') &&
-        resp.request().method() === 'GET' &&
-        resp.status() === 200,
-    );
+    // Delete the trade via API (the new page has no delete button in the table)
+    const delRes = await page.request.delete(`/api/trades/${trade.id}`);
+    expect(delRes.ok()).toBeTruthy();
 
-    // Click Remove on the M012-DEL row (use unique symbol to avoid clashing with other specs' MSFT data)
-    await page.locator('tr').filter({ hasText: 'M012-DEL' }).locator('[title="Remove"]').first().click();
-
-    // Wait for the trade log to refresh after deletion
-    await refreshPromise;
+    // Re-navigate to /trades and switch to Planned tab
+    await page.goto('/trades');
+    await expect(page.locator('h1')).toContainText('Trades');
+    await page.getByRole('tab', { name: /planned/i }).click();
 
     // M012-DEL should no longer appear in the table (hard delete)
     await expect(page.locator('tr').filter({ hasText: 'M012-DEL' })).not.toBeVisible();
