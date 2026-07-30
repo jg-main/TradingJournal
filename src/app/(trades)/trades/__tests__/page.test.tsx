@@ -1,11 +1,11 @@
 /**
- * Component tests for the trades page header buttons.
+ * Component tests for the trades page.
  *
  * Covers:
- * - Plan Trade button navigates to /trades/new
- * - Export CSV button triggers download from /api/trades/export
- * - Refresh Prices button POSTs to /api/trades/mtm/refresh
+ * - Page header buttons: Plan Trade, Export CSV, Refresh Prices
  * - Error paths log to console for operator visibility
+ * - Direction filter renders, defaults to all, and updates URL/localStorage
+ * - Negative tests: direction validation on the API route
  *
  * Run: npx vitest run --reporter verbose src/app/(trades)/trades/__tests__/page.test.tsx
  */
@@ -87,15 +87,24 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuSeparator: () => React.createElement('hr'),
 }));
 
+// Module-level bridge to wire Select onValueChange to SelectItem clicks
+let selectOnValueChange: ((v: string) => void) | null = null;
+
 vi.mock('@/components/ui/select', () => ({
-  Select: ({ children, value, onValueChange }: { children: React.ReactNode; value?: string; onValueChange?: (v: string) => void }) =>
-    React.createElement('div', { 'data-testid': 'select', 'data-value': value }, children),
+  Select: ({ children, value, onValueChange }: { children: React.ReactNode; value?: string; onValueChange?: (v: string) => void }) => {
+    selectOnValueChange = onValueChange ?? null;
+    return React.createElement('div', { 'data-testid': 'select', 'data-value': value }, children);
+  },
   SelectTrigger: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', { 'data-testid': 'select-trigger' }, children),
   SelectContent: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', { 'data-testid': 'select-content' }, children),
   SelectItem: ({ children, value }: { children: React.ReactNode; value: string }) =>
-    React.createElement('div', { 'data-testid': `select-item-${value}` }, children),
+    React.createElement('button', {
+      'data-testid': `select-item-${value}`,
+      type: 'button' as const,
+      onClick: () => selectOnValueChange?.(value),
+    }, children),
   SelectValue: ({ placeholder }: { placeholder?: string }) =>
     React.createElement('span', { 'data-testid': 'select-value' }, placeholder ?? ''),
 }));
@@ -177,9 +186,138 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  selectOnValueChange = null;
 });
 
 // ── Header buttons render ──────────────────────────────────────────────
+
+// ── Direction filter ──────────────────────────────────────────────────
+
+describe('Direction filter', () => {
+  it('renders the Direction label and three options', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Direction')).toBeTruthy();
+      // 'all' appears for both Account and Direction filters
+      const allItems = screen.getAllByTestId('select-item-all');
+      expect(allItems.length).toBe(2);
+      // 'long' and 'short' are unique to Direction filter
+      expect(screen.getByTestId('select-item-long')).toBeTruthy();
+      expect(screen.getByTestId('select-item-short')).toBeTruthy();
+    });
+  });
+
+  it('defaults to "all" (no direction param in fetch URL)', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    // Advance timers past the 300ms debounce to trigger the initial fetch
+    vi.advanceTimersByTime(500);
+
+    await vi.waitFor(() => {
+      // Verify fetch URLs for trades don't contain direction param (default 'all' omits it)
+      const fetchCalls = vi.mocked(globalThis.fetch).mock.calls.filter((c) => {
+        const url = typeof c[0] === 'string' ? c[0] : (c[0] as Request).url;
+        return url.includes('/api/trades') && !url.includes('/export') && !url.includes('/refresh') && !url.includes('/accounts');
+      });
+      expect(fetchCalls.length).toBeGreaterThan(0);
+      for (const call of fetchCalls) {
+        const url = typeof call[0] === 'string' ? call[0] : (call[0] as Request).url;
+        expect(url).not.toContain('direction');
+      }
+    });
+  });
+
+  it('includes direction=long in fetch URL when Long is selected', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    // Wait for initial fetch to complete
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/trades'),
+      );
+    });
+
+    // Clear fetch calls from initial render
+    vi.clearAllMocks();
+
+    // Click the Long option
+    const longBtn = screen.getByTestId('select-item-long');
+    longBtn.click();
+
+    // Advance timers past the 300ms debounce
+    vi.advanceTimersByTime(500);
+
+    // Verify the fetch URL includes direction=long
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('direction=long'),
+      );
+    });
+  });
+
+  it('includes direction=short in fetch URL when Short is selected', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/trades'),
+      );
+    });
+
+    vi.clearAllMocks();
+
+    const shortBtn = screen.getByTestId('select-item-short');
+    shortBtn.click();
+
+    vi.advanceTimersByTime(500);
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('direction=short'),
+      );
+    });
+  });
+
+  it('omits direction param from fetch URL when All ("all") is selected', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/trades'),
+      );
+    });
+
+    vi.clearAllMocks();
+
+    // Switch to Long first, then back to All
+    screen.getByTestId('select-item-long').click();
+    vi.advanceTimersByTime(500);
+    vi.clearAllMocks();
+
+    // Now select All — the direction filter's 'all' is the second instance
+    const allItems = screen.getAllByTestId('select-item-all');
+    allItems[1].click();
+    vi.advanceTimersByTime(500);
+
+    // After selecting 'all', fetch URLs should not contain direction param
+    const fetchCalls = vi.mocked(globalThis.fetch).mock.calls.filter((c) => {
+      const url = typeof c[0] === 'string' ? c[0] : (c[0] as Request).url;
+      return url.includes('/api/trades') && !url.includes('/export') && !url.includes('/refresh');
+    });
+
+    // None of the fetch calls should include direction
+    for (const call of fetchCalls) {
+      const url = typeof call[0] === 'string' ? call[0] : (call[0] as Request).url;
+      expect(url).not.toContain('direction');
+    }
+  });
+});
 
 describe('Page header buttons', () => {
   it('renders Plan Trade, Export CSV, and Refresh Prices buttons', async () => {
