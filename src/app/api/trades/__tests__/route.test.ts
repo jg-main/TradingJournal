@@ -347,12 +347,28 @@ function doGetTrades(params: {
 
       const metrics = computeTradeMetrics(metricsInput);
 
+      // Compute planned risk-to-account for planned trades (matching route.ts logic)
+      let plannedRiskToAccount: number | null = null;
+      if (
+        row.status === 'planned' &&
+        row.plannedEntry != null &&
+        row.plannedStop != null &&
+        row.plannedQuantity != null &&
+        row.plannedQuantity > 0 &&
+        currentAccountEquity != null &&
+        currentAccountEquity > 0
+      ) {
+        const plannedRiskAmount = Math.abs(row.plannedEntry - row.plannedStop) * row.plannedQuantity;
+        plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity) * 100;
+      }
+
       return {
         ...row,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
         unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,
         riskPct: metrics.risk.riskToAccount,
+        plannedRiskToAccount,
         metrics,
       };
     });
@@ -1212,6 +1228,59 @@ console.log('\n25. GET totalsByCurrency present with single currency:');
   assertEqual(Object.keys(d.totalsByCurrency).length, 1, '1 currency in totalsByCurrency');
   assertNotNull(d.totalsByCurrency['USD'], 'USD key is present');
   assertEqual(d.totalsByCurrency['USD'].netRealizedPnl, 992, 'USD netRealizedPnl = 992');
+}
+
+// ── 26. GET: plannedRiskToAccount computed for planned trades ─────────
+
+console.log('\n26. GET plannedRiskToAccount computed for planned trades:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedRollforward({
+    accountId: 'test-account-id',
+    date: new Date().toISOString().slice(0, 10),
+    endingEquity: 12500,
+  });
+
+  // Planned trade with plannedEntry=105, plannedStop=95, plannedQuantity=100
+  // plannedRiskAmount = |105 - 95| * 100 = 1000
+  // plannedRiskToAccount = 1000 / 12500 * 100 = 8%
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'MSFT',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 105,
+    plannedStop: 95,
+    plannedQuantity: 100,
+  });
+
+  // Planned trade with missing plannedStop → plannedRiskToAccount should be null
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 100,
+    plannedStop: null,
+    plannedQuantity: 50,
+  });
+
+  const result = doGetTrades({ status: 'planned' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+  assertEqual(d.data.length, 2, '2 planned trades returned');
+
+  // MSFT: full risk plan
+  const msftRow = d.data.find((r: Record<string, unknown>) => r.symbol === 'MSFT') as Record<string, unknown>;
+  assertNotNull(msftRow, 'MSFT row found');
+  assertNotNull(msftRow.plannedRiskToAccount, 'plannedRiskToAccount is computed for MSFT');
+  assertApprox(msftRow.plannedRiskToAccount as number, 8, 1, 'plannedRiskToAccount ≈ 8% (1000/12500) for MSFT');
+
+  // AAPL: missing plannedStop → plannedRiskToAccount should be null
+  const aaplRow = d.data.find((r: Record<string, unknown>) => r.symbol === 'AAPL') as Record<string, unknown>;
+  assertNotNull(aaplRow, 'AAPL row found');
+  assertEqual(aaplRow.plannedRiskToAccount, null, 'plannedRiskToAccount is null when plannedStop is missing');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

@@ -267,6 +267,23 @@ export async function GET(request: NextRequest) {
 
       const metrics = computeTradeMetrics(metricsInput);
 
+      // Compute planned risk-to-account for planned trades
+      // Planned risk = |plannedEntry - plannedStop| * plannedQuantity
+      // as percentage of current account equity
+      let plannedRiskToAccount: number | null = null;
+      if (
+        row.status === 'planned' &&
+        row.plannedEntry != null &&
+        row.plannedStop != null &&
+        row.plannedQuantity != null &&
+        row.plannedQuantity > 0 &&
+        currentAccountEquity != null &&
+        currentAccountEquity > 0
+      ) {
+        const plannedRiskAmount = Math.abs(row.plannedEntry - row.plannedStop) * row.plannedQuantity;
+        plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity) * 100;
+      }
+
       // Backward-compatible flat fields + nested metrics (matching T01 pattern)
       return {
         ...row,
@@ -274,6 +291,7 @@ export async function GET(request: NextRequest) {
         unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,
         riskPct: metrics.risk.riskToAccount,
+        plannedRiskToAccount,
         metrics,
       };
     });

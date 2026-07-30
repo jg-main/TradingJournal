@@ -58,6 +58,8 @@ interface TradeRow {
   unrealizedPnl: number | null;
   returnPct: number | null;
   riskPct: number | null;
+  // Planned risk-to-account (computed from plannedEntry/plannedStop/plannedQuantity)
+  plannedRiskToAccount?: number | null;
   // Nested metrics
   metrics: TradeMetricsResult;
 }
@@ -776,7 +778,7 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
   {
     id: 'riskToAccount',
     header: 'Risk to Account',
-    accessorFn: (row) => row.metrics?.risk?.riskToAccount,
+    accessorFn: (row) => row.plannedRiskToAccount ?? row.metrics?.risk?.riskToAccount,
     cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
   },
   {
