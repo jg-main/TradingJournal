@@ -365,7 +365,10 @@ function assertNotNull(v: unknown, msg: string) {
     assertApprox(r, 1000, 'winning + losing trades → 1000');
   }
 
-  // 6. Open trades (no exits) → 0 P&L contribution (fees only)
+  // 6. Open trade (no exits): fees remain on open FIFO lots and are not
+  //    realized until an exit matches the entry lot in FIFO accounting.
+  //    computeTradeMetrics uses proportional FIFO fee allocation, which
+  //    differs from the old calculatePnL that subtracted all fees immediately.
   {
     const priorTrades: PriorClosedTradeData[] = [
       {
@@ -376,7 +379,7 @@ function assertNotNull(v: unknown, msg: string) {
       },
     ];
     const r = computeRealizedPnLFromClosedTrades(priorTrades);
-    assertApprox(r, -5, 'open trade with fees only → -5');
+    assert(r === 0, 'open trade with no exits → 0 (fees remain on open lots under FIFO)');
   }
 
   // 7. Trades with fees included

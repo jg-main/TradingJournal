@@ -2,7 +2,7 @@
  * perf-metrics.ts
  *
  * Pure (no side effects) per-trade performance metric functions.
- * Decoupled from the Drizzle schema — reuses ExecutionData from trade-calc.ts
+ * Decoupled from the Drizzle schema — reuses ExecutionData from trade-metrics.ts
  * so this module can be tested independently without a database.
  *
  * Provides:
@@ -11,7 +11,7 @@
  *   - Total Fees (sum of all execution fees)
  */
 
-import type { ExecutionData } from './trade-calc';
+import type { ExecutionData } from './trade-metrics';
 
 // ── Public types ────────────────────────────────────────────────────────
 

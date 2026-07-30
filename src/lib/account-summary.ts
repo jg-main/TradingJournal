@@ -11,7 +11,7 @@
  * All data must be passed in as arguments — no database queries.
  */
 
-import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 export { type ExecutionData };
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -109,14 +109,24 @@ export function computeAccountKPIs(
       executedAt: e.executedAt ?? trade.createdAt ?? new Date().toISOString(),
     }));
 
-    const pnl = calculatePnL(execData, trade.direction);
-    netPnl += pnl.totalRealizedPnL;
+    const risk = riskByTradeId.get(trade.id);
+    const metrics = computeTradeMetrics({
+      executions: execData,
+      direction: trade.direction,
+      riskSnapshot:
+        risk?.initialRiskAmount != null
+          ? { initialRiskAmount: risk.initialRiskAmount, accountEquityAtOpen: null }
+          : null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    netPnl += metrics.realizedPnl.netRealizedPnl;
 
     // R-multiple from risk snapshot
-    const risk = riskByTradeId.get(trade.id);
     if (risk?.initialRiskAmount != null && risk.initialRiskAmount > 0) {
-      const rResult = calculateRMultiple(pnl.totalRealizedPnL, risk.initialRiskAmount);
-      if (rResult.rMultiple !== null) rMultiples.push(rResult.rMultiple);
+      const rMultiple = metrics.returnMetrics.rMultiple;
+      if (rMultiple !== null) rMultiples.push(rMultiple);
     }
 
     // Grade score
@@ -124,7 +134,7 @@ export function computeAccountKPIs(
     if (grade?.totalScore != null) gradeScores.push(grade.totalScore);
 
     // Win/loss
-    if (pnl.totalRealizedPnL > 0) winCount++;
+    if (metrics.realizedPnl.netRealizedPnl > 0) winCount++;
   }
 
   const decisions = closedTrades.filter(

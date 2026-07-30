@@ -10,7 +10,7 @@
  *      src/app/api/trades/[id]/execute/route.ts
  */
 
-import { calculatePnL, type ExecutionData, type Direction } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData, type Direction } from './trade-metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -155,17 +155,24 @@ export function deriveInitialRiskAmount(
 /**
  * Sum the realized P&L across an array of closed trades.
  *
- * Reuses `calculatePnL` from `trade-calc` for each trade's execution
- * history. This is the aggregation step that both execution routes
- * performed inline with a for-loop over prior closed trades.
+ * Reuses `computeTradeMetrics` from `trade-metrics` for each trade's
+ * execution history. This is the aggregation step that both execution
+ * routes performed inline with a for-loop over prior closed trades.
  */
 export function computeRealizedPnLFromClosedTrades(
   priorTrades: PriorClosedTradeData[],
 ): number {
   let total = 0;
   for (const pt of priorTrades) {
-    const result = calculatePnL(pt.executions, pt.direction);
-    total += result.totalRealizedPnL;
+    const result = computeTradeMetrics({
+      executions: pt.executions,
+      direction: pt.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    total += result.realizedPnl.netRealizedPnl;
   }
   return total;
 }
