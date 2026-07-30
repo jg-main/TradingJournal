@@ -67,11 +67,28 @@ export async function GET(request: NextRequest) {
     if (status) {
       filters.push(eq(trades.status, status as TradeStatus));
     }
-    if (from) {
-      filters.push(gte(trades.openedAt, from));
-    }
-    if (to) {
-      filters.push(lte(trades.openedAt, to));
+    // Status-aware date filtering
+    // open → date filters ignored (all open positions visible regardless of date)
+    // closed → filter by closedAt
+    // planned → filter by createdAt
+    // default (no status or other) → filter by openedAt (backward compatible)
+    const dateColumn = status === 'closed'
+      ? trades.closedAt
+      : status === 'planned'
+        ? trades.createdAt
+        : trades.openedAt;
+
+    if (status === 'open') {
+      if (from || to) {
+        console.warn('[trades GET] Date range filters ignored for status=open — open positions are always visible');
+      }
+    } else {
+      if (from) {
+        filters.push(gte(dateColumn, from));
+      }
+      if (to) {
+        filters.push(lte(dateColumn, to));
+      }
     }
     if (accountIdFilter) {
       filters.push(eq(trades.accountId, accountIdFilter));

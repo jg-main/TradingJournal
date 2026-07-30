@@ -202,11 +202,28 @@ function doGetTrades(params: {
     if (statusFilter) {
       filters.push(eq(schema.trades.status, statusFilter));
     }
-    if (params.from) {
-      filters.push(sql`${schema.trades.openedAt} >= ${params.from}`);
-    }
-    if (params.to) {
-      filters.push(sql`${schema.trades.openedAt} <= ${params.to}`);
+    // Status-aware date filtering (matching route.ts logic)
+    // open → date filters ignored (all open positions visible regardless of date)
+    // closed → filter by closedAt
+    // planned → filter by createdAt
+    // default (no status or other) → filter by openedAt (backward compatible)
+    const dateColumn = statusFilter === 'closed'
+      ? schema.trades.closedAt
+      : statusFilter === 'planned'
+        ? schema.trades.createdAt
+        : schema.trades.openedAt;
+
+    if (statusFilter === 'open') {
+      if (params.from || params.to) {
+        console.warn('[doGetTrades] Date range filters ignored for status=open');
+      }
+    } else {
+      if (params.from) {
+        filters.push(sql`${dateColumn} >= ${params.from}`);
+      }
+      if (params.to) {
+        filters.push(sql`${dateColumn} <= ${params.to}`);
+      }
     }
     if (params.accountId) {
       filters.push(eq(schema.trades.accountId, params.accountId));
@@ -848,6 +865,82 @@ console.log('\n18. GET enriched rows have metrics and flat fields:');
   assertNotNull(m.fees, 'metrics.fees');
   assertNotNull(m.realizedPnl, 'metrics.realizedPnl');
   assertNotNull(m.returnMetrics, 'metrics.returnMetrics');
+}
+
+// ── 19. GET: Open trades ignore date filters ─────────────────────
+
+console.log('\n19. GET status-aware: open trades ignore date filters:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'open', openedAt: '2024-01-15T10:00:00.000Z', createdAt: new Date().toISOString() });
+  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'open', openedAt: '2024-06-15T10:00:00.000Z', createdAt: new Date().toISOString() });
+
+  // Status=open with date range that matches NEITHER trade — open trades should ALL be returned
+  const result = doGetTrades({ status: 'open', from: '2099-01-01T00:00:00.000Z' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d.data.length, 2, 'both open trades returned despite restrictive date filter');
+  assertEqual(d.data[0].symbol, 'MSFT', 'first trade is MSFT (newer created_at)');
+  assertEqual(d.data[1].symbol, 'AAPL', 'second trade is AAPL');
+  assertNotNull(d.totals, 'totals present');
+}
+
+// ── 20. GET: Closed trades filtered by closedAt ────────────────────
+
+console.log('\n20. GET status-aware: closed trades filtered by closedAt:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'closed', openedAt: '2024-01-15T10:00:00.000Z', closedAt: '2024-02-01T10:00:00.000Z', createdAt: new Date().toISOString() });
+  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'closed', openedAt: '2024-03-15T10:00:00.000Z', closedAt: '2024-06-01T10:00:00.000Z', createdAt: new Date().toISOString() });
+
+  // Filter by closedAt range
+  const q1 = doGetTrades({ status: 'closed', from: '2024-01-01T00:00:00.000Z', to: '2024-03-31T23:59:59.000Z' });
+  assert(q1.status === 200, 'returns 200');
+  const d1 = q1.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d1.data.length, 1, '1 closed trade in Q1');
+  assertEqual(d1.data[0].symbol, 'AAPL', 'Q1 closed trade is AAPL (closedAt=Feb)');
+  assertNotNull(d1.totals, 'totals present');
+
+  const q2 = doGetTrades({ status: 'closed', from: '2024-04-01T00:00:00.000Z', to: '2024-12-31T23:59:59.000Z' });
+  assert(q2.status === 200, 'returns 200');
+  const d2 = q2.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d2.data.length, 1, '1 closed trade in Q2-Q4');
+  assertEqual(d2.data[0].symbol, 'MSFT', 'Q2-Q4 closed trade is MSFT (closedAt=Jun)');
+}
+
+// ── 21. GET: Planned trades filtered by createdAt ──────────────────
+
+console.log('\n21. GET status-aware: planned trades filtered by createdAt:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'planned', createdAt: '2024-01-15T10:00:00.000Z', openedAt: null });
+  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'planned', createdAt: '2024-06-15T10:00:00.000Z', openedAt: null });
+  // Also create an open trade to verify it does NOT appear when filtering by planned
+  seedTrade({ accountId: 'test-account-id', symbol: 'GOOGL', status: 'open', createdAt: '2024-03-15T10:00:00.000Z', openedAt: '2024-03-15T10:00:00.000Z' });
+
+  const q1 = doGetTrades({ status: 'planned', from: '2024-01-01T00:00:00.000Z', to: '2024-03-31T23:59:59.000Z' });
+  assert(q1.status === 200, 'returns 200');
+  const d1 = q1.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d1.data.length, 1, '1 planned trade in Q1');
+  assertEqual(d1.data[0].symbol, 'AAPL', 'Q1 planned trade is AAPL (createdAt=Jan)');
+  assertNotNull(d1.totals, 'totals present');
+
+  const q2 = doGetTrades({ status: 'planned', from: '2024-04-01T00:00:00.000Z', to: '2024-12-31T23:59:59.000Z' });
+  assert(q2.status === 200, 'returns 200');
+  const d2 = q2.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d2.data.length, 1, '1 planned trade in Q2-Q4');
+  assertEqual(d2.data[0].symbol, 'MSFT', 'Q2-Q4 planned trade is MSFT (createdAt=Jun)');
+
+  // Without status filter, date filters use openedAt (backward compatible)
+  // Only GOOGL has a non-null openedAt, so it should be the only one returned
+  const q3 = doGetTrades({ from: '2024-01-01T00:00:00.000Z' });
+  assert(q3.status === 200, 'returns 200');
+  const d3 = q3.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d3.data.length, 1, '1 trade returned with default openedAt filter (no status)');
+  assertEqual(d3.data[0].symbol, 'GOOGL', 'default filter matches GOOGL (openedAt=March)');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
