@@ -13,7 +13,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
-import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
+import { computeTradeMetrics, type ExecutionData } from '@/lib/trade-metrics';
 
 let passed = 0;
 let failed = 0;
@@ -119,6 +119,9 @@ sqlite.exec(`
     current_price REAL,
     current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     updated_at TEXT DEFAULT (current_timestamp)
   );
 
@@ -244,8 +247,15 @@ function doCloseAccount(id: string): { status: number; data: unknown } {
           executedAt: (e.executed_at as string) ?? (trade.created_at as string) ?? new Date().toISOString(),
         }));
 
-        const pnl = calculatePnL(execData, trade.direction as 'long' | 'short');
-        realizedPnl += pnl.totalRealizedPnL;
+        const metrics = computeTradeMetrics({
+          executions: execData,
+          direction: trade.direction as 'long' | 'short',
+          riskSnapshot: null,
+          stopAdjustments: [],
+          currentMark: null,
+          currentAccountEquity: null,
+        });
+        realizedPnl += metrics.realizedPnl.netRealizedPnl;
       }
 
       // Compute per-account KPI metrics
@@ -279,19 +289,26 @@ function doCloseAccount(id: string): { status: number; data: unknown } {
           executedAt: (e.executed_at as string) ?? (trade.created_at as string) ?? new Date().toISOString(),
         }));
 
-        const pnl = calculatePnL(execData, trade.direction as 'long' | 'short');
-        netPnlForKpis += pnl.totalRealizedPnL;
-
         const risk = riskByTradeId.get(trade.id as string);
+        const metrics = computeTradeMetrics({
+          executions: execData,
+          direction: trade.direction as 'long' | 'short',
+          riskSnapshot: risk?.initial_risk_amount != null ? { initialRiskAmount: risk.initial_risk_amount as number, accountEquityAtOpen: null } : null,
+          stopAdjustments: [],
+          currentMark: null,
+          currentAccountEquity: null,
+        });
+        netPnlForKpis += metrics.realizedPnl.netRealizedPnl;
+
         if (risk?.initial_risk_amount != null && (risk.initial_risk_amount as number) > 0) {
-          const rResult = calculateRMultiple(pnl.totalRealizedPnL, risk.initial_risk_amount as number);
-          if (rResult.rMultiple !== null) rMultiples.push(rResult.rMultiple);
+          const rMultiple = metrics.returnMetrics.rMultiple;
+          if (rMultiple !== null) rMultiples.push(rMultiple);
         }
 
         const grade = gradeByTradeId.get(trade.id as string);
         if (grade?.total_score != null) gradeScores.push(grade.total_score as number);
 
-        if (pnl.totalRealizedPnL > 0) winCount++;
+        if (metrics.realizedPnl.netRealizedPnl > 0) winCount++;
       }
 
       const decisions = closedTradesFiltered.filter(

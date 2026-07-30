@@ -12,7 +12,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, inArray, and } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
-import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
+
 import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
 
 let passed = 0;
@@ -116,6 +116,9 @@ sqlite.exec(`
     current_price REAL,
     current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     updated_at TEXT DEFAULT (current_timestamp)
   );
 

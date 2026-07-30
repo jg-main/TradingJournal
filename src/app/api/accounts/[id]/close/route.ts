@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
 import { accounts, accountTransactions, tradeExecutions, trades, tradeRiskSnapshots, tradeGrades } from '@/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
-import { type ExecutionData } from '@/lib/trade-calc';
+import { type ExecutionData } from '@/lib/trade-metrics';
 import { computeAccountKPIs, computeAccountBalance, computeDatesActive } from '@/lib/account-summary';
 import { findAccountPerformance } from '@/db/accounting-repository';
 type RouteParams = { params: Promise<{ id: string }> };

@@ -15,7 +15,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, inArray, and } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
-import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
+import { computeTradeMetrics, type ExecutionData } from '@/lib/trade-metrics';
 import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
 import { findAccountPerformance, insertAccountingExecution, findOrCreateInstrument } from '@/db/accounting-repository';
 import { postExecutionFill } from '@/lib/accounting/execution-posting';
@@ -139,6 +139,9 @@ sqlite.exec(`
     current_price REAL,
     current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     updated_at TEXT DEFAULT (current_timestamp)
   );
 
@@ -445,13 +448,20 @@ function doGetAccount(id: string): { status: number; data: unknown } {
           fees: e.fees ?? 0,
           executedAt: e.executedAt ?? trade.createdAt ?? new Date().toISOString(),
         }));
-        const pnl = calculatePnL(execData, trade.direction);
-        netPnl += pnl.totalRealizedPnL;
-        if (pnl.totalRealizedPnL > 0) winCount++;
         const risk = riskByTradeId.get(trade.id);
+        const metrics = computeTradeMetrics({
+          executions: execData,
+          direction: trade.direction,
+          riskSnapshot: risk?.initialRiskAmount != null ? { initialRiskAmount: risk.initialRiskAmount, accountEquityAtOpen: null } : null,
+          stopAdjustments: [],
+          currentMark: null,
+          currentAccountEquity: null,
+        });
+        netPnl += metrics.realizedPnl.netRealizedPnl;
+        if (metrics.realizedPnl.netRealizedPnl > 0) winCount++;
         if (risk?.initialRiskAmount != null && risk.initialRiskAmount > 0) {
-          const rResult = calculateRMultiple(pnl.totalRealizedPnL, risk.initialRiskAmount);
-          if (rResult.rMultiple !== null) rMultiples.push(rResult.rMultiple);
+          const rMultiple = metrics.returnMetrics.rMultiple;
+          if (rMultiple !== null) rMultiples.push(rMultiple);
         }
         const grade = gradeByTradeId.get(trade.id);
         if (grade?.totalScore != null) gradeScores.push(grade.totalScore);
