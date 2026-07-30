@@ -10,7 +10,7 @@
  * no NextResponse.
  */
 
-import { calculatePnL, type ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -98,9 +98,17 @@ export function aggregateDailyPnL(trades: CalendarHeatmapTradeInput[]): Calendar
     if (!trade.closedAt) continue;
 
     const dateKey = trade.closedAt.slice(0, 10); // YYYY-MM-DD
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const netRealizedPnl = metrics.realizedPnl.netRealizedPnl;
     const current = dailyMap.get(dateKey) ?? 0;
-    dailyMap.set(dateKey, current + totalRealizedPnL);
+    dailyMap.set(dateKey, current + netRealizedPnl);
   }
 
   return Array.from(dailyMap.entries())

@@ -9,7 +9,7 @@
  * Depends on: src/lib/dashboard.ts (RollforwardRow type)
  */
 
-import { calculateAvgCost, type ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 import { type RollforwardRow } from './dashboard';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -138,34 +138,32 @@ export function computeTradeMarkers(
 
     if (entries.length === 0 || exits.length === 0) continue;
 
-    // Entry: avg price + earliest execution date
-    const { avgEntryPrice } = calculateAvgCost(entries);
-    if (avgEntryPrice === null) continue;
+    // Use computeTradeMetrics for all trade computation
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+
+    const avgEntryPrice = metrics.averagePrices.avgEntryPrice;
+    const avgExitPrice = metrics.averagePrices.avgExitPrice;
+    if (avgEntryPrice === null || avgExitPrice === null) continue;
 
     const sortedEntries = [...entries].sort(
       (a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime(),
     );
     const entryDate = sortedEntries[0].executedAt.slice(0, 10);
 
-    // Exit: avg price of exits + latest execution date
-    const { avgEntryPrice: avgExitPrice } = calculateAvgCost(exits);
-    if (avgExitPrice === null) continue;
-
     const sortedExits = [...exits].sort(
       (a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime(),
     );
     const exitDate = sortedExits[sortedExits.length - 1].executedAt.slice(0, 10);
 
-    // Compute P&L using calculateAvgCost entry + exit prices (simple estimate)
-    // This mirrors the pattern in trade-calc's calculatePnL
-    const totalEntryQty = entries.reduce((s, e) => s + e.quantity, 0);
-    const totalExitQty = Math.min(exits.reduce((s, e) => s + e.quantity, 0), totalEntryQty);
-    const pnl =
-      trade.direction === 'long'
-        ? (avgExitPrice - avgEntryPrice) * totalExitQty
-        : (avgEntryPrice - avgExitPrice) * totalExitQty;
-    const totalFees = trade.executions.reduce((s, e) => s + (e.fees ?? 0), 0);
-    const realizedPnl = pnl - totalFees;
+    // Realized P&L from computeTradeMetrics (canonical FIFO-based net realized P&L)
+    const realizedPnl = metrics.realizedPnl.netRealizedPnl;
 
     // Look up equity at entry and exit dates
     const entryEquity = findEquityAtDate(entryDate, rollforwardRows);

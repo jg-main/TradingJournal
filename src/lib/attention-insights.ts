@@ -15,8 +15,7 @@
  * that change between runs for the same data.
  */
 
-import { calculatePnL, calculateRMultiple } from './trade-calc';
-import type { ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -114,7 +113,15 @@ function computeDayOfWeekWinRates(
     const dayIndex = getDayOfWeek(trade.closedAt);
     if (dayIndex === null) continue;
 
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
 
     // Skip scratches (PnL === 0) following excludeScratches semantics
     if (totalRealizedPnL === 0) continue;
@@ -262,9 +269,18 @@ function createExtremeTradeInsights(
   const tradeResults: { id: string; pnl: number; rMultiple: number | null; trade: AttentionInsightTradeInput }[] = [];
 
   for (const trade of closedTrades) {
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
-    const riskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
-    const { rMultiple } = calculateRMultiple(totalRealizedPnL, riskAmount);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: trade.riskSnapshot != null
+        ? { initialRiskAmount: trade.riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
+        : null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
+    const rMultiple = metrics.returnMetrics.rMultiple;
     tradeResults.push({ id: trade.id, pnl: totalRealizedPnL, rMultiple, trade });
   }
 
@@ -314,8 +330,15 @@ function createStreakInsights(
   if (closedTrades.length < 3) return [];
 
   const outcomes: ('win' | 'loss' | 'scratch')[] = closedTrades.map((trade) => {
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
-    return classifyTradeOutcome(totalRealizedPnL);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    return classifyTradeOutcome(metrics.realizedPnl.netRealizedPnl);
   });
 
   // Find the current streak (from most recent trade backwards)

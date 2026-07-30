@@ -13,7 +13,7 @@
  * and metrics.ts — pure functions, own input types, no DB imports, no NextResponse.
  */
 
-import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 import { computeWinRate as computeMetricsWinRate, averageRMultiples } from './metrics';
 
 // ── Period Types ────────────────────────────────────────────────────────
@@ -359,12 +359,21 @@ function computePeriodMetrics(
   const rMultiples: number[] = [];
 
   for (const trade of trades) {
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: trade.riskSnapshot
+        ? { initialRiskAmount: trade.riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
+        : null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     totalPnl += totalRealizedPnL;
     pnls.push(totalRealizedPnL);
 
-    const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
-    const { rMultiple } = calculateRMultiple(totalRealizedPnL, initialRiskAmount);
+    const rMultiple = metrics.returnMetrics.rMultiple;
     if (rMultiple !== null) {
       rMultiples.push(rMultiple);
     }

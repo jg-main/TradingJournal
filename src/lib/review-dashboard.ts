@@ -9,7 +9,7 @@
  * Pattern: src/lib/weekly-review.ts
  */
 
-import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 import { computeWinRate, averageRMultiples, averageProcessScore } from './metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -147,14 +147,23 @@ export function computeSetupPerformance(
     const processScores: number[] = [];
 
     for (const trade of groupTrades) {
-      const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+      const metrics = computeTradeMetrics({
+        executions: trade.executions,
+        direction: trade.direction,
+        riskSnapshot: trade.riskSnapshot
+          ? { initialRiskAmount: trade.riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
+          : null,
+        stopAdjustments: [],
+        currentMark: null,
+        currentAccountEquity: null,
+      });
+      const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
 
       // Collect PnL for policy-based win rate computation (excludeScratches handles scratches)
       pnls.push(totalRealizedPnL);
 
       // R-multiple
-      const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
-      const { rMultiple } = calculateRMultiple(totalRealizedPnL, initialRiskAmount);
+      const rMultiple = metrics.returnMetrics.rMultiple;
       if (rMultiple !== null) {
         rMultiples.push(rMultiple);
       }

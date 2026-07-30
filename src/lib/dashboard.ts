@@ -9,7 +9,7 @@
  * Pattern: src/lib/weekly-review.ts, src/lib/review-dashboard.ts
  */
 
-import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 import { classifyPnlDecision, computeWinRate as computeMetricsWinRate, averageRMultiples, averageProcessScore } from './metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -148,7 +148,15 @@ export function computeProfitFactor(closedTrades: KpiTradeInput[]): number | nul
   let totalLoss = 0;
 
   for (const trade of closedTrades) {
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     if (totalRealizedPnL > 0) {
       totalProfit += totalRealizedPnL;
     } else {
@@ -170,7 +178,15 @@ export function computeAvgWin(closedTrades: KpiTradeInput[]): number | null {
   const winPnLs: number[] = [];
 
   for (const trade of closedTrades) {
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     if (totalRealizedPnL > 0) {
       winPnLs.push(totalRealizedPnL);
     }
@@ -191,7 +207,15 @@ export function computeAvgLoss(closedTrades: KpiTradeInput[]): number | null {
   const lossMagnitudes: number[] = [];
 
   for (const trade of closedTrades) {
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     if (totalRealizedPnL <= 0) {
       lossMagnitudes.push(Math.abs(totalRealizedPnL));
     }
@@ -227,7 +251,15 @@ export function computeMonthlyPerformance(
 
   for (const trade of closed) {
     const month = (trade.closedAt as string).substring(0, 7); // YYYY-MM
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
 
     let g = groups.get(month);
     if (!g) {
@@ -278,9 +310,17 @@ export function computeRDistribution(
   const counts = new Array<number>(binDefs.length).fill(0);
 
   for (const trade of closedTrades) {
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
-    const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
-    const { rMultiple } = calculateRMultiple(totalRealizedPnL, initialRiskAmount);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: trade.riskSnapshot
+        ? { initialRiskAmount: trade.riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
+        : null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const rMultiple = metrics.returnMetrics.rMultiple;
 
     if (rMultiple === null) continue;
 
@@ -327,7 +367,15 @@ export function computeDirectionalPerformance(
     const dir = trade.direction as keyof typeof buckets;
     if (!buckets[dir]) continue;
 
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     buckets[dir].netPnl += totalRealizedPnL;
     buckets[dir].pnls.push(totalRealizedPnL);
   }
@@ -434,8 +482,18 @@ export function computeKpiMetrics(
   const lossPnLs: number[] = [];
 
   for (const trade of closedTrades) {
-    // P&L
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    // P&L from computeTradeMetrics
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: trade.riskSnapshot
+        ? { initialRiskAmount: trade.riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
+        : null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     netPnl += totalRealizedPnL;
     pnls.push(totalRealizedPnL);
 
@@ -447,9 +505,8 @@ export function computeKpiMetrics(
       lossPnLs.push(Math.abs(totalRealizedPnL));
     }
 
-    // R-multiple
-    const initialRiskAmount = trade.riskSnapshot?.initialRiskAmount ?? null;
-    const { rMultiple } = calculateRMultiple(totalRealizedPnL, initialRiskAmount);
+    // R-multiple from computeTradeMetrics
+    const rMultiple = metrics.returnMetrics.rMultiple;
     if (rMultiple !== null) {
       rMultiples.push(rMultiple);
     }

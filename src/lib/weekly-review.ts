@@ -9,7 +9,7 @@
  * Pattern: src/lib/trade-calc.ts, src/lib/grading.ts
  */
 
-import { calculatePnL, calculateRMultiple, type ExecutionData } from './trade-calc';
+import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 import { computeWinRate, averageRMultiples, averageProcessScore } from './metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -76,7 +76,17 @@ export function computeWeeklyMetrics(trades: WeekReviewTradeInput[]): Aggregated
 
   for (const trade of trades) {
     // ── P&L ──────────────────────────────────────────────────────────
-    const { totalRealizedPnL } = calculatePnL(trade.executions, trade.direction);
+    const metrics = computeTradeMetrics({
+      executions: trade.executions,
+      direction: trade.direction,
+      riskSnapshot: trade.riskSnapshot
+        ? { initialRiskAmount: trade.riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
+        : null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    });
+    const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     netPnl += totalRealizedPnL;
     pnls.push(totalRealizedPnL);
 
@@ -85,7 +95,7 @@ export function computeWeeklyMetrics(trades: WeekReviewTradeInput[]): Aggregated
     if (initialRiskAmount === null || initialRiskAmount === undefined) {
       unassessedRiskCount++;
     }
-    const { rMultiple } = calculateRMultiple(totalRealizedPnL, initialRiskAmount);
+    const rMultiple = metrics.returnMetrics.rMultiple;
     if (rMultiple !== null) {
       rMultiples.push(rMultiple);
     }
