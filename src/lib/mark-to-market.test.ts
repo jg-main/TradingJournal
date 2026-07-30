@@ -5,6 +5,10 @@
  * Covers computeOpenPosition, calculateUnrealizedPnL, and
  * computeMarkToMarketSummary for positive, negative, and edge cases.
  *
+ * Refactored T02 (M008/S03): FeePolicy removed; all unrealized P&L
+ * now uses canonical FIFO-based netUnrealizedPnl from computeTradeMetrics,
+ * which always includes fee effects.
+ *
  * Run: npx tsx src/lib/mark-to-market.test.ts
  */
 
@@ -12,10 +16,9 @@ import {
   computeOpenPosition,
   calculateUnrealizedPnL,
   computeMarkToMarketSummary,
-  type FeePolicy,
   type OpenTrade,
 } from './mark-to-market';
-import type { ExecutionData, Direction } from './trade-calc';
+import type { ExecutionData, Direction } from './trade-metrics';
 
 // ── Test harness (matches trade-calc.test.ts pattern) ──────────────────
 
@@ -49,18 +52,6 @@ function assertNull(v: unknown, msg: string) {
   } else {
     failed++;
     console.error(`  ❌ ${msg} — expected null, got ${v} (FAILED)`);
-  }
-}
-
-function assertDeepEqual<T>(actual: T, expected: T, msg: string) {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson === expectedJson) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — expected ${expectedJson}, got ${actualJson} (FAILED)`);
   }
 }
 
@@ -213,7 +204,7 @@ function exec(
 {
   console.log('\n## calculateUnrealizedPnL');
 
-  // --- Positive tests (exclude_entry_fees) ---
+  // All tests use unified fee-inclusive P&L (FeePolicy removed).
 
   // 1. Long: unrealized profit
   {
@@ -221,7 +212,6 @@ function exec(
       executions: [exec('buy', 100, 50)],
       direction: 'long',
       currentPrice: 60,
-      feePolicy: 'exclude_entry_fees',
     });
     assertApprox(r!, 1000, 'long profit (60-50)*100 = 1000');
   }
@@ -232,7 +222,6 @@ function exec(
       executions: [exec('buy', 100, 50)],
       direction: 'long',
       currentPrice: 40,
-      feePolicy: 'exclude_entry_fees',
     });
     assertApprox(r!, -1000, 'long loss (40-50)*100 = -1000');
   }
@@ -243,7 +232,6 @@ function exec(
       executions: [exec('sell_short', 100, 100)],
       direction: 'short',
       currentPrice: 90,
-      feePolicy: 'exclude_entry_fees',
     });
     assertApprox(r!, 1000, 'short profit (100-90)*100 = 1000');
   }
@@ -254,7 +242,6 @@ function exec(
       executions: [exec('sell_short', 100, 100)],
       direction: 'short',
       currentPrice: 110,
-      feePolicy: 'exclude_entry_fees',
     });
     assertApprox(r!, -1000, 'short loss (100-110)*100 = -1000');
   }
@@ -268,9 +255,8 @@ function exec(
       ],
       direction: 'long',
       currentPrice: 65,
-      feePolicy: 'exclude_entry_fees',
     });
-    // Open qty = 70, avg price = 50
+    // Open qty = 70, FIFO open avg cost = 50 (no fee effect)
     // (65 - 50) * 70 = 15 * 70 = 1050
     assertApprox(r!, 1050, 'partial exit → P&L on open qty 1050');
   }
@@ -284,28 +270,24 @@ function exec(
       ],
       direction: 'long',
       currentPrice: 55,
-      feePolicy: 'exclude_entry_fees',
     });
-    // avg = (100*40 + 100*60)/200 = 50
+    // FIFO open avg cost = (100*40 + 100*60)/200 = 50
     // (55 - 50) * 200 = 1000
     assertApprox(r!, 1000, 'weighted avg → P&L 1000');
   }
 
-  // --- Positive tests (include_entry_fees) ---
-
-  // 7. include_entry_fees: subtracts entry fees
+  // 7. Entry fees included in P&L (unified fee-inclusive behavior)
   {
     const r = calculateUnrealizedPnL({
       executions: [exec('buy', 100, 50, 15)],
       direction: 'long',
       currentPrice: 60,
-      feePolicy: 'include_entry_fees',
     });
-    // (60-50)*100 = 1000, less 15 fees = 985
-    assertApprox(r!, 985, 'include_entry_fees → 1000 - 15 = 985');
+    // FIFO: gross = (60-50)*100 = 1000, open fees = 15, net = 985
+    assertApprox(r!, 985, 'entry fees included → 1000 - 15 = 985');
   }
 
-  // 8. include_entry_fees: multiple entries with fees
+  // 8. Multiple entries with fees
   {
     const r = calculateUnrealizedPnL({
       executions: [
@@ -314,49 +296,47 @@ function exec(
       ],
       direction: 'long',
       currentPrice: 55,
-      feePolicy: 'include_entry_fees',
     });
-    // avg = (50*48 + 50*52)/100 = 50
-    // (55-50)*100 = 500, less 5+3=8 fees = 492
+    // FIFO: openAvgCost = (50*48 + 50*52)/100 = 50
+    // gross = (55-50)*100 = 500
+    // open fees = 5+3 = 8 (proportional, no exits → all fees remain)
+    // net = 492
     assertApprox(r!, 492, 'multiple entry fees → 500 - 8 = 492');
   }
 
-  // 9. exclude_entry_fees overrides fee subtraction even with fees present
+  // 9. Fees present but no feePolicy — fees always included
   {
     const r = calculateUnrealizedPnL({
       executions: [exec('buy', 100, 50, 15)],
       direction: 'long',
       currentPrice: 60,
-      feePolicy: 'exclude_entry_fees',
     });
-    // (60-50)*100 = 1000, no fee subtraction
-    assertApprox(r!, 1000, 'exclude_entry_fees → 1000, fees ignored');
+    // net = 1000 - 15 = 985 (unified behavior, fees always included)
+    assertApprox(r!, 985, 'fees always included → 1000 - 15 = 985');
   }
 
-  // 10. include_entry_fees with zero fees → same as exclude
+  // 10. Zero fees → same as no fees
   {
     const r = calculateUnrealizedPnL({
       executions: [exec('buy', 100, 50, 0)],
       direction: 'long',
       currentPrice: 60,
-      feePolicy: 'include_entry_fees',
     });
-    assertApprox(r!, 1000, 'include_entry_fees with 0 fees → 1000');
+    assertApprox(r!, 1000, 'zero fees → 1000');
   }
 
-  // 11. Short with include_entry_fees
+  // 11. Short with entry fees
   {
     const r = calculateUnrealizedPnL({
       executions: [exec('sell_short', 100, 100, 8)],
       direction: 'short',
       currentPrice: 90,
-      feePolicy: 'include_entry_fees',
     });
-    // (100-90)*100 = 1000, less 8 fees = 992
-    assertApprox(r!, 992, 'short include_entry_fees → 992');
+    // FIFO: gross = (100-90)*100 = 1000, open fees = 8, net = 992
+    assertApprox(r!, 992, 'short with fees → 992');
   }
 
-  // 12. Partial exit with include_entry_fees
+  // 12. Partial exit with fees — proportional FIFO fee allocation
   {
     const r = calculateUnrealizedPnL({
       executions: [
@@ -365,11 +345,12 @@ function exec(
       ],
       direction: 'long',
       currentPrice: 65,
-      feePolicy: 'include_entry_fees',
     });
-    // avg = 50, open = 70
-    // (65-50)*70 = 1050, less 10 entry fees = 1040
-    assertApprox(r!, 1040, 'partial exit include_entry_fees → 1040');
+    // FIFO: lot 100 @ $50, fee=$10.
+    // sell 30 → matched 30, feeRatio = 30/100 = 0.3, allocated fee = $3
+    // remaining: qty=70, openFee=$7
+    // gross = (65-50)*70 = 1050, net = 1050 - 7 = 1043
+    assertApprox(r!, 1043, 'partial exit with fees → 1050 - 7 = 1043');
   }
 
   // --- Negative / edge cases ---
@@ -380,7 +361,6 @@ function exec(
       executions: [],
       direction: 'long',
       currentPrice: 60,
-      feePolicy: 'exclude_entry_fees',
     });
     assertNull(r, 'no entries → null');
   }
@@ -394,7 +374,6 @@ function exec(
       ],
       direction: 'long',
       currentPrice: 65,
-      feePolicy: 'exclude_entry_fees',
     });
     assertNull(r, 'fully exited → null');
   }
@@ -405,29 +384,26 @@ function exec(
       executions: [exec('buy', 0, 50)],
       direction: 'long',
       currentPrice: 60,
-      feePolicy: 'exclude_entry_fees',
     });
     assertNull(r, 'zero qty entry → null');
   }
 
-  // 16. Null fees with include_entry_fees → treated as 0
+  // 16. Null fees → treated as 0
   {
     const r = calculateUnrealizedPnL({
       executions: [{ action: 'buy', quantity: 100, price: 50, fees: null, executedAt: '2026-01-10T10:00:00Z' }],
       direction: 'long',
       currentPrice: 60,
-      feePolicy: 'include_entry_fees',
     });
     assertApprox(r!, 1000, 'null fees → treated as 0 → 1000');
   }
 
-  // 17. P&L at breakeven (currentPrice === avgEntryPrice) → 0
+  // 17. P&L at breakeven (currentPrice === openAvgCost) → 0
   {
     const r = calculateUnrealizedPnL({
       executions: [exec('buy', 100, 50)],
       direction: 'long',
       currentPrice: 50,
-      feePolicy: 'exclude_entry_fees',
     });
     assertApprox(r!, 0, 'breakeven → 0');
   }
@@ -438,7 +414,6 @@ function exec(
       executions: [exec('sell_short', 100, 50)],
       direction: 'short',
       currentPrice: 50,
-      feePolicy: 'exclude_entry_fees',
     });
     assertApprox(r!, 0, 'short breakeven → 0');
   }
@@ -449,7 +424,6 @@ function exec(
       executions: [exec('buy', 10000, 150.25)],
       direction: 'long',
       currentPrice: 175.50,
-      feePolicy: 'exclude_entry_fees',
     });
     // (175.50 - 150.25) * 10000 = 25.25 * 10000 = 252500
     assertApprox(r!, 252500, 'large position → 252500');
@@ -476,7 +450,7 @@ function exec(
 
   // 1. Single open trade (long, profit)
   {
-    const r = computeMarkToMarketSummary([longOpenTrade], 'exclude_entry_fees');
+    const r = computeMarkToMarketSummary([longOpenTrade]);
     assertApprox(r.netUnrealizedPnl!, 1000, 'single long trade → P&L 1000');
     assert(r.tradesWithPrices === 1, 'single long → tradesWithPrices 1');
     assert(r.tradesAwaitingData === 0, 'single long → awaiting 0');
@@ -487,7 +461,6 @@ function exec(
   {
     const r = computeMarkToMarketSummary(
       [longOpenTrade, shortOpenTrade],
-      'exclude_entry_fees',
     );
     // long: 1000, short: (100-90)*100=1000, total=2000
     assertApprox(r.netUnrealizedPnl!, 2000, 'two profitable trades → 2000');
@@ -500,7 +473,6 @@ function exec(
     const awaitingTrade = trade('long', null, [exec('buy', 50, 30)]);
     const r = computeMarkToMarketSummary(
       [longOpenTrade, awaitingTrade],
-      'exclude_entry_fees',
     );
     assertApprox(r.netUnrealizedPnl!, 1000, 'one priced one awaiting → 1000');
     assert(r.tradesWithPrices === 1, 'mix → tradesWithPrices 1');
@@ -515,7 +487,6 @@ function exec(
         trade('long', null, [exec('buy', 100, 50)]),
         trade('short', null, [exec('sell_short', 50, 80)]),
       ],
-      'exclude_entry_fees',
     );
     assertNull(r.netUnrealizedPnl, 'all awaiting → net null');
     assert(r.tradesWithPrices === 0, 'all awaiting → tradesWithPrices 0');
@@ -523,7 +494,7 @@ function exec(
     assert(r.openTradeCount === 2, 'all awaiting → count 2');
   }
 
-  // 5. Dashboard scenario: include_entry_fees with 2 trades
+  // 5. Two trades with fees — unified fee-inclusive P&L
   {
     const tradeWithFees: OpenTrade = trade('long', 65, [
       exec('buy', 100, 50, 12),
@@ -531,23 +502,21 @@ function exec(
     const tradeNoFees: OpenTrade = trade('long', 45, [
       exec('buy', 50, 40, 5),
     ]);
-    // tradeWithFees: (65-50)*100=1500 less 12=1488
-    // tradeNoFees: (45-40)*50=250 less 5=245
+    // tradeWithFees: (65-50)*100=1500, fee=12, net=1488
+    // tradeNoFees: (45-40)*50=250, fee=5, net=245
     // total = 1733
     const r = computeMarkToMarketSummary(
       [tradeWithFees, tradeNoFees],
-      'include_entry_fees',
     );
-    assertApprox(r.netUnrealizedPnl!, 1733, 'dashboard scenario → 1733');
-    assert(r.tradesWithPrices === 2, 'dashboard → both priced');
-    assert(r.openTradeCount === 2, 'dashboard → count 2');
+    assertApprox(r.netUnrealizedPnl!, 1733, 'two fee trades → 1733');
+    assert(r.tradesWithPrices === 2, 'both priced');
+    assert(r.openTradeCount === 2, 'count 2');
   }
 
   // 6. All trades awaiting data via undefined currentPrice
   {
     const r = computeMarkToMarketSummary(
       [trade('long', undefined as unknown as null, [exec('buy', 100, 50)])],
-      'exclude_entry_fees',
     );
     assertNull(r.netUnrealizedPnl, 'undefined price → null');
     assert(r.tradesAwaitingData === 1, 'undefined price → awaiting 1');
@@ -557,7 +526,7 @@ function exec(
 
   // 7. Empty array → net null, all counts 0
   {
-    const r = computeMarkToMarketSummary([], 'exclude_entry_fees');
+    const r = computeMarkToMarketSummary([]);
     assertNull(r.netUnrealizedPnl, 'empty → net null');
     assert(r.tradesWithPrices === 0, 'empty → tradesWithPrices 0');
     assert(r.tradesAwaitingData === 0, 'empty → awaiting 0');
@@ -570,7 +539,7 @@ function exec(
       exec('buy', 100, 50, 0, '2026-01-10T10:00:00Z'),
       exec('sell', 100, 60, 0, '2026-01-10T14:00:00Z'),
     ]);
-    const r = computeMarkToMarketSummary([flatTrade], 'exclude_entry_fees');
+    const r = computeMarkToMarketSummary([flatTrade]);
     // Flat position → calculateUnrealizedPnL returns null, so no P&L added
     assertApprox(r.netUnrealizedPnl!, 0, 'flat position → net 0');
     assert(r.tradesWithPrices === 1, 'flat position → priced 1 (price exists)');
@@ -580,7 +549,7 @@ function exec(
   // 9. Loss on all trades
   {
     const lossTrade: OpenTrade = trade('long', 30, [exec('buy', 100, 50)]);
-    const r = computeMarkToMarketSummary([lossTrade], 'exclude_entry_fees');
+    const r = computeMarkToMarketSummary([lossTrade]);
     assertApprox(r.netUnrealizedPnl!, -2000, 'loss trade → -2000');
   }
 
@@ -588,28 +557,25 @@ function exec(
   {
     const profitTrade = trade('long', 60, [exec('buy', 100, 50)]);    // +1000
     const lossTrade = trade('short', 110, [exec('sell_short', 100, 100)]); // -1000
-    const r = computeMarkToMarketSummary([profitTrade, lossTrade], 'exclude_entry_fees');
+    const r = computeMarkToMarketSummary([profitTrade, lossTrade]);
     assertApprox(r.netUnrealizedPnl!, 0, 'profit + loss cancel → 0');
   }
 
   // 11. Zero quantity trade with price → net 0 (trade has a price but no position)
   {
     const zeroQtyTrade: OpenTrade = trade('long', 60, [exec('buy', 0, 50)]);
-    const r = computeMarkToMarketSummary([zeroQtyTrade], 'exclude_entry_fees');
+    const r = computeMarkToMarketSummary([zeroQtyTrade]);
     // calculateUnrealizedPnL returns null (zero open qty), trade has a currentPrice
     // so anyWithPrices is true → net is 0 (no position generates P&L)
     assertApprox(r.netUnrealizedPnl!, 0, 'zero qty trade → net 0');
     assert(r.tradesWithPrices === 1, 'zero qty → priced 1');
   }
 
-  // 12. Dashboard: include_entry_fees applied to aggregate summary
+  // 12. Single trade with no fees
   {
-    const r = computeMarkToMarketSummary(
-      [longOpenTrade],
-      'include_entry_fees',
-    );
-    // (60-50)*100 = 1000, no entry fees on this trade → 1000
-    assertApprox(r.netUnrealizedPnl!, 1000, 'include fees but none present → 1000');
+    const r = computeMarkToMarketSummary([longOpenTrade]);
+    // (60-50)*100 = 1000, no entry fees → 1000
+    assertApprox(r.netUnrealizedPnl!, 1000, 'no fees → 1000');
   }
 }
 
