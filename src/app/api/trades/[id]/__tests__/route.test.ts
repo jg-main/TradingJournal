@@ -246,15 +246,11 @@ function doGetTrade(id: string): { status: number; data: unknown } {
 
     const metrics = computeTradeMetrics(metricsInput);
 
-    // Backward-compatible shape matching the route: flat fields + nested metrics
+    // Shape matches route: nested metrics — consumers read metrics.realizedPnl, etc.
     return {
       status: 200,
       data: {
         ...row,
-        realizedPnl: metrics.realizedPnl.netRealizedPnl,
-        unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
-        returnPct: metrics.returnMetrics.returnPct,
-        riskPct: metrics.risk.riskToAccount,
         metrics,
       },
     };
@@ -450,11 +446,15 @@ console.log('\n1. GET returns trade by id:');
   assertEqual(data.symbol, 'AAPL', 'symbol matches');
   assertEqual(data.direction, 'long', 'direction matches');
   assertEqual(data.thesis, 'My thesis', 'thesis matches');
-  assertEqual(data.realizedPnl as number, 0, 'realizedPnl is 0 for planned trade');
-  assert(data.unrealizedPnl === null, 'unrealizedPnl is null for planned trade');
-  assert(data.returnPct === null, 'returnPct is null for planned trade');
-  assert(data.riskPct === null, 'riskPct is null for planned trade');
   assertNotNull(data.metrics, 'metrics object is present');
+  const m = data.metrics as Record<string, unknown>;
+  assert(m.realizedPnl != null, 'metrics.realizedPnl is present');
+  assert(m.returnMetrics != null, 'metrics.returnMetrics is present');
+  assert(m.risk != null, 'metrics.risk is present');
+  assertEqual((m.realizedPnl as Record<string, unknown>).netRealizedPnl as number, 0, 'metrics.realizedPnl.netRealizedPnl = 0 for planned trade');
+  assert((m.unrealizedPnl as Record<string, unknown>).grossUnrealizedPnl === null, 'metrics.unrealizedPnl.grossUnrealizedPnl is null for planned trade');
+  assert((m.returnMetrics as Record<string, unknown>).returnPct === null, 'metrics.returnMetrics.returnPct is null for planned trade');
+  assert((m.risk as Record<string, unknown>).riskToAccount === null, 'metrics.risk.riskToAccount is null for planned trade');
 }
 
 // ── 2. GET: 404 for nonexistent id ──────────────────────────────────
@@ -642,7 +642,8 @@ console.log('\n13. GET returns null when no current_price set:');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.currentPrice, null, 'currentPrice is null');
   assertEqual(data.currentPriceFetchedAt, null, 'currentPriceFetchedAt is null');
-  assertEqual(data.unrealizedPnl, null, 'unrealizedPnl is null when no current_price');
+  const m13 = data.metrics as Record<string, unknown>;
+  assert((m13.unrealizedPnl as Record<string, unknown>).grossUnrealizedPnl === null, 'metrics.unrealizedPnl.grossUnrealizedPnl is null when no current_price');
 }
 
 // ── 14. GET: Returns unrealizedPnl for open trade with executions ──
@@ -674,17 +675,15 @@ console.log('\n14. GET computes unrealizedPnl for open trade with executions:');
   const result = doGetTrade(tradeId);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
-  assertNotNull(data.unrealizedPnl, 'unrealizedPnl is not null');
   assertEqual(data.currentPrice, 160.00, 'currentPrice is 160');
-  // unrealizedPnl (gross) = (160 - 150) * 100 = 1000
-  assertApprox(data.unrealizedPnl as number, 1000, 0.01, 'unrealizedPnl = (160-150)*100 = 1000');
-  // realizedPnl is 0 for open trade with no exits (netRealizedPnl = 0, never null)
-  assertEqual(data.realizedPnl as number, 0, 'realizedPnl is 0 for open trade (no exits)');
-  // nested metrics
   assertNotNull(data.metrics, 'metrics object is present');
-  const m = data.metrics as Record<string, unknown>;
-  assertNotNull(m.unrealizedPnl, 'metrics.unrealizedPnl is present');
-  assertNotNull(m.size, 'metrics.size is present');
+  const m14 = data.metrics as Record<string, unknown>;
+  assertNotNull(m14.unrealizedPnl, 'metrics.unrealizedPnl is present');
+  assertNotNull(m14.size, 'metrics.size is present');
+  // metrics.unrealizedPnl.grossUnrealizedPnl = (160 - 150) * 100 = 1000
+  assertApprox((m14.unrealizedPnl as Record<string, unknown>).grossUnrealizedPnl as number, 1000, 0.01, 'metrics.unrealizedPnl.grossUnrealizedPnl = (160-150)*100 = 1000');
+  // realizedPnl.netRealizedPnl is 0 for open trade with no exits
+  assertEqual((m14.realizedPnl as Record<string, unknown>).netRealizedPnl as number, 0, 'metrics.realizedPnl.netRealizedPnl = 0 for open trade (no exits)');
 }
 
 // ── 15. GET: Returns null unrealizedPnl for closed trade with currentPrice ──
@@ -705,7 +704,8 @@ console.log('\n15. GET returns null unrealizedPnl for closed trade:');
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.currentPrice, 170.00, 'currentPrice is still returned');
-  assertEqual(data.unrealizedPnl, null, 'unrealizedPnl is null for closed trade');
+  const m15 = data.metrics as Record<string, unknown>;
+  assert((m15.unrealizedPnl as Record<string, unknown>).grossUnrealizedPnl === null, 'metrics.unrealizedPnl.grossUnrealizedPnl is null for closed trade');
 }
 
 // ── 16. GET: Computes unrealizedPnl for short trade ─────────────────
@@ -737,10 +737,11 @@ console.log('\n16. GET computes unrealizedPnl for short trade:');
   const result = doGetTrade(tradeId);
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
-  assertNotNull(data.unrealizedPnl, 'unrealizedPnl is not null for short trade');
-  // short: unrealizedPnl (gross) = (avgEntryPrice - currentPrice) * openQuantity = (280 - 250) * 50 = 1500
-  assertApprox(data.unrealizedPnl as number, 1500, 0.01, 'short unrealizedPnl = (280-250)*50 = 1500');
   assertEqual(data.currentPrice, 250.00, 'currentPrice is 250');
+  const m16 = data.metrics as Record<string, unknown>;
+  assertNotNull(m16.unrealizedPnl, 'metrics.unrealizedPnl is not null for short trade');
+  // metrics.unrealizedPnl.grossUnrealizedPnl = (280 - 250) * 50 = 1500
+  assertApprox((m16.unrealizedPnl as Record<string, unknown>).grossUnrealizedPnl as number, 1500, 0.01, 'metrics.unrealizedPnl.grossUnrealizedPnl = (280-250)*50 = 1500');
 }
 
 // ── 17. GET: Returns metrics for trade with executions ───────────────

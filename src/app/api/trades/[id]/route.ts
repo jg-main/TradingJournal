@@ -145,14 +145,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const metrics = computeTradeMetrics(metricsInput);
 
-    // Backward-compatible shape: flat fields preserved at top level + nested metrics
-    // Flat unrealizedPnl uses grossUnrealizedPnl to match old exclude_entry_fees behavior
+    // Metrics returned via nested metrics: TradeMetricsResult — consumers read
+    // metrics.realizedPnl, metrics.unrealizedPnl, metrics.returnMetrics, metrics.risk
     return NextResponse.json({
       ...row,
-      realizedPnl: metrics.realizedPnl.netRealizedPnl,
-      unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
-      returnPct: metrics.returnMetrics.returnPct,
-      riskPct: metrics.risk.riskToAccount,
       metrics,
     });
   } catch (error) {
