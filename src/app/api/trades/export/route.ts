@@ -25,7 +25,8 @@ import {
   accounts,
 } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
-import { calculatePnL, calculateRMultiple, type ExecutionData } from '@/lib/trade-calc';
+import { computeTradeMetrics } from '@/lib/trade-metrics';
+import type { TradeMetricsInput } from '@/lib/trade-metrics';
 import { exportTradesToCsv, type ExportTradeRow } from '@/lib/export-csv';
 
 export async function GET(request: NextRequest) {
@@ -152,27 +153,54 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Fetch account and settings for equity cascade
+    const exportAccount = db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, accountId))
+      .get();
+    const exportSettings = db
+      .select()
+      .from(settings)
+      .where(eq(settings.id, 'default'))
+      .get();
+    const currentAccountEquity =
+      exportAccount?.startingBalance ?? exportSettings?.startingAccountValue ?? null;
+
     // 4. Build ExportTradeRow array
     const exportRows: ExportTradeRow[] = allTrades.map((trade) => {
       const tradeExecs = executionsMap.get(trade.id) ?? [];
-
-      // Convert Drizzle executions to ExecutionData for trade-calc
-      const executionData: ExecutionData[] = tradeExecs.map((ex) => ({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? null,
-        executedAt: ex.executedAt ?? '',
-      }));
-
-      // Compute P&L
-      const pnl = calculatePnL(executionData, trade.direction as 'long' | 'short');
-      const totalFees = executionData.reduce((s, e) => s + (e.fees ?? 0), 0);
-
-      // Compute R multiple
       const riskSnap = riskMap.get(trade.id);
-      const initialRiskAmount = riskSnap?.initialRiskAmount ?? null;
-      const { rMultiple } = calculateRMultiple(pnl.totalRealizedPnL, initialRiskAmount);
+      const stopAdjustments = stopAdjustmentsMap.get(trade.id) ?? [];
+
+      // Build TradeMetricsInput for computeTradeMetrics
+      const metricsInput: TradeMetricsInput = {
+        executions: tradeExecs.map((ex) => ({
+          id: ex.id,
+          action: ex.action,
+          quantity: ex.quantity,
+          price: ex.price,
+          fees: ex.fees ?? 0,
+          executedAt: ex.executedAt ?? '',
+        })),
+        direction: trade.direction as 'long' | 'short',
+        riskSnapshot: riskSnap
+          ? {
+              initialRiskAmount: riskSnap.initialRiskAmount,
+              accountEquityAtOpen: riskSnap.accountEquityAtOpen,
+            }
+          : null,
+        stopAdjustments: stopAdjustments
+          .filter((s): s is typeof s & { newStop: number } => s.newStop != null)
+          .map((s) => ({
+            stopPrice: s.newStop,
+            adjustedAt: s.adjustedAt ?? '',
+          })),
+        currentMark: null,
+        currentAccountEquity,
+      };
+
+      const metrics = computeTradeMetrics(metricsInput);
 
       // Grade data
       const grade = gradesMap.get(trade.id);
@@ -208,14 +236,14 @@ export async function GET(request: NextRequest) {
         createdAt: trade.createdAt ?? null,
         updatedAt: trade.updatedAt ?? null,
 
-        // Computed P&L
-        realizedPnL: pnl.totalRealizedPnL,
-        rMultiple,
-        avgEntryPrice: pnl.avgEntryPrice,
-        totalEntryQty: pnl.totalEntryQty,
-        totalExitQty: pnl.totalExitQty,
-        openQuantity: pnl.openQuantity,
-        totalFees,
+        // Computed P&L (from computeTradeMetrics)
+        realizedPnL: metrics.realizedPnl.netRealizedPnl,
+        rMultiple: metrics.returnMetrics.rMultiple,
+        avgEntryPrice: metrics.averagePrices.avgEntryPrice,
+        totalEntryQty: metrics.size.entryQuantity,
+        totalExitQty: metrics.size.exitQuantity,
+        openQuantity: metrics.size.openQuantity,
+        totalFees: metrics.fees.totalFees,
 
         // Grade scores
         setupQualityScore: grade?.setupQualityScore ?? null,

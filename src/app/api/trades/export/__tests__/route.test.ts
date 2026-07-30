@@ -20,11 +20,8 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
-import {
-  calculatePnL,
-  calculateRMultiple,
-  type ExecutionData,
-} from '@/lib/trade-calc';
+import { computeTradeMetrics } from '@/lib/trade-metrics';
+import type { TradeMetricsInput } from '@/lib/trade-metrics';
 import { exportTradesToCsv, CSV_COLUMNS, type ExportTradeRow } from '@/lib/export-csv';
 
 let passed = 0;
@@ -94,6 +91,11 @@ sqlite.exec(`
     default_commission REAL,
     journal_start_date TEXT,
     currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp),
     FOREIGN KEY (default_account_id) REFERENCES accounts(id)
@@ -119,6 +121,11 @@ sqlite.exec(`
     pre_trade_plan TEXT,
     opened_at TEXT,
     closed_at TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     exit_notes TEXT,
     lesson TEXT,
     created_at TEXT DEFAULT (current_timestamp),
@@ -391,24 +398,46 @@ function doGetExport(queryAccountId?: string | null): ExportRouteResult {
       }
     }
 
+    // Fetch account and settings for equity cascade
+    const exportAccount = db.select().from(schema.accounts).where(eq(schema.accounts.id, accountId)).get();
+    const exportSettings = db.select().from(schema.settings).get();
+    const currentAccountEquity =
+      exportAccount?.startingBalance ?? exportSettings?.startingAccountValue ?? null;
+
     // 4. Build ExportTradeRow array
     const exportRows: ExportTradeRow[] = allTrades.map((trade) => {
       const tradeExecs = executionsMap.get(trade.id) ?? [];
-
-      const executionData: ExecutionData[] = tradeExecs.map((ex) => ({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? null,
-        executedAt: ex.executedAt ?? '',
-      }));
-
-      const pnl = calculatePnL(executionData, trade.direction as 'long' | 'short');
-      const totalFees = executionData.reduce((s, e) => s + (e.fees ?? 0), 0);
-
       const riskSnap = riskMap.get(trade.id);
-      const initialRiskAmount = riskSnap?.initialRiskAmount ?? null;
-      const { rMultiple } = calculateRMultiple(pnl.totalRealizedPnL, initialRiskAmount);
+      const stopAdjustments = stopAdjustmentsMap.get(trade.id) ?? [];
+
+      // Build TradeMetricsInput for computeTradeMetrics
+      const metricsInput: TradeMetricsInput = {
+        executions: tradeExecs.map((ex) => ({
+          id: ex.id,
+          action: ex.action,
+          quantity: ex.quantity,
+          price: ex.price,
+          fees: ex.fees ?? 0,
+          executedAt: ex.executedAt ?? '',
+        })),
+        direction: trade.direction as 'long' | 'short',
+        riskSnapshot: riskSnap
+          ? {
+              initialRiskAmount: riskSnap.initialRiskAmount,
+              accountEquityAtOpen: riskSnap.accountEquityAtOpen,
+            }
+          : null,
+        stopAdjustments: stopAdjustments
+          .filter((s) => s.newStop != null)
+          .map((s) => ({
+            stopPrice: s.newStop as number,
+            adjustedAt: s.adjustedAt ?? '',
+          })),
+        currentMark: null,
+        currentAccountEquity,
+      };
+
+      const metrics = computeTradeMetrics(metricsInput);
 
       const grade = gradesMap.get(trade.id);
 
@@ -433,13 +462,13 @@ function doGetExport(queryAccountId?: string | null): ExportRouteResult {
         closedAt: trade.closedAt ?? null,
         createdAt: trade.createdAt ?? null,
         updatedAt: trade.updatedAt ?? null,
-        realizedPnL: pnl.totalRealizedPnL,
-        rMultiple,
-        avgEntryPrice: pnl.avgEntryPrice,
-        totalEntryQty: pnl.totalEntryQty,
-        totalExitQty: pnl.totalExitQty,
-        openQuantity: pnl.openQuantity,
-        totalFees,
+        realizedPnL: metrics.realizedPnl.netRealizedPnl,
+        rMultiple: metrics.returnMetrics.rMultiple,
+        avgEntryPrice: metrics.averagePrices.avgEntryPrice,
+        totalEntryQty: metrics.size.entryQuantity,
+        totalExitQty: metrics.size.exitQuantity,
+        openQuantity: metrics.size.openQuantity,
+        totalFees: metrics.fees.totalFees,
         setupQualityScore: grade?.setupQualityScore ?? null,
         riskQualityScore: grade?.riskQualityScore ?? null,
         entryQualityScore: grade?.entryQualityScore ?? null,
