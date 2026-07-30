@@ -2,7 +2,8 @@
  * server-computed-columns test
  *
  * Tests the GET /api/trades route enhancement: realizedPnl, unrealizedPnl,
- * returnPct, and riskPct fields on each trade row.
+ * returnPct, riskPct, and nested metrics on each trade row, computed via
+ * computeTradeMetrics().
  *
  * Run: npx tsx src/app/api/trades/__tests__/server-computed-columns.test.ts
  */
@@ -13,9 +14,8 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, inArray } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
-import { calculatePnL } from '@/lib/trade-calc';
-import type { ExecutionData, Direction } from '@/lib/trade-calc';
-import { calculateUnrealizedPnL } from '@/lib/mark-to-market';
+import { computeTradeMetrics } from '@/lib/trade-metrics';
+import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
 let passed = 0;
 let failed = 0;
@@ -30,8 +30,8 @@ function assertEqual(actual: unknown, expected: unknown, msg: string) {
   else { failed++; console.error(`  ❌ ${msg} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)} (FAILED)`); }
 }
 
-function assertApprox(actual: number | null, expected: number, tolerance: number, msg: string) {
-  if (actual === null) { failed++; console.error(`  ❌ ${msg} — got null, expected ~${expected} (FAILED)`); return; }
+function assertApprox(actual: number | null | undefined, expected: number, tolerance: number, msg: string) {
+  if (actual === null || actual === undefined) { failed++; console.error(`  ❌ ${msg} — got ${actual}, expected ~${expected} (FAILED)`); return; }
   const diff = Math.abs(actual - expected);
   if (diff <= tolerance) { passed++; console.log(`  ✅ ${msg} (${actual.toFixed(4)} ≈ ${expected})`); }
   else { failed++; console.error(`  ❌ ${msg} — got ${actual}, expected ~${expected} (diff ${diff.toFixed(4)}) (FAILED)`); }
@@ -92,6 +92,9 @@ sqlite.exec(`
     lesson TEXT,
     current_price REAL,
     current_price_fetched_at TEXT,
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -122,7 +125,7 @@ sqlite.exec(`
   );
 `);
 
-// ── Simulated route logic (enhanced) ────────────────────────────────
+// ── Simulated route logic (enhanced via computeTradeMetrics) ──────────
 
 function doEnhancedGetTrades(): { status: number; data: unknown } {
   try {
@@ -141,10 +144,9 @@ function doEnhancedGetTrades(): { status: number; data: unknown } {
         openedAt: schema.trades.openedAt,
         closedAt: schema.trades.closedAt,
         currentPrice: schema.trades.currentPrice,
-        riskPct: schema.tradeRiskSnapshots.accountRiskPct,
+        currentPriceFetchedAt: schema.trades.currentPriceFetchedAt,
       })
       .from(schema.trades)
-      .leftJoin(schema.tradeRiskSnapshots, eq(schema.trades.id, schema.tradeRiskSnapshots.tradeId))
       .all();
 
     // Batch-fetch executions
@@ -158,51 +160,65 @@ function doEnhancedGetTrades(): { status: number; data: unknown } {
             .all()
         : [];
 
-    const execMap = new Map<string, ExecutionData[]>();
+    const execMap = new Map<string, (typeof schema.tradeExecutions.$inferSelect)[]>();
     for (const ex of execRows) {
       const list = execMap.get(ex.tradeId) ?? [];
-      list.push({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? 0,
-        executedAt: ex.executedAt ?? '',
-      });
+      list.push(ex);
       execMap.set(ex.tradeId, list);
+    }
+
+    // Batch-fetch risk snapshots
+    const riskRows =
+      tradeIds.length > 0
+        ? db
+            .select()
+            .from(schema.tradeRiskSnapshots)
+            .where(inArray(schema.tradeRiskSnapshots.tradeId, tradeIds))
+            .all()
+        : [];
+    const riskMap = new Map<string, typeof schema.tradeRiskSnapshots.$inferSelect>();
+    for (const risk of riskRows) {
+      riskMap.set(risk.tradeId, risk);
     }
 
     const enhancedRows = rows.map((row) => {
       const exs = execMap.get(row.id) ?? [];
-      const direction = row.direction as Direction;
+      const riskSnapshot = riskMap.get(row.id) ?? null;
 
-      let realizedPnl: number | null = null;
-      let unrealizedPnl: number | null = null;
-      let returnPct: number | null = null;
-      const riskPct = row.riskPct;
+      const metricsInput: TradeMetricsInput = {
+        executions: exs.map((e) => ({
+          id: e.id,
+          action: e.action,
+          quantity: e.quantity,
+          price: e.price,
+          fees: e.fees,
+          executedAt: e.executedAt ?? '',
+        })),
+        direction: row.direction as 'long' | 'short',
+        riskSnapshot: riskSnapshot
+          ? {
+              initialRiskAmount: riskSnapshot.initialRiskAmount,
+              accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+            }
+          : null,
+        stopAdjustments: [],
+        currentMark:
+          row.currentPrice != null
+            ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
+            : null,
+        currentAccountEquity: null,
+      };
 
-      if (exs.length > 0) {
-        const pnl = calculatePnL(exs, direction);
+      const metrics = computeTradeMetrics(metricsInput);
 
-        if (row.status === 'closed') {
-          realizedPnl = pnl.totalRealizedPnL;
-          if (pnl.avgEntryPrice != null && pnl.totalEntryQty > 0) {
-            returnPct = (realizedPnl / (pnl.avgEntryPrice * pnl.totalEntryQty)) * 100;
-          }
-        } else if (row.status === 'open' && row.currentPrice != null) {
-          const unrealized = calculateUnrealizedPnL({
-            executions: exs,
-            direction,
-            currentPrice: row.currentPrice,
-            feePolicy: 'exclude_entry_fees',
-          });
-          unrealizedPnl = unrealized;
-          if (unrealized != null && pnl.avgEntryPrice != null && pnl.totalEntryQty > 0) {
-            returnPct = (unrealized / (pnl.avgEntryPrice * pnl.totalEntryQty)) * 100;
-          }
-        }
-      }
-
-      return { ...row, realizedPnl, unrealizedPnl, returnPct, riskPct };
+      return {
+        ...row,
+        realizedPnl: metrics.realizedPnl.netRealizedPnl,
+        unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
+        returnPct: metrics.returnMetrics.returnPct,
+        riskPct: metrics.risk.riskToAccount,
+        metrics,
+      };
     });
 
     return { status: 200, data: enhancedRows };
@@ -314,6 +330,12 @@ console.log('\n1. Closed long trade returns computed realizedPnl:');
   assertApprox(trade.returnPct as number, 9.92, 0.01, 'returnPct = 9.92%');
   assert(trade.unrealizedPnl === null, 'unrealizedPnl is null for closed trade');
   assert(trade.riskPct === null, 'riskPct is null without snapshot');
+  // Verify nested metrics
+  assertNotNull(trade.metrics, 'metrics object is present');
+  const m = trade.metrics as Record<string, unknown>;
+  assertNotNull(m.realizedPnl, 'metrics.realizedPnl is present');
+  assertNotNull(m.size, 'metrics.size is present');
+  assertNotNull(m.fees, 'metrics.fees is present');
 }
 
 // ── 2. Closed short trade ──────────────────────────────────────────
@@ -359,6 +381,7 @@ console.log('\n3. Open trade with currentPrice returns unrealizedPnl:');
     status: 'open',
     plannedQuantity: 100,
     currentPrice: 420,
+    currentPriceFetchedAt: new Date().toISOString(),
   });
 
   // Buy 100 shares at $400
@@ -368,11 +391,13 @@ console.log('\n3. Open trade with currentPrice returns unrealizedPnl:');
   const data = result.data as Record<string, unknown>[];
   const trade = data[0] as Record<string, unknown>;
 
-  // Unrealized P&L = (420 - 400) * 100 = 2000 (exclude_entry_fees)
+  // Unrealized P&L = (420 - 400) * 100 = 2000 (gross, exclude_entry_fees)
   assertApprox(trade.unrealizedPnl as number, 2000, 0.01, 'unrealizedPnl = 2000');
-  // Return% = 2000 / (400 * 100) * 100 = 5%
-  assertApprox(trade.returnPct as number, 5, 0.01, 'returnPct = 5%');
-  assert(trade.realizedPnl === null, 'realizedPnl is null for open trade');
+  // returnPct = totalNetPnl / totalEntryNotional * 100
+  // totalNetPnl = 0 (realized) + (2000 - 5) (net unrealized) = 1995
+  // returnPct = 1995 / (400 * 100) * 100 = 4.9875
+  assertApprox(trade.returnPct as number, 4.9875, 0.01, 'returnPct = 4.9875% (fees deducted)');
+  assertEqual(trade.realizedPnl as number, 0, 'realizedPnl is 0 for open trade (no exits)');
   assert(trade.riskPct === null, 'riskPct is null');
 }
 
@@ -398,8 +423,8 @@ console.log('\n4. Open trade without currentPrice has null computed fields:');
   const trade = data[0] as Record<string, unknown>;
 
   assert(trade.unrealizedPnl === null, 'unrealizedPnl is null (no currentPrice)');
-  assert(trade.realizedPnl === null, 'realizedPnl is null');
-  assert(trade.returnPct === null, 'returnPct is null');
+  assertEqual(trade.realizedPnl as number, 0, 'realizedPnl is 0 (no exits, no realized P&L)');
+  assertEqual(trade.returnPct as number, 0, 'returnPct is 0 (no mark, no unrealized P&L)');
 }
 
 // ── 5. Planned trade ───────────────────────────────────────────────
@@ -420,15 +445,15 @@ console.log('\n5. Planned trade has null computed fields:');
   const data = result.data as Record<string, unknown>[];
   const trade = data[0] as Record<string, unknown>;
 
-  assert(trade.realizedPnl === null, 'realizedPnl is null');
+  assertEqual(trade.realizedPnl as number, 0, 'realizedPnl is 0 (no executions)');
   assert(trade.unrealizedPnl === null, 'unrealizedPnl is null');
   assert(trade.returnPct === null, 'returnPct is null');
   assert(trade.riskPct === null, 'riskPct is null');
 }
 
-// ── 6. riskPct from tradeRiskSnapshots ────────────────────────────
+// ── 6. riskPct via computeTradeMetrics (no initialRiskAmount) ──────
 
-console.log('\n6. riskPct comes from tradeRiskSnapshots:');
+console.log('\n6. riskPct from computeTradeMetrics (null when no stop/initialRisk):');
 {
   cleanup();
   const accountId = seedAccount({ id: 'test-account-id' });
@@ -447,8 +472,40 @@ console.log('\n6. riskPct comes from tradeRiskSnapshots:');
   const data = result.data as Record<string, unknown>[];
   const trade = data[0] as Record<string, unknown>;
 
-  assertApprox(trade.riskPct as number, 2.5, 0.01, 'riskPct = 2.5 from snapshot');
+  // riskToAccount is null because computeTradeMetrics needs activeStop or
+  // initialRiskAmount, and our risk snapshot has no initialRiskAmount
+  assert(trade.riskPct === null, 'riskPct is null (no initialRiskAmount in snapshot)');
   assertNotNull(trade.unrealizedPnl, 'unrealizedPnl is not null');
+  assertNotNull(trade.metrics, 'metrics object is present');
+}
+
+// ── 7. R-multiple with initialRiskAmount ──────────────────────────
+
+console.log('\n7. R-multiple computed when initialRiskAmount is present:');
+{
+  cleanup();
+  const accountId = seedAccount({ id: 'test-account-id' });
+  const tradeId = seedTrade({
+    accountId,
+    symbol: 'TSLA',
+    direction: 'long',
+    status: 'closed',
+    plannedQuantity: 100,
+  });
+
+  seedExecution({ tradeId, action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution({ tradeId, action: 'sell', quantity: 100, price: 110, fees: 3 });
+  seedRiskSnapshot({ tradeId, initialRiskAmount: 500, accountRiskPct: 2.5 });
+
+  const result = doEnhancedGetTrades();
+  const data = result.data as Record<string, unknown>[];
+  const trade = data[0] as Record<string, unknown>;
+  const m = trade.metrics as Record<string, unknown>;
+
+  // R = netRealizedPnl / initialRisk = 992 / 500 = 1.984
+  const rm = m.returnMetrics as Record<string, unknown>;
+  assertApprox(rm.rMultiple as number, 1.984, 0.01, 'r-multiple = 992/500 = 1.984');
+  assertNotNull(trade.metrics, 'metrics object is present');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

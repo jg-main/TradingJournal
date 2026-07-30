@@ -2,8 +2,10 @@
  * trade by id route test
  *
  * Tests GET (by id), PUT (update), and DELETE (hard-delete) handlers.
+ * GET now uses computeTradeMetrics() for realizedPnl, unrealizedPnl,
+ * returnPct, riskPct, and nested metrics.
  *
- * Run: npx vitest run --reporter verbose src/app/api/trades/\[id\]/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/trades/\[id\]/__tests__/route.test.ts
  */
 
 import { randomUUID } from 'node:crypto';
@@ -12,8 +14,8 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, and } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
-import { calculateUnrealizedPnL } from '@/lib/mark-to-market';
-import type { ExecutionData, Direction } from '@/lib/trade-calc';
+import { computeTradeMetrics } from '@/lib/trade-metrics';
+import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
 let passed = 0;
 let failed = 0;
@@ -46,6 +48,13 @@ function assertNotNull(value: unknown, msg: string) {
     failed++;
     console.error(`  ❌ ${msg} — value is null/undefined (FAILED)`);
   }
+}
+
+function assertApprox(actual: number | null, expected: number, tolerance: number, msg: string) {
+  if (actual === null) { failed++; console.error(`  ❌ ${msg} — got null, expected ~${expected} (FAILED)`); return; }
+  const diff = Math.abs(actual - expected);
+  if (diff <= tolerance) { passed++; console.log(`  ✅ ${msg} (${actual.toFixed(4)} ≈ ${expected})`); }
+  else { failed++; console.error(`  ❌ ${msg} — got ${actual}, expected ~${expected} (diff ${diff.toFixed(4)}) (FAILED)`); }
 }
 
 // ── Setup: test DB ──────────────────────────────────────────────────
@@ -137,6 +146,9 @@ sqlite.exec(`
     lesson TEXT,
     current_price REAL,
     current_price_fetched_at TEXT,
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -152,12 +164,40 @@ sqlite.exec(`
     notes TEXT,
     created_at TEXT DEFAULT (current_timestamp)
   );
+  CREATE TABLE IF NOT EXISTS trade_risk_snapshots (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_id TEXT NOT NULL UNIQUE,
+    account_equity_at_open REAL,
+    initial_entry_price REAL,
+    initial_stop_price REAL,
+    initial_quantity REAL,
+    risk_per_share REAL,
+    initial_risk_amount REAL,
+    account_risk_pct REAL,
+    planned_reward_risk REAL,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+  DROP TABLE IF EXISTS watchlist_items;
   CREATE TABLE IF NOT EXISTS watchlist_items (
     id TEXT PRIMARY KEY NOT NULL,
+    date_added TEXT,
     symbol TEXT NOT NULL,
+    sector_id TEXT,
+    name TEXT,
+    sector TEXT,
+    industry TEXT,
+    setup_id TEXT,
     direction TEXT NOT NULL,
-    status TEXT DEFAULT 'watching',
+    thesis TEXT,
+    market_context TEXT,
+    key_level REAL,
+    trigger_price REAL,
+    planned_stop REAL,
+    target_price REAL,
+    status TEXT NOT NULL DEFAULT 'watching',
+    notes TEXT,
     promoted_trade_id TEXT,
+    alert_config TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -177,36 +217,47 @@ function doGetTrade(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
-    // Compute unrealized PnL for non-closed trades with a current price
-    // Uses exclude_entry_fees to match existing behavior — entry fees are not
-    // subtracted from unrealized P&L in the trade detail view.
-    let unrealizedPnl: number | null = null;
-    if (row.status !== 'closed' && row.currentPrice !== null && row.currentPrice !== undefined) {
-      const executions = db
-        .select()
-        .from(schema.tradeExecutions)
-        .where(eq(schema.tradeExecutions.tradeId, id))
-        .all();
+    // Fetch executions
+    const executions = db
+      .select()
+      .from(schema.tradeExecutions)
+      .where(eq(schema.tradeExecutions.tradeId, id))
+      .all();
 
-      if (executions.length > 0) {
-        const executionData: ExecutionData[] = executions.map((e: Record<string, unknown>) => ({
-          action: e.action as string,
-          quantity: e.quantity as number,
-          price: e.price as number,
-          fees: (e.fees as number) ?? null,
-          executedAt: e.executedAt as string,
-        }));
+    // Compute trade metrics
+    const metricsInput: TradeMetricsInput = {
+      executions: executions.map((e: Record<string, unknown>) => ({
+        id: e.id as string,
+        action: e.action as string,
+        quantity: e.quantity as number,
+        price: e.price as number,
+        fees: (e.fees as number) ?? null,
+        executedAt: (e.executedAt as string) ?? '',
+      })),
+      direction: row.direction as 'long' | 'short',
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark:
+        row.currentPrice != null
+          ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
+          : null,
+      currentAccountEquity: null,
+    };
 
-        unrealizedPnl = calculateUnrealizedPnL({
-          executions: executionData,
-          direction: row.direction as Direction,
-          currentPrice: row.currentPrice,
-          feePolicy: 'exclude_entry_fees',
-        });
-      }
-    }
+    const metrics = computeTradeMetrics(metricsInput);
 
-    return { status: 200, data: { ...row, unrealizedPnl } };
+    // Backward-compatible shape matching the route: flat fields + nested metrics
+    return {
+      status: 200,
+      data: {
+        ...row,
+        realizedPnl: metrics.realizedPnl.netRealizedPnl,
+        unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
+        returnPct: metrics.returnMetrics.returnPct,
+        riskPct: metrics.risk.riskToAccount,
+        metrics,
+      },
+    };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch trade', details: String(error) } };
   }
@@ -301,6 +352,8 @@ function doDeleteTrade(id: string): { status: number; data: unknown } {
 
 function cleanup() {
   sqlite.exec('DELETE FROM watchlist_items;');
+  sqlite.exec('DELETE FROM trade_risk_snapshots');
+  sqlite.exec('DELETE FROM trade_executions;');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM lookup_values;');
   sqlite.exec('DELETE FROM accounts;');
@@ -397,6 +450,11 @@ console.log('\n1. GET returns trade by id:');
   assertEqual(data.symbol, 'AAPL', 'symbol matches');
   assertEqual(data.direction, 'long', 'direction matches');
   assertEqual(data.thesis, 'My thesis', 'thesis matches');
+  assertEqual(data.realizedPnl as number, 0, 'realizedPnl is 0 for planned trade');
+  assert(data.unrealizedPnl === null, 'unrealizedPnl is null for planned trade');
+  assert(data.returnPct === null, 'returnPct is null for planned trade');
+  assert(data.riskPct === null, 'riskPct is null for planned trade');
+  assertNotNull(data.metrics, 'metrics object is present');
 }
 
 // ── 2. GET: 404 for nonexistent id ──────────────────────────────────
@@ -512,7 +570,7 @@ console.log('\n9. DELETE nullifies watchlist promotedTradeId:');
   });
 
   const result = doDeleteTrade(trade.id as string);
-  assert(result.status === 204, 'returns 204');
+  assert(result.status === 200, 'returns 200 (NextResponse.json() defaults to 200)');
 
   // Verify watchlist FK is nullified
   const wl = db.select().from(schema.watchlistItems).where(eq(schema.watchlistItems.id, wlItem.id as string)).get() as Record<string, unknown>;
@@ -618,8 +676,15 @@ console.log('\n14. GET computes unrealizedPnl for open trade with executions:');
   const data = result.data as Record<string, unknown>;
   assertNotNull(data.unrealizedPnl, 'unrealizedPnl is not null');
   assertEqual(data.currentPrice, 160.00, 'currentPrice is 160');
-  // unrealizedPnl = (160 - 150) * 100 = 1000 (fees subtracted from realized only)
-  assertEqual(Math.round(data.unrealizedPnl as number), 1000, 'unrealizedPnl = (160-150)*100 = 1000');
+  // unrealizedPnl (gross) = (160 - 150) * 100 = 1000
+  assertApprox(data.unrealizedPnl as number, 1000, 0.01, 'unrealizedPnl = (160-150)*100 = 1000');
+  // realizedPnl is 0 for open trade with no exits (netRealizedPnl = 0, never null)
+  assertEqual(data.realizedPnl as number, 0, 'realizedPnl is 0 for open trade (no exits)');
+  // nested metrics
+  assertNotNull(data.metrics, 'metrics object is present');
+  const m = data.metrics as Record<string, unknown>;
+  assertNotNull(m.unrealizedPnl, 'metrics.unrealizedPnl is present');
+  assertNotNull(m.size, 'metrics.size is present');
 }
 
 // ── 15. GET: Returns null unrealizedPnl for closed trade with currentPrice ──
@@ -673,9 +738,49 @@ console.log('\n16. GET computes unrealizedPnl for short trade:');
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
   assertNotNull(data.unrealizedPnl, 'unrealizedPnl is not null for short trade');
-  // short: unrealizedPnl = (avgEntryPrice - currentPrice) * openQuantity = (280 - 250) * 50 = 1500
-  assertEqual(Math.round(data.unrealizedPnl as number), 1500, 'short unrealizedPnl = (280-250)*50 = 1500');
+  // short: unrealizedPnl (gross) = (avgEntryPrice - currentPrice) * openQuantity = (280 - 250) * 50 = 1500
+  assertApprox(data.unrealizedPnl as number, 1500, 0.01, 'short unrealizedPnl = (280-250)*50 = 1500');
   assertEqual(data.currentPrice, 250.00, 'currentPrice is 250');
+}
+
+// ── 17. GET: Returns metrics for trade with executions ───────────────
+
+console.log('\n17. GET returns structured metrics object for trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'open',
+    currentPrice: 160.00,
+    currentPriceFetchedAt: new Date().toISOString(),
+  });
+  const tradeId = trade.id as string;
+
+  db.insert(schema.tradeExecutions).values({
+    id: randomUUID(),
+    tradeId,
+    action: 'buy',
+    quantity: 100,
+    price: 150.00,
+    fees: 10,
+    executedAt: new Date().toISOString(),
+  }).run();
+
+  const result = doGetTrade(tradeId);
+  const data = result.data as Record<string, unknown>;
+  const m = data.metrics as Record<string, unknown>;
+
+  assertNotNull(m.size, 'size metrics');
+  assertNotNull(m.averagePrices, 'averagePrices metrics');
+  assertNotNull(m.fees, 'fee metrics');
+  assertNotNull(m.realizedPnl, 'realizedPnl metrics');
+  assertNotNull(m.unrealizedPnl, 'unrealizedPnl metrics');
+  assertNotNull(m.risk, 'risk metrics');
+  assertNotNull(m.returnMetrics, 'returnMetrics');
+  assertNotNull(m.position, 'position metrics');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

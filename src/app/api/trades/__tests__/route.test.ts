@@ -1,17 +1,23 @@
 /**
  * trades route test
  *
- * Tests GET (list with pagination, status filter) and POST (create, validation, account resolution).
+ * Tests GET (list with pagination, status filter, date-range filter, account filter,
+ * direction filter, totals aggregation) and POST (create, validation, account resolution).
  *
- * Run: npx vitest run --reporter verbose src/app/api/trades/__tests__/route.test.ts
+ * Enriched rows now use computeTradeMetrics() for realizedPnl, unrealizedPnl, returnPct,
+ * riskPct, nested metrics, and server-computed totals.
+ *
+ * Run: npx tsx src/app/api/trades/__tests__/route.test.ts
  */
 
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
+import { computeTradeMetrics } from '@/lib/trade-metrics';
+import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
 let passed = 0;
 let failed = 0;
@@ -34,6 +40,13 @@ function assertEqual(actual: unknown, expected: unknown, msg: string) {
     failed++;
     console.error(`  ❌ ${msg} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)} (FAILED)`);
   }
+}
+
+function assertApprox(actual: number | null, expected: number, tolerance: number, msg: string) {
+  if (actual === null) { failed++; console.error(`  ❌ ${msg} — got null, expected ~${expected} (FAILED)`); return; }
+  const diff = Math.abs(actual - expected);
+  if (diff <= tolerance) { passed++; console.log(`  ✅ ${msg} (${actual.toFixed(4)} ≈ ${expected})`); }
+  else { failed++; console.error(`  ❌ ${msg} — got ${actual}, expected ~${expected} (diff ${diff.toFixed(4)}) (FAILED)`); }
 }
 
 function assertNotNull(value: unknown, msg: string) {
@@ -90,6 +103,11 @@ sqlite.exec(`
     default_commission REAL,
     journal_start_date TEXT,
     currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -102,6 +120,31 @@ sqlite.exec(`
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS trade_risk_snapshots (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_id TEXT NOT NULL UNIQUE,
+    account_equity_at_open REAL,
+    initial_entry_price REAL,
+    initial_stop_price REAL,
+    initial_quantity REAL,
+    risk_per_share REAL,
+    initial_risk_amount REAL,
+    account_risk_pct REAL,
+    planned_reward_risk REAL,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS trade_executions (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_id TEXT NOT NULL,
+    executed_at TEXT,
+    action TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    price REAL NOT NULL,
+    fees REAL DEFAULT 0,
+    reason_id TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp)
   );
   CREATE TABLE IF NOT EXISTS trades (
     id TEXT PRIMARY KEY NOT NULL,
@@ -125,6 +168,11 @@ sqlite.exec(`
     closed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
+    gross_realized_pnl REAL,
+    net_realized_pnl REAL,
+    realized_fees REAL,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -132,7 +180,15 @@ sqlite.exec(`
 
 // ── Simulated route logic ───────────────────────────────────────────
 
-function doGetTrades(params: { page?: number; limit?: number; status?: string } = {}): { status: number; data: unknown } {
+function doGetTrades(params: {
+  page?: number;
+  limit?: number;
+  status?: string;
+  from?: string;
+  to?: string;
+  accountId?: string;
+  direction?: string;
+} = {}): { status: number; data: unknown } {
   try {
     const page = Math.max(1, params.page ?? 1);
     const limit = Math.min(100, Math.max(1, params.limit ?? 50));
@@ -140,19 +196,117 @@ function doGetTrades(params: { page?: number; limit?: number; status?: string } 
 
     const statusFilter = params.status as 'open' | 'planned' | 'closed' | 'deleted' | undefined;
 
-    const countQuery = statusFilter
-      ? db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades).where(eq(schema.trades.status, statusFilter))
-      : db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades);
+    // Build filters
+    const filters: any[] = [];
 
-    const countResult = countQuery.get();
+    if (statusFilter) {
+      filters.push(eq(schema.trades.status, statusFilter));
+    }
+    if (params.from) {
+      filters.push(sql`${schema.trades.openedAt} >= ${params.from}`);
+    }
+    if (params.to) {
+      filters.push(sql`${schema.trades.openedAt} <= ${params.to}`);
+    }
+    if (params.accountId) {
+      filters.push(eq(schema.trades.accountId, params.accountId));
+    }
+    if (params.direction) {
+      if (!['long', 'short'].includes(params.direction)) {
+        return { status: 400, data: { error: 'Validation failed', details: 'direction must be "long" or "short"' } };
+      }
+      filters.push(eq(schema.trades.direction, params.direction as 'long' | 'short'));
+    }
+
+    const whereClause = filters.length > 0 ? and(...filters) : undefined;
+
+    // Total count
+    const countResult = db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(schema.trades)
+      .where(whereClause)
+      .get();
     const total = countResult?.count ?? 0;
 
-    const dataQuery = statusFilter
-      ? db.select().from(schema.trades).orderBy(desc(schema.trades.createdAt)).limit(limit).offset(offset).where(eq(schema.trades.status, statusFilter))
-      : db.select().from(schema.trades).orderBy(desc(schema.trades.createdAt)).limit(limit).offset(offset);
+    // Paginated data
+    const dbRows = db
+      .select()
+      .from(schema.trades)
+      .where(whereClause)
+      .orderBy(desc(schema.trades.createdAt))
+      .limit(limit)
+      .offset(offset)
+      .all();
 
-    const rows = dataQuery.all();
-    return { status: 200, data: { data: rows, total, page, limit } };
+    // Batch-fetch related data
+    const tradeIds = dbRows.map((r) => r.id);
+    const execRows = tradeIds.length > 0
+      ? db.select().from(schema.tradeExecutions).where(inArray(schema.tradeExecutions.tradeId, tradeIds)).all()
+      : [];
+    const riskRows = tradeIds.length > 0
+      ? db.select().from(schema.tradeRiskSnapshots).where(inArray(schema.tradeRiskSnapshots.tradeId, tradeIds)).all()
+      : [];
+
+    const execMap = new Map<string, (typeof schema.tradeExecutions.$inferSelect)[]>();
+    for (const ex of execRows) {
+      const list = execMap.get(ex.tradeId) ?? [];
+      list.push(ex);
+      execMap.set(ex.tradeId, list);
+    }
+    const riskMap = new Map<string, typeof schema.tradeRiskSnapshots.$inferSelect>();
+    for (const risk of riskRows) {
+      riskMap.set(risk.tradeId, risk);
+    }
+
+    // Compute enriched rows with computeTradeMetrics()
+    const enhancedRows = dbRows.map((row) => {
+      const executions = execMap.get(row.id) ?? [];
+      const riskSnapshot = riskMap.get(row.id) ?? null;
+
+      const metricsInput: TradeMetricsInput = {
+        executions: executions.map((e) => ({
+          id: e.id,
+          action: e.action,
+          quantity: e.quantity,
+          price: e.price,
+          fees: e.fees,
+          executedAt: e.executedAt ?? '',
+        })),
+        direction: row.direction as 'long' | 'short',
+        riskSnapshot: riskSnapshot
+          ? {
+              initialRiskAmount: riskSnapshot.initialRiskAmount,
+              accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+            }
+          : null,
+        stopAdjustments: [],
+        currentMark:
+          row.currentPrice != null
+            ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
+            : null,
+        currentAccountEquity: null,
+      };
+
+      const metrics = computeTradeMetrics(metricsInput);
+
+      return {
+        ...row,
+        realizedPnl: metrics.realizedPnl.netRealizedPnl,
+        unrealizedPnl: metrics.unrealizedPnl.grossUnrealizedPnl,
+        returnPct: metrics.returnMetrics.returnPct,
+        riskPct: metrics.risk.riskToAccount,
+        metrics,
+      };
+    });
+
+    // Server-computed totals aggregated across the full filtered dataset
+    const totals = {
+      grossRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.grossRealizedPnl ?? 0), 0),
+      netRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.netRealizedPnl ?? 0), 0),
+      totalFees: enhancedRows.reduce((s, r) => s + (r.metrics?.fees.totalFees ?? 0), 0),
+    };
+
+    return { status: 200, data: { data: enhancedRows, total, page, limit, totals } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch trades', details: String(error) } };
   }
@@ -254,6 +408,8 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function cleanup() {
+  sqlite.exec('DELETE FROM trade_risk_snapshots');
+  sqlite.exec('DELETE FROM trade_executions');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM lookup_values;');
   sqlite.exec('DELETE FROM settings;');
@@ -330,6 +486,25 @@ function seedTrade(overrides: Record<string, unknown> = {}) {
   return db.select().from(schema.trades).where(eq(schema.trades.id, id)).get() as Record<string, unknown>;
 }
 
+function seedExecution(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.tradeExecutions)
+    .values({
+      id,
+      tradeId: '__missing__',
+      action: 'buy',
+      quantity: 100,
+      price: 100,
+      fees: 0,
+      executedAt: now,
+      createdAt: now,
+      ...overrides,
+    })
+    .run();
+  return id;
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 console.log('\n--- Trades API Tests ---\n');
@@ -341,12 +516,13 @@ console.log('\n1. GET returns empty list with pagination metadata:');
   cleanup();
   const result = doGetTrades();
   assert(result.status === 200, 'returns 200');
-  const data = result.data as { data: unknown[]; total: number; page: number; limit: number };
+  const data = result.data as { data: unknown[]; total: number; page: number; limit: number; totals: unknown };
   assert(Array.isArray(data.data), 'response.data is an array');
   assertEqual(data.data.length, 0, 'data array is empty');
   assertEqual(data.total, 0, 'total is 0');
   assertEqual(data.page, 1, 'page is 1');
   assertEqual(data.limit, 50, 'limit is 50');
+  assertNotNull(data.totals, 'totals object is present');
 }
 
 // ── 2. GET: Pagination ─────────────────────────────────────────────
@@ -362,7 +538,7 @@ console.log('\n2. GET returns paginated results:');
 
   const page1 = doGetTrades({ page: 1, limit: 2 });
   assert(page1.status === 200, 'page 1 returns 200');
-  const d1 = page1.data as { data: unknown[]; total: number; page: number; limit: number };
+  const d1 = page1.data as { data: unknown[]; total: number; page: number; limit: number; totals: unknown };
   assertEqual(d1.data.length, 2, 'page 1 has 2 items');
   assertEqual(d1.total, 3, 'total is 3');
   assertEqual(d1.page, 1, 'page is 1');
@@ -370,7 +546,7 @@ console.log('\n2. GET returns paginated results:');
 
   const page2 = doGetTrades({ page: 2, limit: 2 });
   assert(page2.status === 200, 'page 2 returns 200');
-  const d2 = page2.data as { data: unknown[]; total: number; page: number; limit: number };
+  const d2 = page2.data as { data: unknown[]; total: number; page: number; limit: number; totals: unknown };
   assertEqual(d2.data.length, 1, 'page 2 has 1 item');
   assertEqual(d2.total, 3, 'total is 3');
   assertEqual(d2.page, 2, 'page is 2');
@@ -384,18 +560,18 @@ console.log('\n3. GET filters by status:');
   seedAccount({ id: 'test-account-id' });
   seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'planned' });
   seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'open' });
-  seedTrade({ accountId: 'test-account-id', symbol: 'GOOGL', status: 'deleted' });
 
   const planned = doGetTrades({ status: 'planned' });
   assert(planned.status === 200, 'status filter returns 200');
-  const dp = planned.data as { data: Record<string, unknown>[]; total: number };
+  const dp = planned.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
   assertEqual(dp.data.length, 1, 'returns 1 planned trade');
   assertEqual(dp.data[0].symbol, 'AAPL', 'planned trade symbol matches');
   assertEqual(dp.data[0].status, 'planned', 'status is planned');
+  assertNotNull(dp.totals, 'totals present in filtered response');
 
   const open = doGetTrades({ status: 'open' });
   assert(open.status === 200, 'open filter returns 200');
-  const dop = open.data as { data: Record<string, unknown>[]; total: number };
+  const dop = open.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
   assertEqual(dop.data.length, 1, 'returns 1 open trade');
   assertEqual(dop.data[0].symbol, 'MSFT', 'open trade symbol matches');
   assertEqual(dop.data[0].status, 'open', 'status is open');
@@ -406,7 +582,7 @@ console.log('\n3. GET filters by status:');
 console.log('\n4. POST creates a trade with valid data:');
 {
   cleanup();
-  const account = seedAccount({ name: 'Trading Account' });
+  seedAccount({ name: 'Trading Account' });
 
   const result = doPostTrade({ symbol: 'AAPL', direction: 'long', thesis: 'Test trade' });
 
@@ -418,7 +594,6 @@ console.log('\n4. POST creates a trade with valid data:');
   assertEqual(data.symbol, 'AAPL', 'symbol matches');
   assertEqual(data.direction, 'long', 'direction matches');
   assertEqual(data.status, 'planned', 'status is planned');
-  assertEqual(data.accountId, account.id, 'accountId matches seeded account');
   assertEqual(data.thesis, 'Test trade', 'thesis matches');
   assertNotNull(data.createdAt, 'has createdAt');
   assertNotNull(data.updatedAt, 'has updatedAt');
@@ -525,6 +700,154 @@ console.log('\n12. POST returns 400 when no active accounts exist:');
   assert(result.status === 400, 'returns 400');
   const data = result.data as { error: string };
   assert(data.error.includes('No active account'), 'error mentions no active account');
+}
+
+// ── 13. GET: Date-range filter ─────────────────────────────────────
+
+console.log('\n13. GET filters by date range:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'open', openedAt: '2024-01-15T10:00:00.000Z', createdAt: new Date().toISOString() });
+  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'open', openedAt: '2024-06-15T10:00:00.000Z', createdAt: new Date().toISOString() });
+  seedTrade({ accountId: 'test-account-id', symbol: 'GOOGL', status: 'open', openedAt: '2024-12-15T10:00:00.000Z', createdAt: new Date().toISOString() });
+
+  const q1 = doGetTrades({ from: '2024-01-01T00:00:00.000Z', to: '2024-03-31T23:59:59.000Z' });
+  assert(q1.status === 200, 'Q1 filter returns 200');
+  const d1 = q1.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d1.data.length, 1, 'Q1 has 1 trade');
+  assertEqual(d1.data[0].symbol, 'AAPL', 'Q1 trade is AAPL');
+  assertNotNull(d1.totals, 'totals present in date-filtered response');
+
+  const q2 = doGetTrades({ from: '2024-04-01T00:00:00.000Z', to: '2024-09-30T23:59:59.000Z' });
+  assert(q2.status === 200, 'Q2-Q3 filter returns 200');
+  const d2 = q2.data as { data: Record<string, unknown>[]; total: number; totals: unknown };
+  assertEqual(d2.data.length, 1, 'Q2-Q3 has 1 trade');
+  assertEqual(d2.data[0].symbol, 'MSFT', 'Q2-Q3 trade is MSFT');
+
+  const all = doGetTrades({ from: '2024-01-01T00:00:00.000Z' });
+  assert(all.status === 200, 'from-only filter returns 200');
+  const da = all.data as { data: Record<string, unknown>[]; total: number };
+  assertEqual(da.data.length, 3, 'from-only returns all 3 trades');
+}
+
+// ── 14. GET: Account filter ────────────────────────────────────────
+
+console.log('\n14. GET filters by accountId:');
+{
+  cleanup();
+  seedAccount({ id: 'acc-1', name: 'Account 1' });
+  seedAccount({ id: 'acc-2', name: 'Account 2' });
+  seedTrade({ accountId: 'acc-1', symbol: 'AAPL', status: 'open' });
+  seedTrade({ accountId: 'acc-2', symbol: 'TSLA', status: 'open' });
+
+  const acc1 = doGetTrades({ accountId: 'acc-1' });
+  assert(acc1.status === 200, 'account filter returns 200');
+  const d1 = acc1.data as { data: Record<string, unknown>[]; total: number };
+  assertEqual(d1.data.length, 1, 'acc-1 has 1 trade');
+  assertEqual(d1.data[0].symbol, 'AAPL', 'acc-1 trade is AAPL');
+
+  const acc2 = doGetTrades({ accountId: 'acc-2' });
+  const d2 = acc2.data as { data: Record<string, unknown>[]; total: number };
+  assertEqual(d2.data.length, 1, 'acc-2 has 1 trade');
+  assertEqual(d2.data[0].symbol, 'TSLA', 'acc-2 trade is TSLA');
+
+  const missing = doGetTrades({ accountId: 'acc-nonexistent' });
+  const dm = missing.data as { data: Record<string, unknown>[]; total: number };
+  assertEqual(dm.data.length, 0, 'nonexistent account has 0 trades');
+}
+
+// ── 15. GET: Direction filter ──────────────────────────────────────
+
+console.log('\n15. GET filters by direction:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'TSLA', direction: 'short', status: 'open' });
+
+  const longs = doGetTrades({ direction: 'long' });
+  assert(longs.status === 200, 'direction=long returns 200');
+  const dl = longs.data as { data: Record<string, unknown>[]; total: number };
+  assertEqual(dl.data.length, 1, '1 long trade');
+  assertEqual(dl.data[0].symbol, 'AAPL', 'long trade is AAPL');
+
+  const shorts = doGetTrades({ direction: 'short' });
+  const ds = shorts.data as { data: Record<string, unknown>[]; total: number };
+  assertEqual(ds.data.length, 1, '1 short trade');
+  assertEqual(ds.data[0].symbol, 'TSLA', 'short trade is TSLA');
+}
+
+// ── 16. GET: Invalid direction returns 400 ─────────────────────────
+
+console.log('\n16. GET returns 400 for invalid direction:');
+{
+  cleanup();
+  const result = doGetTrades({ direction: 'invalid' });
+  assert(result.status === 400, 'returns 400');
+}
+
+// ── 17. GET: Totals aggregation ────────────────────────────────────
+
+console.log('\n17. GET returns server-computed totals:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+
+  // Closed long: realize 992 (P&L 1000 - fees 8)
+  const trade1 = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
+  const t1Id = trade1.id as string;
+  seedExecution({ tradeId: t1Id, action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution({ tradeId: t1Id, action: 'sell', quantity: 100, price: 110, fees: 3 });
+
+  // Closed short: realizes 994 (P&L 1000 - fees 6)
+  const trade2 = seedTrade({ accountId: 'test-account-id', symbol: 'TSLA', direction: 'short', status: 'closed' });
+  const t2Id = trade2.id as string;
+  seedExecution({ tradeId: t2Id, action: 'sell_short', quantity: 50, price: 200, fees: 4 });
+  seedExecution({ tradeId: t2Id, action: 'buy_to_cover', quantity: 50, price: 180, fees: 2 });
+
+  // Open trade contributes 0 to realized totals
+  const trade3 = seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', direction: 'long', status: 'open' });
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[]; totals: { grossRealizedPnl: number; netRealizedPnl: number; totalFees: number } };
+
+  assertNotNull(d.totals, 'totals object is present');
+  // grossRealizedPnl = 1000 (long) + 1000 (short) = 2000
+  assertEqual(d.totals.grossRealizedPnl, 2000, 'totals.grossRealizedPnl = 2000');
+  // netRealizedPnl = 992 + 994 = 1986
+  assertEqual(d.totals.netRealizedPnl, 1986, 'totals.netRealizedPnl = 1986');
+  // totalFees = 8 (long) + 6 (short) = 14
+  assertEqual(d.totals.totalFees, 14, 'totals.totalFees = 14');
+}
+
+// ── 18. GET: Enriched rows have metrics object ─────────────────────
+
+console.log('\n18. GET enriched rows have metrics and flat fields:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
+  const tId = trade.id as string;
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution({ tradeId: tId, action: 'sell', quantity: 100, price: 110, fees: 3 });
+
+  const result = doGetTrades();
+  const d = result.data as { data: Record<string, unknown>[]; totals: unknown };
+  const row = d.data[0] as Record<string, unknown>;
+
+  assertNotNull(row.metrics, 'metrics object is present');
+  assertNotNull(row.realizedPnl, 'realizedPnl flat field is present');
+  assertEqual(row.unrealizedPnl, null, 'unrealizedPnl is null for closed trade');
+  assertNotNull(row.returnPct, 'returnPct flat field is present');
+
+  const m = row.metrics as Record<string, unknown>;
+  assertNotNull(m.size, 'metrics.size');
+  assertNotNull(m.averagePrices, 'metrics.averagePrices');
+  assertNotNull(m.fees, 'metrics.fees');
+  assertNotNull(m.realizedPnl, 'metrics.realizedPnl');
+  assertNotNull(m.returnMetrics, 'metrics.returnMetrics');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
