@@ -240,14 +240,124 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Server-computed totals aggregated across the full filtered dataset
-    const totals = {
-      grossRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.grossRealizedPnl ?? 0), 0),
-      netRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.netRealizedPnl ?? 0), 0),
-      totalFees: enhancedRows.reduce((s, r) => s + (r.metrics?.fees.totalFees ?? 0), 0),
+    // ── Server-computed totals: aggregate across the full filtered dataset, NOT just the current page ──
+
+    // Get all matching trade IDs (no pagination) for full-dataset aggregation
+    const allMatchingIdsR = db
+      .select({
+        id: trades.id,
+        accountId: trades.accountId,
+        symbol: trades.symbol,
+        direction: trades.direction,
+        currentPrice: trades.currentPrice,
+        currentPriceFetchedAt: trades.currentPriceFetchedAt,
+      })
+      .from(trades)
+      .where(whereClause)
+      .all();
+
+    let fullTotals = {
+      grossRealizedPnl: 0,
+      netRealizedPnl: 0,
+      totalFees: 0,
+      grossUnrealizedPnl: 0,
+      netUnrealizedPnl: 0,
+      totalOpenRisk: 0,
     };
 
-    return NextResponse.json({ data: enhancedRows, total, page, limit, totals });
+    if (allMatchingIdsR.length > 0) {
+      const allTradeIds = allMatchingIdsR.map((r) => r.id);
+      const allUniqueAccountIds = [...new Set(allMatchingIdsR.map((r) => r.accountId))];
+
+      // Batch-fetch related data for ALL matching trades
+      const allExecRows = db.select().from(tradeExecutions).where(inArray(tradeExecutions.tradeId, allTradeIds)).all();
+      const allRiskRows = db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, allTradeIds)).all();
+      const allStopRows = db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, allTradeIds)).all();
+
+      const allExecMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();
+      for (const ex of allExecRows) {
+        const list = allExecMap.get(ex.tradeId) ?? [];
+        list.push(ex);
+        allExecMap.set(ex.tradeId, list);
+      }
+      const allRiskMap = new Map<string, typeof tradeRiskSnapshots.$inferSelect>();
+      for (const risk of allRiskRows) {
+        allRiskMap.set(risk.tradeId, risk);
+      }
+      const allStopMap = new Map<string, (typeof tradeStopAdjustments.$inferSelect)[]>();
+      for (const stop of allStopRows) {
+        const list = allStopMap.get(stop.tradeId) ?? [];
+        list.push(stop);
+        allStopMap.set(stop.tradeId, list);
+      }
+
+      const allAccountRows = db
+        .select()
+        .from(accounts)
+        .where(inArray(accounts.id, allUniqueAccountIds.filter(Boolean)))
+        .all();
+      const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
+
+      // Compute metrics for every matching trade and aggregate
+      fullTotals = allMatchingIdsR.reduce(
+        (acc, row) => {
+          const executions = allExecMap.get(row.id) ?? [];
+          const riskSnapshot = allRiskMap.get(row.id) ?? null;
+          const stopAdjustments = allStopMap.get(row.id) ?? [];
+          const account = allAccountMap.get(row.accountId);
+          const currentAccountEquity =
+            account?.startingBalance ?? settingsRow?.startingAccountValue ?? null;
+
+          const metricsInput: TradeMetricsInput = {
+            executions: executions.map((e) => ({
+              id: e.id,
+              action: e.action,
+              quantity: e.quantity,
+              price: e.price,
+              fees: e.fees,
+              executedAt: e.executedAt ?? '',
+            })),
+            direction: row.direction as 'long' | 'short',
+            riskSnapshot: riskSnapshot
+              ? {
+                  initialRiskAmount: riskSnapshot.initialRiskAmount,
+                  accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+                }
+              : null,
+            stopAdjustments: stopAdjustments
+              .filter((s): s is typeof s & { newStop: number } => s.newStop != null)
+              .map((s) => ({ stopPrice: s.newStop, adjustedAt: s.adjustedAt ?? '' })),
+            currentMark:
+              row.currentPrice != null
+                ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
+                : null,
+            currentAccountEquity,
+          };
+
+          const metrics = computeTradeMetrics(metricsInput);
+
+          return {
+            grossRealizedPnl: acc.grossRealizedPnl + (metrics.realizedPnl.grossRealizedPnl ?? 0),
+            netRealizedPnl: acc.netRealizedPnl + (metrics.realizedPnl.netRealizedPnl ?? 0),
+            totalFees: acc.totalFees + (metrics.fees.totalFees ?? 0),
+            grossUnrealizedPnl:
+              acc.grossUnrealizedPnl + (metrics.unrealizedPnl.grossUnrealizedPnl ?? 0),
+            netUnrealizedPnl:
+              acc.netUnrealizedPnl + (metrics.unrealizedPnl.netUnrealizedPnl ?? 0),
+            totalOpenRisk: acc.totalOpenRisk + (metrics.risk.openRisk ?? 0),
+          };
+        },
+        { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+      );
+    }
+
+    return NextResponse.json({
+      data: enhancedRows,
+      total,
+      page,
+      limit,
+      totals: fullTotals,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch trades', details: String(error) },

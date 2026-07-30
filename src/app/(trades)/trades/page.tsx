@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { NotebookPen, EllipsisVertical } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import DynamicTable from '@/components/dynamic-table';
 import {
   formatCurrency,
@@ -67,7 +69,16 @@ interface TradesResponse {
     grossRealizedPnl: number;
     netRealizedPnl: number;
     totalFees: number;
+    grossUnrealizedPnl: number;
+    netUnrealizedPnl: number;
+    totalOpenRisk: number;
   };
+}
+
+interface AccountOption {
+  id: string;
+  name: string;
+  broker: string | null;
 }
 
 // ── Tab definitions ────────────────────────────────────────────────────
@@ -89,6 +100,16 @@ const TABS: TabDef[] = [
 const PAGE_SIZE = 50;
 
 // ── Helpers ────────────────────────────────────────────────────────────
+
+/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the from bound (start of day). */
+function toFromIso(dateStr: string): string {
+  return `${dateStr}T00:00:00.000Z`;
+}
+
+/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the to bound (end of day). */
+function toToIso(dateStr: string): string {
+  return `${dateStr}T23:59:59.999Z`;
+}
 
 function SkeletonRows() {
   return (
@@ -127,6 +148,50 @@ function ActionsCell() {
       <EllipsisVertical className="size-4" />
     </button>
   );
+}
+
+/** Totals footer row rendered below the DynamicTable */
+function TotalsFooter({
+  totals,
+  tabId,
+}: {
+  totals: TradesResponse['totals'];
+  tabId: TabId;
+}) {
+  if (tabId === 'open') {
+    return (
+      <div className="flex items-center gap-6 border-t px-3 py-2 text-xs text-muted-foreground">
+        <span>
+          Unrealized P&L:{' '}
+          <PnlCell value={totals.netUnrealizedPnl} />
+        </span>
+        <span>
+          Open Risk: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (tabId === 'closed') {
+    return (
+      <div className="flex items-center gap-6 border-t px-3 py-2 text-xs text-muted-foreground">
+        <span>
+          Gross Realized P&L:{' '}
+          <PnlCell value={totals.grossRealizedPnl} />
+        </span>
+        <span>
+          Fees: <span className="tabular-nums">{formatCurrency(totals.totalFees)}</span>
+        </span>
+        <span>
+          Net Realized P&L:{' '}
+          <PnlCell value={totals.netRealizedPnl} />
+        </span>
+      </div>
+    );
+  }
+
+  // Planned tab — no meaningful monetary totals
+  return null;
 }
 
 // ── Column Definitions per Spec Sections 7.1-7.3 ───────────────────────
@@ -460,6 +525,8 @@ export default function TradesPage() {
     document.title = 'Trades — Trading Journal';
   }, []);
 
+  // ── State ──────────────────────────────────────────────────────────
+
   const [tabData, setTabData] = useState<Record<TabId, TradeRow[]>>({
     open: [],
     closed: [],
@@ -469,6 +536,11 @@ export default function TradesPage() {
     open: 0,
     closed: 0,
     planned: 0,
+  });
+  const [tabTotals, setTabTotals] = useState<Record<TabId, TradesResponse['totals']>>({
+    open: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+    closed: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+    planned: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
   });
   const [tabLoading, setTabLoading] = useState<Record<TabId, boolean>>({
     open: true,
@@ -482,6 +554,38 @@ export default function TradesPage() {
   });
   const [activeTab, setActiveTab] = useState<TabId>('open');
 
+  // Filter state
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [accountId, setAccountId] = useState('all');
+
+  // Account options for the filter dropdown
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+
+  // Fetch accounts list
+  useEffect(() => {
+    async function loadAccounts() {
+      try {
+        const res = await fetch('/api/accounts');
+        if (res.ok) {
+          const data: AccountOption[] = await res.json();
+          setAccounts(data);
+        }
+      } catch {
+        // Non-critical — leave empty list
+      } finally {
+        setAccountsLoading(false);
+      }
+    }
+    loadAccounts();
+  }, []);
+
+  // Debounce ref to avoid rapid re-fetches while typing dates
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Data fetching ─────────────────────────────────────────────────
+
   const fetchTab = useCallback(async (tab: TabDef, page: number = 1) => {
     setTabLoading((prev) => ({ ...prev, [tab.id]: true }));
     setTabError((prev) => ({ ...prev, [tab.id]: null }));
@@ -490,6 +594,12 @@ export default function TradesPage() {
       params.set('status', tab.apiStatus);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
+
+      // Append active filter values
+      if (fromDate) params.set('from', toFromIso(fromDate));
+      if (toDate) params.set('to', toToIso(toDate));
+      if (accountId && accountId !== 'all') params.set('accountId', accountId);
+
       const res = await fetch(`/api/trades?${params.toString()}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to fetch trades' }));
@@ -498,6 +608,7 @@ export default function TradesPage() {
       const result: TradesResponse = await res.json();
       setTabData((prev) => ({ ...prev, [tab.id]: result.data }));
       setTabTotal((prev) => ({ ...prev, [tab.id]: result.total }));
+      setTabTotals((prev) => ({ ...prev, [tab.id]: result.totals }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error';
       setTabError((prev) => ({ ...prev, [tab.id]: msg }));
@@ -506,12 +617,21 @@ export default function TradesPage() {
     } finally {
       setTabLoading((prev) => ({ ...prev, [tab.id]: false }));
     }
-  }, []);
+  }, [fromDate, toDate, accountId]);
 
-  // Fetch all tabs on mount
+  // Fetch all tabs — fires when filters change (debounced)
   useEffect(() => {
-    TABS.forEach((tab) => fetchTab(tab, 1));
-  }, [fetchTab]);
+    // Clear any pending debounce
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      TABS.forEach((tab) => fetchTab(tab, 1));
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [fetchTab]); // fetchTab changes when fromDate, toDate, or accountId change
 
   // Memoized column definitions per tab
   const colMap = useMemo<
@@ -529,6 +649,7 @@ export default function TradesPage() {
     const error = tabError[tab.id];
     const rows = tabData[tab.id];
     const total = tabTotal[tab.id];
+    const totals = tabTotals[tab.id];
 
     if (error) {
       return (
@@ -578,6 +699,7 @@ export default function TradesPage() {
           columns={colMap[tab.id]}
           storageKey={`trades:${tab.id}`}
         />
+        <TotalsFooter totals={totals} tabId={tab.id} />
       </div>
     );
   }
@@ -590,6 +712,63 @@ export default function TradesPage() {
         Trades
       </h1>
 
+      {/* ── Filter controls ─────────────────────────────────────── */}
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        {/* From date */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-from" className="text-xs font-medium text-muted-foreground">
+            From
+          </label>
+          <Input
+            id="filter-from"
+            type="date"
+            className="h-8 w-44"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+        </div>
+
+        {/* To date */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-to" className="text-xs font-medium text-muted-foreground">
+            To
+          </label>
+          <Input
+            id="filter-to"
+            type="date"
+            className="h-8 w-44"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+        </div>
+
+        {/* Account filter */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-account" className="text-xs font-medium text-muted-foreground">
+            Account
+          </label>
+          <Select
+            value={accountId}
+            onValueChange={(v) => setAccountId(v)}
+            disabled={accountsLoading}
+          >
+            <SelectTrigger id="filter-account" className="h-8 w-48">
+              <SelectValue placeholder={accountsLoading ? 'Loading...' : 'All accounts'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All accounts</SelectItem>
+              {accounts.map((acct) => (
+                <SelectItem key={acct.id} value={acct.id}>
+                  {acct.name}
+                  {acct.broker ? ` (${acct.broker})` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* ── Tabs ────────────────────────────────────────────────── */}
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as TabId)}
