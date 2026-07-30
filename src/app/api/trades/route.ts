@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments } from '@/db/schema';
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
@@ -35,16 +35,64 @@ export async function GET(request: NextRequest) {
 
     type TradeStatus = 'planned' | 'open' | 'closed' | 'deleted';
 
-    // Build status filter conditions
-    const statusFilter = status
-      ? [eq(trades.status, status as TradeStatus)]
-      : [];
+    // Parse filter params
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    const accountIdFilter = searchParams.get('accountId');
+    const directionFilter = searchParams.get('direction');
+
+    // Validate date params with zod if present
+    if (from) {
+      const parsed = z.string().datetime({ offset: true }).or(z.string().datetime()).safeParse(from);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Validation failed', details: 'from must be a valid ISO 8601 date string' },
+          { status: 400 }
+        );
+      }
+    }
+    if (to) {
+      const parsed = z.string().datetime({ offset: true }).or(z.string().datetime()).safeParse(to);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Validation failed', details: 'to must be a valid ISO 8601 date string' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Build filters array (conditions that narrow the result set)
+    const filters: any[] = [];
+
+    if (status) {
+      filters.push(eq(trades.status, status as TradeStatus));
+    }
+    if (from) {
+      filters.push(gte(trades.openedAt, from));
+    }
+    if (to) {
+      filters.push(lte(trades.openedAt, to));
+    }
+    if (accountIdFilter) {
+      filters.push(eq(trades.accountId, accountIdFilter));
+    }
+    if (directionFilter) {
+      if (!['long', 'short'].includes(directionFilter)) {
+        return NextResponse.json(
+          { error: 'Validation failed', details: 'direction must be "long" or "short"' },
+          { status: 400 }
+        );
+      }
+      filters.push(eq(trades.direction, directionFilter as 'long' | 'short'));
+    }
+
+    const whereClause = filters.length > 0 ? and(...filters) : undefined;
 
     // Total count
     const countResult = db
       .select({ count: sql<number>`COUNT(*)` })
       .from(trades)
-      .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
+      .where(whereClause)
       .get();
 
     const total = countResult?.count ?? 0;
@@ -86,7 +134,7 @@ export async function GET(request: NextRequest) {
       .from(trades)
       .leftJoin(setupDefinitions, eq(trades.setupId, setupDefinitions.id))
       .leftJoin(lookupValues, eq(trades.setupId, lookupValues.id))
-      .where(statusFilter.length > 0 ? and(...statusFilter) : undefined)
+      .where(whereClause)
       .orderBy(desc(trades.openedAt), desc(trades.createdAt))
       .limit(limit)
       .offset(offset)
