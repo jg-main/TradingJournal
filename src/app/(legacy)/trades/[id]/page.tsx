@@ -515,6 +515,7 @@ export default function TradeDetailPage() {
           id: trade.id,
           symbol: trade.symbol,
           direction: trade.direction,
+          status: trade.status,
           accountId: trade.accountId,
           setupId: trade.setupId,
           thesis: trade.thesis,

@@ -26,6 +26,7 @@ export interface EditableTrade {
   id: string;
   symbol: string;
   direction: 'long' | 'short';
+  status: 'planned' | 'open' | 'closed' | 'deleted';
   accountId: string;
   setupId: string | null;
   thesis: string | null;
@@ -124,7 +125,12 @@ export default function EditTradeDialog({
           setup: setup === '__none__' ? null : (setup.trim() || null),
           thesis: thesis.trim() || null,
           plannedEntry: plannedEntry ? parseFloat(plannedEntry) : null,
-          plannedStop: plannedStop ? parseFloat(plannedStop) : null,
+          // plannedStop is immutable for open trades — the active stop is
+          // managed exclusively through the Adjust Stop flow. The backend
+          // rejects plannedStop updates for open trades; omit it client-side.
+          ...(trade.status === 'open'
+            ? {}
+            : { plannedStop: plannedStop ? parseFloat(plannedStop) : null }),
           plannedTarget1: plannedTarget1 ? parseFloat(plannedTarget1) : null,
           plannedTarget2: plannedTarget2 ? parseFloat(plannedTarget2) : null,
           plannedQuantity: plannedQuantity ? parseFloat(plannedQuantity) : null,
@@ -173,7 +179,9 @@ export default function EditTradeDialog({
         <DialogHeader>
           <DialogTitle>Edit Trade — {trade.symbol}</DialogTitle>
           <DialogDescription>
-            Update the trade details below. Changes apply at any stage.
+            {trade.status === 'open'
+              ? 'Update trade details. The active stop is managed through Adjust Stop.'
+              : 'Update the trade details below. Changes apply at any stage.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -258,16 +266,35 @@ export default function EditTradeDialog({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Stop Loss
+                {trade.status === 'open'
+                  ? 'Original Planned Stop'
+                  : 'Stop Loss'}
               </label>
-              <Input
-                type="number"
-                step="any"
-                placeholder="0.00"
-                value={plannedStop}
-                onChange={(e) => setPlannedStop(e.target.value)}
-                disabled={submitting}
-              />
+              {trade.status === 'open' ? (
+                <>
+                  <Input
+                    type="number"
+                    step="any"
+                    placeholder="0.00"
+                    value={trade.plannedStop?.toString() ?? ''}
+                    readOnly
+                    aria-readonly="true"
+                    className="cursor-not-allowed bg-input/50 opacity-60"
+                  />
+                  <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                    Read-only — the active stop is managed through Adjust Stop.
+                  </p>
+                </>
+              ) : (
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder="0.00"
+                  value={plannedStop}
+                  onChange={(e) => setPlannedStop(e.target.value)}
+                  disabled={submitting}
+                />
+              )}
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
