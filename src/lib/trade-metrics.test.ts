@@ -831,12 +831,12 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 // T02: Risk calculation fixes — Active Stop fallback + Open Risk clamp + lockedPnl
 // ────────────────────────────────────────────────────────────────────────
 
-// --- T02 Test 1: Active Stop falls back to riskSnapshot (long) ---
+// --- T02 Test 1: Active Stop falls back to riskSnapshot initialStopPrice (long) ---
 {
-  console.log('\n## T02-1: Active Stop falls back to riskSnapshot (long)');
+  console.log('\n## T02-1: Active Stop uses stored initialStopPrice (long)');
 
-  // Buy 10@$50, no stop adjustments, riskSnapshot with initialRiskAmount=$200
-  // Derived activeStop = 50 - (200/10) = 50 - 20 = $30
+  // Buy 10@$50, no stop adjustments, riskSnapshot with stored initialStopPrice=$30
+  // activeStop uses stored initialStopPrice directly (never reconstructed from risk amount)
   // openRisk = max(0, 50 - 30) * 10 = $200
   // lockedPnl = max(0, 30 - 50) * 10 = $0
   const input: TradeMetricsInput = {
@@ -844,14 +844,15 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
       { id: 'T2-E1', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
     ],
     direction: 'long',
-    riskSnapshot: { initialRiskAmount: 200, accountEquityAtOpen: 10000 },
+    riskSnapshot: { initialRiskAmount: 200, accountEquityAtOpen: 10000, initialStopPrice: 30 },
     stopAdjustments: [],
     currentMark: null,
     currentAccountEquity: null,
   };
 
   const r = computeTradeMetrics(input);
-  assertApprox(r.risk.activeStop, 30, 'T02-1: activeStop = $30 (derived from riskSnapshot)');
+  assertApprox(r.risk.activeStop, 30, 'T02-1: activeStop = $30 (stored initialStopPrice)');
+  assertApprox(r.risk.initialStop, 30, 'T02-1: initialStop = $30 (stored exact value)');
   assertApprox(r.risk.openRisk, 200, 'T02-1: openRisk = $200');
   assertApprox(r.risk.lockedPnl, 0, 'T02-1: lockedPnl = $0 (no profit locked)');
   assertApprox(r.risk.initialRisk, 200, 'T02-1: initialRisk = $200');
@@ -859,12 +860,12 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.risk.initialRiskPct, 0.02, 'T02-1: initialRiskPct = 0.02 (2.0%)');
 }
 
-// --- T02 Test 2: Active Stop falls back to riskSnapshot (short) ---
+// --- T02 Test 2: Active Stop falls back to riskSnapshot initialStopPrice (short) ---
 {
-  console.log('\n## T02-2: Active Stop falls back to riskSnapshot (short)');
+  console.log('\n## T02-2: Active Stop uses stored initialStopPrice (short)');
 
-  // Sell_short 10@$100, no stop adjustments, riskSnapshot with initialRiskAmount=$300
-  // Derived activeStop = 100 + (300/10) = 100 + 30 = $130
+  // Sell_short 10@$100, no stop adjustments, riskSnapshot with stored initialStopPrice=$130
+  // activeStop uses stored initialStopPrice directly (never reconstructed from risk amount)
   // openRisk = max(0, 130 - 100) * 10 = $300
   // lockedPnl = max(0, 100 - 130) * 10 = $0
   const input: TradeMetricsInput = {
@@ -872,14 +873,15 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
       { id: 'T2-E2', action: 'sell_short', quantity: 10, price: 100, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
     ],
     direction: 'short',
-    riskSnapshot: { initialRiskAmount: 300, accountEquityAtOpen: 10000 },
+    riskSnapshot: { initialRiskAmount: 300, accountEquityAtOpen: 10000, initialStopPrice: 130 },
     stopAdjustments: [],
     currentMark: null,
     currentAccountEquity: null,
   };
 
   const r = computeTradeMetrics(input);
-  assertApprox(r.risk.activeStop, 130, 'T02-2: activeStop = $130 (derived from riskSnapshot)');
+  assertApprox(r.risk.activeStop, 130, 'T02-2: activeStop = $130 (stored initialStopPrice)');
+  assertApprox(r.risk.initialStop, 130, 'T02-2: initialStop = $130 (stored exact value)');
   assertApprox(r.risk.openRisk, 300, 'T02-2: openRisk = $300');
   assertApprox(r.risk.lockedPnl, 0, 'T02-2: lockedPnl = $0 (no profit locked)');
 }
@@ -905,6 +907,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 
   const r = computeTradeMetrics(input);
   assertApprox(r.risk.activeStop, 45, 'T02-3: activeStop = $45 (from adjustment, not riskSnapshot)');
+  assert(r.risk.initialStop === null, 'T02-3: initialStop = null (no initialStopPrice in riskSnapshot)');
   assertApprox(r.risk.openRisk, 50, 'T02-3: openRisk = $50');
   assertApprox(r.risk.lockedPnl, 0, 'T02-3: lockedPnl = $0');
 }
@@ -929,6 +932,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 
   const r = computeTradeMetrics(input);
   assertApprox(r.risk.activeStop, 55, 'T02-4: activeStop = $55');
+  assert(r.risk.initialStop === null, 'T02-4: initialStop = null (no riskSnapshot)');
   assertApprox(r.risk.openRisk, 0, 'T02-4: openRisk = $0 (clamped, no risk)');
   assertApprox(r.risk.lockedPnl, 50, 'T02-4: lockedPnl = $50 (profit locked)');
 }
@@ -953,6 +957,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 
   const r = computeTradeMetrics(input);
   assertApprox(r.risk.activeStop, 90, 'T02-5: activeStop = $90');
+  assert(r.risk.initialStop === null, 'T02-5: initialStop = null (no riskSnapshot)');
   assertApprox(r.risk.openRisk, 0, 'T02-5: openRisk = $0 (clamped, no risk)');
   assertApprox(r.risk.lockedPnl, 100, 'T02-5: lockedPnl = $100 (profit locked)');
 }
@@ -977,6 +982,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 
   const r = computeTradeMetrics(input);
   assertApprox(r.risk.activeStop, 45, 'T02-6: activeStop = $45');
+  assert(r.risk.initialStop === null, 'T02-6: initialStop = null (no riskSnapshot)');
   assertApprox(r.risk.openRisk, 50, 'T02-6: openRisk = $50');
   assertApprox(r.risk.lockedPnl, 0, 'T02-6: lockedPnl = $0 (no profit locked)');
 }
@@ -1001,6 +1007,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 
   const r = computeTradeMetrics(input);
   assertApprox(r.risk.activeStop, 110, 'T02-7: activeStop = $110');
+  assert(r.risk.initialStop === null, 'T02-7: initialStop = null (no riskSnapshot)');
   assertApprox(r.risk.openRisk, 100, 'T02-7: openRisk = $100');
   assertApprox(r.risk.lockedPnl, 0, 'T02-7: lockedPnl = $0 (no profit locked)');
 }
@@ -1025,6 +1032,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 
   const r = computeTradeMetrics(input);
   assertApprox(r.risk.activeStop, 50, 'T02-8: activeStop = $50');
+  assert(r.risk.initialStop === null, 'T02-8: initialStop = null (no riskSnapshot)');
   assertApprox(r.risk.openRisk, 0, 'T02-8: openRisk = $0');
   assertApprox(r.risk.lockedPnl, 0, 'T02-8: lockedPnl = $0');
 }
@@ -1048,8 +1056,56 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 
   const r = computeTradeMetrics(input);
   assert(r.risk.activeStop === null, 'T02-9: activeStop = null');
+  assert(r.risk.initialStop === null, 'T02-9: initialStop = null (no riskSnapshot)');
   assert(r.risk.openRisk === null, 'T02-9: openRisk = null');
   assert(r.risk.lockedPnl === null, 'T02-9: lockedPnl = null (no stop at all)');
+}
+
+// --- T02 Test 10: Backward compat — activeStop derived from initialRiskAmount when initialStopPrice is null ---
+{
+  console.log('\n## T02-10: Backward compat — activeStop derived from initialRiskAmount');
+
+  // riskSnapshot has initialRiskAmount but no initialStopPrice
+  // Should fall back to deriving activeStop from initialRiskAmount
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T2-E10', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: { initialRiskAmount: 200, accountEquityAtOpen: 10000, initialStopPrice: null },
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 30, 'T02-10: activeStop = $30 (derived from initialRiskAmount fallback)');
+  assert(r.risk.initialStop === null, 'T02-10: initialStop = null (initialStopPrice was null)');
+  assertApprox(r.risk.openRisk, 200, 'T02-10: openRisk = $200');
+  assertApprox(r.risk.lockedPnl, 0, 'T02-10: lockedPnl = $0 (lockedPnl computed as 0 when activeStop exists but no profit locked)');
+}
+
+// --- T02 Test 11: Backward compat — legacy riskSnapshot without initialStopPrice (undefined) ---
+{
+  console.log('\n## T02-11: Backward compat — legacy riskSnapshot (undefined initialStopPrice)');
+
+  // Old-style riskSnapshot without initialStopPrice at all (undefined)
+  // Should fall back to deriving activeStop from initialRiskAmount
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T2-E11', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: { initialRiskAmount: 200, accountEquityAtOpen: 10000 },
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 30, 'T02-11: activeStop = $30 (derived from legacy initialRiskAmount)');
+  assert(r.risk.initialStop === null, 'T02-11: initialStop = null (initialStopPrice was undefined)');
+  assertApprox(r.risk.openRisk, 200, 'T02-11: openRisk = $200');
 }
 
 // ────────────────────────────────────────────────────────────────────────

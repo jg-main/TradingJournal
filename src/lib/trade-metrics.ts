@@ -60,6 +60,10 @@ export interface RiskSnapshotData {
   initialRiskAmount: number | null;
   /** Account equity at the time of first execution. */
   accountEquityAtOpen: number | null;
+  /** Stored initial stop price (never reconstructed from risk amount). */
+  initialStopPrice?: number | null;
+  /** Stored initial entry price from risk snapshot. */
+  initialEntryPrice?: number | null;
 }
 
 /** A single stop adjustment record. */
@@ -190,6 +194,8 @@ export interface RiskMetrics {
   initialRisk: number | null;
   /** Initial risk as percentage of account equity at first execution. */
   initialRiskPct: number | null;
+  /** Initial stop price from risk snapshot (stored exact value, never reconstructed). */
+  initialStop: number | null;
 }
 
 /** Return metrics (Section 5.10). */
@@ -469,11 +475,15 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
 
   if (sortedStopAdjustments.length > 0) {
     activeStop = sortedStopAdjustments[sortedStopAdjustments.length - 1].stopPrice;
+  } else if (riskSnapshot?.initialStopPrice != null) {
+    // Use stored exact initialStopPrice directly (never reconstructed from risk amount)
+    activeStop = riskSnapshot.initialStopPrice;
   } else if (
     riskSnapshot?.initialRiskAmount != null &&
     avgEntryPrice != null &&
     entryQuantity.gt(0)
   ) {
+    // Backward compatibility: derive from initialRiskAmount when initialStopPrice is null
     const riskPerShare = new Decimal(riskSnapshot.initialRiskAmount).div(entryQuantity);
     activeStop = direction === 'long'
       ? new Decimal(avgEntryPrice).minus(riskPerShare).toNumber()
@@ -584,6 +594,7 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
       riskToAccount,
       initialRisk,
       initialRiskPct,
+      initialStop: riskSnapshot?.initialStopPrice ?? null,
     },
     returnMetrics: {
       returnPct,

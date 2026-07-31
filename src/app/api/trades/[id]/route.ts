@@ -126,6 +126,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         ? {
             initialRiskAmount: riskSnapshotRow.initialRiskAmount,
             accountEquityAtOpen: riskSnapshotRow.accountEquityAtOpen,
+            initialStopPrice: riskSnapshotRow.initialStopPrice,
+            initialEntryPrice: riskSnapshotRow.initialEntryPrice,
           }
         : null,
       stopAdjustments: stopAdjustmentRows
