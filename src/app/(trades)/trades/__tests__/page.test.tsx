@@ -10,8 +10,8 @@
  * Run: npx vitest run --reporter verbose src/app/(trades)/trades/__tests__/page.test.tsx
  */
 
-import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, waitFor, cleanup, within } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from 'vitest';
+import { render, screen, waitFor, cleanup, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React, { type ComponentType } from 'react';
 
@@ -716,6 +716,133 @@ describe('Footer totals', () => {
       expect(within(plannedTab).getByText('$250.00')).toBeTruthy();
       expect(within(plannedTab).getByText('$5,000.00')).toBeTruthy();
       expect(within(plannedTab).getByText('3')).toBeTruthy();
+    });
+  });
+});
+
+// ── Date preset + timezone tests ───────────────────────────────────────
+// T02: 1M/3M/6M presets use trailing-day arithmetic (not first-of-month) and
+// from/to bounds carry the browser's local timezone offset instead of UTC "Z".
+
+// Mirror of the page's localOffsetSuffix() — computes the env-timezone offset
+// for a given instant so assertions adapt to whatever TZ the test runs in.
+function localOffsetFor(instant: string): string {
+  const offsetMin = -new Date(instant).getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
+  return `${sign}${hh}:${mm}`;
+}
+
+describe('Date presets (trailing-day arithmetic + local timezone bounds)', () => {
+  // Pinned "today" so preset arithmetic is deterministic: July 31, 2026 noon UTC
+  // (noon keeps the local calendar date July 31 in every timezone).
+  const PINNED_NOW = '2026-07-31T12:00:00Z';
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.setSystemTime(new Date(PINNED_NOW));
+  });
+
+  afterEach(() => {
+    // Re-pin to the auto-advancing fake clock (≈ real now) so later tests are
+    // unaffected by the July 31 system-time pinning above.
+    vi.setSystemTime(new Date());
+    localStorage.clear();
+  });
+
+  // Captures the most recent /api/trades URL and serves a generic empty response.
+  function setupTradesUrlCapture() {
+    let tradesUrl: string | null = null;
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        tradesUrl = urlStr;
+        return new Response(JSON.stringify({ data: [], total: 0, totals: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+    return () => tradesUrl;
+  }
+
+  // Encodes a query param the same way URLSearchParams does in the page fetch.
+  const encodedParam = (key: string, value: string) => new URLSearchParams({ [key]: value }).toString();
+
+  it('1M preset on July 31 uses trailing-day arithmetic: from = June 30 (not June 1)', async () => {
+    const getTradesUrl = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
+    screen.getByText('1M').click();
+    vi.advanceTimersByTime(500);
+
+    const offset = localOffsetFor(PINNED_NOW);
+    await vi.waitFor(() => {
+      const url = getTradesUrl();
+      expect(url).not.toBeNull();
+      expect(url).toContain(encodedParam('from', `2026-06-30T00:00:00.000${offset}`));
+      expect(url).not.toContain('from=2026-06-01');
+    });
+  });
+
+  it('3M preset on July 31 uses 91 trailing days: from = May 1 (not April 1)', async () => {
+    const getTradesUrl = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
+    screen.getByText('3M').click();
+    vi.advanceTimersByTime(500);
+
+    const offset = localOffsetFor(PINNED_NOW);
+    await vi.waitFor(() => {
+      const url = getTradesUrl();
+      expect(url).not.toBeNull();
+      expect(url).toContain(encodedParam('from', `2026-05-01T00:00:00.000${offset}`));
+      expect(url).not.toContain('from=2026-04-01');
+    });
+  });
+
+  it('6M preset on July 31 uses 180 trailing days: from = February 1 (not January 1)', async () => {
+    const getTradesUrl = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
+    screen.getByText('6M').click();
+    vi.advanceTimersByTime(500);
+
+    const offset = localOffsetFor(PINNED_NOW);
+    await vi.waitFor(() => {
+      const url = getTradesUrl();
+      expect(url).not.toBeNull();
+      expect(url).toContain(encodedParam('from', `2026-02-01T00:00:00.000${offset}`));
+      expect(url).not.toContain('from=2026-01-01');
+    });
+  });
+
+  it('from/to bounds carry the browser local timezone offset, never hardcoded Z', async () => {
+    const getTradesUrl = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
+
+    // Set From and To directly through the date inputs (index 0 = From, 1 = To)
+    const inputs = screen.getAllByTestId('input');
+    fireEvent.change(inputs[0], { target: { value: '2025-07-01' } });
+    fireEvent.change(inputs[1], { target: { value: '2025-07-31' } });
+    vi.advanceTimersByTime(500);
+
+    const offset = localOffsetFor(PINNED_NOW);
+    await vi.waitFor(() => {
+      const url = getTradesUrl();
+      expect(url).not.toBeNull();
+      // Start of local day for From, end of local day for To, both with the
+      // browser's local ±HH:MM offset suffix (never "Z").
+      expect(url).toContain(encodedParam('from', `2025-07-01T00:00:00.000${offset}`));
+      expect(url).toContain(encodedParam('to', `2025-07-31T23:59:59.999${offset}`));
     });
   });
 });

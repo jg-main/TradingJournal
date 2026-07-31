@@ -130,14 +130,28 @@ const PAGE_SIZE = 50;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the from bound (start of day). */
-function toFromIso(dateStr: string): string {
-  return `${dateStr}T00:00:00.000Z`;
+/**
+ * Browser-local timezone offset suffix, e.g. "-05:00" or "+02:00".
+ * Date-range bounds must be interpreted against the user's local day
+ * boundaries, not hardcoded UTC, so the ISO strings carry the local offset.
+ */
+function localOffsetSuffix(): string {
+  const offsetMin = -new Date().getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
+  return `${sign}${hh}:${mm}`;
 }
 
-/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the to bound (end of day). */
+/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the from bound (start of local day). */
+function toFromIso(dateStr: string): string {
+  return `${dateStr}T00:00:00.000${localOffsetSuffix()}`;
+}
+
+/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the to bound (end of local day). */
 function toToIso(dateStr: string): string {
-  return `${dateStr}T23:59:59.999Z`;
+  return `${dateStr}T23:59:59.999${localOffsetSuffix()}`;
 }
 
 function SkeletonRows() {
@@ -1233,21 +1247,29 @@ function TradesPageInner() {
   // Date-range presets
   const datePresets = useMemo(() => {
     const today = new Date();
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    // Local-calendar formatting — never toISOString(), which would shift the
+    // date by the UTC offset (e.g. a July 31 local midnight becomes July 30
+    // 14:00Z when the browser is east of UTC).
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const startOfYear = new Date(today.getFullYear(), 0, 1);
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthsAgo = (n: number) => {
-      const d = new Date(today.getFullYear(), today.getMonth() - n, 1);
+    // Trailing-day arithmetic (not calendar-month snapping): "1M" on July 31
+    // is June 30 (31 days back), "3M" is May 1 (91 days back), "6M" is
+    // February 1 (180 days back).
+    const daysAgo = (n: number) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - n);
       return d;
     };
     return [
       { label: 'Max', from: '' },
       { label: 'YTD', from: fmt(startOfYear) },
       { label: '1Y', from: fmt(new Date(today.getFullYear() - 1, today.getMonth(), today.getDate())) },
-      { label: '6M', from: fmt(monthsAgo(6)) },
-      { label: '3M', from: fmt(monthsAgo(3)) },
+      { label: '6M', from: fmt(daysAgo(180)) },
+      { label: '3M', from: fmt(daysAgo(91)) },
       { label: 'MTD', from: fmt(startOfMonth) },
-      { label: '1M', from: fmt(monthsAgo(1)) },
+      { label: '1M', from: fmt(daysAgo(31)) },
     ];
   }, []);
 
