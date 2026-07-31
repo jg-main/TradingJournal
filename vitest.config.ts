@@ -129,6 +129,7 @@ export default defineConfig({
       'src/components/accounting/account-positions.test.tsx',
       'src/components/accounting/account-reconciliation-summary.test.tsx',
       'src/components/accounting/account-settings.test.tsx',
+      'src/components/edit-trade-dialog.test.tsx',
       'src/app/api/accounts/[id]/__tests__/route.defaults.test.ts',
       'src/lib/account-detail.test.ts',
       'src/lib/__fixtures__/account-detail-contracts.test.ts',

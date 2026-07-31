@@ -90,6 +90,11 @@ export default function EditTradeDialog({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // R019: plannedStop is immutable once a trade leaves 'planned' status.
+  // Non-planned trades (open, closed, deleted) show a read-only historical
+  // Planned Stop; only planned trades can edit it. Mirrors the PUT guard.
+  const plannedStopLocked = trade.status !== 'planned';
+
   // Fetch setup options when dialog opens
   useEffect(() => {
     if (open) {
@@ -125,10 +130,11 @@ export default function EditTradeDialog({
           setup: setup === '__none__' ? null : (setup.trim() || null),
           thesis: thesis.trim() || null,
           plannedEntry: plannedEntry ? parseFloat(plannedEntry) : null,
-          // plannedStop is immutable for open trades — the active stop is
-          // managed exclusively through the Adjust Stop flow. The backend
-          // rejects plannedStop updates for open trades; omit it client-side.
-          ...(trade.status === 'open'
+          // plannedStop is immutable once the trade leaves 'planned' status
+          // (R019): open, closed, and deleted trades show a read-only
+          // historical Planned Stop. The backend rejects plannedStop updates
+          // for non-planned trades; omit it client-side.
+          ...(plannedStopLocked
             ? {}
             : { plannedStop: plannedStop ? parseFloat(plannedStop) : null }),
           plannedTarget1: plannedTarget1 ? parseFloat(plannedTarget1) : null,
@@ -179,8 +185,10 @@ export default function EditTradeDialog({
         <DialogHeader>
           <DialogTitle>Edit Trade — {trade.symbol}</DialogTitle>
           <DialogDescription>
-            {trade.status === 'open'
-              ? 'Update trade details. The active stop is managed through Adjust Stop.'
+            {plannedStopLocked
+              ? trade.status === 'open'
+                ? 'Update trade details. The active stop is managed through Adjust Stop.'
+                : 'Update trade details. The planned stop is historical and read-only.'
               : 'Update the trade details below. Changes apply at any stage.'}
           </DialogDescription>
         </DialogHeader>
@@ -266,11 +274,9 @@ export default function EditTradeDialog({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                {trade.status === 'open'
-                  ? 'Original Planned Stop'
-                  : 'Stop Loss'}
+                {plannedStopLocked ? 'Original Planned Stop' : 'Stop Loss'}
               </label>
-              {trade.status === 'open' ? (
+              {plannedStopLocked ? (
                 <>
                   <Input
                     type="number"
@@ -282,7 +288,9 @@ export default function EditTradeDialog({
                     className="cursor-not-allowed bg-input/50 opacity-60"
                   />
                   <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
-                    Read-only — the active stop is managed through Adjust Stop.
+                    {trade.status === 'open'
+                      ? 'Read-only — the active stop is managed through Adjust Stop.'
+                      : 'Read-only — the planned stop can only be changed while the trade is planned.'}
                   </p>
                 </>
               ) : (
