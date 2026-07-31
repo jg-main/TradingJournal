@@ -423,6 +423,26 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // Batch-fetch account_performance.nav for ALL full-dataset accounts — primary
+      // equity source for the totals denominator. Keyed by the FULL dataset (not the
+      // paginated page) so totals.portfolioHeatPct stays identical across pagination
+      // pages when a multi-account dataset spans accounts that don't all appear on
+      // the requested page.
+      const allAccountIdsFiltered = allUniqueAccountIds.filter(Boolean);
+      const allPerfRows = allAccountIdsFiltered.length > 0
+        ? db
+            .select({ accountId: accountPerformance.accountId, nav: accountPerformance.nav })
+            .from(accountPerformance)
+            .where(inArray(accountPerformance.accountId, allAccountIdsFiltered))
+            .all()
+        : [];
+      const allAccountPerfMap = new Map<string, string>();
+      for (const perf of allPerfRows) {
+        if (perf.nav) {
+          allAccountPerfMap.set(perf.accountId, perf.nav);
+        }
+      }
+
       // Track unique account equities for portfolioHeat denominator
       // (one equity per account to avoid double-counting)
       const totalEquityByAccount = new Map<string, number>();
@@ -436,7 +456,7 @@ export async function GET(request: NextRequest) {
           const stopAdjustments = allStopMap.get(row.id) ?? [];
           const account = allAccountMap.get(row.accountId);
           const latestRollforward = allLatestRollforwardMap.get(row.accountId);
-          const navRaw = accountPerfMap.get(row.accountId);
+          const navRaw = allAccountPerfMap.get(row.accountId);
           const navValue = navRaw ? parseFloat(navRaw) : null;
           const currentAccountEquity =
             navValue ??

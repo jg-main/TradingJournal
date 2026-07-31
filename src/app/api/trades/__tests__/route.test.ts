@@ -517,6 +517,22 @@ function doGetTrades(params: {
         }
       }
 
+      // Batch-fetch account_performance.nav for ALL full-dataset accounts (S02 T02):
+      // keyed by the FULL dataset, NOT the paginated page, so totals.portfolioHeatPct
+      // is identical across pagination pages for multi-account datasets.
+      const allAccountPerfMap = new Map<string, string>();
+      const allAccIds = allUniqueAccountIds.filter(Boolean);
+      if (allAccIds.length > 0) {
+        const perfRows = sqlite
+          .prepare(`SELECT account_id, nav FROM account_performance WHERE account_id IN (${allAccIds.map(() => '?').join(',')})`)
+          .all(...allAccIds) as Array<{ account_id: string; nav: string }>;
+        for (const perf of perfRows) {
+          if (perf.nav) {
+            allAccountPerfMap.set(perf.account_id, perf.nav);
+          }
+        }
+      }
+
       // Track unique account equities for the portfolioHeat denominator
       // (one equity per account to avoid double-counting)
       const totalEquityByAccount = new Map<string, number>();
@@ -527,9 +543,9 @@ function doGetTrades(params: {
         const riskSnapshot = allRiskMap.get(row.id) ?? null;
         const account = allAccountMap.get(row.accountId);
         const latestRollforward = allLatestRollforwardMap.get(row.accountId);
-        // Note: mirrors route.ts — the nav map is keyed by the PAGINATED account set here;
-        // S02 T02 batch-fetches account_performance.nav for the full dataset independently.
-        const navRaw = accountPerfMap.get(row.accountId);
+        // Full-dataset nav map (S02 T02): keyed by ALL matching accounts, so the
+        // equity denominator — and therefore portfolioHeatPct — is page-independent.
+        const navRaw = allAccountPerfMap.get(row.accountId);
         const navValue = navRaw ? parseFloat(navRaw) : null;
         const currentAccountEquity =
           navValue ??
@@ -1884,6 +1900,79 @@ console.log('\n36. S02 T01: Scale-in open risk — totals.portfolioHeatAmount eq
   assertEqual(d.totals.totalOpenRisk, rowOpenRiskSum, 'totals.totalOpenRisk == sum of row-level openRisk');
   assertEqual(d.totals.portfolioHeatAmount, rowOpenRiskSum, 'totals.portfolioHeatAmount == sum of row-level openRisk (stored stop, not initialRiskAmount fallback)');
   assertApprox(d.totals.portfolioHeatAmount as number, 700, 0.01, 'portfolioHeatAmount = 700 (stored-stop value, not 500 fallback)');
+}
+
+// ── 37. S02 T02: NAV pagination independence ────────────────────────
+
+console.log('\n37. S02 T02: totals.portfolioHeatPct identical on page=1 and page=2 for multi-account datasets (full-dataset nav fetch):');
+{
+  cleanup();
+  // Three accounts, each with account_performance.nav DIFFERENT from their
+  // rollforward fallback (so a page missing the account would use a different
+  // equity and shift the portfolioHeatPct denominator). Note: seedAccount with a
+  // custom id returns undefined (helper re-selects by its own UUID), so subsequent
+  // calls use the literal ids.
+  seedAccount({ id: 'navp-acc-a', name: 'Nav A', startingBalance: 80000 });
+  seedRollforward({ accountId: 'navp-acc-a', endingEquity: 70000 });
+  seedAccount({ id: 'navp-acc-b', name: 'Nav B', startingBalance: 30000 });
+  seedRollforward({ accountId: 'navp-acc-b', endingEquity: 40000 });
+  seedAccount({ id: 'navp-acc-c', name: 'Nav C', startingBalance: 15000 });
+  seedRollforward({ accountId: 'navp-acc-c', endingEquity: 20000 });
+
+  const insertPerf = (accountId: string, nav: string) => {
+    const perfId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite.prepare(`
+      INSERT INTO account_performance (id, account_id, computed_as_of, net_cash, nav, marked_positions, realized_pnl, unrealized_pnl, total_pnl, realized_fees, gross_exposure, net_exposure, warnings, positions_json, rebuild_count, last_rebuilt_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(perfId, accountId, now, '0', nav, '0', '0', '0', '0', '0', '0', '0', '[]', '[]', 0, now);
+  };
+  insertPerf('navp-acc-a', '100000');
+  insertPerf('navp-acc-b', '50000');
+  insertPerf('navp-acc-c', '25000');
+
+  // Three open trades across the three accounts. Distinct createdAt/openedAt so
+  // page 1 (limit=2, newest first) shows acc-c and acc-b, page 2 shows only acc-a.
+  // → the full dataset spans accounts that do NOT all appear on page 1.
+  const tradeA = seedTrade({ accountId: 'navp-acc-a', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110, createdAt: '2026-02-01T10:00:00.000Z', updatedAt: '2026-02-01T10:00:00.000Z', openedAt: '2026-02-01T10:00:00.000Z' });
+  seedExecution({ tradeId: tradeA.id as string, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tradeA.id as string, initialRiskAmount: 1000, accountEquityAtOpen: 100000 }).run();
+
+  const tradeB = seedTrade({ accountId: 'navp-acc-b', symbol: 'MSFT', direction: 'long', status: 'open', currentPrice: 210, createdAt: '2026-02-02T10:00:00.000Z', updatedAt: '2026-02-02T10:00:00.000Z', openedAt: '2026-02-02T10:00:00.000Z' });
+  seedExecution({ tradeId: tradeB.id as string, action: 'buy', quantity: 100, price: 200, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tradeB.id as string, initialRiskAmount: 1000, accountEquityAtOpen: 50000 }).run();
+
+  const tradeC = seedTrade({ accountId: 'navp-acc-c', symbol: 'TSLA', direction: 'long', status: 'open', currentPrice: 310, createdAt: '2026-02-03T10:00:00.000Z', updatedAt: '2026-02-03T10:00:00.000Z', openedAt: '2026-02-03T10:00:00.000Z' });
+  seedExecution({ tradeId: tradeC.id as string, action: 'buy', quantity: 50, price: 300, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tradeC.id as string, initialRiskAmount: 500, accountEquityAtOpen: 25000 }).run();
+
+  const page1 = doGetTrades({ status: 'open', page: 1, limit: 2 });
+  assert(page1.status === 200, 'page=1 returns 200');
+  const p1 = page1.data as { data: Record<string, unknown>[]; totals: Record<string, number> };
+  assertEqual(p1.data.length, 2, 'page 1 has 2 rows (acc-c TSLA, acc-b MSFT)');
+  assertEqual(p1.data.map((r) => r.symbol).sort().join(','), 'MSFT,TSLA', 'page 1 rows are TSLA + MSFT (newest first)');
+
+  const page2 = doGetTrades({ status: 'open', page: 2, limit: 2 });
+  assert(page2.status === 200, 'page=2 returns 200');
+  const p2 = page2.data as { data: Record<string, unknown>[]; totals: Record<string, number> };
+  assertEqual(p2.data.length, 1, 'page 2 has 1 row (acc-a AAPL)');
+  assertEqual(p2.data[0].symbol, 'AAPL', 'page 2 row is AAPL (acc-a only — not on page 1)');
+
+  // Full-dataset totals: open risk = 1000 (A) + 1000 (B) + 500 (C) = 2500.
+  // Equity denominator must use NAV for ALL accounts (100000 + 50000 + 25000 = 175000)
+  // regardless of which accounts appear on the requested page.
+  // pct = 2500 / 175000 ≈ 0.0142857.
+  assertEqual(p1.totals.totalOpenRisk, 2500, 'page1 totals.totalOpenRisk = 2500 (full dataset)');
+  assertEqual(p2.totals.totalOpenRisk, 2500, 'page2 totals.totalOpenRisk = 2500 (full dataset)');
+  assertEqual(p1.totals.portfolioHeatAmount, 2500, 'page1 totals.portfolioHeatAmount = 2500');
+  assertEqual(p2.totals.portfolioHeatAmount, 2500, 'page2 totals.portfolioHeatAmount = 2500');
+
+  // THE regression assertion: portfolioHeatPct identical on both pages.
+  // Pre-fix (nav map keyed by paginated accounts): page1 denominator = 25000+50000+70000
+  // = 145000 → 0.01724; page2 denominator = 100000+40000+20000 = 160000 → 0.01563.
+  assertApprox(p1.totals.portfolioHeatPct as number, p2.totals.portfolioHeatPct as number, 1e-9, 'portfolioHeatPct identical across pages (nav fetched for full dataset)');
+  assertApprox(p1.totals.portfolioHeatPct as number, 2500 / 175000, 0.0001, 'portfolioHeatPct = 2500/175000 ≈ 0.01429 (all three NAVs in denominator)');
+  assertApprox(p2.totals.portfolioHeatPct as number, 2500 / 175000, 0.0001, 'page2 portfolioHeatPct = 2500/175000 ≈ 0.01429 (all three NAVs in denominator)');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
