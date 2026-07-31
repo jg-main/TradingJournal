@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
       ? db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, tradeIds)).all()
       : [];
     const stopRows = tradeIds.length > 0
-      ? db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, tradeIds)).orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.newStop), desc(tradeStopAdjustments.createdAt)).all()
+      ? db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, tradeIds)).orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.createdAt), desc(tradeStopAdjustments.id)).all()
       : [];
 
     // Group by trade ID
@@ -295,6 +295,8 @@ export async function GET(request: NextRequest) {
           .map((s) => ({
             stopPrice: s.newStop,
             adjustedAt: s.adjustedAt ?? '',
+            createdAt: s.createdAt ?? '',
+            id: s.id,
           })),
         currentMark:
           row.currentPrice != null
@@ -390,7 +392,7 @@ export async function GET(request: NextRequest) {
       // Batch-fetch related data for ALL matching trades
       const allExecRows = db.select().from(tradeExecutions).where(inArray(tradeExecutions.tradeId, allTradeIds)).all();
       const allRiskRows = db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, allTradeIds)).all();
-      const allStopRows = db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, allTradeIds)).orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.newStop), desc(tradeStopAdjustments.createdAt)).all();
+      const allStopRows = db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, allTradeIds)).orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.createdAt), desc(tradeStopAdjustments.id)).all();
 
       const allExecMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();
       for (const ex of allExecRows) {
@@ -495,7 +497,12 @@ export async function GET(request: NextRequest) {
               : null,
             stopAdjustments: stopAdjustments
               .filter((s): s is typeof s & { newStop: number } => s.newStop != null)
-              .map((s) => ({ stopPrice: s.newStop, adjustedAt: s.adjustedAt ?? '' })),
+              .map((s) => ({
+                stopPrice: s.newStop,
+                adjustedAt: s.adjustedAt ?? '',
+                createdAt: s.createdAt ?? '',
+                id: s.id,
+              })),
             currentMark:
               row.currentPrice != null
                 ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }

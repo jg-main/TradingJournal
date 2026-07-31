@@ -1164,13 +1164,12 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assert(r.risk.initialStop === null, 'T03-2: initialStop = null (no riskSnapshot)');
 }
 
-// --- T03 Test 3: Same timestamp, largest stopPrice wins ---
+// --- T03 Test 3: Same timestamp, later createdAt wins ---
 {
-  console.log('\n## T03-3: Same timestamp tiebreaker — largest stopPrice wins');
+  console.log('\n## T03-3: Same adjustedAt tiebreaker — later createdAt wins (not larger stopPrice)');
 
-  // Two adjustments at same time: $45 and $55
-  // After ASC sort by adjustedAt (same), then ASC by stopPrice: [45, 55]
-  // [length-1] picks 55
+  // Two adjustments at same adjustedAt: $55 (earlier createdAt) and $45 (later createdAt)
+  // Chronology tiebreaker: later createdAt wins → $45, NOT the larger $55
   const input: TradeMetricsInput = {
     executions: [
       { id: 'T3-E3', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
@@ -1178,25 +1177,24 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
     direction: 'long',
     riskSnapshot: null,
     stopAdjustments: [
-      { stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z' },
-      { stopPrice: 55, adjustedAt: '2026-01-11T10:00:00Z' },
+      { id: 'SA-1', stopPrice: 55, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '2026-01-11T09:00:00Z' },
+      { id: 'SA-2', stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '2026-01-11T11:00:00Z' },
     ],
     currentMark: null,
     currentAccountEquity: null,
   };
 
   const r = computeTradeMetrics(input);
-  assertApprox(r.risk.activeStop, 55, 'T03-3: activeStop = $55 (largest stopPrice wins tiebreaker)');
+  assertApprox(r.risk.activeStop, 45, 'T03-3: activeStop = $45 (later createdAt wins, not larger stopPrice)');
   assert(r.risk.initialStop === null, 'T03-3: initialStop = null (no riskSnapshot)');
 }
 
-// --- T03 Test 4: Same timestamp, multiple prices, reverse stopPrice order ---
+// --- T03 Test 4: Same adjustedAt and createdAt, id decides ---
 {
-  console.log('\n## T03-4: Same timestamp, multiple prices, reverse order');
+  console.log('\n## T03-4: Same adjustedAt + createdAt — id is the final tiebreaker');
 
-  // Three adjustments at same timestamp, passed in descending stopPrice order
-  // After ASC sort by adjustedAt (same), then ASC by stopPrice: [45, 50, 55]
-  // [length-1] picks 55
+  // Three adjustments at same adjustedAt AND same createdAt, passed in scrambled order
+  // After ASC sort by adjustedAt, createdAt, then id: [SA-1, SA-2, SA-3] → [length-1] = SA-3
   const input: TradeMetricsInput = {
     executions: [
       { id: 'T3-E4', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
@@ -1204,16 +1202,16 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
     direction: 'long',
     riskSnapshot: null,
     stopAdjustments: [
-      { stopPrice: 55, adjustedAt: '2026-01-11T10:00:00Z' },
-      { stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z' },
-      { stopPrice: 50, adjustedAt: '2026-01-11T10:00:00Z' },
+      { id: 'SA-3', stopPrice: 55, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '2026-01-11T11:00:00Z' },
+      { id: 'SA-1', stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '2026-01-11T11:00:00Z' },
+      { id: 'SA-2', stopPrice: 50, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '2026-01-11T11:00:00Z' },
     ],
     currentMark: null,
     currentAccountEquity: null,
   };
 
   const r = computeTradeMetrics(input);
-  assertApprox(r.risk.activeStop, 55, 'T03-4: activeStop = $55 (largest stopPrice among same-timestamp after sort)');
+  assertApprox(r.risk.activeStop, 55, 'T03-4: activeStop = $55 (id tiebreaker: SA-3 > SA-2 > SA-1)');
   assert(r.risk.initialStop === null, 'T03-4: initialStop = null (no riskSnapshot)');
 }
 
@@ -1273,6 +1271,56 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   // lockPerUnit = 55 - 50 = 5 → lockedPnl = max(0, 5)*10 = $50
   assertApprox(r.risk.openRisk, 0, 'T03-6: openRisk = $0 (stop above entry)');
   assertApprox(r.risk.lockedPnl, 50, 'T03-6: lockedPnl = $50 (profit locked)');
+}
+
+// --- T03 Test 7: Missing createdAt falls back to id chronologically ---
+{
+  console.log('\n## T03-7: Missing createdAt — id is the deterministic fallback');
+
+  // Legacy rows may lack createdAt (''): same adjustedAt, one with createdAt, one without.
+  // The row with a real createdAt timestamp sorts later → wins.
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E7', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [
+      { id: 'SA-1', stopPrice: 55, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '' },
+      { id: 'SA-2', stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '2026-01-11T11:00:00Z' },
+    ],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 45, 'T03-7: activeStop = $45 (row with createdAt beats missing createdAt)');
+  assert(r.risk.initialStop === null, 'T03-7: initialStop = null (no riskSnapshot)');
+}
+
+// --- T03 Test 8: Blank adjustedAt sorts oldest (deterministic, no NaN) ---
+{
+  console.log('\n## T03-8: Blank adjustedAt — deterministic ordering, no NaN comparisons');
+
+  // A row with null adjustedAt maps to '' in the API. It must sort oldest and never
+  // produce NaN comparisons that could flip ordering non-deterministically.
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E8', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [
+      { id: 'SA-1', stopPrice: 55, adjustedAt: '', createdAt: '2026-01-11T09:00:00Z' },
+      { id: 'SA-2', stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z', createdAt: '2026-01-11T09:00:00Z' },
+    ],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 45, 'T03-8: activeStop = $45 (real adjustedAt beats blank)');
+  assert(r.risk.initialStop === null, 'T03-8: initialStop = null (no riskSnapshot)');
 }
 
 // ────────────────────────────────────────────────────────────────────────

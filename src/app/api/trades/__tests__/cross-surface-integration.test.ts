@@ -13,7 +13,7 @@
  * Audit Section 15 categories (all 10):
  *   1.  Percentage integration      — decimal fractions + formatPercent display
  *   2.  Stop propagation            — activeStop/initialStop identical across surfaces
- *   3.  Stop ordering               — latest adjustedAt, tiebreak largest newStop
+ *   3.  Stop ordering               — latest adjustedAt, tiebreak createdAt then id
  *   4.  Scale-in                    — initial stop exact after additional fills
  *   5.  Partial exit                — FIFO cost basis + realized/unrealized P&L
  *   6.  Cross-surface reconciliation — list ≡ detail ≡ kernel for the same trade
@@ -358,7 +358,8 @@ function seedStopAdjustment(
   tradeId: string,
   adjustedAt: string,
   newStop: number,
-  previousStop: number | null
+  previousStop: number | null,
+  createdAt?: string
 ): void {
   requireDb().db.insert(schema.tradeStopAdjustments).values({
     id: randomUUID(),
@@ -366,7 +367,7 @@ function seedStopAdjustment(
     adjustedAt,
     previousStop,
     newStop,
-    createdAt: nowIso(),
+    createdAt: createdAt ?? nowIso(),
   }).run();
 }
 
@@ -753,7 +754,8 @@ registerCategory('C02', 'Stop propagation', async () => {
 
 // ── C03. Stop ordering ─────────────────────────────────────────────────────
 // Audit §15: multiple stop adjustments inserted out of order must select the
-// latest timestamp; same-timestamp ties resolve to the largest newStop.
+// latest timestamp; same-timestamp ties resolve chronologically (later createdAt,
+// then id) — never by price magnitude.
 
 registerCategory('C03', 'Stop ordering', async () => {
   const accountId = 'acc-order';
@@ -784,21 +786,23 @@ registerCategory('C03', 'Stop ordering', async () => {
     'stop ordering deterministic across surfaces'
   );
 
-  // ── Tiebreaker: two adjustments with the SAME adjustedAt → largest newStop ──
-  seedStopAdjustment(tradeId, '2026-07-04T10:00:00.000Z', 100.0, 99.75);
-  seedStopAdjustment(tradeId, '2026-07-04T10:00:00.000Z', 100.5, 100.0);
+  // ── Tiebreaker: two adjustments with the SAME adjustedAt → later createdAt wins ──
+  // The later-created row carries the SMALLER newStop (99.5) — chronology must beat
+  // price magnitude: activeStop becomes 99.5, not 100.0.
+  seedStopAdjustment(tradeId, '2026-07-04T10:00:00.000Z', 100.0, 99.75, '2026-07-04T11:00:00.000Z');
+  seedStopAdjustment(tradeId, '2026-07-04T10:00:00.000Z', 99.5, 100.0, '2026-07-04T12:00:00.000Z');
 
   const list2 = await getTradesList();
   const row2 = findListRow(list2.body, tradeId);
-  assertEqual(row2.metrics.risk.activeStop, 100.5, 'tie → activeStop = 100.5 (largest newStop at same timestamp)');
+  assertEqual(row2.metrics.risk.activeStop, 99.5, 'tie → activeStop = 99.5 (later createdAt wins, not larger newStop)');
 
   const detail2 = await getTradeDetail(tradeId);
-  assertEqual(detail2.body.metrics.risk.activeStop, 100.5, 'detail tie → activeStop = 100.5');
+  assertEqual(detail2.body.metrics.risk.activeStop, 99.5, 'detail tie → activeStop = 99.5');
 
   // The deterministic selection drives downstream risk correctly:
-  // stop (100.5) is above cost (100) → openRisk clamps to 0, lockedPnl = +50
-  assertApprox(row2.metrics.risk.openRisk, 0, 1e-9, 'openRisk clamps to 0 when stop is past cost');
-  assertApprox(row2.metrics.risk.lockedPnl, 50, 0.01, 'lockedPnl = $50 (100.5−100)×100');
+  // stop (99.5) is below cost (100) → openRisk = (100−99.5)×100 = $50, lockedPnl = 0
+  assertApprox(row2.metrics.risk.openRisk, 50, 1e-9, 'openRisk = $50 (100−99.5)×100 when stop below cost');
+  assertApprox(row2.metrics.risk.lockedPnl, 0, 1e-9, 'lockedPnl = 0 when stop is below cost');
 });
 
 // ── C04. Scale-in ──────────────────────────────────────────────────────────

@@ -91,7 +91,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .select()
       .from(tradeStopAdjustments)
       .where(eq(tradeStopAdjustments.tradeId, id))
-      .orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.newStop), desc(tradeStopAdjustments.createdAt))
+      .orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.createdAt), desc(tradeStopAdjustments.id))
       .all();
 
     // Derive current account equity: account_performance.nav → rollforward.endingEquity
@@ -172,6 +172,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         .map((s) => ({
           stopPrice: s.newStop,
           adjustedAt: s.adjustedAt ?? '',
+          createdAt: s.createdAt ?? '',
+          id: s.id,
         })),
       currentMark:
         row.currentPrice != null

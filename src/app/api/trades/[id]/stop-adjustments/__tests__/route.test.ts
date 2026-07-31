@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 
@@ -104,6 +104,8 @@ sqlite.exec(`
     closed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -138,7 +140,7 @@ function doGetStopAdjustments(tradeId: string): { status: number; data: unknown 
       .select()
       .from(schema.tradeStopAdjustments)
       .where(eq(schema.tradeStopAdjustments.tradeId, tradeId))
-      .orderBy(schema.tradeStopAdjustments.adjustedAt, schema.tradeStopAdjustments.createdAt)
+      .orderBy(desc(schema.tradeStopAdjustments.adjustedAt), desc(schema.tradeStopAdjustments.createdAt), desc(schema.tradeStopAdjustments.id))
       .all();
 
     return { status: 200, data: adjustments };
@@ -290,9 +292,9 @@ console.log('\n2. GET returns 404 for nonexistent trade:');
   assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
 }
 
-// ── 3. GET: Returns adjustments ordered by adjustedAt ───────────────
+// ── 3. GET: Returns adjustments ordered by adjustedAt DESC (newest first) ──
 
-console.log('\n3. GET returns adjustments ordered by adjustedAt:');
+console.log('\n3. GET returns adjustments ordered by adjustedAt DESC (newest first):');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
@@ -305,12 +307,12 @@ console.log('\n3. GET returns adjustments ordered by adjustedAt:');
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>[];
   assertEqual(data.length, 2, 'returns 2 adjustments');
-  assertEqual(data[0].id, adj1.id, 'first adjustment is earliest');
-  assertEqual(data[1].id, adj2.id, 'second adjustment is later');
-  assertEqual(data[0].previousStop, 145.0, 'first previousStop matches');
-  assertEqual(data[0].newStop, 147.0, 'first newStop matches');
-  assertEqual(data[1].previousStop, 147.0, 'second previousStop matches');
-  assertEqual(data[1].newStop, 149.0, 'second newStop matches');
+  assertEqual(data[0].id, adj2.id, 'first adjustment is latest (newest first)');
+  assertEqual(data[1].id, adj1.id, 'second adjustment is earlier');
+  assertEqual(data[0].previousStop, 147.0, 'first previousStop matches');
+  assertEqual(data[0].newStop, 149.0, 'first newStop matches');
+  assertEqual(data[1].previousStop, 145.0, 'second previousStop matches');
+  assertEqual(data[1].newStop, 147.0, 'second newStop matches');
 }
 
 // ── 4. POST: Creates stop adjustment with valid data ────────────────

@@ -72,6 +72,10 @@ export interface StopAdjustmentData {
   stopPrice: number;
   /** ISO 8601 timestamp of the adjustment. */
   adjustedAt: string;
+  /** ISO 8601 timestamp when the adjustment row was created (tiebreaker after adjustedAt). */
+  createdAt?: string;
+  /** Stop adjustment row id (final deterministic tiebreaker). */
+  id?: string;
 }
 
 /** A current market-price mark. */
@@ -248,6 +252,18 @@ export interface TradeMetricsResult {
 export type TradeListMetrics = Omit<TradeMetricsResult, 'remainingLots' | 'matches'>;
 
 // ── Helper functions ───────────────────────────────────────────────────
+
+/**
+ * Parse a timestamp string to epoch milliseconds. Invalid, null, or empty
+ * values sort as 0 (oldest) so ordering stays fully deterministic even when
+ * a field is missing or malformed (e.g. `new Date('').getTime()` → NaN would
+ * otherwise poison comparator results).
+ */
+function parseTimestamp(value: string | undefined | null): number {
+  if (value == null || value === '') return 0;
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
 
 /**
  * Classify an execution action as an entry for the given direction.
@@ -460,15 +476,16 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
   //   or  initialStopPrice = avgEntryPrice + (initialRiskAmount / entryQuantity) for short
   //
   // Defensive sort: ensure stop adjustments are chronologically ordered (oldest first)
-  // with deterministic tiebreakers per the plan: latest adjustedAt, then largest newStop
-  // for same timestamp, then createdAt.
+  // with fully deterministic tiebreakers per the plan: latest adjustedAt, then latest
+  // createdAt for identical adjustedAt, then id as the final fallback. Price magnitude
+  // is deliberately NOT a tiebreaker — event chronology decides. The last element after
+  // the ascending sort is the most recent event (picked by [length-1] below).
   const sortedStopAdjustments = [...stopAdjustments].sort((a, b) => {
-    const t = new Date(a.adjustedAt).getTime() - new Date(b.adjustedAt).getTime();
+    const t = parseTimestamp(a.adjustedAt) - parseTimestamp(b.adjustedAt);
     if (t !== 0) return t;
-    // Tiebreak: larger newStop = "more recent/more relevant" — sorted ascending so
-    // the largest stopPrice lands at the end (picked by [length-1] below).
-    if (b.stopPrice !== a.stopPrice) return a.stopPrice - b.stopPrice;
-    return 0;
+    const c = parseTimestamp(a.createdAt) - parseTimestamp(b.createdAt);
+    if (c !== 0) return c;
+    return (a.id ?? '').localeCompare(b.id ?? '');
   });
 
   let activeStop: number | null = null;

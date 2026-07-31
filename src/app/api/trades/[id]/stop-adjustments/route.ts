@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeStopAdjustments } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .select()
       .from(tradeStopAdjustments)
       .where(eq(tradeStopAdjustments.tradeId, id))
-      .orderBy(tradeStopAdjustments.adjustedAt, tradeStopAdjustments.createdAt)
+      .orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.createdAt), desc(tradeStopAdjustments.id))
       .all();
 
     return NextResponse.json(adjustments);

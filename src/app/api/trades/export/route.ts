@@ -195,6 +195,8 @@ export async function GET(request: NextRequest) {
           .map((s) => ({
             stopPrice: s.newStop,
             adjustedAt: s.adjustedAt ?? '',
+            createdAt: s.createdAt ?? '',
+            id: s.id,
           })),
         currentMark: null,
         currentAccountEquity,
