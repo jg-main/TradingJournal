@@ -197,3 +197,35 @@ export function computePlannedRR(
   if (risk <= 0 || reward <= 0) return null;
   return reward / risk;
 }
+
+/**
+ * Distance from the current market price to the active stop, as a decimal
+ * fraction (e.g. 0.05 → "5.00%" after formatPercent).
+ *
+ * Direction-aware: Math.abs keeps long (stop below market) and short
+ * (stop above market) both positive. Returns null when either input is
+ * missing or the market price is zero (division guard).
+ */
+export function computeDistanceToStop(
+  price: number | null | undefined,
+  stop: number | null | undefined,
+): number | null {
+  if (price == null || stop == null || price === 0) return null;
+  return Math.abs((price - stop) / price);
+}
+
+/**
+ * Distance from the current market price to the planned entry trigger, as a
+ * decimal fraction (e.g. 0.04 → "4.00%" after formatPercent).
+ *
+ * Direction-aware via Math.abs: works for longs (trigger below market) and
+ * shorts (trigger above market). Returns null when either input is missing
+ * or the trigger price is zero (division guard).
+ */
+export function computeDistanceToTrigger(
+  current: number | null | undefined,
+  trigger: number | null | undefined,
+): number | null {
+  if (current == null || trigger == null || trigger === 0) return null;
+  return Math.abs((current - trigger) / trigger);
+}

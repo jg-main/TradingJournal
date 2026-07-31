@@ -29,6 +29,8 @@ import {
   DirectionBadge,
   computePlannedRisk,
   computePlannedRR,
+  computeDistanceToStop,
+  computeDistanceToTrigger,
   formatNumber,
 } from '@/lib/trade-formatters';
 import type { TradeListMetrics } from '@/lib/trade-metrics';
@@ -633,14 +635,8 @@ const openColumns: ColumnDef<TradeRow>[] = [
   {
     id: 'distanceToStop',
     header: 'Dist to Stop %',
-    accessorFn: (row) => {
-      const price = row.currentPrice;
-      const stop = row.metrics?.risk?.activeStop;
-      if (price != null && stop != null && price !== 0) {
-        return Math.abs((price - stop) / price);
-      }
-      return null;
-    },
+    accessorFn: (row) =>
+      computeDistanceToStop(row.currentPrice, row.metrics?.risk?.activeStop),
     cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
   },
   {
@@ -1065,14 +1061,8 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
   {
     id: 'distanceToTrigger',
     header: 'Dist to Trigger',
-    accessorFn: (row) => {
-      const current = row.currentPrice;
-      const trigger = row.plannedEntry;
-      if (current != null && trigger != null && trigger !== 0) {
-        return Math.abs((current - trigger) / trigger);
-      }
-      return null;
-    },
+    accessorFn: (row) =>
+      computeDistanceToTrigger(row.currentPrice, row.plannedEntry),
     cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
   },
   {
