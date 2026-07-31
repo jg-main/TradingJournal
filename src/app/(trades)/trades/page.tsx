@@ -41,8 +41,11 @@ interface TradeRow {
   symbol: string;
   direction: 'long' | 'short';
   accountId: string | null;
+  accountName: string | null;
+  accountCurrency: string | null;
   setupName: string | null;
   sectorId: string | null;
+  sectorName: string | null;
   marketConditionId: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
   thesis: string | null;
@@ -504,15 +507,18 @@ const openColumns: ColumnDef<TradeRow>[] = [
   {
     id: 'account',
     header: 'Account',
-    accessorKey: 'accountId',
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
-    ),
+    accessorFn: (row) => row.accountName,
+    cell: ({ getValue }) => {
+      const name = getValue<string | null>();
+      return (
+        <span className="text-muted-foreground">{name ?? '—'}</span>
+      );
+    },
   },
   {
     id: 'sector',
     header: 'Sector',
-    accessorKey: 'sectorId',
+    accessorFn: (row) => row.sectorName,
     cell: ({ getValue }) => (
       <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
     ),
@@ -853,15 +859,18 @@ const closedColumns: ColumnDef<TradeRow>[] = [
   {
     id: 'account',
     header: 'Account',
-    accessorKey: 'accountId',
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
-    ),
+    accessorFn: (row) => row.accountName,
+    cell: ({ getValue }) => {
+      const name = getValue<string | null>();
+      return (
+        <span className="text-muted-foreground">{name ?? '—'}</span>
+      );
+    },
   },
   {
     id: 'sector',
     header: 'Sector',
-    accessorKey: 'sectorId',
+    accessorFn: (row) => row.sectorName,
     cell: ({ getValue }) => (
       <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
     ),
@@ -1016,15 +1025,18 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
   {
     id: 'account',
     header: 'Account',
-    accessorKey: 'accountId',
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
-    ),
+    accessorFn: (row) => row.accountName,
+    cell: ({ getValue }) => {
+      const name = getValue<string | null>();
+      return (
+        <span className="text-muted-foreground">{name ?? '—'}</span>
+      );
+    },
   },
   {
     id: 'sector',
     header: 'Sector',
-    accessorKey: 'sectorId',
+    accessorFn: (row) => row.sectorName,
     cell: ({ getValue }) => (
       <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
     ),
