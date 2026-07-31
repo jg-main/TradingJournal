@@ -246,11 +246,34 @@ function doGetTrade(id: string): { status: number; data: unknown } {
 
     const metrics = computeTradeMetrics(metricsInput);
 
+    // Fetch account for name and currency resolution
+    const accountRow = db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.id, row.accountId))
+      .get() as Record<string, unknown> | undefined;
+    const accountName = accountRow?.name ?? null;
+    const accountCurrency = accountRow?.currency ?? null;
+
+    // Fetch sector name from lookup_values
+    let sectorName: string | null = null;
+    if (row.sectorId) {
+      const sectorRow = db
+        .select({ value: schema.lookupValues.value })
+        .from(schema.lookupValues)
+        .where(eq(schema.lookupValues.id, row.sectorId))
+        .get() as { value: string } | undefined;
+      sectorName = sectorRow?.value ?? null;
+    }
+
     // Shape matches route: nested metrics — consumers read metrics.realizedPnl, etc.
     return {
       status: 200,
       data: {
         ...row,
+        accountName,
+        accountCurrency,
+        sectorName,
         metrics,
       },
     };
@@ -782,6 +805,64 @@ console.log('\n17. GET returns structured metrics object for trade:');
   assertNotNull(m.risk, 'risk metrics');
   assertNotNull(m.returnMetrics, 'returnMetrics');
   assertNotNull(m.position, 'position metrics');
+}
+
+// ── 18. GET: Returns accountName, accountCurrency, and sectorName ──────
+
+console.log('\n18. GET returns accountName, accountCurrency, and sectorName:');
+{
+  cleanup();
+  const account = seedAccount({
+    id: 'test-account-ib',
+    name: 'Interactive Brokers',
+    currency: 'EUR',
+  });
+  const sector = seedLookupValue({
+    type: 'sector',
+    value: 'Technology',
+  });
+
+  // Trade with sectorId set
+  const tradeWithSector = seedTrade({
+    accountId: 'test-account-ib',
+    sectorId: sector.id,
+    symbol: 'AAPL',
+  });
+
+  const r1 = doGetTrade(tradeWithSector.id as string);
+  assert(r1.status === 200, 'returns 200 for trade with sector');
+  const d1 = r1.data as Record<string, unknown>;
+  assertEqual(d1.accountName, 'Interactive Brokers', 'accountName is resolved');
+  assertEqual(d1.accountCurrency, 'EUR', 'accountCurrency is resolved');
+  assertEqual(d1.sectorName, 'Technology', 'sectorName is resolved');
+
+  // Trade with null sectorId
+  const tradeNoSector = seedTrade({
+    accountId: 'test-account-ib',
+    sectorId: null,
+    symbol: 'MSFT',
+  });
+
+  const r2 = doGetTrade(tradeNoSector.id as string);
+  assert(r2.status === 200, 'returns 200 for trade with null sector');
+  const d2 = r2.data as Record<string, unknown>;
+  assertEqual(d2.accountName, 'Interactive Brokers', 'accountName from same account');
+  assertEqual(d2.accountCurrency, 'EUR', 'accountCurrency from same account');
+  assertEqual(d2.sectorName, null, 'sectorName is null when sectorId is null');
+
+  // Trade with unknown sectorId (non-existent UUID)
+  const tradeUnknownSector = seedTrade({
+    accountId: 'test-account-ib',
+    sectorId: '00000000-0000-0000-0000-000000000000',
+    symbol: 'GOOGL',
+  });
+
+  const r3 = doGetTrade(tradeUnknownSector.id as string);
+  assert(r3.status === 200, 'returns 200 for trade with unknown sector');
+  const d3 = r3.data as Record<string, unknown>;
+  assertEqual(d3.accountName, 'Interactive Brokers', 'accountName from same account');
+  assertEqual(d3.accountCurrency, 'EUR', 'accountCurrency from same account');
+  assertEqual(d3.sectorName, null, 'sectorName is null when sector UUID does not exist');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

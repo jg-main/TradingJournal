@@ -110,6 +110,21 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const currentAccountEquity =
       account?.startingBalance ?? settingsRow?.startingAccountValue ?? null;
 
+    // Resolve account display name and currency
+    const accountName = account?.name ?? null;
+    const accountCurrency = account?.currency ?? null;
+
+    // Resolve sector name from lookup_values
+    let sectorName: string | null = null;
+    if (row.sectorId) {
+      const sectorRow = db
+        .select({ value: lookupValues.value })
+        .from(lookupValues)
+        .where(eq(lookupValues.id, row.sectorId))
+        .get();
+      sectorName = sectorRow?.value ?? null;
+    }
+
     // ── Build TradeMetricsInput ───────────────────────────────────────
 
     const metricsInput: TradeMetricsInput = {
