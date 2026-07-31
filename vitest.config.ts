@@ -96,6 +96,7 @@ export default defineConfig({
       'src/app/settings/workspace/__tests__/page.test.tsx',
       'src/app/settings/risk-defaults/__tests__/page.test.tsx',
       'src/app/(trades)/trades/__tests__/page.test.tsx',
+      'src/app/(trades)/trades/__tests__/actions-propagation.test.tsx',
       'src/app/(trades)/trades/__tests__/distance-columns.test.ts',
       'src/components/dashboard-v2.test.tsx',
       'src/components/dashboard/filter-context.test.tsx',
