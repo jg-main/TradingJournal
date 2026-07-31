@@ -228,6 +228,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Open trades manage their active stop exclusively through the Adjust
+    // Stop flow (trade_stop_adjustments). Reject direct plannedStop edits —
+    // they would silently overwrite the original planned stop and bypass the
+    // audit trail. A null value is still an update attempt and is rejected.
+    if (existing.status === 'open' && parsed.data.plannedStop !== undefined) {
+      return NextResponse.json(
+        {
+          error:
+            'plannedStop cannot be changed on an open trade. The active stop is managed through Adjust Stop.',
+        },
+        { status: 400 }
+      );
+    }
+
     // Map 'setup' back to 'setupId' for the DB column
     const updateData: Record<string, unknown> = {};
     if (parsed.data.setupId !== undefined) {

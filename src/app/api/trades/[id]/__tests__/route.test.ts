@@ -428,6 +428,18 @@ function doPutTrade(id: string, body: Record<string, unknown>): { status: number
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
+    // Open trades manage their active stop exclusively through the Adjust
+    // Stop flow (trade_stop_adjustments). Reject direct plannedStop edits.
+    if (existing.status === 'open' && body.plannedStop !== undefined) {
+      return {
+        status: 400,
+        data: {
+          error:
+            'plannedStop cannot be changed on an open trade. The active stop is managed through Adjust Stop.',
+        },
+      };
+    }
+
     // Map 'setup' back to 'setupId' for the DB column
     const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (body.setup !== undefined) {
@@ -1168,6 +1180,105 @@ console.log('\n21. GET falls back to account.startingBalance when no performance
   const m = (result.data as Record<string, unknown>).metrics as Record<string, unknown>;
   // riskToAccount = 1000 / 50000 = 0.02
   assertApprox((m.risk as Record<string, unknown>).riskToAccount as number, 0.02, 0.001, 'riskToAccount uses startingBalance=50000 (0.02)');
+}
+
+// ── 22. PUT: Rejects plannedStop for open trade (400, no mutation) ───────
+
+console.log('\n22. PUT rejects plannedStop for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    plannedStop: 605.02,
+  });
+
+  const result = doPutTrade(trade.id as string, { plannedStop: 590.0 });
+
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as { error: string };
+  assert(
+    data.error.includes('open trade'),
+    'error message explains open-trade restriction',
+  );
+  // DB must be untouched — plannedStop preserved, no partial write
+  const row = db
+    .select()
+    .from(schema.trades)
+    .where(eq(schema.trades.id, trade.id as string))
+    .get() as Record<string, unknown>;
+  assertEqual(row.plannedStop, 605.02, 'plannedStop unchanged in DB after rejection');
+}
+
+// ── 23. PUT: Rejects null plannedStop for open trade too ────────────────
+
+console.log('\n23. PUT rejects null plannedStop for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    plannedStop: 100.0,
+  });
+
+  const result = doPutTrade(trade.id as string, { plannedStop: null });
+
+  assert(result.status === 400, 'returns 400 (null is still an update attempt)');
+  const row = db
+    .select()
+    .from(schema.trades)
+    .where(eq(schema.trades.id, trade.id as string))
+    .get() as Record<string, unknown>;
+  assertEqual(row.plannedStop, 100.0, 'plannedStop not cleared in DB');
+}
+
+// ── 24. PUT: Open trade still updatable on other fields ────────────────
+
+console.log('\n24. PUT allows other fields on an open trade (no plannedStop):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    plannedStop: 605.02,
+    thesis: 'Old thesis',
+  });
+
+  const result = doPutTrade(trade.id as string, { thesis: 'Updated thesis' });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.thesis, 'Updated thesis', 'thesis is updated');
+  assertEqual(data.plannedStop, 605.02, 'plannedStop preserved');
+}
+
+// ── 25. PUT: plannedStop still allowed for planned/closed trades ────────
+
+console.log('\n25. PUT allows plannedStop for planned and closed trades:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const planned = seedTrade({
+    accountId: 'test-account-id',
+    status: 'planned',
+    plannedStop: 10.0,
+  });
+  const closed = seedTrade({
+    accountId: 'test-account-id',
+    status: 'closed',
+    plannedStop: 20.0,
+  });
+
+  const r1 = doPutTrade(planned.id as string, { plannedStop: 11.5 });
+  assert(r1.status === 200, 'returns 200 for planned trade');
+  assertEqual((r1.data as Record<string, unknown>).plannedStop, 11.5, 'planned trade plannedStop updated');
+
+  const r2 = doPutTrade(closed.id as string, { plannedStop: 21.5 });
+  assert(r2.status === 200, 'returns 200 for closed trade');
+  assertEqual((r2.data as Record<string, unknown>).plannedStop, 21.5, 'closed trade plannedStop updated');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
