@@ -282,39 +282,21 @@ function ActionsCell({ row }: { row: TradeRow }) {
   );
 }
 
-/** Totals summary card rendered below the DynamicTable */
-/** A single totals group rendered as labelled items */
+/** A single totals group rendered as labelled items (closed-tab per-currency) */
 function TotalsGroup({
   label,
-  isOpen,
   totals,
   currency,
-  showPortfolioHeat,
 }: {
   label?: string;
-  isOpen: boolean;
   totals: TradesResponse['totals'];
   currency?: string;
-  showPortfolioHeat?: boolean;
 }) {
-  const openItems = showPortfolioHeat
-    ? [
-        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
-        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk, currency)}</span> },
-        { label: 'Portfolio Heat', content: <span className="tabular-nums">{(totals.portfolioHeat ?? 0).toFixed(2)}%</span> },
-      ]
-    : [
-        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
-        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk, currency)}</span> },
-      ];
-
-  const items = isOpen
-    ? openItems
-    : [
-        { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} /> },
-        { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees, currency)}</span> },
-        { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} /> },
-      ];
+  const items = [
+    { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} /> },
+    { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees, currency)}</span> },
+    { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} /> },
+  ];
 
   return (
     <div>
@@ -341,11 +323,13 @@ function TotalsFooter({
   totalsByCurrency,
   tabId,
   plannedTotals,
+  count,
 }: {
   totals: TradesResponse['totals'];
   totalsByCurrency?: Record<string, TradesResponse['totals']>;
   tabId: TabId;
   plannedTotals: PlannedTotalsShape;
+  count: number;
 }) {
   if (tabId === 'planned') {
     return (
@@ -371,16 +355,41 @@ function TotalsFooter({
     );
   }
 
-  const isOpen = tabId === 'open';
+  // Open tab: single authoritative Portfolio Heat section ($/%/N).
+  // portfolioHeatAmount is the sum of open risk across all currencies (== totalOpenRisk).
+  // portfolioHeatPct follows the M010 decimal-fraction contract (0.0125 = 1.25%),
+  // displayed via ×100 formatting. The per-currency totalsByCurrency structure is
+  // preserved on the response for S02 but no longer duplicated in this footer.
+  if (tabId === 'open') {
+    return (
+      <div className="mt-3 rounded-lg border bg-muted/30 p-4">
+        <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Portfolio Heat
+        </div>
+        <div className="flex flex-wrap gap-x-8 gap-y-2">
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Portfolio Heat $</span>
+            <span className="text-lg font-semibold tabular-nums">{formatCurrency(totals.portfolioHeatAmount ?? 0)}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Portfolio Heat %</span>
+            <span className="text-lg font-semibold tabular-nums">{((totals.portfolioHeatPct ?? 0) * 100).toFixed(2)}%</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Positions</span>
+            <span className="text-lg font-semibold tabular-nums">{count}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Closed tab: Closed Totals + per-currency breakdown (unchanged)
   const currencies = Object.keys(totalsByCurrency ?? {});
 
   return (
     <div className="mt-3 rounded-lg border bg-muted/30 p-4">
-      <TotalsGroup
-        label={isOpen ? 'Open Positions Total' : 'Closed Totals'}
-        isOpen={isOpen}
-        totals={totals}
-      />
+      <TotalsGroup label="Closed Totals" totals={totals} />
       {currencies.length > 0 && (
         <>
           <hr className="my-4 border-border" />
@@ -392,10 +401,8 @@ function TotalsFooter({
               <TotalsGroup
                 key={currency}
                 label={currency}
-                isOpen={isOpen}
                 totals={totalsByCurrency![currency]}
                 currency={currency}
-                showPortfolioHeat={isOpen}
               />
             ))}
           </div>
@@ -1533,7 +1540,7 @@ function TradesPageInner() {
             onPageChange={(p) => handlePageChange(tab.id, p)}
           />
         )}
-        <TotalsFooter totals={totals} totalsByCurrency={tabTotalsByCurrency[tab.id]} tabId={tab.id} plannedTotals={plannedTotalsState} />
+        <TotalsFooter totals={totals} totalsByCurrency={tabTotalsByCurrency[tab.id]} tabId={tab.id} plannedTotals={plannedTotalsState} count={total} />
       </div>
     );
   }

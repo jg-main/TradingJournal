@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React, { type ComponentType } from 'react';
 
@@ -509,8 +509,10 @@ describe('Refresh Prices error paths', () => {
   });
 });
 
-// ── Per-currency totals and portfolioHeat tests ────────────────────
-// These tests need rows.length > 0 so the TotalsFooter renders (not just EmptyState)
+// ── Footer totals tests ────────────────────────────────────────────
+// These tests need rows.length > 0 so the TotalsFooter renders (not just EmptyState).
+// The Tabs mock renders all three TabsContent nodes at once, so assertions are
+// scoped with within() to the specific tab's content region.
 
 function makeMinimalTradeRow(overrides?: Partial<{
   id: string;
@@ -549,8 +551,8 @@ function makeMinimalTradeRow(overrides?: Partial<{
   };
 }
 
-describe('Per-currency totals in footer', () => {
-  it('renders per-currency totals section when totalsByCurrency is present', async () => {
+describe('Footer totals', () => {
+  it('renders a single Portfolio Heat section ($/%/N) in the open tab footer, without By Currency', async () => {
     setupFetchMocks(async (url) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
       if (urlStr === '/api/accounts') {
@@ -559,8 +561,8 @@ describe('Per-currency totals in footer', () => {
       if (urlStr.startsWith('/api/trades')) {
         return new Response(JSON.stringify({
           data: [makeMinimalTradeRow()],
-          total: 1,
-          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+          total: 2,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeatAmount: 800, portfolioHeatPct: 0.0125 },
           totalsByCurrency: {
             USD: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeat: 3.5 },
             EUR: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, portfolioHeat: 1.2 },
@@ -571,17 +573,55 @@ describe('Per-currency totals in footer', () => {
     });
 
     render(React.createElement(TradesPage));
-
-    // Advance past the 300ms debounce to trigger the initial fetch
     vi.advanceTimersByTime(500);
 
-    // The footer should render the "By Currency" section with currency labels
+    const openTab = screen.getByTestId('tab-content-open');
     await vi.waitFor(() => {
-      expect(screen.getAllByText('By Currency').length).toBeGreaterThanOrEqual(1);
+      // Single authoritative Portfolio Heat section with $, %, and N positions
+      expect(within(openTab).getByText('Portfolio Heat')).toBeTruthy();
+      expect(within(openTab).getByText('Portfolio Heat $')).toBeTruthy();
+      expect(within(openTab).getByText('$800.00')).toBeTruthy();
+      expect(within(openTab).getByText('Portfolio Heat %')).toBeTruthy();
+      expect(within(openTab).getByText('1.25%')).toBeTruthy();
+      expect(within(openTab).getByText('Positions')).toBeTruthy();
+      expect(within(openTab).getByText('2')).toBeTruthy();
+      // No duplicate display: no By Currency / per-currency labels / old Open Positions Total group
+      expect(within(openTab).queryByText('By Currency')).toBeNull();
+      expect(within(openTab).queryByText('USD')).toBeNull();
+      expect(within(openTab).queryByText('Open Positions Total')).toBeNull();
+      expect(within(openTab).queryByText('Unrealized P&L')).toBeNull();
     });
   });
 
-  it('renders per-currency section even with single currency', async () => {
+  it('formats Portfolio Heat % from the decimal-fraction portfolioHeatPct (×100)', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow()],
+          total: 1,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 1000, portfolioHeatAmount: 1000, portfolioHeatPct: 0.0342 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const openTab = screen.getByTestId('tab-content-open');
+    await vi.waitFor(() => {
+      // 0.0342 is a fraction of 1.0 → rendered as 3.42% (never 0.03%)
+      expect(within(openTab).getByText('3.42%')).toBeTruthy();
+      expect(within(openTab).getByText('$1,000.00')).toBeTruthy();
+      expect(within(openTab).queryByText('0.03%')).toBeNull();
+    });
+  });
+
+  it('falls back to $0.00 / 0.00% when the top-level portfolioHeat fields are absent', async () => {
     setupFetchMocks(async (url) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
       if (urlStr === '/api/accounts') {
@@ -592,8 +632,37 @@ describe('Per-currency totals in footer', () => {
           data: [makeMinimalTradeRow()],
           total: 1,
           totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const openTab = screen.getByTestId('tab-content-open');
+    await vi.waitFor(() => {
+      // Section still renders with zeroed amounts rather than disappearing
+      expect(within(openTab).getByText('Portfolio Heat')).toBeTruthy();
+      expect(within(openTab).getByText('$0.00')).toBeTruthy();
+      expect(within(openTab).getByText('0.00%')).toBeTruthy();
+    });
+  });
+
+  it('keeps the Closed Totals + By Currency footer on the closed tab unchanged', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow()],
+          total: 1,
+          totals: { grossRealizedPnl: 600, netRealizedPnl: 590, totalFees: 10, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
           totalsByCurrency: {
-            USD: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+            USD: { grossRealizedPnl: 600, netRealizedPnl: 590, totalFees: 10, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+            EUR: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
           },
         }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
@@ -603,13 +672,22 @@ describe('Per-currency totals in footer', () => {
     render(React.createElement(TradesPage));
     vi.advanceTimersByTime(500);
 
+    const closedTab = screen.getByTestId('tab-content-closed');
     await vi.waitFor(() => {
-      expect(screen.getAllByText('By Currency').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('USD').length).toBeGreaterThanOrEqual(1);
+      expect(within(closedTab).getByText('Closed Totals')).toBeTruthy();
+      // Gross/Net P&L and Fees appear in both the totals group and per-currency groups
+      expect(within(closedTab).getAllByText('Gross P&L').length).toBeGreaterThanOrEqual(1);
+      expect(within(closedTab).getAllByText('Net P&L').length).toBeGreaterThanOrEqual(1);
+      expect(within(closedTab).getAllByText('Fees').length).toBeGreaterThanOrEqual(1);
+      expect(within(closedTab).getByText('By Currency')).toBeTruthy();
+      expect(within(closedTab).getByText('USD')).toBeTruthy();
+      expect(within(closedTab).getByText('EUR')).toBeTruthy();
+      // Closed tab never shows Portfolio Heat
+      expect(within(closedTab).queryByText('Portfolio Heat')).toBeNull();
     });
   });
 
-  it('renders portfolioHeat value in per-currency section for open tab', async () => {
+  it('keeps the Planned Totals footer unchanged', async () => {
     setupFetchMocks(async (url) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
       if (urlStr === '/api/accounts') {
@@ -619,10 +697,8 @@ describe('Per-currency totals in footer', () => {
         return new Response(JSON.stringify({
           data: [makeMinimalTradeRow()],
           total: 1,
-          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
-          totalsByCurrency: {
-            USD: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeat: 3.5 },
-          },
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+          plannedTotals: { totalPlannedRisk: 250, totalPlannedCapital: 5000, count: 3 },
         }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return new Response('Not found', { status: 404 });
@@ -631,35 +707,15 @@ describe('Per-currency totals in footer', () => {
     render(React.createElement(TradesPage));
     vi.advanceTimersByTime(500);
 
-    // Open tab is default, so portfolioHeat text should appear in per-currency section
+    const plannedTab = screen.getByTestId('tab-content-planned');
     await vi.waitFor(() => {
-      expect(screen.getAllByText('Portfolio Heat').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('3.50%').length).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  it('does not render portfolioHeat in top-level totals when no per-currency data', async () => {
-    setupFetchMocks(async (url) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr === '/api/accounts') {
-        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      if (urlStr.startsWith('/api/trades')) {
-        return new Response(JSON.stringify({
-          data: [makeMinimalTradeRow()],
-          total: 1,
-          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
-        }), { status: 200, headers: { 'content-type': 'application/json' } });
-      }
-      return new Response('Not found', { status: 404 });
-    });
-
-    render(React.createElement(TradesPage));
-    vi.advanceTimersByTime(500);
-
-    // Portfolio Heat should NOT appear anywhere since there's no per-currency data
-    await vi.waitFor(() => {
-      expect(screen.queryByText('Portfolio Heat')).toBeNull();
+      expect(within(plannedTab).getByText('Planned Totals')).toBeTruthy();
+      expect(within(plannedTab).getByText('Planned Risk')).toBeTruthy();
+      expect(within(plannedTab).getByText('Planned Capital')).toBeTruthy();
+      expect(within(plannedTab).getByText('Trades')).toBeTruthy();
+      expect(within(plannedTab).getByText('$250.00')).toBeTruthy();
+      expect(within(plannedTab).getByText('$5,000.00')).toBeTruthy();
+      expect(within(plannedTab).getByText('3')).toBeTruthy();
     });
   });
 });
