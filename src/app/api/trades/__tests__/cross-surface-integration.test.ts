@@ -982,9 +982,38 @@ registerCategory('C06', 'Cross-surface reconciliation', async () => {
     'unrealizedPnl',
     'risk',
     'returnMetrics',
-    'position',
   ] as const) {
     assertDeepEqual(listMetrics[group], detailMetrics[group], `list.metrics.${group} ≡ detail.metrics.${group}`);
+  }
+
+  // position group: holdingPeriodDays is now-based (Date.now()) so list and
+  // detail are computed milliseconds apart — compare it within a clock-drift
+  // tolerance instead of exact equality; all other position fields stay exact.
+  {
+    const lp = listMetrics.position as unknown as Record<string, unknown>;
+    const dp = detailMetrics.position as unknown as Record<string, unknown>;
+    assert(
+      JSON.stringify(Object.keys(lp).sort()) === JSON.stringify(Object.keys(dp).sort()),
+      'list.metrics.position ≡ detail.metrics.position (key match)',
+    );
+    for (const key of Object.keys(lp)) {
+      if (key === 'holdingPeriodDays') continue;
+      assertDeepEqual(lp[key], dp[key], `list.metrics.position.${key} ≡ detail.metrics.position.${key}`);
+    }
+    const lh = lp.holdingPeriodDays as number | null;
+    const dh = dp.holdingPeriodDays as number | null;
+    if (lh === null && dh === null) {
+      assert(true, 'list.metrics.position.holdingPeriodDays ≡ detail (both null)');
+    } else if (typeof lh === 'number' && typeof dh === 'number') {
+      // Both surfaces use Date.now() milliseconds apart; allow up to ~1 second drift.
+      const driftDays = 1 / (60 * 60 * 24);
+      assert(
+        Math.abs(lh - dh) < driftDays,
+        `list.metrics.position.holdingPeriodDays ≡ detail within clock drift (diff ${Math.abs(lh - dh).toFixed(10)}d)`,
+      );
+    } else {
+      throw new Error(`holdingPeriodDays mismatch: list=${lh} detail=${dh}`);
+    }
   }
 
   // ── Exact equality: list flat fields ≡ nested metrics ──

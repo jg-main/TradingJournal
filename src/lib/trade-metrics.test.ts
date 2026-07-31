@@ -84,6 +84,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
     stopAdjustments: [],
     currentMark: { price: 22, markedAt: '2026-01-10T13:00:00Z' },
     currentAccountEquity: 10000,
+    now: new Date('2026-01-10T13:00:00Z').getTime(),
   };
 
   const r = computeTradeMetrics(input);
@@ -369,6 +370,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
     stopAdjustments: [],
     currentMark: { price: 22, markedAt: '2026-01-10T13:00:00Z' },
     currentAccountEquity: null,
+    now: new Date('2026-01-10T13:00:00Z').getTime(),
   };
 
   const r = computeTradeMetrics(input);
@@ -656,6 +658,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
     stopAdjustments: [],
     currentMark: { price: 60, markedAt: '2026-01-10T13:00:00Z' },
     currentAccountEquity: null,
+    now: new Date('2026-01-10T13:00:00Z').getTime(),
   };
 
   const r = computeTradeMetrics(input);
@@ -761,6 +764,7 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
     stopAdjustments: [],
     currentMark: null,
     currentAccountEquity: null,
+    now: new Date('2026-01-10T13:00:00Z').getTime(),
   };
 
   const r = computeTradeMetrics(input);
@@ -780,7 +784,8 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'EntryOnly: grossUnrealizedPnl = null');
   assert(r.unrealizedPnl.netUnrealizedPnl === null, 'EntryOnly: netUnrealizedPnl = null');
   assert(r.position.totalNetPnl === null, 'EntryOnly: totalNetPnl = null (no market price, open trade)');
-  assert(r.position.holdingPeriodDays === null, 'EntryOnly: holdingPeriodDays = null (no mark)');
+  // Holding period no longer requires a market mark — open trades use `now` (T02).
+  assertApprox(r.position.holdingPeriodDays, 0.125, 'EntryOnly: holdingPeriodDays = 0.125 (now-based, no mark required)');
   assert(r.position.marketValue === null, 'EntryOnly: marketValue = null (no mark)');
   assert(r.position.positionWeight === null, 'EntryOnly: positionWeight = null');
   assert(r.returnMetrics.returnPct === null, 'EntryOnly: returnPct = null (totalNetPnl=null)');
@@ -1321,6 +1326,165 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   const r = computeTradeMetrics(input);
   assertApprox(r.risk.activeStop, 45, 'T03-8: activeStop = $45 (real adjustedAt beats blank)');
   assert(r.risk.initialStop === null, 'T03-8: initialStop = null (no riskSnapshot)');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// T04: Holding period uses current time (now), not the market mark timestamp
+// ────────────────────────────────────────────────────────────────────────
+
+// --- T04 Test 1: Open-trade holding period uses `now`, ignoring markedAt ---
+{
+  console.log('\n## T04-1: Open-trade holding period uses now, not currentMark.markedAt');
+
+  // Entry at 2026-01-10T10:00:00Z. The mark was recorded 9 days later
+  // (2026-01-19T13:00:00Z) but `now` is 2026-01-11T10:00:00Z (1 day after entry).
+  // Holding period must be 1.0 day (now-based), NOT ~9.125 days (mark-based).
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T4-E1', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: { price: 60, markedAt: '2026-01-19T13:00:00Z' },
+    currentAccountEquity: null,
+    now: new Date('2026-01-11T10:00:00Z').getTime(),
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.position.holdingPeriodDays, 1.0, 'T04-1: holdingPeriodDays = 1.0 (now, not stale mark)');
+  assert(
+    r.position.holdingPeriodDays !== null && Math.abs(r.position.holdingPeriodDays - 9.125) > 1,
+    'T04-1: stale markedAt (~9.125d) is NOT used',
+  );
+  assert(r.position.status === 'open', 'T04-1: status = open');
+}
+
+// --- T04 Test 2: Open trade without a mark still reports holding period ---
+{
+  console.log('\n## T04-2: Open-trade holding period works without a market mark');
+
+  // Entry-only trade, no currentMark. Holding period still computed from `now`.
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T4-E2', action: 'buy', quantity: 100, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+    now: new Date('2026-01-10T16:00:00Z').getTime(),
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.position.holdingPeriodDays, 6 / 24, 'T04-2: holdingPeriodDays = 0.25 (6h, no mark needed)');
+  assert(r.position.status === 'open', 'T04-2: status = open');
+}
+
+// --- T04 Test 3: Default `now` falls back to Date.now() ---
+{
+  console.log('\n## T04-3: Default now falls back to Date.now()');
+
+  const openedMs = new Date('2026-01-10T10:00:00Z').getTime();
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T4-E3', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  const expectedNow = (Date.now() - openedMs) / (1000 * 60 * 60 * 24);
+  // Tolerance: allow up to 2 seconds of clock drift between compute and assert.
+  assertApprox(
+    r.position.holdingPeriodDays,
+    expectedNow,
+    'T04-3: default now = Date.now()-based',
+    2 / (1000 * 60 * 60 * 24),
+  );
+  assert(r.position.holdingPeriodDays !== null, 'T04-3: holdingPeriodDays is a number');
+}
+
+// --- T04 Test 4: Closed trade holding period still uses closedAt ---
+{
+  console.log('\n## T04-4: Closed trade holding period uses closedAt (unchanged)');
+
+  // Closed trade with `now` far in the future — closedAt must win, not now.
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T4-E4', action: 'buy', quantity: 100, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+      { id: 'T4-E5', action: 'sell', quantity: 100, price: 60, fees: 0, executedAt: '2026-01-10T14:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+    now: new Date('2030-01-01T00:00:00Z').getTime(),
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.position.holdingPeriodDays, 4 / 24, 'T04-4: closed holding = 0.167 (closedAt, not now)');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// T05: P2 hardening — Decimal.js exactness on monetary aggregates
+// ────────────────────────────────────────────────────────────────────────
+
+// --- T05 Test 1: totalFees exact (0.1 × 3 = 0.3, not 0.30000000000000004) ---
+{
+  console.log('\n## T05-1: totalFees reduced in Decimal.js — exact 0.3');
+
+  // Three executions with $0.10 fees each. Plain float reduction yields
+  // 0.30000000000000004; Decimal.js yields exactly 0.3. netRealizedPnl:
+  // gross (12-10)×2 = $4.00 minus realized fees $0.30 = exactly $3.70.
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T5-E1', action: 'buy', quantity: 1, price: 10, fees: 0.1, executedAt: '2026-01-10T10:00:00Z' },
+      { id: 'T5-E2', action: 'buy', quantity: 1, price: 10, fees: 0.1, executedAt: '2026-01-10T11:00:00Z' },
+      { id: 'T5-E3', action: 'sell', quantity: 2, price: 12, fees: 0.1, executedAt: '2026-01-10T12:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assert(r.fees.totalFees === 0.3, `T05-1: totalFees === 0.3 exactly (got ${r.fees.totalFees})`);
+  assert(r.realizedPnl.netRealizedPnl === 3.7, `T05-1: netRealizedPnl === 3.7 exactly (got ${r.realizedPnl.netRealizedPnl})`);
+}
+
+// --- T05 Test 2: 1000 × $0.01 fees reduce exactly (no float drift) ---
+{
+  console.log('\n## T05-2: 1000 × $0.01 fees reduce exactly in Decimal.js');
+
+  // 1000 executions each with $0.01 fee. Float accumulation drifts away from
+  // exactly 10; Decimal.js reduction is exact.
+  const executions = Array.from({ length: 1000 }, (_, i) => ({
+    id: `T5-E${i}`,
+    action: 'buy',
+    quantity: 1,
+    price: 10,
+    fees: 0.01,
+    executedAt: '2026-01-10T10:00:00Z',
+  }));
+
+  const r = computeTradeMetrics({
+    executions,
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
+  assert(r.fees.totalFees === 10, `T05-2: totalFees === 10 exactly (got ${r.fees.totalFees})`);
 }
 
 // ────────────────────────────────────────────────────────────────────────

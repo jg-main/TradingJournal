@@ -100,6 +100,12 @@ export interface TradeMetricsInput {
   currentMark: MarketMarkData | null;
   /** Current account equity for risk-to-account computation. */
   currentAccountEquity: number | null;
+  /**
+   * Optional 'current time' in epoch milliseconds, used as the holding-period
+   * end for open trades. Defaults to Date.now() when omitted. Injectable for
+   * deterministic tests.
+   */
+  now?: number;
 }
 
 // ── FIFO Lot Types ─────────────────────────────────────────────────────
@@ -431,8 +437,12 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
 
   const grossRealizedPnlNum = totalGrossRealizedPnl.toNumber();
   const realizedFeesNum = totalRealizedFees.toNumber();
-  const netRealizedPnlNum = grossRealizedPnlNum - realizedFeesNum;
-  const totalFeesNum = executions.reduce((s, e) => s + (e.fees ?? 0), 0);
+  // P2 hardening: net realized P&L stays in Decimal.js (no float subtraction drift).
+  const netRealizedPnlNum = totalGrossRealizedPnl.minus(totalRealizedFees).toNumber();
+  // P2 hardening: fee total is a monetary aggregate — reduce in Decimal.js, not floats.
+  const totalFeesNum = executions
+    .reduce((s, e) => s.plus(new Decimal(e.fees ?? 0)), new Decimal(0))
+    .toNumber();
 
   // ── Quantity-weighted average prices ───────────────────────────
 
@@ -553,11 +563,15 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
       ? null
       : netRealizedPnlNum;
 
+  // Holding period: closed trades use closedAt; open trades use the current time
+  // (input.now or Date.now()), NOT the stale market-mark timestamp. The mark is
+  // irrelevant to elapsed holding time, so no currentMark guard applies.
+  const nowMs = input.now ?? Date.now();
   const holdingPeriodDays =
     openedAt != null && closedAt != null
       ? (new Date(closedAt).getTime() - new Date(openedAt).getTime()) / (1000 * 60 * 60 * 24)
-      : openedAt != null && currentMark != null
-        ? (new Date(currentMark.markedAt).getTime() - new Date(openedAt).getTime()) / (1000 * 60 * 60 * 24)
+      : openedAt != null
+        ? (nowMs - new Date(openedAt).getTime()) / (1000 * 60 * 60 * 24)
         : null;
 
   const marketValue =

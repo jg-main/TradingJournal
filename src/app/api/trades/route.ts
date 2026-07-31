@@ -3,6 +3,7 @@ import { db, getSqliteHandle } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
+import Decimal from 'decimal.js';
 import { resolveSetup } from '@/lib/setup-resolver';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput, TradeListMetrics } from '@/lib/trade-metrics';
@@ -320,8 +321,8 @@ export async function GET(request: NextRequest) {
         currentAccountEquity != null &&
         currentAccountEquity > 0
       ) {
-        const plannedRiskAmount = Math.abs(row.plannedEntry - row.plannedStop) * row.plannedQuantity;
-        plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity);
+        const plannedRiskAmount = new Decimal(Math.abs(row.plannedEntry - row.plannedStop)).mul(new Decimal(row.plannedQuantity));
+        plannedRiskToAccount = plannedRiskAmount.div(new Decimal(currentAccountEquity)).toNumber();
       }
 
       // Strip FIFO debugging detail for the list view; full metrics remain available
@@ -456,121 +457,149 @@ export async function GET(request: NextRequest) {
       }
 
       // Track unique account equities for portfolioHeat denominator
-      // (one equity per account to avoid double-counting)
-      const totalEquityByAccount = new Map<string, number>();
-      const currencyEquityByAccount = new Map<string, Map<string, number>>();
+      // (one equity per account to avoid double-counting). Monetary values are
+      // held as Decimal.js throughout the aggregation (P2 hardening).
+      const totalEquityByAccount = new Map<string, Decimal>();
+      const currencyEquityByAccount = new Map<string, Map<string, Decimal>>();
+
+      // Decimal.js accumulators — no plain floating-point reduction of monetary
+      // aggregates anywhere in the totals pipeline.
+      const decTotals = {
+        grossRealizedPnl: new Decimal(0),
+        netRealizedPnl: new Decimal(0),
+        totalFees: new Decimal(0),
+        grossUnrealizedPnl: new Decimal(0),
+        netUnrealizedPnl: new Decimal(0),
+        totalOpenRisk: new Decimal(0),
+      };
+      const decCurrencyBuckets: Record<
+        string,
+        {
+          grossRealizedPnl: Decimal;
+          netRealizedPnl: Decimal;
+          totalFees: Decimal;
+          grossUnrealizedPnl: Decimal;
+          netUnrealizedPnl: Decimal;
+          totalOpenRisk: Decimal;
+          portfolioHeat: Decimal;
+        }
+      > = {};
 
       // Compute metrics for every matching trade and aggregate
-      fullTotals = allMatchingIdsR.reduce(
-        (acc, row) => {
-          const executions = allExecMap.get(row.id) ?? [];
-          const riskSnapshot = allRiskMap.get(row.id) ?? null;
-          const stopAdjustments = allStopMap.get(row.id) ?? [];
-          const account = allAccountMap.get(row.accountId);
-          const latestRollforward = allLatestRollforwardMap.get(row.accountId);
-          const navRaw = allAccountPerfMap.get(row.accountId);
-          const navValue = navRaw ? parseFloat(navRaw) : null;
-          const currentAccountEquity =
-            navValue ??
-            latestRollforward?.endingEquity ??
-            account?.startingBalance ??
-            settingsRow?.startingAccountValue ??
-            null;
+      for (const row of allMatchingIdsR) {
+        const executions = allExecMap.get(row.id) ?? [];
+        const riskSnapshot = allRiskMap.get(row.id) ?? null;
+        const stopAdjustments = allStopMap.get(row.id) ?? [];
+        const account = allAccountMap.get(row.accountId);
+        const latestRollforward = allLatestRollforwardMap.get(row.accountId);
+        const navRaw = allAccountPerfMap.get(row.accountId);
+        const navValue = navRaw ? parseFloat(navRaw) : null;
+        const currentAccountEquity =
+          navValue ??
+          latestRollforward?.endingEquity ??
+          account?.startingBalance ??
+          settingsRow?.startingAccountValue ??
+          null;
 
-          const metricsInput: TradeMetricsInput = {
-            executions: executions.map((e) => ({
-              id: e.id,
-              action: e.action,
-              quantity: e.quantity,
-              price: e.price,
-              fees: e.fees,
-              executedAt: e.executedAt ?? '',
+        const metricsInput: TradeMetricsInput = {
+          executions: executions.map((e) => ({
+            id: e.id,
+            action: e.action,
+            quantity: e.quantity,
+            price: e.price,
+            fees: e.fees,
+            executedAt: e.executedAt ?? '',
+          })),
+          direction: row.direction as 'long' | 'short',
+          riskSnapshot: riskSnapshot
+            ? {
+                initialRiskAmount: riskSnapshot.initialRiskAmount,
+                accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+                initialStopPrice: riskSnapshot.initialStopPrice,
+                initialEntryPrice: riskSnapshot.initialEntryPrice,
+              }
+            : null,
+          stopAdjustments: stopAdjustments
+            .filter((s): s is typeof s & { newStop: number } => s.newStop != null)
+            .map((s) => ({
+              stopPrice: s.newStop,
+              adjustedAt: s.adjustedAt ?? '',
+              createdAt: s.createdAt ?? '',
+              id: s.id,
             })),
-            direction: row.direction as 'long' | 'short',
-            riskSnapshot: riskSnapshot
-              ? {
-                  initialRiskAmount: riskSnapshot.initialRiskAmount,
-                  accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
-                  initialStopPrice: riskSnapshot.initialStopPrice,
-                  initialEntryPrice: riskSnapshot.initialEntryPrice,
-                }
+          currentMark:
+            row.currentPrice != null
+              ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
               : null,
-            stopAdjustments: stopAdjustments
-              .filter((s): s is typeof s & { newStop: number } => s.newStop != null)
-              .map((s) => ({
-                stopPrice: s.newStop,
-                adjustedAt: s.adjustedAt ?? '',
-                createdAt: s.createdAt ?? '',
-                id: s.id,
-              })),
-            currentMark:
-              row.currentPrice != null
-                ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
-                : null,
-            currentAccountEquity,
+          currentAccountEquity,
+        };
+
+        const metrics = computeTradeMetrics(metricsInput);
+
+        const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
+
+        // Track unique per-account equity for portfolioHeat denominator
+        if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
+          totalEquityByAccount.set(row.accountId, new Decimal(currentAccountEquity));
+          if (!currencyEquityByAccount.has(currency)) {
+            currencyEquityByAccount.set(currency, new Map());
+          }
+          currencyEquityByAccount.get(currency)!.set(row.accountId, new Decimal(currentAccountEquity));
+        }
+
+        if (!decCurrencyBuckets[currency]) {
+          decCurrencyBuckets[currency] = {
+            grossRealizedPnl: new Decimal(0),
+            netRealizedPnl: new Decimal(0),
+            totalFees: new Decimal(0),
+            grossUnrealizedPnl: new Decimal(0),
+            netUnrealizedPnl: new Decimal(0),
+            totalOpenRisk: new Decimal(0),
+            portfolioHeat: new Decimal(0),
           };
+        }
 
-          const metrics = computeTradeMetrics(metricsInput);
+        const gRP = new Decimal(metrics.realizedPnl.grossRealizedPnl ?? 0);
+        const nRP = new Decimal(metrics.realizedPnl.netRealizedPnl ?? 0);
+        const tF = new Decimal(metrics.fees.totalFees ?? 0);
+        const gUP = new Decimal(metrics.unrealizedPnl.grossUnrealizedPnl ?? 0);
+        const nUP = new Decimal(metrics.unrealizedPnl.netUnrealizedPnl ?? 0);
+        const oR = new Decimal(metrics.risk.openRisk ?? 0);
 
-          const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
+        decTotals.grossRealizedPnl = decTotals.grossRealizedPnl.plus(gRP);
+        decTotals.netRealizedPnl = decTotals.netRealizedPnl.plus(nRP);
+        decTotals.totalFees = decTotals.totalFees.plus(tF);
+        decTotals.grossUnrealizedPnl = decTotals.grossUnrealizedPnl.plus(gUP);
+        decTotals.netUnrealizedPnl = decTotals.netUnrealizedPnl.plus(nUP);
+        decTotals.totalOpenRisk = decTotals.totalOpenRisk.plus(oR);
 
-          // Track unique per-account equity for portfolioHeat denominator
-          if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
-            totalEquityByAccount.set(row.accountId, currentAccountEquity);
-            if (!currencyEquityByAccount.has(currency)) {
-              currencyEquityByAccount.set(currency, new Map());
-            }
-            currencyEquityByAccount.get(currency)!.set(row.accountId, currentAccountEquity);
-          }
+        const bucket = decCurrencyBuckets[currency];
+        bucket.grossRealizedPnl = bucket.grossRealizedPnl.plus(gRP);
+        bucket.netRealizedPnl = bucket.netRealizedPnl.plus(nRP);
+        bucket.totalFees = bucket.totalFees.plus(tF);
+        bucket.grossUnrealizedPnl = bucket.grossUnrealizedPnl.plus(gUP);
+        bucket.netUnrealizedPnl = bucket.netUnrealizedPnl.plus(nUP);
+        bucket.totalOpenRisk = bucket.totalOpenRisk.plus(oR);
+      }
 
-          if (!totalsByCurrency[currency]) {
-            totalsByCurrency[currency] = {
-              grossRealizedPnl: 0,
-              netRealizedPnl: 0,
-              totalFees: 0,
-              grossUnrealizedPnl: 0,
-              netUnrealizedPnl: 0,
-              totalOpenRisk: 0,
-              portfolioHeat: 0,
-            };
-          }
-
-          const gRP = metrics.realizedPnl.grossRealizedPnl ?? 0;
-          const nRP = metrics.realizedPnl.netRealizedPnl ?? 0;
-          const tF = metrics.fees.totalFees ?? 0;
-          const gUP = metrics.unrealizedPnl.grossUnrealizedPnl ?? 0;
-          const nUP = metrics.unrealizedPnl.netUnrealizedPnl ?? 0;
-          const oR = metrics.risk.openRisk ?? 0;
-
-          acc.grossRealizedPnl += gRP;
-          acc.netRealizedPnl += nRP;
-          acc.totalFees += tF;
-          acc.grossUnrealizedPnl += gUP;
-          acc.netUnrealizedPnl += nUP;
-          acc.totalOpenRisk += oR;
-
-          const bucket = totalsByCurrency[currency];
-          bucket.grossRealizedPnl += gRP;
-          bucket.netRealizedPnl += nRP;
-          bucket.totalFees += tF;
-          bucket.grossUnrealizedPnl += gUP;
-          bucket.netUnrealizedPnl += nUP;
-          bucket.totalOpenRisk += oR;
-
-          return acc;
-        },
-        { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
-      );
-
-      // Compute per-currency portfolioHeat
-      for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
+      // Compute per-currency portfolioHeat (Decimal.js) and emit numeric response buckets
+      for (const [currency, bucket] of Object.entries(decCurrencyBuckets)) {
         const currencyEquities = currencyEquityByAccount.get(currency);
         const currencyTotalEquity = currencyEquities
-          ? [...currencyEquities.values()].reduce((s, v) => s + v, 0)
-          : 0;
-        bucket.portfolioHeat = currencyTotalEquity > 0 && bucket.totalOpenRisk > 0
-          ? (bucket.totalOpenRisk / currencyTotalEquity) * 100
-          : 0;
+          ? [...currencyEquities.values()].reduce((s, v) => s.plus(v), new Decimal(0))
+          : new Decimal(0);
+        bucket.portfolioHeat = currencyTotalEquity.gt(0) && bucket.totalOpenRisk.gt(0)
+          ? bucket.totalOpenRisk.div(currencyTotalEquity).mul(100)
+          : new Decimal(0);
+        totalsByCurrency[currency] = {
+          grossRealizedPnl: bucket.grossRealizedPnl.toNumber(),
+          netRealizedPnl: bucket.netRealizedPnl.toNumber(),
+          totalFees: bucket.totalFees.toNumber(),
+          grossUnrealizedPnl: bucket.grossUnrealizedPnl.toNumber(),
+          netUnrealizedPnl: bucket.netUnrealizedPnl.toNumber(),
+          totalOpenRisk: bucket.totalOpenRisk.toNumber(),
+          portfolioHeat: bucket.portfolioHeat.toNumber(),
+        };
       }
 
       // Top-level portfolioHeat — single authoritative value for the open tab footer.
@@ -579,12 +608,20 @@ export async function GET(request: NextRequest) {
       // following the M010 decimal-fraction contract (displayed via ×100 formatting).
       // The denominator sums one equity per account (unique, not per trade) to avoid
       // double-counting when multiple open positions share an account.
-      const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
-      fullTotals.portfolioHeatAmount = fullTotals.totalOpenRisk;
-      fullTotals.portfolioHeatPct =
-        totalEquityAcrossAccounts > 0 && fullTotals.totalOpenRisk > 0
-          ? fullTotals.totalOpenRisk / totalEquityAcrossAccounts
-          : 0;
+      const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s.plus(v), new Decimal(0));
+      fullTotals = {
+        grossRealizedPnl: decTotals.grossRealizedPnl.toNumber(),
+        netRealizedPnl: decTotals.netRealizedPnl.toNumber(),
+        totalFees: decTotals.totalFees.toNumber(),
+        grossUnrealizedPnl: decTotals.grossUnrealizedPnl.toNumber(),
+        netUnrealizedPnl: decTotals.netUnrealizedPnl.toNumber(),
+        totalOpenRisk: decTotals.totalOpenRisk.toNumber(),
+        portfolioHeatAmount: decTotals.totalOpenRisk.toNumber(),
+        portfolioHeatPct:
+          totalEquityAcrossAccounts.gt(0) && decTotals.totalOpenRisk.gt(0)
+            ? decTotals.totalOpenRisk.div(totalEquityAcrossAccounts).toNumber()
+            : 0,
+      };
     }
 
     // ── plannedTotals: aggregate risk/capital across all planned trades ──
@@ -623,16 +660,16 @@ export async function GET(request: NextRequest) {
     const plannedTotals = {
       totalPlannedRisk: plannedRows.reduce((sum, r) => {
         if (r.plannedEntry != null && r.plannedStop != null && r.plannedQuantity != null && r.plannedQuantity > 0) {
-          return sum + Math.abs(r.plannedEntry - r.plannedStop) * r.plannedQuantity;
+          return sum.plus(new Decimal(Math.abs(r.plannedEntry - r.plannedStop)).mul(new Decimal(r.plannedQuantity)));
         }
         return sum;
-      }, 0),
+      }, new Decimal(0)).toNumber(),
       totalPlannedCapital: plannedRows.reduce((sum, r) => {
         if (r.plannedEntry != null && r.plannedQuantity != null && r.plannedQuantity > 0) {
-          return sum + r.plannedEntry * r.plannedQuantity;
+          return sum.plus(new Decimal(r.plannedEntry).mul(new Decimal(r.plannedQuantity)));
         }
         return sum;
-      }, 0),
+      }, new Decimal(0)).toNumber(),
       count: plannedRows.length,
     };
 
