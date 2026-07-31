@@ -452,10 +452,23 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
   //   initialRiskAmount = |avgEntryPrice - initialStopPrice| * entryQuantity
   //   so initialStopPrice = avgEntryPrice - (initialRiskAmount / entryQuantity) for long
   //   or  initialStopPrice = avgEntryPrice + (initialRiskAmount / entryQuantity) for short
+  //
+  // Defensive sort: ensure stop adjustments are chronologically ordered (oldest first)
+  // with deterministic tiebreakers per the plan: latest adjustedAt, then largest newStop
+  // for same timestamp, then createdAt.
+  const sortedStopAdjustments = [...stopAdjustments].sort((a, b) => {
+    const t = new Date(a.adjustedAt).getTime() - new Date(b.adjustedAt).getTime();
+    if (t !== 0) return t;
+    // Tiebreak: larger newStop = "more recent/more relevant" — sorted ascending so
+    // the largest stopPrice lands at the end (picked by [length-1] below).
+    if (b.stopPrice !== a.stopPrice) return a.stopPrice - b.stopPrice;
+    return 0;
+  });
+
   let activeStop: number | null = null;
 
-  if (stopAdjustments.length > 0) {
-    activeStop = stopAdjustments[stopAdjustments.length - 1].stopPrice;
+  if (sortedStopAdjustments.length > 0) {
+    activeStop = sortedStopAdjustments[sortedStopAdjustments.length - 1].stopPrice;
   } else if (
     riskSnapshot?.initialRiskAmount != null &&
     avgEntryPrice != null &&

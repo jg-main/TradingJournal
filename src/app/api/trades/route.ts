@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
       ? db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, tradeIds)).all()
       : [];
     const stopRows = tradeIds.length > 0
-      ? db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, tradeIds)).all()
+      ? db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, tradeIds)).orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.newStop), desc(tradeStopAdjustments.createdAt)).all()
       : [];
 
     // Group by trade ID
@@ -346,7 +346,7 @@ export async function GET(request: NextRequest) {
       // Batch-fetch related data for ALL matching trades
       const allExecRows = db.select().from(tradeExecutions).where(inArray(tradeExecutions.tradeId, allTradeIds)).all();
       const allRiskRows = db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, allTradeIds)).all();
-      const allStopRows = db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, allTradeIds)).all();
+      const allStopRows = db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, allTradeIds)).orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.newStop), desc(tradeStopAdjustments.createdAt)).all();
 
       const allExecMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();
       for (const ex of allExecRows) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, settings, accounts } from '@/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
@@ -91,6 +91,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .select()
       .from(tradeStopAdjustments)
       .where(eq(tradeStopAdjustments.tradeId, id))
+      .orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.newStop), desc(tradeStopAdjustments.createdAt))
       .all();
 
     // Derive current account equity: account startingBalance, then settings fallback, then null
