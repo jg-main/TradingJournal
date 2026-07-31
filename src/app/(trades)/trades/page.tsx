@@ -637,7 +637,7 @@ const openColumns: ColumnDef<TradeRow>[] = [
       const price = row.currentPrice;
       const stop = row.metrics?.risk?.activeStop;
       if (price != null && stop != null && price !== 0) {
-        return ((price - stop) / price) * 100;
+        return Math.abs((price - stop) / price);
       }
       return null;
     },
@@ -1069,7 +1069,7 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
       const current = row.currentPrice;
       const trigger = row.plannedEntry;
       if (current != null && trigger != null && trigger !== 0) {
-        return ((current - trigger) / trigger) * 100;
+        return Math.abs((current - trigger) / trigger);
       }
       return null;
     },
