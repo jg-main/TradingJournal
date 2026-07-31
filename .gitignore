@@ -77,3 +77,4 @@ docs/
 
 # GSD compat bad files (generated on compat parse failure)
 .gsd/.compat.json.bad-*
+snapshots/
