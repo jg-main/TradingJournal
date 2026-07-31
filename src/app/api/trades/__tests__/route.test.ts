@@ -354,7 +354,7 @@ function doGetTrades(params: {
           .prepare(`SELECT id, value FROM lookup_values WHERE id IN (${uniqueSectorIds.map(() => '?').join(',')})`)
           .all(...uniqueSectorIds) as Array<{ id: string; value: string }>)
       : [];
-    const sectorMap = new Map(sectorRowsTest.map((s: any) => [s.id, s.value]));
+    const sectorMap = new Map(sectorRowsTest.map((s) => [s.id, s.value]));
 
     // Batch-fetch accounts for name and currency resolution
     const accRows = db
