@@ -75,6 +75,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // R020: stop adjustments are only allowed for open trades.
+    // Planned trades have not entered the market yet; closed and deleted
+    // trades are immutable history. Reject lifecycle violations before any
+    // write so the stop-adjustment audit trail stays consistent.
+    if (trade.status !== 'open') {
+      return NextResponse.json(
+        { error: 'Stop adjustments are only allowed for open trades.' },
+        { status: 409 },
+      );
+    }
+
     const adjustmentId = randomUUID();
     const now = new Date().toISOString();
 

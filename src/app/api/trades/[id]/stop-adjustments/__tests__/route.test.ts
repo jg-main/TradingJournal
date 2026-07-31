@@ -172,6 +172,17 @@ function doPostStopAdjustment(tradeId: string, body: Record<string, unknown>): {
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
+    // R020: stop adjustments are only allowed for open trades.
+    // Planned trades have not entered the market yet; closed and deleted
+    // trades are immutable history. Reject lifecycle violations before any
+    // write so the stop-adjustment audit trail stays consistent.
+    if (trade.status !== 'open') {
+      return {
+        status: 409,
+        data: { error: 'Stop adjustments are only allowed for open trades.' },
+      };
+    }
+
     const adjustmentId = randomUUID();
     const now = new Date().toISOString();
 
@@ -321,7 +332,7 @@ console.log('\n4. POST creates stop adjustment with valid data:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
 
   const result = doPostStopAdjustment(trade.id as string, {
     previousStop: 145.0,
@@ -350,7 +361,7 @@ console.log('\n5. POST creates stop adjustment with only required fields:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
 
   const result = doPostStopAdjustment(trade.id as string, {
     previousStop: 145.0,
@@ -426,7 +437,7 @@ console.log('\n9. POST accepts explicit null for optional fields:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
 
   const result = doPostStopAdjustment(trade.id as string, {
     previousStop: 145.0,
@@ -444,6 +455,114 @@ console.log('\n9. POST accepts explicit null for optional fields:');
   assertEqual(data.reason, null, 'reason is null');
   assertEqual(data.ruleBased, null, 'ruleBased is null');
   assertEqual(data.notes, null, 'notes is null');
+}
+
+// ── 10. POST: Rejects planned trade with 409 (no mutation) ────────────
+
+console.log('\n10. POST rejects stop adjustment for a planned trade (409):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const result = doPostStopAdjustment(trade.id as string, {
+    previousStop: 145.0,
+    newStop: 147.0,
+    reason: 'Should be rejected',
+  });
+
+  assert(result.status === 409, 'returns 409');
+  const data = result.data as { error: string };
+  assertEqual(
+    data.error,
+    'Stop adjustments are only allowed for open trades.',
+    'error message explains lifecycle restriction',
+  );
+  // No mutation — the audit trail must not gain a row for a planned trade.
+  const rows = db
+    .select()
+    .from(schema.tradeStopAdjustments)
+    .where(eq(schema.tradeStopAdjustments.tradeId, trade.id as string))
+    .all();
+  assertEqual(rows.length, 0, 'no adjustment row created for planned trade');
+}
+
+// ── 11. POST: Rejects closed trade with 409 (no mutation) ─────────────
+
+console.log('\n11. POST rejects stop adjustment for a closed trade (409):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'closed' });
+
+  const result = doPostStopAdjustment(trade.id as string, {
+    previousStop: 145.0,
+    newStop: 147.0,
+    reason: 'Should be rejected',
+  });
+
+  assert(result.status === 409, 'returns 409');
+  const data = result.data as { error: string };
+  assertEqual(
+    data.error,
+    'Stop adjustments are only allowed for open trades.',
+    'error message explains lifecycle restriction',
+  );
+  const rows = db
+    .select()
+    .from(schema.tradeStopAdjustments)
+    .where(eq(schema.tradeStopAdjustments.tradeId, trade.id as string))
+    .all();
+  assertEqual(rows.length, 0, 'no adjustment row created for closed trade');
+}
+
+// ── 12. POST: Rejects deleted trade with 409 (no mutation) ────────────
+
+console.log('\n12. POST rejects stop adjustment for a deleted trade (409):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'deleted' });
+
+  const result = doPostStopAdjustment(trade.id as string, {
+    previousStop: 145.0,
+    newStop: 147.0,
+    reason: 'Should be rejected',
+  });
+
+  assert(result.status === 409, 'returns 409');
+  const data = result.data as { error: string };
+  assertEqual(
+    data.error,
+    'Stop adjustments are only allowed for open trades.',
+    'error message explains lifecycle restriction',
+  );
+  const rows = db
+    .select()
+    .from(schema.tradeStopAdjustments)
+    .where(eq(schema.tradeStopAdjustments.tradeId, trade.id as string))
+    .all();
+  assertEqual(rows.length, 0, 'no adjustment row created for deleted trade');
+}
+
+// ── 13. POST: Open trade still creates adjustment (guard does not block) ──
+
+console.log('\n13. POST still allows stop adjustment for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open', plannedStop: 145.0 });
+
+  const result = doPostStopAdjustment(trade.id as string, {
+    previousStop: 145.0,
+    newStop: 148.0,
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertNotNull(data.id, 'has id');
+  assertEqual(data.newStop, 148.0, 'newStop matches');
+  assertEqual(data.tradeId, trade.id, 'tradeId matches');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
