@@ -33,6 +33,7 @@ const TSX_TESTS: string[] = [
   'src/lib/weekly-review.test.ts',
   'src/lib/__fixtures__/golden-scenarios.test.tsx',
   'src/lib/__fixtures__/response-contracts.test.ts',
+  'src/app/api/trades/__tests__/cross-surface-integration.test.ts',
 ];
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */

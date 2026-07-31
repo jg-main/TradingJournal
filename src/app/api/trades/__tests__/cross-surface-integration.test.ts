@@ -370,6 +370,37 @@ function seedStopAdjustment(
   }).run();
 }
 
+/** Seed an account_rollforward row (secondary equity source after NAV). */
+function seedRollforward(accountId: string, date: string, endingEquity: number): void {
+  requireDb().db.insert(schema.accountRollforward).values({
+    id: randomUUID(),
+    accountId,
+    date,
+    beginningEquity: 0,
+    depositsWithdrawals: 0,
+    realizedGrossPnl: 0,
+    fees: 0,
+    endingEquity,
+    cumulativePnl: 0,
+    highWaterMark: endingEquity,
+    drawdownAmount: 0,
+    drawdownPct: 0,
+    notes: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  }).run();
+}
+
+/** Seed the singleton settings row (final equity fallback source). */
+function seedSettings(startingAccountValue: number): void {
+  requireDb().db.insert(schema.settings).values({
+    id: 'default',
+    startingAccountValue,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  }).run();
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // 5. Route invocation helpers (real handlers, real HTTP-ish NextRequest)
 // ────────────────────────────────────────────────────────────────────────────
@@ -449,8 +480,9 @@ function findListRow(body: ApiListBody, tradeId: string): ApiRow {
 
 /**
  * Rebuild the exact TradeMetricsInput the routes derive from the DB.
- * Mirrors the equity cascade in both route handlers
- * (account_performance.nav → account.startingBalance → null).
+ * Mirrors the full equity cascade in both route handlers
+ * (account_performance.nav → account_rollforward.endingEquity →
+ *  account.startingBalance → settings.startingAccountValue → null).
  */
 function buildMetricsInputFromDb(tradeId: string): TradeMetricsInput {
   const { db: d } = requireDb();
@@ -479,7 +511,21 @@ function buildMetricsInputFromDb(tradeId: string): TradeMetricsInput {
     .where(eq(schema.accountPerformance.accountId, trade.accountId))
     .get();
   const account = d.select().from(schema.accounts).where(eq(schema.accounts.id, trade.accountId)).get();
+  const rollforward = d
+    .select()
+    .from(schema.accountRollforward)
+    .where(eq(schema.accountRollforward.accountId, trade.accountId))
+    .orderBy(desc(schema.accountRollforward.date))
+    .limit(1)
+    .get();
+  const settingsRow = d.select().from(schema.settings).where(eq(schema.settings.id, 'default')).get();
   const navValue = perf?.nav ? parseFloat(perf.nav) : null;
+  const currentAccountEquity =
+    navValue ??
+    rollforward?.endingEquity ??
+    account?.startingBalance ??
+    settingsRow?.startingAccountValue ??
+    null;
 
   return {
     executions: executions.map((e) => ({
@@ -506,7 +552,7 @@ function buildMetricsInputFromDb(tradeId: string): TradeMetricsInput {
       trade.currentPrice != null
         ? { price: trade.currentPrice, markedAt: trade.currentPriceFetchedAt ?? nowIso() }
         : null,
-    currentAccountEquity: navValue ?? account?.startingBalance ?? null,
+    currentAccountEquity,
   };
 }
 
@@ -955,6 +1001,231 @@ registerCategory('C06', 'Cross-surface reconciliation', async () => {
   assertApprox(kernel.returnMetrics.rMultiple, 793 / 350, 1e-6, 'rMultiple = 793/350');
 });
 
+// ── C07. Friendly names ────────────────────────────────────────────────────
+// Audit §15: accountName/sectorName resolve to human-readable strings on both
+// surfaces — never the raw UUID stored in trades.accountId / trades.sectorId.
+
+registerCategory('C07', 'Friendly names', async () => {
+  // Deliberately UUID-shaped ids so the assertion is meaningful:
+  // the API must NOT echo the id back as the display name.
+  const accountId = randomUUID();
+  const sectorId = randomUUID();
+  seedAccount(accountId, { name: 'Friendly Names Account' });
+  seedLookup(sectorId, 'sector', 'Technology Semiconductors');
+
+  const tradeId = seedTrade(accountId, { symbol: 'WKC', sectorId });
+  seedExecution(tradeId, 'buy', 100, 100, 0, '2026-07-01T10:00:00.000Z');
+  seedRiskSnapshot(tradeId, { initialEntryPrice: 100, initialStopPrice: 98, initialQuantity: 100 });
+
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  // ── List surface ──
+  const list = await getTradesList();
+  assert(list.status === 200, 'list returns 200');
+  const row = findListRow(list.body, tradeId);
+
+  const listAccountName = row.accountName as string | null;
+  const listSectorName = row.sectorName as string | null;
+  assertEqual(listAccountName, 'Friendly Names Account', 'list accountName is human-readable');
+  assertEqual(listSectorName, 'Technology Semiconductors', 'list sectorName is human-readable');
+  assert(
+    listAccountName !== accountId,
+    'list accountName is not the raw account UUID'
+  );
+  assert(
+    listSectorName !== sectorId,
+    'list sectorName is not the raw sector UUID'
+  );
+  assert(!uuidPattern.test(listAccountName ?? ''), 'list accountName is not UUID-shaped');
+  assert(!uuidPattern.test(listSectorName ?? ''), 'list sectorName is not UUID-shaped');
+
+  // ── Detail surface ──
+  const detail = await getTradeDetail(tradeId);
+  assert(detail.status === 200, 'detail returns 200');
+  assertEqual(detail.body.accountName, 'Friendly Names Account', 'detail accountName is human-readable');
+  assertEqual(detail.body.sectorName, 'Technology Semiconductors', 'detail sectorName is human-readable');
+  assert(!uuidPattern.test(detail.body.accountName ?? ''), 'detail accountName is not UUID-shaped');
+  assert(!uuidPattern.test(detail.body.sectorName ?? ''), 'detail sectorName is not UUID-shaped');
+
+  // Account metadata propagates too
+  assertEqual(detail.body.accountCurrency, 'USD', 'detail accountCurrency = USD');
+  assertEqual(row.accountCurrency as string, 'USD', 'list accountCurrency = USD');
+});
+
+// ── C08. NAV consistency ───────────────────────────────────────────────────
+// Audit §15: riskToAccount must use account_performance.nav as the equity
+// denominator, and fall through the full cascade (nav → rollforward →
+// startingBalance → settings → null) as each source disappears.
+
+registerCategory('C08', 'NAV consistency', async () => {
+  const accountId = 'acc-nav';
+  // startingBalance is deliberately misleading (100) — NAV (25000) must win.
+  seedAccount(accountId, { startingBalance: 100 });
+  seedAccountPerformance(accountId, 25000);
+  seedRollforward(accountId, '2026-07-05T00:00:00.000Z', 15000);
+
+  const tradeId = seedTrade(accountId, { symbol: 'WKC' });
+  seedExecution(tradeId, 'buy', 100, 100, 0, '2026-07-01T10:00:00.000Z');
+  // openRisk = (100 − 95) × 100 = 500
+  seedRiskSnapshot(tradeId, { initialEntryPrice: 100, initialStopPrice: 95, initialQuantity: 100, initialRiskAmount: 500 });
+
+  const riskToAccountFor = async (label: string) => {
+    const list = await getTradesList();
+    const row = findListRow(list.body, tradeId);
+    const detail = await getTradeDetail(tradeId);
+    const listValue = row.metrics.risk.riskToAccount as number | null;
+    assertDeepEqual(
+      listValue,
+      detail.body.metrics.risk.riskToAccount as number | null,
+      `${label}: detail riskToAccount matches list`
+    );
+    if (listValue != null) {
+      assertApprox(row.riskPct as number, listValue, 1e-9, `${label}: flat riskPct matches metrics`);
+    } else {
+      assertEqual(row.riskPct, null, `${label}: flat riskPct is null when riskToAccount is null`);
+    }
+    return listValue;
+  };
+
+  // ── Phase 1: NAV present → 500 / 25000 = 0.02 (rollforward/startingBalance ignored) ──
+  const withNav = await riskToAccountFor('with NAV');
+  assertApprox(withNav, 0.02, 1e-9, 'riskToAccount = 0.02 (500 / NAV 25000)');
+  assert(withNav !== 500 / 15000, 'NAV wins over rollforward (≠ 0.0333…)');
+  assert(withNav !== 5, 'NAV wins over startingBalance (≠ 5.0)');
+
+  // ── Phase 2: NAV removed → rollforward.endingEquity 15000 → 500/15000 ──
+  requireDb().db.delete(schema.accountPerformance)
+    .where(eq(schema.accountPerformance.accountId, accountId)).run();
+  const withRollforward = await riskToAccountFor('after NAV removed');
+  assertApprox(withRollforward, 500 / 15000, 1e-9, 'riskToAccount = 500/15000 (rollforward)' );
+  assert(withRollforward !== 5, 'rollforward wins over startingBalance (≠ 5.0)');
+
+  // ── Phase 3: rollforward removed → account.startingBalance 100 → 500/100 ──
+  requireDb().db.delete(schema.accountRollforward)
+    .where(eq(schema.accountRollforward.accountId, accountId)).run();
+  const withStartingBalance = await riskToAccountFor('after rollforward removed');
+  assertApprox(withStartingBalance, 5.0, 1e-9, 'riskToAccount = 5.0 (500 / startingBalance 100)');
+
+  // ── Phase 4: startingBalance removed → settings.startingAccountValue 40000 ──
+  requireDb().db.update(schema.accounts)
+    .set({ startingBalance: null })
+    .where(eq(schema.accounts.id, accountId))
+    .run();
+  seedSettings(40000);
+  const withSettings = await riskToAccountFor('after startingBalance removed');
+  assertApprox(withSettings, 500 / 40000, 1e-9, 'riskToAccount = 500/40000 (settings fallback)');
+
+  // ── Phase 5: settings removed → no equity source → riskToAccount null ──
+  requireDb().db.delete(schema.settings).where(eq(schema.settings.id, 'default')).run();
+  const withNoEquity = await riskToAccountFor('after settings removed');
+  assertEqual(withNoEquity, null, 'riskToAccount = null when no equity source exists');
+});
+
+// ── C09. Short position risk ───────────────────────────────────────────────
+// Audit §15: short trades compute risk in the opposite direction — stop ABOVE
+// entry price produces openRisk; stop BELOW entry price locks profit.
+
+registerCategory('C09', 'Short position risk', async () => {
+  const accountId = 'acc-short';
+  seedAccount(accountId);
+  seedAccountPerformance(accountId, 10000);
+
+  const tradeId = seedTrade(accountId, { symbol: 'WKC', direction: 'short', currentPrice: 101, currentPriceFetchedAt: nowIso() });
+  seedExecution(tradeId, 'sell_short', 100, 100, 0, '2026-07-01T10:00:00.000Z');
+  seedRiskSnapshot(tradeId, {
+    initialEntryPrice: 100,
+    initialStopPrice: 102, // stop ABOVE entry = risk for a short
+    initialQuantity: 100,
+    initialRiskAmount: 200,
+    accountEquityAtOpen: 10000,
+  });
+
+  const list = await getTradesList();
+  assert(list.status === 200, 'list returns 200');
+  const row = findListRow(list.body, tradeId);
+
+  // Direction-aware risk: openRisk = (102 − 100) × 100 = 200, not 0
+  assertEqual(row.metrics.risk.activeStop, 102, 'short activeStop = 102 (stop above entry)');
+  assertApprox(row.metrics.risk.openRisk, 200, 0.01, 'short openRisk = 200 (102−100)×100');
+  assertApprox(row.metrics.risk.riskToAccount, 0.02, 1e-9, 'short riskToAccount = 0.02');
+  assertApprox(row.metrics.risk.lockedPnl, 0, 1e-9, 'short lockedPnl = 0 (stop not past cost)');
+
+  // Direction-aware unrealized P&L: short loses when price rises → (100−101)×100 = −100
+  assertApprox(row.metrics.unrealizedPnl.grossUnrealizedPnl, -100, 0.01, 'short grossUnrealizedPnl = −100');
+
+  // ── Stop moved BELOW entry → profit locked, openRisk clamps to 0 ──
+  seedStopAdjustment(tradeId, '2026-07-02T10:00:00.000Z', 99, 102);
+  const list2 = await getTradesList();
+  const row2 = findListRow(list2.body, tradeId);
+  assertEqual(row2.metrics.risk.activeStop, 99, 'short activeStop = 99 after adjustment');
+  assertApprox(row2.metrics.risk.openRisk, 0, 1e-9, 'short openRisk clamps to 0 below entry');
+  assertApprox(row2.metrics.risk.lockedPnl, 100, 0.01, 'short lockedPnl = 100 (100−99)×100');
+
+  // Detail surface agrees on both phases
+  const detail = await getTradeDetail(tradeId);
+  assert(detail.status === 200, 'detail returns 200');
+  assertEqual(detail.body.metrics.risk.activeStop, 99, 'detail short activeStop = 99');
+  assertApprox(detail.body.metrics.risk.lockedPnl, 100, 0.01, 'detail short lockedPnl = 100');
+  assertApprox(detail.body.metrics.unrealizedPnl.grossUnrealizedPnl, -100, 0.01, 'detail short grossUnrealizedPnl = −100');
+});
+
+// ── C10. Missing mark ──────────────────────────────────────────────────────
+// Audit §15: an open trade without a market price must return null P&L (never
+// a fabricated zero or stale value), while risk fields that do not depend on
+// the mark still compute.
+
+registerCategory('C10', 'Missing mark', async () => {
+  const accountId = 'acc-nomark';
+  seedAccount(accountId);
+  seedAccountPerformance(accountId, 10000);
+
+  // Open trade WITHOUT currentPrice (no mark yet)
+  const tradeId = seedTrade(accountId, { symbol: 'WKC' });
+  seedExecution(tradeId, 'buy', 100, 100, 0, '2026-07-01T10:00:00.000Z');
+  seedRiskSnapshot(tradeId, { initialEntryPrice: 100, initialStopPrice: 98, initialQuantity: 100, initialRiskAmount: 200 });
+
+  const list = await getTradesList();
+  assert(list.status === 200, 'list returns 200');
+  const row = findListRow(list.body, tradeId);
+
+  // Unrealized P&L is null — never 0, never a stale value
+  assertEqual(row.metrics.unrealizedPnl.grossUnrealizedPnl, null, 'grossUnrealizedPnl = null (no mark)');
+  assertEqual(row.metrics.unrealizedPnl.netUnrealizedPnl, null, 'netUnrealizedPnl = null (no mark)');
+  assertEqual(row.metrics.returnMetrics.returnPct, null, 'returnPct = null (no mark)');
+  assertEqual(row.metrics.returnMetrics.rMultiple, null, 'rMultiple = null (no mark)');
+  assertEqual(row.metrics.position.totalNetPnl, null, 'totalNetPnl = null (no mark)');
+  assertEqual(row.metrics.position.marketValue, null, 'marketValue = null (no mark)');
+  assertEqual(row.metrics.position.positionWeight, null, 'positionWeight = null (no mark)');
+
+  // Flat list fields agree (UI renders '—' via formatPercent/formatCurrency)
+  assertEqual(row.unrealizedPnl, null, 'flat unrealizedPnl = null');
+  assertEqual(row.returnPct, null, 'flat returnPct = null');
+  assertEqual(formatPercent(row.metrics.returnMetrics.returnPct), '—', 'formatPercent(null) renders —');
+
+  // Risk does NOT depend on the mark — still computed
+  assertEqual(row.metrics.risk.activeStop, 98, 'activeStop still computes without mark');
+  assertApprox(row.metrics.risk.openRisk, 200, 0.01, 'openRisk still computes without mark');
+  assertApprox(row.metrics.risk.riskToAccount, 0.02, 1e-9, 'riskToAccount still computes without mark');
+
+  // Detail surface agrees
+  const detail = await getTradeDetail(tradeId);
+  assert(detail.status === 200, 'detail returns 200');
+  assertEqual(detail.body.metrics.unrealizedPnl.grossUnrealizedPnl, null, 'detail grossUnrealizedPnl = null');
+  assertEqual(detail.body.metrics.returnMetrics.returnPct, null, 'detail returnPct = null');
+
+  // ── Mark arrives → values populate ──
+  requireDb().db.update(schema.trades)
+    .set({ currentPrice: 105, currentPriceFetchedAt: nowIso() })
+    .where(eq(schema.trades.id, tradeId))
+    .run();
+  const list2 = await getTradesList();
+  const row2 = findListRow(list2.body, tradeId);
+  assertApprox(row2.metrics.unrealizedPnl.grossUnrealizedPnl, 500, 0.01, 'grossUnrealizedPnl = 500 after mark (105−100)×100');
+  assertApprox(row2.metrics.returnMetrics.returnPct, 0.05, 1e-9, 'returnPct = 0.05 after mark');
+  assertApprox(row2.metrics.position.marketValue, 10500, 0.01, 'marketValue = 10500 after mark');
+  assertEqual(formatPercent(row2.metrics.returnMetrics.returnPct), '+5.00%', 'formatPercent populates after mark');
+});
+
 // ────────────────────────────────────────────────────────────────────────────
 // 7. Main
 // ────────────────────────────────────────────────────────────────────────────
@@ -1009,7 +1280,7 @@ async function main(): Promise<void> {
   console.log('─'.repeat(72));
   const passed = results.filter((r) => r.ok).length;
   const failed = results.filter((r) => !r.ok).length;
-  console.log(`  ${passed}/${results.length} audit categories passed (T01 scope: §15 categories 1–6; 7–10 land in T02)`);
+  console.log(`  ${passed}/${results.length} audit categories passed (all 10 audit §15 categories: percentage integration, stop propagation, stop ordering, scale-in, partial exit, cross-surface reconciliation, friendly names, NAV consistency, short position risk, missing mark)`);
   if (failed > 0) {
     console.error(`  ${failed} category(ies) FAILED — see diff above`);
     console.error('─'.repeat(72));
