@@ -508,3 +508,158 @@ describe('Refresh Prices error paths', () => {
     consoleSpy.mockRestore();
   });
 });
+
+// ── Per-currency totals and portfolioHeat tests ────────────────────
+// These tests need rows.length > 0 so the TotalsFooter renders (not just EmptyState)
+
+function makeMinimalTradeRow(overrides?: Partial<{
+  id: string;
+  symbol: string;
+  direction: 'long' | 'short';
+  status: 'open' | 'closed' | 'planned';
+}>): Record<string, unknown> {
+  return {
+    id: overrides?.id ?? 't1',
+    tradeCode: 'TC-001',
+    symbol: overrides?.symbol ?? 'AAPL',
+    direction: overrides?.direction ?? 'long',
+    accountId: 'acc-001',
+    accountName: 'Test Account',
+    accountCurrency: 'USD',
+    status: overrides?.status ?? 'open',
+    openedAt: '2024-06-01T10:00:00.000Z',
+    closedAt: null,
+    currentPrice: 155.00,
+    metrics: {
+      position: { holdingPeriodDays: 30, totalNetPnl: 500, marketValue: 15000, openedAt: '2024-06-01T10:00:00.000Z', closedAt: null },
+      size: { sizeDisplay: '100', entryQuantity: 100, openQuantity: 100 },
+      averagePrices: { openAvgCost: 150.00, avgEntryPrice: 150.00, avgExitPrice: null },
+      unrealizedPnl: { grossUnrealizedPnl: 500, netUnrealizedPnl: 490 },
+      realizedPnl: { grossRealizedPnl: 0, netRealizedPnl: 0 },
+      fees: { realizedFees: 10, totalFees: 10 },
+      risk: { initialRisk: 1000, initialRiskPct: 0.02, openRisk: 800, activeStop: 148, lockedPnl: null, riskToAccount: null },
+      returnMetrics: { returnPct: 0.1, rMultiple: null },
+    },
+    setupName: 'Breakout',
+    returnPct: 0.1,
+    riskPct: null,
+    realizedPnl: 0,
+    unrealizedPnl: 500,
+    ...overrides,
+  };
+}
+
+describe('Per-currency totals in footer', () => {
+  it('renders per-currency totals section when totalsByCurrency is present', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow()],
+          total: 1,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+          totalsByCurrency: {
+            USD: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeat: 3.5 },
+            EUR: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, portfolioHeat: 1.2 },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+
+    // Advance past the 300ms debounce to trigger the initial fetch
+    vi.advanceTimersByTime(500);
+
+    // The footer should render the "By Currency" section with currency labels
+    await vi.waitFor(() => {
+      expect(screen.getAllByText('By Currency').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('renders per-currency section even with single currency', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow()],
+          total: 1,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+          totalsByCurrency: {
+            USD: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    await vi.waitFor(() => {
+      expect(screen.getAllByText('By Currency').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('USD').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('renders portfolioHeat value in per-currency section for open tab', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow()],
+          total: 1,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+          totalsByCurrency: {
+            USD: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeat: 3.5 },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    // Open tab is default, so portfolioHeat text should appear in per-currency section
+    await vi.waitFor(() => {
+      expect(screen.getAllByText('Portfolio Heat').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('3.50%').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('does not render portfolioHeat in top-level totals when no per-currency data', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow()],
+          total: 1,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    // Portfolio Heat should NOT appear anywhere since there's no per-currency data
+    await vi.waitFor(() => {
+      expect(screen.queryByText('Portfolio Heat')).toBeNull();
+    });
+  });
+});

@@ -11,26 +11,26 @@ import { cn } from '@/lib/utils';
 
 // ── Numeric Formatters ─────────────────────────────────────────────────
 
-/** Format a currency value as $X,XXX.XX */
-export function formatCurrency(value: number | null | undefined): string {
+/** Format a currency value as $X,XXX.XX or with the specified currency */
+export function formatCurrency(value: number | null | undefined, currencyCode: string = 'USD'): string {
   if (value == null || Number.isNaN(value)) return '—';
   const abs = Math.abs(value);
   const formatted = new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency: currencyCode,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(abs);
   return value < 0 ? `-${formatted}` : formatted;
 }
 
-/** Format a price (same as currency but might show more decimals) */
-export function formatPrice(value: number | null | undefined): string {
+/** Format a price (same as currency but might show more decimals, with optional currency) */
+export function formatPrice(value: number | null | undefined, currencyCode: string = 'USD'): string {
   if (value == null || Number.isNaN(value)) return '—';
   // For stock prices, 2 decimal places is standard
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency: currencyCode,
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   }).format(value);

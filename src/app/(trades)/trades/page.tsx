@@ -286,24 +286,31 @@ function TotalsGroup({
   label,
   isOpen,
   totals,
+  currency,
+  showPortfolioHeat,
 }: {
   label?: string;
   isOpen: boolean;
   totals: TradesResponse['totals'];
+  currency?: string;
+  showPortfolioHeat?: boolean;
 }) {
-  const openItems = [
-    { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
-    { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk)}</span> },
-  ];
-  const portfolioHeatItem = totals.portfolioHeat != null
-    ? [{ label: 'Portfolio Heat', content: <span className="tabular-nums">{totals.portfolioHeat.toFixed(2)}%</span> }]
-    : [];
+  const openItems = showPortfolioHeat
+    ? [
+        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
+        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk, currency)}</span> },
+        { label: 'Portfolio Heat', content: <span className="tabular-nums">{(totals.portfolioHeat ?? 0).toFixed(2)}%</span> },
+      ]
+    : [
+        { label: 'Unrealized P&L', content: <PnlCell value={totals.netUnrealizedPnl} /> },
+        { label: 'Open Risk', content: <span className="tabular-nums">{formatCurrency(totals.totalOpenRisk, currency)}</span> },
+      ];
 
   const items = isOpen
-    ? [...openItems, ...portfolioHeatItem]
+    ? openItems
     : [
         { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} /> },
-        { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees)}</span> },
+        { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees, currency)}</span> },
         { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} /> },
       ];
 
@@ -364,7 +371,6 @@ function TotalsFooter({
 
   const isOpen = tabId === 'open';
   const currencies = Object.keys(totalsByCurrency ?? {});
-  const hasMultipleCurrencies = currencies.length > 1;
 
   return (
     <div className="mt-3 rounded-lg border bg-muted/30 p-4">
@@ -373,7 +379,7 @@ function TotalsFooter({
         isOpen={isOpen}
         totals={totals}
       />
-      {hasMultipleCurrencies && (
+      {currencies.length > 0 && (
         <>
           <hr className="my-4 border-border" />
           <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -386,6 +392,8 @@ function TotalsFooter({
                 label={currency}
                 isOpen={isOpen}
                 totals={totalsByCurrency![currency]}
+                currency={currency}
+                showPortfolioHeat={isOpen}
               />
             ))}
           </div>
