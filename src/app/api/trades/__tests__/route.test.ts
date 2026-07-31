@@ -452,6 +452,8 @@ function doGetTrades(params: {
       grossUnrealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.unrealizedPnl.grossUnrealizedPnl ?? 0), 0),
       netUnrealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.unrealizedPnl.netUnrealizedPnl ?? 0), 0),
       totalOpenRisk: enhancedRows.reduce((s, r) => s + (r.metrics?.risk.openRisk ?? 0), 0),
+      portfolioHeatAmount: 0,
+      portfolioHeatPct: 0,
     };
 
     // Compute totalsByCurrency from the full dataset
@@ -513,8 +515,18 @@ function doGetTrades(params: {
       }
     }
 
-    // Top-level portfolioHeat removed — only per-currency portfolioHeat is returned.
-    // Mixed-currency portfolioHeat is misleading when accounts use different currencies.
+    // Top-level portfolioHeat — single authoritative value for the open tab footer.
+    // portfolioHeatAmount = sum of open risk across all currencies (== totalOpenRisk).
+    // portfolioHeatPct = decimal fraction of total account equity (0.0125 = 1.25%),
+    // following the M010 decimal-fraction contract (displayed via ×100 formatting).
+    // The denominator sums one equity per account (unique, not per trade) to avoid
+    // double-counting when multiple open positions share an account.
+    const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
+    totals.portfolioHeatAmount = totals.totalOpenRisk;
+    totals.portfolioHeatPct =
+      totalEquityAcrossAccounts > 0 && totals.totalOpenRisk > 0
+        ? totals.totalOpenRisk / totalEquityAcrossAccounts
+        : 0;
 
     for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
       const currencyEquities = currencyEquityByAccount.get(currency);
@@ -1434,8 +1446,12 @@ console.log('\n27. GET returns portfolioHeat in totals and totalsByCurrency:');
   const d = result.data as { totals: Record<string, unknown>; totalsByCurrency: Record<string, Record<string, unknown>> };
 
   assertNotNull(d.totals, 'totals object is present');
-  // Top-level portfolioHeat has been removed — only per-currency portfolioHeat is returned
-  assert('portfolioHeat' in d.totals === false, 'portfolioHeat NOT in top-level totals (removed, per-currency only)');
+  // Top-level portfolioHeatAmount = sum of open risk across all currencies
+  assertEqual(d.totals.portfolioHeatAmount, 1500, 'portfolioHeatAmount in top-level totals = 1500 (1000 USD + 500 EUR)');
+  // Top-level portfolioHeatPct = decimal fraction of total equity (M010 contract):
+  // 1500 / (25000 + 40000) = 0.02308 → 2.31%
+  assertApprox(d.totals.portfolioHeatPct as number, 1500 / 65000, 0.0001, 'portfolioHeatPct in top-level totals = 1500/65000 ≈ 0.02308 (decimal fraction)');
+  assert((d.totals.portfolioHeatPct as number) < 1.0, 'portfolioHeatPct is a decimal fraction < 1.0 (NOT a ×100 percentage)');
 
   assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
   // USD: openRisk = 1000, equity = 25000 → 1000/25000 * 100 = 4%
@@ -1459,14 +1475,16 @@ console.log('\n28. GET returns portfolioHeat=0 for closed and planned tabs:');
   const closedResult = doGetTrades({ status: 'closed' });
   assert(closedResult.status === 200, 'closed returns 200');
   const cd = closedResult.data as { totals: Record<string, unknown> };
-  // Top-level portfolioHeat has been removed — only per-currency portfolioHeat is returned
-  assert('portfolioHeat' in cd.totals === false, 'closed totals has no portfolioHeat (removed for top-level)');
+  // Top-level portfolioHeat fields are always present; zero when there is no open risk
+  assertEqual(cd.totals.portfolioHeatAmount, 0, 'closed totals.portfolioHeatAmount = 0 (no open risk)');
+  assertEqual(cd.totals.portfolioHeatPct, 0, 'closed totals.portfolioHeatPct = 0 (no open risk)');
 
   // Planned trade — no open risk
   const plannedResult = doGetTrades({ status: 'planned' });
   assert(plannedResult.status === 200, 'planned returns 200');
   const pd = plannedResult.data as { totals: Record<string, unknown> };
-  assert('portfolioHeat' in pd.totals === false, 'planned totals has no portfolioHeat (removed for top-level)');
+  assertEqual(pd.totals.portfolioHeatAmount, 0, 'planned totals.portfolioHeatAmount = 0 (no open risk)');
+  assertEqual(pd.totals.portfolioHeatPct, 0, 'planned totals.portfolioHeatPct = 0 (no open risk)');
 }
 
 // ── 29. GET: plannedTotals in response ──────────────────────────────

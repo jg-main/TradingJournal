@@ -355,6 +355,8 @@ export async function GET(request: NextRequest) {
       grossUnrealizedPnl: 0,
       netUnrealizedPnl: 0,
       totalOpenRisk: 0,
+      portfolioHeatAmount: 0,
+      portfolioHeatPct: 0,
     };
 
     // Per-currency totals buckets — hoisted outside the if-block for response access
@@ -521,9 +523,6 @@ export async function GET(request: NextRequest) {
         { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
       );
 
-      // Top-level portfolioHeat removed — only per-currency portfolioHeat is returned.
-      // Mixed-currency portfolioHeat is misleading when accounts use different currencies.
-
       // Compute per-currency portfolioHeat
       for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
         const currencyEquities = currencyEquityByAccount.get(currency);
@@ -534,6 +533,19 @@ export async function GET(request: NextRequest) {
           ? (bucket.totalOpenRisk / currencyTotalEquity) * 100
           : 0;
       }
+
+      // Top-level portfolioHeat — single authoritative value for the open tab footer.
+      // portfolioHeatAmount = sum of open risk across all currencies (== totalOpenRisk).
+      // portfolioHeatPct = decimal fraction of total account equity (0.0125 = 1.25%),
+      // following the M010 decimal-fraction contract (displayed via ×100 formatting).
+      // The denominator sums one equity per account (unique, not per trade) to avoid
+      // double-counting when multiple open positions share an account.
+      const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
+      fullTotals.portfolioHeatAmount = fullTotals.totalOpenRisk;
+      fullTotals.portfolioHeatPct =
+        totalEquityAcrossAccounts > 0 && fullTotals.totalOpenRisk > 0
+          ? fullTotals.totalOpenRisk / totalEquityAcrossAccounts
+          : 0;
     }
 
     // ── plannedTotals: aggregate risk/capital across all planned trades ──

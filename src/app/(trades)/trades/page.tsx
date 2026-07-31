@@ -82,6 +82,8 @@ interface TotalsShape {
   netUnrealizedPnl: number;
   totalOpenRisk: number;
   portfolioHeat?: number;
+  portfolioHeatAmount?: number;
+  portfolioHeatPct?: number;
 }
 
 interface PlannedTotalsShape {

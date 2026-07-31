@@ -701,6 +701,10 @@ registerCategory('C02', 'Stop propagation', async () => {
     0.01,
     'pre portfolioHeat = 2.0 (200/10000×100, established points contract)'
   );
+  // Top-level portfolioHeat contract (M010 decimal-fraction): amount = open risk,
+  // pct = fraction of 1.0 (0.02 = 2.00%), NOT a ×100 percentage.
+  assertApprox(preList.body.totals.portfolioHeatAmount, 200, 0.01, 'pre top-level portfolioHeatAmount = 200');
+  assertApprox(preList.body.totals.portfolioHeatPct, 0.02, 1e-9, 'pre top-level portfolioHeatPct = 0.02 (200/10000, decimal fraction)');
 
   // ── Record the stop adjustment (the "edit stop on open trade" path) ──
   seedStopAdjustment(tradeId, '2026-07-02T10:00:00.000Z', 99.5, 98);
@@ -734,6 +738,12 @@ registerCategory('C02', 'Stop propagation', async () => {
     0.5,
     0.01,
     'post portfolioHeat = 0.5 (50/10000×100)'
+  );
+  assertApprox(postList.body.totals.portfolioHeatAmount, 50, 0.01, 'post top-level portfolioHeatAmount = 50');
+  assertApprox(postList.body.totals.portfolioHeatPct, 0.005, 1e-9, 'post top-level portfolioHeatPct = 0.005 (50/10000, decimal fraction)');
+  assert(
+    postList.body.totals.portfolioHeatPct < preList.body.totals.portfolioHeatPct,
+    'top-level portfolioHeatPct decreases after stop tightened'
   );
   assert(
     postList.body.totalsByCurrency['USD'].portfolioHeat < preList.body.totalsByCurrency['USD'].portfolioHeat,
