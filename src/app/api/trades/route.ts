@@ -214,6 +214,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Batch-fetch sector lookupValues for sector name resolution
+    const uniqueSectorIds: string[] = [...new Set(rows.map((r) => r.sectorId).filter((id): id is string => id !== null))];
+    const sectorRows: Array<{ id: string; value: string }> = uniqueSectorIds.length > 0
+      ? (getSqliteHandle()
+          .prepare(`SELECT id, value FROM lookup_values WHERE id IN (${uniqueSectorIds.map(() => '?').join(',')})`)
+          .all(...uniqueSectorIds) as Array<{ id: string; value: string }>)
+      : [];
+    const sectorMap = new Map(sectorRows.map((s) => [s.id, s.value]));
+
     // Single settings row for equity fallback
     const settingsRow = db
       .select()
@@ -293,6 +302,9 @@ export async function GET(request: NextRequest) {
       // Backward-compatible flat fields + compact nested metrics
       return {
         ...row,
+        accountName: account?.name ?? null,
+        accountCurrency: account?.currency ?? null,
+        sectorName: row.sectorId ? (sectorMap.get(row.sectorId) ?? null) : null,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
         unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,

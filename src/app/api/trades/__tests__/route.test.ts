@@ -310,6 +310,23 @@ function doGetTrades(params: {
       }
     }
 
+    // Batch-fetch sector lookupValues for sector name resolution
+    const uniqueSectorIds: string[] = [...new Set(dbRows.map((r) => r.sectorId).filter((id): id is string => id !== null))];
+    const sectorRowsTest: Array<{ id: string; value: string }> = uniqueSectorIds.length > 0
+      ? (sqlite
+          .prepare(`SELECT id, value FROM lookup_values WHERE id IN (${uniqueSectorIds.map(() => '?').join(',')})`)
+          .all(...uniqueSectorIds) as Array<{ id: string; value: string }>)
+      : [];
+    const sectorMap = new Map(sectorRowsTest.map((s: any) => [s.id, s.value]));
+
+    // Batch-fetch accounts for name and currency resolution
+    const accRows = db
+      .select()
+      .from(schema.accounts)
+      .where(inArray(schema.accounts.id, uniqueAccountIds))
+      .all() as Record<string, unknown>[];
+    const accMap = new Map(accRows.map((a) => [a.id, a]));
+
     // Compute enriched rows with computeTradeMetrics()
     const enhancedRows = dbRows.map((row) => {
       const executions = execMap.get(row.id) ?? [];
@@ -362,8 +379,13 @@ function doGetTrades(params: {
         plannedRiskToAccount = (plannedRiskAmount / currentAccountEquity);
       }
 
+      const accountInfo = accMap.get(row.accountId) as Record<string, unknown> | undefined;
+
       return {
         ...row,
+        accountName: accountInfo?.name ?? null,
+        accountCurrency: accountInfo?.currency ?? null,
+        sectorName: row.sectorId ? (sectorMap.get(row.sectorId) ?? null) : null,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
         unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,
@@ -1520,6 +1542,61 @@ console.log('\n31. GET plannedTotals returns zeros when no planned trades:');
   assertEqual(d.plannedTotals.totalPlannedRisk, 0, 'plannedTotals.totalPlannedRisk = 0 when no planned trades');
   assertEqual(d.plannedTotals.totalPlannedCapital, 0, 'plannedTotals.totalPlannedCapital = 0 when no planned trades');
   assertEqual(d.plannedTotals.count, 0, 'plannedTotals.count = 0 when no planned trades');
+}
+
+// ── 32. GET: Returns resolved accountName, sectorName, accountCurrency ──
+
+console.log('\n32. GET returns resolved accountName, sectorName, accountCurrency:');
+{
+  cleanup();
+  const sectorId = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.lookupValues)
+    .values({
+      id: sectorId,
+      type: 'sector',
+      value: 'Technology',
+      sortOrder: 0,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+
+  const acc = seedAccount({ name: 'Interactive Brokers', currency: 'EUR' });
+  const accId = acc.id as string;
+
+  seedTrade({
+    accountId: accId,
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'planned',
+    sectorId,
+  });
+  seedTrade({
+    accountId: accId,
+    symbol: 'NVDA',
+    direction: 'long',
+    status: 'planned',
+    sectorId: null,
+  });
+
+  const result = doGetTrades({ status: 'planned' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+  assertEqual(d.data.length, 2, '2 planned trades returned');
+
+  const aapl = d.data.find((r: Record<string, unknown>) => r.symbol === 'AAPL') as Record<string, unknown>;
+  assertNotNull(aapl, 'AAPL row found');
+  assertEqual(aapl.accountName, 'Interactive Brokers', 'accountName is "Interactive Brokers"');
+  assertEqual(aapl.accountCurrency, 'EUR', 'accountCurrency is "EUR"');
+  assertEqual(aapl.sectorName, 'Technology', 'sectorName is "Technology"');
+
+  const nvda = d.data.find((r: Record<string, unknown>) => r.symbol === 'NVDA') as Record<string, unknown>;
+  assertNotNull(nvda, 'NVDA row found');
+  assertEqual(nvda.accountName, 'Interactive Brokers', 'NVDA accountName is "Interactive Brokers"');
+  assertEqual(nvda.accountCurrency, 'EUR', 'NVDA accountCurrency is "EUR"');
+  assertEqual(nvda.sectorName, null, 'NVDA sectorName is null when sectorId is null');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
