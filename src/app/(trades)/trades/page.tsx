@@ -654,21 +654,7 @@ const openColumns: ColumnDef<TradeRow>[] = [
       <span className="tabular-nums text-muted-foreground">{formatCurrency(getValue<number | null>())}</span>
     ),
   },
-  {
-    id: 'entryFillCount',
-    header: 'Entry Fills',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'exitFillCount',
-    header: 'Exit Fills',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'grade',
-    header: 'Grade',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
+
   {
     id: 'priceTimestamp',
     header: 'Price Timestamp',
@@ -845,31 +831,7 @@ const closedColumns: ColumnDef<TradeRow>[] = [
       <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
     ),
   },
-  {
-    id: 'executionCount',
-    header: 'Execution Count',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'entryFillCount',
-    header: 'Entry Fill Count',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'exitFillCount',
-    header: 'Exit Fill Count',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'mfe',
-    header: 'MFE',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'mae',
-    header: 'MAE',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
+
   {
     id: 'account',
     header: 'Account',
@@ -889,26 +851,7 @@ const closedColumns: ColumnDef<TradeRow>[] = [
       <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
     ),
   },
-  {
-    id: 'grade',
-    header: 'Grade',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'followedPlan',
-    header: 'Followed Plan',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'ruleViolation',
-    header: 'Rule Violation',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
-  {
-    id: 'highestMistakeSeverity',
-    header: 'Mistake Severity',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
+
   {
     id: 'thesis',
     header: 'Thesis',
@@ -1092,11 +1035,7 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
       <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
     ),
   },
-  {
-    id: 'target2',
-    header: 'Target 2',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
+
   {
     id: 'marketCondition',
     header: 'Market Condition',
@@ -1113,11 +1052,7 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
       <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
     ),
   },
-  {
-    id: 'expirationDate',
-    header: 'Expiration Date',
-    cell: () => <span className="text-muted-foreground">—</span>,
-  },
+
   {
     id: 'distanceToTrigger',
     header: 'Dist to Trigger',
@@ -1170,9 +1105,6 @@ const openDefaultVisibility: VisibilityState = {
   grossRealizedPnlToDate: false,
   netRealizedPnlToDate: false,
   realizedFees: false,
-  entryFillCount: false,
-  exitFillCount: false,
-  grade: false,
   priceTimestamp: false,
   priceAge: false,
   created: false,
@@ -1182,17 +1114,8 @@ const closedDefaultVisibility: VisibilityState = {
   initialRisk: false,
   initialRiskPct: false,
   totalEntryNotional: false,
-  executionCount: false,
-  entryFillCount: false,
-  exitFillCount: false,
-  mfe: false,
-  mae: false,
   account: false,
   sector: false,
-  grade: false,
-  followedPlan: false,
-  ruleViolation: false,
-  highestMistakeSeverity: false,
   thesis: false,
   exitNotes: false,
   lesson: false,
@@ -1205,10 +1128,8 @@ const plannedDefaultVisibility: VisibilityState = {
   invalidation: false,
   preTradePlan: false,
   plannedCapital: false,
-  target2: false,
   marketCondition: false,
   dateAdded: false,
-  expirationDate: false,
   distanceToTrigger: false,
   currentMarketPrice: false,
 };
