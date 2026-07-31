@@ -41,6 +41,10 @@ interface ActivePhaseViewProps {
   onAssetsChanged: () => Promise<void>;
   onExecutionAdded?: () => void;
   onEdit?: () => void;
+  /** Canonical unrealized values from API metrics (FIFO-aware, partial-exit accurate) */
+  unrealizedPnl?: number | null;
+  unrealizedReturnPct?: number | null;
+  unrealizedRMultiple?: number | null;
 }
 
 export default function ActivePhaseView({
@@ -60,39 +64,14 @@ export default function ActivePhaseView({
   onAssetsChanged,
   onExecutionAdded,
   onEdit,
+  unrealizedPnl,
+  unrealizedReturnPct,
+  unrealizedRMultiple,
 }: ActivePhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const entryManagementAssets = assets.filter(
     (a) => a.phase === 'entry' || a.phase === 'management',
   );
-
-  // ── Compute MTM unrealized values for the top P&L card ──
-  const hasMtmPrice = mtmData?.price != null;
-  const dir = trade.direction;
-  const entryPrice = pnlResult?.avgEntryPrice ?? null;
-  const entryQty = pnlResult?.totalEntryQty ?? 0;
-  const derivedRiskAmount =
-    riskSnapshot?.initialRiskAmount ??
-    (riskSnapshot?.initialEntryPrice != null &&
-     riskSnapshot?.initialStopPrice != null &&
-     riskSnapshot?.initialQuantity != null
-      ? Math.abs(riskSnapshot.initialEntryPrice - riskSnapshot.initialStopPrice) * riskSnapshot.initialQuantity
-      : null);
-
-  const unrealizedPnl =
-    hasMtmPrice && entryPrice != null && entryQty > 0
-      ? dir === 'long'
-        ? (mtmData!.price! - entryPrice) * entryQty
-        : (entryPrice - mtmData!.price!) * entryQty
-      : null;
-  const unrealizedReturnPct =
-    unrealizedPnl != null && entryPrice != null && entryQty > 0
-      ? (unrealizedPnl / (entryPrice * entryQty)) * 100
-      : null;
-  const unrealizedRMultiple =
-    unrealizedPnl != null && derivedRiskAmount != null && derivedRiskAmount > 0
-      ? unrealizedPnl / derivedRiskAmount
-      : null;
 
   return (
     <>

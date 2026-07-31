@@ -8,8 +8,8 @@ import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import type { CheckResult, MtmData } from '@/components/trade-detail/types';
 import { EmptyState } from '@/components/empty-state';
 
-import { computeTradeMetrics, type ExecutionData } from '@/lib/trade-metrics';
-import { computePerfMetrics, type PerfMetrics } from '@/lib/perf-metrics';
+import type { TradeMetricsResult } from '@/lib/trade-metrics';
+import type { PerfMetrics } from '@/lib/perf-metrics';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
 
@@ -152,16 +152,6 @@ function formatDate(d: string | null, timezone?: string): string {
   } catch {
     return d;
   }
-}
-
-function toExecutionData(executions: Execution[]): ExecutionData[] {
-  return executions.map((e) => ({
-    action: e.action,
-    quantity: e.quantity,
-    price: e.price,
-    fees: e.fees ?? 0,
-    executedAt: e.executedAt ?? e.createdAt ?? '',
-  }));
 }
 
 /**
@@ -345,25 +335,21 @@ export default function TradeDetailPage() {
     trade?.status === 'open',
   );
 
-  const execData = trade ? toExecutionData(executions) : [];
-  const computedRiskAmount = riskSnapshot
-    ? (riskSnapshot.initialRiskAmount ??
-        (riskSnapshot.initialEntryPrice != null && riskSnapshot.initialStopPrice != null && riskSnapshot.initialQuantity != null
-          ? Math.abs(riskSnapshot.initialEntryPrice - riskSnapshot.initialStopPrice) * riskSnapshot.initialQuantity
-          : null))
-    : null;
-  const metrics = trade && executions.length > 0
-    ? computeTradeMetrics({
-        executions: execData,
-        direction: trade.direction,
-        riskSnapshot: computedRiskAmount != null
-          ? { initialRiskAmount: computedRiskAmount, accountEquityAtOpen: riskSnapshot?.accountEquityAtOpen ?? null }
-          : null,
-        stopAdjustments: [],
-        currentMark: null,
-        currentAccountEquity: null,
-      })
-    : null;
+  /** Derive duration in ms from position timestamps (enriched inline, no computePerfMetrics).
+   *  For open trade, uses Date.now() — matching the previous computePerfMetrics(closedAt = now) behavior. */
+  function deriveDuration(openedAt: string | null, closedAt: string | null): number | null {
+    if (!openedAt) return null;
+    const closeTime = closedAt ? new Date(closedAt).getTime() : Date.now();
+    const openTime = new Date(openedAt).getTime();
+    if (isNaN(openTime) || isNaN(closeTime)) return null;
+    return closeTime - openTime;
+  }
+
+  // Derived from canonical API metrics (no duplicate computeTradeMetrics/computePerfMetrics)
+  const apiMetrics = (trade as { metrics?: TradeMetricsResult })?.metrics ?? null;
+  const hasExecutionData = apiMetrics != null && apiMetrics.size.entryQuantity > 0;
+  const metrics = hasExecutionData ? apiMetrics : null;
+
   const derivedStatus = metrics
     ? {
         status: metrics.position.status,
@@ -386,15 +372,30 @@ export default function TradeDetailPage() {
     ? { rMultiple: metrics.returnMetrics.rMultiple, initialRiskUsed: metrics.risk.initialRisk != null }
     : null;
 
-  const perfMetrics: PerfMetrics | null = trade && executions.length > 0 && pnlResult
-    ? computePerfMetrics(
-        execData,
-        trade.openedAt ?? null,
-        trade.status === 'open' ? new Date().toISOString() : (trade.closedAt ?? null),
-        pnlResult.totalRealizedPnL,
-        pnlResult.avgEntryPrice,
-        pnlResult.totalEntryQty,
-      )
+  // Derive unrealized values from canonical metrics (FIFO-aware, partial-exit accurate)
+  const unrealizedPnl = hasExecutionData ? apiMetrics.unrealizedPnl.grossUnrealizedPnl ?? null : null;
+  const unrealizedReturnPct =
+    hasExecutionData &&
+    unrealizedPnl != null &&
+    apiMetrics.averagePrices.openAvgCost != null &&
+    apiMetrics.size.openQuantity > 0
+      ? (unrealizedPnl / (apiMetrics.averagePrices.openAvgCost * apiMetrics.size.openQuantity)) * 100
+      : null;
+  const unrealizedRMultiple =
+    hasExecutionData &&
+    unrealizedPnl != null &&
+    apiMetrics.risk.initialRisk != null &&
+    apiMetrics.risk.initialRisk > 0
+      ? unrealizedPnl / apiMetrics.risk.initialRisk
+      : null;
+
+  // Derive duration from canonical position timestamps (inline, no computePerfMetrics)
+  const perfMetrics: PerfMetrics | null = metrics
+    ? {
+        duration: deriveDuration(metrics.position.openedAt, metrics.position.closedAt),
+        returnPercent: metrics.returnMetrics.returnPct,
+        totalFees: metrics.fees.totalFees,
+      }
     : null;
 
   const handleRiskSnapshotSave = async (payload: Record<string, number | null>) => {
@@ -493,7 +494,7 @@ export default function TradeDetailPage() {
       </div>
 
       {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} onEdit={() => setEditOpen(true)} />}
-      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} onEdit={() => setEditOpen(true)} />}
+      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} unrealizedPnl={unrealizedPnl} unrealizedReturnPct={unrealizedReturnPct} unrealizedRMultiple={unrealizedRMultiple} onEdit={() => setEditOpen(true)} />}
       {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} onEdit={() => setEditOpen(true)} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
 
