@@ -1109,6 +1109,173 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// T03: Active Stop Ordering and Initial Stop Correctness
+// ────────────────────────────────────────────────────────────────────────
+
+// --- T03 Test 1: Latest adjustment by timestamp wins (chronological order) ---
+{
+  console.log('\n## T03-1: Active stop picks latest adjustment by timestamp');
+
+  // Three adjustments: $50 (day 1), $45 (day 2), $55 (day 3)
+  // After sort ASC: [50, 45, 55] → [length-1] = 55
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E1', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [
+      { stopPrice: 50, adjustedAt: '2026-01-11T10:00:00Z' },
+      { stopPrice: 45, adjustedAt: '2026-01-12T10:00:00Z' },
+      { stopPrice: 55, adjustedAt: '2026-01-13T10:00:00Z' },
+    ],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 55, 'T03-1: activeStop = $55 (latest adjustedAt)');
+  assert(r.risk.initialStop === null, 'T03-1: initialStop = null (no riskSnapshot)');
+}
+
+// --- T03 Test 2: Latest adjustment by timestamp wins (reverse chronological input) ---
+{
+  console.log('\n## T03-2: Active stop with reverse input order (defensive sort)');
+
+  // Same adjustments, passed in reverse chronological order
+  // Defensive ASC sort: [50, 45, 55] → [length-1] = 55
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E2', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [
+      { stopPrice: 55, adjustedAt: '2026-01-13T10:00:00Z' },
+      { stopPrice: 45, adjustedAt: '2026-01-12T10:00:00Z' },
+      { stopPrice: 50, adjustedAt: '2026-01-11T10:00:00Z' },
+    ],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 55, 'T03-2: activeStop = $55 (defensive sort correct)');
+  assert(r.risk.initialStop === null, 'T03-2: initialStop = null (no riskSnapshot)');
+}
+
+// --- T03 Test 3: Same timestamp, largest stopPrice wins ---
+{
+  console.log('\n## T03-3: Same timestamp tiebreaker — largest stopPrice wins');
+
+  // Two adjustments at same time: $45 and $55
+  // After ASC sort by adjustedAt (same), then ASC by stopPrice: [45, 55]
+  // [length-1] picks 55
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E3', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [
+      { stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z' },
+      { stopPrice: 55, adjustedAt: '2026-01-11T10:00:00Z' },
+    ],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 55, 'T03-3: activeStop = $55 (largest stopPrice wins tiebreaker)');
+  assert(r.risk.initialStop === null, 'T03-3: initialStop = null (no riskSnapshot)');
+}
+
+// --- T03 Test 4: Same timestamp, multiple prices, reverse stopPrice order ---
+{
+  console.log('\n## T03-4: Same timestamp, multiple prices, reverse order');
+
+  // Three adjustments at same timestamp, passed in descending stopPrice order
+  // After ASC sort by adjustedAt (same), then ASC by stopPrice: [45, 50, 55]
+  // [length-1] picks 55
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E4', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: null,
+    stopAdjustments: [
+      { stopPrice: 55, adjustedAt: '2026-01-11T10:00:00Z' },
+      { stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z' },
+      { stopPrice: 50, adjustedAt: '2026-01-11T10:00:00Z' },
+    ],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 55, 'T03-4: activeStop = $55 (largest stopPrice among same-timestamp after sort)');
+  assert(r.risk.initialStop === null, 'T03-4: initialStop = null (no riskSnapshot)');
+}
+
+// --- T03 Test 5: Initial stop never reconstructed from risk amount ---
+{
+  console.log('\n## T03-5: Initial stop stored value differs from reconstructed value');
+
+  // riskSnapshot has initialStopPrice=$30 but initialRiskAmount=$500
+  // avgEntryPrice=$50, entryQuantity=10
+  // If reconstructed from risk amount: 50 - 500/10 = $0 (different from stored $30)
+  // activeStop should use stored $30 directly
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E5', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: { initialRiskAmount: 500, accountEquityAtOpen: 10000, initialStopPrice: 30 },
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 30, 'T03-5: activeStop = $30 (stored value, never reconstructed)');
+  assertApprox(r.risk.initialStop, 30, 'T03-5: initialStop = $30 (stored exact value)');
+  // openRisk should be based on stored value: max(0, 50-30)*10 = $200
+  assertApprox(r.risk.openRisk, 200, 'T03-5: openRisk = $200 (based on stored $30 stop)');
+  // If we had reconstructed from $500: stop=$0, openRisk=max(0,50-0)*10=$500 (wrong)
+  // This confirms the stored value is used, not reconstructed
+}
+
+// --- T03 Test 6: Active stop with both adjustments and risk snapshot (interaction) ---
+{
+  console.log('\n## T03-6: Active stop from adjustment, initial stop from stored value');
+
+  // Trade with both stop adjustments AND riskSnapshot with initialStopPrice
+  // activeStop should be from adjustments (latest), initialStop from stored value
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'T3-E6', action: 'buy', quantity: 10, price: 50, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+    ],
+    direction: 'long',
+    riskSnapshot: { initialRiskAmount: 200, accountEquityAtOpen: 10000, initialStopPrice: 30 },
+    stopAdjustments: [
+      { stopPrice: 45, adjustedAt: '2026-01-11T10:00:00Z' },
+      { stopPrice: 55, adjustedAt: '2026-01-12T10:00:00Z' },
+    ],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+  assertApprox(r.risk.activeStop, 55, 'T03-6: activeStop = $55 (latest adjustment)');
+  assertApprox(r.risk.initialStop, 30, 'T03-6: initialStop = $30 (stored exact value, never reconstructed)');
+  // openRisk based on activeStop $55 vs openAvgCost $50
+  // riskPerUnit = 50 - 55 = -5 → openRisk = max(0, -5)*10 = $0
+  // lockPerUnit = 55 - 50 = 5 → lockedPnl = max(0, 5)*10 = $50
+  assertApprox(r.risk.openRisk, 0, 'T03-6: openRisk = $0 (stop above entry)');
+  assertApprox(r.risk.lockedPnl, 50, 'T03-6: lockedPnl = $50 (profit locked)');
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Summary
 // ────────────────────────────────────────────────────────────────────────
 console.log(`\n=== ${passed} passed, ${failed} failed ===`);
