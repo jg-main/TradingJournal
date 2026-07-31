@@ -768,6 +768,7 @@ section('API 5: Trade List');
     setupName: null,
     sectorId: null,
     marketConditionId: null,
+    marketConditionName: null,
     status: 'closed',
     thesis: null,
     plannedEntry: 50,
@@ -811,7 +812,7 @@ section('API 5: Trade List');
     );
   }
 
-  const nullableString = ['setupId', 'setupName', 'sectorId', 'marketConditionId',
+  const nullableString = ['setupId', 'setupName', 'sectorId', 'marketConditionId', 'marketConditionName',
     'thesis', 'invalidationCondition', 'preTradePlan',
     'openedAt', 'closedAt', 'exitNotes', 'lesson'];
   for (const key of nullableString) {

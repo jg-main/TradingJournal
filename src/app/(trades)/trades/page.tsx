@@ -49,6 +49,7 @@ interface TradeRow {
   sectorId: string | null;
   sectorName: string | null;
   marketConditionId: string | null;
+  marketConditionName: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
   thesis: string | null;
   plannedEntry: number | null;
@@ -1058,7 +1059,7 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
   {
     id: 'marketCondition',
     header: 'Market Condition',
-    accessorKey: 'marketConditionId',
+    accessorKey: 'marketConditionName',
     cell: ({ getValue }) => (
       <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
     ),

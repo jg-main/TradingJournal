@@ -238,6 +238,15 @@ export async function GET(request: NextRequest) {
       : [];
     const sectorMap = new Map(sectorRows.map((s) => [s.id, s.value]));
 
+    // Batch-fetch market condition lookupValues for name resolution (same pattern as sector)
+    const uniqueMarketConditionIds: string[] = [...new Set(rows.map((r) => r.marketConditionId).filter((id): id is string => id !== null))];
+    const marketConditionRows: Array<{ id: string; value: string }> = uniqueMarketConditionIds.length > 0
+      ? (getSqliteHandle()
+          .prepare(`SELECT id, value FROM lookup_values WHERE id IN (${uniqueMarketConditionIds.map(() => '?').join(',')})`)
+          .all(...uniqueMarketConditionIds) as Array<{ id: string; value: string }>)
+      : [];
+    const marketConditionMap = new Map(marketConditionRows.map((s) => [s.id, s.value]));
+
     // Single settings row for equity fallback
     const settingsRow = db
       .select()
@@ -323,6 +332,7 @@ export async function GET(request: NextRequest) {
         accountName: account?.name ?? null,
         accountCurrency: account?.currency ?? null,
         sectorName: row.sectorId ? (sectorMap.get(row.sectorId) ?? null) : null,
+        marketConditionName: row.marketConditionId ? (marketConditionMap.get(row.marketConditionId) ?? null) : null,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
         unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,

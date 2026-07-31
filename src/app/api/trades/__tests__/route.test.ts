@@ -356,6 +356,15 @@ function doGetTrades(params: {
       : [];
     const sectorMap = new Map(sectorRowsTest.map((s) => [s.id, s.value]));
 
+    // Batch-fetch market condition lookupValues for name resolution (mirror of route.ts)
+    const uniqueMarketConditionIds: string[] = [...new Set(dbRows.map((r) => r.marketConditionId).filter((id): id is string => id !== null))];
+    const marketConditionRowsTest: Array<{ id: string; value: string }> = uniqueMarketConditionIds.length > 0
+      ? (sqlite
+          .prepare(`SELECT id, value FROM lookup_values WHERE id IN (${uniqueMarketConditionIds.map(() => '?').join(',')})`)
+          .all(...uniqueMarketConditionIds) as Array<{ id: string; value: string }>)
+      : [];
+    const marketConditionMap = new Map(marketConditionRowsTest.map((s) => [s.id, s.value]));
+
     // Batch-fetch accounts for name and currency resolution
     const accRows = db
       .select()
@@ -430,6 +439,7 @@ function doGetTrades(params: {
         accountName: accountInfo?.name ?? null,
         accountCurrency: accountInfo?.currency ?? null,
         sectorName: row.sectorId ? (sectorMap.get(row.sectorId) ?? null) : null,
+        marketConditionName: row.marketConditionId ? (marketConditionMap.get(row.marketConditionId) ?? null) : null,
         realizedPnl: metrics.realizedPnl.netRealizedPnl,
         unrealizedPnl: metrics.unrealizedPnl.netUnrealizedPnl,
         returnPct: metrics.returnMetrics.returnPct,
@@ -1799,18 +1809,30 @@ console.log('\n31b. GET plannedTotals respects date filters when status=planned:
   assertEqual(d4.plannedTotals.count, 2, 'plannedTotals.count = 2 when status=open (date filter not applied)');
 }
 
-// ── 32. GET: Returns resolved accountName, sectorName, accountCurrency ──
+// ── 32. GET: Returns resolved accountName, sectorName, marketConditionName, accountCurrency ──
 
-console.log('\n32. GET returns resolved accountName, sectorName, accountCurrency:');
+console.log('\n32. GET returns resolved accountName, sectorName, marketConditionName, accountCurrency:');
 {
   cleanup();
   const sectorId = randomUUID();
+  const marketConditionId = randomUUID();
   const now = new Date().toISOString();
   db.insert(schema.lookupValues)
     .values({
       id: sectorId,
       type: 'sector',
       value: 'Technology',
+      sortOrder: 0,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  db.insert(schema.lookupValues)
+    .values({
+      id: marketConditionId,
+      type: 'market_condition',
+      value: 'Trend Following',
       sortOrder: 0,
       isActive: true,
       createdAt: now,
@@ -1827,6 +1849,7 @@ console.log('\n32. GET returns resolved accountName, sectorName, accountCurrency
     direction: 'long',
     status: 'planned',
     sectorId,
+    marketConditionId,
   });
   seedTrade({
     accountId: accId,
@@ -1834,6 +1857,7 @@ console.log('\n32. GET returns resolved accountName, sectorName, accountCurrency
     direction: 'long',
     status: 'planned',
     sectorId: null,
+    marketConditionId: null,
   });
 
   const result = doGetTrades({ status: 'planned' });
@@ -1846,12 +1870,14 @@ console.log('\n32. GET returns resolved accountName, sectorName, accountCurrency
   assertEqual(aapl.accountName, 'Interactive Brokers', 'accountName is "Interactive Brokers"');
   assertEqual(aapl.accountCurrency, 'EUR', 'accountCurrency is "EUR"');
   assertEqual(aapl.sectorName, 'Technology', 'sectorName is "Technology"');
+  assertEqual(aapl.marketConditionName, 'Trend Following', 'marketConditionName is "Trend Following"');
 
   const nvda = d.data.find((r: Record<string, unknown>) => r.symbol === 'NVDA') as Record<string, unknown>;
   assertNotNull(nvda, 'NVDA row found');
   assertEqual(nvda.accountName, 'Interactive Brokers', 'NVDA accountName is "Interactive Brokers"');
   assertEqual(nvda.accountCurrency, 'EUR', 'NVDA accountCurrency is "EUR"');
   assertEqual(nvda.sectorName, null, 'NVDA sectorName is null when sectorId is null');
+  assertEqual(nvda.marketConditionName, null, 'NVDA marketConditionName is null when marketConditionId is null');
 }
 
 // ── 33. GET: Account_performance.nav is authoritative equity source ──
