@@ -571,13 +571,25 @@ export async function GET(request: NextRequest) {
     }
 
     // ── plannedTotals: aggregate risk/capital across all planned trades ──
-    // Respects accountId and direction filters but not date/status filters.
+    // Respects accountId and direction filters. When status=planned (Planned tab
+    // active), also applies the from/to date filters against createdAt so the
+    // footer plannedTotals.count matches the filtered tab count. When status is
+    // NOT planned (open/closed tabs), plannedTotals keeps the full pipeline view
+    // — date filters must not leak into it.
     const plannedFilters: any[] = [eq(trades.status, 'planned')];
     if (accountIdFilter) {
       plannedFilters.push(eq(trades.accountId, accountIdFilter));
     }
     if (directionFilter) {
       plannedFilters.push(eq(trades.direction, directionFilter as 'long' | 'short'));
+    }
+    if (status === 'planned') {
+      if (from) {
+        plannedFilters.push(gte(trades.createdAt, from));
+      }
+      if (to) {
+        plannedFilters.push(lte(trades.createdAt, to));
+      }
     }
     const plannedWhere = plannedFilters.length > 0 ? and(...plannedFilters) : undefined;
 

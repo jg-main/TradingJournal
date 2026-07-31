@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, desc, and, sql, inArray } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray, gte, lte } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
@@ -644,10 +644,29 @@ function doGetTrades(params: {
     }
 
     // ── plannedTotals: aggregate risk/capital across all planned trades ──
+    // Mirror of route.ts: planned status + accountId + direction filters; the
+    // from/to date filters (against createdAt) only apply when status=planned so
+    // the footer count matches the Planned tab, while open/closed tabs keep the
+    // full pipeline view.
+    const plannedFiltersT: any[] = [eq(schema.trades.status, 'planned')];
+    if (params.accountId) {
+      plannedFiltersT.push(eq(schema.trades.accountId, params.accountId));
+    }
+    if (params.direction) {
+      plannedFiltersT.push(eq(schema.trades.direction, params.direction as 'long' | 'short'));
+    }
+    if (statusFilter === 'planned') {
+      if (params.from) {
+        plannedFiltersT.push(gte(schema.trades.createdAt, params.from));
+      }
+      if (params.to) {
+        plannedFiltersT.push(lte(schema.trades.createdAt, params.to));
+      }
+    }
     const plannedRows = db
       .select()
       .from(schema.trades)
-      .where(eq(schema.trades.status, 'planned'))
+      .where(plannedFiltersT.length > 0 ? and(...plannedFiltersT) : undefined)
       .all();
 
     const plannedTotals = {
@@ -1705,6 +1724,79 @@ console.log('\n31. GET plannedTotals returns zeros when no planned trades:');
   assertEqual(d.plannedTotals.totalPlannedRisk, 0, 'plannedTotals.totalPlannedRisk = 0 when no planned trades');
   assertEqual(d.plannedTotals.totalPlannedCapital, 0, 'plannedTotals.totalPlannedCapital = 0 when no planned trades');
   assertEqual(d.plannedTotals.count, 0, 'plannedTotals.count = 0 when no planned trades');
+}
+
+// ── 31b. GET: plannedTotals respects date filters when status=planned ─
+
+console.log('\n31b. GET plannedTotals respects date filters when status=planned:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+
+  // Planned trade A: createdAt Jan 2024, risk = |100-90|*50 = 500, capital = 5000
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 100,
+    plannedStop: 90,
+    plannedQuantity: 50,
+    createdAt: '2024-01-15T10:00:00.000Z',
+    openedAt: null,
+  });
+
+  // Planned trade B: createdAt Jun 2024, risk = |50-45|*100 = 500, capital = 5000
+  seedTrade({
+    accountId: 'test-account-id',
+    symbol: 'MSFT',
+    direction: 'long',
+    status: 'planned',
+    plannedEntry: 50,
+    plannedStop: 45,
+    plannedQuantity: 100,
+    createdAt: '2024-06-15T10:00:00.000Z',
+    openedAt: null,
+  });
+
+  // Open trade — never counted in plannedTotals
+  seedTrade({ accountId: 'test-account-id', symbol: 'TSLA', direction: 'long', status: 'open', openedAt: '2024-06-20T10:00:00.000Z', createdAt: '2024-06-20T10:00:00.000Z' });
+
+  // Planned tab + Q2-Q4 date range → only B is in-window
+  const q1 = doGetTrades({ status: 'planned', from: '2024-04-01T00:00:00.000Z', to: '2024-12-31T23:59:59.999Z' });
+  assert(q1.status === 200, 'returns 200');
+  const d1 = q1.data as {
+    data: Record<string, unknown>[];
+    total: number;
+    plannedTotals: { totalPlannedRisk: number; totalPlannedCapital: number; count: number };
+  };
+  assertEqual(d1.data.length, 1, '1 planned trade in Q2-Q4 window');
+  assertEqual(d1.total, 1, 'tab total = 1 in Q2-Q4 window');
+  assertEqual(d1.plannedTotals.count, 1, 'plannedTotals.count = 1 (matches tab count)');
+  assertEqual(d1.plannedTotals.totalPlannedRisk, 500, 'plannedTotals.totalPlannedRisk = 500 (only B in window)');
+  assertEqual(d1.plannedTotals.totalPlannedCapital, 5000, 'plannedTotals.totalPlannedCapital = 5000 (only B in window)');
+  assertEqual(d1.plannedTotals.count, d1.total, 'plannedTotals.count === tab total when status=planned with date filter');
+
+  // Planned tab + Q1 date range → only A is in-window
+  const q2 = doGetTrades({ status: 'planned', from: '2024-01-01T00:00:00.000Z', to: '2024-03-31T23:59:59.999Z' });
+  assert(q2.status === 200, 'returns 200');
+  const d2 = q2.data as { data: Record<string, unknown>[]; total: number; plannedTotals: { count: number } };
+  assertEqual(d2.data.length, 1, '1 planned trade in Q1 window');
+  assertEqual(d2.plannedTotals.count, 1, 'plannedTotals.count = 1 in Q1 window');
+  assertEqual(d2.plannedTotals.count, d2.total, 'plannedTotals.count === tab total in Q1 window');
+
+  // Regression: status NOT planned (no status) + date filter → plannedTotals
+  // must keep the full pipeline view (count ALL planned trades regardless of date).
+  const q3 = doGetTrades({ from: '2024-04-01T00:00:00.000Z' });
+  assert(q3.status === 200, 'returns 200');
+  const d3 = q3.data as { plannedTotals: { count: number } };
+  assertEqual(d3.plannedTotals.count, 2, 'plannedTotals.count = 2 when status is NOT planned (date filter not applied)');
+
+  // Regression: status=open + date filter → plannedTotals still full pipeline view
+  const q4 = doGetTrades({ status: 'open', from: '2099-01-01T00:00:00.000Z' });
+  assert(q4.status === 200, 'returns 200');
+  const d4 = q4.data as { plannedTotals: { count: number } };
+  assertEqual(d4.plannedTotals.count, 2, 'plannedTotals.count = 2 when status=open (date filter not applied)');
 }
 
 // ── 32. GET: Returns resolved accountName, sectorName, accountCurrency ──
