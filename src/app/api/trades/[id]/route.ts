@@ -189,6 +189,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     // metrics.realizedPnl, metrics.unrealizedPnl, metrics.returnMetrics, metrics.risk
     return NextResponse.json({
       ...row,
+      accountName,
+      accountCurrency,
+      sectorName,
       metrics,
     });
   } catch (error) {
