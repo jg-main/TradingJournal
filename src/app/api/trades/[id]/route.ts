@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, settings, accounts } from '@/db/schema';
+import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, settings, accounts, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -94,7 +94,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.newStop), desc(tradeStopAdjustments.createdAt))
       .all();
 
-    // Derive current account equity: account startingBalance, then settings fallback, then null
+    // Derive current account equity: account_performance.nav → rollforward.endingEquity
+    // → account.startingBalance → settings.startingAccountValue → null
     const account = db
       .select()
       .from(accounts)
@@ -107,8 +108,29 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .where(eq(settings.id, 'default'))
       .get();
 
+    // Primary equity source: account_performance.nav (TEXT → parseFloat)
+    const perfRow = db
+      .select({ nav: accountPerformance.nav })
+      .from(accountPerformance)
+      .where(eq(accountPerformance.accountId, row.accountId))
+      .get();
+    const navValue = perfRow?.nav ? parseFloat(perfRow.nav) : null;
+
+    // Secondary equity source: latest account_rollforward.endingEquity
+    const rollforwardRow = db
+      .select()
+      .from(accountRollforward)
+      .where(eq(accountRollforward.accountId, row.accountId))
+      .orderBy(desc(accountRollforward.date))
+      .limit(1)
+      .get();
+
     const currentAccountEquity =
-      account?.startingBalance ?? settingsRow?.startingAccountValue ?? null;
+      navValue ??
+      rollforwardRow?.endingEquity ??
+      account?.startingBalance ??
+      settingsRow?.startingAccountValue ??
+      null;
 
     // Resolve account display name and currency
     const accountName = account?.name ?? null;

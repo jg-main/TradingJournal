@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
@@ -71,6 +71,9 @@ sqlite.exec(`
   DROP TABLE IF EXISTS account_rollforward;
   DROP TABLE IF EXISTS account_transactions;
   DROP TABLE IF EXISTS trade_stop_adjustments;
+  DROP TABLE IF EXISTS trade_stop_adjustments;
+  DROP TABLE IF EXISTS account_rollforward;
+  DROP TABLE IF EXISTS account_performance;
   DROP TABLE IF EXISTS trade_risk_snapshots;
   DROP TABLE IF EXISTS trade_mistakes;
   DROP TABLE IF EXISTS trade_grades;
@@ -81,6 +84,23 @@ sqlite.exec(`
   DROP TABLE IF EXISTS weekly_reviews;
   DROP TABLE IF EXISTS setup_definitions;
   DROP TABLE IF EXISTS accounts;
+  DROP TABLE IF EXISTS settings;
+  CREATE TABLE settings (
+    id TEXT PRIMARY KEY NOT NULL,
+    default_account_id TEXT,
+    starting_account_value REAL,
+    max_risk_per_trade_pct REAL,
+    default_commission REAL,
+    journal_start_date TEXT,
+    currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
   CREATE TABLE accounts (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
@@ -177,7 +197,51 @@ sqlite.exec(`
     planned_reward_risk REAL,
     created_at TEXT DEFAULT (current_timestamp)
   );
+  DROP TABLE IF EXISTS account_rollforward;
+  DROP TABLE IF EXISTS account_performance;
   DROP TABLE IF EXISTS watchlist_items;
+  CREATE TABLE IF NOT EXISTS account_rollforward (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    beginning_equity REAL,
+    deposits_withdrawals REAL DEFAULT 0,
+    realized_gross_pnl REAL DEFAULT 0,
+    fees REAL DEFAULT 0,
+    ending_equity REAL,
+    cumulative_pnl REAL,
+    high_water_mark REAL,
+    drawdown_amount REAL DEFAULT 0,
+    drawdown_pct REAL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS account_performance (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL UNIQUE,
+    computed_as_of TEXT NOT NULL,
+    net_cash TEXT NOT NULL,
+    nav TEXT NOT NULL,
+    marked_positions TEXT NOT NULL,
+    realized_pnl TEXT NOT NULL,
+    unrealized_pnl TEXT NOT NULL,
+    total_pnl TEXT NOT NULL,
+    realized_fees TEXT NOT NULL,
+    gross_exposure TEXT NOT NULL,
+    net_exposure TEXT NOT NULL,
+    modified_dietz_return TEXT,
+    twr TEXT,
+    high_water_mark TEXT,
+    drawdown TEXT,
+    drawdown_pct TEXT,
+    warnings TEXT NOT NULL DEFAULT '[]',
+    positions_json TEXT NOT NULL DEFAULT '[]',
+    rebuild_count INTEGER NOT NULL DEFAULT 0,
+    last_rebuilt_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
   CREATE TABLE IF NOT EXISTS watchlist_items (
     id TEXT PRIMARY KEY NOT NULL,
     date_added TEXT,
@@ -200,6 +264,17 @@ sqlite.exec(`
     alert_config TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS trade_stop_adjustments (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_id TEXT NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+    adjusted_at TEXT,
+    previous_stop REAL,
+    new_stop REAL,
+    reason TEXT,
+    rule_based INTEGER,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp)
   );
 `);
 
@@ -224,6 +299,44 @@ function doGetTrade(id: string): { status: number; data: unknown } {
       .where(eq(schema.tradeExecutions.tradeId, id))
       .all();
 
+    // Fetch account for equity cascade and name/currency resolution
+    const accountRow = db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.id, row.accountId))
+      .get() as Record<string, unknown> | undefined;
+
+    // Settings fallback
+    const settingsRow = db
+      .select()
+      .from(schema.settings)
+      .where(eq(schema.settings.id, 'default'))
+      .get() as Record<string, unknown> | undefined;
+
+    // Primary equity source: account_performance.nav (TEXT → parseFloat)
+    const perfRow = db
+      .select({ nav: schema.accountPerformance.nav })
+      .from(schema.accountPerformance)
+      .where(eq(schema.accountPerformance.accountId, row.accountId))
+      .get() as { nav: string | null } | undefined;
+    const navValue = perfRow?.nav ? parseFloat(perfRow.nav) : null;
+
+    // Secondary equity source: latest account_rollforward.endingEquity
+    const rollforwardRow = db
+      .select()
+      .from(schema.accountRollforward)
+      .where(eq(schema.accountRollforward.accountId, row.accountId))
+      .orderBy(desc(schema.accountRollforward.date))
+      .limit(1)
+      .get() as Record<string, unknown> | undefined;
+
+    const currentAccountEquity =
+      navValue ??
+      (rollforwardRow?.endingEquity as number | undefined) ??
+      (accountRow?.startingBalance as number | undefined) ??
+      (settingsRow?.startingAccountValue as number | undefined) ??
+      null;
+
     // Compute trade metrics
     const metricsInput: TradeMetricsInput = {
       executions: executions.map((e: Record<string, unknown>) => ({
@@ -235,23 +348,44 @@ function doGetTrade(id: string): { status: number; data: unknown } {
         executedAt: (e.executedAt as string) ?? '',
       })),
       direction: row.direction as 'long' | 'short',
-      riskSnapshot: null,
-      stopAdjustments: [],
+      riskSnapshot: (() => {
+        const rs = db
+          .select()
+          .from(schema.tradeRiskSnapshots)
+          .where(eq(schema.tradeRiskSnapshots.tradeId, id))
+          .get() as Record<string, unknown> | undefined;
+        return rs
+          ? {
+              initialRiskAmount: rs.initialRiskAmount as number,
+              accountEquityAtOpen: rs.accountEquityAtOpen as number | null,
+              initialStopPrice: rs.initialStopPrice as number | null,
+              initialEntryPrice: rs.initialEntryPrice as number | null,
+            }
+          : null;
+      })(),
+      stopAdjustments: (() => {
+        const adjRows = db
+          .select()
+          .from(schema.tradeStopAdjustments)
+          .where(eq(schema.tradeStopAdjustments.tradeId, id))
+          .orderBy(desc(schema.tradeStopAdjustments.adjustedAt))
+          .all() as Array<Record<string, unknown>>;
+        return adjRows
+          .filter((s) => s.newStop != null)
+          .map((s) => ({
+            stopPrice: s.newStop as number,
+            adjustedAt: (s.adjustedAt as string) ?? '',
+          }));
+      })(),
       currentMark:
         row.currentPrice != null
           ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
           : null,
-      currentAccountEquity: null,
+      currentAccountEquity,
     };
 
     const metrics = computeTradeMetrics(metricsInput);
 
-    // Fetch account for name and currency resolution
-    const accountRow = db
-      .select()
-      .from(schema.accounts)
-      .where(eq(schema.accounts.id, row.accountId))
-      .get() as Record<string, unknown> | undefined;
     const accountName = accountRow?.name ?? null;
     const accountCurrency = accountRow?.currency ?? null;
 
@@ -375,6 +509,9 @@ function cleanup() {
   sqlite.exec('DELETE FROM trade_executions;');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM lookup_values;');
+  sqlite.exec('DELETE FROM settings;');
+  sqlite.exec('DELETE FROM account_rollforward;');
+  sqlite.exec('DELETE FROM account_performance;');
   sqlite.exec('DELETE FROM accounts;');
 }
 
@@ -863,6 +1000,174 @@ console.log('\n18. GET returns accountName, accountCurrency, and sectorName:');
   assertEqual(d3.accountName, 'Interactive Brokers', 'accountName from same account');
   assertEqual(d3.accountCurrency, 'EUR', 'accountCurrency from same account');
   assertEqual(d3.sectorName, null, 'sectorName is null when sector UUID does not exist');
+}
+
+// ── 19. GET: account_performance.nav is primary equity source ──────────
+
+console.log('\n19. GET uses account_performance.nav over rollforward.endingEquity:');
+{
+  cleanup();
+  const accId = randomUUID();
+  seedAccount({ id: accId, startingBalance: 50000 });
+
+  // Seed an open trade with executions (so riskToAccount is meaningful)
+  const trade = seedTrade({
+    accountId: accId,
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'open',
+    currentPrice: 160.00,
+    currentPriceFetchedAt: new Date().toISOString(),
+  });
+  const tradeId = trade.id as string;
+
+  db.insert(schema.tradeRiskSnapshots).values({
+    id: randomUUID(),
+    tradeId,
+    initialRiskAmount: 1000,
+    accountEquityAtOpen: 25000,
+  }).run();
+
+  db.insert(schema.tradeExecutions).values({
+    id: randomUUID(),
+    tradeId,
+    action: 'buy',
+    quantity: 100,
+    price: 150.00,
+    fees: 10,
+    executedAt: new Date().toISOString(),
+  }).run();
+
+  // account_performance.nav=25000 should be used over rollforward.endingEquity=20000
+  const now = new Date().toISOString();
+  db.insert(schema.accountPerformance).values({
+    id: randomUUID(),
+    accountId: accId,
+    computedAsOf: now,
+    netCash: '10000',
+    nav: '25000',
+    markedPositions: '[]',
+    realizedPnl: '0',
+    unrealizedPnl: '100',
+    totalPnl: '100',
+    realizedFees: '0',
+    grossExposure: '15000',
+    netExposure: '15000',
+    warnings: '[]',
+    positionsJson: '[]',
+    rebuildCount: 0,
+    lastRebuiltAt: now,
+  }).run();
+
+  db.insert(schema.accountRollforward).values({
+    id: randomUUID(),
+    accountId: accId,
+    date: new Date(Date.now() - 86400000).toISOString(),
+    endingEquity: 20000,
+    realizedGrossPnl: 0,
+    fees: 0,
+  }).run();
+
+  const result = doGetTrade(tradeId);
+  assert(result.status === 200, 'returns 200');
+  const m = (result.data as Record<string, unknown>).metrics as Record<string, unknown>;
+  // riskToAccount = initialRiskAmount / nav = 1000 / 25000 = 0.04
+  assertApprox((m.risk as Record<string, unknown>).riskToAccount as number, 0.04, 0.001, 'riskToAccount uses nav=25000 (0.04) over rollforward (would be 0.05)');
+}
+
+// ── 20. GET: No account_performance row → rollforward fallback ──────────
+
+console.log('\n20. GET falls back to rollforward.endingEquity when no account_performance:');
+{
+  cleanup();
+  const accId = randomUUID();
+  seedAccount({ id: accId, startingBalance: 50000 });
+
+  const trade = seedTrade({
+    accountId: accId,
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'open',
+    currentPrice: 160.00,
+    currentPriceFetchedAt: new Date().toISOString(),
+  });
+  const tradeId = trade.id as string;
+
+  db.insert(schema.tradeRiskSnapshots).values({
+    id: randomUUID(),
+    tradeId,
+    initialRiskAmount: 1000,
+    accountEquityAtOpen: 20000,
+  }).run();
+
+  db.insert(schema.tradeExecutions).values({
+    id: randomUUID(),
+    tradeId,
+    action: 'buy',
+    quantity: 100,
+    price: 150.00,
+    fees: 10,
+    executedAt: new Date().toISOString(),
+  }).run();
+
+  // No account_performance row, but rollforward exists
+  db.insert(schema.accountRollforward).values({
+    id: randomUUID(),
+    accountId: accId,
+    date: new Date(Date.now() - 86400000).toISOString(),
+    endingEquity: 20000,
+    realizedGrossPnl: 0,
+    fees: 0,
+  }).run();
+
+  const result = doGetTrade(tradeId);
+  assert(result.status === 200, 'returns 200');
+  const m = (result.data as Record<string, unknown>).metrics as Record<string, unknown>;
+  // riskToAccount = 1000 / 20000 = 0.05
+  assertApprox((m.risk as Record<string, unknown>).riskToAccount as number, 0.05, 0.001, 'riskToAccount uses rollforward=20000 (0.05)');
+}
+
+// ── 21. GET: No performance/rollforward → startingBalance fallback ─────
+
+console.log('\n21. GET falls back to account.startingBalance when no performance or rollforward:');
+{
+  cleanup();
+  const accId = randomUUID();
+  seedAccount({ id: accId, startingBalance: 50000 });
+
+  const trade = seedTrade({
+    accountId: accId,
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'open',
+    currentPrice: 160.00,
+    currentPriceFetchedAt: new Date().toISOString(),
+  });
+  const tradeId = trade.id as string;
+
+  db.insert(schema.tradeRiskSnapshots).values({
+    id: randomUUID(),
+    tradeId,
+    initialRiskAmount: 1000,
+    accountEquityAtOpen: 50000,
+  }).run();
+
+  db.insert(schema.tradeExecutions).values({
+    id: randomUUID(),
+    tradeId,
+    action: 'buy',
+    quantity: 100,
+    price: 150.00,
+    fees: 10,
+    executedAt: new Date().toISOString(),
+  }).run();
+
+  // No account_performance, no rollforward — should fall back to startingBalance
+  const result = doGetTrade(tradeId);
+  assert(result.status === 200, 'returns 200');
+  const m = (result.data as Record<string, unknown>).metrics as Record<string, unknown>;
+  // riskToAccount = 1000 / 50000 = 0.02
+  assertApprox((m.risk as Record<string, unknown>).riskToAccount as number, 0.02, 0.001, 'riskToAccount uses startingBalance=50000 (0.02)');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
