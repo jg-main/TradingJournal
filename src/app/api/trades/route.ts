@@ -459,6 +459,8 @@ export async function GET(request: NextRequest) {
               ? {
                   initialRiskAmount: riskSnapshot.initialRiskAmount,
                   accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+                  initialStopPrice: riskSnapshot.initialStopPrice,
+                  initialEntryPrice: riskSnapshot.initialEntryPrice,
                 }
               : null,
             stopAdjustments: stopAdjustments

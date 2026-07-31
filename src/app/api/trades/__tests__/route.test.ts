@@ -394,6 +394,8 @@ function doGetTrades(params: {
           ? {
               initialRiskAmount: riskSnapshot.initialRiskAmount,
               accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+              initialStopPrice: riskSnapshot.initialStopPrice,
+              initialEntryPrice: riskSnapshot.initialEntryPrice,
             }
           : null,
         stopAdjustments: [],
@@ -437,105 +439,192 @@ function doGetTrades(params: {
       };
     });
 
-    // Build account currency map from DB accounts
-    const allDbAccounts = db.select().from(schema.accounts).all();
-    const accountCurrencyMap = new Map<string, string>();
-    for (const a of allDbAccounts) {
-      accountCurrencyMap.set(a.id, a.currency ?? 'USD');
-    }
+    // Server-computed totals: aggregate across the full filtered dataset, NOT just the current page.
+    // Mirror of route.ts — batch-fetch executions/risk snapshots/accounts/rollforward for ALL
+    // matching trades and compute metrics independently of the paginated rows, so totals stay
+    // consistent regardless of which page is requested.
+    const allMatchingIdsR = db
+      .select({
+        id: schema.trades.id,
+        accountId: schema.trades.accountId,
+        symbol: schema.trades.symbol,
+        direction: schema.trades.direction,
+        currentPrice: schema.trades.currentPrice,
+        currentPriceFetchedAt: schema.trades.currentPriceFetchedAt,
+      })
+      .from(schema.trades)
+      .where(whereClause)
+      .all();
 
-    // Server-computed totals aggregated across the full filtered dataset
     const totals: Record<string, number> = {
-      grossRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.grossRealizedPnl ?? 0), 0),
-      netRealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.realizedPnl.netRealizedPnl ?? 0), 0),
-      totalFees: enhancedRows.reduce((s, r) => s + (r.metrics?.fees.totalFees ?? 0), 0),
-      grossUnrealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.unrealizedPnl.grossUnrealizedPnl ?? 0), 0),
-      netUnrealizedPnl: enhancedRows.reduce((s, r) => s + (r.metrics?.unrealizedPnl.netUnrealizedPnl ?? 0), 0),
-      totalOpenRisk: enhancedRows.reduce((s, r) => s + (r.metrics?.risk.openRisk ?? 0), 0),
+      grossRealizedPnl: 0,
+      netRealizedPnl: 0,
+      totalFees: 0,
+      grossUnrealizedPnl: 0,
+      netUnrealizedPnl: 0,
+      totalOpenRisk: 0,
       portfolioHeatAmount: 0,
       portfolioHeatPct: 0,
     };
 
-    // Compute totalsByCurrency from the full dataset
-    // Re-query all matching trades (no pagination) to compute per-currency totals
-    const allMatchingIdsForCurrency = (() => {
-      const fullFilters: any[] = [];
-      if (statusFilter) fullFilters.push(eq(schema.trades.status, statusFilter));
-      if (params.accountId) fullFilters.push(eq(schema.trades.accountId, params.accountId));
-      if (params.direction) fullFilters.push(eq(schema.trades.direction, params.direction as 'long' | 'short'));
-      // Date filtering uses the same pattern as above
-      if (statusFilter !== 'open') {
-        const fullDateColumn = statusFilter === 'closed'
-          ? schema.trades.closedAt
-          : statusFilter === 'planned'
-            ? schema.trades.createdAt
-            : schema.trades.openedAt;
-        if (params.from) fullFilters.push(sql`${fullDateColumn} >= ${params.from}`);
-        if (params.to) fullFilters.push(sql`${fullDateColumn} <= ${params.to}`);
-      }
-      const fullWhere = fullFilters.length > 0 ? and(...fullFilters) : undefined;
-      return db
-        .select({ id: schema.trades.id, accountId: schema.trades.accountId })
-        .from(schema.trades)
-        .where(fullWhere)
-        .all();
-    })();
-
+    // Per-currency totals buckets — hoisted for response access
     const totalsByCurrency: Record<string, Record<string, number>> = {};
-    // Track unique account equities for portfolioHeat denominator
-    const totalEquityByAccount = new Map<string, number>();
-    const currencyEquityByAccount = new Map<string, Map<string, number>>();
 
-    for (const row of enhancedRows) {
-      const currency = accountCurrencyMap.get(row.accountId) ?? 'USD';
-      if (!totalsByCurrency[currency]) {
-        totalsByCurrency[currency] = { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, portfolioHeat: 0 };
+    if (allMatchingIdsR.length > 0) {
+      const allTradeIds = allMatchingIdsR.map((r) => r.id);
+      const allUniqueAccountIds = [...new Set(allMatchingIdsR.map((r) => r.accountId))];
+
+      // Batch-fetch related data for ALL matching trades
+      const allExecRows = allTradeIds.length > 0
+        ? db.select().from(schema.tradeExecutions).where(inArray(schema.tradeExecutions.tradeId, allTradeIds)).all()
+        : [];
+      const allRiskRows = allTradeIds.length > 0
+        ? db.select().from(schema.tradeRiskSnapshots).where(inArray(schema.tradeRiskSnapshots.tradeId, allTradeIds)).all()
+        : [];
+
+      const allExecMap = new Map<string, (typeof schema.tradeExecutions.$inferSelect)[]>();
+      for (const ex of allExecRows) {
+        const list = allExecMap.get(ex.tradeId) ?? [];
+        list.push(ex);
+        allExecMap.set(ex.tradeId, list);
       }
-      totalsByCurrency[currency].grossRealizedPnl += row.metrics?.realizedPnl.grossRealizedPnl ?? 0;
-      totalsByCurrency[currency].netRealizedPnl += row.metrics?.realizedPnl.netRealizedPnl ?? 0;
-      totalsByCurrency[currency].totalFees += row.metrics?.fees.totalFees ?? 0;
-      totalsByCurrency[currency].grossUnrealizedPnl += row.metrics?.unrealizedPnl.grossUnrealizedPnl ?? 0;
-      totalsByCurrency[currency].netUnrealizedPnl += row.metrics?.unrealizedPnl.netUnrealizedPnl ?? 0;
-      totalsByCurrency[currency].totalOpenRisk += row.metrics?.risk.openRisk ?? 0;
+      const allRiskMap = new Map<string, typeof schema.tradeRiskSnapshots.$inferSelect>();
+      for (const risk of allRiskRows) {
+        allRiskMap.set(risk.tradeId, risk);
+      }
 
-      // Track unique account equities for portfolioHeat denominator
-      if (!totalEquityByAccount.has(row.accountId)) {
-        const latestRf = latestRollforwardMap.get(row.accountId);
-        const a = allDbAccounts.find(acc => acc.id === row.accountId);
+      const allAccountRows = db
+        .select()
+        .from(schema.accounts)
+        .where(inArray(schema.accounts.id, allUniqueAccountIds.filter(Boolean)))
+        .all();
+      const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
+      const allAccountCurrencyMap = new Map(allAccountRows.map((a) => [a.id, a.currency ?? 'USD']));
+
+      // Batch-fetch latest rollforward per account for totals computation (mirrors route.ts)
+      const allLatestRollforwardMap = new Map<string, typeof schema.accountRollforward.$inferSelect>();
+      for (const accId of allUniqueAccountIds) {
+        if (!accId) continue;
+        const rf = db
+          .select()
+          .from(schema.accountRollforward)
+          .where(eq(schema.accountRollforward.accountId, accId))
+          .orderBy(desc(schema.accountRollforward.date))
+          .limit(1)
+          .get();
+        if (rf) {
+          allLatestRollforwardMap.set(accId, rf);
+        }
+      }
+
+      // Track unique account equities for the portfolioHeat denominator
+      // (one equity per account to avoid double-counting)
+      const totalEquityByAccount = new Map<string, number>();
+      const currencyEquityByAccount = new Map<string, Map<string, number>>();
+
+      for (const row of allMatchingIdsR) {
+        const executions = allExecMap.get(row.id) ?? [];
+        const riskSnapshot = allRiskMap.get(row.id) ?? null;
+        const account = allAccountMap.get(row.accountId);
+        const latestRollforward = allLatestRollforwardMap.get(row.accountId);
+        // Note: mirrors route.ts — the nav map is keyed by the PAGINATED account set here;
+        // S02 T02 batch-fetches account_performance.nav for the full dataset independently.
         const navRaw = accountPerfMap.get(row.accountId);
         const navValue = navRaw ? parseFloat(navRaw) : null;
-        const equity = navValue ?? latestRf?.endingEquity ?? a?.startingBalance ?? null;
-        if (equity != null) {
-          totalEquityByAccount.set(row.accountId, equity);
+        const currentAccountEquity =
+          navValue ??
+          latestRollforward?.endingEquity ??
+          account?.startingBalance ??
+          null;
+
+        const metricsInput: TradeMetricsInput = {
+          executions: executions.map((e) => ({
+            id: e.id,
+            action: e.action,
+            quantity: e.quantity,
+            price: e.price,
+            fees: e.fees,
+            executedAt: e.executedAt ?? '',
+          })),
+          direction: row.direction as 'long' | 'short',
+          riskSnapshot: riskSnapshot
+            ? {
+                initialRiskAmount: riskSnapshot.initialRiskAmount,
+                accountEquityAtOpen: riskSnapshot.accountEquityAtOpen,
+                initialStopPrice: riskSnapshot.initialStopPrice,
+                initialEntryPrice: riskSnapshot.initialEntryPrice,
+              }
+            : null,
+          stopAdjustments: [],
+          currentMark:
+            row.currentPrice != null
+              ? { price: row.currentPrice, markedAt: row.currentPriceFetchedAt ?? new Date().toISOString() }
+              : null,
+          currentAccountEquity,
+        };
+
+        const metrics = computeTradeMetrics(metricsInput);
+        const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
+
+        // Track unique per-account equity for the portfolioHeat denominator
+        if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
+          totalEquityByAccount.set(row.accountId, currentAccountEquity);
           if (!currencyEquityByAccount.has(currency)) {
             currencyEquityByAccount.set(currency, new Map());
           }
-          currencyEquityByAccount.get(currency)!.set(row.accountId, equity);
+          currencyEquityByAccount.get(currency)!.set(row.accountId, currentAccountEquity);
         }
+
+        if (!totalsByCurrency[currency]) {
+          totalsByCurrency[currency] = { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, portfolioHeat: 0 };
+        }
+
+        const gRP = metrics.realizedPnl.grossRealizedPnl ?? 0;
+        const nRP = metrics.realizedPnl.netRealizedPnl ?? 0;
+        const tF = metrics.fees.totalFees ?? 0;
+        const gUP = metrics.unrealizedPnl.grossUnrealizedPnl ?? 0;
+        const nUP = metrics.unrealizedPnl.netUnrealizedPnl ?? 0;
+        const oR = metrics.risk.openRisk ?? 0;
+
+        totals.grossRealizedPnl += gRP;
+        totals.netRealizedPnl += nRP;
+        totals.totalFees += tF;
+        totals.grossUnrealizedPnl += gUP;
+        totals.netUnrealizedPnl += nUP;
+        totals.totalOpenRisk += oR;
+
+        const bucket = totalsByCurrency[currency];
+        bucket.grossRealizedPnl += gRP;
+        bucket.netRealizedPnl += nRP;
+        bucket.totalFees += tF;
+        bucket.grossUnrealizedPnl += gUP;
+        bucket.netUnrealizedPnl += nUP;
+        bucket.totalOpenRisk += oR;
       }
-    }
 
-    // Top-level portfolioHeat — single authoritative value for the open tab footer.
-    // portfolioHeatAmount = sum of open risk across all currencies (== totalOpenRisk).
-    // portfolioHeatPct = decimal fraction of total account equity (0.0125 = 1.25%),
-    // following the M010 decimal-fraction contract (displayed via ×100 formatting).
-    // The denominator sums one equity per account (unique, not per trade) to avoid
-    // double-counting when multiple open positions share an account.
-    const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
-    totals.portfolioHeatAmount = totals.totalOpenRisk;
-    totals.portfolioHeatPct =
-      totalEquityAcrossAccounts > 0 && totals.totalOpenRisk > 0
-        ? totals.totalOpenRisk / totalEquityAcrossAccounts
-        : 0;
+      // Compute per-currency portfolioHeat
+      for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
+        const currencyEquities = currencyEquityByAccount.get(currency);
+        const currencyTotalEquity = currencyEquities
+          ? [...currencyEquities.values()].reduce((s, v) => s + v, 0)
+          : 0;
+        bucket.portfolioHeat = currencyTotalEquity > 0 && bucket.totalOpenRisk > 0
+          ? (bucket.totalOpenRisk / currencyTotalEquity) * 100
+          : 0;
+      }
 
-    for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
-      const currencyEquities = currencyEquityByAccount.get(currency);
-      const currencyTotalEquity = currencyEquities
-        ? [...currencyEquities.values()].reduce((s, v) => s + v, 0)
-        : 0;
-      bucket.portfolioHeat = currencyTotalEquity > 0 && bucket.totalOpenRisk > 0
-        ? (bucket.totalOpenRisk / currencyTotalEquity) * 100
-        : 0;
+      // Top-level portfolioHeat — single authoritative value for the open tab footer.
+      // portfolioHeatAmount = sum of open risk across all currencies (== totalOpenRisk).
+      // portfolioHeatPct = decimal fraction of total account equity (0.0125 = 1.25%),
+      // following the M010 decimal-fraction contract (displayed via ×100 formatting).
+      // The denominator sums one equity per account (unique, not per trade) to avoid
+      // double-counting when multiple open positions share an account.
+      const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
+      totals.portfolioHeatAmount = totals.totalOpenRisk;
+      totals.portfolioHeatPct =
+        totalEquityAcrossAccounts > 0 && totals.totalOpenRisk > 0
+          ? totals.totalOpenRisk / totalEquityAcrossAccounts
+          : 0;
     }
 
     // ── plannedTotals: aggregate risk/capital across all planned trades ──
@@ -1131,8 +1220,8 @@ console.log('\n19. GET status-aware: open trades ignore date filters:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
-  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'open', openedAt: '2024-01-15T10:00:00.000Z', createdAt: new Date().toISOString() });
-  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'open', openedAt: '2024-06-15T10:00:00.000Z', createdAt: new Date().toISOString() });
+  seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', status: 'open', openedAt: '2024-01-15T10:00:00.000Z', createdAt: '2024-01-16T10:00:00.000Z' });
+  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', status: 'open', openedAt: '2024-06-15T10:00:00.000Z', createdAt: '2024-06-16T10:00:00.000Z' });
 
   // Status=open with date range that matches NEITHER trade — open trades should ALL be returned
   const result = doGetTrades({ status: 'open', from: '2099-01-01T00:00:00.000Z' });
@@ -1747,6 +1836,54 @@ console.log('\n35. GET falls back to account.startingBalance when no performance
 
   // No NAV, no rollforward → account.startingBalance=50000 → riskToAccount = 1000/50000 = 0.02
   assertApprox(risk.riskToAccount as number, 0.02, 0.01, 'riskToAccount ≈ 0.02 (1000/50000) using startingBalance fallback');
+}
+
+// ── 36. S02 T01: Scale-in totals use stored initialStopPrice ────────
+
+console.log('\n36. S02 T01: Scale-in open risk — totals.portfolioHeatAmount equals sum of row-level openRisk (stored initialStopPrice):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 25000 });
+  seedRollforward({ accountId: 'test-account-id', endingEquity: 25000 });
+
+  // Scale-in trade: 100 @ 100, then add 100 @ 97 → total entry 200 shares, avg cost 98.5.
+  // Risk snapshot recorded at first execution: initialStopPrice = 95, initialRiskAmount = 500
+  // (100 shares × $5/share at snapshot time — the amount does NOT rescale with the add).
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-05T14:30:00.000Z' });
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 97, fees: 0, executedAt: '2026-01-06T14:30:00.000Z' });
+  db.insert(schema.tradeRiskSnapshots).values({
+    id: randomUUID(),
+    tradeId: tId,
+    initialEntryPrice: 100,
+    initialStopPrice: 95,
+    initialRiskAmount: 500,
+    accountEquityAtOpen: 25000,
+  }).run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[]; totals: Record<string, number> };
+
+  // Row-level open risk: openAvgCost = (100×100 + 97×100)/200 = 98.5, activeStop = stored 95.
+  // openRisk = (98.5 − 95) × 200 = 700.
+  // Without the stored stop the fallback would derive activeStop = 98.5 − 500/200 = 96 → 500.
+  const row = d.data[0] as Record<string, unknown>;
+  const rowRisk = ((row.metrics as { risk: { openRisk: number | null } }).risk).openRisk;
+  assertApprox(rowRisk as number, 700, 0.01, 'row-level openRisk uses stored initialStopPrice: (98.5-95)*200 = 700');
+
+  const rowOpenRiskSum = d.data.reduce(
+    (s, r) => s + (((r.metrics as { risk: { openRisk: number | null } }).risk).openRisk ?? 0),
+    0,
+  );
+  assertApprox(rowOpenRiskSum, 700, 0.01, 'sum of row-level openRisk = 700');
+
+  // Totals aggregation recomputes metrics for the FULL dataset independently of the page —
+  // it must use the same stored initialStopPrice so totals agree with the rows.
+  assertEqual(d.totals.totalOpenRisk, rowOpenRiskSum, 'totals.totalOpenRisk == sum of row-level openRisk');
+  assertEqual(d.totals.portfolioHeatAmount, rowOpenRiskSum, 'totals.portfolioHeatAmount == sum of row-level openRisk (stored stop, not initialRiskAmount fallback)');
+  assertApprox(d.totals.portfolioHeatAmount as number, 700, 0.01, 'portfolioHeatAmount = 700 (stored-stop value, not 500 fallback)');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
