@@ -139,6 +139,31 @@ sqlite.exec(`
     updated_at TEXT DEFAULT (current_timestamp),
     FOREIGN KEY (account_id) REFERENCES accounts(id)
   );
+  CREATE TABLE IF NOT EXISTS account_performance (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL UNIQUE,
+    computed_as_of TEXT NOT NULL,
+    net_cash TEXT NOT NULL,
+    nav TEXT NOT NULL,
+    marked_positions TEXT NOT NULL,
+    realized_pnl TEXT NOT NULL,
+    unrealized_pnl TEXT NOT NULL,
+    total_pnl TEXT NOT NULL,
+    realized_fees TEXT NOT NULL,
+    gross_exposure TEXT NOT NULL,
+    net_exposure TEXT NOT NULL,
+    modified_dietz_return TEXT,
+    twr TEXT,
+    high_water_mark TEXT,
+    drawdown TEXT,
+    drawdown_pct TEXT,
+    warnings TEXT NOT NULL DEFAULT '[]',
+    positions_json TEXT NOT NULL DEFAULT '[]',
+    rebuild_count INTEGER NOT NULL DEFAULT 0,
+    last_rebuilt_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
   CREATE TABLE IF NOT EXISTS trade_risk_snapshots (
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT NOT NULL UNIQUE,
@@ -310,6 +335,18 @@ function doGetTrades(params: {
       }
     }
 
+    // Batch-fetch account_performance.nav per unique account (primary equity source)
+    const accountPerfMap = new Map<string, string>();
+    for (const accId of uniqueAccountIds) {
+      if (!accId) continue;
+      const perf = sqlite
+        .prepare(`SELECT nav FROM account_performance WHERE account_id = ?`)
+        .get(accId) as { nav: string } | undefined;
+      if (perf && perf.nav) {
+        accountPerfMap.set(accId, perf.nav);
+      }
+    }
+
     // Batch-fetch sector lookupValues for sector name resolution
     const uniqueSectorIds: string[] = [...new Set(dbRows.map((r) => r.sectorId).filter((id): id is string => id !== null))];
     const sectorRowsTest: Array<{ id: string; value: string }> = uniqueSectorIds.length > 0
@@ -332,10 +369,15 @@ function doGetTrades(params: {
       const executions = execMap.get(row.id) ?? [];
       const riskSnapshot = riskMap.get(row.id) ?? null;
 
-      // Account equity cascade: latest rollforward.endingEquity → account.startingBalance → null
+      // Account equity cascade: account_performance.nav → rollforward.endingEquity → account.startingBalance → null
       const latestRollforward = latestRollforwardMap.get(row.accountId);
+      const navRaw = accountPerfMap.get(row.accountId);
+      const navValue = navRaw ? parseFloat(navRaw) : null;
+      const acc = accMap.get(row.accountId) as Record<string, unknown> | undefined;
       const currentAccountEquity =
+        navValue ??
         latestRollforward?.endingEquity ??
+        (acc?.startingBalance as number | undefined) ??
         null;
 
       const metricsInput: TradeMetricsInput = {
@@ -458,7 +500,9 @@ function doGetTrades(params: {
       if (!totalEquityByAccount.has(row.accountId)) {
         const latestRf = latestRollforwardMap.get(row.accountId);
         const a = allDbAccounts.find(acc => acc.id === row.accountId);
-        const equity = latestRf?.endingEquity ?? a?.startingBalance ?? null;
+        const navRaw = accountPerfMap.get(row.accountId);
+        const navValue = navRaw ? parseFloat(navRaw) : null;
+        const equity = navValue ?? latestRf?.endingEquity ?? a?.startingBalance ?? null;
         if (equity != null) {
           totalEquityByAccount.set(row.accountId, equity);
           if (!currencyEquityByAccount.has(currency)) {
@@ -469,11 +513,8 @@ function doGetTrades(params: {
       }
     }
 
-    // Compute portfolioHeat values (totalOpenRisk / totalUniqueAccountEquity * 100)
-    const totalUniqueEquity = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
-    totals.portfolioHeat = totalUniqueEquity > 0 && totals.totalOpenRisk > 0
-      ? (totals.totalOpenRisk / totalUniqueEquity) * 100
-      : 0;
+    // Top-level portfolioHeat removed — only per-currency portfolioHeat is returned.
+    // Mixed-currency portfolioHeat is misleading when accounts use different currencies.
 
     for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
       const currencyEquities = currencyEquityByAccount.get(currency);
@@ -616,6 +657,7 @@ function cleanup() {
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM lookup_values;');
   sqlite.exec('DELETE FROM settings;');
+  sqlite.exec('DELETE FROM account_performance;');
   sqlite.exec('DELETE FROM accounts;');
 }
 
@@ -1197,12 +1239,12 @@ console.log('\n22. GET uses rollforward.endingEquity as primary equity source:')
   assertNotNull(risk.openRisk, 'openRisk is computed');
 }
 
-// ── 23. GET: Falls back when no rollforward exists ──────────────────
+// ── 23. GET: Falls back to startingBalance when no rollforward exists ──
 
-console.log('\n23. GET equity falls back when no rollforward exists:');
+console.log('\n23. GET equity falls back to account.startingBalance when no rollforward exists:');
 {
   cleanup();
-  // Account with startingBalance but NO rollforward row
+  // Account with startingBalance 50000 but NO rollforward row
   seedAccount({ id: 'test-account-id', startingBalance: 50000 });
 
   const trade = seedTrade({
@@ -1234,8 +1276,8 @@ console.log('\n23. GET equity falls back when no rollforward exists:');
   const m = row.metrics as Record<string, unknown>;
   const risk = m.risk as Record<string, unknown>;
 
-  // No rollforward → equity null → riskToAccount is null (no denominator)
-  assertEqual(risk.riskToAccount, null, 'riskToAccount is null when no equity source available');
+  // No NAV, no rollforward → account.startingBalance=50000 → riskToAccount = 1000/50000 = 0.02
+  assertApprox(risk.riskToAccount as number, 0.02, 0.01, 'riskToAccount ≈ 0.02 (1000/50000) using startingBalance fallback');
 }
 
 // ── 24. GET: totalsByCurrency multi-currency grouping ─────────────
@@ -1392,11 +1434,8 @@ console.log('\n27. GET returns portfolioHeat in totals and totalsByCurrency:');
   const d = result.data as { totals: Record<string, unknown>; totalsByCurrency: Record<string, Record<string, unknown>> };
 
   assertNotNull(d.totals, 'totals object is present');
-  assert('portfolioHeat' in d.totals, 'portfolioHeat field exists in totals');
-  // Total open risk = 1000 (USD) + 500 (EUR) = 1500
-  // Total unique equity = 25000 (USD) + 40000 (EUR) = 65000
-  // portfolioHeat = 1500 / 65000 * 100 ≈ 2.3077%
-  assertApprox(d.totals.portfolioHeat as number, 2.3077, 0.01, 'totals.portfolioHeat ≈ 2.3077% (1500/65000)');
+  // Top-level portfolioHeat has been removed — only per-currency portfolioHeat is returned
+  assert('portfolioHeat' in d.totals === false, 'portfolioHeat NOT in top-level totals (removed, per-currency only)');
 
   assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
   // USD: openRisk = 1000, equity = 25000 → 1000/25000 * 100 = 4%
@@ -1420,13 +1459,14 @@ console.log('\n28. GET returns portfolioHeat=0 for closed and planned tabs:');
   const closedResult = doGetTrades({ status: 'closed' });
   assert(closedResult.status === 200, 'closed returns 200');
   const cd = closedResult.data as { totals: Record<string, unknown> };
-  assertEqual(cd.totals.portfolioHeat as number, 0, 'closed totals.portfolioHeat = 0 (no open risk)');
+  // Top-level portfolioHeat has been removed — only per-currency portfolioHeat is returned
+  assert('portfolioHeat' in cd.totals === false, 'closed totals has no portfolioHeat (removed for top-level)');
 
   // Planned trade — no open risk
   const plannedResult = doGetTrades({ status: 'planned' });
   assert(plannedResult.status === 200, 'planned returns 200');
   const pd = plannedResult.data as { totals: Record<string, unknown> };
-  assertEqual(pd.totals.portfolioHeat as number, 0, 'planned totals.portfolioHeat = 0 (no open risk)');
+  assert('portfolioHeat' in pd.totals === false, 'planned totals has no portfolioHeat (removed for top-level)');
 }
 
 // ── 29. GET: plannedTotals in response ──────────────────────────────
@@ -1597,6 +1637,98 @@ console.log('\n32. GET returns resolved accountName, sectorName, accountCurrency
   assertEqual(nvda.accountName, 'Interactive Brokers', 'NVDA accountName is "Interactive Brokers"');
   assertEqual(nvda.accountCurrency, 'EUR', 'NVDA accountCurrency is "EUR"');
   assertEqual(nvda.sectorName, null, 'NVDA sectorName is null when sectorId is null');
+}
+
+// ── 33. GET: Account_performance.nav is authoritative equity source ──
+
+console.log('\n33. GET uses account_performance.nav as primary equity source:');
+{
+  cleanup();
+  // Account with startingBalance 10000, rollforward 20000, but NAV 25000
+  const acc = seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedRollforward({ accountId: 'test-account-id', endingEquity: 20000 });
+
+  // Insert account_performance row with NAV higher than both
+  const perfId = randomUUID();
+  const now = new Date().toISOString();
+  const stmt = sqlite.prepare(`
+    INSERT INTO account_performance (id, account_id, computed_as_of, net_cash, nav, marked_positions, realized_pnl, unrealized_pnl, total_pnl, realized_fees, gross_exposure, net_exposure, warnings, positions_json, rebuild_count, last_rebuilt_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(perfId, 'test-account-id', now, '0', '25000', '0', '0', '0', '0', '0', '0', '0', '[]', '[]', 0, now);
+
+  // Open trade with a risk snapshot
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  const rsId = randomUUID();
+  db.insert(schema.tradeRiskSnapshots).values({ id: rsId, tradeId: tId, initialRiskAmount: 1000, accountEquityAtOpen: 10000 }).run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+  assertEqual(d.data.length, 1, '1 trade returned');
+
+  const row = d.data[0] as Record<string, unknown>;
+  const m = row.metrics as Record<string, unknown>;
+  const risk = m.risk as Record<string, unknown>;
+
+  // With NAV=25000, riskToAccount = 1000/25000 = 0.04
+  assertNotNull(risk.riskToAccount, 'riskToAccount is not null (NAV was used)');
+  assertApprox(risk.riskToAccount as number, 0.04, 0.01, 'riskToAccount ≈ 0.04 (1000/25000) using account_performance.nav');
+}
+
+// ── 34. GET: Falls back to rollforward when no account_performance row exists ──
+
+console.log('\n34. GET falls back to rollforward when no account_performance row exists:');
+{
+  cleanup();
+  const acc = seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedRollforward({ accountId: 'test-account-id', endingEquity: 20000 });
+  // No account_performance row — cascade falls through to rollforward.endingEquity
+
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  const rsId = randomUUID();
+  db.insert(schema.tradeRiskSnapshots).values({ id: rsId, tradeId: tId, initialRiskAmount: 1000, accountEquityAtOpen: 10000 }).run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+
+  const row = d.data[0] as Record<string, unknown>;
+  const m = row.metrics as Record<string, unknown>;
+  const risk = m.risk as Record<string, unknown>;
+
+  // No account_performance → falls back to rollforward.endingEquity=20000 → riskToAccount = 1000/20000 = 0.05
+  assertApprox(risk.riskToAccount as number, 0.05, 0.01, 'riskToAccount ≈ 0.05 (1000/20000) using rollforward fallback');
+}
+
+// ── 35. GET: Falls back to startingBalance when no performance or rollforward ──
+
+console.log('\n35. GET falls back to account.startingBalance when no performance/rollforward:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 50000 });
+  // No account_performance row, no rollforward row
+
+  const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  seedExecution({ tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  const rsId = randomUUID();
+  db.insert(schema.tradeRiskSnapshots).values({ id: rsId, tradeId: tId, initialRiskAmount: 1000, accountEquityAtOpen: 50000 }).run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+
+  const row = d.data[0] as Record<string, unknown>;
+  const m = row.metrics as Record<string, unknown>;
+  const risk = m.risk as Record<string, unknown>;
+
+  // No NAV, no rollforward → account.startingBalance=50000 → riskToAccount = 1000/50000 = 0.02
+  assertApprox(risk.riskToAccount as number, 0.02, 0.01, 'riskToAccount ≈ 0.02 (1000/50000) using startingBalance fallback');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

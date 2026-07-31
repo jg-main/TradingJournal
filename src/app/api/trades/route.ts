@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward } from '@/db/schema';
+import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
     const accountMap = new Map(accountRows.map((a) => [a.id, a]));
 
     // Batch-fetch latest account_rollforward per unique account — endingEquity is
-    // the primary source for current account equity (more accurate than startingBalance).
+    // used as the secondary source for current account equity (after account_performance.nav).
     const latestRollforwardMap = new Map<string, typeof accountRollforward.$inferSelect>();
     for (const accId of uniqueAccountIds) {
       if (!accId) continue;
@@ -211,6 +211,21 @@ export async function GET(request: NextRequest) {
         .get();
       if (rf) {
         latestRollforwardMap.set(accId, rf);
+      }
+    }
+
+    // Batch-fetch account_performance.nav per unique account — primary equity source
+    // (more accurate than rollforward as it includes marked-to-market positions).
+    const accountPerfMap = new Map<string, string>();
+    for (const accId of uniqueAccountIds) {
+      if (!accId) continue;
+      const perf = db
+        .select({ nav: accountPerformance.nav })
+        .from(accountPerformance)
+        .where(eq(accountPerformance.accountId, accId))
+        .get();
+      if (perf && perf.nav) {
+        accountPerfMap.set(accId, perf.nav);
       }
     }
 
@@ -236,10 +251,13 @@ export async function GET(request: NextRequest) {
       const riskSnapshot = riskMap.get(row.id) ?? null;
       const stopAdjustments = stopMap.get(row.id) ?? [];
 
-      // Account equity cascade: latest rollforward.endingEquity → account.startingBalance → settings.startingAccountValue → null
+      // Account equity cascade: account_performance.nav → rollforward.endingEquity → account.startingBalance → settings.startingAccountValue → null
       const account = accountMap.get(row.accountId);
       const latestRollforward = latestRollforwardMap.get(row.accountId);
+      const navRaw = accountPerfMap.get(row.accountId);
+      const navValue = navRaw ? parseFloat(navRaw) : null;
       const currentAccountEquity =
+        navValue ??
         latestRollforward?.endingEquity ??
         account?.startingBalance ??
         settingsRow?.startingAccountValue ??
@@ -416,7 +434,10 @@ export async function GET(request: NextRequest) {
           const stopAdjustments = allStopMap.get(row.id) ?? [];
           const account = allAccountMap.get(row.accountId);
           const latestRollforward = allLatestRollforwardMap.get(row.accountId);
+          const navRaw = accountPerfMap.get(row.accountId);
+          const navValue = navRaw ? parseFloat(navRaw) : null;
           const currentAccountEquity =
+            navValue ??
             latestRollforward?.endingEquity ??
             account?.startingBalance ??
             settingsRow?.startingAccountValue ??
@@ -500,12 +521,8 @@ export async function GET(request: NextRequest) {
         { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
       );
 
-      // Compute portfolioHeat from unique account equities tracked during reduce
-      const totalUniqueEquity = [...totalEquityByAccount.values()].reduce((s, v) => s + v, 0);
-      const portfolioHeat = totalUniqueEquity > 0 && fullTotals.totalOpenRisk > 0
-        ? (fullTotals.totalOpenRisk / totalUniqueEquity) * 100
-        : 0;
-      fullTotals = { ...fullTotals, portfolioHeat };
+      // Top-level portfolioHeat removed — only per-currency portfolioHeat is returned.
+      // Mixed-currency portfolioHeat is misleading when accounts use different currencies.
 
       // Compute per-currency portfolioHeat
       for (const [currency, bucket] of Object.entries(totalsByCurrency)) {
