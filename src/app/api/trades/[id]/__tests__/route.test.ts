@@ -428,14 +428,16 @@ function doPutTrade(id: string, body: Record<string, unknown>): { status: number
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
+    // R019: plannedStop is immutable once a trade leaves 'planned' status.
     // Open trades manage their active stop exclusively through the Adjust
-    // Stop flow (trade_stop_adjustments). Reject direct plannedStop edits.
-    if (existing.status === 'open' && body.plannedStop !== undefined) {
+    // Stop flow (trade_stop_adjustments); closed and deleted trades must keep
+    // their historical planned stop intact. Reject direct plannedStop edits.
+    if (existing.status !== 'planned' && body.plannedStop !== undefined) {
       return {
         status: 400,
         data: {
           error:
-            'plannedStop cannot be changed on an open trade. The active stop is managed through Adjust Stop.',
+            'Planned stop can only be changed while the trade is planned.',
         },
       };
     }
@@ -1199,8 +1201,8 @@ console.log('\n22. PUT rejects plannedStop for an open trade:');
   assert(result.status === 400, 'returns 400');
   const data = result.data as { error: string };
   assert(
-    data.error.includes('open trade'),
-    'error message explains open-trade restriction',
+    data.error === 'Planned stop can only be changed while the trade is planned.',
+    'error message explains lifecycle restriction',
   );
   // DB must be untouched — plannedStop preserved, no partial write
   const row = db
@@ -1255,9 +1257,9 @@ console.log('\n24. PUT allows other fields on an open trade (no plannedStop):');
   assertEqual(data.plannedStop, 605.02, 'plannedStop preserved');
 }
 
-// ── 25. PUT: plannedStop still allowed for planned/closed trades ────────
+// ── 25. PUT: plannedStop still allowed for planned trades ────────────
 
-console.log('\n25. PUT allows plannedStop for planned and closed trades:');
+console.log('\n25. PUT allows plannedStop for a planned trade:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
@@ -1266,19 +1268,91 @@ console.log('\n25. PUT allows plannedStop for planned and closed trades:');
     status: 'planned',
     plannedStop: 10.0,
   });
+
+  const r1 = doPutTrade(planned.id as string, { plannedStop: 11.5 });
+  assert(r1.status === 200, 'returns 200 for planned trade');
+  assertEqual((r1.data as Record<string, unknown>).plannedStop, 11.5, 'planned trade plannedStop updated');
+}
+
+// ── 26. PUT: Rejects plannedStop for a closed trade (400, no mutation) ─
+
+console.log('\n26. PUT rejects plannedStop for a closed trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
   const closed = seedTrade({
     accountId: 'test-account-id',
     status: 'closed',
     plannedStop: 20.0,
   });
 
-  const r1 = doPutTrade(planned.id as string, { plannedStop: 11.5 });
-  assert(r1.status === 200, 'returns 200 for planned trade');
-  assertEqual((r1.data as Record<string, unknown>).plannedStop, 11.5, 'planned trade plannedStop updated');
+  const result = doPutTrade(closed.id as string, { plannedStop: 21.5 });
 
-  const r2 = doPutTrade(closed.id as string, { plannedStop: 21.5 });
-  assert(r2.status === 200, 'returns 200 for closed trade');
-  assertEqual((r2.data as Record<string, unknown>).plannedStop, 21.5, 'closed trade plannedStop updated');
+  assert(result.status === 400, 'returns 400 for closed trade');
+  const data = result.data as { error: string };
+  assertEqual(
+    data.error,
+    'Planned stop can only be changed while the trade is planned.',
+    'error message matches R019 lifecycle message',
+  );
+  const row = db
+    .select()
+    .from(schema.trades)
+    .where(eq(schema.trades.id, closed.id as string))
+    .get() as Record<string, unknown>;
+  assertEqual(row.plannedStop, 20.0, 'plannedStop unchanged in DB for closed trade');
+}
+
+// ── 27. PUT: Rejects null plannedStop for closed trade too ────────────
+
+console.log('\n27. PUT rejects null plannedStop for a closed trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const closed = seedTrade({
+    accountId: 'test-account-id',
+    status: 'closed',
+    plannedStop: 20.0,
+  });
+
+  const result = doPutTrade(closed.id as string, { plannedStop: null });
+
+  assert(result.status === 400, 'returns 400 (null is still an update attempt)');
+  const row = db
+    .select()
+    .from(schema.trades)
+    .where(eq(schema.trades.id, closed.id as string))
+    .get() as Record<string, unknown>;
+  assertEqual(row.plannedStop, 20.0, 'plannedStop not cleared in DB for closed trade');
+}
+
+// ── 28. PUT: Rejects plannedStop for a deleted trade ──────────────────
+
+console.log('\n28. PUT rejects plannedStop for a deleted trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const deleted = seedTrade({
+    accountId: 'test-account-id',
+    status: 'deleted',
+    plannedStop: 30.0,
+  });
+
+  const result = doPutTrade(deleted.id as string, { plannedStop: 31.0 });
+
+  assert(result.status === 400, 'returns 400 for deleted trade');
+  const data = result.data as { error: string };
+  assertEqual(
+    data.error,
+    'Planned stop can only be changed while the trade is planned.',
+    'error message matches R019 lifecycle message',
+  );
+  const row = db
+    .select()
+    .from(schema.trades)
+    .where(eq(schema.trades.id, deleted.id as string))
+    .get() as Record<string, unknown>;
+  assertEqual(row.plannedStop, 30.0, 'plannedStop unchanged in DB for deleted trade');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

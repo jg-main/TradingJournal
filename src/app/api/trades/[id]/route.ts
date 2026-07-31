@@ -230,15 +230,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // R019: plannedStop is immutable once a trade leaves 'planned' status.
     // Open trades manage their active stop exclusively through the Adjust
-    // Stop flow (trade_stop_adjustments). Reject direct plannedStop edits —
+    // Stop flow (trade_stop_adjustments); closed and deleted trades must keep
+    // their historical planned stop intact. Reject direct plannedStop edits —
     // they would silently overwrite the original planned stop and bypass the
     // audit trail. A null value is still an update attempt and is rejected.
-    if (existing.status === 'open' && parsed.data.plannedStop !== undefined) {
+    if (existing.status !== 'planned' && parsed.data.plannedStop !== undefined) {
       return NextResponse.json(
         {
           error:
-            'plannedStop cannot be changed on an open trade. The active stop is managed through Adjust Stop.',
+            'Planned stop can only be changed while the trade is planned.',
         },
         { status: 400 }
       );
