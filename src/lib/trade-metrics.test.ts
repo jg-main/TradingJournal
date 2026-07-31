@@ -776,14 +776,14 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
   assertApprox(r.fees.totalFees, 8, 'totalFees = $8');
   assertApprox(r.realizedPnl.grossRealizedPnl, 0, 'grossRealizedPnl = 0');
 
-  // Derived fields: entry only, no mark — unrealized=null, totalNetPnl=0
+  // Derived fields: entry only, no mark — unrealized=null, totalNetPnl=null (can't compute without market price)
   assert(r.unrealizedPnl.grossUnrealizedPnl === null, 'EntryOnly: grossUnrealizedPnl = null');
   assert(r.unrealizedPnl.netUnrealizedPnl === null, 'EntryOnly: netUnrealizedPnl = null');
-  assertApprox(r.position.totalNetPnl, 0, 'EntryOnly: totalNetPnl = 0');
+  assert(r.position.totalNetPnl === null, 'EntryOnly: totalNetPnl = null (no market price, open trade)');
   assert(r.position.holdingPeriodDays === null, 'EntryOnly: holdingPeriodDays = null (no mark)');
   assert(r.position.marketValue === null, 'EntryOnly: marketValue = null (no mark)');
   assert(r.position.positionWeight === null, 'EntryOnly: positionWeight = null');
-  assertApprox(r.returnMetrics.returnPct, 0, 'EntryOnly: returnPct = 0 (totalNetPnl=0)');
+  assert(r.returnMetrics.returnPct === null, 'EntryOnly: returnPct = null (totalNetPnl=null)');
   assert(r.returnMetrics.rMultiple === null, 'EntryOnly: rMultiple = null');
 }
 

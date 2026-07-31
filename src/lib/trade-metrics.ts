@@ -530,9 +530,11 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
       ? exits[exits.length - 1].executedAt
       : null;
 
-  const totalNetPnl = new Decimal(netRealizedPnlNum).plus(
-    netUnrealizedPnl != null ? new Decimal(netUnrealizedPnl) : new Decimal(0),
-  ).toNumber();
+  const totalNetPnl = netUnrealizedPnl != null
+    ? new Decimal(netRealizedPnlNum).plus(new Decimal(netUnrealizedPnl)).toNumber()
+    : openQuantity > 0
+      ? null
+      : netRealizedPnlNum;
 
   const holdingPeriodDays =
     openedAt != null && closedAt != null
@@ -553,12 +555,12 @@ export function computeTradeMetrics(input: TradeMetricsInput): TradeMetricsResul
 
   // Return metrics (Section 5.10)
   const returnPct =
-    totalEntryNotional.gt(0)
+    totalNetPnl != null && totalEntryNotional.gt(0)
       ? new Decimal(totalNetPnl).div(totalEntryNotional).toNumber()
       : null;
 
   const rMultiple =
-    initialRisk != null && initialRisk > 0
+    totalNetPnl != null && initialRisk != null && initialRisk > 0
       ? new Decimal(totalNetPnl).div(new Decimal(initialRisk)).toNumber()
       : null;
 

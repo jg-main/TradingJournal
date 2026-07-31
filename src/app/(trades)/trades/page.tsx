@@ -487,7 +487,13 @@ const openColumns: ColumnDef<TradeRow>[] = [
     id: 'totalPnl',
     header: 'Total P&L',
     accessorFn: (row) => row.metrics?.position?.totalNetPnl,
-    cell: ({ getValue }) => <PnlCell value={getValue<number | null>()} />,
+    cell: ({ getValue, row }) => {
+      const value = getValue<number | null>();
+      if (value == null && row.original.status === 'open') {
+        return <span className="text-muted-foreground">— Awaiting market price</span>;
+      }
+      return <PnlCell value={value} />;
+    },
   },
   {
     id: 'openRisk',
