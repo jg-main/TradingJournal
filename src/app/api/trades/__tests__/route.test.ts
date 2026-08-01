@@ -481,13 +481,8 @@ function doGetTrades(params: {
       unpricedOpenPositions: 0,
     };
 
-    // Per-currency totals buckets — hoisted for response access
-    const totalsByCurrency: Record<string, Record<string, number | null>> = {};
-
-    // M013/S01 mirror: open positions (openQuantity > 0) without a market mark
-    // and the currencies they belong to.
+    // M013/S01 mirror: open positions (openQuantity > 0) without a market mark.
     let unpricedOpenPositions = 0;
-    const unpricedCurrencies = new Set<string>();
 
     if (allMatchingIdsR.length > 0) {
       const allTradeIds = allMatchingIdsR.map((r) => r.id);
@@ -518,7 +513,6 @@ function doGetTrades(params: {
         .where(inArray(schema.accounts.id, allUniqueAccountIds.filter(Boolean)))
         .all();
       const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
-      const allAccountCurrencyMap = new Map(allAccountRows.map((a) => [a.id, a.currency ?? 'USD']));
 
       // Batch-fetch latest rollforward per account for totals computation (mirrors route.ts)
       const allLatestRollforwardMap = new Map<string, typeof schema.accountRollforward.$inferSelect>();
@@ -556,7 +550,6 @@ function doGetTrades(params: {
       // (one equity per account to avoid double-counting). Mirror of route.ts:
       // monetary aggregates are accumulated in Decimal.js (P2 hardening).
       const totalEquityByAccount = new Map<string, Decimal>();
-      const currencyEquityByAccount = new Map<string, Map<string, Decimal>>();
 
       // Decimal.js accumulators (mirror of route.ts totals pipeline)
       const decTotals = {
@@ -567,18 +560,6 @@ function doGetTrades(params: {
         netUnrealizedPnl: new Decimal(0),
         totalOpenRisk: new Decimal(0),
       };
-      const decCurrencyBuckets: Record<
-        string,
-        {
-          grossRealizedPnl: Decimal;
-          netRealizedPnl: Decimal;
-          totalFees: Decimal;
-          grossUnrealizedPnl: Decimal;
-          netUnrealizedPnl: Decimal;
-          totalOpenRisk: Decimal;
-          portfolioHeat: Decimal;
-        }
-      > = {};
 
       for (const row of allMatchingIdsR) {
         const executions = allExecMap.get(row.id) ?? [];
@@ -622,33 +603,15 @@ function doGetTrades(params: {
         };
 
         const metrics = computeTradeMetrics(metricsInput);
-        const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
 
         // M013/S01 mirror: count open positions without a market mark.
         if (metrics.size.openQuantity > 0 && row.currentPrice == null) {
           unpricedOpenPositions += 1;
-          unpricedCurrencies.add(currency);
         }
 
         // Track unique per-account equity for the portfolioHeat denominator
         if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
           totalEquityByAccount.set(row.accountId, new Decimal(currentAccountEquity));
-          if (!currencyEquityByAccount.has(currency)) {
-            currencyEquityByAccount.set(currency, new Map());
-          }
-          currencyEquityByAccount.get(currency)!.set(row.accountId, new Decimal(currentAccountEquity));
-        }
-
-        if (!decCurrencyBuckets[currency]) {
-          decCurrencyBuckets[currency] = {
-            grossRealizedPnl: new Decimal(0),
-            netRealizedPnl: new Decimal(0),
-            totalFees: new Decimal(0),
-            grossUnrealizedPnl: new Decimal(0),
-            netUnrealizedPnl: new Decimal(0),
-            totalOpenRisk: new Decimal(0),
-            portfolioHeat: new Decimal(0),
-          };
         }
 
         const gRP = new Decimal(metrics.realizedPnl.grossRealizedPnl ?? 0);
@@ -665,36 +628,6 @@ function doGetTrades(params: {
         decTotals.netUnrealizedPnl = decTotals.netUnrealizedPnl.plus(nUP);
         decTotals.totalOpenRisk = decTotals.totalOpenRisk.plus(oR);
 
-        const bucket = decCurrencyBuckets[currency];
-        bucket.grossRealizedPnl = bucket.grossRealizedPnl.plus(gRP);
-        bucket.netRealizedPnl = bucket.netRealizedPnl.plus(nRP);
-        bucket.totalFees = bucket.totalFees.plus(tF);
-        bucket.grossUnrealizedPnl = bucket.grossUnrealizedPnl.plus(gUP);
-        bucket.netUnrealizedPnl = bucket.netUnrealizedPnl.plus(nUP);
-        bucket.totalOpenRisk = bucket.totalOpenRisk.plus(oR);
-      }
-
-      // Compute per-currency portfolioHeat (Decimal.js) and emit numeric response buckets
-      for (const [currency, bucket] of Object.entries(decCurrencyBuckets)) {
-        const currencyEquities = currencyEquityByAccount.get(currency);
-        const currencyTotalEquity = currencyEquities
-          ? [...currencyEquities.values()].reduce((s, v) => s.plus(v), new Decimal(0))
-          : new Decimal(0);
-        bucket.portfolioHeat = currencyTotalEquity.gt(0) && bucket.totalOpenRisk.gt(0)
-          ? bucket.totalOpenRisk.div(currencyTotalEquity).mul(100)
-          : new Decimal(0);
-        // M013/S01 mirror: a bucket containing any unpriced open position reports
-        // null for its unrealized aggregates.
-        const bucketHasUnpriced = unpricedCurrencies.has(currency);
-        totalsByCurrency[currency] = {
-          grossRealizedPnl: bucket.grossRealizedPnl.toNumber(),
-          netRealizedPnl: bucket.netRealizedPnl.toNumber(),
-          totalFees: bucket.totalFees.toNumber(),
-          grossUnrealizedPnl: bucketHasUnpriced ? null : bucket.grossUnrealizedPnl.toNumber(),
-          netUnrealizedPnl: bucketHasUnpriced ? null : bucket.netUnrealizedPnl.toNumber(),
-          totalOpenRisk: bucket.totalOpenRisk.toNumber(),
-          portfolioHeat: bucket.portfolioHeat.toNumber(),
-        };
       }
 
       // Top-level portfolioHeat — single authoritative value for the open tab footer.
@@ -763,7 +696,7 @@ function doGetTrades(params: {
       count: plannedRows.length,
     };
 
-    return { status: 200, data: { data: enhancedRows, total, page, limit, totals, totalsByCurrency, plannedTotals } };
+    return { status: 200, data: { data: enhancedRows, total, page, limit, totals, plannedTotals } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to fetch trades', details: String(error) } };
   }
@@ -1602,9 +1535,9 @@ console.log('\n23. GET equity falls back to account.startingBalance when no roll
   assertApprox(risk.riskToAccount as number, 0.02, 0.01, 'riskToAccount ≈ 0.02 (1000/50000) using startingBalance fallback');
 }
 
-// ── 24. GET: totalsByCurrency multi-currency grouping ─────────────
+// ── 24. GET: totals aggregate across multi-currency accounts ──────────
 
-console.log('\n24. GET returns totals grouped by account currency:');
+console.log('\n24. GET returns totals aggregated across multi-currency accounts:');
 {
   cleanup();
   // Account 1: USD
@@ -1634,47 +1567,15 @@ console.log('\n24. GET returns totals grouped by account currency:');
 
   const result = doGetTrades();
   assert(result.status === 200, 'returns 200');
-  const d = result.data as { totalsByCurrency: Record<string, Record<string, number>> };
+  const d = result.data as { totals: { grossRealizedPnl: number; netRealizedPnl: number; totalFees: number } };
 
-  assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
-  assertEqual(Object.keys(d.totalsByCurrency).length, 2, '2 currencies in totalsByCurrency');
-
-  // USD: trade1 (gross 1000, net 992, fees 8) + trade2 (gross 500, net 494, fees 6) = gross 1500, net 1486, fees 14
-  assertEqual(d.totalsByCurrency['USD'].grossRealizedPnl, 1500, 'USD grossRealizedPnl = 1500 (1000 + 500)');
-  assertEqual(d.totalsByCurrency['USD'].netRealizedPnl, 1486, 'USD netRealizedPnl = 1486 (992 + 494)');
-  assertEqual(d.totalsByCurrency['USD'].totalFees, 14, 'USD totalFees = 14 (8 + 6)');
-
-  // EUR: trade3 (gross 1000, net 994, fees 6)
-  assertEqual(d.totalsByCurrency['EUR'].grossRealizedPnl, 1000, 'EUR grossRealizedPnl = 1000');
-  assertEqual(d.totalsByCurrency['EUR'].netRealizedPnl, 994, 'EUR netRealizedPnl = 994');
-  assertEqual(d.totalsByCurrency['EUR'].totalFees, 6, 'EUR totalFees = 6');
-
-  // Overall totals should match pre-computed values
-  assertEqual(d.totalsByCurrency['USD'].grossRealizedPnl + d.totalsByCurrency['EUR'].grossRealizedPnl, 2500, 'combined gross = 2500 (1500 + 1000)');
+  // Top-level totals aggregate across accounts regardless of currency:
+  // gross 1500 (USD) + 1000 (EUR) = 2500; net 1486 + 994 = 2480; fees 14 + 6 = 20.
+  assertEqual(d.totals.grossRealizedPnl, 2500, 'totals.grossRealizedPnl = 2500 (1500 USD + 1000 EUR)');
+  assertEqual(d.totals.netRealizedPnl, 2480, 'totals.netRealizedPnl = 2480 (1486 USD + 994 EUR)');
+  assertEqual(d.totals.totalFees, 20, 'totals.totalFees = 20 (14 USD + 6 EUR)');
 }
 
-// ── 25. GET: totalsByCurrency for single currency ─────────────────
-
-console.log('\n25. GET totalsByCurrency present with single currency:');
-{
-  cleanup();
-  seedAccount({ id: 'test-account-id' });
-
-  // Closed long: realize 992 (P&L 1000 - fees 8)
-  const trade1 = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
-  const t1Id = trade1.id as string;
-  seedExecution({ tradeId: t1Id, action: 'buy', quantity: 100, price: 100, fees: 5 });
-  seedExecution({ tradeId: t1Id, action: 'sell', quantity: 100, price: 110, fees: 3 });
-
-  const result = doGetTrades();
-  assert(result.status === 200, 'returns 200');
-  const d = result.data as { totalsByCurrency: Record<string, Record<string, number>> };
-
-  assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
-  assertEqual(Object.keys(d.totalsByCurrency).length, 1, '1 currency in totalsByCurrency');
-  assertNotNull(d.totalsByCurrency['USD'], 'USD key is present');
-  assertEqual(d.totalsByCurrency['USD'].netRealizedPnl, 992, 'USD netRealizedPnl = 992');
-}
 
 // ── 26. GET: plannedRiskToAccount computed for planned trades ─────────
 
@@ -1729,9 +1630,9 @@ console.log('\n26. GET plannedRiskToAccount computed for planned trades:');
   assertEqual(aaplRow.plannedRiskToAccount, null, 'plannedRiskToAccount is null when plannedStop is missing');
 }
 
-// ── 27. GET: portfolioHeat in totals and totalsByCurrency ────────────
+// ── 27. GET: portfolioHeat in totals ────────────────────────────────
 
-console.log('\n27. GET returns portfolioHeat in totals and totalsByCurrency:');
+console.log('\n27. GET returns portfolioHeat in totals:');
 {
   cleanup();
   // Account 1 (USD) with rollforward: equity 25000
@@ -1753,7 +1654,7 @@ console.log('\n27. GET returns portfolioHeat in totals and totalsByCurrency:');
 
   const result = doGetTrades({ status: 'open' });
   assert(result.status === 200, 'returns 200');
-  const d = result.data as { totals: Record<string, unknown>; totalsByCurrency: Record<string, Record<string, unknown>> };
+  const d = result.data as { totals: Record<string, unknown> };
 
   assertNotNull(d.totals, 'totals object is present');
   // Top-level portfolioHeatAmount = sum of open risk across all currencies
@@ -1762,12 +1663,6 @@ console.log('\n27. GET returns portfolioHeat in totals and totalsByCurrency:');
   // 1500 / (25000 + 40000) = 0.02308 → 2.31%
   assertApprox(d.totals.portfolioHeatPct as number, 1500 / 65000, 0.0001, 'portfolioHeatPct in top-level totals = 1500/65000 ≈ 0.02308 (decimal fraction)');
   assert((d.totals.portfolioHeatPct as number) < 1.0, 'portfolioHeatPct is a decimal fraction < 1.0 (NOT a ×100 percentage)');
-
-  assertNotNull(d.totalsByCurrency, 'totalsByCurrency object is present');
-  // USD: openRisk = 1000, equity = 25000 → 1000/25000 * 100 = 4%
-  assertApprox(d.totalsByCurrency['USD'].portfolioHeat as number, 4, 0.01, 'USD portfolioHeat = 4% (1000/25000)');
-  // EUR: openRisk = 500, equity = 40000 → 500/40000 * 100 = 1.25%
-  assertApprox(d.totalsByCurrency['EUR'].portfolioHeat as number, 1.25, 0.01, 'EUR portfolioHeat = 1.25% (500/40000)');
 }
 
 // ── 28. GET: portfolioHeat is 0 for closed and planned tabs ────────
@@ -2347,33 +2242,6 @@ console.log('\n40. M013/S01: all open positions priced → numeric aggregate pre
   assertEqual(d.totals.netUnrealizedPnl, 1246, 'totals.netUnrealizedPnl = 1246 (998 + 248)');
 }
 
-// ── 41. M013/S01 T01: per-currency null semantics in totalsByCurrency ──
-
-console.log('\n41. M013/S01: unpriced position nulls its currency bucket only:');
-{
-  cleanup();
-  seedAccount({ id: 'eur-acc-id', name: 'EUR Account', currency: 'EUR' });
-  seedAccount({ id: 'usd-acc-id', name: 'USD Account', currency: 'USD' });
-
-  // EUR open short WITHOUT a mark → EUR unrealized bucket must be null.
-  const eurT = seedTrade({ accountId: 'eur-acc-id', symbol: 'TSLA', direction: 'short', status: 'open' });
-  seedExecution({ tradeId: eurT.id as string, action: 'sell_short', quantity: 10, price: 100, fees: 2 });
-
-  // USD open long WITH a mark → USD unrealized bucket stays numeric: (110-100)*100 = 1000 gross, 998 net.
-  const usdT = seedTrade({ accountId: 'usd-acc-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
-  seedExecution({ tradeId: usdT.id as string, action: 'buy', quantity: 100, price: 100, fees: 2 });
-
-  const result = doGetTrades();
-  assert(result.status === 200, 'returns 200');
-  const d = result.data as { totals: Record<string, number | null>; totalsByCurrency: Record<string, Record<string, number | null>> };
-
-  assertEqual(d.totals.unpricedOpenPositions, 1, 'totals.unpricedOpenPositions = 1');
-  assertEqual(d.totals.grossUnrealizedPnl, null, 'totals.grossUnrealizedPnl = null (any unpriced position nulls the top-level aggregate)');
-  assertEqual(d.totalsByCurrency['EUR'].grossUnrealizedPnl, null, 'EUR grossUnrealizedPnl = null (EUR position unpriced)');
-  assertEqual(d.totalsByCurrency['EUR'].netUnrealizedPnl, null, 'EUR netUnrealizedPnl = null (EUR position unpriced)');
-  assertEqual(d.totalsByCurrency['USD'].grossUnrealizedPnl, 1000, 'USD grossUnrealizedPnl = 1000 (priced bucket unaffected)');
-  assertEqual(d.totalsByCurrency['USD'].netUnrealizedPnl, 998, 'USD netUnrealizedPnl = 998 (priced bucket unaffected)');
-}
 
 // ── 42. M013/S01 T01: closed tab totals unaffected by open unpriced positions ──
 

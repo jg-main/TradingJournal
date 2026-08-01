@@ -426,7 +426,6 @@ interface ApiListBody {
   data: ApiRow[];
   total: number;
   totals: Record<string, number>;
-  totalsByCurrency: Record<string, { portfolioHeat: number }>;
   [key: string]: unknown;
 }
 
@@ -696,12 +695,6 @@ registerCategory('C02', 'Stop propagation', async () => {
   assertEqual(preDetail.body.metrics.risk.initialStop, 98, 'detail initialStop = 98');
   assertApprox(preRow.metrics.risk.openRisk, 200, 0.01, 'pre openRisk = $200');
   assertApprox(preRow.metrics.risk.riskToAccount, 0.02, 1e-9, 'pre riskToAccount = 0.02');
-  assertApprox(
-    preList.body.totalsByCurrency['USD'].portfolioHeat,
-    2.0,
-    0.01,
-    'pre portfolioHeat = 2.0 (200/10000×100, established points contract)'
-  );
   // Top-level portfolioHeat contract (M010 decimal-fraction): amount = open risk,
   // pct = fraction of 1.0 (0.02 = 2.00%), NOT a ×100 percentage.
   assertApprox(preList.body.totals.portfolioHeatAmount, 200, 0.01, 'pre top-level portfolioHeatAmount = 200');
@@ -734,21 +727,11 @@ registerCategory('C02', 'Stop propagation', async () => {
   // Open Risk and Risk to Account update
   assertApprox(postRow.metrics.risk.openRisk, 50, 0.01, 'post openRisk = $50 (100−99.5)×100');
   assertApprox(postRow.metrics.risk.riskToAccount, 0.005, 1e-9, 'post riskToAccount = 0.005');
-  assertApprox(
-    postList.body.totalsByCurrency['USD'].portfolioHeat,
-    0.5,
-    0.01,
-    'post portfolioHeat = 0.5 (50/10000×100)'
-  );
   assertApprox(postList.body.totals.portfolioHeatAmount, 50, 0.01, 'post top-level portfolioHeatAmount = 50');
   assertApprox(postList.body.totals.portfolioHeatPct, 0.005, 1e-9, 'post top-level portfolioHeatPct = 0.005 (50/10000, decimal fraction)');
   assert(
     postList.body.totals.portfolioHeatPct < preList.body.totals.portfolioHeatPct,
     'top-level portfolioHeatPct decreases after stop tightened'
-  );
-  assert(
-    postList.body.totalsByCurrency['USD'].portfolioHeat < preList.body.totalsByCurrency['USD'].portfolioHeat,
-    'portfolioHeat decreases after stop tightened'
   );
 });
 

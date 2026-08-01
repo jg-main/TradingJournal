@@ -563,10 +563,6 @@ describe('Footer totals', () => {
           data: [makeMinimalTradeRow()],
           total: 2,
           totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeatAmount: 800, portfolioHeatPct: 0.0125 },
-          totalsByCurrency: {
-            USD: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeat: 3.5 },
-            EUR: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, portfolioHeat: 1.2 },
-          },
         }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return new Response('Not found', { status: 404 });
@@ -755,10 +751,6 @@ describe('Footer totals', () => {
           data: [makeMinimalTradeRow()],
           total: 1,
           totals: { grossRealizedPnl: 600, netRealizedPnl: 590, totalFees: 10, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
-          totalsByCurrency: {
-            USD: { grossRealizedPnl: 600, netRealizedPnl: 590, totalFees: 10, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
-            EUR: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
-          },
         }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return new Response('Not found', { status: 404 });
