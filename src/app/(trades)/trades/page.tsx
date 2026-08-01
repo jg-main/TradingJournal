@@ -100,7 +100,6 @@ interface TradesResponse {
   page: number;
   limit: number;
   totals: TotalsShape;
-  totalsByCurrency?: Record<string, TotalsShape>;
   plannedTotals?: PlannedTotalsShape;
 }
 
@@ -311,7 +310,6 @@ function TotalsFooter({
   count,
 }: {
   totals: TradesResponse['totals'];
-  totalsByCurrency?: Record<string, TradesResponse['totals']>;
   tabId: TabId;
   plannedTotals: PlannedTotalsShape;
   count: number;
@@ -345,8 +343,6 @@ function TotalsFooter({
   // position count. portfolioHeatAmount is the sum of open risk across all
   // currencies (== totalOpenRisk). portfolioHeatPct follows the M010
   // decimal-fraction contract (0.0125 = 1.25%), displayed via ×100 formatting.
-  // The per-currency totalsByCurrency structure is preserved on the response
-  // for S02 but no longer duplicated in this footer.
   if (tabId === 'open') {
     return (
       <div className="mt-3 rounded-lg border bg-muted/30 p-4">
@@ -1150,11 +1146,6 @@ function TradesPageInner() {
     totalPlannedCapital: 0,
     count: 0,
   });
-  const [tabTotalsByCurrency, setTabTotalsByCurrency] = useState<Record<TabId, Record<string, TradesResponse['totals']>>>({
-    open: {},
-    closed: {},
-    planned: {},
-  });
   const [tabLoading, setTabLoading] = useState<Record<TabId, boolean>>({
     open: true,
     closed: true,
@@ -1331,7 +1322,6 @@ function TradesPageInner() {
       setTabData((prev) => ({ ...prev, [tab.id]: result.data }));
       setTabTotal((prev) => ({ ...prev, [tab.id]: result.total }));
       setTabTotals((prev) => ({ ...prev, [tab.id]: result.totals }));
-      setTabTotalsByCurrency((prev) => ({ ...prev, [tab.id]: result.totalsByCurrency ?? {} }));
       if (result.plannedTotals) {
         setPlannedTotalsState(result.plannedTotals);
       }
@@ -1509,7 +1499,7 @@ function TradesPageInner() {
             onPageChange={(p) => handlePageChange(tab.id, p)}
           />
         )}
-        <TotalsFooter totals={totals} totalsByCurrency={tabTotalsByCurrency[tab.id]} tabId={tab.id} plannedTotals={plannedTotalsState} count={total} />
+        <TotalsFooter totals={totals} tabId={tab.id} plannedTotals={plannedTotalsState} count={total} />
       </div>
     );
   }
