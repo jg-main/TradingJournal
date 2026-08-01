@@ -27,6 +27,7 @@ const TSX_TESTS: string[] = [
   'src/lib/mark-to-market.test.ts',
   'src/lib/metrics.test.ts',
   'src/lib/perf-metrics.test.ts',
+  'src/lib/planned-risk.test.ts',
   'src/lib/position-sizing.test.ts',
   'src/lib/review-dashboard.test.ts',
   'src/lib/risk-snapshot.test.ts',
