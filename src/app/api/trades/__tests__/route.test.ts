@@ -467,7 +467,8 @@ function doGetTrades(params: {
       .where(whereClause)
       .all();
 
-    const totals: Record<string, number> = {
+    // M013/S01 mirror: unrealized aggregates are null-able + unpricedOpenPositions count.
+    const totals: Record<string, number | null> = {
       grossRealizedPnl: 0,
       netRealizedPnl: 0,
       totalFees: 0,
@@ -476,10 +477,16 @@ function doGetTrades(params: {
       totalOpenRisk: 0,
       portfolioHeatAmount: 0,
       portfolioHeatPct: 0,
+      unpricedOpenPositions: 0,
     };
 
     // Per-currency totals buckets — hoisted for response access
-    const totalsByCurrency: Record<string, Record<string, number>> = {};
+    const totalsByCurrency: Record<string, Record<string, number | null>> = {};
+
+    // M013/S01 mirror: open positions (openQuantity > 0) without a market mark
+    // and the currencies they belong to.
+    let unpricedOpenPositions = 0;
+    const unpricedCurrencies = new Set<string>();
 
     if (allMatchingIdsR.length > 0) {
       const allTradeIds = allMatchingIdsR.map((r) => r.id);
@@ -616,6 +623,12 @@ function doGetTrades(params: {
         const metrics = computeTradeMetrics(metricsInput);
         const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
 
+        // M013/S01 mirror: count open positions without a market mark.
+        if (metrics.size.openQuantity > 0 && row.currentPrice == null) {
+          unpricedOpenPositions += 1;
+          unpricedCurrencies.add(currency);
+        }
+
         // Track unique per-account equity for the portfolioHeat denominator
         if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
           totalEquityByAccount.set(row.accountId, new Decimal(currentAccountEquity));
@@ -669,12 +682,15 @@ function doGetTrades(params: {
         bucket.portfolioHeat = currencyTotalEquity.gt(0) && bucket.totalOpenRisk.gt(0)
           ? bucket.totalOpenRisk.div(currencyTotalEquity).mul(100)
           : new Decimal(0);
+        // M013/S01 mirror: a bucket containing any unpriced open position reports
+        // null for its unrealized aggregates.
+        const bucketHasUnpriced = unpricedCurrencies.has(currency);
         totalsByCurrency[currency] = {
           grossRealizedPnl: bucket.grossRealizedPnl.toNumber(),
           netRealizedPnl: bucket.netRealizedPnl.toNumber(),
           totalFees: bucket.totalFees.toNumber(),
-          grossUnrealizedPnl: bucket.grossUnrealizedPnl.toNumber(),
-          netUnrealizedPnl: bucket.netUnrealizedPnl.toNumber(),
+          grossUnrealizedPnl: bucketHasUnpriced ? null : bucket.grossUnrealizedPnl.toNumber(),
+          netUnrealizedPnl: bucketHasUnpriced ? null : bucket.netUnrealizedPnl.toNumber(),
           totalOpenRisk: bucket.totalOpenRisk.toNumber(),
           portfolioHeat: bucket.portfolioHeat.toNumber(),
         };
@@ -695,9 +711,13 @@ function doGetTrades(params: {
       totals.grossRealizedPnl = decTotals.grossRealizedPnl.toNumber();
       totals.netRealizedPnl = decTotals.netRealizedPnl.toNumber();
       totals.totalFees = decTotals.totalFees.toNumber();
-      totals.grossUnrealizedPnl = decTotals.grossUnrealizedPnl.toNumber();
-      totals.netUnrealizedPnl = decTotals.netUnrealizedPnl.toNumber();
+      // M013/S01 mirror: any unpriced open position makes the aggregate
+      // unrealized P&L unknown — report null (never a partial sum or 0).
+      const unrealizedUnknown = unpricedOpenPositions > 0;
+      totals.grossUnrealizedPnl = unrealizedUnknown ? null : decTotals.grossUnrealizedPnl.toNumber();
+      totals.netUnrealizedPnl = unrealizedUnknown ? null : decTotals.netUnrealizedPnl.toNumber();
       totals.totalOpenRisk = decTotals.totalOpenRisk.toNumber();
+      totals.unpricedOpenPositions = unpricedOpenPositions;
     }
 
     // ── plannedTotals: aggregate risk/capital across all planned trades ──
@@ -2138,6 +2158,139 @@ console.log('\n37. S02 T02: totals.portfolioHeatPct identical on page=1 and page
   assertApprox(p1.totals.portfolioHeatPct as number, p2.totals.portfolioHeatPct as number, 1e-9, 'portfolioHeatPct identical across pages (nav fetched for full dataset)');
   assertApprox(p1.totals.portfolioHeatPct as number, 2500 / 175000, 0.0001, 'portfolioHeatPct = 2500/175000 ≈ 0.01429 (all three NAVs in denominator)');
   assertApprox(p2.totals.portfolioHeatPct as number, 2500 / 175000, 0.0001, 'page2 portfolioHeatPct = 2500/175000 ≈ 0.01429 (all three NAVs in denominator)');
+}
+
+// ── 38. M013/S01 T01: mixed priced/unpriced open positions → null aggregate ──
+
+console.log('\n38. M013/S01: one priced + one unpriced open position → totals unrealized null + unpricedOpenPositions=1:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+
+  // Closed long: realized 992 (P&L 1000 - fees 8). Realized totals must stay numeric.
+  const closed = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
+  seedExecution({ tradeId: closed.id as string, action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution({ tradeId: closed.id as string, action: 'sell', quantity: 100, price: 110, fees: 3 });
+
+  // Open long WITH a market mark: gross unrealized = (110-100)*100 = 1000, net = 998.
+  const priced = seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', direction: 'long', status: 'open', currentPrice: 110 });
+  seedExecution({ tradeId: priced.id as string, action: 'buy', quantity: 100, price: 100, fees: 2 });
+
+  // Open long WITHOUT a market mark: unrealized is null (cannot be priced).
+  const unpriced = seedTrade({ accountId: 'test-account-id', symbol: 'TSLA', direction: 'long', status: 'open' });
+  seedExecution({ tradeId: unpriced.id as string, action: 'buy', quantity: 100, price: 100, fees: 2 });
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { data: Record<string, unknown>[]; totals: Record<string, number | null> };
+
+  // The P0 fix: aggregate unrealized P&L must be null — NEVER a partial sum (1000) or 0.
+  assertEqual(d.totals.grossUnrealizedPnl, null, 'totals.grossUnrealizedPnl = null (one unpriced open position)');
+  assertEqual(d.totals.netUnrealizedPnl, null, 'totals.netUnrealizedPnl = null (one unpriced open position)');
+  assertEqual(d.totals.unpricedOpenPositions, 1, 'totals.unpricedOpenPositions = 1 (TSLA lacks a mark)');
+
+  // Realized aggregates remain numeric — only unrealized completeness is affected.
+  assertEqual(d.totals.grossRealizedPnl, 1000, 'totals.grossRealizedPnl = 1000 (closed trade unaffected)');
+  assertEqual(d.totals.netRealizedPnl, 992, 'totals.netRealizedPnl = 992 (closed trade unaffected)');
+}
+
+// ── 39. M013/S01 T01: all open positions unpriced ──
+
+console.log('\n39. M013/S01: all open positions unpriced → null aggregate + unpricedOpenPositions=2:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+
+  const t1 = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open' });
+  seedExecution({ tradeId: t1.id as string, action: 'buy', quantity: 100, price: 100, fees: 2 });
+  const t2 = seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', direction: 'short', status: 'open' });
+  seedExecution({ tradeId: t2.id as string, action: 'sell_short', quantity: 50, price: 200, fees: 2 });
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { totals: Record<string, number | null> };
+
+  assertEqual(d.totals.unpricedOpenPositions, 2, 'totals.unpricedOpenPositions = 2');
+  assertEqual(d.totals.grossUnrealizedPnl, null, 'totals.grossUnrealizedPnl = null');
+  assertEqual(d.totals.netUnrealizedPnl, null, 'totals.netUnrealizedPnl = null');
+}
+
+// ── 40. M013/S01 T01: all open positions priced → numeric aggregate preserved ──
+
+console.log('\n40. M013/S01: all open positions priced → numeric aggregate preserved:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+
+  // Gross (110-100)*100 = 1000, net 1000 - 2 fees = 998.
+  const t1 = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  seedExecution({ tradeId: t1.id as string, action: 'buy', quantity: 100, price: 100, fees: 2 });
+  // Gross (205-200)*50 = 250, net 250 - 2 fees = 248.
+  const t2 = seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', direction: 'long', status: 'open', currentPrice: 205 });
+  seedExecution({ tradeId: t2.id as string, action: 'buy', quantity: 50, price: 200, fees: 2 });
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { totals: Record<string, number | null> };
+
+  assertEqual(d.totals.unpricedOpenPositions, 0, 'totals.unpricedOpenPositions = 0');
+  assertEqual(d.totals.grossUnrealizedPnl, 1250, 'totals.grossUnrealizedPnl = 1250 (1000 + 250)');
+  assertEqual(d.totals.netUnrealizedPnl, 1246, 'totals.netUnrealizedPnl = 1246 (998 + 248)');
+}
+
+// ── 41. M013/S01 T01: per-currency null semantics in totalsByCurrency ──
+
+console.log('\n41. M013/S01: unpriced position nulls its currency bucket only:');
+{
+  cleanup();
+  seedAccount({ id: 'eur-acc-id', name: 'EUR Account', currency: 'EUR' });
+  seedAccount({ id: 'usd-acc-id', name: 'USD Account', currency: 'USD' });
+
+  // EUR open short WITHOUT a mark → EUR unrealized bucket must be null.
+  const eurT = seedTrade({ accountId: 'eur-acc-id', symbol: 'TSLA', direction: 'short', status: 'open' });
+  seedExecution({ tradeId: eurT.id as string, action: 'sell_short', quantity: 10, price: 100, fees: 2 });
+
+  // USD open long WITH a mark → USD unrealized bucket stays numeric: (110-100)*100 = 1000 gross, 998 net.
+  const usdT = seedTrade({ accountId: 'usd-acc-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  seedExecution({ tradeId: usdT.id as string, action: 'buy', quantity: 100, price: 100, fees: 2 });
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { totals: Record<string, number | null>; totalsByCurrency: Record<string, Record<string, number | null>> };
+
+  assertEqual(d.totals.unpricedOpenPositions, 1, 'totals.unpricedOpenPositions = 1');
+  assertEqual(d.totals.grossUnrealizedPnl, null, 'totals.grossUnrealizedPnl = null (any unpriced position nulls the top-level aggregate)');
+  assertEqual(d.totalsByCurrency['EUR'].grossUnrealizedPnl, null, 'EUR grossUnrealizedPnl = null (EUR position unpriced)');
+  assertEqual(d.totalsByCurrency['EUR'].netUnrealizedPnl, null, 'EUR netUnrealizedPnl = null (EUR position unpriced)');
+  assertEqual(d.totalsByCurrency['USD'].grossUnrealizedPnl, 1000, 'USD grossUnrealizedPnl = 1000 (priced bucket unaffected)');
+  assertEqual(d.totalsByCurrency['USD'].netUnrealizedPnl, 998, 'USD netUnrealizedPnl = 998 (priced bucket unaffected)');
+}
+
+// ── 42. M013/S01 T01: closed tab totals unaffected by open unpriced positions ──
+
+console.log('\n42. M013/S01: closed tab (status=closed) totals unaffected by unpriced open positions:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+
+  // Closed long: realized 992 (P&L 1000 - fees 8).
+  const closed = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'closed' });
+  seedExecution({ tradeId: closed.id as string, action: 'buy', quantity: 100, price: 100, fees: 5 });
+  seedExecution({ tradeId: closed.id as string, action: 'sell', quantity: 100, price: 110, fees: 3 });
+
+  // An open unpriced trade exists in the DB but is excluded by the status=closed filter.
+  const openT = seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', direction: 'long', status: 'open' });
+  seedExecution({ tradeId: openT.id as string, action: 'buy', quantity: 100, price: 100, fees: 2 });
+
+  const result = doGetTrades({ status: 'closed' });
+  assert(result.status === 200, 'returns 200');
+  const d = result.data as { totals: Record<string, number | null> };
+
+  // Closed tab: no open positions in the filtered dataset → numeric unrealized (0) preserved.
+  assertEqual(d.totals.unpricedOpenPositions, 0, 'totals.unpricedOpenPositions = 0 on closed tab');
+  assertEqual(d.totals.grossUnrealizedPnl, 0, 'totals.grossUnrealizedPnl = 0 (numeric, unchanged)');
+  assertEqual(d.totals.netUnrealizedPnl, 0, 'totals.netUnrealizedPnl = 0 (numeric, unchanged)');
+  assertEqual(d.totals.netRealizedPnl, 992, 'totals.netRealizedPnl = 992 (realized totals unchanged)');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

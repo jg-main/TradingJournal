@@ -362,7 +362,24 @@ export async function GET(request: NextRequest) {
       .where(whereClause)
       .all();
 
-    let fullTotals: Record<string, number> = {
+    // M013/S01: unrealized P&L aggregates are null-able. When any open position
+    // (openQuantity > 0) in the filtered dataset lacks a currentPrice market mark,
+    // computeTradeMetrics returns null for that position's unrealized P&L. The
+    // aggregate must NOT convert that unknown to 0 — a partially-known or entirely
+    // unknown aggregate is returned as null (never a complete-looking number).
+    // unpricedOpenPositions provides a machine-readable count of the positions
+    // blocking the aggregate (used for monitoring and footer completeness states).
+    let fullTotals: {
+      grossRealizedPnl: number;
+      netRealizedPnl: number;
+      totalFees: number;
+      grossUnrealizedPnl: number | null;
+      netUnrealizedPnl: number | null;
+      totalOpenRisk: number;
+      portfolioHeatAmount: number;
+      portfolioHeatPct: number;
+      unpricedOpenPositions: number;
+    } = {
       grossRealizedPnl: 0,
       netRealizedPnl: 0,
       totalFees: 0,
@@ -371,6 +388,7 @@ export async function GET(request: NextRequest) {
       totalOpenRisk: 0,
       portfolioHeatAmount: 0,
       portfolioHeatPct: 0,
+      unpricedOpenPositions: 0,
     };
 
     // Per-currency totals buckets — hoisted outside the if-block for response access
@@ -380,12 +398,20 @@ export async function GET(request: NextRequest) {
         grossRealizedPnl: number;
         netRealizedPnl: number;
         totalFees: number;
-        grossUnrealizedPnl: number;
-        netUnrealizedPnl: number;
+        grossUnrealizedPnl: number | null;
+        netUnrealizedPnl: number | null;
         totalOpenRisk: number;
         portfolioHeat: number;
       }
     > = {};
+
+    // Open positions lacking a market mark (M013/S01): count + affected currencies.
+    // A position is "open" when it has open quantity (metrics.size.openQuantity > 0),
+    // matching the computeTradeMetrics guard for unrealized P&L (currentMark != null
+    // && openAvgCost != null && openQuantity > 0). Planned/closed rows contribute
+    // openQuantity 0 and can never block the aggregate.
+    let unpricedOpenPositions = 0;
+    const unpricedCurrencies = new Set<string>();
 
     if (allMatchingIdsR.length > 0) {
       const allTradeIds = allMatchingIdsR.map((r) => r.id);
@@ -539,6 +565,15 @@ export async function GET(request: NextRequest) {
 
         const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
 
+        // M013/S01: count open positions without a market mark and remember the
+        // currencies they belong to so per-currency unrealized aggregates can be
+        // nulled independently (a priced USD bucket stays numeric when only an EUR
+        // position is unpriced).
+        if (metrics.size.openQuantity > 0 && row.currentPrice == null) {
+          unpricedOpenPositions += 1;
+          unpricedCurrencies.add(currency);
+        }
+
         // Track unique per-account equity for portfolioHeat denominator
         if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
           totalEquityByAccount.set(row.accountId, new Decimal(currentAccountEquity));
@@ -592,12 +627,15 @@ export async function GET(request: NextRequest) {
         bucket.portfolioHeat = currencyTotalEquity.gt(0) && bucket.totalOpenRisk.gt(0)
           ? bucket.totalOpenRisk.div(currencyTotalEquity).mul(100)
           : new Decimal(0);
+        // M013/S01: a bucket containing any unpriced open position reports null
+        // for its unrealized aggregates instead of a partial sum.
+        const bucketHasUnpriced = unpricedCurrencies.has(currency);
         totalsByCurrency[currency] = {
           grossRealizedPnl: bucket.grossRealizedPnl.toNumber(),
           netRealizedPnl: bucket.netRealizedPnl.toNumber(),
           totalFees: bucket.totalFees.toNumber(),
-          grossUnrealizedPnl: bucket.grossUnrealizedPnl.toNumber(),
-          netUnrealizedPnl: bucket.netUnrealizedPnl.toNumber(),
+          grossUnrealizedPnl: bucketHasUnpriced ? null : bucket.grossUnrealizedPnl.toNumber(),
+          netUnrealizedPnl: bucketHasUnpriced ? null : bucket.netUnrealizedPnl.toNumber(),
           totalOpenRisk: bucket.totalOpenRisk.toNumber(),
           portfolioHeat: bucket.portfolioHeat.toNumber(),
         };
@@ -610,18 +648,22 @@ export async function GET(request: NextRequest) {
       // The denominator sums one equity per account (unique, not per trade) to avoid
       // double-counting when multiple open positions share an account.
       const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s.plus(v), new Decimal(0));
+      // M013/S01: any unpriced open position makes the aggregate unrealized P&L
+      // unknown — report null (never a partial sum or 0).
+      const unrealizedUnknown = unpricedOpenPositions > 0;
       fullTotals = {
         grossRealizedPnl: decTotals.grossRealizedPnl.toNumber(),
         netRealizedPnl: decTotals.netRealizedPnl.toNumber(),
         totalFees: decTotals.totalFees.toNumber(),
-        grossUnrealizedPnl: decTotals.grossUnrealizedPnl.toNumber(),
-        netUnrealizedPnl: decTotals.netUnrealizedPnl.toNumber(),
+        grossUnrealizedPnl: unrealizedUnknown ? null : decTotals.grossUnrealizedPnl.toNumber(),
+        netUnrealizedPnl: unrealizedUnknown ? null : decTotals.netUnrealizedPnl.toNumber(),
         totalOpenRisk: decTotals.totalOpenRisk.toNumber(),
         portfolioHeatAmount: decTotals.totalOpenRisk.toNumber(),
         portfolioHeatPct:
           totalEquityAcrossAccounts.gt(0) && decTotals.totalOpenRisk.gt(0)
             ? decTotals.totalOpenRisk.div(totalEquityAcrossAccounts).toNumber()
             : 0,
+        unpricedOpenPositions,
       };
     }
 
