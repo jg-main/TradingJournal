@@ -378,10 +378,20 @@ export default function PlanTradeForm({
               quantity: qty || undefined,
             });
 
-            const canCalcRisk = preview.riskPct != null;
-            const canCalcReward = preview.rewardPct != null;
-            const rr = preview.riskRewardRatio != null
-              ? preview.riskRewardRatio.toFixed(2)
+            // Clamp invalid stop direction: calculatePlanRiskRewardPreview returns a
+            // negative riskPct/riskDollar when the stop sits on the wrong side of the
+            // entry (long stop >= entry, short stop <= entry). Null those fields out so
+            // the form shows '—' instead of negative risk, matching the shared
+            // computePlannedRiskAmount contract (R021).
+            const riskIsValid = preview.riskPct == null || preview.riskPct > 0;
+            const previewFinal = riskIsValid
+              ? preview
+              : { ...preview, riskPct: null, riskDollar: null, riskRewardRatio: null };
+
+            const canCalcRisk = previewFinal.riskPct != null;
+            const canCalcReward = previewFinal.rewardPct != null;
+            const rr = previewFinal.riskRewardRatio != null
+              ? previewFinal.riskRewardRatio.toFixed(2)
               : null;
 
             return (
@@ -392,10 +402,10 @@ export default function PlanTradeForm({
                   {canCalcRisk ? (
                     <>
                       <p className="text-lg font-semibold text-foreground">
-                        {preview.riskPct!.toFixed(1)}%
+                        {previewFinal.riskPct!.toFixed(1)}%
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {qty ? `\$${preview.riskDollar!.toFixed(2)}` : '—'}
+                        {qty ? `\$${previewFinal.riskDollar!.toFixed(2)}` : '—'}
                       </p>
                     </>
                   ) : (
@@ -409,10 +419,10 @@ export default function PlanTradeForm({
                   {canCalcReward ? (
                     <>
                       <p className="text-lg font-semibold text-foreground">
-                        {preview.rewardPct!.toFixed(1)}%
+                        {previewFinal.rewardPct!.toFixed(1)}%
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {qty ? `\$${preview.rewardDollar!.toFixed(2)}` : '—'}
+                        {qty ? `\$${previewFinal.rewardDollar!.toFixed(2)}` : '—'}
                       </p>
                     </>
                   ) : (

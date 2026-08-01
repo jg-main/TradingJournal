@@ -5,6 +5,7 @@ import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 import { resolveSetup } from '@/lib/setup-resolver';
+import { computePlannedRiskAmount } from '@/lib/planned-risk';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput, TradeListMetrics } from '@/lib/trade-metrics';
 
@@ -309,20 +310,20 @@ export async function GET(request: NextRequest) {
       const metrics = computeTradeMetrics(metricsInput);
 
       // Compute planned risk-to-account for planned trades
-      // Planned risk = |plannedEntry - plannedStop| * plannedQuantity
-      // as percentage of current account equity
+      // Planned risk = direction-aware |entry - stop| * plannedQuantity
+      // (shared helper returns null for invalid stop directions) as a
+      // percentage of current account equity.
       let plannedRiskToAccount: number | null = null;
-      if (
-        row.status === 'planned' &&
-        row.plannedEntry != null &&
-        row.plannedStop != null &&
-        row.plannedQuantity != null &&
-        row.plannedQuantity > 0 &&
-        currentAccountEquity != null &&
-        currentAccountEquity > 0
-      ) {
-        const plannedRiskAmount = new Decimal(Math.abs(row.plannedEntry - row.plannedStop)).mul(new Decimal(row.plannedQuantity));
-        plannedRiskToAccount = plannedRiskAmount.div(new Decimal(currentAccountEquity)).toNumber();
+      if (row.status === 'planned' && currentAccountEquity != null && currentAccountEquity > 0) {
+        const plannedRiskAmount = computePlannedRiskAmount(
+          row.direction,
+          row.plannedEntry,
+          row.plannedStop,
+          row.plannedQuantity,
+        );
+        if (plannedRiskAmount != null) {
+          plannedRiskToAccount = new Decimal(plannedRiskAmount).div(new Decimal(currentAccountEquity)).toNumber();
+        }
       }
 
       // Strip FIFO debugging detail for the list view; full metrics remain available
@@ -649,6 +650,7 @@ export async function GET(request: NextRequest) {
 
     const plannedRows = db
       .select({
+        direction: trades.direction,
         plannedEntry: trades.plannedEntry,
         plannedStop: trades.plannedStop,
         plannedQuantity: trades.plannedQuantity,
@@ -659,8 +661,9 @@ export async function GET(request: NextRequest) {
 
     const plannedTotals = {
       totalPlannedRisk: plannedRows.reduce((sum, r) => {
-        if (r.plannedEntry != null && r.plannedStop != null && r.plannedQuantity != null && r.plannedQuantity > 0) {
-          return sum.plus(new Decimal(Math.abs(r.plannedEntry - r.plannedStop)).mul(new Decimal(r.plannedQuantity)));
+        const risk = computePlannedRiskAmount(r.direction, r.plannedEntry, r.plannedStop, r.plannedQuantity);
+        if (risk != null) {
+          return sum.plus(new Decimal(risk));
         }
         return sum;
       }, new Decimal(0)).toNumber(),

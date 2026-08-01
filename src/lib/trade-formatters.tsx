@@ -8,6 +8,7 @@
  */
 
 import { cn } from '@/lib/utils';
+import { computePlannedRiskAmount } from '@/lib/planned-risk';
 
 // ── Numeric Formatters ─────────────────────────────────────────────────
 
@@ -169,18 +170,22 @@ export function DirectionBadge({ direction }: { direction: string | null | undef
 
 // ── Computed Helpers for Planned Trades ───────────────────────────────
 
-/** Compute planned trade risk amount (absolute dollar risk) */
+/**
+ * Compute planned trade risk amount (absolute dollar risk).
+ *
+ * Delegates to the shared direction-aware helper `computePlannedRiskAmount`
+ * (src/lib/planned-risk.ts) so the Planned Risk column, Planned Risk to
+ * Account, planned totals, and planning preview all agree on one source of
+ * truth. Returns null for invalid stop directions (long stop >= entry,
+ * short stop <= entry) instead of a misleading positive value.
+ */
 export function computePlannedRisk(
   direction: string | null | undefined,
   entry: number | null | undefined,
   stop: number | null | undefined,
   quantity: number | null | undefined,
 ): number | null {
-  if (!entry || !stop || !quantity || quantity <= 0) return null;
-  if (!direction) return null;
-  const diff = direction === 'long' ? entry - stop : stop - entry;
-  if (diff <= 0) return null;
-  return diff * quantity;
+  return computePlannedRiskAmount(direction, entry, stop, quantity);
 }
 
 /** Compute planned risk:reward ratio */
