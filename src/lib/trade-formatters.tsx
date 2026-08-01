@@ -204,33 +204,52 @@ export function computePlannedRR(
 }
 
 /**
- * Distance from the current market price to the active stop, as a decimal
- * fraction (e.g. 0.05 → "5.00%" after formatPercent).
+ * Distance from the current market price to the active stop, as a signed
+ * decimal fraction (e.g. 0.05 → "+5.00%" after formatPercent).
  *
- * Direction-aware: Math.abs keeps long (stop below market) and short
- * (stop above market) both positive. Returns null when either input is
- * missing or the market price is zero (division guard).
+ * Signed, direction-aware semantics (audit item P1-6):
+ *   long:  (price - stop) / price
+ *   short: (stop - price) / price
+ *
+ * Positive = the stop has not been reached; zero = market at the stop;
+ * negative = the market has crossed the stop. Returns null when either
+ * input is missing or the market price is zero (division guard).
  */
 export function computeDistanceToStop(
   price: number | null | undefined,
   stop: number | null | undefined,
+  direction: string | null | undefined,
 ): number | null {
   if (price == null || stop == null || price === 0) return null;
+  if (direction === 'long') return (price - stop) / price;
+  if (direction === 'short') return (stop - price) / price;
+  // Unknown/missing direction: preserve historical behavior for callers
+  // that predate the direction argument.
   return Math.abs((price - stop) / price);
 }
 
 /**
  * Distance from the current market price to the planned entry trigger, as a
- * decimal fraction (e.g. 0.04 → "4.00%" after formatPercent).
+ * signed decimal fraction (e.g. 0.04 → "+4.00%" after formatPercent).
  *
- * Direction-aware via Math.abs: works for longs (trigger below market) and
- * shorts (trigger above market). Returns null when either input is missing
- * or the trigger price is zero (division guard).
+ * Signed, direction-aware semantics (audit item P1-6); positive is defined
+ * as distance remaining:
+ *   long:  (trigger - current) / trigger
+ *   short: (current - trigger) / trigger
+ *
+ * Positive = the level has not been reached; zero = market at the level;
+ * negative = the market has crossed the level. Returns null when either
+ * input is missing or the trigger price is zero (division guard).
  */
 export function computeDistanceToTrigger(
   current: number | null | undefined,
   trigger: number | null | undefined,
+  direction: string | null | undefined,
 ): number | null {
   if (current == null || trigger == null || trigger === 0) return null;
+  if (direction === 'long') return (trigger - current) / trigger;
+  if (direction === 'short') return (current - trigger) / trigger;
+  // Unknown/missing direction: preserve historical behavior for callers
+  // that predate the direction argument.
   return Math.abs((current - trigger) / trigger);
 }

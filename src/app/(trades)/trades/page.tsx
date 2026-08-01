@@ -560,7 +560,7 @@ const openColumns: ColumnDef<TradeRow>[] = [
     id: 'distanceToStop',
     header: 'Dist to Stop %',
     accessorFn: (row) =>
-      computeDistanceToStop(row.currentPrice, row.metrics?.risk?.activeStop),
+      computeDistanceToStop(row.currentPrice, row.metrics?.risk?.activeStop, row.direction),
     cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
   },
   {
@@ -986,7 +986,7 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
     id: 'distanceToTrigger',
     header: 'Dist to Trigger',
     accessorFn: (row) =>
-      computeDistanceToTrigger(row.currentPrice, row.plannedEntry),
+      computeDistanceToTrigger(row.currentPrice, row.plannedEntry, row.direction),
     cell: ({ getValue }) => <PercentCell value={getValue<number | null>()} />,
   },
   {
