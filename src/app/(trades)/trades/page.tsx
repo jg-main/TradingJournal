@@ -218,20 +218,23 @@ function PaginationControls({
   );
 }
 
-/** A single totals group rendered as labelled items (closed-tab per-currency) */
+/** A single totals group rendered as labelled items (closed-tab totals + optional trade count) */
 function TotalsGroup({
   label,
   totals,
   currency,
+  count,
 }: {
   label?: string;
   totals: TradesResponse['totals'];
   currency?: string;
+  count?: number;
 }) {
   const items = [
     { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} /> },
     { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees, currency)}</span> },
     { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} /> },
+    ...(count != null ? [{ label: 'Trades', content: <span className="tabular-nums">{count}</span> }] : []),
   ];
 
   return (
@@ -256,7 +259,6 @@ function TotalsGroup({
 /** Totals summary card rendered below the DynamicTable */
 function TotalsFooter({
   totals,
-  totalsByCurrency,
   tabId,
   plannedTotals,
   count,
@@ -291,18 +293,24 @@ function TotalsFooter({
     );
   }
 
-  // Open tab: single authoritative Portfolio Heat section ($/%/N).
-  // portfolioHeatAmount is the sum of open risk across all currencies (== totalOpenRisk).
-  // portfolioHeatPct follows the M010 decimal-fraction contract (0.0125 = 1.25%),
-  // displayed via ×100 formatting. The per-currency totalsByCurrency structure is
-  // preserved on the response for S02 but no longer duplicated in this footer.
+  // Open tab: single authoritative 'Open Positions Total' section.
+  // Unrealized P&L (net) is restored alongside Portfolio Heat $/% and the open
+  // position count. portfolioHeatAmount is the sum of open risk across all
+  // currencies (== totalOpenRisk). portfolioHeatPct follows the M010
+  // decimal-fraction contract (0.0125 = 1.25%), displayed via ×100 formatting.
+  // The per-currency totalsByCurrency structure is preserved on the response
+  // for S02 but no longer duplicated in this footer.
   if (tabId === 'open') {
     return (
       <div className="mt-3 rounded-lg border bg-muted/30 p-4">
         <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Portfolio Heat
+          Open Positions Total
         </div>
         <div className="flex flex-wrap gap-x-8 gap-y-2">
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground">Unrealized P&L</span>
+            <span className="text-lg font-semibold tabular-nums"><PnlCell value={totals.netUnrealizedPnl} /></span>
+          </div>
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">Portfolio Heat $</span>
             <span className="text-lg font-semibold tabular-nums">{formatCurrency(totals.portfolioHeatAmount ?? 0)}</span>
@@ -312,7 +320,7 @@ function TotalsFooter({
             <span className="text-lg font-semibold tabular-nums">{((totals.portfolioHeatPct ?? 0) * 100).toFixed(2)}%</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-xs text-muted-foreground">Positions</span>
+            <span className="text-xs text-muted-foreground">Open Positions</span>
             <span className="text-lg font-semibold tabular-nums">{count}</span>
           </div>
         </div>
@@ -320,30 +328,12 @@ function TotalsFooter({
     );
   }
 
-  // Closed tab: Closed Totals + per-currency breakdown (unchanged)
-  const currencies = Object.keys(totalsByCurrency ?? {});
-
+  // Closed tab: single authoritative 'Closed Trades Total' section (R023).
+  // The top-level totals are the single-currency view; the per-currency
+  // breakdown is no longer surfaced in this footer.
   return (
     <div className="mt-3 rounded-lg border bg-muted/30 p-4">
-      <TotalsGroup label="Closed Totals" totals={totals} />
-      {currencies.length > 0 && (
-        <>
-          <hr className="my-4 border-border" />
-          <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            By Currency
-          </div>
-          <div className="space-y-4">
-            {currencies.map((currency) => (
-              <TotalsGroup
-                key={currency}
-                label={currency}
-                totals={totalsByCurrency![currency]}
-                currency={currency}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      <TotalsGroup label="Closed Trades Total" totals={totals} count={count} />
     </div>
   );
 }

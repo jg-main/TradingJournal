@@ -552,7 +552,7 @@ function makeMinimalTradeRow(overrides?: Partial<{
 }
 
 describe('Footer totals', () => {
-  it('renders a single Portfolio Heat section ($/%/N) in the open tab footer, without By Currency', async () => {
+  it('renders a single Open Positions Total section (Unrealized P&L, Portfolio Heat $/%, Open Positions) in the open tab footer, without By Currency', async () => {
     setupFetchMocks(async (url) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
       if (urlStr === '/api/accounts') {
@@ -577,19 +577,21 @@ describe('Footer totals', () => {
 
     const openTab = screen.getByTestId('tab-content-open');
     await vi.waitFor(() => {
-      // Single authoritative Portfolio Heat section with $, %, and N positions
-      expect(within(openTab).getByText('Portfolio Heat')).toBeTruthy();
+      // Single authoritative Open Positions Total section with Unrealized P&L,
+      // Portfolio Heat $/% and the open position count.
+      expect(within(openTab).getByText('Open Positions Total')).toBeTruthy();
+      expect(within(openTab).getByText('Unrealized P&L')).toBeTruthy();
+      expect(within(openTab).getByText('$490.00')).toBeTruthy();
       expect(within(openTab).getByText('Portfolio Heat $')).toBeTruthy();
       expect(within(openTab).getByText('$800.00')).toBeTruthy();
       expect(within(openTab).getByText('Portfolio Heat %')).toBeTruthy();
       expect(within(openTab).getByText('1.25%')).toBeTruthy();
-      expect(within(openTab).getByText('Positions')).toBeTruthy();
+      expect(within(openTab).getByText('Open Positions')).toBeTruthy();
       expect(within(openTab).getByText('2')).toBeTruthy();
-      // No duplicate display: no By Currency / per-currency labels / old Open Positions Total group
+      // No duplicate display: no By Currency / per-currency labels / standalone Portfolio Heat header
       expect(within(openTab).queryByText('By Currency')).toBeNull();
       expect(within(openTab).queryByText('USD')).toBeNull();
-      expect(within(openTab).queryByText('Open Positions Total')).toBeNull();
-      expect(within(openTab).queryByText('Unrealized P&L')).toBeNull();
+      expect(within(openTab).queryByText('Portfolio Heat')).toBeNull();
     });
   });
 
@@ -643,13 +645,13 @@ describe('Footer totals', () => {
     const openTab = screen.getByTestId('tab-content-open');
     await vi.waitFor(() => {
       // Section still renders with zeroed amounts rather than disappearing
-      expect(within(openTab).getByText('Portfolio Heat')).toBeTruthy();
+      expect(within(openTab).getByText('Open Positions Total')).toBeTruthy();
       expect(within(openTab).getByText('$0.00')).toBeTruthy();
       expect(within(openTab).getByText('0.00%')).toBeTruthy();
     });
   });
 
-  it('keeps the Closed Totals + By Currency footer on the closed tab unchanged', async () => {
+  it('renders a single Closed Trades Total section (Gross P&L, Fees, Net P&L, Trades) on the closed tab footer, without By Currency', async () => {
     setupFetchMocks(async (url) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
       if (urlStr === '/api/accounts') {
@@ -674,14 +676,17 @@ describe('Footer totals', () => {
 
     const closedTab = screen.getByTestId('tab-content-closed');
     await vi.waitFor(() => {
-      expect(within(closedTab).getByText('Closed Totals')).toBeTruthy();
-      // Gross/Net P&L and Fees appear in both the totals group and per-currency groups
-      expect(within(closedTab).getAllByText('Gross P&L').length).toBeGreaterThanOrEqual(1);
-      expect(within(closedTab).getAllByText('Net P&L').length).toBeGreaterThanOrEqual(1);
-      expect(within(closedTab).getAllByText('Fees').length).toBeGreaterThanOrEqual(1);
-      expect(within(closedTab).getByText('By Currency')).toBeTruthy();
-      expect(within(closedTab).getByText('USD')).toBeTruthy();
-      expect(within(closedTab).getByText('EUR')).toBeTruthy();
+      expect(within(closedTab).getByText('Closed Trades Total')).toBeTruthy();
+      // Gross/Net P&L, Fees, and the trade count appear exactly once in the single totals section
+      expect(within(closedTab).getAllByText('Gross P&L').length).toBe(1);
+      expect(within(closedTab).getAllByText('Net P&L').length).toBe(1);
+      expect(within(closedTab).getAllByText('Fees').length).toBe(1);
+      expect(within(closedTab).getByText('Trades')).toBeTruthy();
+      expect(within(closedTab).getByText('1')).toBeTruthy();
+      // No per-currency breakdown: no By Currency header, no currency labels
+      expect(within(closedTab).queryByText('By Currency')).toBeNull();
+      expect(within(closedTab).queryByText('USD')).toBeNull();
+      expect(within(closedTab).queryByText('EUR')).toBeNull();
       // Closed tab never shows Portfolio Heat
       expect(within(closedTab).queryByText('Portfolio Heat')).toBeNull();
     });
