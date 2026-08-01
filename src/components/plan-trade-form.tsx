@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { calculatePlanRiskRewardPreview } from '@/lib/position-sizing';
+import { computePlannedRiskAmount } from '@/lib/planned-risk';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -94,6 +95,24 @@ export default function PlanTradeForm({
   const activeAccounts = accounts.filter((a) => a.isActive);
   const activeSetups = setups.filter((s) => s.isActive);
 
+  // R025: derive the wrong-side planned stop condition from the direction and
+  // price fields using the canonical direction-aware validity check (R021).
+  // computePlannedRiskAmount returns null whenever the stop sits on the wrong
+  // side of the entry (long stop >= entry, short stop <= entry). The check only
+  // runs when both fields hold positive numeric values — partial entries (only
+  // entry, only stop, neither) are never flagged.
+  const plannedEntryNum = parseFloat(form.plannedEntry);
+  const plannedStopNum = parseFloat(form.plannedStop);
+  const wrongSideStop =
+    plannedEntryNum > 0 &&
+    plannedStopNum > 0 &&
+    computePlannedRiskAmount(form.direction, plannedEntryNum, plannedStopNum, 1) == null;
+  const wrongSideStopMessage = wrongSideStop
+    ? form.direction === 'long'
+      ? 'Planned stop must be below the planned entry for a long trade.'
+      : 'Planned stop must be above the planned entry for a short trade.'
+    : null;
+
   const updateField = <K extends keyof TradeForm>(
     field: K,
     value: TradeForm[K]
@@ -123,6 +142,14 @@ export default function PlanTradeForm({
 
     if (!form.symbol.trim()) {
       setError('Symbol is required.');
+      return;
+    }
+
+    // R025: block submission when the planned stop sits on the wrong side of
+    // the planned entry. The inline error below Stop Loss is already rendered;
+    // surface the same message in the banner and refuse to send the payload.
+    if (wrongSideStop) {
+      setError(wrongSideStopMessage);
       return;
     }
 
@@ -323,7 +350,18 @@ export default function PlanTradeForm({
                 value={form.plannedStop}
                 onChange={(e) => updateField('plannedStop', e.target.value)}
                 disabled={submitting}
+                aria-invalid={wrongSideStop || undefined}
+                aria-describedby={wrongSideStop ? 'plan-plannedStop-error' : undefined}
               />
+              {wrongSideStop && (
+                <p
+                  id="plan-plannedStop-error"
+                  role="alert"
+                  className="text-xs font-medium text-red-600 dark:text-red-400"
+                >
+                  {wrongSideStopMessage}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <div className="flex items-center gap-1">
