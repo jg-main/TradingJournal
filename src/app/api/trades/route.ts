@@ -391,27 +391,12 @@ export async function GET(request: NextRequest) {
       unpricedOpenPositions: 0,
     };
 
-    // Per-currency totals buckets — hoisted outside the if-block for response access
-    const totalsByCurrency: Record<
-      string,
-      {
-        grossRealizedPnl: number;
-        netRealizedPnl: number;
-        totalFees: number;
-        grossUnrealizedPnl: number | null;
-        netUnrealizedPnl: number | null;
-        totalOpenRisk: number;
-        portfolioHeat: number;
-      }
-    > = {};
-
-    // Open positions lacking a market mark (M013/S01): count + affected currencies.
-    // A position is "open" when it has open quantity (metrics.size.openQuantity > 0),
-    // matching the computeTradeMetrics guard for unrealized P&L (currentMark != null
+    // Open positions lacking a market mark (M013/S01): count of open positions
+    // (metrics.size.openQuantity > 0) with no currentPrice mark, matching the
+    // computeTradeMetrics guard for unrealized P&L (currentMark != null
     // && openAvgCost != null && openQuantity > 0). Planned/closed rows contribute
     // openQuantity 0 and can never block the aggregate.
     let unpricedOpenPositions = 0;
-    const unpricedCurrencies = new Set<string>();
 
     if (allMatchingIdsR.length > 0) {
       const allTradeIds = allMatchingIdsR.map((r) => r.id);
@@ -445,7 +430,6 @@ export async function GET(request: NextRequest) {
         .where(inArray(accounts.id, allUniqueAccountIds.filter(Boolean)))
         .all();
       const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
-      const allAccountCurrencyMap = new Map(allAccountRows.map((a) => [a.id, a.currency ?? 'USD']));
 
       // Batch-fetch latest rollforward per account for totals computation
       const allLatestRollforwardMap = new Map<string, typeof accountRollforward.$inferSelect>();
@@ -487,7 +471,6 @@ export async function GET(request: NextRequest) {
       // (one equity per account to avoid double-counting). Monetary values are
       // held as Decimal.js throughout the aggregation (P2 hardening).
       const totalEquityByAccount = new Map<string, Decimal>();
-      const currencyEquityByAccount = new Map<string, Map<string, Decimal>>();
 
       // Decimal.js accumulators — no plain floating-point reduction of monetary
       // aggregates anywhere in the totals pipeline.
@@ -499,19 +482,6 @@ export async function GET(request: NextRequest) {
         netUnrealizedPnl: new Decimal(0),
         totalOpenRisk: new Decimal(0),
       };
-      const decCurrencyBuckets: Record<
-        string,
-        {
-          grossRealizedPnl: Decimal;
-          netRealizedPnl: Decimal;
-          totalFees: Decimal;
-          grossUnrealizedPnl: Decimal;
-          netUnrealizedPnl: Decimal;
-          totalOpenRisk: Decimal;
-          portfolioHeat: Decimal;
-        }
-      > = {};
-
       // Compute metrics for every matching trade and aggregate
       for (const row of allMatchingIdsR) {
         const executions = allExecMap.get(row.id) ?? [];
@@ -563,36 +533,15 @@ export async function GET(request: NextRequest) {
 
         const metrics = computeTradeMetrics(metricsInput);
 
-        const currency = allAccountCurrencyMap.get(row.accountId) ?? 'USD';
-
-        // M013/S01: count open positions without a market mark and remember the
-        // currencies they belong to so per-currency unrealized aggregates can be
-        // nulled independently (a priced USD bucket stays numeric when only an EUR
-        // position is unpriced).
+        // M013/S01: count open positions without a market mark so the aggregate
+        // unrealized P&L is reported null when any position is unpriced.
         if (metrics.size.openQuantity > 0 && row.currentPrice == null) {
           unpricedOpenPositions += 1;
-          unpricedCurrencies.add(currency);
         }
 
         // Track unique per-account equity for portfolioHeat denominator
         if (currentAccountEquity != null && !totalEquityByAccount.has(row.accountId)) {
           totalEquityByAccount.set(row.accountId, new Decimal(currentAccountEquity));
-          if (!currencyEquityByAccount.has(currency)) {
-            currencyEquityByAccount.set(currency, new Map());
-          }
-          currencyEquityByAccount.get(currency)!.set(row.accountId, new Decimal(currentAccountEquity));
-        }
-
-        if (!decCurrencyBuckets[currency]) {
-          decCurrencyBuckets[currency] = {
-            grossRealizedPnl: new Decimal(0),
-            netRealizedPnl: new Decimal(0),
-            totalFees: new Decimal(0),
-            grossUnrealizedPnl: new Decimal(0),
-            netUnrealizedPnl: new Decimal(0),
-            totalOpenRisk: new Decimal(0),
-            portfolioHeat: new Decimal(0),
-          };
         }
 
         const gRP = new Decimal(metrics.realizedPnl.grossRealizedPnl ?? 0);
@@ -608,37 +557,6 @@ export async function GET(request: NextRequest) {
         decTotals.grossUnrealizedPnl = decTotals.grossUnrealizedPnl.plus(gUP);
         decTotals.netUnrealizedPnl = decTotals.netUnrealizedPnl.plus(nUP);
         decTotals.totalOpenRisk = decTotals.totalOpenRisk.plus(oR);
-
-        const bucket = decCurrencyBuckets[currency];
-        bucket.grossRealizedPnl = bucket.grossRealizedPnl.plus(gRP);
-        bucket.netRealizedPnl = bucket.netRealizedPnl.plus(nRP);
-        bucket.totalFees = bucket.totalFees.plus(tF);
-        bucket.grossUnrealizedPnl = bucket.grossUnrealizedPnl.plus(gUP);
-        bucket.netUnrealizedPnl = bucket.netUnrealizedPnl.plus(nUP);
-        bucket.totalOpenRisk = bucket.totalOpenRisk.plus(oR);
-      }
-
-      // Compute per-currency portfolioHeat (Decimal.js) and emit numeric response buckets
-      for (const [currency, bucket] of Object.entries(decCurrencyBuckets)) {
-        const currencyEquities = currencyEquityByAccount.get(currency);
-        const currencyTotalEquity = currencyEquities
-          ? [...currencyEquities.values()].reduce((s, v) => s.plus(v), new Decimal(0))
-          : new Decimal(0);
-        bucket.portfolioHeat = currencyTotalEquity.gt(0) && bucket.totalOpenRisk.gt(0)
-          ? bucket.totalOpenRisk.div(currencyTotalEquity).mul(100)
-          : new Decimal(0);
-        // M013/S01: a bucket containing any unpriced open position reports null
-        // for its unrealized aggregates instead of a partial sum.
-        const bucketHasUnpriced = unpricedCurrencies.has(currency);
-        totalsByCurrency[currency] = {
-          grossRealizedPnl: bucket.grossRealizedPnl.toNumber(),
-          netRealizedPnl: bucket.netRealizedPnl.toNumber(),
-          totalFees: bucket.totalFees.toNumber(),
-          grossUnrealizedPnl: bucketHasUnpriced ? null : bucket.grossUnrealizedPnl.toNumber(),
-          netUnrealizedPnl: bucketHasUnpriced ? null : bucket.netUnrealizedPnl.toNumber(),
-          totalOpenRisk: bucket.totalOpenRisk.toNumber(),
-          portfolioHeat: bucket.portfolioHeat.toNumber(),
-        };
       }
 
       // Top-level portfolioHeat — single authoritative value for the open tab footer.
@@ -724,7 +642,6 @@ export async function GET(request: NextRequest) {
       page,
       limit,
       totals: fullTotals,
-      totalsByCurrency,
       plannedTotals,
     });
   } catch (error) {
