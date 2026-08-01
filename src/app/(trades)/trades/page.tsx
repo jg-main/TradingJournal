@@ -75,12 +75,17 @@ interface TotalsShape {
   grossRealizedPnl: number;
   netRealizedPnl: number;
   totalFees: number;
-  grossUnrealizedPnl: number;
-  netUnrealizedPnl: number;
+  // M013/S01: unrealized aggregates are null when any open position lacks a
+  // currentPrice market mark — never a partial sum presented as complete.
+  grossUnrealizedPnl: number | null;
+  netUnrealizedPnl: number | null;
   totalOpenRisk: number;
   portfolioHeat?: number;
   portfolioHeatAmount?: number;
   portfolioHeatPct?: number;
+  // M013/S01: machine-readable count of open positions blocking the unrealized
+  // aggregate (optional for backward compat with older responses / fallback state).
+  unpricedOpenPositions?: number;
 }
 
 interface PlannedTotalsShape {
@@ -257,6 +262,48 @@ function TotalsGroup({
 }
 
 /** Totals summary card rendered below the DynamicTable */
+
+/**
+ * M013/S01: Unrealized P&L aggregate completeness states for the Open footer.
+ * The totals route returns null (never 0) for netUnrealizedPnl when any open
+ * position lacks a currentPrice market mark, plus an unpricedOpenPositions
+ * count. The footer must never present a partial or unknown aggregate as a
+ * complete-looking number:
+ *  - numeric value       → all open positions priced (normal aggregate)
+ *  - null, all unpriced  → "Awaiting market prices"
+ *  - null, some unpriced → "Partial — N unpriced"
+ */
+function UnrealizedPnlFooterValue({
+  totals,
+  count,
+}: {
+  totals: TradesResponse['totals'];
+  count: number;
+}) {
+  if (totals.netUnrealizedPnl !== null && totals.netUnrealizedPnl !== undefined) {
+    return <PnlCell value={totals.netUnrealizedPnl} />;
+  }
+  const unpriced = totals.unpricedOpenPositions ?? 0;
+  if (unpriced > 0 && unpriced >= count) {
+    // Every open position lacks a market mark — the aggregate is entirely unknown.
+    return (
+      <span className="text-lg font-semibold tabular-nums italic text-muted-foreground">
+        Awaiting market prices
+      </span>
+    );
+  }
+  if (unpriced > 0) {
+    // Some positions priced, some not — the aggregate is partial, never complete.
+    return (
+      <span className="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-500">
+        Partial — {unpriced} unpriced
+      </span>
+    );
+  }
+  // Defensive: null aggregate without an unpriced count — render the null placeholder.
+  return <PnlCell value={null} />;
+}
+
 function TotalsFooter({
   totals,
   tabId,
@@ -309,7 +356,7 @@ function TotalsFooter({
         <div className="flex flex-wrap gap-x-8 gap-y-2">
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">Unrealized P&L</span>
-            <span className="text-lg font-semibold tabular-nums"><PnlCell value={totals.netUnrealizedPnl} /></span>
+            <UnrealizedPnlFooterValue totals={totals} count={count} />
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">Portfolio Heat $</span>
@@ -1094,9 +1141,9 @@ function TradesPageInner() {
     planned: 0,
   });
   const [tabTotals, setTabTotals] = useState<Record<TabId, TradesResponse['totals']>>({
-    open: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
-    closed: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
-    planned: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+    open: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, unpricedOpenPositions: 0 },
+    closed: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, unpricedOpenPositions: 0 },
+    planned: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, unpricedOpenPositions: 0 },
   });
   const [plannedTotalsState, setPlannedTotalsState] = useState<PlannedTotalsShape>({
     totalPlannedRisk: 0,

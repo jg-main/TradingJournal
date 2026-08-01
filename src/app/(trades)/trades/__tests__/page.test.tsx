@@ -595,6 +595,99 @@ describe('Footer totals', () => {
     });
   });
 
+  it('renders a partial Unrealized P&L state with the unpriced count when some open positions lack a market mark', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow(), makeMinimalTradeRow({ id: 't2', symbol: 'MSFT' })],
+          total: 2,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: null, netUnrealizedPnl: null, totalOpenRisk: 800, portfolioHeatAmount: 800, portfolioHeatPct: 0.0125, unpricedOpenPositions: 1 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const openTab = screen.getByTestId('tab-content-open');
+    await vi.waitFor(() => {
+      // M013/S01 partial state: one of two open positions lacks a market mark.
+      // The aggregate is never presented as a complete-looking number.
+      expect(within(openTab).getByText('Open Positions Total')).toBeTruthy();
+      expect(within(openTab).getByText('Unrealized P&L')).toBeTruthy();
+      expect(within(openTab).getByText('Partial — 1 unpriced')).toBeTruthy();
+      expect(within(openTab).queryByText('Awaiting market prices')).toBeNull();
+      expect(within(openTab).queryByText('$490.00')).toBeNull();
+      expect(within(openTab).queryByText('$0.00')).toBeNull();
+    });
+  });
+
+  it('renders "Awaiting market prices" when every open position lacks a market mark', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow(), makeMinimalTradeRow({ id: 't2', symbol: 'MSFT' })],
+          total: 2,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: null, netUnrealizedPnl: null, totalOpenRisk: 800, portfolioHeatAmount: 800, portfolioHeatPct: 0.0125, unpricedOpenPositions: 2 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const openTab = screen.getByTestId('tab-content-open');
+    await vi.waitFor(() => {
+      // M013/S01 all-unpriced state: the aggregate is entirely unknown —
+      // explicit awaiting copy instead of a misleading $0.00 or blank.
+      expect(within(openTab).getByText('Open Positions Total')).toBeTruthy();
+      expect(within(openTab).getByText('Awaiting market prices')).toBeTruthy();
+      expect(within(openTab).queryByText(/Partial —/)).toBeNull();
+      expect(within(openTab).queryByText('$490.00')).toBeNull();
+      expect(within(openTab).queryByText('$0.00')).toBeNull();
+    });
+  });
+
+  it('keeps the numeric Unrealized P&L aggregate when all open positions are priced (unpricedOpenPositions: 0)', async () => {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({
+          data: [makeMinimalTradeRow()],
+          total: 1,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 500, netUnrealizedPnl: 490, totalOpenRisk: 800, portfolioHeatAmount: 800, portfolioHeatPct: 0.0125, unpricedOpenPositions: 0 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const openTab = screen.getByTestId('tab-content-open');
+    await vi.waitFor(() => {
+      // M013/S01 all-priced state: the normal numeric aggregate is preserved
+      // when the route reports zero unpriced open positions.
+      expect(within(openTab).getByText('Open Positions Total')).toBeTruthy();
+      expect(within(openTab).getByText('$490.00')).toBeTruthy();
+      expect(within(openTab).queryByText('Awaiting market prices')).toBeNull();
+      expect(within(openTab).queryByText(/Partial —/)).toBeNull();
+    });
+  });
+
   it('formats Portfolio Heat % from the decimal-fraction portfolioHeatPct (×100)', async () => {
     setupFetchMocks(async (url) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
