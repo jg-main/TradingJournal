@@ -19,6 +19,7 @@ import Decimal from 'decimal.js';
 import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
+import { computePlannedRiskAmount } from '@/lib/planned-risk';
 
 let passed = 0;
 let failed = 0;
@@ -784,6 +785,23 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
       return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { direction: ['Invalid enum value. Expected long | short'] } } } };
     }
 
+    // R025: reject wrong-side planned stops (mirror of POST /api/trades route).
+    // Uses the same canonical direction-aware validity check as the route:
+    // when both plannedEntry and plannedStop are supplied, computePlannedRiskAmount
+    // returns null for a stop on the wrong side of the entry (long stop >= entry,
+    // short stop <= entry). Partial/null combinations skip the check.
+    const plannedEntryRaw = body.plannedEntry as number | null | undefined;
+    const plannedStopRaw = body.plannedStop as number | null | undefined;
+    if (plannedEntryRaw != null && plannedStopRaw != null) {
+      const risk = computePlannedRiskAmount(direction, plannedEntryRaw, plannedStopRaw, 1);
+      if (risk == null) {
+        const stopMsg = direction === 'long'
+          ? 'Planned stop must be below the planned entry for a long trade.'
+          : 'Planned stop must be above the planned entry for a short trade.';
+        return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { plannedStop: [stopMsg] }, formErrors: [] } } };
+      }
+    }
+
     // Resolve account: settings.defaultAccountId first, then first active account
     const setting = db.select().from(schema.settings).get() as Record<string, unknown> | undefined;
     let accountId: string | undefined;
@@ -1176,6 +1194,97 @@ console.log('\n12. POST returns 400 when no active accounts exist:');
   assert(result.status === 400, 'returns 400');
   const data = result.data as { error: string };
   assert(data.error.includes('No active account'), 'error mentions no active account');
+}
+
+// ── 12a. POST: Rejects wrong-side long planned stop (stop >= entry) ──
+
+console.log('\n12a. POST rejects long planned stop >= planned entry:');
+{
+  cleanup();
+  seedAccount({ name: 'Trading Account' });
+
+  const before = db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades).get()?.count ?? 0;
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 105 });
+  assert(result.status === 400, 'long wrong-side stop returns 400');
+  const data = result.data as { error: string; details: { fieldErrors: Record<string, string[] | undefined> } };
+  assertEqual(data.error, 'Validation failed', 'error is Validation failed');
+  assertEqual(data.details.fieldErrors.plannedStop?.length, 1, 'field error targets plannedStop with one message');
+  assert((data.details.fieldErrors.plannedStop?.[0] ?? '').includes('below'), 'long error message says stop must be below entry');
+
+  const after = db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades).get()?.count ?? 0;
+  assertEqual(after, before, 'no trade row inserted on rejection');
+}
+
+// ── 12b. POST: Rejects wrong-side short planned stop (stop <= entry) ──
+
+console.log('\n12b. POST rejects short planned stop <= planned entry:');
+{
+  cleanup();
+  seedAccount({ name: 'Trading Account' });
+
+  const before = db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades).get()?.count ?? 0;
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'short', plannedEntry: 100, plannedStop: 95 });
+  assert(result.status === 400, 'short wrong-side stop returns 400');
+  const data = result.data as { error: string; details: { fieldErrors: Record<string, string[] | undefined> } };
+  assertEqual(data.error, 'Validation failed', 'error is Validation failed');
+  assertEqual(data.details.fieldErrors.plannedStop?.length, 1, 'field error targets plannedStop with one message');
+  assert((data.details.fieldErrors.plannedStop?.[0] ?? '').includes('above'), 'short error message says stop must be above entry');
+
+  const after = db.select({ count: sql<number>`COUNT(*)` }).from(schema.trades).get()?.count ?? 0;
+  assertEqual(after, before, 'no trade row inserted on rejection');
+}
+
+// ── 12c. POST: Rejects boundary equality (stop == entry) ─────────────
+
+console.log('\n12c. POST rejects planned stop == planned entry (boundary):');
+{
+  cleanup();
+  seedAccount({ name: 'Trading Account' });
+
+  const longResult = doPostTrade({ symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 100 });
+  assert(longResult.status === 400, 'long stop == entry returns 400');
+
+  const shortResult = doPostTrade({ symbol: 'AAPL', direction: 'short', plannedEntry: 100, plannedStop: 100 });
+  assert(shortResult.status === 400, 'short stop == entry returns 400');
+}
+
+// ── 12d. POST: Accepts valid stop configurations ─────────────────────
+
+console.log('\n12d. POST accepts valid long and short stop configurations:');
+{
+  cleanup();
+  seedAccount({ name: 'Trading Account' });
+
+  const longResult = doPostTrade({ symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 95 });
+  assert(longResult.status === 201, 'long entry > stop returns 201');
+  const longData = longResult.data as Record<string, unknown>;
+  assertEqual(longData.plannedStop, 95, 'long plannedStop persisted as 95');
+  assertEqual(longData.plannedEntry, 100, 'long plannedEntry persisted as 100');
+
+  const shortResult = doPostTrade({ symbol: 'MSFT', direction: 'short', plannedEntry: 100, plannedStop: 105 });
+  assert(shortResult.status === 201, 'short stop > entry returns 201');
+  const shortData = shortResult.data as Record<string, unknown>;
+  assertEqual(shortData.plannedStop, 105, 'short plannedStop persisted as 105');
+  assertEqual(shortData.plannedEntry, 100, 'short plannedEntry persisted as 100');
+}
+
+// ── 12e. POST: Partial/null planned fields are not rejected ──────────
+
+console.log('\n12e. POST does not reject partial/null planned field combinations:');
+{
+  cleanup();
+  seedAccount({ name: 'Trading Account' });
+
+  const onlyEntry = doPostTrade({ symbol: 'AAPL', direction: 'long', plannedEntry: 100 });
+  assert(onlyEntry.status === 201, 'only plannedEntry returns 201');
+
+  const onlyStop = doPostTrade({ symbol: 'MSFT', direction: 'long', plannedStop: 95 });
+  assert(onlyStop.status === 201, 'only plannedStop returns 201');
+
+  const neither = doPostTrade({ symbol: 'GOOGL', direction: 'short' });
+  assert(neither.status === 201, 'neither plannedEntry nor plannedStop returns 201');
 }
 
 // ── 13. GET: Date-range filter ─────────────────────────────────────

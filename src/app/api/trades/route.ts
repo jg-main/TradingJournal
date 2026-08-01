@@ -747,6 +747,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // R025: reject wrong-side planned stops before any insert. When both
+    // plannedEntry and plannedStop are supplied, computePlannedRiskAmount is the
+    // canonical direction-aware validity check (R021): it returns null when the
+    // stop sits on the wrong side of the entry (long stop >= entry, short stop
+    // <= entry). Null/partial field combinations (only entry, only stop, neither)
+    // skip this check entirely and are unaffected.
+    if (parsed.data.plannedEntry != null && parsed.data.plannedStop != null) {
+      const risk = computePlannedRiskAmount(
+        parsed.data.direction,
+        parsed.data.plannedEntry,
+        parsed.data.plannedStop,
+        1,
+      );
+      if (risk == null) {
+        const stopMsg =
+          parsed.data.direction === 'long'
+            ? 'Planned stop must be below the planned entry for a long trade.'
+            : 'Planned stop must be above the planned entry for a short trade.';
+        return NextResponse.json(
+          {
+            error: 'Validation failed',
+            details: {
+              fieldErrors: { plannedStop: [stopMsg] },
+              formErrors: [],
+            },
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     // Resolve account: body.accountId overrides the default chain
     let accountId: string | undefined;
 
