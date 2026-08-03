@@ -14,8 +14,8 @@ interface SidebarNavItemProps {
 /**
  * Single sidebar navigation link.
  *
- * Active state: muted fill plus a 3px primary rail on the leading edge
- * (before: pseudo-element) using the --sidebar-primary theme token.
+ * Active state: sidebar accent fill plus a 3px primary rail on the leading
+ * edge (before: pseudo-element) using the --sidebar-primary theme token.
  * Collapsed mode: icon-only, centered, with a right-side tooltip label.
  */
 export function SidebarNavItem({ item, isActive, collapsed = false }: SidebarNavItemProps) {
@@ -29,8 +29,8 @@ export function SidebarNavItem({ item, isActive, collapsed = false }: SidebarNav
         'relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
         collapsed && 'justify-center px-0',
         isActive
-          ? 'bg-muted text-foreground before:absolute before:left-0 before:inset-y-1 before:w-[3px] before:rounded-r-full before:bg-sidebar-primary before:content-[""]'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:inset-y-1 before:w-[3px] before:rounded-r-full before:bg-sidebar-primary before:content-[""]'
+          : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
       )}
     >
       <Icon className="size-4 shrink-0" />

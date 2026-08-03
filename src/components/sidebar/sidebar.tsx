@@ -6,17 +6,13 @@ import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Separator } from '@/components/ui/separator';
-import { NAV_SECTIONS } from './nav-config';
+import { NAV_SECTIONS, resolveActiveHref } from './nav-config';
 import { SidebarNavItem } from './nav-item';
 import { SidebarBrand } from './sidebar-brand';
 import { SidebarAccount } from './sidebar-account';
 import { SidebarValue } from './sidebar-value';
 
 const COLLAPSED_STORAGE_KEY = 'sidebar:collapsed';
-
-function isItemActive(href: string, pathname: string): boolean {
-  return href === '/' ? pathname === '/' : pathname.startsWith(href);
-}
 
 function readCollapsed(): boolean {
   if (typeof window === 'undefined') return false;
@@ -29,6 +25,9 @@ function readCollapsed(): boolean {
 
 export function Sidebar() {
   const pathname = usePathname();
+  // Single active item across all sections; longest-matching-href wins so
+  // nested routes (e.g. /settings/accounts) highlight the specific item.
+  const activeHref = resolveActiveHref(pathname);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed);
 
@@ -64,7 +63,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-30 flex w-56 flex-col border-r bg-background transition-[width,transform] duration-200 md:static md:translate-x-0',
+          'fixed inset-y-0 left-0 z-30 flex w-56 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 md:static md:translate-x-0',
           collapsed && 'md:w-14',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
@@ -79,11 +78,11 @@ export function Sidebar() {
               {effectiveCollapsed ? (
                 index > 0 && (
                   <div className="px-2 pb-2 pt-0">
-                    <Separator />
+                    <Separator className="bg-sidebar-border" />
                   </div>
                 )
               ) : (
-                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
                   {section.label}
                 </div>
               )}
@@ -92,7 +91,7 @@ export function Sidebar() {
                   <SidebarNavItem
                     key={item.href}
                     item={item}
-                    isActive={isItemActive(item.href, pathname)}
+                    isActive={activeHref === item.href}
                     collapsed={effectiveCollapsed}
                   />
                 ))}
@@ -106,14 +105,14 @@ export function Sidebar() {
         {/* Footer */}
         <div
           className={cn(
-            'flex border-t p-2',
+            'flex border-t border-sidebar-border p-2',
             effectiveCollapsed ? 'flex-col items-center gap-1' : 'items-center justify-between'
           )}
         >
           <ThemeToggle />
           <button
             onClick={toggleCollapsed}
-            className="hidden min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
+            className="hidden min-h-11 min-w-11 items-center justify-center rounded-lg text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground md:flex"
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >

@@ -64,3 +64,31 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
 ];
+
+/**
+ * Resolve which nav item's href represents the current pathname.
+ *
+ * Longest-matching-href wins so nested routes highlight the most specific
+ * item: on /settings/accounts the Accounts item is active, not the broader
+ * Settings item at /settings. The root href "/" matches only the exact
+ * path. Returns null when no nav item matches (e.g. a route with no item).
+ */
+export function resolveActiveHref(
+  pathname: string,
+  sections: NavSection[] = NAV_SECTIONS
+): string | null {
+  let best: string | null = null;
+  for (const section of sections) {
+    for (const item of section.items) {
+      if (itemMatches(item.href, pathname) && (best === null || item.href.length > best.length)) {
+        best = item.href;
+      }
+    }
+  }
+  return best;
+}
+
+function itemMatches(href: string, pathname: string): boolean {
+  if (href === '/') return pathname === '/';
+  return pathname === href || pathname.startsWith(`${href}/`);
+}

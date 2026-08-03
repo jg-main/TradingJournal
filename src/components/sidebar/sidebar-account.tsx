@@ -39,10 +39,10 @@ export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
 
   if (loading) {
     return (
-      <div className={cn('border-b p-2', collapsed && 'flex justify-center')}>
+      <div className={cn('border-b border-sidebar-border p-2', collapsed && 'flex justify-center')}>
         <div
           className={cn(
-            'animate-pulse rounded-lg bg-muted',
+            'animate-pulse rounded-lg bg-sidebar-accent',
             collapsed ? 'size-9' : 'h-9 w-full'
           )}
           data-testid="sidebar-account-loading"
@@ -54,9 +54,9 @@ export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
   if (error) {
     if (collapsed) {
       return (
-        <div className="flex justify-center border-b p-2">
+        <div className="flex justify-center border-b border-sidebar-border p-2">
           <div
-            className="flex size-9 items-center justify-center rounded-lg text-red-500"
+            className="flex size-9 items-center justify-center rounded-lg text-destructive"
             title={`Accounts unavailable: ${error}`}
           >
             <Building2 className="size-4" />
@@ -65,8 +65,8 @@ export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
       );
     }
     return (
-      <div className="border-b p-2">
-        <p className="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-600 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+      <div className="border-b border-sidebar-border p-2">
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
           {error}
         </p>
       </div>
@@ -80,13 +80,13 @@ export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
   if (collapsed) {
     const active = accounts.find((a) => a.id === accountId);
     return (
-      <div className="flex justify-center border-b p-2">
+      <div className="flex justify-center border-b border-sidebar-border p-2">
         <DropdownMenu>
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="flex size-9 items-center justify-center rounded-lg text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   aria-label={`Account: ${active?.name ?? 'Select account'}`}
                   data-testid="sidebar-account-collapsed-trigger"
                 >
@@ -116,7 +116,7 @@ export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
   }
 
   return (
-    <div className="border-b p-2" data-testid="sidebar-account">
+    <div className="border-b border-sidebar-border p-2" data-testid="sidebar-account">
       <Select value={accountId} onValueChange={setAccountId}>
         <SelectTrigger
           className="h-9 w-full text-xs"
