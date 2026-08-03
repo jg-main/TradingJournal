@@ -19,6 +19,7 @@ export default defineConfig({
       'src/lib/restore.test.ts',
       'src/lib/__tests__/error-utils.test.ts',
       'src/lib/__tests__/chart-palette.test.ts',
+      'src/lib/__tests__/design-system-docs.test.ts',
       'src/lib/__tests__/token-structure.test.ts',
       'src/lib/__tests__/surface-token-migration.test.ts',
       'src/lib/__tests__/scorecard.test.ts',
