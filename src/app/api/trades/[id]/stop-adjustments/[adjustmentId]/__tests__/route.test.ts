@@ -7,8 +7,11 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { eq } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
@@ -37,78 +40,25 @@ function assertEqual(actual: unknown, expected: unknown, msg: string) {
 }
 
 // ── Setup: test DB ──────────────────────────────────────────────────
+//
+// Always use this test's OWN throwaway DB — never the ambient DB_FILE_NAME
+// (this test used to read it, which let an exported workaround variable
+// redirect table-DROPs onto another suite's database).
+const DB_FILE = './.test-stop-adjustment-by-id.db';
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-stop-adjustment-by-id.db';
+// Start from a clean file so stale tables from previous runs cannot mask
+// schema drift.
+rmSync(DB_FILE, { force: true });
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 const db = drizzle(sqlite, { schema });
 
-// Create tables
-sqlite.exec(`
-  DROP TABLE IF EXISTS settings;
-  DROP TABLE IF EXISTS account_rollforward;
-  DROP TABLE IF EXISTS account_transactions;
-  DROP TABLE IF EXISTS trade_stop_adjustments;
-  DROP TABLE IF EXISTS trade_risk_snapshots;
-  DROP TABLE IF EXISTS trade_mistakes;
-  DROP TABLE IF EXISTS trade_grades;
-  DROP TABLE IF EXISTS trade_executions;
-  DROP TABLE IF EXISTS trade_assets;
-  DROP TABLE IF EXISTS trades;
-  DROP TABLE IF EXISTS watchlist_items;
-  DROP TABLE IF EXISTS weekly_reviews;
-  DROP TABLE IF EXISTS setup_definitions;
-  DROP TABLE IF EXISTS accounts;
-  CREATE TABLE accounts (
-    id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    broker TEXT,
-    currency TEXT DEFAULT 'USD',
-    is_active INTEGER DEFAULT 1,
-    max_risk_per_trade_pct REAL,
-    default_commission REAL,
-    starting_balance REAL,
-    created_at TEXT DEFAULT (current_timestamp),
-    updated_at TEXT DEFAULT (current_timestamp)
-  );
-  CREATE TABLE IF NOT EXISTS trades (
-    id TEXT PRIMARY KEY NOT NULL,
-    trade_code TEXT UNIQUE NOT NULL,
-    account_id TEXT NOT NULL,
-    symbol TEXT NOT NULL,
-    direction TEXT NOT NULL,
-    sector_id TEXT,
-    setup_id TEXT,
-    market_condition_id TEXT,
-    status TEXT NOT NULL,
-    planned_entry REAL,
-    planned_stop REAL,
-    planned_target_1 REAL,
-    planned_target_2 REAL,
-    planned_quantity REAL,
-    thesis TEXT,
-    invalidation_condition TEXT,
-    pre_trade_plan TEXT,
-    opened_at TEXT,
-    closed_at TEXT,
-    exit_notes TEXT,
-    lesson TEXT,
-    created_at TEXT DEFAULT (current_timestamp),
-    updated_at TEXT DEFAULT (current_timestamp)
-  );
-  CREATE TABLE IF NOT EXISTS trade_stop_adjustments (
-    id TEXT PRIMARY KEY NOT NULL,
-    trade_id TEXT NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
-    adjusted_at TEXT,
-    previous_stop REAL,
-    new_stop REAL,
-    reason TEXT,
-    rule_based INTEGER,
-    notes TEXT,
-    created_at TEXT DEFAULT (current_timestamp)
-  );
-`);
+// Apply the project's real migrations instead of hand-written DDL so the
+// test schema can never drift from src/db/schema.ts again (the previous
+// inline CREATE TABLE block was missing current_price and other newer
+// columns).
+migrate(db, { migrationsFolder: join(process.cwd(), 'src/db/migrations') });
 
 // ── Simulated route logic ───────────────────────────────────────────
 

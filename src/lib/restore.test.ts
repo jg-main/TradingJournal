@@ -22,7 +22,15 @@
  * Run: npx vitest run src/lib/restore.test.ts
  */
 
-process.env.DB_FILE_NAME = './.test-restore-vitest.db';
+// vi.hoisted runs BEFORE the file's imports are evaluated, so @/db/index
+// (imported transitively via @/lib/restore -> @/db/index) binds DB_FILE to
+// this throwaway database instead of the real ./.trading-journal/journal.db.
+// Previously the assignment lived in the module body, where ESM import
+// hoisting defeated it (the singleton initialized against the real DB with
+// 740+ open trades, failing the validation suites).
+vi.hoisted(() => {
+  process.env.DB_FILE_NAME = './.test-restore-vitest.db';
+});
 
 import { describe, it, expect, vi } from 'vitest';
 import { mkdirSync, rmSync, mkdtempSync } from 'node:fs';
