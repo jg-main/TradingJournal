@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { EmptyState } from '@/components/empty-state';
+import { withAlpha, type ChartPalette } from '@/lib/chart-palette';
+import { useChartPalette } from '@/hooks/use-chart-palette';
 import type { ProcessScoreBin } from '@/lib/dashboard';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -31,16 +33,34 @@ interface GradeColorConfig {
   labelColor: string;
 }
 
-const GRADE_COLORS: Record<string, GradeColorConfig> = {
-  'A (54-60)': { barColor: '#22c55e', labelColor: '#16a34a' },
-  'B (42-53)': { barColor: '#3b82f6', labelColor: '#2563eb' },
-  'C (30-41)': { barColor: '#f59e0b', labelColor: '#d97706' },
-  'D (18-29)': { barColor: '#f97316', labelColor: '#ea580c' },
-  'F (0-17)':  { barColor: '#ef4444', labelColor: '#dc2626' },
-};
-
-export function getGradeColor(label: string): GradeColorConfig {
-  return GRADE_COLORS[label] ?? { barColor: '#6b7280', labelColor: '#6b7280' };
+/**
+ * Resolve a grade tier's colour from the theme-aware chart palette.
+ *
+ * Grade tiers map to the categorical series stops (chart-1..chart-5):
+ *   A → series[0] (steel blue), B → series[1] (graphite),
+ *   C → series[2] (steel cyan), D → series[3] (indigo),
+ *   E → series[4] (gold; defensive — the rubric only emits A/B/C/D/F).
+ *   F → palette.negative (red): a failing grade reads as a loss.
+ * Unknown labels fall back to palette.missing.
+ */
+export function getGradeColor(label: string, palette: ChartPalette): GradeColorConfig {
+  const letter = /^([A-Za-z])/.exec(label.trim())?.[1]?.toUpperCase();
+  switch (letter) {
+    case 'A':
+      return { barColor: palette.series[0], labelColor: palette.series[0] };
+    case 'B':
+      return { barColor: palette.series[1], labelColor: palette.series[1] };
+    case 'C':
+      return { barColor: palette.series[2], labelColor: palette.series[2] };
+    case 'D':
+      return { barColor: palette.series[3], labelColor: palette.series[3] };
+    case 'E':
+      return { barColor: palette.series[4], labelColor: palette.series[4] };
+    case 'F':
+      return { barColor: palette.negative, labelColor: palette.negative };
+    default:
+      return { barColor: palette.missing, labelColor: palette.missing };
+  }
 }
 
 // ── Chart Option Builder ───────────────────────────────────────────────
@@ -50,13 +70,19 @@ export function getGradeColor(label: string): GradeColorConfig {
  *
  * Single Y-axis showing trade count. Each grade tier (A-F) is a
  * colour-coded bar with the count label displayed directly on top.
+ *
+ * @param bins    Grade distribution bins from the dashboard API
+ * @param palette Active theme's ChartPalette (rebuilds the option on theme switch)
  */
-export function buildChartOption(bins: ProcessScoreBin[]): Record<string, unknown> | null {
+export function buildChartOption(
+  bins: ProcessScoreBin[],
+  palette: ChartPalette,
+): Record<string, unknown> | null {
   if (bins.length === 0) return null;
 
   const labels = bins.map((b) => b.label);
   const counts = bins.map((b) => b.count);
-  const colors = bins.map((b) => getGradeColor(b.label).barColor);
+  const colors = bins.map((b) => getGradeColor(b.label, palette).barColor);
 
   const maxCount = Math.max(...counts, 1);
 
@@ -75,6 +101,7 @@ export function buildChartOption(bins: ProcessScoreBin[]): Record<string, unknow
       axisLabel: {
         fontSize: 12,
         fontWeight: 'bold' as const,
+        color: palette.axis,
       },
     },
     yAxis: {
@@ -84,7 +111,7 @@ export function buildChartOption(bins: ProcessScoreBin[]): Record<string, unknow
       splitLine: {
         lineStyle: {
           type: 'dashed' as const,
-          color: 'rgba(0,0,0,0.08)',
+          color: withAlpha(palette.grid, 0.5),
         },
       },
     },
@@ -99,7 +126,7 @@ export function buildChartOption(bins: ProcessScoreBin[]): Record<string, unknow
             const idx = typeof _params === 'object' && _params !== null && 'dataIndex' in _params
               ? (_params as { dataIndex: number }).dataIndex
               : 0;
-            return colors[idx] ?? '#6b7280';
+            return colors[idx] ?? palette.missing;
           },
         },
         label: {
@@ -107,7 +134,7 @@ export function buildChartOption(bins: ProcessScoreBin[]): Record<string, unknow
           position: 'top' as const,
           fontSize: 13,
           fontWeight: 'bold' as const,
-          color: '#374151',
+          color: palette.axis,
           formatter: (params: { value: number }) => {
             return params.value > 0 ? String(params.value) : '';
           },
@@ -130,15 +157,16 @@ export function buildChartOption(bins: ProcessScoreBin[]): Record<string, unknow
  * Process discipline widget showing grade distribution as a colour-coded
  * bar chart (A through F tiers).
  *
- * Each bar is colour-coded by grade tier:
- * - A (54-60): green
- * - B (42-53): blue
- * - C (30-41): amber
- * - D (18-29): orange
- * - F (0-17):  red
+ * Each bar is colour-coded by grade tier via the theme-aware palette:
+ * - A (54-60): steel blue (series chart-1)
+ * - B (42-53): graphite (series chart-2)
+ * - C (30-41): steel cyan (series chart-3)
+ * - D (18-29): indigo (series chart-4)
+ * - F (0-17):  red (negative)
  *
  * Trade count labels appear above each bar. The chart shows the count
- * distribution across all five grade tiers.
+ * distribution across all five grade tiers. Colours are theme-reactive:
+ * switching light/dark rebuilds the option in place.
  *
  * Wraps in a DashboardWidget for consistent loading/error/empty state
  * handling.
@@ -160,7 +188,11 @@ export function ProcessDisciplineWidget({
   testId,
 }: ProcessDisciplineWidgetProps) {
   const hasData = processScoreDistribution.length > 0;
-  const chartOption = hasData ? buildChartOption(processScoreDistribution) : null;
+  const palette = useChartPalette();
+  const chartOption = useMemo(
+    () => (hasData ? buildChartOption(processScoreDistribution, palette) : null),
+    [hasData, processScoreDistribution, palette],
+  );
 
   return (
     <DashboardWidget

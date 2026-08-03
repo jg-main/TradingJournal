@@ -2,9 +2,10 @@
  * Tests for the ProcessDisciplineWidget component.
  *
  * Covers: title rendering, chart rendering with grade distribution bins,
- * grade colour mapping (all 5 tiers), xAxis/yAxis configuration, tooltip,
- * bar label formatter, loading/error/empty state passthrough, drag handle,
- * testId support, error is null handling, and edge cases.
+ * grade colour mapping (all 5 tiers via the theme-aware chartPalette),
+ * xAxis/yAxis configuration, tooltip, bar label formatter,
+ * loading/error/empty state passthrough, drag handle, testId support,
+ * error is null handling, edge cases, and dark-theme reactivity.
  *
  * Run: npx vitest run src/components/dashboard/process-discipline-widget.test.tsx
  */
@@ -13,6 +14,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { ProcessDisciplineWidget, getGradeColor, buildChartOption } from './process-discipline-widget';
+import { chartPalette, withAlpha } from '@/lib/chart-palette';
 import { CustomizingProvider } from '@/lib/customizing-context';
 import type { ProcessScoreBin } from '@/lib/dashboard';
 
@@ -24,6 +26,11 @@ vi.mock('echarts-for-react', () => ({
     <div data-testid="echarts-mock" data-option={JSON.stringify(option)} />
   ),
 }));
+
+// Tests run in jsdom with no `dark` class, so the useChartPalette hook
+// resolves the light theme by default.
+const LIGHT = chartPalette.light;
+const DARK = chartPalette.dark;
 
 // ── Fixtures ───────────────────────────────────────────────────────────
 
@@ -212,14 +219,14 @@ describe('ProcessDisciplineWidget', () => {
   });
 
   it('label formatter returns empty string for zero count', () => {
-    const option = buildChartOption(ZERO_BINS);
+    const option = buildChartOption(ZERO_BINS, LIGHT);
     expect(option).not.toBeNull();
     const formatter = (option!.series as Array<{ label: { formatter: (p: { value: number }) => string } }>)[0].label.formatter;
     expect(formatter({ value: 0 })).toBe('');
   });
 
   it('label formatter returns count string for positive values', () => {
-    const option = buildChartOption(SAMPLE_BINS);
+    const option = buildChartOption(SAMPLE_BINS, LIGHT);
     expect(option).not.toBeNull();
     const formatter = (option!.series as Array<{ label: { formatter: (p: { value: number }) => string } }>)[0].label.formatter;
     expect(formatter({ value: 8 })).toBe('8');
@@ -253,47 +260,103 @@ describe('ProcessDisciplineWidget', () => {
     expect(option.grid.bottom).toBe(30);
   });
 
-  // ── Grade Color Mapping ─────────────────────────────────────────
+  // ── Grade Color Mapping (theme-aware palette) ───────────────────
 
-  it('getGradeColor maps A grade label to green #22c55e', () => {
-    const { barColor } = getGradeColor('A (54-60)');
-    expect(barColor).toBe('#22c55e');
+  it('getGradeColor maps A grade label to series[0] (steel blue)', () => {
+    const { barColor } = getGradeColor('A (54-60)', LIGHT);
+    expect(barColor).toBe(LIGHT.series[0]);
   });
 
-  it('getGradeColor maps B grade label to blue #3b82f6', () => {
-    const { barColor } = getGradeColor('B (42-53)');
-    expect(barColor).toBe('#3b82f6');
+  it('getGradeColor maps B grade label to series[1] (graphite)', () => {
+    const { barColor } = getGradeColor('B (42-53)', LIGHT);
+    expect(barColor).toBe(LIGHT.series[1]);
   });
 
-  it('getGradeColor maps C grade label to amber #f59e0b', () => {
-    const { barColor } = getGradeColor('C (30-41)');
-    expect(barColor).toBe('#f59e0b');
+  it('getGradeColor maps C grade label to series[2] (steel cyan)', () => {
+    const { barColor } = getGradeColor('C (30-41)', LIGHT);
+    expect(barColor).toBe(LIGHT.series[2]);
   });
 
-  it('getGradeColor maps D grade label to orange #f97316', () => {
-    const { barColor } = getGradeColor('D (18-29)');
-    expect(barColor).toBe('#f97316');
+  it('getGradeColor maps D grade label to series[3] (indigo)', () => {
+    const { barColor } = getGradeColor('D (18-29)', LIGHT);
+    expect(barColor).toBe(LIGHT.series[3]);
   });
 
-  it('getGradeColor maps F grade label to red #ef4444', () => {
-    const { barColor } = getGradeColor('F (0-17)');
-    expect(barColor).toBe('#ef4444');
+  it('getGradeColor maps E grade label to series[4] (gold, defensive)', () => {
+    const { barColor } = getGradeColor('E (18-29)', LIGHT);
+    expect(barColor).toBe(LIGHT.series[4]);
   });
 
-  it('getGradeColor returns grey fallback for unknown labels', () => {
-    const { barColor } = getGradeColor('Unknown Bin');
-    expect(barColor).toBe('#6b7280');
+  it('getGradeColor maps F grade label to negative (red)', () => {
+    const { barColor } = getGradeColor('F (0-17)', LIGHT);
+    expect(barColor).toBe(LIGHT.negative);
+  });
+
+  it('getGradeColor returns missing fallback for unknown labels', () => {
+    const { barColor } = getGradeColor('Unknown Bin', LIGHT);
+    expect(barColor).toBe(LIGHT.missing);
+  });
+
+  it('getGradeColor resolves dark-theme palette colors', () => {
+    expect(getGradeColor('A (54-60)', DARK).barColor).toBe(DARK.series[0]);
+    expect(getGradeColor('F (0-17)', DARK).barColor).toBe(DARK.negative);
+    expect(getGradeColor('Unknown Bin', DARK).barColor).toBe(DARK.missing);
   });
 
   it('buildChartOption itemStyle color callback returns correct color per dataIndex', () => {
-    const option = buildChartOption(SAMPLE_BINS);
+    const option = buildChartOption(SAMPLE_BINS, LIGHT);
     expect(option).not.toBeNull();
     const colorFn = (option!.series as Array<{ itemStyle: { color: (p: { dataIndex: number }) => string } }>)[0].itemStyle.color;
-    expect(colorFn({ dataIndex: 0 })).toBe('#22c55e');
-    expect(colorFn({ dataIndex: 1 })).toBe('#3b82f6');
-    expect(colorFn({ dataIndex: 2 })).toBe('#f59e0b');
-    expect(colorFn({ dataIndex: 3 })).toBe('#f97316');
-    expect(colorFn({ dataIndex: 4 })).toBe('#ef4444');
+    expect(colorFn({ dataIndex: 0 })).toBe(LIGHT.series[0]);
+    expect(colorFn({ dataIndex: 1 })).toBe(LIGHT.series[1]);
+    expect(colorFn({ dataIndex: 2 })).toBe(LIGHT.series[2]);
+    expect(colorFn({ dataIndex: 3 })).toBe(LIGHT.series[3]);
+    expect(colorFn({ dataIndex: 4 })).toBe(LIGHT.negative);
+  });
+
+  // ── Chart palette tokens (grid/axis) ────────────────────────────
+
+  it('uses chartPalette grid/axis tokens for axes and labels', () => {
+    render(
+      <ProcessDisciplineWidget
+        processScoreDistribution={SAMPLE_BINS}
+      />,
+    );
+    const chart = screen.getByTestId('echarts-mock');
+    const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+    // Split lines use the translucent grid token
+    expect(option.yAxis.splitLine.lineStyle.color).toBe(withAlpha(LIGHT.grid, 0.5));
+    // xAxis labels and bar count labels use the axis token
+    expect(option.xAxis.axisLabel.color).toBe(LIGHT.axis);
+    expect(option.series[0].label.color).toBe(LIGHT.axis);
+  });
+
+  it('rebuilds option colours from the dark palette when the theme class is dark', () => {
+    document.documentElement.classList.add('dark');
+    try {
+      // buildChartOption with the DARK palette keeps function-valued callbacks intact
+      const option = buildChartOption(SAMPLE_BINS, DARK);
+      expect(option).not.toBeNull();
+      const colorFn = (option!.series as Array<{ itemStyle: { color: (p: { dataIndex: number }) => string } }>)[0].itemStyle.color;
+      expect(colorFn({ dataIndex: 0 })).toBe(DARK.series[0]);
+      expect(colorFn({ dataIndex: 4 })).toBe(DARK.negative);
+
+      // Rendering with the dark class present resolves the dark palette end-to-end
+      render(
+        <ProcessDisciplineWidget
+          processScoreDistribution={SAMPLE_BINS}
+        />,
+      );
+      const chart = screen.getByTestId('echarts-mock');
+      const renderedOption = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+      expect(renderedOption.yAxis.splitLine.lineStyle.color).toBe(withAlpha(DARK.grid, 0.5));
+      expect(renderedOption.xAxis.axisLabel.color).toBe(DARK.axis);
+      expect(renderedOption.series[0].label.color).toBe(DARK.axis);
+    } finally {
+      document.documentElement.classList.remove('dark');
+    }
   });
 
   // ── Loading state ───────────────────────────────────────────────
@@ -475,5 +538,9 @@ describe('ProcessDisciplineWidget', () => {
     const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
 
     expect(option.yAxis.splitLine.lineStyle.type).toBe('dashed');
+  });
+
+  it('empty bins return null option', () => {
+    expect(buildChartOption(EMPTY_BINS, LIGHT)).toBeNull();
   });
 });
