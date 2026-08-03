@@ -91,7 +91,7 @@ export const chartTokens = {
     warning: 'oklch(0.78 0.13 80)',
     missing: 'oklch(0.7 0.07 75)',
     info: 'oklch(0.68 0.1 235)',
-    destructive: 'oklch(0.6 0.22 25)',
+    destructive: 'oklch(0.68 0.2 25)',
     chart1: 'oklch(0.68 0.1 235)',
     chart2: 'oklch(0.6 0.02 250)',
     chart3: 'oklch(0.7 0.08 205)',
