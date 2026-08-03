@@ -228,21 +228,21 @@ describe('PtdPerformancePanel', () => {
     renderWithTooltip(<PtdPerformancePanel data={SAMPLE_KPIS} />);
     // profitFactor 1.75 > 1.5 → green
     const valueElement = screen.getByText('1.75');
-    expect(valueElement?.className).toContain('text-green-600');
+    expect(valueElement?.className).toContain('text-positive');
   });
 
   it('applies amber color when profit factor between 1.0 and 1.5', () => {
     renderWithTooltip(<PtdPerformancePanel data={MEDIUM_PROFIT_FACTOR_KPIS} />);
     // profitFactor 1.25 between 1.0 and 1.5 → amber
     const valueElement = screen.getByText('1.25');
-    expect(valueElement?.className).toContain('text-amber-600');
+    expect(valueElement?.className).toContain('text-warning');
   });
 
   it('applies red color when profit factor < 1.0', () => {
     renderWithTooltip(<PtdPerformancePanel data={LOW_PROFIT_FACTOR_KPIS} />);
     // profitFactor 0.85 < 1.0 → red
     const valueElement = screen.getByText('0.85');
-    expect(valueElement?.className).toContain('text-red-600');
+    expect(valueElement?.className).toContain('text-negative');
   });
 
   // ── Attribution Badge ────────────────────────────────────────────

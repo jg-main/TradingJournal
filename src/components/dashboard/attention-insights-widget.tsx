@@ -44,29 +44,29 @@ interface SeverityConfig {
 const SEVERITY_CONFIG: Record<InsightSeverity, SeverityConfig> = {
   critical: {
     label: 'Critical',
-    borderColor: 'border-l-red-500',
-    iconColor: 'text-red-500',
-    bgColor: 'bg-red-50 dark:bg-red-950/20',
-    badgeBg: 'bg-red-100 dark:bg-red-900/40',
-    badgeText: 'text-red-700 dark:text-red-300',
+    borderColor: 'border-l-destructive',
+    iconColor: 'text-destructive',
+    bgColor: 'bg-destructive/5',
+    badgeBg: 'bg-destructive/10',
+    badgeText: 'text-destructive',
     Icon: AlertTriangle,
   },
   warning: {
     label: 'Warning',
-    borderColor: 'border-l-amber-500',
-    iconColor: 'text-amber-500',
-    bgColor: 'bg-amber-50 dark:bg-amber-950/20',
-    badgeBg: 'bg-amber-100 dark:bg-amber-900/40',
-    badgeText: 'text-amber-700 dark:text-amber-300',
+    borderColor: 'border-l-warning',
+    iconColor: 'text-warning',
+    bgColor: 'bg-warning/5',
+    badgeBg: 'bg-warning/10',
+    badgeText: 'text-warning',
     Icon: AlertCircle,
   },
   info: {
     label: 'Info',
-    borderColor: 'border-l-blue-500',
-    iconColor: 'text-blue-500',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/20',
-    badgeBg: 'bg-blue-100 dark:bg-blue-900/40',
-    badgeText: 'text-blue-700 dark:text-blue-300',
+    borderColor: 'border-l-info',
+    iconColor: 'text-info',
+    bgColor: 'bg-info/5',
+    badgeBg: 'bg-info/10',
+    badgeText: 'text-info',
     Icon: Info,
   },
 };
@@ -118,7 +118,7 @@ function SeverityBadge({
 function InsightValueBadge({ value }: { value: number | string }) {
   const displayValue = typeof value === 'number' ? String(value) : value;
   return (
-    <span className="inline-flex items-center rounded-md bg-zinc-100 px-2 py-0.5 text-sm font-semibold tabular-nums text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
+    <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-sm font-semibold tabular-nums text-foreground">
       {displayValue}
     </span>
   );
@@ -148,10 +148,10 @@ function InsightCard({ insight }: { insight: AttentionInsight }) {
             <InsightValueBadge value={insight.value} />
           )}
         </div>
-        <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <h4 className="text-sm font-semibold text-foreground">
           {insight.title}
         </h4>
-        <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           {insight.message}
         </p>
       </div>
@@ -208,7 +208,7 @@ export function AttentionInsightsWidget({
           <EmptyState
             icon={
               <Lightbulb
-                className="size-10 text-zinc-300 dark:text-zinc-600"
+                className="size-10 text-muted-foreground"
                 strokeWidth={1}
               />
             }

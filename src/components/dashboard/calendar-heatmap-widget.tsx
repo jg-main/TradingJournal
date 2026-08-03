@@ -253,7 +253,7 @@ export function CalendarHeatmapWidget({
       {!hasData && !isLoading && (
         <div className="px-(--card-spacing) pb-(--card-spacing)">
           <EmptyState
-            icon={<Calendar className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+            icon={<Calendar className="size-10 text-muted-foreground" strokeWidth={1} />}
             title="No calendar data available"
             description="Your daily P&L calendar heatmap will appear here after you close trades."
           />
@@ -270,8 +270,8 @@ export function CalendarHeatmapWidget({
                   onClick={() => setSelectedYearIdx(idx)}
                   className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
                     idx === selectedYearIdx
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-950/30 dark:text-blue-300'
-                      : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200'
+                      ? 'border-info/50 bg-info/10 text-info'
+                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
                 >
                   {yd.year}
@@ -284,30 +284,30 @@ export function CalendarHeatmapWidget({
           {stats && (
             <div className="mb-2 grid grid-cols-4 gap-2 px-(--card-spacing) text-center text-xs">
               <div>
-                <span className="block font-semibold tabular-nums text-green-600 dark:text-green-400">
+                <span className="block font-semibold tabular-nums text-positive">
                   {stats.profitDays}
                 </span>
-                <span className="text-zinc-500 dark:text-zinc-400">Winners</span>
+                <span className="text-muted-foreground">Winners</span>
               </div>
               <div>
-                <span className="block font-semibold tabular-nums text-red-600 dark:text-red-400">
+                <span className="block font-semibold tabular-nums text-negative">
                   {stats.lossDays}
                 </span>
-                <span className="text-zinc-500 dark:text-zinc-400">Losers</span>
+                <span className="text-muted-foreground">Losers</span>
               </div>
               <div>
-                <span className={`block font-semibold tabular-nums ${stats.totalPnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                <span className={`block font-semibold tabular-nums ${stats.totalPnl >= 0 ? 'text-positive' : 'text-negative'}`}>
                   {formatCurrency(stats.totalPnl, { sign: true })}
                 </span>
-                <span className="text-zinc-500 dark:text-zinc-400">Net P&amp;L</span>
+                <span className="text-muted-foreground">Net P&amp;L</span>
               </div>
               <div>
-                <span className="block font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">
+                <span className="block font-semibold tabular-nums text-foreground">
                   {((stats.profitDays + stats.lossDays) > 0
                     ? (stats.profitDays / (stats.profitDays + stats.lossDays) * 100).toFixed(0)
                     : 0)}%
                 </span>
-                <span className="text-zinc-500 dark:text-zinc-400">Win Rate</span>
+                <span className="text-muted-foreground">Win Rate</span>
               </div>
             </div>
           )}

@@ -59,28 +59,28 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
       {/* Shortcuts overlay */}
       {showOverlay && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay"
           onClick={() => setShowOverlay(false)}
         >
           <div
-            className="w-80 rounded-xl border border-zinc-200 bg-white p-6 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-80 rounded-xl border border-border bg-card p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+            <h3 className="mb-4 text-base font-semibold text-foreground">
               Keyboard Shortcuts
             </h3>
             <div className="space-y-2">
               {SHORTCUTS.map((s) => (
                 <div key={s.key} className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">{s.label}</span>
-                  <kbd className="rounded-md border border-zinc-300 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                  <span className="text-sm text-muted-foreground">{s.label}</span>
+                  <kbd className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
                     {s.key}
                   </kbd>
                 </div>
               ))}
             </div>
-            <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
-              Press <kbd className="rounded border border-zinc-300 px-1 text-[10px] dark:border-zinc-600">?</kbd> to toggle this overlay.
+            <p className="mt-4 text-xs text-muted-foreground">
+              Press <kbd className="rounded border border-border px-1 text-[10px]">?</kbd> to toggle this overlay.
             </p>
           </div>
         </div>

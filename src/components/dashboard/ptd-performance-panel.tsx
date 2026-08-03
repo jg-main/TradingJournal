@@ -66,13 +66,13 @@ function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) 
     <div className="flex flex-col h-10 items-center justify-center">
       <span
         className={cn(
-          'text-base font-bold tabular-nums leading-tight text-zinc-900 dark:text-zinc-100',
+          'text-base font-bold tabular-nums leading-tight text-foreground',
           valueClassName,
         )}
       >
         {value}
       </span>
-      <span className="mt-0.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
+      <span className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
         {label}
       </span>
     </div>
@@ -101,9 +101,9 @@ function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) 
 /** Deterministic color class for profit factor thresholds */
 function profitFactorColor(v: number | null | undefined): string {
   if (v === null || v === undefined) return '';
-  if (v > 1.5) return 'text-green-600 dark:text-green-400';
-  if (v >= 1.0) return 'text-amber-600 dark:text-amber-400';
-  return 'text-red-600 dark:text-red-400';
+  if (v > 1.5) return 'text-positive';
+  if (v >= 1.0) return 'text-warning';
+  return 'text-negative';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -134,14 +134,14 @@ export function PtdPerformancePanel({
     >
       {!data ? (
         <div className="flex h-32 items-center justify-center">
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             No performance data available
           </p>
         </div>
       ) : (
         <div className="flex h-full flex-col gap-2">
           {/* ── Metrics Grid (3 columns, 3 rows = 8 metrics) ──────────── */}
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50/50 px-2 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-border bg-muted px-2 py-2">
             {/* Row 1: Net P&L, Total Trades, Win Rate */}
             <MetricCell
               value={formatCurrency(data.netPnl, { sign: true })}
@@ -188,7 +188,7 @@ export function PtdPerformancePanel({
               label="Avg Win"
               valueClassName={
                 data.avgWin !== null && data.avgWin !== undefined && data.avgWin > 0
-                  ? 'text-green-600 dark:text-green-400'
+                  ? 'text-positive'
                   : ''
               }
               tooltip="Average P&amp;L of winning trades. Higher is better."
@@ -198,7 +198,7 @@ export function PtdPerformancePanel({
               label="Avg Loss"
               valueClassName={
                 data.avgLoss !== null && data.avgLoss !== undefined && data.avgLoss > 0
-                  ? 'text-red-600 dark:text-red-400'
+                  ? 'text-negative'
                   : ''
               }
               tooltip="Average absolute P&amp;L of losing trades. Lower (absolute) is better."

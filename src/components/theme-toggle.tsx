@@ -33,7 +33,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="rounded-md border border-zinc-200 bg-white p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+      className="rounded-md border border-border bg-card p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       aria-label="Toggle dark mode"
       title="Toggle dark mode"
     >

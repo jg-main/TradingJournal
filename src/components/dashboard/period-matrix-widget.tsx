@@ -61,7 +61,7 @@ function getDeltaIndicator(value: number | null, metric: 'winRate' | 'pnl' | 'tr
   colorClass: string;
 } {
   if (value === null || value === undefined) {
-    return { direction: 'none', arrow: '\u2014', colorClass: 'text-zinc-400 dark:text-zinc-500' };
+    return { direction: 'none', arrow: '\u2014', colorClass: 'text-muted-foreground' };
   }
 
   // For all metrics, positive/negative/zero determines direction.
@@ -73,8 +73,8 @@ function getDeltaIndicator(value: number | null, metric: 'winRate' | 'pnl' | 'tr
       direction: 'up',
       arrow: '\u25B2',
       colorClass: isImprovement
-        ? 'text-green-600 dark:text-green-400'
-        : 'text-zinc-500 dark:text-zinc-400',
+        ? 'text-positive'
+        : 'text-muted-foreground',
     };
   }
   if (value < 0) {
@@ -83,11 +83,11 @@ function getDeltaIndicator(value: number | null, metric: 'winRate' | 'pnl' | 'tr
       direction: 'down',
       arrow: '\u25BC',
       colorClass: isImprovement
-        ? 'text-red-600 dark:text-red-400'
-        : 'text-zinc-500 dark:text-zinc-400',
+        ? 'text-negative'
+        : 'text-muted-foreground',
     };
   }
-  return { direction: 'flat', arrow: '\u25B6', colorClass: 'text-zinc-400 dark:text-zinc-500' };
+  return { direction: 'flat', arrow: '\u25B6', colorClass: 'text-muted-foreground' };
 }
 
 /**
@@ -179,7 +179,7 @@ export function PeriodMatrixWidget({
       {!hasAnyData && !isLoading && (
         <div className="px-(--card-spacing) pb-(--card-spacing)">
           <EmptyState
-            icon={<BarChart3 className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+            icon={<BarChart3 className="size-10 text-muted-foreground" strokeWidth={1} />}
             title="No comparison data available"
             description="Your period-over-period performance matrix will appear here after you close trades across multiple periods."
           />
@@ -196,8 +196,8 @@ export function PeriodMatrixWidget({
                 className={cn(
                   'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
                   selectedType === opt.value
-                    ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-600 dark:bg-blue-950/30 dark:text-blue-300'
-                    : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200',
+                    ? 'border-info/50 bg-info/10 text-info'
+                    : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
                 title={opt.description}
               >
@@ -229,7 +229,7 @@ export function PeriodMatrixWidget({
                         <TableRow className="border-0">
                           <TableCell
                             colSpan={5}
-                            className="px-0 pb-0 pt-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
+                            className="px-0 pb-0 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                           >
                             {pairLabel}
                           </TableCell>
@@ -237,7 +237,7 @@ export function PeriodMatrixWidget({
 
                         {/* Current period row */}
                         <TableRow className="hover:bg-transparent">
-                          <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">
+                          <TableCell className="font-medium text-foreground">
                             {row.current.periodLabel}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
@@ -247,8 +247,8 @@ export function PeriodMatrixWidget({
                             className={cn(
                               'text-right tabular-nums font-medium',
                               (row.current.pnl) >= 0
-                                ? 'text-green-600 dark:text-green-400'
-                                : 'text-red-600 dark:text-red-400',
+                                ? 'text-positive'
+                                : 'text-negative',
                             )}
                           >
                             {formatCurrency(row.current.pnl, { sign: true })}
@@ -262,7 +262,7 @@ export function PeriodMatrixWidget({
                         </TableRow>
 
                         {/* Previous period row */}
-                        <TableRow className="text-zinc-500 dark:text-zinc-400 hover:bg-transparent">
+                        <TableRow className="text-muted-foreground hover:bg-transparent">
                           <TableCell>{row.previous.periodLabel}</TableCell>
                           <TableCell className="text-right tabular-nums">
                             {formatPercent(row.previous.winRate)}
@@ -271,8 +271,8 @@ export function PeriodMatrixWidget({
                             className={cn(
                               'text-right tabular-nums',
                               (row.previous.pnl) >= 0
-                                ? 'text-green-600 dark:text-green-400'
-                                : 'text-red-600 dark:text-red-400',
+                                ? 'text-positive'
+                                : 'text-negative',
                             )}
                           >
                             {formatCurrency(row.previous.pnl, { sign: true })}
@@ -293,7 +293,7 @@ export function PeriodMatrixWidget({
                               isLastRow ? 'border-b-0' : '',
                             )}
                           >
-                            <TableCell className="text-zinc-500 dark:text-zinc-400 italic">
+                            <TableCell className="text-muted-foreground italic">
                               Change
                             </TableCell>
                             <TableCell className="text-right tabular-nums">
@@ -315,7 +315,7 @@ export function PeriodMatrixWidget({
                         {!isLastRow && (
                           <TableRow className="border-0 hover:bg-transparent">
                             <TableCell colSpan={5} className="py-0">
-                              <div className="border-b border-dashed border-zinc-200 dark:border-zinc-700" />
+                              <div className="border-b border-dashed border-border" />
                             </TableCell>
                           </TableRow>
                         )}
@@ -328,7 +328,7 @@ export function PeriodMatrixWidget({
           ) : (
             <div className="flex items-center justify-center py-6">
               <EmptyState
-                icon={<TrendingUp className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+                icon={<TrendingUp className="size-10 text-muted-foreground" strokeWidth={1} />}
                 title="No comparison data"
                 description={`No data available for ${PERIOD_TYPE_OPTIONS.find((o) => o.value === selectedType)?.label ?? selectedType} comparison.`}
               />

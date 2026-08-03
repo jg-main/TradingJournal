@@ -89,15 +89,15 @@ export function LifecycleStepper({
                 className={cn(
                   'flex size-8 items-center justify-center rounded-full text-xs font-semibold transition-colors',
                   // Completed: filled circle with checkmark
-                  isCompleted && isLong && 'bg-emerald-500 text-white dark:bg-emerald-400 dark:text-white',
-                  isCompleted && !isLong && 'bg-red-500 text-white dark:bg-red-400 dark:text-white',
+                  isCompleted && isLong && 'bg-positive text-primary-foreground',
+                  isCompleted && !isLong && 'bg-negative text-primary-foreground',
                   // Active: outlined circle with accent border
-                  isActive && isLong && 'border-2 border-emerald-500 bg-white text-emerald-600 dark:border-emerald-400 dark:bg-zinc-900 dark:text-emerald-400',
-                  isActive && !isLong && 'border-2 border-red-500 bg-white text-red-600 dark:border-red-400 dark:bg-zinc-900 dark:text-red-400',
+                  isActive && isLong && 'border-2 border-positive bg-card text-positive',
+                  isActive && !isLong && 'border-2 border-negative bg-card text-negative',
                   // Future: light outline
-                  isFuture && 'border border-zinc-300 bg-white text-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-500',
+                  isFuture && 'border border-border bg-card text-muted-foreground',
                   // Scratched: muted outline
-                  isScratched && 'border border-zinc-300 text-zinc-400 dark:border-zinc-600 dark:text-zinc-500',
+                  isScratched && 'border border-border text-muted-foreground',
                 )}
               >
                 {isCompleted ? (
@@ -113,11 +113,11 @@ export function LifecycleStepper({
               <span
                 className={cn(
                   'mt-1.5 whitespace-nowrap text-[11px] font-medium transition-colors',
-                  isActive && isLong && 'text-emerald-600 dark:text-emerald-400',
-                  isActive && !isLong && 'text-red-600 dark:text-red-400',
-                  isCompleted && 'text-zinc-700 dark:text-zinc-300',
-                  isFuture && 'text-zinc-500 dark:text-zinc-400',
-                  isScratched && 'text-zinc-500 dark:text-zinc-400 line-through',
+                  isActive && isLong && 'text-positive',
+                  isActive && !isLong && 'text-negative',
+                  isCompleted && 'text-foreground',
+                  isFuture && 'text-muted-foreground',
+                  isScratched && 'text-muted-foreground line-through',
                 )}
               >
                 {step.label}
@@ -130,9 +130,9 @@ export function LifecycleStepper({
                 <div
                   className={cn(
                     'h-[2px] transition-colors',
-                    step.number < currentStep && isLong && 'bg-emerald-400 dark:bg-emerald-500',
-                    step.number < currentStep && !isLong && 'bg-red-400 dark:bg-red-500',
-                    step.number >= currentStep && 'bg-zinc-200 dark:bg-zinc-700',
+                    step.number < currentStep && isLong && 'bg-positive',
+                    step.number < currentStep && !isLong && 'bg-negative',
+                    step.number >= currentStep && 'bg-muted',
                   )}
                 />
               </div>

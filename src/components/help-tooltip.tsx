@@ -32,7 +32,7 @@ export function HelpTooltip({ content, side = 'top', className }: HelpTooltipPro
         <button
           type="button"
           className={cn(
-            'inline-flex items-center justify-center rounded-full text-zinc-400 transition-colors hover:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-1 dark:text-zinc-500 dark:hover:text-zinc-300',
+            'inline-flex items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             className,
           )}
           aria-label={content}

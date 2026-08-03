@@ -144,7 +144,7 @@ export function RDistributionChart({
           <EmptyState
             icon={
               <TrendingUp
-                className="size-10 text-zinc-300 dark:text-zinc-600"
+                className="size-10 text-muted-foreground"
                 strokeWidth={1}
               />
             }

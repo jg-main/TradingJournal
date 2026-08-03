@@ -332,7 +332,7 @@ describe('CurrentRiskPanel', () => {
     );
     // Find the signed P&L element
     const valueEl = screen.getByText(/\+?\$150\.00/);
-    expect(valueEl.className).toContain('text-zinc-700');
+    expect(valueEl.className).toContain('text-positive');
   });
 
   it('applies negative color class for negative Open P&L', () => {
@@ -343,7 +343,7 @@ describe('CurrentRiskPanel', () => {
       />,
     );
     const valueEl = screen.getByText(/-?\$350\.00/);
-    expect(valueEl.className).toContain('text-red-600');
+    expect(valueEl.className).toContain('text-negative');
   });
 
   it('applies neutral color class for zero Open P&L', () => {
@@ -357,10 +357,10 @@ describe('CurrentRiskPanel', () => {
     // 'Open P&L' label by matching the one with text-zinc-500 class.
     const values = screen.getAllByText(/\$0\.00/);
     const pnlValue = values.find(
-      (el) => el.className.includes('text-zinc-500')
+      (el) => el.className.includes('text-muted-foreground')
     );
     expect(pnlValue).toBeTruthy();
-    expect(pnlValue!.className).toContain('text-zinc-500');
+    expect(pnlValue!.className).toContain('text-muted-foreground');
   });
 
   // ── Missing Stops Badge Variants ────────────────────────────────

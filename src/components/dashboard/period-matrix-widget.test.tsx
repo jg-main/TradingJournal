@@ -419,7 +419,7 @@ describe('PeriodMatrixWidget', () => {
     expect(winRateDelta).toBeTruthy();
     // The parentElement is the outer <span> with the color class
     const parent = winRateDelta.parentElement;
-    expect(parent?.className).toContain('text-green');
+    expect(parent?.className).toContain('text-positive');
   });
 
   it('shows red downward arrow for negative win rate delta', () => {
@@ -431,7 +431,7 @@ describe('PeriodMatrixWidget', () => {
     // Win rate delta: -0.15 → should show red ▼
     const winRateDelta = screen.getByText('-15.0%');
     const parent = winRateDelta.parentElement;
-    expect(parent?.className).toContain('text-red');
+    expect(parent?.className).toContain('text-negative');
   });
 
   it('shows green upward arrow for positive P&L delta', () => {
@@ -444,7 +444,7 @@ describe('PeriodMatrixWidget', () => {
     const pnlDelta = screen.getByText(/\$1,700\.00/);
     expect(pnlDelta).toBeTruthy();
     const parent = pnlDelta.parentElement;
-    expect(parent?.className).toContain('text-green');
+    expect(parent?.className).toContain('text-positive');
   });
 
   it('shows red downward arrow for negative P&L delta', () => {
@@ -457,7 +457,7 @@ describe('PeriodMatrixWidget', () => {
     const pnlDelta = screen.getByText('-$1,700.00');
     expect(pnlDelta).toBeTruthy();
     const parent = pnlDelta.parentElement;
-    expect(parent?.className).toContain('text-red');
+    expect(parent?.className).toContain('text-negative');
   });
 
   it('shows neutral indicator for trade count delta regardless of sign', () => {
@@ -470,7 +470,7 @@ describe('PeriodMatrixWidget', () => {
     const tradeCountDelta = screen.getByText('+3');
     expect(tradeCountDelta).toBeTruthy();
     const parent = tradeCountDelta.parentElement;
-    expect(parent?.className).toContain('text-zinc');
+    expect(parent?.className).toContain('text-muted-foreground');
   });
 
   it('shows negative trade count delta with neutral indicator', () => {
@@ -483,7 +483,7 @@ describe('PeriodMatrixWidget', () => {
     const tradeCountDelta = screen.getByText('-2');
     expect(tradeCountDelta).toBeTruthy();
     const parent = tradeCountDelta.parentElement;
-    expect(parent?.className).toContain('text-zinc');
+    expect(parent?.className).toContain('text-muted-foreground');
   });
 
   it('shows green upward arrow for positive avg R delta', () => {
@@ -496,7 +496,7 @@ describe('PeriodMatrixWidget', () => {
     const avgRDelta = screen.getByText('+0.30R');
     expect(avgRDelta).toBeTruthy();
     const parent = avgRDelta.parentElement;
-    expect(parent?.className).toContain('text-green');
+    expect(parent?.className).toContain('text-positive');
   });
 
   // ── Loading state ───────────────────────────────────────────────
@@ -670,7 +670,7 @@ describe('PeriodMatrixWidget', () => {
     const pnlText = screen.getByText(/\$2,500/);
     expect(pnlText).toBeTruthy();
     const parent = pnlText.closest('td') || pnlText;
-    expect(parent.className).toContain('text-green');
+    expect(parent.className).toContain('text-positive');
   });
 
   it('shows current period P&L in red when negative', () => {
@@ -683,6 +683,6 @@ describe('PeriodMatrixWidget', () => {
     const pnlText = screen.getByText('-$500.00');
     expect(pnlText).toBeTruthy();
     const parent = pnlText.closest('td') || pnlText;
-    expect(parent.className).toContain('text-red');
+    expect(parent.className).toContain('text-negative');
   });
 });

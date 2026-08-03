@@ -215,15 +215,15 @@ describe('gradeLabelFromScore', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('pnlColorClass', () => {
-  it('returns green-tinted class for positive values', () => {
-    expect(pnlColorClass(100)).toContain('text-zinc-700');
+  it('returns positive-token class for positive values', () => {
+    expect(pnlColorClass(100)).toContain('text-positive');
   });
 
-  it('returns red-tinted class for negative values', () => {
-    expect(pnlColorClass(-50)).toContain('text-red-600');
+  it('returns negative-token class for negative values', () => {
+    expect(pnlColorClass(-50)).toContain('text-negative');
   });
 
-  it('returns neutral class for zero', () => {
-    expect(pnlColorClass(0)).toContain('text-zinc-500');
+  it('returns neutral muted class for zero', () => {
+    expect(pnlColorClass(0)).toContain('text-muted-foreground');
   });
 });

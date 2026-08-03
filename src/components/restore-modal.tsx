@@ -235,14 +235,14 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
       aria-label="Restore backup"
     >
-      <div className="relative w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-        <button onClick={handleClose} className="absolute right-4 top-4 rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" aria-label="Close restore modal">
+      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl">
+        <button onClick={handleClose} className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground hover:text-foreground" aria-label="Close restore modal">
           <X className="size-5" />
         </button>
 
@@ -259,11 +259,11 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
               aria-label="Select backup ZIP file"
               onChange={handleFileChange}
             />
-            <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-6 py-8 text-center hover:border-zinc-400 dark:border-zinc-600 dark:hover:border-zinc-500">
-              <Upload className="size-10 text-zinc-400" strokeWidth={1.5} />
+            <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-border px-6 py-8 text-center hover:border-foreground/40">
+              <Upload className="size-10 text-muted-foreground" strokeWidth={1.5} />
               <div>
-                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Choose a backup ZIP file</p>
-                <p className="mt-1 text-xs text-zinc-400">Only .zip files exported from this journal are supported</p>
+                <p className="text-sm font-medium text-foreground">Choose a backup ZIP file</p>
+                <p className="mt-1 text-xs text-muted-foreground">Only .zip files exported from this journal are supported</p>
               </div>
             </div>
           </div>
@@ -271,11 +271,11 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
 
         {(step === 'upload' || step === 'browse') && (
-          <div className="mb-5 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
-            <button onClick={() => handleSwitchMode('upload')} className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'upload' ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
+          <div className="mb-5 flex gap-1 rounded-lg bg-muted p-1">
+            <button onClick={() => handleSwitchMode('upload')} className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'upload' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
               Upload a backup file
             </button>
-            <button onClick={() => handleSwitchMode('server')} className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'server' ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200'}`}>
+            <button onClick={() => handleSwitchMode('server')} className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${mode === 'server' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
               Browse scheduled backups
             </button>
           </div>
@@ -283,27 +283,27 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
         {step === 'browse' && (
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Browse Scheduled Backups</h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Select a server-side backup file to restore.</p>
+            <h2 className="text-lg font-semibold text-foreground">Browse Scheduled Backups</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Select a server-side backup file to restore.</p>
             {serverFilesLoading ? (
-              <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-zinc-400" /><p className="text-sm text-zinc-600 dark:text-zinc-300">Loading backup files...</p></div>
+              <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-muted-foreground" /><p className="text-sm text-muted-foreground">Loading backup files...</p></div>
             ) : serverFilesError ? (
-              <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{serverFilesError}</span></div>
+              <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{serverFilesError}</span></div>
             ) : serverFiles.length === 0 ? (
-              <div className="mt-6 flex flex-col items-center gap-2 py-8"><Clock className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1.5} /><p className="text-sm text-zinc-500 dark:text-zinc-400">No scheduled backups found.</p></div>
+              <div className="mt-6 flex flex-col items-center gap-2 py-8"><Clock className="size-10 text-muted-foreground" strokeWidth={1.5} /><p className="text-sm text-muted-foreground">No scheduled backups found.</p></div>
             ) : (
-              <div className="mt-4 max-h-64 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <div className="mt-4 max-h-64 overflow-y-auto rounded-lg border border-border">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
-                    <tr><th className="px-3 py-2 text-left text-xs font-medium text-zinc-600 dark:text-zinc-300">Backup Date</th><th className="px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Size</th><th className="w-20 px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Action</th></tr>
+                  <thead className="sticky top-0 border-b border-border bg-muted">
+                    <tr><th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Backup Date</th><th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Size</th><th className="w-20 px-3 py-2 text-right text-xs font-medium text-muted-foreground">Action</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  <tbody className="divide-y divide-border">
                     {serverFiles.map((file) => (
-                      <tr key={file.filename} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/30 ${selectedServerFile?.filename === file.filename ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                        <td className="px-3 py-2.5 text-zinc-700 dark:text-zinc-300"><div className="flex items-center gap-2"><Clock className="size-3.5 shrink-0 text-zinc-400" strokeWidth={1.5} /><span>{formatBackupDate(file.isoDate, timezone)}</span></div></td>
-                        <td className="px-3 py-2.5 text-right text-zinc-500 dark:text-zinc-400">{file.sizeHuman}</td>
+                      <tr key={file.filename} className={`hover:bg-muted/50 ${selectedServerFile?.filename === file.filename ? 'bg-info/10' : ''}`}>
+                        <td className="px-3 py-2.5 text-foreground"><div className="flex items-center gap-2"><Clock className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} /><span>{formatBackupDate(file.isoDate, timezone)}</span></div></td>
+                        <td className="px-3 py-2.5 text-right text-muted-foreground">{file.sizeHuman}</td>
                         <td className="px-3 py-2.5 text-right">
-                          <button onClick={() => { setSelectedServerFile(file); setStep('confirm'); setConfirmText(''); }} className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Restore</button>
+                          <button onClick={() => { setSelectedServerFile(file); setStep('confirm'); setConfirmText(''); }} className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80">Restore</button>
                         </td>
                       </tr>
                     ))}
@@ -312,30 +312,30 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
               </div>
             )}
             <div className="mt-5 flex items-center justify-end">
-              <button onClick={handleClose} className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">Close</button>
+              <button onClick={handleClose} className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted">Close</button>
             </div>
           </div>
         )}
 
         {step === 'upload' && (
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Restore from Backup</h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Upload a backup ZIP file to restore your journal data. This will replace all existing data.</p>
+            <h2 className="text-lg font-semibold text-foreground">Restore from Backup</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Upload a backup ZIP file to restore your journal data. This will replace all existing data.</p>
 
             {errorMessage && (
-              <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+              <div role="alert" className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                   <span className="flex-1">{errorMessage}</span>
                 </div>
-                <button onClick={handleRetry} className="mt-2 ml-6 text-xs font-medium text-red-600 underline underline-offset-2 hover:text-red-500 dark:text-red-300">Retry</button>
+                <button onClick={handleRetry} className="mt-2 ml-6 text-xs font-medium text-destructive underline underline-offset-2 hover:text-destructive/80">Retry</button>
               </div>
             )}
             {isUploading ? (
-              <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-zinc-400" /><p className="text-sm text-zinc-600 dark:text-zinc-300">Uploading and validating backup...</p></div>
+              <div className="mt-6 flex flex-col items-center gap-3 py-8"><Loader2 className="size-8 animate-spin text-muted-foreground" /><p className="text-sm text-muted-foreground">Uploading and validating backup...</p></div>
             ) : (
               <div className="mt-6">
-                <p className="text-xs text-zinc-400">Use the file selector above to choose a backup ZIP file. Only .zip files exported from this journal are supported.</p>
+                <p className="text-xs text-muted-foreground">Use the file selector above to choose a backup ZIP file. Only .zip files exported from this journal are supported.</p>
               </div>
             )}
           </div>
@@ -343,73 +343,73 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
 
         {step === 'preview' && previewData && (
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Backup Preview</h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Review the backup contents before restoring.</p>
-            <div className="mt-4 space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-              <div className="flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Backup Date</span><span className="text-sm text-zinc-900 dark:text-zinc-100">{formatBackupDate(previewData.manifest.backupTimestamp, timezone)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Schema Version</span><span className="text-sm text-zinc-900 dark:text-zinc-100">v{previewData.manifest.schemaVersion}</span></div>
-              <div className="flex items-center justify-between"><span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">App Version</span><span className="text-sm text-zinc-900 dark:text-zinc-100">{previewData.manifest.appVersion}</span></div>
+            <h2 className="text-lg font-semibold text-foreground">Backup Preview</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Review the backup contents before restoring.</p>
+            <div className="mt-4 space-y-2 rounded-lg border border-border bg-muted p-4">
+              <div className="flex items-center justify-between"><span className="text-xs font-medium text-muted-foreground">Backup Date</span><span className="text-sm text-foreground">{formatBackupDate(previewData.manifest.backupTimestamp, timezone)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-xs font-medium text-muted-foreground">Schema Version</span><span className="text-sm text-foreground">v{previewData.manifest.schemaVersion}</span></div>
+              <div className="flex items-center justify-between"><span className="text-xs font-medium text-muted-foreground">App Version</span><span className="text-sm text-foreground">{previewData.manifest.appVersion}</span></div>
             </div>
-            <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+            <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800"><tr><th className="px-3 py-2 text-left text-xs font-medium text-zinc-600 dark:text-zinc-300">Table</th><th className="px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Rows</th></tr></thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                <thead className="sticky top-0 border-b border-border bg-muted"><tr><th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Table</th><th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Rows</th></tr></thead>
+                <tbody className="divide-y divide-border">
                   {Object.entries(previewData.manifest.tables).map(([tableName, count]) => (
-                    <tr key={tableName} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30"><td className="px-3 py-1.5 text-zinc-700 dark:text-zinc-300">{TABLE_LABELS[tableName] ?? tableName}</td><td className="px-3 py-1.5 text-right text-zinc-600 dark:text-zinc-400">{count < 0 ? 'Error' : count.toLocaleString()}</td></tr>
+                    <tr key={tableName} className="hover:bg-muted/50"><td className="px-3 py-1.5 text-foreground">{TABLE_LABELS[tableName] ?? tableName}</td><td className="px-3 py-1.5 text-right text-muted-foreground">{count < 0 ? 'Error' : count.toLocaleString()}</td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleClose} className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button><button onClick={() => setStep('confirm')} className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Restore</button></div>
+            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleClose} className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted">Cancel</button><button onClick={() => setStep('confirm')} className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80">Restore</button></div>
           </div>
         )}
 
         {step === 'confirm' && (
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Backup uploaded. Confirm restore.</h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">The backup ZIP was uploaded and validated successfully.</p>
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>Restoring will permanently replace ALL existing data in your journal with the data from the backup. This action cannot be undone.</span></div>
+            <h2 className="text-lg font-semibold text-foreground">Backup uploaded. Confirm restore.</h2>
+            <p className="mt-1 text-sm text-muted-foreground">The backup ZIP was uploaded and validated successfully.</p>
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>Restoring will permanently replace ALL existing data in your journal with the data from the backup. This action cannot be undone.</span></div>
             
             {previewData && (
-              <div className="mt-3 space-y-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
-                <div className="flex items-center justify-between"><span className="text-zinc-500">Backup date</span><span className="text-zinc-700 dark:text-zinc-300">{formatBackupDate(previewData.manifest.backupTimestamp, timezone)}</span></div>
-                <div className="flex items-center justify-between"><span className="text-zinc-500">Schema version</span><span className="text-zinc-700 dark:text-zinc-300">v{previewData.manifest.schemaVersion}</span></div>
-                <div className="flex items-center justify-between"><span className="text-zinc-500">Tables</span><span className="text-zinc-700 dark:text-zinc-300">{Object.keys(previewData.manifest.tables).length}</span></div>
+              <div className="mt-3 space-y-1 rounded-lg border border-border bg-muted p-3 text-xs">
+                <div className="flex items-center justify-between"><span className="text-muted-foreground">Backup date</span><span className="text-foreground">{formatBackupDate(previewData.manifest.backupTimestamp, timezone)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-muted-foreground">Schema version</span><span className="text-foreground">v{previewData.manifest.schemaVersion}</span></div>
+                <div className="flex items-center justify-between"><span className="text-muted-foreground">Tables</span><span className="text-foreground">{Object.keys(previewData.manifest.tables).length}</span></div>
               </div>
             )}
 
-            <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Type <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">RESTORE</span> to confirm:</p>
-            <input ref={confirmInputRef} type="text" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} aria-label="Type RESTORE to confirm" placeholder="Type RESTORE to confirm" className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-red-500 dark:focus:ring-red-900/30" autoComplete="off" spellCheck={false} />
-            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleGoBack} className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancel</button><button onClick={handleRestore} disabled={confirmText !== 'RESTORE'} className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600">Confirm Restore</button></div>
+            <p className="mt-4 text-sm text-muted-foreground">Type <span className="font-mono font-bold text-foreground">RESTORE</span> to confirm:</p>
+            <input ref={confirmInputRef} type="text" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} aria-label="Type RESTORE to confirm" placeholder="Type RESTORE to confirm" className="mt-2 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30" autoComplete="off" spellCheck={false} />
+            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleGoBack} className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted">Cancel</button><button onClick={handleRestore} disabled={confirmText !== 'RESTORE'} className="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50">Confirm Restore</button></div>
           </div>
         )}
 
         {step === 'restoring' && (
-          <div className="flex flex-col items-center py-8"><Loader2 className="size-10 animate-spin text-zinc-400" /><p className="mt-4 text-sm font-medium text-zinc-700 dark:text-zinc-300">Restoring...</p><p className="mt-1 text-xs text-zinc-400">Please wait while your journal data is being restored.</p></div>
+          <div className="flex flex-col items-center py-8"><Loader2 className="size-10 animate-spin text-muted-foreground" /><p className="mt-4 text-sm font-medium text-foreground">Restoring...</p><p className="mt-1 text-xs text-muted-foreground">Please wait while your journal data is being restored.</p></div>
         )}
 
         {step === 'success' && (
-          <div className="flex flex-col items-center py-8"><CircleCheck className="size-12 text-emerald-600 dark:text-emerald-400" /><p className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">Restore Complete</p><p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">Your journal has been restored. Redirecting to dashboard...</p></div>
+          <div className="flex flex-col items-center py-8"><CircleCheck className="size-12 text-positive" /><p className="mt-4 text-sm font-medium text-foreground">Restore Complete</p><p className="mt-1 text-xs text-muted-foreground">Your journal has been restored. Redirecting to dashboard...</p></div>
         )}
 
         {step === 'error' && (
           <div>
-            <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Restore Failed</h2>
-            <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>{errorMessage || 'An unexpected error occurred during restore.'}</span></div>
+            <h2 className="text-lg font-semibold text-destructive">Restore Failed</h2>
+            <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><span>{errorMessage || 'An unexpected error occurred during restore.'}</span></div>
             {errorMessage != null && errorMessage.includes('Schema version mismatch') && (
-              <div role="alert" className="mt-2 ml-6 text-xs text-red-600 dark:text-red-400">
+              <div role="alert" className="mt-2 ml-6 text-xs text-destructive">
                 The database schema has changed since this backup was created.
                 Create a new backup from the current app (Backup Now) or upload a newer backup file.
-                Run <code className="rounded bg-red-100 px-1 dark:bg-red-900/50">make seed-settings</code> to regenerate the seed file.
+                Run <code className="rounded bg-destructive/10 px-1">make seed-settings</code> to regenerate the seed file.
               </div>
             )}
             {errorMessage != null && errorMessage.includes('Cannot restore while trades are open') && (
-              <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>Close all open trades in the Trade Log first, then try restoring again.</span>
               </div>
             )}
-            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleClose} className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">Close</button><button onClick={handleRetry} className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Try Again</button></div>
+            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={handleClose} className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted">Close</button><button onClick={handleRetry} className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80">Try Again</button></div>
           </div>
         )}
       </div>

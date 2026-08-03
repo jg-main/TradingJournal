@@ -123,8 +123,8 @@ describe('DirectionalPerformanceWidget', () => {
     );
     // Long P&L value (+$1,500.00) should have text-zinc-700 class (positive)
     const longPnl = screen.getByText('+$1,500.00');
-    expect(longPnl.className).toContain('text-zinc-700');
-    expect(longPnl.className).toContain('dark:text-zinc-300');
+    expect(longPnl.className).toContain('text-positive');
+    expect(longPnl.className).toContain('text-positive');
   });
 
   it('renders negative P&L with red colour class', () => {
@@ -135,8 +135,8 @@ describe('DirectionalPerformanceWidget', () => {
     );
     // Short P&L value (-$300) should have text-red-600 class (negative)
     const shortPnl = screen.getByText('-$300.00');
-    expect(shortPnl.className).toContain('text-red-600');
-    expect(shortPnl.className).toContain('dark:text-red-400');
+    expect(shortPnl.className).toContain('text-negative');
+    expect(shortPnl.className).toContain('text-negative');
   });
 
   it('renders zero P&L without colour class emphasis', () => {
@@ -150,7 +150,7 @@ describe('DirectionalPerformanceWidget', () => {
     expect(zeroPnl).toHaveLength(2);
     // $0.00 should not have red colour class
     zeroPnl.forEach((el) => {
-      expect(el.className).not.toContain('text-red-600');
+      expect(el.className).not.toContain('text-negative');
     });
   });
 

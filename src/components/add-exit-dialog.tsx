@@ -75,7 +75,7 @@ function getExitActions(direction: 'long' | 'short'): ExitAction[] {
 }
 
 const labelClass =
-  'mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300';
+  'mb-1 block text-sm font-medium text-foreground';
 
 const textareaClass =
   'w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 dark:bg-input/30 md:text-sm';
@@ -246,7 +246,7 @@ export function AddExitDialog({
         </DialogHeader>
 
         {serverError && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {serverError}
           </div>
         )}
@@ -282,7 +282,7 @@ export function AddExitDialog({
               </SelectContent>
             </Select>
             {fieldErrors.action && (
-              <p className="mt-1 text-xs text-red-500">{fieldErrors.action}</p>
+              <p className="mt-1 text-xs text-destructive">{fieldErrors.action}</p>
             )}
           </div>
 
@@ -302,7 +302,7 @@ export function AddExitDialog({
                 aria-invalid={!!fieldErrors.quantity || undefined}
               />
               {fieldErrors.quantity && (
-                <p className="mt-1 text-xs text-red-500">
+                <p className="mt-1 text-xs text-destructive">
                   {fieldErrors.quantity}
                 </p>
               )}
@@ -321,7 +321,7 @@ export function AddExitDialog({
                 aria-invalid={!!fieldErrors.price || undefined}
               />
               {fieldErrors.price && (
-                <p className="mt-1 text-xs text-red-500">
+                <p className="mt-1 text-xs text-destructive">
                   {fieldErrors.price}
                 </p>
               )}
@@ -355,7 +355,7 @@ export function AddExitDialog({
                 aria-invalid={!!fieldErrors.fees || undefined}
               />
               {fieldErrors.fees && (
-                <p className="mt-1 text-xs text-red-500">
+                <p className="mt-1 text-xs text-destructive">
                   {fieldErrors.fees}
                 </p>
               )}

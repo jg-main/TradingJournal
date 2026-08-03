@@ -18,14 +18,14 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 px-6 py-16 text-center dark:border-zinc-700',
+        'flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 py-16 text-center',
         className
       )}
     >
       {icon && (
         <div className="mb-4">{icon}</div>
       )}
-      <h3 className="mb-1 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+      <h3 className="mb-1 text-base font-semibold text-foreground">
         {title}
       </h3>
       <p className="mb-6 max-w-sm text-sm text-muted-foreground">

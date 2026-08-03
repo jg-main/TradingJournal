@@ -72,13 +72,13 @@ function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) 
     <div className="flex flex-col h-10 items-center justify-center">
       <span
         className={cn(
-          'text-base font-bold tabular-nums leading-tight text-zinc-900 dark:text-zinc-100',
+          'text-base font-bold tabular-nums leading-tight text-foreground',
           valueClassName,
         )}
       >
         {value}
       </span>
-      <span className="mt-0.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
+      <span className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
         {label}
       </span>
     </div>
@@ -140,9 +140,9 @@ function pnlColor(v: string | null | undefined): string {
   if (v === null || v === undefined) return '';
   const n = parseFloat(v);
   if (isNaN(n)) return '';
-  if (n > 0) return 'text-zinc-700 dark:text-zinc-300';
-  if (n < 0) return 'text-red-600 dark:text-red-400';
-  return 'text-zinc-500 dark:text-zinc-400';
+  if (n > 0) return 'text-positive';
+  if (n < 0) return 'text-negative';
+  return 'text-muted-foreground';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -160,10 +160,10 @@ function IntegrityBadge({
   // Always render the status badge — even healthy shows a visual indicator
 
   const colors: Record<IntegrityStatus, string> = {
-    healthy: 'text-green-700 bg-green-50 dark:text-green-400 dark:bg-green-900/30',
-    warning: 'text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/30',
-    critical: 'text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-900/30',
-    unknown: 'text-zinc-600 bg-zinc-50 dark:text-zinc-400 dark:bg-zinc-900/30',
+    healthy: 'text-positive bg-positive/10',
+    warning: 'text-warning bg-warning/10',
+    critical: 'text-destructive bg-destructive/10',
+    unknown: 'text-muted-foreground bg-muted',
   };
 
   const icons: Record<IntegrityStatus, React.ReactNode> = {
@@ -222,7 +222,7 @@ export function AccountPerformancePanel({
     >
       {!data || !metrics ? (
         <div className="flex h-32 items-center justify-center">
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             No account data available
           </p>
         </div>
@@ -230,12 +230,12 @@ export function AccountPerformancePanel({
         <div className="flex h-full flex-col gap-2">
           {/* ── Account Header Row ─────────────────────────────────── */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Wallet className="size-3.5 shrink-0" />
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+              <span className="font-medium text-foreground">
                 {data.account.name}
               </span>
-              <span className="text-zinc-300 dark:text-zinc-600">·</span>
+              <span className="text-muted-foreground">·</span>
               <span>{data.account.currency}</span>
             </div>
 
@@ -253,7 +253,7 @@ export function AccountPerformancePanel({
                 <button
                   onClick={onRefresh}
                   disabled={isRefreshing}
-                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title={isRefreshing ? 'Refreshing...' : 'Refresh'}
                 >
                   <RefreshCw
@@ -266,7 +266,7 @@ export function AccountPerformancePanel({
           </div>
 
           {/* ── Metrics Grid (3 columns, 3 rows = 9 metrics) ───────────── */}
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50/50 px-2 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-border bg-muted px-2 py-2">
             {/* Row 1: Cash, NAV, Marked Positions */}
             <MetricCell
               value={fmt(metrics.cash)}
@@ -300,7 +300,7 @@ export function AccountPerformancePanel({
             <MetricCell
               value={fmtSigned(metrics.realizedFees)}
               label="Realized Fees"
-              valueClassName="text-red-600 dark:text-red-400"
+              valueClassName="text-negative"
               tooltip="Total fees and commissions incurred on closed positions."
             />
 
@@ -323,7 +323,7 @@ export function AccountPerformancePanel({
                   : '--'
               }
               label="Drawdown"
-              valueClassName="text-red-600 dark:text-red-400"
+              valueClassName="text-negative"
               tooltip="Peak-to-trough decline from the highest account NAV."
             />
           </div>
@@ -344,7 +344,7 @@ export function AccountPerformancePanel({
               )}
             </div>
             {data.computedAt && (
-              <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+              <span className="text-[10px] text-muted-foreground">
                 {new Date(data.computedAt).toLocaleString()}
               </span>
             )}

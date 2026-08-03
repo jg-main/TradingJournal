@@ -584,7 +584,7 @@ describe('OpenPositionsRiskWidget', () => {
         riskSummary={SAMPLE_RISK}
       />,
     );
-    const greenCells = container.querySelectorAll('.text-green-600');
+    const greenCells = container.querySelectorAll('.text-positive');
     expect(greenCells.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -595,7 +595,7 @@ describe('OpenPositionsRiskWidget', () => {
         riskSummary={NEGATIVE_PNL_RISK}
       />,
     );
-    const redCells = container.querySelectorAll('.text-red-600');
+    const redCells = container.querySelectorAll('.text-negative');
     // The Open P&L '-$200.00' cell and the META cell should have red
     expect(redCells.length).toBeGreaterThanOrEqual(1);
   });
@@ -640,13 +640,13 @@ describe('OpenPositionsRiskWidget', () => {
         riskSummary={SAMPLE_RISK}
       />,
     );
-    // Positive P&L cells (AAPL $500, TSLA $400, GOOGL $50): text-green-600
-    const greenCells = container.querySelectorAll('.text-green-600');
+    // Positive P&L cells (AAPL $500, TSLA $400, GOOGL $50): text-positive
+    const greenCells = container.querySelectorAll('.text-positive');
     expect(greenCells.length).toBeGreaterThanOrEqual(1);
-    // META has -$200.00 P&L which should be text-red-600 in the P&L cell
+    // META has -$200.00 P&L which should be text-negative in the P&L cell
     // The risk summary Open P&L uses SAMPLE_RISK (positive $750), so only
     // the META row cell should be red
-    const redCells = container.querySelectorAll('.text-red-600');
+    const redCells = container.querySelectorAll('.text-negative');
     expect(redCells.length).toBeGreaterThanOrEqual(1);
   });
 });

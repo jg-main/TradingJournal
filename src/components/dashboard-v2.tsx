@@ -153,24 +153,24 @@ function formatPercent(v: string | null | undefined): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function pnlColorValue(v: string | null): string {
-  if (v === null || v === undefined) return 'text-zinc-500 dark:text-zinc-400';
+  if (v === null || v === undefined) return 'text-muted-foreground';
   const n = parseFloat(v);
-  if (isNaN(n)) return 'text-zinc-500 dark:text-zinc-400';
-  if (n > 0) return 'text-zinc-700 dark:text-zinc-300';
-  if (n < 0) return 'text-red-600 dark:text-red-400';
-  return 'text-zinc-500 dark:text-zinc-400';
+  if (isNaN(n)) return 'text-muted-foreground';
+  if (n > 0) return 'text-positive';
+  if (n < 0) return 'text-negative';
+  return 'text-muted-foreground';
 }
 
 function integrityColor(status: IntegrityStatus): string {
   switch (status) {
     case 'healthy':
-      return 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400';
+      return 'border-positive/30 bg-positive/10 text-positive';
     case 'warning':
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
+      return 'border-warning/30 bg-warning/10 text-warning';
     case 'critical':
-      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400';
+      return 'border-destructive/30 bg-destructive/10 text-destructive';
     case 'unknown':
-      return 'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400';
+      return 'border-border bg-muted text-muted-foreground';
   }
 }
 
@@ -194,10 +194,10 @@ function integrityIcon(status: IntegrityStatus) {
 /** Skeleton placeholders during loading */
 function SkeletonCard() {
   return (
-    <div className="animate-pulse rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="mb-3 size-9 rounded-lg bg-zinc-200 dark:bg-zinc-700" />
-      <div className="mb-1 h-7 w-20 rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-3 w-16 rounded bg-zinc-100 dark:bg-zinc-800" />
+    <div className="animate-pulse rounded-xl border border-border bg-card p-5">
+      <div className="mb-3 size-9 rounded-lg bg-muted" />
+      <div className="mb-1 h-7 w-20 rounded bg-muted" />
+      <div className="h-3 w-16 rounded bg-muted" />
     </div>
   );
 }
@@ -225,14 +225,14 @@ function MetricCard({
           {icon}
         </div>
         <p
-          className={`text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100 ${valueClassName ?? ''}`}
+          className={`text-2xl font-bold tabular-nums text-foreground ${valueClassName ?? ''}`}
         >
           {value}
         </p>
         {tooltip ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <p className="cursor-help text-xs text-zinc-500 underline decoration-dotted decoration-zinc-300 underline-offset-2 dark:text-zinc-400 dark:decoration-zinc-600">
+              <p className="cursor-help text-xs text-muted-foreground underline decoration-dotted decoration-muted-foreground underline-offset-2">
                 {label}
               </p>
             </TooltipTrigger>
@@ -241,7 +241,7 @@ function MetricCard({
             </TooltipContent>
           </Tooltip>
         ) : (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{label}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
         )}
       </CardContent>
     </Card>
@@ -296,12 +296,12 @@ function ValuationBadge({ status }: { status: string }) {
 /** Direction icon helper */
 function DirectionIcon({ direction }: { direction: string | null }) {
   if (direction === 'long') {
-    return <ArrowUp className="size-3 text-green-600 dark:text-green-400" />;
+    return <ArrowUp className="size-3 text-positive" />;
   }
   if (direction === 'short') {
-    return <ArrowDown className="size-3 text-red-600 dark:text-red-400" />;
+    return <ArrowDown className="size-3 text-negative" />;
   }
-  return <Minus className="size-3 text-zinc-400" />;
+  return <Minus className="size-3 text-muted-foreground" />;
 }
 
 /** Account selector dropdown */
@@ -318,13 +318,13 @@ function AccountSelector({
 }) {
   if (loading) {
     return (
-      <div className="h-9 w-48 animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800" />
+      <div className="h-9 w-48 animate-pulse rounded-lg border border-border bg-muted" />
     );
   }
 
   if (accounts.length === 0) {
     return (
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="text-sm text-muted-foreground">
         No accounts found
       </p>
     );
@@ -339,7 +339,7 @@ function AccountSelector({
         id="account-selector-v2"
         value={selectedAccountId ?? ''}
         onChange={(e) => onSelect(e.target.value)}
-        className="h-9 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm text-zinc-900 outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-100"
+        className="h-9 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
         aria-label="Select account"
       >
         {accounts.map((acc) => (
@@ -466,7 +466,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2
           id="dashboard-v2-heading"
-          className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50"
+          className="text-lg font-semibold tracking-tight text-foreground"
         >
           Account Performance
         </h2>
@@ -480,7 +480,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
           <button
             onClick={handleRefresh}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Refresh dashboard data"
           >
             <RefreshCw
@@ -493,12 +493,12 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
       {/* Error state */}
       {error && (
-        <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span className="flex-1">{error}</span>
           <button
             onClick={handleRefresh}
-            className="shrink-0 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-700 dark:bg-red-900/50 dark:text-red-300 dark:hover:bg-red-800/50"
+            className="shrink-0 rounded-md border border-destructive/40 bg-card px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
           >
             Retry
           </button>
@@ -518,12 +518,12 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
       {!loading && !error && dashboard && metrics && (
         <>
           {/* Account info header */}
-          <div className="mb-4 flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
             <Wallet className="size-4" />
             <span>
               {dashboard.account.name}
             </span>
-            <span className="text-zinc-300 dark:text-zinc-600">·</span>
+            <span className="text-muted-foreground">·</span>
             <span>{dashboard.account.currency}</span>
           </div>
 
@@ -543,8 +543,8 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
           <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {/* Cash */}
             <MetricCard
-              icon={<DollarSign className="size-4 text-zinc-700 dark:text-zinc-300" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<DollarSign className="size-4 text-foreground" />}
+              iconBg="bg-muted"
               value={formatCurrency(metrics.cash)}
               label="Cash"
               tooltip="Available cash balance in the account."
@@ -552,8 +552,8 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
             {/* NAV */}
             <MetricCard
-              icon={<Wallet className="size-4 text-zinc-700 dark:text-zinc-300" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<Wallet className="size-4 text-foreground" />}
+              iconBg="bg-muted"
               value={formatCurrency(metrics.nav)}
               label="NAV"
               tooltip="Net asset value: cash plus marked positions value."
@@ -561,8 +561,8 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
             {/* Marked Positions */}
             <MetricCard
-              icon={<BarChart3 className="size-4 text-zinc-700 dark:text-zinc-300" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<BarChart3 className="size-4 text-foreground" />}
+              iconBg="bg-muted"
               value={formatCurrency(metrics.markedPositions)}
               label="Marked Positions"
               tooltip="Total value of open positions at latest mark prices."
@@ -570,8 +570,8 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
             {/* Realized P&L */}
             <MetricCard
-              icon={<Target className="size-4 text-zinc-700 dark:text-zinc-300" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<Target className="size-4 text-foreground" />}
+              iconBg="bg-muted"
               value={formatCurrencySigned(metrics.realizedPnl)}
               valueClassName={pnlColorValue(metrics.realizedPnl)}
               label="Realized P&amp;L"
@@ -580,13 +580,13 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
             {/* Unrealized P&L */}
             <MetricCard
-              icon={<TrendingUp className="size-4 text-zinc-700 dark:text-zinc-300" />}
+              icon={<TrendingUp className="size-4 text-foreground" />}
               iconBg={
                 metrics.unrealizedPnl !== null
                   ? parseFloat(metrics.unrealizedPnl) >= 0
-                    ? 'bg-emerald-100 dark:bg-emerald-900/30'
-                    : 'bg-red-100 dark:bg-red-900/30'
-                  : 'bg-zinc-100 dark:bg-zinc-800'
+                    ? 'bg-positive/10'
+                    : 'bg-negative/10'
+                  : 'bg-muted'
               }
               value={formatCurrencySigned(metrics.unrealizedPnl)}
               valueClassName={pnlColorValue(metrics.unrealizedPnl)}
@@ -596,18 +596,18 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
             {/* Realized Fees */}
             <MetricCard
-              icon={<Activity className="size-4 text-zinc-700 dark:text-zinc-300" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<Activity className="size-4 text-foreground" />}
+              iconBg="bg-muted"
               value={formatCurrencySigned(metrics.realizedFees)}
-              valueClassName="text-red-600 dark:text-red-400"
+              valueClassName="text-negative"
               label="Realized Fees"
               tooltip="Total fees and commissions incurred on closed positions."
             />
 
             {/* Gross Exposure */}
             <MetricCard
-              icon={<Layers className="size-4 text-zinc-700 dark:text-zinc-300" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<Layers className="size-4 text-foreground" />}
+              iconBg="bg-muted"
               value={formatCurrency(metrics.grossExposure)}
               label="Gross Exposure"
               tooltip="Absolute value of all open positions (long + short)."
@@ -615,8 +615,8 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
             {/* Net Exposure */}
             <MetricCard
-              icon={<LineChart className="size-4 text-zinc-700 dark:text-zinc-300" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<LineChart className="size-4 text-foreground" />}
+              iconBg="bg-muted"
               value={formatCurrencySigned(metrics.netExposure)}
               valueClassName={pnlColorValue(metrics.netExposure)}
               label="Net Exposure"
@@ -625,21 +625,21 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
             {/* Drawdown */}
             <MetricCard
-              icon={<TrendingDown className="size-4 text-red-600 dark:text-red-400" />}
-              iconBg="bg-zinc-100 dark:bg-zinc-800"
+              icon={<TrendingDown className="size-4 text-negative" />}
+              iconBg="bg-muted"
               value={
                 metrics.drawdown !== null && metrics.drawdownPct !== null
                   ? `${formatCurrency(metrics.drawdown)} (${formatPercent(metrics.drawdownPct)})`
                   : '--'
               }
-              valueClassName="text-red-600 dark:text-red-400"
+              valueClassName="text-negative"
               label="Drawdown"
               tooltip="Peak-to-trough decline from the highest account NAV."
             />
           </div>
 
           {/* Account Performance vs Journal Attribution labels */}
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="gap-1">
               <BookOpen className="size-3" />
               Account performance
@@ -661,10 +661,10 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
             <CardContent>
               <div className="mb-4 flex flex-wrap gap-4">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                  <span className="text-sm text-muted-foreground">
                     Positions:
                   </span>
-                  <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                  <span className="text-sm font-semibold tabular-nums text-foreground">
                     {valuation?.positionsTotal ?? '--'}
                   </span>
                 </div>
@@ -684,29 +684,29 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
                 <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Position valuation details">
                   <table className="w-full text-left text-xs tabular-nums">
                     <thead>
-                      <tr className="border-b border-zinc-200 dark:border-zinc-700">
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                      <tr className="border-b border-border">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Symbol
                         </th>
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Dir
                         </th>
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Qty
                         </th>
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Avg Cost
                         </th>
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Mark
                         </th>
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Marked Value
                         </th>
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Unrealized
                         </th>
-                        <th className="pb-2 pr-2 font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-2 font-medium text-muted-foreground">
                           Status
                         </th>
                       </tr>
@@ -715,26 +715,26 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
                       {valuation.positions.map((pos) => (
                         <tr
                           key={pos.instrumentId}
-                          className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
+                          className="border-b border-border last:border-0"
                         >
-                          <td className="py-2 pr-2 font-medium text-zinc-900 dark:text-zinc-100">
+                          <td className="py-2 pr-2 font-medium text-foreground">
                             {pos.symbol}
                           </td>
                           <td className="py-2 pr-2">
                             <DirectionIcon direction={pos.direction} />
                           </td>
-                          <td className="py-2 pr-2 text-zinc-700 dark:text-zinc-300">
+                          <td className="py-2 pr-2 text-foreground">
                             {pos.quantity}
                           </td>
-                          <td className="py-2 pr-2 text-zinc-700 dark:text-zinc-300">
+                          <td className="py-2 pr-2 text-foreground">
                             {formatCurrency(pos.averageCost)}
                           </td>
-                          <td className="py-2 pr-2 text-zinc-700 dark:text-zinc-300">
+                          <td className="py-2 pr-2 text-foreground">
                             {pos.markPrice !== null
                               ? formatCurrency(pos.markPrice)
                               : '--'}
                           </td>
-                          <td className="py-2 pr-2 text-zinc-700 dark:text-zinc-300">
+                          <td className="py-2 pr-2 text-foreground">
                             {pos.markedValue !== null
                               ? formatCurrency(pos.markedValue)
                               : '--'}
@@ -759,7 +759,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
               {/* Empty position state */}
               {valuation && valuation.positions.length === 0 && (
                 <EmptyState
-                  icon={<BarChart3 className="size-8 text-zinc-400" />}
+                  icon={<BarChart3 className="size-8 text-muted-foreground" />}
                   title="No open positions"
                   description="This account has no open positions to valuate."
                 />
@@ -771,7 +771,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
           {/* Computed at timestamp */}
           {dashboard.computedAt && (
-            <p className="text-right text-xs text-zinc-400 dark:text-zinc-500">
+            <p className="text-right text-xs text-muted-foreground">
               Last computed:{' '}
               {new Date(dashboard.computedAt).toLocaleString()}
             </p>
@@ -782,7 +782,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
       {/* Empty state: no dashboard data (account exists but no accounting data) */}
       {!loading && !error && !dashboard && !selectedAccountId && (
         <EmptyState
-          icon={<Wallet className="size-10 text-zinc-300 dark:text-zinc-600" />}
+          icon={<Wallet className="size-10 text-muted-foreground" />}
           title="Select an account"
           description="Choose an account above to view account-level performance metrics."
         />
@@ -790,7 +790,7 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
 
       {!loading && !error && !dashboard && selectedAccountId && (
         <EmptyState
-          icon={<BarChart3 className="size-10 text-zinc-300 dark:text-zinc-600" />}
+          icon={<BarChart3 className="size-10 text-muted-foreground" />}
           title="No account data"
           description="This account has no accounting data yet. Post an opening balance or execution to get started."
         />

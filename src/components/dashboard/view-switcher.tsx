@@ -95,13 +95,12 @@ export function ViewSwitcher({
         <button
           data-testid="view-switcher-trigger"
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100',
-            'dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+            'inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
           )}
         >
           <span data-testid="view-switcher-current-name">{displayName}</span>
-          <ChevronDown className="size-3.5 text-zinc-400 dark:text-zinc-500" />
+          <ChevronDown className="size-3.5 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
 
@@ -185,7 +184,7 @@ export function ViewSwitcher({
             <DropdownMenuSeparator />
             <div
               data-testid="view-write-failed"
-              className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-amber-600 dark:text-amber-400"
+              className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-warning"
             >
               <AlertTriangle className="size-3 shrink-0" />
               <span>Changes may not be saved</span>

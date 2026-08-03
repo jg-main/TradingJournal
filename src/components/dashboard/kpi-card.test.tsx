@@ -243,9 +243,9 @@ describe('KpiCardSkeleton', () => {
     expect(children.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('renders skeleton placeholders with bg-zinc classes', () => {
+  it('renders skeleton placeholders with bg-muted classes', () => {
     const { container } = render(<KpiCardSkeleton />);
-    const skeletonElements = container.querySelectorAll('.bg-zinc-200, .bg-zinc-100');
+    const skeletonElements = container.querySelectorAll('.bg-muted');
     expect(skeletonElements.length).toBe(3);
   });
 

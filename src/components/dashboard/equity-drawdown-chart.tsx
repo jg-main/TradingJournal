@@ -310,7 +310,7 @@ export function EquityDrawdownChart({
       {!hasData && !isLoading && (
         <div className="px-(--card-spacing) pb-(--card-spacing)">
           <EmptyState
-            icon={<TrendingUp className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+            icon={<TrendingUp className="size-10 text-muted-foreground" strokeWidth={1} />}
             title="No equity data available"
             description="Your combined equity and drawdown chart will appear here after you start trading."
           />

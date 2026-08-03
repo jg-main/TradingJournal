@@ -40,15 +40,15 @@ interface DirectionColumnProps {
 function DirectionColumn({ label, netPnl, winRate, tradeCount }: DirectionColumnProps) {
   const pnlClass =
     netPnl > 0
-      ? 'text-zinc-700 dark:text-zinc-300'
+      ? 'text-positive'
       : netPnl < 0
-        ? 'text-red-600 dark:text-red-400'
+        ? 'text-negative'
         : '';
 
   return (
     <Card size="sm">
       <CardContent className="flex flex-col gap-1.5 p-3">
-        <p className="text-sm font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+        <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </p>
         <div className="grid grid-cols-3 gap-2">
@@ -56,19 +56,19 @@ function DirectionColumn({ label, netPnl, winRate, tradeCount }: DirectionColumn
             <p className={`text-base font-bold tabular-nums ${pnlClass}`}>
               {formatCurrency(netPnl, { sign: true })}
             </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">P&amp;L</p>
+            <p className="text-xs text-muted-foreground">P&amp;L</p>
           </div>
           <div>
-            <p className="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+            <p className="text-base font-bold tabular-nums text-foreground">
               {formatPercent(winRate)}
             </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Win Rate</p>
+            <p className="text-xs text-muted-foreground">Win Rate</p>
           </div>
           <div>
-            <p className="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+            <p className="text-base font-bold tabular-nums text-foreground">
               {tradeCount}
             </p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Trades</p>
+            <p className="text-xs text-muted-foreground">Trades</p>
           </div>
         </div>
       </CardContent>
@@ -120,7 +120,7 @@ export function DirectionalPerformanceWidget({
           <EmptyState
             icon={
               <TrendingUp
-                className="size-10 text-zinc-300 dark:text-zinc-600"
+                className="size-10 text-muted-foreground"
                 strokeWidth={1}
               />
             }

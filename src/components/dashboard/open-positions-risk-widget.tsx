@@ -95,18 +95,18 @@ function pnlColor(v: string | null | undefined): string {
   if (v === null || v === undefined) return '';
   const n = parseFloat(v);
   if (isNaN(n)) return '';
-  if (n > 0) return 'text-green-600 dark:text-green-400';
-  if (n < 0) return 'text-red-600 dark:text-red-400';
-  return 'text-zinc-500 dark:text-zinc-400';
+  if (n > 0) return 'text-positive';
+  if (n < 0) return 'text-negative';
+  return 'text-muted-foreground';
 }
 
 function pnlBg(v: string | null | undefined): string {
-  if (v === null || v === undefined) return 'bg-zinc-100 dark:bg-zinc-800';
+  if (v === null || v === undefined) return 'bg-muted';
   const n = parseFloat(v);
-  if (isNaN(n)) return 'bg-zinc-100 dark:bg-zinc-800';
-  if (n > 0) return 'bg-green-100 dark:bg-green-900/30';
-  if (n < 0) return 'bg-red-100 dark:bg-red-900/30';
-  return 'bg-zinc-100 dark:bg-zinc-800';
+  if (isNaN(n)) return 'bg-muted';
+  if (n > 0) return 'bg-positive/10';
+  if (n < 0) return 'bg-negative/10';
+  return 'bg-muted';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -116,12 +116,12 @@ function pnlBg(v: string | null | undefined): string {
 /** Direction arrow icon for a position's direction attribute. */
 function DirectionIcon({ direction }: { direction: string | null }) {
   if (direction === 'long') {
-    return <ArrowUp className="size-3 text-green-600 dark:text-green-400" />;
+    return <ArrowUp className="size-3 text-positive" />;
   }
   if (direction === 'short') {
-    return <ArrowDown className="size-3 text-red-600 dark:text-red-400" />;
+    return <ArrowDown className="size-3 text-negative" />;
   }
-  return <Minus className="size-3 text-zinc-400" />;
+  return <Minus className="size-3 text-muted-foreground" />;
 }
 
 /** Badge showing the valuation status of a position. */
@@ -162,7 +162,7 @@ function RiskSummaryRow({
     <div className="mb-2 flex flex-wrap items-center gap-2">
       {/* Open P&L */}
       <div className="flex items-center gap-1.5">
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="text-xs text-muted-foreground">
           Open P&amp;L:
         </span>
         <span
@@ -173,48 +173,48 @@ function RiskSummaryRow({
       </div>
 
       {/* Divider */}
-      <span className="hidden text-zinc-300 dark:text-zinc-600 sm:inline">|</span>
+      <span className="hidden text-muted-foreground sm:inline">|</span>
 
       {/* Open Risk */}
       <div className="flex items-center gap-1.5">
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="text-xs text-muted-foreground">
           Open Risk:
         </span>
-        <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+        <span className="text-sm font-semibold tabular-nums text-foreground">
           {fmt(risk.openRisk)}
         </span>
       </div>
 
       {/* Divider */}
-      <span className="hidden text-zinc-300 dark:text-zinc-600 sm:inline">|</span>
+      <span className="hidden text-muted-foreground sm:inline">|</span>
 
       {/* Portfolio Heat */}
       <div className="flex items-center gap-1.5">
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="text-xs text-muted-foreground">
           Portfolio Heat:
         </span>
-        <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+        <span className="text-sm font-semibold tabular-nums text-foreground">
           {fmtPct(risk.portfolioHeat)}
         </span>
       </div>
 
       {/* Divider */}
-      <span className="hidden text-zinc-300 dark:text-zinc-600 sm:inline">|</span>
+      <span className="hidden text-muted-foreground sm:inline">|</span>
 
       {/* Missing Stops */}
       <div className="flex items-center gap-1.5">
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="text-xs text-muted-foreground">
           Missing Stops:
         </span>
         <Badge variant={missingStopsBadge}>{risk.missingStops}</Badge>
       </div>
 
       {/* Divider */}
-      <span className="hidden text-zinc-300 dark:text-zinc-600 sm:inline">|</span>
+      <span className="hidden text-muted-foreground sm:inline">|</span>
 
       {/* Fresh / Stale / Missing badges */}
       <div className="flex items-center gap-1.5">
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="text-xs text-muted-foreground">
           Marks:
         </span>
         <Badge variant="default">Fresh: {valuation.fresh}</Badge>
@@ -259,13 +259,13 @@ function PositionTable({
         <TableBody>
           {positions.map((pos) => (
             <TableRow key={pos.instrumentId}>
-              <TableCell className="py-0.5 font-medium text-zinc-900 dark:text-zinc-100">
+              <TableCell className="py-0.5 font-medium text-foreground">
                 {pos.symbol}
               </TableCell>
               <TableCell className="py-0.5">
                 <DirectionIcon direction={pos.direction} />
               </TableCell>
-              <TableCell className="py-0.5 text-zinc-700 dark:text-zinc-300">
+              <TableCell className="py-0.5 text-foreground">
                 {pos.quantity}
               </TableCell>
               <TableCell className={cn('py-0.5', pnlColor(pos.unrealizedPnl))}>
@@ -315,7 +315,7 @@ export function OpenPositionsRiskWidget({
     >
       {!valuation || !riskSummary ? (
         <div className="flex h-32 items-center justify-center">
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             No position data available
           </p>
         </div>
@@ -328,12 +328,12 @@ export function OpenPositionsRiskWidget({
           {valuation.positions.length > 0 ? (
             <PositionTable positions={valuation.positions} />
           ) : (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center dark:border-zinc-700">
-              <BarChart3 className="mb-2 size-6 text-zinc-300 dark:text-zinc-600" />
-              <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-4 py-8 text-center">
+              <BarChart3 className="mb-2 size-6 text-muted-foreground" />
+              <p className="text-sm font-medium text-muted-foreground">
                 No open positions
               </p>
-              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 This account has no open positions to display.
               </p>
             </div>

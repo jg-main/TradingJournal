@@ -205,7 +205,7 @@ export function ProcessDisciplineWidget({
       {!hasData && !isLoading && (
         <div className="px-(--card-spacing) pb-(--card-spacing)">
           <EmptyState
-            icon={<BarChart3 className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+            icon={<BarChart3 className="size-10 text-muted-foreground" strokeWidth={1} />}
             title="No process data available"
             description="Your grade distribution chart will appear here after you grade your trades."
           />

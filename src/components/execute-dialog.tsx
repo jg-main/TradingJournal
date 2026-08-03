@@ -72,10 +72,10 @@ interface FormState {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const inputClass =
-  'w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100';
+  'w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring';
 
 const labelClass =
-  'mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300';
+  'mb-1 block text-sm font-medium text-foreground';
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -440,7 +440,7 @@ export function ExecuteDialog({
             <DialogDescription>Loading...</DialogDescription>
           </DialogHeader>
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-zinc-400" />
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         </DialogContent>
       </Dialog>
@@ -461,7 +461,7 @@ export function ExecuteDialog({
           </DialogHeader>
 
           {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           )}
@@ -470,12 +470,12 @@ export function ExecuteDialog({
             <div>
               <label className={labelClass}>Setup</label>
               {loadingSetups ? (
-                <div className="flex items-center gap-2 text-sm text-zinc-500">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-3.5 animate-spin" />
                   Loading setups...
                 </div>
               ) : setupDefinitions.length === 0 ? (
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-muted-foreground">
                   No setup definitions found. Create one first.
                 </p>
               ) : (
@@ -499,7 +499,7 @@ export function ExecuteDialog({
             </div>
 
             {savingSetup && (
-              <div className="flex items-center gap-2 text-sm text-zinc-500">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" />
                 Saving setup...
               </div>
@@ -510,7 +510,7 @@ export function ExecuteDialog({
             <DialogClose asChild>
               <button
                 type="button"
-                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
               >
                 Cancel
               </button>
@@ -535,37 +535,37 @@ export function ExecuteDialog({
           </DialogHeader>
 
           {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {error}
             </div>
           )}
 
           {loadingChecklist ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="size-6 animate-spin text-zinc-400" />
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
             <div className="space-y-4">
               <div>
-                <h3 className="mb-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                <h3 className="mb-1 text-sm font-semibold text-foreground">
                   Pre-Execution Checklist
                 </h3>
-                <p className="mb-3 text-xs text-zinc-500">
+                <p className="mb-3 text-xs text-muted-foreground">
                   All items must be checked before proceeding.
                 </p>
                 <div className="space-y-2">
                   {checklist.map((item) => (
                     <label
                       key={item.id}
-                      className="flex cursor-pointer items-start gap-2.5 rounded-md border border-zinc-200 px-3 py-2.5 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                      className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border px-3 py-2.5 hover:bg-muted/50"
                     >
                       <input
                         type="checkbox"
                         checked={checkedIds.has(item.id)}
                         onChange={() => toggleCheck(item.id)}
-                        className="mt-0.5 size-4 accent-zinc-900 dark:accent-zinc-100"
+                        className="mt-0.5 size-4 accent-foreground"
                       />
-                      <span className="text-sm text-zinc-700 dark:text-zinc-300">
+                      <span className="text-sm text-foreground">
                         {item.description}
                       </span>
                     </label>
@@ -585,7 +585,7 @@ export function ExecuteDialog({
                       setStep('setup-picker');
                       fetchSetupDefinitions();
                     }}
-                    className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
                   >
                     <ArrowLeft className="size-3.5" />
                     Back
@@ -594,7 +594,7 @@ export function ExecuteDialog({
                 <DialogClose asChild>
                   <button
                     type="button"
-                    className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
                   >
                     Cancel
                   </button>
@@ -604,7 +604,7 @@ export function ExecuteDialog({
                 type="button"
                 onClick={handleProceedToEntry}
                 disabled={!allChecksChecked}
-                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 <Check className="size-3.5" />
                 Proceed
@@ -629,7 +629,7 @@ export function ExecuteDialog({
         </DialogHeader>
 
         {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
@@ -713,11 +713,11 @@ export function ExecuteDialog({
           </div>
 
           {/* ── Divider ────────────────────────────────────────────── */}
-          <hr className="border-zinc-200 dark:border-zinc-700" />
+          <hr className="border-border" />
 
           {/* ── Exit 1 ─────────────────────────────────────────────── */}
           <div>
-            <h4 className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            <h4 className="mb-2 text-sm font-medium text-muted-foreground">
               Exit 1
             </h4>
             <div className="grid grid-cols-2 gap-3">
@@ -756,7 +756,7 @@ export function ExecuteDialog({
           {form.showExit2 ? (
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <h4 className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                <h4 className="text-sm font-medium text-muted-foreground">
                   Exit 2
                 </h4>
                 <button
@@ -769,7 +769,7 @@ export function ExecuteDialog({
                       exit2Quantity: '',
                     }))
                   }
-                  className="inline-flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <X className="size-3" />
                   Remove
@@ -812,7 +812,7 @@ export function ExecuteDialog({
               onClick={() =>
                 setForm((prev) => ({ ...prev, showExit2: true }))
               }
-              className="inline-flex items-center gap-1.5 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
             >
               <Plus className="size-4" />
               Add Exit 2
@@ -821,14 +821,14 @@ export function ExecuteDialog({
 
           {/* ── Total exit indicator ───────────────────────────────── */}
           {(form.exit1Price.trim() || form.showExit2) && entryQuantityValue > 0 && (
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs text-muted-foreground">
               Exit total: {totalExitQty.toFixed(4)} of {entryQuantityValue.toFixed(4)} shares
               {totalExitQty > entryQuantityValue ? (
-                <span className="ml-1 text-red-500">(exceeds entry!)</span>
+                <span className="ml-1 text-destructive">(exceeds entry!)</span>
               ) : totalExitQty === entryQuantityValue ? (
-                <span className="ml-1 text-emerald-500">(full exit)</span>
+                <span className="ml-1 text-positive">(full exit)</span>
               ) : (
-                <span className="ml-1 text-amber-500">(partial exit)</span>
+                <span className="ml-1 text-warning">(partial exit)</span>
               )}
             </p>
           )}
@@ -841,7 +841,7 @@ export function ExecuteDialog({
                   <button
                     type="button"
                     onClick={() => setStep('checklist')}
-                    className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
                   >
                     <ArrowLeft className="size-3.5" />
                     Back
@@ -850,7 +850,7 @@ export function ExecuteDialog({
                 <DialogClose asChild>
                   <button
                     type="button"
-                    className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
                   >
                     Cancel
                   </button>
@@ -859,7 +859,7 @@ export function ExecuteDialog({
               <button
                 type="submit"
                 disabled={submitting}
-                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {submitting && <Loader2 className="size-3.5 animate-spin" />}
                 {submitting ? 'Executing...' : 'Execute'}

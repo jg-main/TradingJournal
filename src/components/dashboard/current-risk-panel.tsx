@@ -97,13 +97,13 @@ function MetricCell({ value, label, tooltip, valueClassName }: MetricCellProps) 
     <div className="flex flex-col h-10 items-center justify-center">
       <span
         className={cn(
-          'text-base font-bold tabular-nums leading-tight text-zinc-900 dark:text-zinc-100',
+          'text-base font-bold tabular-nums leading-tight text-foreground',
           valueClassName,
         )}
       >
         {value}
       </span>
-      <span className="mt-0.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400">
+      <span className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
         {label}
       </span>
     </div>
@@ -168,14 +168,14 @@ export function CurrentRiskPanel({
     >
       {showEmpty ? (
         <div className="flex h-32 items-center justify-center">
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             No risk data available
           </p>
         </div>
       ) : (
         <div className="flex h-full flex-col gap-2">
           {/* ── 3x3 Metrics Grid ─────────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50/50 px-2 py-2 dark:border-zinc-800 dark:bg-zinc-900/30">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 rounded-lg border border-border bg-muted px-2 py-2">
             {/* Row 1: Open Positions */}
             <MetricCell
               value={valuation?.positionsTotal ?? '--'}

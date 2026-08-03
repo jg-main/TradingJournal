@@ -71,12 +71,12 @@ function SortableCheckItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 border-b border-zinc-200 px-1 py-2 last:border-b-0 dark:border-zinc-800"
+      className="flex items-center gap-2 border-b border-border px-1 py-2 last:border-b-0"
     >
       {/* Grip handle */}
       <button
         type="button"
-        className="flex shrink-0 cursor-grab touch-none items-center text-zinc-400 hover:text-zinc-600 active:cursor-grabbing aria-[disabled]:cursor-default"
+        className="flex shrink-0 cursor-grab touch-none items-center text-muted-foreground hover:text-foreground active:cursor-grabbing aria-[disabled]:cursor-default"
         aria-label="Drag to reorder"
         {...attributes}
         {...listeners}
@@ -87,7 +87,7 @@ function SortableCheckItem({
       {/* Description text / inline edit trigger */}
       <button
         type="button"
-        className="flex-1 truncate text-left text-sm text-zinc-800 hover:text-zinc-600 dark:text-zinc-200 dark:hover:text-zinc-400"
+        className="flex-1 truncate text-left text-sm text-foreground hover:text-muted-foreground"
         onClick={() => onStartEdit(check)}
         aria-label={`Edit check: ${check.description}`}
       >
@@ -97,7 +97,7 @@ function SortableCheckItem({
       {/* Delete button */}
       <button
         type="button"
-        className="flex shrink-0 items-center text-zinc-400 hover:text-red-500"
+        className="flex shrink-0 items-center text-muted-foreground hover:text-destructive"
         aria-label="Delete check"
         onClick={() => onDelete(check.id)}
       >
@@ -148,7 +148,7 @@ function InlineEditRow({
   }, []);
 
   return (
-    <div className="flex items-center gap-2 border-b border-zinc-200 px-1 py-2 last:border-b-0 dark:border-zinc-800">
+    <div className="flex items-center gap-2 border-b border-border px-1 py-2 last:border-b-0">
       <div className="w-4 shrink-0" />
       <Input
         data-checklist-edit-input
@@ -358,20 +358,20 @@ export default function ChecklistManager({ parentId, scope }: ChecklistManagerPr
   // ── Render ─────────────────────────────────────────────────────────
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-lg border border-border bg-card p-6">
       {/* Section heading */}
-      <h3 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">
+      <h3 className="mb-4 text-sm font-medium text-muted-foreground">
         {sectionTitle}
       </h3>
 
       {/* Loading state */}
       {loading && (
-        <p className="py-4 text-center text-sm text-zinc-500">Loading...</p>
+        <p className="py-4 text-center text-sm text-muted-foreground">Loading...</p>
       )}
 
       {/* Empty state */}
       {!loading && checks.length === 0 && (
-        <p className="mb-4 text-sm italic text-zinc-500 dark:text-zinc-400">
+        <p className="mb-4 text-sm italic text-muted-foreground">
           No entry checks yet. Add one below.
         </p>
       )}
@@ -438,7 +438,7 @@ export default function ChecklistManager({ parentId, scope }: ChecklistManagerPr
 
       {/* Error message */}
       {error && (
-        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+        <p className="mt-2 text-xs text-destructive">{error}</p>
       )}
 
       {/* Delete confirmation dialog */}

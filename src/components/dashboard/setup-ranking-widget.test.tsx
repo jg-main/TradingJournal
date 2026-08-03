@@ -218,7 +218,7 @@ describe('SetupRankingWidget', () => {
     );
     // Pullback has 40 trades → 'adequate' → green dot
     const pullbackRow = screen.getByText('Pullback').closest('tr');
-    const greenDot = pullbackRow?.querySelector('.bg-green-500');
+    const greenDot = pullbackRow?.querySelector('.bg-positive');
     expect(greenDot).toBeTruthy();
     expect(screen.getByText('Adequate')).toBeTruthy();
   });
@@ -231,7 +231,7 @@ describe('SetupRankingWidget', () => {
     );
     // Breakout has 25 trades → 'moderate' → blue dot
     const breakoutRow = screen.getByText('Breakout').closest('tr');
-    const blueDot = breakoutRow?.querySelector('.bg-blue-500');
+    const blueDot = breakoutRow?.querySelector('.bg-info');
     expect(blueDot).toBeTruthy();
     expect(screen.getByText('Moderate')).toBeTruthy();
   });
@@ -244,7 +244,7 @@ describe('SetupRankingWidget', () => {
     );
     // Reversal has 12 trades → 'small' → amber dot
     const reversalRow = screen.getByText('Reversal').closest('tr');
-    const amberDot = reversalRow?.querySelector('.bg-amber-500');
+    const amberDot = reversalRow?.querySelector('.bg-warning');
     expect(amberDot).toBeTruthy();
     expect(screen.getByText('Small')).toBeTruthy();
   });
@@ -257,7 +257,7 @@ describe('SetupRankingWidget', () => {
     );
     // Gap Fill has 3 trades → 'very_small' → red dot
     const gapFillRow = screen.getByText('Gap Fill').closest('tr');
-    const redDot = gapFillRow?.querySelector('.bg-red-500');
+    const redDot = gapFillRow?.querySelector('.bg-destructive');
     expect(redDot).toBeTruthy();
     expect(screen.getByText('Very small')).toBeTruthy();
   });

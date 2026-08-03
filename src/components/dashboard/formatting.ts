@@ -55,7 +55,7 @@ export function gradeLabelFromScore(score: number | null | undefined): string {
 
 export function pnlColorClass(v: number | null | undefined): string {
   if (v === null || v === undefined) return '';
-  if (v > 0) return 'text-zinc-700 dark:text-zinc-300';
-  if (v < 0) return 'text-red-600 dark:text-red-400';
-  return 'text-zinc-500 dark:text-zinc-400';
+  if (v > 0) return 'text-positive';
+  if (v < 0) return 'text-negative';
+  return 'text-muted-foreground';
 }

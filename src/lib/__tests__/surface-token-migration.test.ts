@@ -228,40 +228,7 @@ function violationsInFile(file: string): Violation[] {
 const EXEMPT_FILES: readonly string[] = [
   /* ── T02: trade-detail components (18 listed + helpers.ts) — MIGRATED in T02 ── */
 
-  /* ── T03: dashboard widgets + root shared components (32 listed + formatting.ts) ── */
-  'src/components/dashboard/account-performance-panel.tsx',
-  'src/components/dashboard/account-selector.tsx',
-  'src/components/dashboard/attention-insights-widget.tsx',
-  'src/components/dashboard/calendar-heatmap-widget.tsx',
-  'src/components/dashboard/current-risk-panel.tsx',
-  'src/components/dashboard/dashboard-toolbar.tsx',
-  'src/components/dashboard/directional-performance-widget.tsx',
-  'src/components/dashboard/equity-drawdown-chart.tsx',
-  'src/components/dashboard/formatting.ts',
-  'src/components/dashboard/kpi-card.tsx',
-  'src/components/dashboard/kpi-widgets.tsx',
-  'src/components/dashboard/manage-views-dialog.tsx',
-  'src/components/dashboard/monthly-performance-chart.tsx',
-  'src/components/dashboard/open-positions-risk-widget.tsx',
-  'src/components/dashboard/period-matrix-widget.tsx',
-  'src/components/dashboard/process-discipline-widget.tsx',
-  'src/components/dashboard/ptd-performance-panel.tsx',
-  'src/components/dashboard/r-distribution-chart.tsx',
-  'src/components/dashboard/setup-ranking-widget.tsx',
-  'src/components/dashboard/view-switcher.tsx',
-  'src/components/dashboard-v2.tsx',
-  'src/components/execute-dialog.tsx',
-  'src/components/restore-modal.tsx',
-  'src/components/lifecycle-stepper.tsx',
-  'src/components/edit-trade-dialog.tsx',
-  'src/components/checklist-manager.tsx',
-  'src/components/add-exit-dialog.tsx',
-  'src/components/keyboard-shortcuts.tsx',
-  'src/components/dashboard-filters.tsx',
-  'src/components/plan-trade-form.tsx',
-  'src/components/empty-state.tsx',
-  'src/components/help-tooltip.tsx',
-  'src/components/theme-toggle.tsx',
+  /* ── T03: dashboard widgets + root shared components (32 listed + formatting.ts) — MIGRATED in T03 ── */
 
   /* ── T04: accounting components (13) ─────────────────────────────────── */
   'src/components/accounting/account-activity.tsx',

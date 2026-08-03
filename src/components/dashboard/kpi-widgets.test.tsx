@@ -152,9 +152,9 @@ describe('DEFAULT_KPI_LAYOUT', () => {
 });
 
 describe('SECTION_TINTS', () => {
-  it('defines PTD and CURRENT tints', () => {
-    expect(SECTION_TINTS.PTD).toContain('blue');
-    expect(SECTION_TINTS.CURRENT).toContain('amber');
+  it('defines PTD and CURRENT tints with semantic tokens', () => {
+    expect(SECTION_TINTS.PTD).toContain('info');
+    expect(SECTION_TINTS.CURRENT).toContain('warning');
   });
 });
 
@@ -207,10 +207,10 @@ describe('KpiSectionHeader', () => {
 
   it('applies tint class when provided', () => {
     const { container } = render(
-      <KpiSectionHeader title="PTD" tint="bg-blue-50/40" />,
+      <KpiSectionHeader title="PTD" tint="bg-info/10" />,
     );
     const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper?.classList.contains('bg-blue-50/40')).toBe(true);
+    expect(wrapper?.classList.contains('bg-info/10')).toBe(true);
   });
 });
 

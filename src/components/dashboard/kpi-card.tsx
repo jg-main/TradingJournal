@@ -49,7 +49,7 @@ export const KPI_TOOLTIPS: Record<string, string> = {
 export interface KpiCardContentProps {
   /** Icon element shown in the card header circle */
   icon: React.ReactNode;
-  /** Background color class for the icon circle e.g. "bg-zinc-100 dark:bg-zinc-800" */
+  /** Background color class for the icon circle e.g. "bg-muted" */
   iconBg: string;
   /** The rendered value node (formatted string, JSX, etc.) */
   value: React.ReactNode;
@@ -74,7 +74,7 @@ export interface KpiCardContentProps {
  * <DashboardWidget title="Net P&L">
  *   <KpiCardContent
  *     icon={<Target className="size-4" />}
- *     iconBg="bg-zinc-100 dark:bg-zinc-800"
+ *     iconBg="bg-muted"
  *     value={formatCurrency(netPnl, { sign: true })}
  *     label="Net P&amp;L"
  *   />
@@ -101,7 +101,7 @@ export function KpiCardContent({
       </div>
       <p
         className={cn(
-          'text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100',
+          'text-2xl font-bold tabular-nums text-foreground',
           valueClassName,
         )}
       >
@@ -109,7 +109,7 @@ export function KpiCardContent({
       </p>
       <Tooltip>
         <TooltipTrigger asChild>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 underline decoration-dotted decoration-zinc-300 dark:decoration-zinc-600 underline-offset-2 cursor-help">
+          <p className="text-xs text-muted-foreground underline decoration-dotted decoration-muted-foreground underline-offset-2 cursor-help">
             {label}
           </p>
         </TooltipTrigger>
@@ -131,9 +131,9 @@ export function KpiCardContent({
 export function KpiCardSkeleton() {
   return (
     <div className="animate-pulse">
-      <div className="mb-3 size-9 rounded-lg bg-zinc-200 dark:bg-zinc-700" />
-      <div className="mb-1 h-7 w-20 rounded bg-zinc-200 dark:bg-zinc-700" />
-      <div className="h-3 w-16 rounded bg-zinc-100 dark:bg-zinc-800" />
+      <div className="mb-3 size-9 rounded-lg bg-muted" />
+      <div className="mb-1 h-7 w-20 rounded bg-muted" />
+      <div className="h-3 w-16 rounded bg-muted" />
     </div>
   );
 }

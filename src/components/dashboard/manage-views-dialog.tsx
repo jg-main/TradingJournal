@@ -88,14 +88,14 @@ function ConfirmPrompt({
   return (
     <div
       data-testid="confirm-prompt"
-      className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+      className="flex items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1 text-xs text-warning"
     >
       <AlertTriangle className="size-3 shrink-0" />
       <span className="flex-1">{message}</span>
       <button
         data-testid="confirm-prompt-yes"
         onClick={onConfirm}
-        className="flex items-center gap-0.5 rounded px-1 py-0.5 font-medium text-red-600 hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-950/50"
+        className="flex items-center gap-0.5 rounded px-1 py-0.5 font-medium text-destructive hover:bg-destructive/10"
       >
         <Check className="size-3" />
         <span>Delete</span>
@@ -103,7 +103,7 @@ function ConfirmPrompt({
       <button
         data-testid="confirm-prompt-no"
         onClick={onCancel}
-        className="flex items-center gap-0.5 rounded px-1 py-0.5 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        className="flex items-center gap-0.5 rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50"
       >
         <X className="size-3" />
         <span>Cancel</span>
@@ -302,7 +302,7 @@ export function ManageViewsDialog({
           {/* System Views */}
           {systemViews.length > 0 && (
             <div data-testid="system-views-section">
-              <h4 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+              <h4 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 System Views
               </h4>
               <div className="space-y-1">
@@ -312,7 +312,7 @@ export function ManageViewsDialog({
                     data-testid={`manage-view-${view.id}`}
                     className={cn(
                       'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-                      'bg-zinc-50 dark:bg-zinc-900',
+                      'bg-muted',
                       isViewActive(view) &&
                         'ring-1 ring-primary/20',
                     )}
@@ -342,14 +342,14 @@ export function ManageViewsDialog({
                     {isViewActive(view) && (
                       <span
                         data-testid={`manage-view-${view.id}-active-badge`}
-                        className="text-[10px] text-zinc-400 dark:text-zinc-500"
+                        className="text-[10px] text-muted-foreground"
                       >
                         Active
                       </span>
                     )}
 
                     {/* System badge */}
-                    <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                       System
                     </span>
 
@@ -372,10 +372,10 @@ export function ManageViewsDialog({
 
           {/* User Views */}
           <div data-testid="user-views-section">
-            <h4 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            <h4 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               User Views
               {userViews.length > 0 && (
-                <span className="ml-1.5 text-zinc-300 dark:text-zinc-600">
+                <span className="ml-1.5 text-muted-foreground">
                   ({userViews.length})
                 </span>
               )}
@@ -383,7 +383,7 @@ export function ManageViewsDialog({
             {userViews.length === 0 ? (
               <p
                 data-testid="no-user-views"
-                className="py-3 text-center text-xs text-zinc-400 dark:text-zinc-500"
+                className="py-3 text-center text-xs text-muted-foreground"
               >
                 No user views yet. Create one from the View dropdown.
               </p>
@@ -394,7 +394,7 @@ export function ManageViewsDialog({
                     key={view.id}
                     data-testid={`manage-view-${view.id}`}
                     className={cn(
-                      'group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800',
+                      'group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted/50',
                       isViewActive(view) &&
                         'bg-primary/[0.03] ring-1 ring-primary/20',
                     )}
@@ -439,7 +439,7 @@ export function ManageViewsDialog({
                     {isViewActive(view) && (
                       <span
                         data-testid={`manage-view-${view.id}-active-badge`}
-                        className="text-[10px] text-zinc-400 dark:text-zinc-500"
+                        className="text-[10px] text-muted-foreground"
                       >
                         Active
                       </span>
@@ -492,7 +492,7 @@ export function ManageViewsDialog({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => setConfirmingDeleteId(view.id)}
-                          className="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                          className="text-destructive hover:text-destructive/80"
                           title="Delete"
                         >
                           <Trash2 className="size-3" />

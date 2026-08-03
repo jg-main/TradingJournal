@@ -255,9 +255,9 @@ describe('AccountPerformancePanel', () => {
     renderWithTooltip(
       <AccountPerformancePanel data={SAMPLE_DATA_NEGATIVE_METRICS} />,
     );
-    // The -$150.00 should have text-red-600 class applied
+    // The -$150.00 should have text-negative class applied
     const valueElement = screen.getByText(/\$150\.00/);
-    expect(valueElement?.className).toContain('text-red-600');
+    expect(valueElement?.className).toContain('text-negative');
   });
 
   // ── Integrity Badge ──────────────────────────────────────────────

@@ -195,7 +195,7 @@ export default function EditTradeDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -203,7 +203,7 @@ export default function EditTradeDialog({
           {/* Symbol + Direction */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label className="text-xs font-medium text-muted-foreground">
                 Symbol
               </label>
               <Input
@@ -214,7 +214,7 @@ export default function EditTradeDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label className="text-xs font-medium text-muted-foreground">
                 Direction
               </label>
               <Select
@@ -235,7 +235,7 @@ export default function EditTradeDialog({
 
           {/* Setup */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label className="text-xs font-medium text-muted-foreground">
               Setup
             </label>
             <Select
@@ -260,7 +260,7 @@ export default function EditTradeDialog({
           {/* Price fields in 2x2 grid */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label className="text-xs font-medium text-muted-foreground">
                 Planned Entry
               </label>
               <Input
@@ -273,7 +273,7 @@ export default function EditTradeDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label className="text-xs font-medium text-muted-foreground">
                 {plannedStopLocked ? 'Original Planned Stop' : 'Stop Loss'}
               </label>
               {plannedStopLocked ? (
@@ -287,7 +287,7 @@ export default function EditTradeDialog({
                     aria-readonly="true"
                     className="cursor-not-allowed bg-input/50 opacity-60"
                   />
-                  <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
+                  <p className="text-[11px] leading-snug text-muted-foreground">
                     {trade.status === 'open'
                       ? 'Read-only — the active stop is managed through Adjust Stop.'
                       : 'Read-only — the planned stop can only be changed while the trade is planned.'}
@@ -305,7 +305,7 @@ export default function EditTradeDialog({
               )}
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label className="text-xs font-medium text-muted-foreground">
                 Target 1
               </label>
               <Input
@@ -318,7 +318,7 @@ export default function EditTradeDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <label className="text-xs font-medium text-muted-foreground">
                 Target 2
               </label>
               <Input
@@ -334,7 +334,7 @@ export default function EditTradeDialog({
 
           {/* Quantity */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label className="text-xs font-medium text-muted-foreground">
               Quantity
             </label>
             <Input
@@ -349,7 +349,7 @@ export default function EditTradeDialog({
 
           {/* Thesis */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label className="text-xs font-medium text-muted-foreground">
               Thesis
             </label>
             <textarea
@@ -364,7 +364,7 @@ export default function EditTradeDialog({
 
           {/* Invalidation Condition */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label className="text-xs font-medium text-muted-foreground">
               Invalidation Condition
             </label>
             <textarea
@@ -379,7 +379,7 @@ export default function EditTradeDialog({
 
           {/* Pre-Trade Plan */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label className="text-xs font-medium text-muted-foreground">
               Pre-Trade Plan
             </label>
             <textarea

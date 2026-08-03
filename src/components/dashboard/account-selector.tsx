@@ -83,7 +83,7 @@ export function AccountSelector({
   if (loading) {
     return (
       <div
-        className={`h-8 w-40 animate-pulse rounded-lg bg-zinc-200 dark:bg-zinc-700 ${className ?? ''}`}
+        className={`h-8 w-40 animate-pulse rounded-lg bg-muted ${className ?? ''}`}
         data-testid="account-selector-loading"
       />
     );
@@ -94,7 +94,7 @@ export function AccountSelector({
   if (error) {
     return (
       <div
-        className={`flex h-8 items-center rounded-lg border border-red-200 bg-red-50 px-3 text-xs text-red-600 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400 ${className ?? ''}`}
+        className={`flex h-8 items-center rounded-lg border border-destructive/30 bg-destructive/10 px-3 text-xs text-destructive ${className ?? ''}`}
         data-testid="account-selector-error"
       >
         {error}

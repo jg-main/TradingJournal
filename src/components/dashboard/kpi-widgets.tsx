@@ -149,7 +149,7 @@ export const ALL_KPI_WIDGET_IDS: readonly string[] = [
 export interface KpiSectionHeaderProps {
   title: string;
   description?: string;
-  /** Background tint class for the section, e.g. "bg-blue-50/40" */
+  /** Background tint class for the section, e.g. "bg-info/10" */
   tint?: string;
 }
 
@@ -162,18 +162,18 @@ export interface KpiSectionHeaderProps {
  * <KpiSectionHeader
  *   title="Period-to-Date"
  *   description="Metrics from closed trades in the filtered date range."
- *   tint="bg-blue-50/40 dark:bg-blue-950/20"
+ *   tint="bg-info/10"
  * />
  * ```
  */
 export function KpiSectionHeader({ title, description, tint }: KpiSectionHeaderProps) {
   return (
     <div className={cn('mb-4 rounded-lg px-5 py-4', tint)}>
-      <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h2 className="text-lg font-semibold tracking-tight text-foreground">
         {title}
       </h2>
       {description && (
-        <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-0.5 text-sm text-muted-foreground">
           {description}
         </p>
       )}
@@ -204,8 +204,8 @@ export function NetPnlWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<Target className="size-4 text-zinc-700 dark:text-zinc-300" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<Target className="size-4 text-foreground" />}
+        iconBg="bg-muted"
         value={kpis ? formatCurrency(kpis.netPnl, { sign: true }) : '--'}
         valueClassName={kpis ? pnlColorClass(kpis.netPnl) : ''}
         label="Net P&amp;L"
@@ -233,8 +233,8 @@ export function TotalTradesWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<NotebookPen className="size-4 text-zinc-700 dark:text-zinc-300" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<NotebookPen className="size-4 text-foreground" />}
+        iconBg="bg-muted"
         value={kpis?.totalTrades ?? '--'}
         label="Total Trades"
       />
@@ -261,8 +261,8 @@ export function WinRateWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<TrendingUp className="size-4 text-zinc-700 dark:text-zinc-300" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<TrendingUp className="size-4 text-foreground" />}
+        iconBg="bg-muted"
         value={formatPercent(kpis?.winRate ?? null)}
         label="Win Rate"
       />
@@ -289,8 +289,8 @@ export function AvgRWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<Star className="size-4 text-zinc-700 dark:text-zinc-300" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<Star className="size-4 text-foreground" />}
+        iconBg="bg-muted"
         value={formatDecimal(kpis?.avgR ?? null)}
         label="Avg R"
       />
@@ -317,8 +317,8 @@ export function AvgGradeWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<Star className="size-4 text-zinc-600 dark:text-zinc-400" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<Star className="size-4 text-muted-foreground" />}
+        iconBg="bg-muted"
         value={
           kpis?.avgGrade !== null && kpis?.avgGrade !== undefined
             ? `${formatDecimal(kpis.avgGrade)} (${gradeLabelFromScore(kpis.avgGrade)})`
@@ -342,10 +342,10 @@ export function ProfitFactorWidget({
   const profitFactorValueClassName =
     kpis?.profitFactor !== null && kpis?.profitFactor !== undefined
       ? kpis.profitFactor > 1.5
-        ? 'text-green-600 dark:text-green-400'
+        ? 'text-positive'
         : kpis.profitFactor >= 1.0
-          ? 'text-amber-600 dark:text-amber-400'
-          : 'text-red-600 dark:text-red-400'
+          ? 'text-warning'
+          : 'text-negative'
       : '';
 
   return (
@@ -358,8 +358,8 @@ export function ProfitFactorWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<BarChart3 className="size-4 text-zinc-700 dark:text-zinc-300" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<BarChart3 className="size-4 text-foreground" />}
+        iconBg="bg-muted"
         value={formatDecimal(kpis?.profitFactor ?? null)}
         valueClassName={profitFactorValueClassName}
         label="Profit Factor"
@@ -389,10 +389,10 @@ export function AvgWinWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<TrendingUp className="size-4 text-green-600 dark:text-green-400" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<TrendingUp className="size-4 text-positive" />}
+        iconBg="bg-muted"
         value={formatCurrency(kpis?.avgWin ?? null)}
-        valueClassName={isPositive ? 'text-green-600 dark:text-green-400' : ''}
+        valueClassName={isPositive ? 'text-positive' : ''}
         label="Avg Win"
       />
     </DashboardWidget>
@@ -420,10 +420,10 @@ export function AvgLossWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<TrendingDown className="size-4 text-red-600 dark:text-red-400" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<TrendingDown className="size-4 text-negative" />}
+        iconBg="bg-muted"
         value={formatCurrency(kpis?.avgLoss ?? null)}
-        valueClassName={isNegative ? 'text-red-600 dark:text-red-400' : ''}
+        valueClassName={isNegative ? 'text-negative' : ''}
         label="Avg Loss"
       />
     </DashboardWidget>
@@ -449,8 +449,8 @@ export function CurrentDrawdownWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<TrendingDown className="size-4 text-red-600 dark:text-red-400" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<TrendingDown className="size-4 text-negative" />}
+        iconBg="bg-muted"
         value={
           kpis?.currentDrawdown !== null && kpis?.currentDrawdown !== undefined
             ? `${formatCurrency(Math.abs(kpis.currentDrawdown))}${
@@ -460,7 +460,7 @@ export function CurrentDrawdownWidget({
               }`
             : '--'
         }
-        valueClassName="text-red-600 dark:text-red-400"
+        valueClassName="text-negative"
         label="Current Drawdown"
       />
     </DashboardWidget>
@@ -486,8 +486,8 @@ export function AccountValueWidget({
       className={className}
     >
       <KpiCardContent
-        icon={<Wallet className="size-4 text-zinc-700 dark:text-zinc-300" />}
-        iconBg="bg-zinc-100 dark:bg-zinc-800"
+        icon={<Wallet className="size-4 text-foreground" />}
+        iconBg="bg-muted"
         value={formatCurrency(kpis?.accountValue ?? null)}
         label="Account Value"
       />
@@ -517,13 +517,13 @@ export function UnrealizedPnlWidget({
     }
     if (mtm.openTradeCount > 0) {
       return (
-        <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">
+        <span className="text-xs text-muted-foreground italic">
           Awaiting prices
         </span>
       );
     }
     return (
-      <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">
+      <span className="text-xs text-muted-foreground italic">
         No open positions
       </span>
     );
@@ -549,12 +549,12 @@ export function UnrealizedPnlWidget({
       className={className}
     >
       <div>
-        <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30">
-          <TrendingUp className="size-4 text-zinc-700 dark:text-zinc-300" />
+        <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-warning/10">
+          <TrendingUp className="size-4 text-foreground" />
         </div>
         <p
           className={cn(
-            'text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100',
+            'text-2xl font-bold tabular-nums text-foreground',
             unrealizedValueClass,
           )}
         >
@@ -563,7 +563,7 @@ export function UnrealizedPnlWidget({
         <div className="flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 underline decoration-dotted decoration-zinc-300 dark:decoration-zinc-600 underline-offset-2 cursor-help">
+              <p className="text-xs text-muted-foreground underline decoration-dotted decoration-muted-foreground underline-offset-2 cursor-help">
                 Unrealized P&amp;L
               </p>
             </TooltipTrigger>
@@ -576,7 +576,7 @@ export function UnrealizedPnlWidget({
             <button
               onClick={onRefresh}
               disabled={isRefreshing}
-              className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+              className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title={
                 isRefreshing
                   ? 'Refreshing...'
@@ -653,9 +653,9 @@ export const DEFAULT_KPI_LAYOUT: LayoutItem[] = [
  */
 export const SECTION_TINTS = {
   /** Blue-tinted background for period-to-date metrics */
-  PTD: 'bg-blue-50/40 dark:bg-blue-950/20',
+  PTD: 'bg-info/10',
   /** Amber-tinted background for current-state metrics */
-  CURRENT: 'bg-amber-50/40 dark:bg-amber-950/20',
+  CURRENT: 'bg-warning/10',
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════

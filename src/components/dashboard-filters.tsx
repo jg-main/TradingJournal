@@ -29,7 +29,7 @@ export function DashboardFilters({
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-date-from"
-          className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+          className="text-xs font-medium text-muted-foreground"
         >
           From
         </label>
@@ -38,7 +38,7 @@ export function DashboardFilters({
           type="date"
           value={dateFrom}
           onChange={(e) => onDateFromChange(e.target.value)}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm text-zinc-900 transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]"
+          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm text-foreground transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 [color-scheme:light] dark:[color-scheme:dark]"
         />
       </div>
 
@@ -46,7 +46,7 @@ export function DashboardFilters({
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-date-to"
-          className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+          className="text-xs font-medium text-muted-foreground"
         >
           To
         </label>
@@ -55,7 +55,7 @@ export function DashboardFilters({
           type="date"
           value={dateTo}
           onChange={(e) => onDateToChange(e.target.value)}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm text-zinc-900 transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 dark:text-zinc-100 [color-scheme:light] dark:[color-scheme:dark]"
+          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm text-foreground transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50 [color-scheme:light] dark:[color-scheme:dark]"
         />
       </div>
 
@@ -63,7 +63,7 @@ export function DashboardFilters({
       <div className="flex flex-col gap-1">
         <label
           htmlFor="filter-account"
-          className="text-xs font-medium text-zinc-600 dark:text-zinc-300"
+          className="text-xs font-medium text-muted-foreground"
         >
           Account
         </label>

@@ -218,7 +218,7 @@ export default function PlanTradeForm({
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -357,7 +357,7 @@ export default function PlanTradeForm({
                 <p
                   id="plan-plannedStop-error"
                   role="alert"
-                  className="text-xs font-medium text-red-600 dark:text-red-400"
+                  className="text-xs font-medium text-destructive"
                 >
                   {wrongSideStopMessage}
                 </p>
@@ -436,7 +436,7 @@ export default function PlanTradeForm({
               <div className="grid grid-cols-3 gap-3 rounded-lg border bg-muted p-3">
                 {/* Risk */}
                 <div>
-                  <p className="mb-0.5 text-xs font-medium text-red-600 dark:text-red-400">Max Risk</p>
+                  <p className="mb-0.5 text-xs font-medium text-negative">Max Risk</p>
                   {canCalcRisk ? (
                     <>
                       <p className="text-lg font-semibold text-foreground">
@@ -453,7 +453,7 @@ export default function PlanTradeForm({
 
                 {/* Reward */}
                 <div>
-                  <p className="mb-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">Max Reward</p>
+                  <p className="mb-0.5 text-xs font-medium text-positive">Max Reward</p>
                   {canCalcReward ? (
                     <>
                       <p className="text-lg font-semibold text-foreground">

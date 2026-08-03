@@ -44,23 +44,23 @@ interface SampleSizeConfig {
 const SAMPLE_SIZE_CONFIG: Record<SampleSizeWarning, SampleSizeConfig> = {
   very_small: {
     label: 'Very small',
-    dotColor: 'bg-red-500',
-    textColor: 'text-red-600 dark:text-red-400',
+    dotColor: 'bg-destructive',
+    textColor: 'text-destructive',
   },
   small: {
     label: 'Small',
-    dotColor: 'bg-amber-500',
-    textColor: 'text-amber-600 dark:text-amber-400',
+    dotColor: 'bg-warning',
+    textColor: 'text-warning',
   },
   moderate: {
     label: 'Moderate',
-    dotColor: 'bg-blue-500',
-    textColor: 'text-blue-600 dark:text-blue-400',
+    dotColor: 'bg-info',
+    textColor: 'text-info',
   },
   adequate: {
     label: 'Adequate',
-    dotColor: 'bg-green-500',
-    textColor: 'text-green-600 dark:text-green-400',
+    dotColor: 'bg-positive',
+    textColor: 'text-positive',
   },
 };
 
@@ -146,7 +146,7 @@ export function SetupRankingWidget({
       {!hasData && !isLoading && (
         <div className="px-(--card-spacing) pb-(--card-spacing)">
           <EmptyState
-            icon={<BarChart3 className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+            icon={<BarChart3 className="size-10 text-muted-foreground" strokeWidth={1} />}
             title="No setup data available"
             description="Your setup ranking will appear here after you close trades with assigned setups."
           />
@@ -167,7 +167,7 @@ export function SetupRankingWidget({
             <TableBody>
               {sortedItems.map((item) => (
                 <TableRow key={item.setupId ?? '__unknown__'}>
-                  <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">
+                  <TableCell className="font-medium text-foreground">
                     {item.setupName}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
