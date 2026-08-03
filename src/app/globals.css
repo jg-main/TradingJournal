@@ -21,7 +21,8 @@
  *   3. Financial     --positive (profit), --negative (loss), --warning,
  *                      --missing (stale/absent data), --info,
  *                      --destructive (+ --destructive-foreground)
- *   4. Structure     --border, --input, --separator, --radius, elevation shadows
+ *   4. Structure     --border, --input, --separator, --overlay, --radius,
+ *                      elevation shadows
  *   5. Interaction   --primary (Steel Blue), --accent, --ring
  *   6. Charts        --chart-1..5 categorical, --chart-grid, --chart-axis,
  *                      --chart-reference
@@ -66,6 +67,9 @@
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
+
+  /* Overlay scrim → bg-overlay utility (dialog/sheet backdrops) */
+  --color-overlay: var(--overlay);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
@@ -136,6 +140,7 @@
   --border: oklch(0.9 0.008 250);
   --input: oklch(0.9 0.008 250);
   --separator: oklch(0.86 0.01 250);
+  --overlay: oklch(0.16 0.012 250 / 0.3); /* cool graphite scrim over light surfaces */
   --radius: 0.5rem;
 
   /* 6. Charts — categorical + reference tokens */
@@ -174,8 +179,10 @@
   --font-size-3xl: 2rem; /* 32px — numeric KPIs */
 
   /* 8. Density — control heights, rows, spacing */
+  --density-control-h-xs: 1.5rem; /* 24px — micro controls */
   --density-control-h-sm: 1.75rem; /* 28px — compact controls */
   --density-control-h: 2rem; /* 32px — standard controls */
+  --density-control-h-lg: 2.25rem; /* 36px — prominent controls */
   --density-row-sm: 2.25rem; /* 36px — dense table rows */
   --density-row-md: 2.5rem; /* 40px — standard rows */
   --density-space-1: 0.25rem; /* 4px */
@@ -222,6 +229,7 @@
   --border: oklch(0.26 0.012 250);
   --input: oklch(0.26 0.012 250);
   --separator: oklch(0.3 0.012 250);
+  --overlay: oklch(0 0 0 / 0.5); /* deep black scrim over graphite surfaces */
 
   /* 6. Charts — lifted for dark backgrounds, same identity */
   --chart-1: oklch(0.68 0.1 235);
