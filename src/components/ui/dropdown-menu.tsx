@@ -20,7 +20,7 @@ function DropdownMenuTrigger({
     <DropdownMenuPrimitive.Trigger
       data-slot="dropdown-menu-trigger"
       className={cn(
-        "outline-none select-none",
+        "outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
         className
       )}
       {...props}
