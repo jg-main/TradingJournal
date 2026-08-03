@@ -394,8 +394,10 @@ export function useDashboardViews(
     if (saved) {
       dispatch({ type: 'HYDRATE', views: saved.views, activeViewId: saved.activeViewId });
     } else {
-      // No saved data — use the latest defaultViews
-      const currentDefs = defaultViewsRef.current;
+      // No saved data — use the latest defaultViews (closure captures the
+      // value from this render; the effect only runs when `key` changes, so
+      // this is always current — no ref mirror needed)
+      const currentDefs = defaultViews;
       const activeId = resolveDefaultViewId(currentDefs);
       dispatch({
         type: 'HYDRATE',
@@ -440,16 +442,14 @@ export function useDashboardViews(
     return () => {
       apiHydrationCancelledRef.current = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // Ref to track latest views for callbacks that need state access
+  // Ref to track latest views for callbacks that need state access.
+  // Updated in an effect (not during render) per react-hooks/refs.
   const viewsRef = useRef(state.views);
-  viewsRef.current = state.views;
-
-  // Use a ref for defaultViews to prevent stale closures in effects/callbacks.
-  const defaultViewsRef = useRef(defaultViews);
-  defaultViewsRef.current = defaultViews;
+  useEffect(() => {
+    viewsRef.current = state.views;
+  }, [state.views]);
 
   // Track IDs of views that were deleted and need API sync
   const pendingDeletionIdsRef = useRef<Set<string>>(new Set());

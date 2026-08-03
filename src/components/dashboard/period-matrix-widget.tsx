@@ -152,22 +152,21 @@ export function PeriodMatrixWidget({
     Object.values(periodMatrixData).some((r) => r.rows.length > 0);
 
   // On data change, auto-switch to a type with data if the current
-  // selection has no rows. Does NOT react to user interaction clicks
-  // (selectedType omitted from deps array intentionally).
-  React.useEffect(() => {
+  // selection has no rows. Implemented as a state adjustment during render
+  // (React-sanctioned; replaces the setState-in-effect the linter rejects).
+  // Only reacts to periodMatrixData changes — never to user selection clicks.
+  const [lastMatrixData, setLastMatrixData] = useState(periodMatrixData);
+  if (lastMatrixData !== periodMatrixData) {
+    setLastMatrixData(periodMatrixData);
     if (periodMatrixData && !periodMatrixData[selectedType]?.rows.length) {
-      const hasAnyData = Object.values(periodMatrixData).some((r) => r.rows.length > 0);
-      if (hasAnyData) {
-        for (const opt of PERIOD_TYPE_OPTIONS) {
-          if (periodMatrixData[opt.value]?.rows.length) {
-            setSelectedType(opt.value);
-            break;
-          }
-        }
+      const firstWithData = PERIOD_TYPE_OPTIONS.find(
+        (opt) => periodMatrixData[opt.value]?.rows.length > 0,
+      );
+      if (firstWithData) {
+        setSelectedType(firstWithData.value);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodMatrixData]);
+  }
 
   return (
     <DashboardWidget

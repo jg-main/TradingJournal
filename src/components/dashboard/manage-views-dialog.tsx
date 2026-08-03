@@ -220,13 +220,16 @@ export function ManageViewsDialog({
   // ── Delete confirmation state ───────────────────────────────────────
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
-  // Reset local state when dialog closes
-  useEffect(() => {
+  // Reset local state when the dialog closes. Adjusted during render
+  // (React-sanctioned; replaces the setState-in-effect the linter rejects).
+  const [lastOpen, setLastOpen] = useState(open);
+  if (lastOpen !== open) {
+    setLastOpen(open);
     if (!open) {
       setRenamingId(null);
       setConfirmingDeleteId(null);
     }
-  }, [open]);
+  }
 
   // Split views into system and user
   const systemViews = views.filter((v) => v.isSystem);
@@ -291,7 +294,7 @@ export function ManageViewsDialog({
           <DialogTitle>Manage Views</DialogTitle>
           <DialogDescription>
             Rename, duplicate, or delete your custom views. System views are
-            read-only — select "Edit" to create a copy.
+            read-only — select &quot;Edit&quot; to create a copy.
           </DialogDescription>
         </DialogHeader>
 

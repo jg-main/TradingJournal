@@ -304,11 +304,15 @@ export function WorkstationProvider({
   // Fetches prices for market indices + watchlist symbols when liveData
   // changes.  Best-effort: a failure leaves marketIndices/symbolPrices
   // empty but doesn't break the rest of the workstation.
+  //
+  // Reset live prices when live mode is off. Adjusted during render
+  // (React-sanctioned; replaces the setState-in-effect the linter rejects).
+  if (!liveMode || !liveData) {
+    if (livePrices !== null) setLivePrices(null);
+  }
+
   useEffect(() => {
-    if (!liveMode || !liveData) {
-      setLivePrices(null);
-      return;
-    }
+    if (!liveMode || !liveData) return;
 
     let cancelled = false;
 
@@ -351,11 +355,18 @@ export function WorkstationProvider({
   // Polls at 30s when live mode is active, tab is visible, and positions > 0.
   // Pauses when tab is hidden or positions reach zero.  Sets mtmPollingState
   // so the toolbar can render the active/paused/error indicator.
+  //
+  // Show the paused indicator when live mode is off, no account is
+  // selected, or there are no positions to poll. Adjusted during render
+  // (React-sanctioned; replaces the setState-in-effect the linter rejects).
+  if (!liveMode || !activeAccountId) {
+    if (mtmPollingState !== 'paused') setMtmPollingState('paused');
+  } else if (liveData === null || liveData.positions.length === 0) {
+    if (mtmPollingState !== 'paused') setMtmPollingState('paused');
+  }
+
   useEffect(() => {
-    if (!liveMode || !activeAccountId) {
-      setMtmPollingState('paused');
-      return;
-    }
+    if (!liveMode || !activeAccountId) return;
 
     const hasPositions = liveData !== null && liveData.positions.length > 0;
 
@@ -425,8 +436,6 @@ export function WorkstationProvider({
 
     if (hasPositions && !document.hidden) {
       startPolling();
-    } else {
-      setMtmPollingState('paused');
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange);

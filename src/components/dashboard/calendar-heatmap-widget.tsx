@@ -204,10 +204,15 @@ export function CalendarHeatmapWidget({
   const defaultIdx = useMemo(() => getDefaultYearIndex(heatmapData), [heatmapData]);
   const [selectedYearIdx, setSelectedYearIdx] = useState(defaultIdx);
 
-  // Reset selected year index when data changes (e.g. filter applied)
-  React.useEffect(() => {
+  // Reset the selected year when the dataset changes (e.g. a filter was
+  // applied). Adjusting state during render is the React-sanctioned
+  // replacement for the setState-in-effect pattern the linter rejects:
+  // it re-renders immediately with the new value before committing.
+  const [lastHeatmapData, setLastHeatmapData] = useState(heatmapData);
+  if (lastHeatmapData !== heatmapData) {
+    setLastHeatmapData(heatmapData);
     setSelectedYearIdx(getDefaultYearIndex(heatmapData));
-  }, [heatmapData]);
+  }
 
   const hasData = heatmapData.length > 0 && heatmapData.some((yd) => yd.days.length > 0);
   const yearData = hasData && selectedYearIdx >= 0 && selectedYearIdx < heatmapData.length
