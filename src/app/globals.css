@@ -4,6 +4,40 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * TradingJournal semantic token system — Graphite + Steel Blue identity (M014)
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Design character: Industrial. Precise. Restrained. Analytical. Fast.
+ *
+ * Token groups (each defined for BOTH :root light and .dark themes):
+ *   1. Surfaces      --background, --card, --popover, --muted, --secondary,
+ *                      --sidebar, --sidebar-accent
+ *   2. Text          --foreground, --card-foreground, --popover-foreground,
+ *                      --muted-foreground, --secondary-foreground,
+ *                      --accent-foreground, --primary-foreground,
+ *                      --sidebar-foreground, --sidebar-accent-foreground
+ *   3. Financial     --positive (profit), --negative (loss), --warning,
+ *                      --missing (stale/absent data), --info,
+ *                      --destructive (+ --destructive-foreground)
+ *   4. Structure     --border, --input, --separator, --radius, elevation shadows
+ *   5. Interaction   --primary (Steel Blue), --accent, --ring
+ *   6. Charts        --chart-1..5 categorical, --chart-grid, --chart-axis,
+ *                      --chart-reference
+ *   7. Typography    --font-size-* scale (theme-independent)
+ *   8. Density       --density-* control/row/spacing tokens (theme-independent)
+ *
+ * Identity rules:
+ *   - Primary/action color is Steel Blue (oklch hue ~235). GREEN IS RESERVED
+ *     for positive financial meaning only (--positive). No green primary hue.
+ *   - Light and dark themes are intentionally designed pairs, not inversion:
+ *     light uses white/steel surfaces with deep graphite text; dark uses
+ *     graphite surfaces with luminous steel accents.
+ *   - Borders and surface contrast are the primary separation mechanism;
+ *     shadows are reserved for floating overlays (popovers, dialogs, menus).
+ */
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -27,6 +61,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -39,6 +74,18 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* Financial / operational state colors → Tailwind utilities:
+     text-positive, bg-negative/10, border-warning/30, text-missing, ... */
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --color-missing: var(--missing);
+  --color-info: var(--info);
+
+  /* Structural separation color → border-separator utility */
+  --color-separator: var(--separator);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -46,75 +93,160 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Elevation → shadow-sm / shadow-md / shadow-lg utilities (theme-aware) */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
 }
 
+/* ── Light theme ────────────────────────────────────────────────────────── */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.13 0.008 130);
+  color-scheme: light;
+
+  /* 1. Surfaces — white / cool graphite */
+  --background: oklch(0.985 0.003 250);
+  --foreground: oklch(0.2 0.015 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.13 0.008 130);
+  --card-foreground: oklch(0.2 0.015 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0.008 130);
-  --primary: oklch(0.55 0.14 130);
+  --popover-foreground: oklch(0.2 0.015 250);
+  --muted: oklch(0.955 0.006 250);
+  --muted-foreground: oklch(0.49 0.025 250);
+  --secondary: oklch(0.955 0.006 250);
+  --secondary-foreground: oklch(0.24 0.02 250);
+
+  /* 5. Interaction — Steel Blue identity */
+  --primary: oklch(0.48 0.1 235);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.965 0.005 90);
-  --secondary-foreground: oklch(0.13 0.008 130);
-  --muted: oklch(0.965 0.005 90);
-  --muted-foreground: oklch(0.47 0.012 130);
-  --accent: oklch(0.50 0.12 250);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.55 0.20 25);
-  --border: oklch(0.90 0.005 90);
-  --input: oklch(0.90 0.005 90);
-  --ring: oklch(0.65 0.08 130);
-  --chart-1: oklch(0.55 0.14 130);
-  --chart-2: oklch(0.50 0.12 250);
-  --chart-3: oklch(0.55 0.10 280);
-  --chart-4: oklch(0.52 0.10 80);
-  --chart-5: oklch(0.48 0.08 20);
+  --accent: oklch(0.94 0.025 235);
+  --accent-foreground: oklch(0.35 0.08 235);
+  --ring: oklch(0.55 0.1 235);
+
+  /* 3. Financial / operational state */
+  --positive: oklch(0.55 0.13 152);
+  --negative: oklch(0.55 0.19 27);
+  --warning: oklch(0.68 0.14 75);
+  --missing: oklch(0.6 0.07 75);
+  --info: oklch(0.52 0.1 235);
+  --destructive: oklch(0.53 0.2 25);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  /* 4. Structure */
+  --border: oklch(0.9 0.008 250);
+  --input: oklch(0.9 0.008 250);
+  --separator: oklch(0.86 0.01 250);
   --radius: 0.5rem;
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.13 0.008 130);
-  --sidebar-primary: oklch(0.50 0.14 130);
+
+  /* 6. Charts — categorical + reference tokens */
+  --chart-1: oklch(0.52 0.1 235); /* steel blue — primary series */
+  --chart-2: oklch(0.45 0.02 250); /* graphite — comparison / neutral */
+  --chart-3: oklch(0.58 0.07 205); /* steel cyan — secondary series */
+  --chart-4: oklch(0.49 0.12 275); /* indigo — categorical */
+  --chart-5: oklch(0.68 0.13 80); /* warm gold — categorical accent */
+  --chart-grid: oklch(0.93 0.006 250);
+  --chart-axis: oklch(0.49 0.025 250);
+  --chart-reference: oklch(0.7 0.02 250);
+
+  /* Sidebar surfaces */
+  --sidebar: oklch(0.975 0.004 250);
+  --sidebar-foreground: oklch(0.2 0.015 250);
+  --sidebar-primary: oklch(0.48 0.1 235);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.965 0.005 90);
-  --sidebar-accent-foreground: oklch(0.13 0.008 130);
-  --sidebar-border: oklch(0.90 0.005 90);
-  --sidebar-ring: oklch(0.65 0.08 130);
+  --sidebar-accent: oklch(0.94 0.025 235);
+  --sidebar-accent-foreground: oklch(0.3 0.08 235);
+  --sidebar-border: oklch(0.9 0.008 250);
+  --sidebar-ring: oklch(0.55 0.1 235);
+
+  /* 4. Elevation — subtle; borders carry separation, shadows float overlays */
+  --shadow-sm: 0 1px 2px oklch(0.18 0.02 250 / 0.05);
+  --shadow-md: 0 1px 3px oklch(0.18 0.02 250 / 0.08), 0 4px 12px oklch(0.18 0.02 250 / 0.06);
+  --shadow-lg: 0 2px 8px oklch(0.18 0.02 250 / 0.1), 0 12px 32px oklch(0.18 0.02 250 / 0.12);
+
+  /* 7. Typography scale — consumed via var(--font-size-*) */
+  --font-size-xs: 0.6875rem; /* 11px — metadata, table headers, badges */
+  --font-size-sm: 0.75rem; /* 12px — compact body */
+  --font-size-md: 0.8125rem; /* 13px — table cells, dense UI */
+  --font-size-base: 0.875rem; /* 14px — default body */
+  --font-size-lg: 1rem; /* 16px — section headings */
+  --font-size-xl: 1.25rem; /* 20px — page titles */
+  --font-size-2xl: 1.5rem; /* 24px — panel / product headings */
+  --font-size-3xl: 2rem; /* 32px — numeric KPIs */
+
+  /* 8. Density — control heights, rows, spacing */
+  --density-control-h-sm: 1.75rem; /* 28px — compact controls */
+  --density-control-h: 2rem; /* 32px — standard controls */
+  --density-row-sm: 2.25rem; /* 36px — dense table rows */
+  --density-row-md: 2.5rem; /* 40px — standard rows */
+  --density-space-1: 0.25rem; /* 4px */
+  --density-space-2: 0.5rem; /* 8px */
+  --density-space-3: 0.75rem; /* 12px */
+  --density-space-4: 1rem; /* 16px */
+  --density-space-5: 1.5rem; /* 24px */
+  --density-space-6: 2rem; /* 32px */
 }
 
+/* ── Dark theme — intentionally designed graphite, not inversion ────────── */
 .dark {
-  --background: oklch(0.12 0.004 130);
-  --foreground: oklch(0.95 0.004 130);
-  --card: oklch(0.16 0.005 130);
-  --card-foreground: oklch(0.95 0.004 130);
-  --popover: oklch(0.16 0.005 130);
-  --popover-foreground: oklch(0.95 0.004 130);
-  --primary: oklch(0.62 0.145 130);
-  --primary-foreground: oklch(0.12 0 0);
-  --secondary: oklch(0.20 0.005 130);
-  --secondary-foreground: oklch(0.95 0.004 130);
-  --muted: oklch(0.20 0.005 130);
-  --muted-foreground: oklch(0.60 0.008 130);
-  --accent: oklch(0.55 0.11 250);
-  --accent-foreground: oklch(0.12 0 0);
-  --destructive: oklch(0.60 0.22 25);
-  --border: oklch(0.22 0.005 130);
-  --input: oklch(0.22 0.005 130);
-  --ring: oklch(0.55 0.10 130);
-  --chart-1: oklch(0.55 0.14 130);
-  --chart-2: oklch(0.50 0.12 250);
-  --chart-3: oklch(0.55 0.10 280);
-  --chart-4: oklch(0.52 0.10 80);
-  --chart-5: oklch(0.48 0.08 20);
-  --sidebar: oklch(0.14 0.004 130);
-  --sidebar-foreground: oklch(0.95 0.004 130);
-  --sidebar-primary: oklch(0.55 0.14 130);
-  --sidebar-primary-foreground: oklch(0.12 0 0);
-  --sidebar-accent: oklch(0.20 0.005 130);
-  --sidebar-accent-foreground: oklch(0.95 0.004 130);
-  --sidebar-border: oklch(0.22 0.005 130);
-  --sidebar-ring: oklch(0.55 0.10 130);
+  color-scheme: dark;
+
+  /* 1. Surfaces — deep graphite with cool undertone */
+  --background: oklch(0.145 0.006 250);
+  --foreground: oklch(0.945 0.006 250);
+  --card: oklch(0.185 0.008 250);
+  --card-foreground: oklch(0.945 0.006 250);
+  --popover: oklch(0.215 0.01 250);
+  --popover-foreground: oklch(0.945 0.006 250);
+  --muted: oklch(0.235 0.01 250);
+  --muted-foreground: oklch(0.655 0.02 250);
+  --secondary: oklch(0.235 0.01 250);
+  --secondary-foreground: oklch(0.945 0.006 250);
+
+  /* 5. Interaction — luminous steel blue on graphite */
+  --primary: oklch(0.65 0.1 235);
+  --primary-foreground: oklch(0.16 0.03 250);
+  --accent: oklch(0.28 0.03 235);
+  --accent-foreground: oklch(0.82 0.06 230);
+  --ring: oklch(0.6 0.11 235);
+
+  /* 3. Financial / operational state — brightened for dark surfaces */
+  --positive: oklch(0.7 0.14 152);
+  --negative: oklch(0.64 0.2 27);
+  --warning: oklch(0.78 0.13 80);
+  --missing: oklch(0.7 0.07 75);
+  --info: oklch(0.68 0.1 235);
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  /* 4. Structure */
+  --border: oklch(0.26 0.012 250);
+  --input: oklch(0.26 0.012 250);
+  --separator: oklch(0.3 0.012 250);
+
+  /* 6. Charts — lifted for dark backgrounds, same identity */
+  --chart-1: oklch(0.68 0.1 235);
+  --chart-2: oklch(0.6 0.02 250);
+  --chart-3: oklch(0.7 0.08 205);
+  --chart-4: oklch(0.65 0.12 275);
+  --chart-5: oklch(0.78 0.13 80);
+  --chart-grid: oklch(0.27 0.012 250);
+  --chart-axis: oklch(0.655 0.02 250);
+  --chart-reference: oklch(0.45 0.015 250);
+
+  /* Sidebar surfaces */
+  --sidebar: oklch(0.17 0.007 250);
+  --sidebar-foreground: oklch(0.945 0.006 250);
+  --sidebar-primary: oklch(0.65 0.1 235);
+  --sidebar-primary-foreground: oklch(0.16 0.03 250);
+  --sidebar-accent: oklch(0.26 0.03 235);
+  --sidebar-accent-foreground: oklch(0.82 0.06 230);
+  --sidebar-border: oklch(0.26 0.012 250);
+  --sidebar-ring: oklch(0.6 0.11 235);
+
+  /* 4. Elevation — deeper, graphite-tinted shadows on dark */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.35);
+  --shadow-md: 0 2px 6px oklch(0 0 0 / 0.45), 0 8px 20px oklch(0 0 0 / 0.3);
+  --shadow-lg: 0 4px 12px oklch(0 0 0 / 0.55), 0 16px 40px oklch(0 0 0 / 0.45);
 }
 
 @layer base {
