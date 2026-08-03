@@ -156,12 +156,12 @@ function assert(condition: boolean, msg: string) {
   const source = fs.readFileSync(compSourcePath, 'utf-8');
 
   // The gradeColorClass function uses a switch statement with 6 cases + default
-  assert(source.includes("case 'A'") && source.includes('emerald'), 'grade A maps to emerald color');
-  assert(source.includes("case 'B'") && source.includes('blue'), 'grade B maps to blue color');
-  assert(source.includes("case 'C'") && source.includes('amber'), 'grade C maps to amber color');
-  assert(source.includes("case 'D'") && source.includes('orange'), 'grade D maps to orange color');
-  assert(source.includes("case 'F'") && source.includes('red'), 'grade F maps to red color');
-  assert(source.includes('default:') && source.includes('zinc'), 'default (unknown grade) maps to zinc color');
+  assert(source.includes("case 'A'") && source.includes('bg-positive'), 'grade A maps to positive color');
+  assert(source.includes("case 'B'") && source.includes('bg-info'), 'grade B maps to info color');
+  assert(source.includes("case 'C'") && source.includes('bg-warning'), 'grade C maps to warning color');
+  assert(source.includes("case 'D'") && source.includes('bg-warning'), 'grade D maps to warning color (no orange token)');
+  assert(source.includes("case 'F'") && source.includes('bg-negative'), 'grade F maps to negative color');
+  assert(source.includes('default:') && source.includes('bg-muted'), 'default (unknown grade) maps to muted neutral');
   assert(source.includes('function gradeColorClass'), 'gradeColorClass function is defined');
   assert(source.includes('letter: string'), 'gradeColorClass accepts a string parameter');
 }
@@ -426,7 +426,7 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('No scorecard data available'), 'HistoryRow shows fallback when scorecard is null');
 
   // Hover styling
-  assert(source.includes('hover:bg-zinc-50'), 'HistoryRow has hover background style');
+  assert(source.includes('hover:bg-muted/50'), 'HistoryRow has hover background style');
   assert(source.includes('transition-colors'), 'HistoryRow has transition animation');
 }
 

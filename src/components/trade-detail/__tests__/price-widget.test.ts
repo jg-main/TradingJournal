@@ -182,7 +182,7 @@ function assert(condition: boolean, msg: string) {
   // Default return — no prior if/return matched
   assert(
     source.includes('data-testid="price-widget"') &&
-    source.includes('border-zinc-200/60'),
+    source.includes('border-border'),
     'populated state: data-testid="price-widget" with default card styling'
   );
 
@@ -256,12 +256,12 @@ function assert(condition: boolean, msg: string) {
     'error state renders the mtmData.error message'
   );
   assert(
-    source.includes('border-red-200/60'),
-    'error state card uses red border styling'
+    source.includes('border-destructive/40'),
+    'error state card uses destructive border styling'
   );
   assert(
-    source.includes('text-red-700') && source.includes('text-red-500'),
-    'error state uses red text for heading and detail'
+    source.includes('text-destructive'),
+    'error state uses destructive text for heading and detail'
   );
 }
 
@@ -303,12 +303,12 @@ function assert(condition: boolean, msg: string) {
 
   // Change color logic
   assert(
-    source.includes('changeSign') && source.includes('text-emerald-600'),
-    'populated state uses emerald for positive change'
+    source.includes('changeSign') && source.includes('text-positive'),
+    'populated state uses positive color for positive change'
   );
   assert(
-    source.includes('text-red-600'),
-    'populated state uses red for negative change'
+    source.includes('text-negative'),
+    'populated state uses negative color for negative change'
   );
 
   // Change display
@@ -383,8 +383,8 @@ function assert(condition: boolean, msg: string) {
 
   // Amber border for cached error
   assert(
-    source.includes('border-amber-200/60'),
-    'offline state card uses amber border styling'
+    source.includes('border-warning/40'),
+    'offline state card uses warning border styling'
   );
 
   // WifiOff icon and text
@@ -482,8 +482,8 @@ function assert(condition: boolean, msg: string) {
   const source = fs.readFileSync(compSourcePath, 'utf-8');
 
   assert(source.includes('changeSign = change >= 0'), 'changeSign derived from change >= 0 (zero shows as positive)');
-  assert(source.includes("'text-emerald-600 dark:text-emerald-400'"), 'changeColor uses emerald for positive/zero');
-  assert(source.includes("'text-red-600 dark:text-red-400'"), 'negChangeColor uses red for negative');
+  assert(source.includes("'text-positive'"), 'changeColor uses positive token for positive/zero');
+  assert(source.includes("'text-negative'"), 'negChangeColor uses negative token for negative');
 
   // Price text color uses changeSign logic
   assert(
@@ -494,7 +494,7 @@ function assert(condition: boolean, msg: string) {
 
   // When price exists but change is zero, text is neutral
   assert(
-    source.includes('text-zinc-800 dark:text-zinc-200'),
+    source.includes('text-foreground'),
     'neutral price color for zero/no change'
   );
 }

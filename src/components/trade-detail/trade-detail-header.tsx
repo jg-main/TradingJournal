@@ -32,8 +32,8 @@ export default function TradeDetailHeader({
   const isDeleted = status === 'deleted';
 
   const symbolClasses = isDeleted
-    ? 'text-xl font-semibold tracking-tight text-zinc-400 line-through dark:text-zinc-500'
-    : 'text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50';
+    ? 'text-xl font-semibold tracking-tight text-muted-foreground line-through'
+    : 'text-xl font-semibold tracking-tight text-foreground';
 
   const DirectionIcon = direction === 'long' ? TrendingUp : TrendingDown;
 
@@ -46,7 +46,7 @@ export default function TradeDetailHeader({
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2.5">
           <h1 className={symbolClasses}>{symbol}</h1>
-          <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
             <DirectionIcon className="size-3" />
             {direction === 'long' ? 'Long' : 'Short'}
           </span>
@@ -54,11 +54,11 @@ export default function TradeDetailHeader({
             {statusLabel(status)}
           </Badge>
         </div>
-        <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="font-mono">{tradeCode}</span>
           {openedDate && (
             <>
-              <span className="text-zinc-300 dark:text-zinc-600">·</span>
+              <span className="text-muted-foreground">·</span>
               <span className="inline-flex items-center gap-1">
                 <Calendar className="size-3" />
                 {openedDate}
@@ -67,7 +67,7 @@ export default function TradeDetailHeader({
           )}
           {setupName && (
             <>
-              <span className="text-zinc-300 dark:text-zinc-600">·</span>
+              <span className="text-muted-foreground">·</span>
               <span className="inline-flex items-center gap-1">
                 <Tag className="size-3" />
                 {setupName}
@@ -76,8 +76,8 @@ export default function TradeDetailHeader({
           )}
           {gradeLabel && (
             <>
-              <span className="text-zinc-300 dark:text-zinc-600">·</span>
-              <span className="font-medium text-zinc-500 dark:text-zinc-400">Grade: {gradeLabel}</span>
+              <span className="text-muted-foreground">·</span>
+              <span className="font-medium text-muted-foreground">Grade: {gradeLabel}</span>
             </>
           )}
         </div>

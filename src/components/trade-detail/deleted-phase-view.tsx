@@ -35,13 +35,13 @@ export default function DeletedPhaseView({ trade }: DeletedPhaseViewProps) {
 
       {/* Deleted state */}
       <EmptyState
-        icon={<AlertCircle className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+        icon={<AlertCircle className="size-12 text-muted-foreground" strokeWidth={1} />}
         title="This trade has been deleted"
         description="The trade was removed and its data is no longer available."
         action={
           <Link
             href="/trades"
-            className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
           >
             <ArrowLeft className="size-4" />
             Back to Trades

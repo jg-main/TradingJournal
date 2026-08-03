@@ -18,7 +18,7 @@ export default function TradeExitNotesCard({ exitNotes, lesson }: TradeExitNotes
             <CardTitle>Exit Notes</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">{exitNotes}</p>
+            <p className="text-sm text-foreground">{exitNotes}</p>
           </CardContent>
         </Card>
       )}
@@ -28,7 +28,7 @@ export default function TradeExitNotesCard({ exitNotes, lesson }: TradeExitNotes
             <CardTitle>Lesson</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">{lesson}</p>
+            <p className="text-sm text-foreground">{lesson}</p>
           </CardContent>
         </Card>
       )}

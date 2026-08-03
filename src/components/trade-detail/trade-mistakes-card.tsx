@@ -18,16 +18,16 @@ interface TradeMistakesCardProps {
 
 const severityColors: Record<string, string> = {
   minor: 'bg-muted text-muted-foreground',
-  moderate: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  major: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  critical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  moderate: 'bg-warning/10 text-warning',
+  major: 'bg-warning/10 text-warning',
+  critical: 'bg-destructive/10 text-destructive',
 };
 
 const statusColors: Record<string, string> = {
-  open: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  addressed: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  improved: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  resolved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  open: 'bg-destructive/10 text-destructive',
+  addressed: 'bg-warning/10 text-warning',
+  improved: 'bg-info/10 text-info',
+  resolved: 'bg-positive/10 text-positive',
 };
 
 const defaultForm = {
@@ -176,8 +176,8 @@ export default function TradeMistakesCard({
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
                   message.type === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+                    ? 'border-positive/30 bg-positive/10 text-positive'
+                    : 'border-destructive/30 bg-destructive/10 text-destructive'
                 }`}
               >
                 {message.text}

@@ -184,7 +184,7 @@ const ARBITRARY_VALUE_RE =
 
 /** Pure lengths (text-[10px]) are font sizes / sizes, not colors. */
 const PURE_LENGTH_RE = /^[\d.]+(?:rem|em|px|vh|vw|%)?$/;
-/** Non-color type hints inside arbitrary values (bg-[url(...)], bg-[length:200px], ...). */
+/** Non-color type-hint prefixes inside arbitrary values (length:, url:, image:, color-mix:). */
 const NON_COLOR_HINT_RE = /^(?:length|size|position|url|image|color-mix):/;
 
 interface Violation {
@@ -205,7 +205,7 @@ function findViolations(source: string): Violation[] {
       const inner = m[1].trim();
       if (inner.includes('var(--')) continue; // token-driven, e.g. bg-[var(--x)]
       if (PURE_LENGTH_RE.test(inner)) continue; // font size / dimension, e.g. text-[10px]
-      if (NON_COLOR_HINT_RE.test(inner)) continue; // image/length hint, e.g. bg-[url(...)]
+      if (NON_COLOR_HINT_RE.test(inner)) continue; // type-hinted values, e.g. length:200px
       hits.push({ line: lineno, literal: m[0] });
     }
   }
@@ -226,26 +226,7 @@ function violationsInFile(file: string): Violation[] {
  * scan on 2026-08-03 (89 files, 5507 palette-shade + 194 black/white hits).
  */
 const EXEMPT_FILES: readonly string[] = [
-  /* ── T02: trade-detail components (18 listed + helpers.ts) ───────────── */
-  'src/components/trade-detail/assessment-card.tsx',
-  'src/components/trade-detail/assessment-history.tsx',
-  'src/components/trade-detail/closed-phase-view.tsx',
-  'src/components/trade-detail/deleted-phase-view.tsx',
-  'src/components/trade-detail/helpers.ts',
-  'src/components/trade-detail/planned-phase-view.tsx',
-  'src/components/trade-detail/price-widget.tsx',
-  'src/components/trade-detail/risk-snapshot-card.tsx',
-  'src/components/trade-detail/trade-assets-card.tsx',
-  'src/components/trade-detail/trade-check-results-card.tsx',
-  'src/components/trade-detail/trade-detail-header.tsx',
-  'src/components/trade-detail/trade-executions-card.tsx',
-  'src/components/trade-detail/trade-exit-notes-card.tsx',
-  'src/components/trade-detail/trade-grade-card.tsx',
-  'src/components/trade-detail/trade-lifecycle-summary-card.tsx',
-  'src/components/trade-detail/trade-mistakes-card.tsx',
-  'src/components/trade-detail/trade-plan-card.tsx',
-  'src/components/trade-detail/trade-pnl-card.tsx',
-  'src/components/trade-detail/trade-stop-adjustments-card.tsx',
+  /* ── T02: trade-detail components (18 listed + helpers.ts) — MIGRATED in T02 ── */
 
   /* ── T03: dashboard widgets + root shared components (32 listed + formatting.ts) ── */
   'src/components/dashboard/account-performance-panel.tsx',

@@ -175,7 +175,7 @@ export default function ClosedPhaseView({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-md border border-zinc-300 p-2 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                className="inline-flex items-center justify-center rounded-md border border-border p-2 text-foreground hover:bg-muted dark:border-input dark:hover:bg-input/50"
                 aria-label="More actions"
               >
                 <MoreHorizontal className="size-4" />

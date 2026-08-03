@@ -306,8 +306,8 @@ export default function TradeAssetsCard({
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
                   message.type === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+                    ? 'border-positive/30 bg-positive/10 text-positive'
+                    : 'border-destructive/30 bg-destructive/10 text-destructive'
                 }`}
               >
                 {message.text}
@@ -521,12 +521,12 @@ export default function TradeAssetsCard({
 
       {expandedImage && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
           onClick={() => setExpandedImage(null)}
         >
           <button
             onClick={(e) => { e.stopPropagation(); setExpandedImage(null); }}
-            className="absolute right-4 top-4 rounded-full bg-black/50 p-3 text-white hover:bg-black/70 z-10"
+            className="absolute right-4 top-4 rounded-full bg-overlay p-3 text-primary-foreground hover:bg-overlay/70 z-10"
             aria-label="Close lightbox"
           >
             <X className="size-6" />

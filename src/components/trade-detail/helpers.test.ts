@@ -39,15 +39,15 @@ function assert(condition: boolean, msg: string) {
 
   const planned = statusBadgeVariant('planned');
   assert(planned.variant === 'secondary', 'planned status returns variant secondary');
-  assert(planned.className.includes('bg-blue-100'), 'planned status has blue bg class');
+  assert(planned.className.includes('bg-info/10'), 'planned status has info bg class');
 
   const open = statusBadgeVariant('open');
   assert(open.variant === 'default', 'open status returns variant default');
-  assert(open.className.includes('bg-emerald-100'), 'open status has emerald bg class');
+  assert(open.className.includes('bg-positive/10'), 'open status has positive bg class');
 
   const closed = statusBadgeVariant('closed');
   assert(closed.variant === 'outline', 'closed status returns variant outline');
-  assert(closed.className.includes('text-zinc-500'), 'closed status has zinc text class');
+  assert(closed.className.includes('text-muted-foreground'), 'closed status has muted text class');
 
   const deleted = statusBadgeVariant('deleted');
   assert(deleted.variant === 'outline', 'deleted status returns variant outline');

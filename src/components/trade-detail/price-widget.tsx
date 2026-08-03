@@ -43,13 +43,13 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
   const change = mtmData.change ?? 0;
   const changePercent = mtmData.changePercent ?? 0;
   const changeSign = change >= 0;
-  const changeColor = 'text-emerald-600 dark:text-emerald-400';
-  const negChangeColor = 'text-red-600 dark:text-red-400';
+  const changeColor = 'text-positive';
+  const negChangeColor = 'text-negative';
 
   // ── Loading State ──
   if (isLoading) {
     return (
-      <Card data-testid="price-widget-loading" className="border-zinc-200/60 dark:border-zinc-800/60">
+      <Card data-testid="price-widget-loading" className="border-border">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="space-y-2">
@@ -74,15 +74,15 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
   // ── Error State (no cached price) ──
   if (hasError && !hasPrice) {
     return (
-      <Card data-testid="price-widget-error" className="border-red-200/60 dark:border-red-900/30">
+      <Card data-testid="price-widget-error" className="border-destructive/40">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-500" />
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-red-700 dark:text-red-400">
+              <p className="text-sm font-medium text-destructive">
                 Price data unavailable
               </p>
-              <p className="mt-0.5 text-xs text-red-500 dark:text-red-400/80">
+              <p className="mt-0.5 text-xs text-destructive/80">
                 {mtmData.error}
               </p>
             </div>
@@ -109,8 +109,8 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
     <Card
       data-testid="price-widget"
       className={cn(
-        "border-zinc-200/60 dark:border-zinc-800/60",
-        isCachedWithError && "border-amber-200/60 dark:border-amber-900/30",
+        "border-border",
+        isCachedWithError && "border-warning/40",
       )}
     >
       <CardContent className="p-4">
@@ -118,17 +118,17 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
         <div className="flex items-start justify-between">
           <div className="min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className="text-base font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+              <span className="text-base font-semibold tabular-nums text-foreground">
                 Symbol
               </span>
               {mtmData.shortName ? (
-                <span className="truncate text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                <span className="truncate text-sm font-medium text-muted-foreground">
                   {mtmData.shortName}
                 </span>
               ) : null}
             </div>
             {mtmData.sector && (
-              <div className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+              <div className="mt-0.5 text-xs text-muted-foreground">
                 {mtmData.sector}
                 {mtmData.industry && <span> · {mtmData.industry}</span>}
               </div>
@@ -142,7 +142,7 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
                   ? changeSign
                     ? changeColor
                     : negChangeColor
-                  : "text-zinc-800 dark:text-zinc-200",
+                  : "text-foreground",
               )}
             >
               {formatPrice(mtmData.price)}
@@ -165,20 +165,20 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
         {/* ── Detail grid: day high, day low, previous close ── */}
         <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
           <div>
-            <span className="text-zinc-400 dark:text-zinc-500">Day High</span>
-            <div className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
+            <span className="text-muted-foreground">Day High</span>
+            <div className="mt-0.5 tabular-nums text-foreground">
               {formatPrice(mtmData.dayHigh)}
             </div>
           </div>
           <div>
-            <span className="text-zinc-400 dark:text-zinc-500">Day Low</span>
-            <div className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
+            <span className="text-muted-foreground">Day Low</span>
+            <div className="mt-0.5 tabular-nums text-foreground">
               {formatPrice(mtmData.dayLow)}
             </div>
           </div>
           <div>
-            <span className="text-zinc-400 dark:text-zinc-500">Prev Close</span>
-            <div className="mt-0.5 tabular-nums text-zinc-700 dark:text-zinc-300">
+            <span className="text-muted-foreground">Prev Close</span>
+            <div className="mt-0.5 tabular-nums text-foreground">
               {formatPrice(mtmData.previousClose)}
             </div>
           </div>
@@ -186,7 +186,7 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
 
         {/* ── Footer row: staleness/streaming/last-updated + offline/retry ── */}
         <div className="mt-2 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {showStaleness && (
               <span className="inline-flex items-center gap-1">
                 <Clock className="size-3" />
@@ -207,7 +207,7 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
             {isCachedWithError && (
               <span
                 data-testid="price-widget-offline"
-                className="inline-flex items-center gap-1 text-amber-500 dark:text-amber-400"
+                className="inline-flex items-center gap-1 text-warning"
               >
                 <WifiOff className="size-3" />
                 Offline — showing cached price

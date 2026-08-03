@@ -35,17 +35,17 @@ export interface AssessmentCardProps {
 function gradeColorClass(letter: string): string {
   switch (letter) {
     case 'A':
-      return 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700';
+      return 'bg-positive/10 text-positive border-positive/30';
     case 'B':
-      return 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700';
+      return 'bg-info/10 text-info border-info/30';
     case 'C':
-      return 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700';
+      return 'bg-warning/10 text-warning border-warning/30';
     case 'D':
-      return 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-700';
+      return 'bg-warning/10 text-warning border-warning/30';
     case 'F':
-      return 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700';
+      return 'bg-negative/10 text-negative border-negative/30';
     default:
-      return 'bg-zinc-100 text-zinc-700 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700';
+      return 'bg-muted text-muted-foreground border-border';
   }
 }
 
@@ -57,10 +57,10 @@ function scoreLabel(score: number): string {
 }
 
 function dimensionColorClass(score: number): string {
-  if (score >= 8) return 'text-emerald-600 dark:text-emerald-400';
-  if (score >= 6) return 'text-blue-600 dark:text-blue-400';
-  if (score >= 4) return 'text-amber-600 dark:text-amber-400';
-  return 'text-red-600 dark:text-red-400';
+  if (score >= 8) return 'text-positive';
+  if (score >= 6) return 'text-info';
+  if (score >= 4) return 'text-warning';
+  return 'text-negative';
 }
 
 function formatDuration(ms: number): string {
@@ -77,12 +77,12 @@ function LoadingState() {
     <Card className="mb-8">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Brain className="size-4 text-zinc-500" />
+          <Brain className="size-4 text-muted-foreground" />
           AI Quality Assessment
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-2 py-6 text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           Loading assessment...
         </div>
@@ -96,12 +96,12 @@ function ErrorState({ error }: { error: string }) {
     <Card className="mb-8">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Brain className="size-4 text-zinc-500" />
+          <Brain className="size-4 text-muted-foreground" />
           AI Quality Assessment
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex items-start gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
+        <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -115,18 +115,18 @@ function EmptyState({ onRequest, requestLoading }: { onRequest?: () => void; req
     <Card className="mb-8">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Brain className="size-4 text-zinc-500" />
+          <Brain className="size-4 text-muted-foreground" />
           AI Quality Assessment
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col items-center gap-4 py-6 text-center">
-          <ClipboardList className="size-10 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />
+          <ClipboardList className="size-10 text-muted-foreground" strokeWidth={1} />
           <div>
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            <p className="text-sm font-medium text-foreground">
               No AI assessment yet
             </p>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               Request an AI-powered quality assessment to evaluate this trade plan.
             </p>
           </div>
@@ -135,7 +135,7 @@ function EmptyState({ onRequest, requestLoading }: { onRequest?: () => void; req
               type="button"
               onClick={onRequest}
               disabled={requestLoading}
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               {requestLoading && <Loader2 className="size-4 animate-spin" />}
               {requestLoading ? 'Requesting...' : 'Request Assessment'}
@@ -155,7 +155,7 @@ function WarningsList({ warnings }: { warnings: string[] }) {
       {warnings.map((w, i) => (
         <div
           key={i}
-          className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+          className="flex items-start gap-1.5 rounded-md bg-warning/10 p-2 text-xs text-warning"
         >
           <AlertCircle className="mt-0.5 size-3 shrink-0" />
           <span>{w}</span>
@@ -169,8 +169,8 @@ function WarningsList({ warnings }: { warnings: string[] }) {
 
 function DimensionRow({ label, score }: { label: string; score: number }) {
   return (
-    <div className="flex items-center justify-between border-b border-zinc-100 py-1.5 last:border-0 dark:border-zinc-800">
-      <span className="text-sm text-zinc-600 dark:text-zinc-400">{label}</span>
+    <div className="flex items-center justify-between border-b border-border py-1.5 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
       <span className={cn('text-sm font-medium tabular-nums', dimensionColorClass(score))}>
         {score}/10
       </span>
@@ -184,14 +184,14 @@ function CollapsibleSection({ label, content }: { label: string; content: string
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border-t border-zinc-200 pt-3 dark:border-zinc-700">
+    <div className="border-t border-border pt-3">
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+        <CollapsibleTrigger className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
           {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
           {label}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <pre className="mt-2 whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+          <pre className="mt-2 whitespace-pre-wrap rounded-md bg-muted p-3 text-xs text-foreground">
             {content ?? 'Not available'}
           </pre>
         </CollapsibleContent>
@@ -222,7 +222,7 @@ function ScorecardDisplay({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            <Brain className="size-4 text-zinc-500" />
+            <Brain className="size-4 text-muted-foreground" />
             AI Quality Assessment
           </CardTitle>
           {onRequest && (
@@ -230,7 +230,7 @@ function ScorecardDisplay({
               type="button"
               onClick={onRequest}
               disabled={requestLoading}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:border-input dark:hover:bg-input/50"
             >
               {requestLoading && <Loader2 className="size-3 animate-spin" />}
               Reassess
@@ -244,10 +244,10 @@ function ScorecardDisplay({
         {/* ── Overall Score & Grade ──────────────────────────────── */}
         <div className="mb-4 flex items-center gap-4">
           <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-bold tabular-nums text-zinc-900 dark:text-zinc-100">
+            <span className="text-2xl font-bold tabular-nums text-foreground">
               {scorecard.overallScore}
             </span>
-            <span className="text-sm text-zinc-500 dark:text-zinc-400">/100</span>
+            <span className="text-sm text-muted-foreground">/100</span>
           </div>
           <Badge
             className={cn(
@@ -257,14 +257,14 @@ function ScorecardDisplay({
           >
             {scorecard.gradeLabel}
           </Badge>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="text-xs text-muted-foreground">
             {scoreLabel(scorecard.overallScore)}
           </span>
         </div>
 
         {/* ── Dimension Scores ──────────────────────────────────── */}
-        <div className="mb-4 rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
-          <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+        <div className="mb-4 rounded-lg border border-border px-3 py-2">
+          <div className="mb-1 text-xs font-medium text-muted-foreground">
             Dimensions
           </div>
           {scorecard.dimensions.map((dim) => (
@@ -275,41 +275,41 @@ function ScorecardDisplay({
         {/* ── Summary / Rationale ───────────────────────────────── */}
         {scorecard.summary && (
           <div className="mb-4">
-            <div className="mb-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <div className="mb-1 text-xs font-medium text-muted-foreground">
               Summary
             </div>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
               {scorecard.summary}
             </p>
           </div>
         )}
 
         {/* ── Metadata ──────────────────────────────────────────── */}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
           {scorecard.metadata?.modelUsed && (
             <span>
-              Model: <span className="font-medium text-zinc-700 dark:text-zinc-300">{scorecard.metadata.modelUsed}</span>
+              Model: <span className="font-medium text-foreground">{scorecard.metadata.modelUsed}</span>
             </span>
           )}
           <span>
             Assessment:{' '}
-            <span className="font-medium text-zinc-700 dark:text-zinc-300">
+            <span className="font-medium text-foreground">
               {scorecard.assessmentType === 'ai_quality' ? 'Quality' : 'Review'}
             </span>
           </span>
           {scorecard.metadata?.promptTokens !== undefined && (
             <span>
-              Prompt: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-300">{scorecard.metadata.promptTokens}</span> tokens
+              Prompt: <span className="tabular-nums font-medium text-foreground">{scorecard.metadata.promptTokens}</span> tokens
             </span>
           )}
           {scorecard.metadata?.completionTokens !== undefined && (
             <span>
-              Completion: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-300">{scorecard.metadata.completionTokens}</span> tokens
+              Completion: <span className="tabular-nums font-medium text-foreground">{scorecard.metadata.completionTokens}</span> tokens
             </span>
           )}
           {scorecard.metadata?.durationMs !== undefined && (
             <span>
-              Duration: <span className="tabular-nums font-medium text-zinc-700 dark:text-zinc-300">{formatDuration(scorecard.metadata.durationMs)}</span>
+              Duration: <span className="tabular-nums font-medium text-foreground">{formatDuration(scorecard.metadata.durationMs)}</span>
             </span>
           )}
         </div>

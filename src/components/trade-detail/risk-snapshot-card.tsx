@@ -31,12 +31,12 @@ export default function RiskSnapshotCard({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base font-semibold text-zinc-800 dark:text-zinc-200">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
             Trade Overview
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">No risk snapshot recorded.</p>
+          <p className="text-sm text-muted-foreground">No risk snapshot recorded.</p>
         </CardContent>
       </Card>
     );
@@ -104,13 +104,13 @@ export default function RiskSnapshotCard({
   const mtmDistTarget2 = mtmDistTo(planTarget2);
   const mtmMarketValue = hasMtm && actualQty != null ? mtmPrice! * actualQty : null;
 
-  const T = 'text-zinc-500 dark:text-zinc-400';
-  const V = 'tabular-nums text-zinc-900 dark:text-zinc-100';
-  const D = 'tabular-nums text-zinc-500 dark:text-zinc-400';
+  const T = 'text-muted-foreground';
+  const V = 'tabular-nums text-foreground';
+  const D = 'tabular-nums text-muted-foreground';
 
-  const mtmPositiveClass = 'text-amber-600 dark:text-amber-400';
+  const mtmPositiveClass = 'text-warning';
   const mtmBadge = (
-    <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+    <span className="ml-1.5 inline-flex items-center rounded-full bg-warning/10 px-1.5 py-0 text-[10px] font-medium text-warning">
       MTM
     </span>
   );
@@ -124,40 +124,40 @@ export default function RiskSnapshotCard({
         {/* Price Levels Card */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Price Levels
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                  <th className="pb-1.5 text-left text-xs font-normal text-zinc-400 dark:text-zinc-500"></th>
-                  {hasPlan && <th className="pb-1.5 text-right text-xs font-normal text-zinc-400 dark:text-zinc-500">Plan</th>}
-                  <th className="pb-1.5 text-right text-xs font-normal text-zinc-400 dark:text-zinc-500">Actual</th>
-                  {hasMtm && <th className="pb-1.5 text-right text-xs font-normal text-amber-600 dark:text-amber-400">Market</th>}
+                <tr className="border-b border-border">
+                  <th className="pb-1.5 text-left text-xs font-normal text-muted-foreground"></th>
+                  {hasPlan && <th className="pb-1.5 text-right text-xs font-normal text-muted-foreground">Plan</th>}
+                  <th className="pb-1.5 text-right text-xs font-normal text-muted-foreground">Actual</th>
+                  {hasMtm && <th className="pb-1.5 text-right text-xs font-normal text-warning">Market</th>}
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Entry</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planEntry)}</td>}
                   <td className={'py-1.5 text-right ' + (actualEntry != null ? V : D)}>{actualEntry != null ? formatPrice(actualEntry) : '—'}</td>
                   {hasMtm && <td className={'py-1.5 text-right ' + mtmPositiveClass}>{formatPrice(mtmPrice)}{mtmBadge}</td>}
                 </tr>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Stop</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planStop)}</td>}
                   <td className={'py-1.5 text-right ' + D}>{formatPrice(actualStop)}</td>
                   {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistStop != null ? `${formatPrice(mtmDistStop.dollar)} (${mtmDistStop.pct.toFixed(1)}%)` : '—'}</td>}
                 </tr>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Target 1</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planTarget1)}</td>}
                   <td className={'py-1.5 text-right ' + D}>{actualExit ? formatPrice(actualExit) : '—'}</td>
                   {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistTarget1 != null ? `${formatPrice(mtmDistTarget1.dollar)} (${mtmDistTarget1.pct.toFixed(1)}%)` : '—'}</td>}
                 </tr>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Target 2</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planTarget2)}</td>}
                   <td className={'py-1.5 text-right ' + D}>—</td>
@@ -177,54 +177,54 @@ export default function RiskSnapshotCard({
         {/* Risk & Reward Card */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Risk &amp; Reward
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                  <th className="pb-1.5 text-left text-xs font-normal text-zinc-400 dark:text-zinc-500"></th>
-                  {hasPlan && <th className="pb-1.5 text-right text-xs font-normal text-zinc-400 dark:text-zinc-500">Plan</th>}
-                  <th className="pb-1.5 text-right text-xs font-normal text-zinc-400 dark:text-zinc-500">Actual</th>
+                <tr className="border-b border-border">
+                  <th className="pb-1.5 text-left text-xs font-normal text-muted-foreground"></th>
+                  {hasPlan && <th className="pb-1.5 text-right text-xs font-normal text-muted-foreground">Plan</th>}
+                  <th className="pb-1.5 text-right text-xs font-normal text-muted-foreground">Actual</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Risk %</td>
-                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-zinc-500'}>{planRiskPct != null ? planRiskPct.toFixed(2) + '%' : '—'}</td>}
-                  <td className={'py-1.5 text-right tabular-nums text-zinc-500'}>{actualRiskPct != null ? actualRiskPct.toFixed(2) + '%' : '—'}</td>
+                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-muted-foreground'}>{planRiskPct != null ? planRiskPct.toFixed(2) + '%' : '—'}</td>}
+                  <td className={'py-1.5 text-right tabular-nums text-muted-foreground'}>{actualRiskPct != null ? actualRiskPct.toFixed(2) + '%' : '—'}</td>
                 </tr>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Risk $</td>
-                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-zinc-500'}>{planRiskDollar != null ? '$' + planRiskDollar.toFixed(2) : '—'}</td>}
-                  <td className={'py-1.5 text-right tabular-nums text-zinc-500'}>{actualRiskDollar != null ? '$' + actualRiskDollar.toFixed(2) : '—'}</td>
+                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-muted-foreground'}>{planRiskDollar != null ? '$' + planRiskDollar.toFixed(2) : '—'}</td>}
+                  <td className={'py-1.5 text-right tabular-nums text-muted-foreground'}>{actualRiskDollar != null ? '$' + actualRiskDollar.toFixed(2) : '—'}</td>
                 </tr>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Return %</td>
-                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-zinc-900 dark:text-zinc-100'}>{planReturn != null ? '+' + planReturn.pct.toFixed(1) + '%' : '—'}</td>}
-                  <td className={'py-1.5 text-right tabular-nums ' + (hasMtm && mtmReturnPct != null ? (mtmReturnPct >= 0 ? mtmPositiveClass : 'text-red-600 dark:text-red-400') : actualReturn != null ? 'text-zinc-900 dark:text-zinc-100' : V)}>
+                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-foreground'}>{planReturn != null ? '+' + planReturn.pct.toFixed(1) + '%' : '—'}</td>}
+                  <td className={'py-1.5 text-right tabular-nums ' + (hasMtm && mtmReturnPct != null ? (mtmReturnPct >= 0 ? mtmPositiveClass : 'text-negative') : actualReturn != null ? 'text-foreground' : V)}>
                     {hasMtm && mtmReturnPct != null ? (<span>{mtmReturnPct >= 0 ? '+' : ''}{mtmReturnPct.toFixed(1)}%{mtmBadge}</span>) : actualReturn != null ? '+' + actualReturn.pct.toFixed(1) + '%' : '—'}
                   </td>
                 </tr>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>Return $</td>
-                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-zinc-900 dark:text-zinc-100'}>{planReturn != null ? formatCurrency(planReturn.dollar) : '—'}</td>}
-                  <td className={'py-1.5 text-right tabular-nums ' + (hasMtm && mtmReturnDollar != null ? (mtmReturnDollar >= 0 ? mtmPositiveClass : 'text-red-600 dark:text-red-400') : actualReturn != null ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-500')}>
+                  {hasPlan && <td className={'py-1.5 text-right tabular-nums text-foreground'}>{planReturn != null ? formatCurrency(planReturn.dollar) : '—'}</td>}
+                  <td className={'py-1.5 text-right tabular-nums ' + (hasMtm && mtmReturnDollar != null ? (mtmReturnDollar >= 0 ? mtmPositiveClass : 'text-negative') : actualReturn != null ? 'text-foreground' : 'text-muted-foreground')}>
                     {hasMtm && mtmReturnDollar != null ? (<span>{formatCurrency(mtmReturnDollar)}{mtmBadge}</span>) : actualReturn != null ? formatCurrency(actualReturn.dollar) : '—'}
                   </td>
                 </tr>
-                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                <tr className="border-b border-border">
                   <td className={'py-1.5 ' + T}>R:R</td>
                   {hasPlan && <td className={'py-1.5 text-right ' + V}>{planRR != null ? (planRR === '∞' ? '∞' : '1:' + planRR) : '—'}</td>}
                   <td className={'py-1.5 text-right ' + (hasMtm && mtmRR != null ? mtmPositiveClass : V)}>
-                    {hasMtm && mtmRR != null ? (<span>1:{mtmRR}{mtmBadge}</span>) : actualRR != null ? (actualRR === '∞' ? <span className="text-emerald-500">∞</span> : '1:' + actualRR) : (actualReturn != null ? '1:0' : '—')}
+                    {hasMtm && mtmRR != null ? (<span>1:{mtmRR}{mtmBadge}</span>) : actualRR != null ? (actualRR === '∞' ? <span className="text-positive">∞</span> : '1:' + actualRR) : (actualReturn != null ? '1:0' : '—')}
                   </td>
                 </tr>
                 <tr>
                   <td className={'py-1.5 ' + T}>Acct Risk %</td>
-                  {hasPlan && <td className="py-1.5 text-right text-zinc-400">—</td>}
+                  {hasPlan && <td className="py-1.5 text-right text-muted-foreground">—</td>}
                   <td className={'py-1.5 text-right ' + V}>{riskSnapshot!.accountRiskPct != null ? riskSnapshot!.accountRiskPct.toFixed(2) + '%' : '—'}</td>
                 </tr>
               </tbody>
@@ -235,23 +235,23 @@ export default function RiskSnapshotCard({
 
       {/* ── Narrative fields ── */}
       {(thesis || invalidationCondition || preTradePlan) && (
-        <div className="space-y-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+        <div className="space-y-3 border-t border-border pt-4">
           {thesis && (
             <div>
-              <div className="mb-1 text-xs font-medium text-zinc-400 dark:text-zinc-500">Thesis</div>
-              <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{thesis}</p>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">Thesis</div>
+              <p className="text-sm leading-relaxed text-foreground">{thesis}</p>
             </div>
           )}
           {invalidationCondition && (
             <div>
-              <div className="mb-1 text-xs font-medium text-zinc-400 dark:text-zinc-500">Invalidation</div>
-              <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{invalidationCondition}</p>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">Invalidation</div>
+              <p className="text-sm leading-relaxed text-foreground">{invalidationCondition}</p>
             </div>
           )}
           {preTradePlan && (
             <div>
-              <div className="mb-1 text-xs font-medium text-zinc-400 dark:text-zinc-500">Pre-Trade Plan</div>
-              <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{preTradePlan}</p>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">Pre-Trade Plan</div>
+              <p className="text-sm leading-relaxed text-foreground">{preTradePlan}</p>
             </div>
           )}
         </div>

@@ -94,8 +94,8 @@ export default function TradeStopAdjustmentsCard({
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
                   message.type === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+                    ? 'border-positive/30 bg-positive/10 text-positive'
+                    : 'border-destructive/30 bg-destructive/10 text-destructive'
                 }`}
               >
                 {message.text}
@@ -198,9 +198,9 @@ export default function TradeStopAdjustmentsCard({
                       className={`tabular-nums text-right ${
                         change != null
                           ? change > 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
+                            ? 'text-positive'
                             : change < 0
-                              ? 'text-red-600 dark:text-red-400'
+                              ? 'text-negative'
                               : 'text-muted-foreground'
                           : 'text-muted-foreground'
                       }`}
@@ -217,7 +217,7 @@ export default function TradeStopAdjustmentsCard({
                         <span
                           className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
                             adj.ruleBased
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              ? 'bg-info/10 text-info'
                               : 'bg-muted text-muted-foreground'
                           }`}
                         >

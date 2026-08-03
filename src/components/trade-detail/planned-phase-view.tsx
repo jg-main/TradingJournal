@@ -208,7 +208,7 @@ export default function PlannedPhaseView({
             <button
               type="button"
               onClick={onExecute}
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <Play className="size-4" />
               Execute
@@ -217,7 +217,7 @@ export default function PlannedPhaseView({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex items-center justify-center rounded-md border border-zinc-300 p-2 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="inline-flex items-center justify-center rounded-md border border-border p-2 text-foreground hover:bg-muted dark:border-input dark:hover:bg-input/50"
                   aria-label="More actions"
                 >
                   <MoreHorizontal className="size-4" />

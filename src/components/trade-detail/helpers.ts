@@ -16,13 +16,13 @@ export function statusBadgeVariant(status: Trade['status']): {
 } {
   switch (status) {
     case 'planned':
-      return { variant: 'secondary', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
+      return { variant: 'secondary', className: 'bg-info/10 text-info' };
     case 'open':
-      return { variant: 'default', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+      return { variant: 'default', className: 'bg-positive/10 text-positive' };
     case 'closed':
-      return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400' };
+      return { variant: 'outline', className: 'text-muted-foreground' };
     case 'deleted':
-      return { variant: 'outline', className: 'text-zinc-500 dark:text-zinc-400 line-through' };
+      return { variant: 'outline', className: 'text-muted-foreground line-through' };
   }
 }
 

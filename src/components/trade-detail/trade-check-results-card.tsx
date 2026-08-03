@@ -14,13 +14,13 @@ export default function TradeCheckResultsCard({ checkResults }: TradeCheckResult
     <Card className="mb-8">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ClipboardCheck className="size-4 text-zinc-500" />
+          <ClipboardCheck className="size-4 text-muted-foreground" />
           Pre-Execution Checklist
         </CardTitle>
       </CardHeader>
       <CardContent>
         {checkResults.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 italic">
+          <p className="text-sm text-muted-foreground italic">
             No pre-execution checks were verified for this trade.
           </p>
         ) : (
@@ -28,16 +28,16 @@ export default function TradeCheckResultsCard({ checkResults }: TradeCheckResult
             {checkResults.map((check) => (
               <li key={check.id} className="flex items-start gap-3">
                 {check.passed ? (
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" />
                 ) : (
-                  <XCircle className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400" />
+                  <XCircle className="mt-0.5 size-4 shrink-0 text-negative" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-zinc-800 dark:text-zinc-200">
+                  <p className="text-sm text-foreground">
                     {check.description}
                   </p>
                   {check.checkedAt && (
-                    <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       Verified {formatDate(check.checkedAt)}
                     </p>
                   )}
