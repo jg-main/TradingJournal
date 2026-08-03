@@ -135,7 +135,7 @@ test.describe('M008 Trades Tabs', () => {
     await expect(page.locator('th').filter({ hasText: 'Setup' })).toBeVisible();
   });
 
-  test('date-range filter hides and restores open trades', async ({ page }) => {
+  test('date-range filter applies to closed and planned tabs while open positions stay visible', async ({ page }) => {
     const account = await setupAccount(page, `M008-Date-${TS}`);
 
     // Create and execute a trade so it appears in the Open tab — symbol must be ≤20 chars
@@ -149,10 +149,27 @@ test.describe('M008 Trades Tabs', () => {
     });
     expect(execRes.ok()).toBeTruthy();
 
+    // Create a fully exited trade → status 'closed' (closedAt = now)
+    const closeTradeRes = await page.request.post('/api/trades', {
+      data: { symbol: `CLD${TS}`, direction: 'long', accountId: account.id },
+    });
+    expect(closeTradeRes.ok()).toBeTruthy();
+    const closeTrade = await closeTradeRes.json();
+    const execClose = await page.request.post(`/api/trades/${closeTrade.id}/execute`, {
+      data: { entryPrice: 50, entryQuantity: 100, exit1Price: 55, exit1Quantity: 100, fees: 3 },
+    });
+    expect(execClose.ok()).toBeTruthy();
+
+    // Create a planned trade (no execution, createdAt = now)
+    const planRes = await page.request.post('/api/trades', {
+      data: { symbol: `PLD${TS}`, direction: 'short', accountId: account.id },
+    });
+    expect(planRes.ok()).toBeTruthy();
+
     await page.goto('/trades');
     await expect(page.locator('h1')).toContainText('Trades');
 
-    // The trade should be visible initially
+    // The open trade should be visible initially
     await expect(page.locator('tr').filter({ hasText: `DAT${TS}` }).first()).toBeVisible();
 
     // Apply a date-range filter set to the past (2020) — this should exclude
@@ -163,19 +180,32 @@ test.describe('M008 Trades Tabs', () => {
     // Wait for the debounced re-fetch (300ms) and network response
     await page.waitForTimeout(1500);
 
-    // The trade should no longer be visible (it was created today, not in 2020)
-    const row = page.locator('tr').filter({ hasText: `DAT${TS}` });
-    await expect(row).not.toBeVisible();
+    // M009 contract: open positions are always visible regardless of date range
+    // (GET /api/trades ignores from/to for status=open).
+    await expect(page.locator('tr').filter({ hasText: `DAT${TS}` }).first()).toBeVisible();
 
-    // Clear filters to restore the trade
+    // Closed tab filters by closedAt — the just-closed trade (today) is excluded
+    await page.getByRole('tab', { name: /closed/i }).click();
+    await expect(page.locator('tr').filter({ hasText: `CLD${TS}` })).not.toBeVisible();
+
+    // Planned tab filters by createdAt — the planned trade (today) is excluded
+    await page.getByRole('tab', { name: /planned/i }).click();
+    await expect(page.locator('tr').filter({ hasText: `PLD${TS}` })).not.toBeVisible();
+
+    // Clear filters to restore the closed and planned trades
     await page.fill('#filter-from', '');
     await page.fill('#filter-to', '');
 
     // Wait for debounce and re-fetch
     await page.waitForTimeout(1500);
 
-    // The trade should reappear after clearing filters
-    await expect(page.locator('tr').filter({ hasText: `DAT${TS}` }).first()).toBeVisible({ timeout: 10_000 });
+    // The closed trade should reappear after clearing filters
+    await page.getByRole('tab', { name: /closed/i }).click();
+    await expect(page.locator('tr').filter({ hasText: `CLD${TS}` }).first()).toBeVisible({ timeout: 10_000 });
+
+    // The planned trade should reappear as well
+    await page.getByRole('tab', { name: /planned/i }).click();
+    await expect(page.locator('tr').filter({ hasText: `PLD${TS}` }).first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('pagination count display shows correct totals for each tab', async ({ page }) => {
@@ -197,11 +227,12 @@ test.describe('M008 Trades Tabs', () => {
 
     // Verify the "Showing X of Y planned trades" pagination count text appears
     // The page renders: <p>Showing {rows.length} of {total} planned trades.</p>
-    const showingText = page.locator('text=/Showing\\s+\\d+\\s+of\\s+\\d+\\s+planned\\s+trades/');
+    // Totals use toLocaleString, so tolerate thousand separators (e.g. 1,021).
+    const showingText = page.locator('text=/Showing\\s+[\\d,]+\\s+of\\s+[\\d,]+\\s+planned\\s+trades/');
     await expect(showingText).toBeVisible({ timeout: 10_000 });
 
     // Verify the Open tab also shows its count text
     await page.getByRole('tab', { name: /open/i }).click();
-    await expect(page.locator('text=/Showing\\s+\\d+\\s+of\\s+\\d+\\s+open\\s+trades/')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('text=/Showing\\s+[\\d,]+\\s+of\\s+[\\d,]+\\s+open\\s+trades/')).toBeVisible({ timeout: 10_000 });
   });
 });
