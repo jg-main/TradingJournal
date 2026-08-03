@@ -146,7 +146,7 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
     } finally {
       setLoading(false);
     }
-  }, [accountId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [accountId]);
 
   useEffect(() => {
     // The async loader updates loading/error state after the request resolves.

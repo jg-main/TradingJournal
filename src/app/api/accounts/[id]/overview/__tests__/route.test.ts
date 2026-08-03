@@ -43,6 +43,7 @@ import {
 } from '@/lib/account-detail';
 import { postExecutionFill } from '@/lib/accounting/execution-posting';
 import { rebuildPositions } from '@/lib/positions/rebuild';
+import type { CanonicalDecimal, EventType } from '@/lib/accounting/types';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -312,14 +313,14 @@ function doGetAccountOverview(sqlite: Database.Database, accountId: string): Rou
 function seedFinancialEvent(
   sqlite: Database.Database,
   accountId: string,
-  eventType: string,
+  eventType: EventType,
   amount: string,
   description: string | null,
   postedAt: string,
 ): string {
   const event = insertFinancialEvent(sqlite, {
     accountId,
-    eventType: eventType as any,
+    eventType,
     description,
     postedAt,
   });
@@ -338,8 +339,8 @@ function seedFinancialEvent(
   insertLedgerPosting(sqlite, {
     ledgerEntryId: entry.id,
     accountId,
-    side: parseFloat(amount) >= 0 ? 'debit' : 'credit' as any,
-    amount: cleanAmount as any,
+    side: parseFloat(amount) >= 0 ? 'debit' : 'credit',
+    amount: cleanAmount as CanonicalDecimal,
     amountMicros: Math.abs(amountMicros),
     currency: 'USD',
     sequence: 1,
@@ -347,8 +348,8 @@ function seedFinancialEvent(
   insertLedgerPosting(sqlite, {
     ledgerEntryId: entry.id,
     accountId,
-    side: parseFloat(amount) >= 0 ? 'credit' : 'debit' as any,
-    amount: cleanAmount as any,
+    side: parseFloat(amount) >= 0 ? 'credit' : 'debit',
+    amount: cleanAmount as CanonicalDecimal,
     amountMicros: Math.abs(amountMicros),
     currency: 'USD',
     sequence: 2,

@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, desc, and, sql, inArray, gte, lte } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import Decimal from 'decimal.js';
 
 import * as schema from '@/db/schema';
@@ -242,7 +243,7 @@ function doGetTrades(params: {
     const statusFilter = params.status as 'open' | 'planned' | 'closed' | 'deleted' | undefined;
 
     // Build filters
-    const filters: any[] = [];
+    const filters: SQL<unknown>[] = [];
 
     if (statusFilter) {
       filters.push(eq(schema.trades.status, statusFilter));
@@ -659,7 +660,7 @@ function doGetTrades(params: {
     // from/to date filters (against createdAt) only apply when status=planned so
     // the footer count matches the Planned tab, while open/closed tabs keep the
     // full pipeline view.
-    const plannedFiltersT: any[] = [eq(schema.trades.status, 'planned')];
+    const plannedFiltersT: SQL<unknown>[] = [eq(schema.trades.status, 'planned')];
     if (params.accountId) {
       plannedFiltersT.push(eq(schema.trades.accountId, params.accountId));
     }

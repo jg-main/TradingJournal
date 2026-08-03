@@ -661,7 +661,7 @@ test.describe('Dashboard View Management', () => {
     const userSection = page.getByTestId('user-views-section');
 
     // Rename — scope to the specific view row
-    let viewRow = userSection.locator('[data-testid^="manage-view-"]').filter({ hasText: 'Error Test View' }).first();
+    const viewRow = userSection.locator('[data-testid^="manage-view-"]').filter({ hasText: 'Error Test View' }).first();
     await viewRow.hover();
     await page.waitForTimeout(300);
     const renameBtn = viewRow.locator('[data-testid$="-rename"]');
@@ -673,7 +673,7 @@ test.describe('Dashboard View Management', () => {
     await expect(userSection).toContainText('Renamed');
 
     // Duplicate — scope to the renamed view row
-    let renamedRow = userSection.locator('[data-testid^="manage-view-"]').filter({ hasText: 'Renamed' }).first();
+    const renamedRow = userSection.locator('[data-testid^="manage-view-"]').filter({ hasText: 'Renamed' }).first();
     await renamedRow.hover();
     await page.waitForTimeout(300);
     const duplicateBtn = renamedRow.locator('[data-testid$="-duplicate"]');
@@ -682,7 +682,7 @@ test.describe('Dashboard View Management', () => {
     await expect(userSection).toContainText('Renamed (Copy)');
 
     // Delete the copy — scope to the copy view row
-    let copyRow = userSection.locator('[data-testid^="manage-view-"]').filter({ hasText: 'Renamed (Copy)' }).first();
+    const copyRow = userSection.locator('[data-testid^="manage-view-"]').filter({ hasText: 'Renamed (Copy)' }).first();
     await copyRow.hover();
     await page.waitForTimeout(300);
     const deleteBtn = copyRow.locator('[data-testid$="-delete"]');

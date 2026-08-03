@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Playwright artifacts
     "playwright-report/**",
     "test-results/**",
+    // GSD system state (phase artifacts, generated evidence scripts)
+    ".gsd/**",
   ]),
 ]);
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build filters array (conditions that narrow the result set)
-    const filters: any[] = [];
+    const filters: SQL<unknown>[] = [];
 
     if (status) {
       filters.push(eq(trades.status, status as TradeStatus));
@@ -591,7 +592,7 @@ export async function GET(request: NextRequest) {
     // footer plannedTotals.count matches the filtered tab count. When status is
     // NOT planned (open/closed tabs), plannedTotals keeps the full pipeline view
     // — date filters must not leak into it.
-    const plannedFilters: any[] = [eq(trades.status, 'planned')];
+    const plannedFilters: SQL<unknown>[] = [eq(trades.status, 'planned')];
     if (accountIdFilter) {
       plannedFilters.push(eq(trades.accountId, accountIdFilter));
     }

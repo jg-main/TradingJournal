@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, cleanup, waitFor } from '@testing-library/react';
+import type { LayoutItem } from 'react-grid-layout';
 import { useDashboardViews } from './use-dashboard-views';
 
 // ── localStorage mock ───────────────────────────────────────────────
@@ -36,7 +37,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: lsMock });
 interface DV {
   id: string;
   name: string;
-  layout: any[];
+  layout: LayoutItem[];
   hiddenWidgetIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -145,7 +146,7 @@ function flush() {
 describe('useDashboardViews', () => {
   it('init with 4 views and default active', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     expect(result.current.views).toHaveLength(4);
@@ -163,7 +164,7 @@ describe('useDashboardViews', () => {
           : v,
     );
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: views as any }),
+      useDashboardViews({ defaultViews: views }),
     );
     flush();
     expect(result.current.activeViewId).toBe('st');
@@ -171,7 +172,7 @@ describe('useDashboardViews', () => {
 
   it('setActiveView switches', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     act(() => result.current.setActiveView('st'));
@@ -180,7 +181,7 @@ describe('useDashboardViews', () => {
 
   it('setActiveView no-op for bad id', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     act(() => result.current.setActiveView('x'));
@@ -189,10 +190,10 @@ describe('useDashboardViews', () => {
 
   it('createView adds view and switches', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
-    act(() => result.current.createView('X', LA as any, []));
+    act(() => result.current.createView('X', LA, []));
     expect(result.current.views).toHaveLength(5);
     const v = result.current.views.find((x) => x.name === 'X')!;
     expect(v.isSystem).toBe(false);
@@ -201,10 +202,10 @@ describe('useDashboardViews', () => {
 
   it('renameView renames', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
-    act(() => result.current.createView('X', LA as any, []));
+    act(() => result.current.createView('X', LA, []));
     const v = result.current.views.find((x) => x.name === 'X')!;
     act(() => result.current.renameView(v.id, 'Y'));
     expect(
@@ -214,7 +215,7 @@ describe('useDashboardViews', () => {
 
   it('duplicateView creates copy and switches', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     act(() => result.current.duplicateView('sd'));
@@ -226,7 +227,7 @@ describe('useDashboardViews', () => {
 
   it('duplicateView with custom name', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     act(() => result.current.duplicateView('sd', 'C'));
@@ -236,7 +237,7 @@ describe('useDashboardViews', () => {
 
   it('duplicateView returns null for bad id', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     expect(result.current.duplicateView('x')).toBeNull();
@@ -244,10 +245,10 @@ describe('useDashboardViews', () => {
 
   it('deleteView removes a user view', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
-    act(() => result.current.createView('X', LA as any, []));
+    act(() => result.current.createView('X', LA, []));
     const v = result.current.views.find((x) => x.name === 'X')!;
     act(() => result.current.deleteView(v.id));
     expect(result.current.views).toHaveLength(4);
@@ -255,7 +256,7 @@ describe('useDashboardViews', () => {
 
   it('deleteView blocked on system views', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     act(() => result.current.deleteView('sd'));
@@ -264,11 +265,11 @@ describe('useDashboardViews', () => {
 
   it('delete active view switches to first', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
-    act(() => result.current.createView('A', LA as any, []));
-    act(() => result.current.createView('B', LA as any, []));
+    act(() => result.current.createView('A', LA, []));
+    act(() => result.current.createView('B', LA, []));
     const a = result.current.views.find((x) => x.name === 'A')!;
     act(() => result.current.setActiveView(a.id));
     act(() => result.current.deleteView(a.id));
@@ -277,7 +278,7 @@ describe('useDashboardViews', () => {
 
   it('setDefaultView sets one and clears others', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     act(() => result.current.setDefaultView('sp'));
@@ -291,11 +292,11 @@ describe('useDashboardViews', () => {
 
   it('updateViewLayout updates layout and hidden', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     act(() =>
-      result.current.updateViewLayout('sd', LR as any, ['e']),
+      result.current.updateViewLayout('sd', LR, ['e']),
     );
     const v = result.current.views.find((x) => x.id === 'sd');
     expect(v?.layout).toEqual(LR);
@@ -304,10 +305,10 @@ describe('useDashboardViews', () => {
 
   it('persists to localStorage on create', () => {
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
-    act(() => result.current.createView('P', LA as any, []));
+    act(() => result.current.createView('P', LA, []));
     const raw = store.get('dashboard:views:v2');
     expect(raw).toBeDefined();
     const parsed = JSON.parse(raw!);
@@ -336,7 +337,7 @@ describe('useDashboardViews', () => {
       }),
     );
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     expect(result.current.views).toHaveLength(1);
@@ -346,7 +347,7 @@ describe('useDashboardViews', () => {
   it('recovers from invalid JSON', () => {
     store.set('dashboard:views:v2', 'bad');
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     expect(result.current.views).toHaveLength(4);
@@ -373,7 +374,7 @@ describe('useDashboardViews', () => {
       }),
     );
     const { result } = renderHook(() =>
-      useDashboardViews({ defaultViews: SV as any }),
+      useDashboardViews({ defaultViews: SV }),
     );
     flush();
     expect(result.current.views).toHaveLength(4);
@@ -390,7 +391,7 @@ describe('useDashboardViews', () => {
     afterEach(() => {
       // Restore fetch to its natural state (fails in test env)
       globalThis.fetch = undefined as unknown as typeof globalThis.fetch;
-      delete (globalThis as any).fetch;
+      delete (globalThis as { fetch?: typeof fetch }).fetch;
     });
 
     it('hydrates from API when fetch succeeds', async () => {
@@ -409,7 +410,7 @@ describe('useDashboardViews', () => {
       mockFetchOnce(apiData);
 
       const { result } = renderHook(() =>
-        useDashboardViews({ defaultViews: SV as any }),
+        useDashboardViews({ defaultViews: SV }),
       );
 
       // Wait for the async API hydration to override the synchronous defaults
@@ -459,7 +460,7 @@ describe('useDashboardViews', () => {
       mockFetchOnce(apiData);
 
       const { result } = renderHook(() =>
-        useDashboardViews({ defaultViews: SV as any }),
+        useDashboardViews({ defaultViews: SV }),
       );
 
       // Wait for the async API hydration to override localStorage data
@@ -533,7 +534,7 @@ describe('useDashboardViews', () => {
       });
 
       const { result } = renderHook(() =>
-        useDashboardViews({ defaultViews: SV as any }),
+        useDashboardViews({ defaultViews: SV }),
       );
 
       // Wait for hydration (synchronous localStorage path sets data first)
@@ -577,7 +578,7 @@ describe('useDashboardViews', () => {
       mockFetchToFail();
 
       const { result } = renderHook(() =>
-        useDashboardViews({ defaultViews: SV as any }),
+        useDashboardViews({ defaultViews: SV }),
       );
 
       // localStorage hydration is synchronous, so flush is sufficient

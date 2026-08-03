@@ -374,7 +374,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       offset,
       instrumentId,
     });
-    let accountingTotal = countAccountingExecutions(sqlite, accountId, {
+    const accountingTotal = countAccountingExecutions(sqlite, accountId, {
       instrumentId,
     });
 
