@@ -60,6 +60,8 @@ tmp/
 .test*db
 .test*-shm
 .test*-wal
+.test*-journal
+.test*db-journal
 test-results/
 playwright-report/
 coverage/

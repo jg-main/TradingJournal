@@ -84,6 +84,7 @@ function createTestDatabase(): TestContext {
   // Clean up WAL/SHM files too
   try { unlinkSync(TEST_DB_PATH + '-wal'); } catch { /* ok */ }
   try { unlinkSync(TEST_DB_PATH + '-shm'); } catch { /* ok */ }
+  try { unlinkSync(TEST_DB_PATH + '-journal'); } catch { /* ok */ }
 
   const sqlite = new Database(TEST_DB_PATH);
   sqlite.pragma('journal_mode = WAL');
@@ -112,6 +113,7 @@ function destroyTestDatabase(ctx: TestContext): void {
   try { unlinkSync(TEST_DB_PATH); } catch { /* ok */ }
   try { unlinkSync(TEST_DB_PATH + '-wal'); } catch { /* ok */ }
   try { unlinkSync(TEST_DB_PATH + '-shm'); } catch { /* ok */ }
+  try { unlinkSync(TEST_DB_PATH + '-journal'); } catch { /* ok */ }
 }
 
 // ── Simulated route logic ───────────────────────────────────────────────
@@ -607,6 +609,7 @@ describe('GET /api/accounts/[id]/overview — unknown account', () => {
     }
     try { unlinkSync(TEST_DB_PATH + '-wal'); } catch { /* ok */ }
     try { unlinkSync(TEST_DB_PATH + '-shm'); } catch { /* ok */ }
+    try { unlinkSync(TEST_DB_PATH + '-journal'); } catch { /* ok */ }
 
     sqlite = new Database(TEST_DB_PATH);
     sqlite.pragma('foreign_keys = ON');
@@ -618,6 +621,7 @@ describe('GET /api/accounts/[id]/overview — unknown account', () => {
     try { unlinkSync(TEST_DB_PATH); } catch { /* ok */ }
     try { unlinkSync(TEST_DB_PATH + '-wal'); } catch { /* ok */ }
     try { unlinkSync(TEST_DB_PATH + '-shm'); } catch { /* ok */ }
+    try { unlinkSync(TEST_DB_PATH + '-journal'); } catch { /* ok */ }
   });
 
   it('returns 404 for non-existent account', () => {
@@ -638,6 +642,7 @@ describe('GET /api/accounts/[id]/overview — error response shapes', () => {
     }
     try { unlinkSync(TEST_DB_PATH + '-wal'); } catch { /* ok */ }
     try { unlinkSync(TEST_DB_PATH + '-shm'); } catch { /* ok */ }
+    try { unlinkSync(TEST_DB_PATH + '-journal'); } catch { /* ok */ }
 
     sqlite = new Database(TEST_DB_PATH);
     sqlite.pragma('foreign_keys = ON');
@@ -649,6 +654,7 @@ describe('GET /api/accounts/[id]/overview — error response shapes', () => {
     try { unlinkSync(TEST_DB_PATH); } catch { /* ok */ }
     try { unlinkSync(TEST_DB_PATH + '-wal'); } catch { /* ok */ }
     try { unlinkSync(TEST_DB_PATH + '-shm'); } catch { /* ok */ }
+    try { unlinkSync(TEST_DB_PATH + '-journal'); } catch { /* ok */ }
   });
 
   it('404 error has string error field, no details key', () => {
