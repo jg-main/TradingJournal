@@ -140,6 +140,7 @@ export default defineConfig({
       'src/app/api/accounts/[id]/overview/__tests__/route.test.ts',
       'src/app/api/accounts/[id]/ledger/__tests__/route.test.ts',
       'src/app/api/dashboard/views/__tests__/route.test.ts',
+      'src/components/ui/__tests__/primitive-contracts.test.ts',
     ],
     environment: 'jsdom',
   },
