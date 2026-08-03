@@ -165,7 +165,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
         </div>
         <div className="flex items-center gap-2">
           {setup.isActive ? (
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Active</span>
+            <span className="rounded-full bg-positive/10 px-3 py-1 text-xs font-medium text-positive">Active</span>
           ) : (
             <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">Inactive</span>
           )}
@@ -175,8 +175,8 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
       {message && (
         <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
           message.type === 'success'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+            ? 'border-positive/30 bg-positive/10 text-positive'
+            : 'border-destructive/30 bg-destructive/10 text-destructive'
         }`}>
           {message.text}
         </div>
@@ -357,7 +357,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
           {message?.type === 'success' && (
-            <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved.</span>
+            <span className="text-sm text-positive">Saved.</span>
           )}
         </div>
       </div>

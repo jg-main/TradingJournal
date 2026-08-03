@@ -204,17 +204,17 @@ export default function MistakeTypesPage() {
       <div className="mb-8">
         <Link
           href="/settings"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to Settings
         </Link>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Mistake Types
             </h1>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+            <p className="mt-1 text-sm text-muted-foreground">
               Manage mistake categories for trade reviews.
             </p>
           </div>
@@ -234,7 +234,7 @@ export default function MistakeTypesPage() {
                 <div className="mt-4 space-y-4">
                   {/* Value */}
                   <div>
-                    <label htmlFor="value" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    <label htmlFor="value" className="mb-1 block text-sm font-medium text-foreground">
                       Value *
                     </label>
                     <input
@@ -243,21 +243,21 @@ export default function MistakeTypesPage() {
                       required
                       value={form.value}
                       onChange={handleChange('value')}
-                      className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-1 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 ${
+                      className={`w-full rounded-md border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 ${
                         formErrors.value
-                          ? 'border-red-400 focus:border-red-500 focus:ring-red-300 dark:border-red-600 dark:focus:border-red-500 dark:focus:ring-red-800'
-                          : 'border-zinc-300 focus:border-zinc-500 focus:ring-zinc-500 dark:border-zinc-700'
+                          ? 'border-destructive focus:border-destructive focus:ring-destructive/30'
+                          : 'border-input focus:border-ring focus:ring-ring'
                       }`}
                       placeholder="e.g. fomo_entry"
                     />
                     {formErrors.value && (
-                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">{formErrors.value}</p>
+                      <p className="mt-1 text-xs text-destructive">{formErrors.value}</p>
                     )}
                   </div>
 
                   {/* Description */}
                   <div>
-                    <label htmlFor="description" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    <label htmlFor="description" className="mb-1 block text-sm font-medium text-foreground">
                       Description *
                     </label>
                     <textarea
@@ -266,15 +266,15 @@ export default function MistakeTypesPage() {
                       required
                       value={form.description}
                       onChange={handleChange('description')}
-                      className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-1 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 ${
+                      className={`w-full rounded-md border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 ${
                         formErrors.description
-                          ? 'border-red-400 focus:border-red-500 focus:ring-red-300 dark:border-red-600 dark:focus:border-red-500 dark:focus:ring-red-800'
-                          : 'border-zinc-300 focus:border-zinc-500 focus:ring-zinc-500 dark:border-zinc-700'
+                          ? 'border-destructive focus:border-destructive focus:ring-destructive/30'
+                          : 'border-input focus:border-ring focus:ring-ring'
                       }`}
                       placeholder="Describe this mistake type and when to use it"
                     />
                     {formErrors.description && (
-                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">{formErrors.description}</p>
+                      <p className="mt-1 text-xs text-destructive">{formErrors.description}</p>
                     )}
                   </div>
                 </div>
@@ -295,8 +295,8 @@ export default function MistakeTypesPage() {
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -309,15 +309,15 @@ export default function MistakeTypesPage() {
       {/* Loading state */}
       {loading && (
         <div className="flex flex-col items-center gap-3 py-16">
-          <Loader2 className="size-8 animate-spin text-zinc-400" />
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading mistake types...</p>
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading mistake types...</p>
         </div>
       )}
 
       {/* Empty state */}
       {!loading && mistakeTypes.length === 0 && (
-        <div className="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+        <div className="rounded-lg border border-border bg-card p-12 text-center">
+          <p className="text-sm text-muted-foreground">
             No mistake types defined yet. Click &ldquo;Add Mistake Type&rdquo; to create one.
           </p>
         </div>
@@ -325,28 +325,28 @@ export default function MistakeTypesPage() {
 
       {/* Table */}
       {!loading && mistakeTypes.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+            <thead className="border-b border-border bg-muted">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Value
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Description
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
+            <tbody className="divide-y divide-border bg-card">
               {mistakeTypes.map((mt) => (
-                <tr key={mt.id} className="group hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                  <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                <tr key={mt.id} className="group hover:bg-muted/50">
+                  <td className="px-4 py-3 font-medium text-foreground">
                     {mt.value}
                   </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
+                  <td className="px-4 py-3 text-muted-foreground">
                     {mt.description}
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -357,7 +357,7 @@ export default function MistakeTypesPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => handleDelete(mt)}
                       >
                         Delete
@@ -371,7 +371,7 @@ export default function MistakeTypesPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => handleDelete(mt)}
                       >
                         Delete

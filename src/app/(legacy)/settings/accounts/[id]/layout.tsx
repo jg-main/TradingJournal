@@ -81,7 +81,7 @@ export default function AccountDetailLayout({
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
-        <p className="text-sm text-zinc-500">Loading account...</p>
+        <p className="text-sm text-muted-foreground">Loading account...</p>
       </div>
     );
   }
@@ -92,13 +92,13 @@ export default function AccountDetailLayout({
       <div className="mx-auto max-w-4xl px-6 py-8">
         <Link
           href="/settings/accounts"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to Accounts
         </Link>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
-          <p className="text-sm text-red-700 dark:text-red-400">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+          <p className="text-sm text-destructive">
             {error ?? 'Account not found.'}
           </p>
         </div>
@@ -112,7 +112,7 @@ export default function AccountDetailLayout({
       {/* Back link */}
       <Link
         href="/settings/accounts"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to Accounts

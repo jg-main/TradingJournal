@@ -135,7 +135,7 @@ export default function PlaysSettingsPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-sm text-zinc-500">Loading plays...</p>
+        <p className="text-sm text-muted-foreground">Loading plays...</p>
       </div>
     );
   }
@@ -145,8 +145,8 @@ export default function PlaysSettingsPage() {
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Plays</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Plays</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Trading setups that appear in the Plan Trade dropdown. Click a play to configure its rules, checks, and AI assessment data.
           </p>
         </div>
@@ -160,7 +160,7 @@ export default function PlaysSettingsPage() {
                 <DialogTitle>New Play</DialogTitle>
               </DialogHeader>
               <div className="mt-4">
-                <label htmlFor="newName" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="newName" className="mb-1 block text-sm font-medium text-foreground">
                   Name *
                 </label>
                 <input
@@ -169,7 +169,7 @@ export default function PlaysSettingsPage() {
                   required
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                  className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="e.g. Breakout Pullback"
                 />
               </div>
@@ -186,16 +186,16 @@ export default function PlaysSettingsPage() {
       {message && (
         <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
           message.type === 'success'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+            ? 'border-positive/30 bg-positive/10 text-positive'
+            : 'border-destructive/30 bg-destructive/10 text-destructive'
         }`}>
           {message.text}
         </div>
       )}
 
       {setups.length === 0 ? (
-        <div className="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+        <div className="rounded-lg border border-border bg-card p-12 text-center">
+          <p className="text-sm text-muted-foreground">
             No plays defined yet. Create your first trading setup to see it in the Plan Trade dropdown.
           </p>
         </div>
@@ -204,26 +204,26 @@ export default function PlaysSettingsPage() {
           {setups.map((setup) => (
             <div
               key={setup.id}
-              className={`rounded-lg border bg-white p-5 dark:bg-zinc-900 ${
+              className={`rounded-lg border border-border bg-card p-5 ${
                 setup.isActive
-                  ? 'border-zinc-200 dark:border-zinc-800'
-                  : 'border-zinc-100 opacity-60 dark:border-zinc-800/50'
+                  ? 'border-border'
+                  : 'border-border opacity-60'
               }`}
             >
               <div className="flex items-start justify-between gap-4">
                 <Link href={`/settings/plays/${setup.id}`} className="min-w-0 flex-1 group">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-medium text-zinc-900 group-hover:text-zinc-600 dark:text-zinc-100 dark:group-hover:text-zinc-300">
+                    <h3 className="text-sm font-medium text-foreground group-hover:text-muted-foreground">
                       {setup.name}
                     </h3>
                     {!setup.isActive && <Badge variant="outline">Inactive</Badge>}
                   </div>
                   {setup.description && (
-                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{setup.description}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{setup.description}</p>
                   )}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {setup.defaultRiskPct !== null && (
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400">Risk: {setup.defaultRiskPct}%</span>
+                      <span className="text-xs text-muted-foreground">Risk: {setup.defaultRiskPct}%</span>
                     )}
                     {setup.tags && (() => {
                       try {
@@ -242,12 +242,12 @@ export default function PlaysSettingsPage() {
                         <Button variant="ghost" size="sm">Edit</Button>
                       </Link>
                       <Button variant="outline" size="sm" onClick={() => handleDeactivate(setup)}>Deactivate</Button>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300" onClick={() => handleDelete(setup)}>Delete</Button>
+                      <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(setup)}>Delete</Button>
                     </>
                   ) : (
                     <>
                       <Button variant="ghost" size="sm" onClick={() => handleReactivate(setup)}>Reactivate</Button>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300" onClick={() => handleDelete(setup)}>Delete</Button>
+                      <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(setup)}>Delete</Button>
                     </>
                   )}
                 </div>

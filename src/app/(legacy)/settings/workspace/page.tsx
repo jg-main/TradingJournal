@@ -96,7 +96,7 @@ export default function WorkspaceSettingsPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8">
-        <p className="text-sm text-zinc-500">Loading workspace settings...</p>
+        <p className="text-sm text-muted-foreground">Loading workspace settings...</p>
       </div>
     );
   }
@@ -105,13 +105,13 @@ export default function WorkspaceSettingsPage() {
     <div className="mx-auto max-w-2xl px-6 py-8">
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to Settings
       </Link>
 
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-foreground">
         Workspace
       </h1>
 
@@ -119,8 +119,8 @@ export default function WorkspaceSettingsPage() {
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           {message.text}
@@ -128,19 +128,19 @@ export default function WorkspaceSettingsPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="space-y-4 rounded-lg border border-border bg-card p-6">
           <div>
-            <label htmlFor="timezone" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            <label htmlFor="timezone" className="mb-1 block text-sm font-medium text-foreground">
               Timezone
             </label>
-            <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mb-2 text-xs text-muted-foreground">
               All journal entries, reports, and backup timestamps are displayed in this timezone.
             </p>
             <select
               id="timezone"
               value={form.timezone}
               onChange={handleChange}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             >
               <option value="America/New_York">America/New_York (EST)</option>
               <option value="America/Chicago">America/Chicago (CST)</option>
@@ -161,12 +161,12 @@ export default function WorkspaceSettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
           >
             {saving ? 'Saving...' : 'Save Workspace'}
           </button>
           {message?.type === 'success' && (
-            <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved.</span>
+            <span className="text-sm text-positive">Saved.</span>
           )}
         </div>
       </form>

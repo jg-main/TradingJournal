@@ -118,40 +118,40 @@ export default function DangerZonePage() {
       <div className="mb-8">
         <Link
           href="/settings"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to Settings
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Danger Zone
         </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+        <p className="mt-1 text-sm text-muted-foreground">
           Destructive actions that permanently alter your journal data.
         </p>
       </div>
 
       {/* Reset flow card */}
-      <div className="rounded-xl border border-red-200 bg-red-50/40 p-6 dark:border-red-900/50 dark:bg-red-950/20">
+      <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6">
         {/* ── Warning Step ──────────────────────── */}
         {step === 'warning' && (
           <div>
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 size-6 shrink-0 text-red-500 dark:text-red-400" />
+              <AlertTriangle className="mt-0.5 size-6 shrink-0 text-destructive" />
               <div>
-                <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Factory Reset</h2>
-                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                <h2 className="text-lg font-semibold text-destructive">Factory Reset</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
                   This will permanently delete ALL your journal data, including trades, accounts,
                   settings, and preferences. This action cannot be undone.
                 </p>
               </div>
             </div>
 
-            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-900/20">
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+            <div className="mt-6 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
+              <p className="text-sm font-medium text-warning">
                 Backup required before reset
               </p>
-              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              <p className="mt-1 text-xs text-warning">
                 You must download a backup before proceeding. The reset button will only become
                 active after you have saved a backup to your device.
               </p>
@@ -161,13 +161,13 @@ export default function DangerZonePage() {
               href="/api/backup"
               download
               onClick={handleDownloadBackup}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted"
             >
               Download Backup
             </a>
 
             {backupDownloaded && (
-              <div className="mt-3 flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+              <div className="mt-3 flex items-center gap-2 text-sm text-positive">
                 <CircleCheck className="size-4" />
                 <span>I have downloaded and saved a backup</span>
               </div>
@@ -176,14 +176,14 @@ export default function DangerZonePage() {
             <div className="mt-6 flex items-center justify-end gap-3">
               <Link
                 href="/settings"
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
               >
                 Cancel
               </Link>
               <button
                 onClick={handleNext}
                 disabled={!backupDownloaded}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
+                className="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
               </button>
@@ -194,16 +194,16 @@ export default function DangerZonePage() {
         {/* ── Confirm Step ──────────────────────── */}
         {step === 'confirm' && (
           <div>
-            <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Type RESET to confirm</h2>
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+            <h2 className="text-lg font-semibold text-destructive">Type RESET to confirm</h2>
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <span>
                 This will permanently delete ALL data in your journal. This action cannot be undone.
               </span>
             </div>
 
-            <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-              Type <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">RESET</span> to confirm:
+            <p className="mt-4 text-sm text-muted-foreground">
+              Type <span className="font-mono font-bold text-foreground">RESET</span> to confirm:
             </p>
             <input
               ref={confirmInputRef}
@@ -211,7 +211,7 @@ export default function DangerZonePage() {
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder="Type RESET to confirm"
-              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-red-500 dark:focus:ring-red-900/30"
+              className="mt-2 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-destructive focus:outline-none focus:ring-2 focus:ring-destructive/30"
               autoComplete="off"
               spellCheck={false}
             />
@@ -219,14 +219,14 @@ export default function DangerZonePage() {
             <div className="mt-5 flex items-center justify-end gap-3">
               <button
                 onClick={handleCancelToWarning}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
               >
                 Cancel
               </button>
               <button
                 onClick={handleReset}
                 disabled={confirmText !== 'RESET'}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-700 dark:hover:bg-red-600"
+                className="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Confirm Reset
               </button>
@@ -237,18 +237,18 @@ export default function DangerZonePage() {
         {/* ── Resetting Step ────────────────────── */}
         {step === 'resetting' && (
           <div className="flex flex-col items-center py-8">
-            <Loader2 className="size-10 animate-spin text-zinc-400" />
-            <p className="mt-4 text-sm font-medium text-zinc-700 dark:text-zinc-300">Resetting your journal...</p>
-            <p className="mt-1 text-xs text-zinc-400">Please wait while your data is being cleared.</p>
+            <Loader2 className="size-10 animate-spin text-muted-foreground" />
+            <p className="mt-4 text-sm font-medium text-foreground">Resetting your journal...</p>
+            <p className="mt-1 text-xs text-muted-foreground">Please wait while your data is being cleared.</p>
           </div>
         )}
 
         {/* ── Success Step ──────────────────────── */}
         {step === 'success' && (
           <div className="flex flex-col items-center py-8">
-            <CircleCheck className="size-12 text-emerald-600 dark:text-emerald-400" />
-            <p className="mt-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">Reset Complete</p>
-            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+            <CircleCheck className="size-12 text-positive" />
+            <p className="mt-4 text-sm font-medium text-foreground">Reset Complete</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Your journal has been reset. Redirecting to setup...
             </p>
           </div>
@@ -258,16 +258,16 @@ export default function DangerZonePage() {
         {step === 'error' && (
           <div>
             <div className="flex items-start justify-between">
-              <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">Reset Failed</h2>
+              <h2 className="text-lg font-semibold text-destructive">Reset Failed</h2>
               <button
                 onClick={handleClose}
-                className="rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                className="rounded-md p-1 text-muted-foreground hover:text-foreground"
                 aria-label="Close"
               >
                 <X className="size-5" />
               </button>
             </div>
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <span>{errorMessage || 'An unexpected error occurred during reset.'}</span>
             </div>
@@ -275,13 +275,13 @@ export default function DangerZonePage() {
             <div className="mt-5 flex items-center justify-end gap-3">
               <button
                 onClick={handleClose}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
               >
                 Close
               </button>
               <button
                 onClick={handleRetry}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 Try Again
               </button>

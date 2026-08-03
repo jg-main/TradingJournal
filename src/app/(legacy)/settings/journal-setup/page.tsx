@@ -10,13 +10,13 @@ const journalCards = [
     title: 'Plays',
     description: 'Manage trading setups that appear in the Plan Trade dropdown.',
     href: '/settings/plays',
-    icon: <Gamepad2 className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+    icon: <Gamepad2 className="size-8 text-muted-foreground" strokeWidth={1.5} />,
   },
   {
     title: 'Mistake Types',
     description: 'Manage mistake categories for trade reviews.',
     href: '/settings/mistake-types',
-    icon: <AlertTriangle className="size-8 text-zinc-500 dark:text-zinc-400" strokeWidth={1.5} />,
+    icon: <AlertTriangle className="size-8 text-muted-foreground" strokeWidth={1.5} />,
   },
 ];
 
@@ -29,15 +29,15 @@ export default function JournalSetupPage() {
       <div className="mb-8">
         <Link
           href="/settings"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to Settings
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Journal Setup
         </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
+        <p className="mt-1 text-sm text-muted-foreground">
           Configure trading setups and mistake categories used in your journal.
         </p>
       </div>
@@ -48,11 +48,11 @@ export default function JournalSetupPage() {
           <Link
             key={card.href}
             href={card.href}
-            className="group rounded-lg border border-zinc-200 bg-white p-6 transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
+            className="group rounded-lg border border-border bg-card p-6 transition-colors hover:border-border hover:bg-muted/50"
           >
             <div className="mb-3">{card.icon}</div>
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{card.title}</h2>
-            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{card.description}</p>
+            <h2 className="text-sm font-semibold text-foreground">{card.title}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{card.description}</p>
           </Link>
         ))}
       </div>

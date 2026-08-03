@@ -196,7 +196,7 @@ export default function AiSettingsPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-8">
-        <p className="text-sm text-zinc-500">Loading AI settings...</p>
+        <p className="text-sm text-muted-foreground">Loading AI settings...</p>
       </div>
     );
   }
@@ -205,13 +205,13 @@ export default function AiSettingsPage() {
     <div className="mx-auto max-w-2xl px-6 py-8">
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to Settings
       </Link>
 
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-foreground">
         AI Settings
       </h1>
 
@@ -219,8 +219,8 @@ export default function AiSettingsPage() {
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           {message.text}
@@ -228,11 +228,11 @@ export default function AiSettingsPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="space-y-4 rounded-lg border border-border bg-card p-6">
           {/* Provider */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label htmlFor="provider" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="provider" className="block text-sm font-medium text-foreground">
                 Provider
               </label>
               <HelpTooltip content="Which AI service to use for trade analysis and grading. Changes take effect on save." />
@@ -241,7 +241,7 @@ export default function AiSettingsPage() {
               id="provider"
               value={form.provider}
               onChange={handleProviderChange}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             >
               <option value="openai">OpenAI</option>
               <option value="ollama">Ollama</option>
@@ -255,7 +255,7 @@ export default function AiSettingsPage() {
           {showEndpointUrl && (
             <div>
               <div className="mb-1 flex items-center gap-1">
-                <label htmlFor="baseUrl" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="baseUrl" className="block text-sm font-medium text-foreground">
                   Endpoint URL
                 </label>
                 <HelpTooltip content="Custom API endpoint URL for your LLM provider. Required for Ollama and custom providers." />
@@ -265,7 +265,7 @@ export default function AiSettingsPage() {
                 type="url"
                 value={form.baseUrl}
                 onChange={handleChange('baseUrl')}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder={
                   form.provider === 'ollama'
                     ? 'http://localhost:11434/v1'
@@ -278,8 +278,8 @@ export default function AiSettingsPage() {
           {/* API Key */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label htmlFor="apiKey" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                API Key <span className="text-xs text-zinc-400">(stored securely, never displayed)</span>
+              <label htmlFor="apiKey" className="block text-sm font-medium text-foreground">
+                API Key <span className="text-xs text-muted-foreground">(stored securely, never displayed)</span>
               </label>
               <HelpTooltip content="Your API key is stored securely and never displayed after saving." />
             </div>
@@ -289,14 +289,14 @@ export default function AiSettingsPage() {
                 type={showApiKey ? 'text' : 'password'}
                 value={form.apiKey}
                 onChange={handleChange('apiKey')}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 pr-10 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                className="w-full rounded-md border border-input bg-card px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder="sk-..."
                 autoComplete="off"
               />
               <button
                 type="button"
                 onClick={() => setShowApiKey((prev) => !prev)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground"
                 aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
                 tabIndex={-1}
               >
@@ -308,7 +308,7 @@ export default function AiSettingsPage() {
           {/* Model */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label htmlFor="model" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="model" className="block text-sm font-medium text-foreground">
                 Model
               </label>
               <HelpTooltip content="Model identifier for generating trade analysis (e.g. gpt-4, claude-3-opus, qwen2.5-coder:7b)" />
@@ -318,7 +318,7 @@ export default function AiSettingsPage() {
               type="text"
               value={form.model}
               onChange={handleChange('model')}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               placeholder="e.g. gpt-4, qwen2.5-coder:7b"
             />
           </div>
@@ -326,7 +326,7 @@ export default function AiSettingsPage() {
           {/* Timeout */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label htmlFor="timeoutMs" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="timeoutMs" className="block text-sm font-medium text-foreground">
                 Timeout (ms)
               </label>
               <HelpTooltip content="Maximum time to wait for an AI response before the request times out." />
@@ -338,14 +338,14 @@ export default function AiSettingsPage() {
               step="1000"
               value={form.timeoutMs}
               onChange={handleChange('timeoutMs')}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
 
           {/* Temperature */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label htmlFor="temperature" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="temperature" className="block text-sm font-medium text-foreground">
                 Temperature: {form.temperature}
               </label>
               <HelpTooltip content="Controls output randomness. Lower values produce more deterministic, consistent results." />
@@ -358,14 +358,14 @@ export default function AiSettingsPage() {
               step="0.1"
               value={form.temperature}
               onChange={handleChange('temperature')}
-              className="w-full accent-zinc-900 dark:accent-zinc-100"
+              className="w-full accent-primary"
             />
           </div>
 
           {/* Max Tokens */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label htmlFor="maxTokens" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="maxTokens" className="block text-sm font-medium text-foreground">
                 Max Tokens
               </label>
               <HelpTooltip content="Maximum length of the AI-generated response." />
@@ -377,14 +377,14 @@ export default function AiSettingsPage() {
               step="1"
               value={form.maxTokens}
               onChange={handleChange('maxTokens')}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             />
           </div>
 
           {/* System Prompt */}
           <div>
             <div className="mb-1 flex items-center gap-1">
-              <label htmlFor="systemPrompt" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="systemPrompt" className="block text-sm font-medium text-foreground">
                 System Prompt
               </label>
               <HelpTooltip content="Base instructions that define the AI assistant's behavior and expertise context for trade analysis." />
@@ -394,16 +394,16 @@ export default function AiSettingsPage() {
               rows={4}
               value={form.systemPrompt}
               onChange={handleChange('systemPrompt')}
-              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               placeholder="You are a helpful trading assistant that analyzes trade quality..."
             />
           </div>
 
           {/* AI Provider Active Toggle */}
-          <div className="flex items-center justify-between border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <div className="flex items-center justify-between border-t border-border pt-4">
             <div>
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Enable AI Provider</p>
-              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+              <p className="text-sm font-medium text-foreground">Enable AI Provider</p>
+              <p className="text-xs text-muted-foreground">
                 {form.isActive ? 'Provider is active and ready to accept requests.' : 'Provider is disabled — no AI features will function.'}
               </p>
             </div>
@@ -413,14 +413,14 @@ export default function AiSettingsPage() {
               aria-checked={form.isActive}
               aria-label="Toggle AI provider"
               onClick={handleToggle}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:ring-offset-2 ${
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                 form.isActive
-                  ? 'bg-zinc-900 dark:bg-zinc-100'
-                  : 'bg-zinc-300 dark:bg-zinc-700'
+                  ? 'bg-foreground dark:bg-secondary'
+                  : 'bg-input'
               }`}
             >
               <span
-                className={`inline-block size-5 transform rounded-full bg-white shadow-sm ring-0 transition-transform ${
+                className={`inline-block size-5 transform rounded-full bg-card shadow-sm ring-0 transition-transform ${
                   form.isActive ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
@@ -429,17 +429,17 @@ export default function AiSettingsPage() {
         </div>
 
         {/* ── Prompt Preview ── */}
-        <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="space-y-4 rounded-lg border border-border bg-card p-6">
           <div>
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Prompt Preview</h2>
-            <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+            <h2 className="text-base font-semibold text-foreground">Prompt Preview</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
               Preview the full composed AI prompt using static sample trade data. System Prompt override
               from the form above is reflected in the preview.
             </p>
           </div>
 
           {/* Tab bar */}
-          <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+          <div className="flex gap-1 rounded-lg bg-muted p-1">
             <button
               type="button"
               onClick={() => {
@@ -448,8 +448,8 @@ export default function AiSettingsPage() {
               }}
               className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
                 previewActiveTab === 'pre-trade'
-                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
-                  : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <FileText className="size-4" />
@@ -463,8 +463,8 @@ export default function AiSettingsPage() {
               }}
               className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
                 previewActiveTab === 'after-exit'
-                  ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
-                  : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <ScrollText className="size-4" />
@@ -476,12 +476,12 @@ export default function AiSettingsPage() {
           <div className="min-h-[200px]">
             {previewLoading && (
               <div className="flex items-center justify-center py-12">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Generating prompt preview...</p>
+                <p className="text-sm text-muted-foreground">Generating prompt preview...</p>
               </div>
             )}
 
             {previewError && !previewLoading && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {previewError}
               </div>
             )}
@@ -490,30 +490,30 @@ export default function AiSettingsPage() {
               <div className="space-y-4">
                 {/* Metadata badges */}
                 <div className="flex gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
                     {previewResult.sectionCount} sections
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
                     {previewResult.totalChars.toLocaleString()} characters
                   </span>
                 </div>
 
                 {/* System message */}
                 <div>
-                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     System Message
                   </h3>
-                  <pre className="overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-4 font-mono text-xs leading-relaxed text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200">
+                  <pre className="overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-xs leading-relaxed text-foreground">
                     {previewResult.systemMessage}
                   </pre>
                 </div>
 
                 {/* User message */}
                 <div>
-                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     User Message
                   </h3>
-                  <pre className="overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-4 font-mono text-xs leading-relaxed text-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200">
+                  <pre className="overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-xs leading-relaxed text-foreground">
                     {previewResult.userMessage}
                   </pre>
                 </div>
@@ -522,7 +522,7 @@ export default function AiSettingsPage() {
 
             {!previewResult && !previewLoading && !previewError && (
               <div className="flex items-center justify-center py-12">
-                <p className="text-sm text-zinc-400 dark:text-zinc-500">
+                <p className="text-sm text-muted-foreground">
                   Click a tab above to generate a prompt preview.
                 </p>
               </div>
@@ -534,12 +534,12 @@ export default function AiSettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
           >
             {saving ? 'Saving...' : 'Save AI Settings'}
           </button>
           {message?.type === 'success' && (
-            <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved.</span>
+            <span className="text-sm text-positive">Saved.</span>
           )}
         </div>
       </form>

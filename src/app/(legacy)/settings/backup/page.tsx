@@ -65,12 +65,12 @@ function formatTimeHHMM(time: string | null): string {
 
 function StatusDot({ status }: { status: 'success' | 'error' | null }): JSX.Element {
   if (status === 'success') {
-    return <CircleCheck className="size-5 text-emerald-500" aria-hidden />;
+    return <CircleCheck className="size-5 text-positive" aria-hidden />;
   }
   if (status === 'error') {
-    return <CircleX className="size-5 text-red-500" aria-hidden />;
+    return <CircleX className="size-5 text-destructive" aria-hidden />;
   }
-  return <HelpCircle className="size-5 text-zinc-300 dark:text-zinc-600" aria-hidden />;
+  return <HelpCircle className="size-5 text-muted-foreground" aria-hidden />;
 }
 
 // ── Page ────────────────────────────────────────────────────────────────
@@ -368,12 +368,12 @@ export default function BackupsSettingsPage() {
       <div className="mx-auto max-w-2xl px-6 py-8">
         <Link
           href="/settings"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to Settings
         </Link>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading backup settings...</p>
+        <p className="text-sm text-muted-foreground">Loading backup settings...</p>
       </div>
     );
   }
@@ -382,13 +382,13 @@ export default function BackupsSettingsPage() {
     <div className="mx-auto max-w-2xl px-6 py-8">
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to Settings
       </Link>
 
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-foreground">
         Backup
       </h1>
 
@@ -396,8 +396,8 @@ export default function BackupsSettingsPage() {
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           {message.text}
@@ -406,23 +406,23 @@ export default function BackupsSettingsPage() {
 
       <div className="space-y-6">
         {/* ── Status Indicator ─────────────────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Status</h2>
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-4 text-sm font-semibold text-foreground">Status</h2>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">Last Run</span>
+              <span className="text-sm text-muted-foreground">Last Run</span>
               <div className="flex items-center gap-2">
                 <StatusDot status={backupStatus?.lastRunStatus ?? settings?.backupLastRunStatus ?? null} />
-                <span className="text-sm text-zinc-900 dark:text-zinc-100">
+                <span className="text-sm text-foreground">
                   {formatTimestamp(backupStatus?.lastRunAt ?? settings?.backupLastRunAt ?? null, appTimezone)}
                 </span>
               </div>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">Next Scheduled Run</span>
-              <span className="text-sm text-zinc-900 dark:text-zinc-100">
+              <span className="text-sm text-muted-foreground">Next Scheduled Run</span>
+              <span className="text-sm text-foreground">
                 {backupStatus?.nextScheduledAt
                   ? formatTimestamp(backupStatus.nextScheduledAt, appTimezone)
                   : backupEnabled
@@ -435,21 +435,21 @@ export default function BackupsSettingsPage() {
 
             {/* ── Scheduler diagnostics ───────────────────────────── */}
             {backupEnabled && backupStatus && !backupStatus.schedulerActive && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
+              <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                 <p className="mb-1 font-medium">Scheduler Diagnostics</p>
                 <ul className="space-y-0.5">
                   <li>
-                    NODE_ENV: <code className="rounded bg-amber-100/50 px-1 dark:bg-amber-900/40">{backupStatus.schedulerNodeEnv}</code>
+                    NODE_ENV: <code className="rounded bg-warning/10 px-1">{backupStatus.schedulerNodeEnv}</code>
                     {' — '}
                     {backupStatus.schedulerNodeEnv === 'production'
                       ? 'Environment correct.'
                       : 'Must be "production" for the scheduler to run.'}
                   </li>
                   <li>
-                    Scheduler status: <code className="rounded bg-amber-100/50 px-1 dark:bg-amber-900/40">{backupStatus.schedulerStatus}</code>
+                    Scheduler status: <code className="rounded bg-warning/10 px-1">{backupStatus.schedulerStatus}</code>
                   </li>
                   <li>
-                    Cron expression: <code className="rounded bg-amber-100/50 px-1 dark:bg-amber-900/40">{backupStatus.cronExpression}</code>
+                    Cron expression: <code className="rounded bg-warning/10 px-1">{backupStatus.cronExpression}</code>
                   </li>
                   {backupStatus.schedulerNodeEnv !== 'production' && (
                     <li className="mt-1 font-medium">
@@ -457,7 +457,7 @@ export default function BackupsSettingsPage() {
                         ? 'Scheduled backups are disabled in dev mode by design. In production (Docker), the scheduler starts automatically when backups are enabled.'
                         : <>
                             Fix: Restart the container with{' '}
-                            <code className="rounded bg-amber-100/50 px-1 dark:bg-amber-900/40">NODE_ENV=production</code>
+                            <code className="rounded bg-warning/10 px-1">NODE_ENV=production</code>
                             {' '}set in the environment. The Docker image already includes this,
                             but your compose file or runtime may be overriding it.
                           </>
@@ -468,13 +468,13 @@ export default function BackupsSettingsPage() {
               </div>
             )}
 
-            <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">Backup Now</span>
+            <div className="flex items-center justify-between border-t border-border pt-3">
+              <span className="text-sm text-muted-foreground">Backup Now</span>
               <button
                 type="button"
                 onClick={handleBackupNow}
                 disabled={backingUp}
-                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {backingUp ? (
                   <>
@@ -493,8 +493,8 @@ export default function BackupsSettingsPage() {
         </div>
 
         {/* ── Enable/Disable Toggle + Schedule Time ────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-4 text-sm font-semibold text-foreground">
             Automatic Backups
           </h2>
 
@@ -502,10 +502,10 @@ export default function BackupsSettingsPage() {
             {/* Toggle */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                <p className="text-sm text-foreground">
                   {backupEnabled ? 'Scheduled backups are enabled' : 'Scheduled backups are disabled'}
                 </p>
-                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {backupEnabled
                     ? `Backups will run daily at ${formatTimeHHMM(backupCronTime)}.`
                     : 'Enable to automatically create daily backups.'}
@@ -517,14 +517,14 @@ export default function BackupsSettingsPage() {
                 aria-checked={backupEnabled}
                 onClick={handleToggle}
                 disabled={saving}
-                className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
                   backupEnabled
-                    ? 'bg-zinc-900 dark:bg-zinc-100'
-                    : 'bg-zinc-300 dark:bg-zinc-600'
+                    ? 'bg-foreground dark:bg-secondary'
+                    : 'bg-input'
                 }`}
               >
                 <span
-                  className={`inline-block size-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out dark:bg-zinc-900 ${
+                  className={`inline-block size-4 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
                     backupEnabled ? 'translate-x-4' : 'translate-x-0.5'
                   }`}
                 />
@@ -532,12 +532,12 @@ export default function BackupsSettingsPage() {
             </div>
 
             {/* Time picker */}
-            <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div className="flex items-center gap-3 border-t border-border pt-4">
               <div>
-                <label htmlFor="backupCronTime" className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <label htmlFor="backupCronTime" className="text-xs font-medium text-muted-foreground">
                   Backup Time (24h)
                 </label>
-                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Daily backup at this time ({appTimezone.replace('_', ' ')})
                 </p>
               </div>
@@ -546,13 +546,13 @@ export default function BackupsSettingsPage() {
                 type="time"
                 value={backupCronTime}
                 onChange={(e) => setBackupCronTime(e.target.value)}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               />
               <button
                 type="button"
                 onClick={() => handleCronTimeChange(backupCronTime)}
                 disabled={saving}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {saving ? 'Saving...' : 'Save Time'}
               </button>
@@ -561,11 +561,11 @@ export default function BackupsSettingsPage() {
         </div>
 
         {/* ── Retention Count ───────────────────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">
             Retention Count
           </h2>
-          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+          <p className="mb-4 text-xs text-muted-foreground">
             Number of backup files to keep before removing the oldest. Minimum 1, maximum 30.
           </p>
 
@@ -574,7 +574,7 @@ export default function BackupsSettingsPage() {
               id="retentionCount"
               value={retentionCount}
               onChange={(e) => setRetentionCount(Number(e.target.value))}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>
@@ -586,7 +586,7 @@ export default function BackupsSettingsPage() {
               type="button"
               onClick={handleRetentionSave}
               disabled={saving}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -594,44 +594,44 @@ export default function BackupsSettingsPage() {
         </div>
 
         {/* ── Scheduled Backups ────────────────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">
             Scheduled Backups
           </h2>
-          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+          <p className="mb-4 text-xs text-muted-foreground">
             Backup files created by the scheduler. Click Restore to recover data from any file.
           </p>
           {backupStatus?.backupDir && (
-            <p className="mb-4 text-xs text-zinc-400 dark:text-zinc-500">
-              Storage path: <code className="rounded bg-zinc-100 px-1 text-xs dark:bg-zinc-800">{backupStatus.backupDir}</code>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Storage path: <code className="rounded bg-muted px-1 text-xs">{backupStatus.backupDir}</code>
             </p>
           )}
 
           {serverFiles.length === 0 ? (
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">
+            <p className="text-xs text-muted-foreground">
               No backup files yet. Enable automatic backups above or use Backup Now to create one.
             </p>
           ) : (
-            <div className="max-h-64 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-border">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
+                <thead className="sticky top-0 border-b border-border bg-muted">
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-zinc-600 dark:text-zinc-300">Backup Date</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Size</th>
-                    <th className="w-28 px-3 py-2 text-right text-xs font-medium text-zinc-600 dark:text-zinc-300">Action</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Backup Date</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Size</th>
+                    <th className="w-28 px-3 py-2 text-right text-xs font-medium text-muted-foreground">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                <tbody className="divide-y divide-border">
                   {serverFiles.map((file) => (
-                    <tr key={file.filename} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                      <td className="px-3 py-2.5 text-zinc-700 dark:text-zinc-300">{formatBackupDate(file.isoDate)}</td>
-                      <td className="px-3 py-2.5 text-right text-zinc-500 dark:text-zinc-400">{file.sizeHuman}</td>
+                    <tr key={file.filename} className="hover:bg-muted/50">
+                      <td className="px-3 py-2.5 text-foreground">{formatBackupDate(file.isoDate)}</td>
+                      <td className="px-3 py-2.5 text-right text-muted-foreground">{file.sizeHuman}</td>
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => { setRestoreFile(file); setShowRestoreModal(true); }}
-                            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                            className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
                           >
                             Restore
                           </button>
@@ -639,7 +639,7 @@ export default function BackupsSettingsPage() {
                             type="button"
                             onClick={() => void handleDeleteFile(file.filename)}
                             disabled={deletingFiles.has(file.filename)}
-                            className="rounded-md p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
                             title="Delete backup"
                           >
                             {deletingFiles.has(file.filename) ? (
@@ -659,11 +659,11 @@ export default function BackupsSettingsPage() {
         </div>
 
         {/* ── Manual: Download & Upload ──────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">
             Manual Backup &amp; Restore
           </h2>
-          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+          <p className="mb-4 text-xs text-muted-foreground">
             Download a backup to your computer or upload one to restore.
           </p>
           <div className="flex items-center gap-3">
@@ -677,14 +677,14 @@ export default function BackupsSettingsPage() {
                 a.click();
                 document.body.removeChild(a);
               }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
             >
               Download Backup
             </button>
             <button
               type="button"
               onClick={() => { setRestoreFile(undefined); setShowRestoreModal(true); }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <Upload className="size-3.5" />
               Upload Backup

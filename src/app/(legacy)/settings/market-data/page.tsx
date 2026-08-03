@@ -34,12 +34,12 @@ type SchwabDotStatus = 'connected' | 'expiring' | 'disconnected' | 'unknown';
 
 function StatusDot({ status }: { status: 'success' | 'error' | null }): JSX.Element {
   if (status === 'success') {
-    return <CircleCheck className="size-5 text-emerald-500" aria-hidden />;
+    return <CircleCheck className="size-5 text-positive" aria-hidden />;
   }
   if (status === 'error') {
-    return <CircleX className="size-5 text-red-500" aria-hidden />;
+    return <CircleX className="size-5 text-destructive" aria-hidden />;
   }
-  return <HelpCircle className="size-5 text-zinc-300 dark:text-zinc-600" aria-hidden />;
+  return <HelpCircle className="size-5 text-muted-foreground" aria-hidden />;
 }
 
 /**
@@ -82,16 +82,16 @@ function formatExpiryCountdown(expiresAt: string): string {
 
 function SchwabStatusDot({ status }: { status: SchwabDotStatus }): JSX.Element {
   if (status === 'connected') {
-    return <CircleCheck className="size-5 text-emerald-500" aria-hidden />;
+    return <CircleCheck className="size-5 text-positive" aria-hidden />;
   }
   if (status === 'expiring') {
-    return <AlertTriangle className="size-5 text-amber-500" aria-hidden />;
+    return <AlertTriangle className="size-5 text-warning" aria-hidden />;
   }
   if (status === 'unknown') {
-    return <HelpCircle className="size-5 text-zinc-300 dark:text-zinc-600" aria-hidden />;
+    return <HelpCircle className="size-5 text-muted-foreground" aria-hidden />;
   }
   // disconnected / red
-  return <CircleX className="size-5 text-red-500" aria-hidden />;
+  return <CircleX className="size-5 text-destructive" aria-hidden />;
 }
 
 // ── Page ────────────────────────────────────────────────────────────────
@@ -424,12 +424,12 @@ export default function MarketDataSettingsPage() {
       <div className="mx-auto max-w-2xl px-6 py-8">
         <Link
           href="/settings"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to Settings
         </Link>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading market data settings...</p>
+        <p className="text-sm text-muted-foreground">Loading market data settings...</p>
       </div>
     );
   }
@@ -438,13 +438,13 @@ export default function MarketDataSettingsPage() {
     <div className="mx-auto max-w-2xl px-6 py-8">
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to Settings
       </Link>
 
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-foreground">
         Market Data
       </h1>
 
@@ -452,8 +452,8 @@ export default function MarketDataSettingsPage() {
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           {message.text}
@@ -462,12 +462,12 @@ export default function MarketDataSettingsPage() {
 
       <div className="space-y-6">
         {/* ── Provider Status ─────────────────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-100">Provider Status</h2>
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-4 text-sm font-semibold text-foreground">Provider Status</h2>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">Active Provider</span>
+              <span className="text-sm text-muted-foreground">Active Provider</span>
               <div className="flex items-center gap-2">
                 {activeProvider === 'schwab' && (
                   <SchwabStatusDot status={getSchwabDotStatus(schwabStatus)} />
@@ -475,7 +475,7 @@ export default function MarketDataSettingsPage() {
                 <select
                   value={activeProvider}
                   onChange={(e) => { setActiveProvider(e.target.value); }}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  className="rounded-md border border-input bg-card px-3 py-1.5 text-sm font-medium text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   <option value="clickhouse">ClickHouse</option>
                   <option value="schwab" disabled={!schwabStatus?.connected}>
@@ -486,12 +486,12 @@ export default function MarketDataSettingsPage() {
             </div>
 
             {/* Save provider selection */}
-            <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div className="flex items-center gap-3 border-t border-border pt-4">
               <button
                 type="button"
                 onClick={handleSaveProvider}
                 disabled={saving}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -500,11 +500,11 @@ export default function MarketDataSettingsPage() {
         </div>
 
         {/* ── ClickHouse Configuration ────────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">
             ClickHouse Configuration
           </h2>
-          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+          <p className="mb-4 text-xs text-muted-foreground">
             Connection settings for market data database. Password is never displayed — re-enter when saving.
           </p>
 
@@ -512,7 +512,7 @@ export default function MarketDataSettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               {/* Host */}
               <div>
-                <label htmlFor="chHost" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="chHost" className="mb-1 block text-sm font-medium text-foreground">
                   Host
                 </label>
                 <input
@@ -520,14 +520,14 @@ export default function MarketDataSettingsPage() {
                   type="text"
                   value={chHost}
                   onChange={(e) => { setChHost(e.target.value); setConnectionResult(null); }}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                  className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="localhost"
                 />
               </div>
 
               {/* Port */}
               <div>
-                <label htmlFor="chPort" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="chPort" className="mb-1 block text-sm font-medium text-foreground">
                   Port
                 </label>
                 <input
@@ -537,14 +537,14 @@ export default function MarketDataSettingsPage() {
                   max="65535"
                   value={chPort}
                   onChange={(e) => { setChPort(e.target.value); setConnectionResult(null); }}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                  className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="8123"
                 />
               </div>
 
               {/* User */}
               <div>
-                <label htmlFor="chUser" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="chUser" className="mb-1 block text-sm font-medium text-foreground">
                   User
                 </label>
                 <input
@@ -552,14 +552,14 @@ export default function MarketDataSettingsPage() {
                   type="text"
                   value={chUser}
                   onChange={(e) => { setChUser(e.target.value); setConnectionResult(null); }}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                  className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="default"
                 />
               </div>
 
               {/* Database */}
               <div>
-                <label htmlFor="chDatabase" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="chDatabase" className="mb-1 block text-sm font-medium text-foreground">
                   Database
                 </label>
                 <input
@@ -567,7 +567,7 @@ export default function MarketDataSettingsPage() {
                   type="text"
                   value={chDatabase}
                   onChange={(e) => { setChDatabase(e.target.value); setConnectionResult(null); }}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                  className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="market"
                 />
               </div>
@@ -575,27 +575,27 @@ export default function MarketDataSettingsPage() {
 
             {/* Password */}
             <div>
-              <label htmlFor="chPassword" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Password <span className="text-xs text-zinc-400">(stored securely, never displayed)</span>
+              <label htmlFor="chPassword" className="mb-1 block text-sm font-medium text-foreground">
+                Password <span className="text-xs text-muted-foreground">(stored securely, never displayed)</span>
               </label>
               <input
                 id="chPassword"
                 type="password"
                 value={chPassword}
                 onChange={(e) => { setChPassword(e.target.value); setConnectionResult(null); }}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder="(unchanged)"
                 autoComplete="new-password"
               />
             </div>
 
             {/* Save + Test ClickHouse connection */}
-            <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div className="flex items-center gap-3 border-t border-border pt-4">
               <button
                 type="button"
                 onClick={handleSaveClickHouse}
                 disabled={saving}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -603,19 +603,19 @@ export default function MarketDataSettingsPage() {
                 type="button"
                 onClick={handleTestConnection}
                 disabled={testing}
-                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {testing ? 'Testing...' : 'Test Connection'}
               </button>
             </div>
 
             {connectionResult && (
-              <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Test Result</span>
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <span className="text-sm text-muted-foreground">Test Result</span>
                 <span className={`inline-flex items-center gap-1.5 text-sm ${
                   connectionResult.ok
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-600 dark:text-red-400'
+                    ? 'text-positive'
+                    : 'text-destructive'
                 }`}>
                   {connectionResult.ok ? (
                     <>
@@ -635,11 +635,11 @@ export default function MarketDataSettingsPage() {
         </div>
 
         {/* ── Schwab Connection ──────────────────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">
             Schwab Connection
           </h2>
-          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+          <p className="mb-4 text-xs text-muted-foreground">
             Connect your Schwab account to use Schwab as a market data provider for OHLC data and quotes.
           </p>
 
@@ -647,8 +647,8 @@ export default function MarketDataSettingsPage() {
             <div
               className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
                 schwabMessage.type === 'success'
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-                  : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+                  ? 'border-positive/30 bg-positive/10 text-positive'
+                  : 'border-destructive/30 bg-destructive/10 text-destructive'
               }`}
             >
               {schwabMessage.text}
@@ -658,14 +658,14 @@ export default function MarketDataSettingsPage() {
           <div className="space-y-4">
             {/* Status row */}
             <div className="flex items-center justify-between">
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">Status</span>
+              <span className="text-sm text-muted-foreground">Status</span>
               <div className="flex items-center gap-2">
                 {schwabLoading ? (
-                  <Loader2 className="size-4 animate-spin text-zinc-400" aria-hidden />
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
                 ) : (
                   <>
                     <SchwabStatusDot status={getSchwabDotStatus(schwabStatus)} />
-                    <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    <span className="text-sm font-medium text-foreground">
                       {schwabStatus === null
                         ? '...'
                         : schwabStatus.errorType === 'not_configured'
@@ -683,12 +683,12 @@ export default function MarketDataSettingsPage() {
 
             {/* Expiry countdown */}
             {schwabStatus?.connected && schwabStatus.expiresAt && (
-              <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">Token Expiry</span>
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <span className="text-sm text-muted-foreground">Token Expiry</span>
                 <span className={`text-sm font-medium ${
                   getSchwabDotStatus(schwabStatus) === 'expiring'
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-zinc-700 dark:text-zinc-300'
+                    ? 'text-warning'
+                    : 'text-foreground'
                 }`}>
                   {formatExpiryCountdown(schwabStatus.expiresAt)}
                 </span>
@@ -697,21 +697,21 @@ export default function MarketDataSettingsPage() {
 
             {/* Configured but not connected message */}
             {schwabStatus?.errorType === 'not_configured' && (
-              <div className="border-t border-zinc-100 pt-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                Set <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800">SCHWAB_CLIENT_ID</code>,{' '}
-                <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800">SCHWAB_CLIENT_SECRET</code>, and{' '}
-                <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs dark:bg-zinc-800">SCHWAB_REDIRECT_URI</code>{' '}
+              <div className="border-t border-border pt-3 text-xs text-muted-foreground">
+                Set <code className="rounded bg-muted px-1 py-0.5 text-xs">SCHWAB_CLIENT_ID</code>,{' '}
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">SCHWAB_CLIENT_SECRET</code>, and{' '}
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">SCHWAB_REDIRECT_URI</code>{' '}
                 environment variables to enable Schwab market data.
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex items-center gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div className="flex items-center gap-3 border-t border-border pt-4">
               {schwabStatus?.connected ? (
                 <button
                   type="button"
                   onClick={handleDisconnectSchwab}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:bg-zinc-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-card px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Unplug className="size-4" />
                   Disconnect
@@ -721,7 +721,7 @@ export default function MarketDataSettingsPage() {
                   type="button"
                   onClick={handleConnectSchwab}
                   disabled={schwabConnecting || schwabStatus?.errorType === 'not_configured'}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
                 >
                   {schwabConnecting ? (
                     <>
@@ -741,11 +741,11 @@ export default function MarketDataSettingsPage() {
         </div>
 
         {/* ── Enrich Missing Profiles ──────────────────────────────────── */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-1 text-sm font-semibold text-foreground">
             Enrich Missing Profiles
           </h2>
-          <p className="mb-4 text-xs text-zinc-600 dark:text-zinc-400">
+          <p className="mb-4 text-xs text-muted-foreground">
             Fetch sector and industry data from Yahoo Finance for position price snapshots missing this information.
           </p>
 
@@ -755,7 +755,7 @@ export default function MarketDataSettingsPage() {
                 type="button"
                 onClick={handleEnrichProfiles}
                 disabled={enriching}
-                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {enriching ? (
                   <>
@@ -769,7 +769,7 @@ export default function MarketDataSettingsPage() {
             </div>
 
             {enrichResult && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+              <div className="rounded-lg border border-positive/30 bg-positive/10 px-4 py-3 text-sm text-positive">
                 <p className="font-medium">Enrichment complete</p>
                 <p className="mt-1">
                   Enriched: {enrichResult.enriched} | Errors: {enrichResult.errored} | Total: {enrichResult.total} symbols
@@ -778,7 +778,7 @@ export default function MarketDataSettingsPage() {
             )}
 
             {enrichError && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {enrichError}
               </div>
             )}

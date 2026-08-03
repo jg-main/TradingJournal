@@ -184,7 +184,7 @@ export default function AccountsPage() {
         <span className="font-semibold text-foreground">
           {row.original.name}
           {persistedDefaultAccountId === row.original.id && (
-            <span className="ml-2 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+            <span className="ml-2 inline-block rounded-full bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
               Default
             </span>
           )}
@@ -213,7 +213,7 @@ export default function AccountsPage() {
           <span
             className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
               active
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                ? 'bg-positive/10 text-positive'
                 : 'bg-muted text-muted-foreground'
             }`}
           >
@@ -239,7 +239,7 @@ export default function AccountsPage() {
       {/* Back link */}
       <Link
         href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to Settings
@@ -265,8 +265,8 @@ export default function AccountsPage() {
           aria-live="polite"
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           {message.text}

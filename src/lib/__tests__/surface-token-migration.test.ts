@@ -232,23 +232,7 @@ const EXEMPT_FILES: readonly string[] = [
 
   /* ── T04: accounting components (13) — MIGRATED in T04 ──────────── */
 
-  /* ── T05: legacy settings pages (14 flagged; the 5 accounts/[id] sub-pages
-        and settings/accounts/[id]/* sub-pages are already token-clean) ─── */
-  'src/app/(legacy)/settings/page.tsx',
-  'src/app/(legacy)/settings/ai/page.tsx',
-  'src/app/(legacy)/settings/backup/page.tsx',
-  'src/app/(legacy)/settings/danger-zone/page.tsx',
-  'src/app/(legacy)/settings/integrations/page.tsx',
-  'src/app/(legacy)/settings/journal-setup/page.tsx',
-  'src/app/(legacy)/settings/market-data/page.tsx',
-  'src/app/(legacy)/settings/mistake-types/page.tsx',
-  'src/app/(legacy)/settings/plays/page.tsx',
-  'src/app/(legacy)/settings/plays/[id]/page.tsx',
-  'src/app/(legacy)/settings/risk-defaults/page.tsx',
-  'src/app/(legacy)/settings/workspace/page.tsx',
-  'src/app/(legacy)/settings/accounts/page.tsx',
-  'src/app/(legacy)/settings/accounts/[id]/layout.tsx',
-
+  /* ── T05: legacy settings pages (14) — MIGRATED in T05 ───────────── */
   /* ── T06: remaining legacy pages + trades page (9 flagged; (legacy)/page.tsx
         and (legacy)/account/page.tsx are already token-clean) ──────────── */
   'src/app/(legacy)/reviews/page.tsx',
