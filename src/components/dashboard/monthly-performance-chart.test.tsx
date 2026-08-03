@@ -13,7 +13,12 @@ import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { MonthlyPerformanceChart } from './monthly-performance-chart';
 import { CustomizingProvider } from '@/lib/customizing-context';
+import { chartPalette } from '@/lib/chart-palette';
 import type { MonthlyPerformanceItem } from '@/lib/dashboard';
+
+// Light palette — jsdom has no 'dark' class on documentElement, so the
+// useChartPalette hook resolves the light theme.
+const LIGHT = chartPalette.light;
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
@@ -127,10 +132,34 @@ describe('MonthlyPerformanceChart', () => {
     const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
 
     const data = option.series[0].data;
-    expect(data[0].itemStyle.color).toBe('#22c55e'); // $500 positive → green
-    expect(data[1].itemStyle.color).toBe('#ef4444'); // -$200 negative → red
-    expect(data[2].itemStyle.color).toBe('#22c55e'); // $800 positive → green
-    expect(data[3].itemStyle.color).toBe('#22c55e'); // $300 positive → green
+    expect(data[0].itemStyle.color).toBe(LIGHT.positive); // $500 positive → green
+    expect(data[1].itemStyle.color).toBe(LIGHT.negative); // -$200 negative → red
+    expect(data[2].itemStyle.color).toBe(LIGHT.positive); // $800 positive → green
+    expect(data[3].itemStyle.color).toBe(LIGHT.positive); // $300 positive → green
+  });
+
+  it('uses chartPalette tokens for bar border, win-rate line, and axes', () => {
+    render(
+      <MonthlyPerformanceChart
+        monthlyPerformance={SAMPLE_MONTHLY}
+      />,
+    );
+    const chart = screen.getByTestId('echarts-mock');
+    const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+    // Bars carry a primary (steel blue) border
+    expect(option.series[0].data[0].itemStyle.borderColor).toBe(LIGHT.primary);
+    expect(option.series[0].data[0].itemStyle.borderWidth).toBe(1);
+
+    // Win Rate line uses primary
+    const winRateSeries = option.series.find((s: Record<string, unknown>) => s.name === 'Win Rate');
+    expect(winRateSeries.color).toBe(LIGHT.primary);
+
+    // Axes use grid/axis tokens
+    expect(option.xAxis.axisLabel.color).toBe(LIGHT.axis);
+    expect(option.xAxis.axisLine.lineStyle.color).toBe(LIGHT.grid);
+    expect(option.yAxis[0].axisLabel.color).toBe(LIGHT.axis);
+    expect(option.yAxis[1].axisLabel.color).toBe(LIGHT.axis);
   });
 
   it('uses category xAxis with month abbreviations', () => {

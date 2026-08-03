@@ -61,6 +61,7 @@ export default defineConfig({
       'src/hooks/use-visibility-polling.test.ts',
       'src/hooks/use-customization-mode.test.ts',
       'src/hooks/use-chart-resize.test.ts',
+      'src/hooks/use-chart-palette.test.tsx',
       'src/hooks/use-dashboard-views.test.ts',
       'src/types/dashboard-view.test.ts',
       'src/lib/accounting/decimal.test.ts',

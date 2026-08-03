@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { EmptyState } from '@/components/empty-state';
+import { withAlpha, type ChartPalette } from '@/lib/chart-palette';
+import { useChartPalette } from '@/hooks/use-chart-palette';
 import type { RDistributionBin } from '@/lib/dashboard';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -29,15 +31,15 @@ export interface RDistributionChartProps {
 /**
  * Build the ECharts option for the R-multiple distribution histogram.
  *
- * Colour-coded bars:
- * - Negative R bins: red (#ef4444)
- * - Gray zone (-1 to 0): grey (#a1a1aa)
- * - Positive R bins: green (#22c55e)
+ * Colour-coded bars (from the theme chart palette):
+ * - Negative R bins: palette.negative (red)
+ * - Gray zone (-1 to 0): palette.missing
+ * - Positive R bins: palette.positive (green)
  *
  * X-axis: Category axis with bin labels (rotated 30° for readability).
  * Y-axis: Trade count.
  */
-function buildChartOption(rDistribution: RDistributionBin[]) {
+function buildChartOption(rDistribution: RDistributionBin[], palette: ChartPalette) {
   if (rDistribution.length === 0) return null;
   if (rDistribution.every((b) => b.count === 0)) return null;
 
@@ -56,9 +58,22 @@ function buildChartOption(rDistribution: RDistributionBin[]) {
     xAxis: {
       type: 'category' as const,
       data: rDistribution.map((b) => b.label),
-      axisLabel: { rotate: 30 },
+      axisLabel: { color: palette.axis, rotate: 30 },
+      axisLine: { lineStyle: { color: palette.grid } },
     },
-    yAxis: { type: 'value' as const, name: 'Trades' },
+    yAxis: {
+      type: 'value' as const,
+      name: 'Trades',
+      nameTextStyle: { color: palette.axis },
+      axisLabel: { color: palette.axis },
+      splitLine: {
+        show: true,
+        lineStyle: {
+          type: 'dashed',
+          color: withAlpha(palette.grid, 0.5),
+        },
+      },
+    },
     series: [
       {
         name: 'Trades',
@@ -66,11 +81,11 @@ function buildChartOption(rDistribution: RDistributionBin[]) {
         data: rDistribution.map((b) => {
           let color: string;
           if (b.label === '-1 to 0') {
-            color = '#a1a1aa';
+            color = palette.missing;
           } else if (['0 to 1', '1 to 2', '2 to 3', '> 3'].includes(b.label)) {
-            color = '#22c55e';
+            color = palette.positive;
           } else {
-            color = '#ef4444';
+            color = palette.negative;
           }
           return { value: b.count, itemStyle: { color } };
         }),
@@ -110,7 +125,11 @@ export function RDistributionChart({
   testId,
 }: RDistributionChartProps) {
   const hasData = rDistribution.length > 0 && !rDistribution.every((b) => b.count === 0);
-  const chartOption = hasData ? buildChartOption(rDistribution) : null;
+  const palette = useChartPalette();
+  const chartOption = useMemo(
+    () => (hasData ? buildChartOption(rDistribution, palette) : null),
+    [hasData, rDistribution, palette],
+  );
 
   return (
     <DashboardWidget

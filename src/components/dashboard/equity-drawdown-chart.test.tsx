@@ -13,7 +13,12 @@ import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { CustomizingProvider } from '@/lib/customizing-context';
+import { chartPalette, withAlpha } from '@/lib/chart-palette';
 import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
+
+// Light palette — jsdom has no 'dark' class on documentElement, so the
+// useChartPalette hook resolves the light theme.
+const LIGHT = chartPalette.light;
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
@@ -219,6 +224,61 @@ describe('EquityDrawdownChart', () => {
     const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
 
     expect(option.xAxis.type).toBe('time');
+  });
+
+  // ── Chart palette colours ───────────────────────────────────────
+
+  it('uses the chartPalette tokens for series colours', () => {
+    render(
+      <EquityDrawdownChart
+        equityCurve={SAMPLE_EQUITY}
+        drawdown={SAMPLE_DRAWDOWN}
+        tradeMarkers={SAMPLE_MARKERS}
+      />,
+    );
+    const chart = screen.getByTestId('echarts-mock');
+    const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+    // Equity line: primary (steel blue)
+    const equitySeries = option.series.find((s: Record<string, unknown>) => s.name === 'Equity');
+    expect(equitySeries.color).toBe(LIGHT.primary);
+    // Equity area gradient uses translucent primary
+    const equityGradient = equitySeries.areaStyle.color.colorStops;
+    expect(equityGradient[0].color).toBe(withAlpha(LIGHT.primary, 0.25));
+    expect(equityGradient[1].color).toBe(withAlpha(LIGHT.primary, 0.01));
+
+    // Drawdown: negative (red)
+    const drawdownSeries = option.series.find((s: Record<string, unknown>) => s.name === 'Drawdown');
+    expect(drawdownSeries.lineStyle.color).toBe(LIGHT.negative);
+    const ddGradient = drawdownSeries.areaStyle.color.colorStops;
+    expect(ddGradient[0].color).toBe(withAlpha(LIGHT.negative, 0.25));
+    expect(ddGradient[1].color).toBe(withAlpha(LIGHT.negative, 0.02));
+
+    // Trade markers: entry positive (green), exit negative (red)
+    const entrySeries = option.series.find((s: Record<string, unknown>) => s.name === 'Entry');
+    expect(entrySeries.color).toBe(LIGHT.positive);
+    const exitSeries = option.series.find((s: Record<string, unknown>) => s.name === 'Exit');
+    expect(exitSeries.color).toBe(LIGHT.negative);
+  });
+
+  it('uses chartPalette grid/axis tokens for axes', () => {
+    render(
+      <EquityDrawdownChart
+        equityCurve={SAMPLE_EQUITY}
+        drawdown={SAMPLE_DRAWDOWN}
+        tradeMarkers={SAMPLE_MARKERS}
+      />,
+    );
+    const chart = screen.getByTestId('echarts-mock');
+    const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+    expect(option.xAxis.axisLabel.color).toBe(LIGHT.axis);
+    expect(option.xAxis.axisLine.lineStyle.color).toBe(LIGHT.grid);
+    expect(option.yAxis[0].axisLabel.color).toBe(LIGHT.axis);
+    expect(option.yAxis[1].axisLabel.color).toBe(LIGHT.axis);
+    // Split lines use translucent grid token
+    expect(option.yAxis[0].splitLine.lineStyle.color).toBe(withAlpha(LIGHT.grid, 0.5));
+    expect(option.yAxis[1].splitLine.lineStyle.color).toBe(withAlpha(LIGHT.grid, 0.5));
   });
 
   // ── Loading state ───────────────────────────────────────────────

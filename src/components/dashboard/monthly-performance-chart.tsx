@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { EmptyState } from '@/components/empty-state';
+import { withAlpha, type ChartPalette } from '@/lib/chart-palette';
+import { useChartPalette } from '@/hooks/use-chart-palette';
 import {
   formatCurrency,
   formatPercent,
@@ -39,7 +41,7 @@ export interface MonthlyPerformanceChartProps {
  *
  * X-axis: Category axis with month labels (YYYY-MM), showing only MM part.
  */
-function buildChartOption(monthlyPerformance: MonthlyPerformanceItem[]) {
+function buildChartOption(monthlyPerformance: MonthlyPerformanceItem[], palette: ChartPalette) {
   if (monthlyPerformance.length === 0) return null;
 
   return {
@@ -62,17 +64,35 @@ function buildChartOption(monthlyPerformance: MonthlyPerformanceItem[]) {
     xAxis: {
       type: 'category' as const,
       data: monthlyPerformance.map((m) => m.month),
-      axisLabel: { formatter: (v: string) => v.slice(5) },
+      axisLabel: { color: palette.axis, formatter: (v: string) => v.slice(5) },
+      axisLine: { lineStyle: { color: palette.grid } },
     },
     yAxis: [
-      { type: 'value' as const, name: 'P&L ($)' },
+      {
+        type: 'value' as const,
+        name: 'P&L ($)',
+        nameTextStyle: { color: palette.axis },
+        axisLabel: { color: palette.axis },
+        splitLine: {
+          show: true,
+          lineStyle: {
+            type: 'dashed',
+            color: withAlpha(palette.grid, 0.5),
+          },
+        },
+      },
       {
         type: 'value' as const,
         name: 'Win Rate',
+        nameTextStyle: { color: palette.axis },
         min: 0,
         max: 1,
         axisLabel: {
+          color: palette.axis,
           formatter: (v: number) => `${(v * 100).toFixed(0)}%`,
+        },
+        splitLine: {
+          show: false,
         },
       },
     ],
@@ -82,7 +102,11 @@ function buildChartOption(monthlyPerformance: MonthlyPerformanceItem[]) {
         type: 'bar' as const,
         data: monthlyPerformance.map((m) => ({
           value: m.netPnl,
-          itemStyle: { color: m.netPnl >= 0 ? '#22c55e' : '#ef4444' },
+          itemStyle: {
+            color: m.netPnl >= 0 ? palette.positive : palette.negative,
+            borderColor: palette.primary,
+            borderWidth: 1,
+          },
         })),
       },
       {
@@ -91,7 +115,7 @@ function buildChartOption(monthlyPerformance: MonthlyPerformanceItem[]) {
         yAxisIndex: 1,
         data: monthlyPerformance.map((m) => m.winRate ?? 0),
         smooth: true,
-        color: '#3b82f6',
+        color: palette.primary,
         symbol: 'none',
       },
     ],
@@ -127,7 +151,11 @@ export function MonthlyPerformanceChart({
   testId,
 }: MonthlyPerformanceChartProps) {
   const hasData = monthlyPerformance.length > 0;
-  const chartOption = hasData ? buildChartOption(monthlyPerformance) : null;
+  const palette = useChartPalette();
+  const chartOption = useMemo(
+    () => (hasData ? buildChartOption(monthlyPerformance, palette) : null),
+    [hasData, monthlyPerformance, palette],
+  );
 
   return (
     <DashboardWidget

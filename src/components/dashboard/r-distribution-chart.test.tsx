@@ -13,7 +13,12 @@ import { render, screen, cleanup } from '@testing-library/react';
 import React from 'react';
 import { RDistributionChart } from './r-distribution-chart';
 import { CustomizingProvider } from '@/lib/customizing-context';
+import { chartPalette, withAlpha } from '@/lib/chart-palette';
 import type { RDistributionBin } from '@/lib/dashboard';
+
+// Light palette — jsdom has no 'dark' class on documentElement, so the
+// useChartPalette hook resolves the light theme.
+const LIGHT = chartPalette.light;
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
@@ -147,16 +152,31 @@ describe('RDistributionChart', () => {
 
     const data = option.series[0].data;
     // Negative bins: red
-    expect(data[0].itemStyle.color).toBe('#ef4444'); // <= -3
-    expect(data[1].itemStyle.color).toBe('#ef4444'); // -3 to -2
-    expect(data[2].itemStyle.color).toBe('#ef4444'); // -2 to -1
-    // Gray zone
-    expect(data[3].itemStyle.color).toBe('#a1a1aa'); // -1 to 0
+    expect(data[0].itemStyle.color).toBe(LIGHT.negative); // <= -3
+    expect(data[1].itemStyle.color).toBe(LIGHT.negative); // -3 to -2
+    expect(data[2].itemStyle.color).toBe(LIGHT.negative); // -2 to -1
+    // Gray zone (scratch): missing token
+    expect(data[3].itemStyle.color).toBe(LIGHT.missing); // -1 to 0
     // Positive bins: green
-    expect(data[4].itemStyle.color).toBe('#22c55e'); // 0 to 1
-    expect(data[5].itemStyle.color).toBe('#22c55e'); // 1 to 2
-    expect(data[6].itemStyle.color).toBe('#22c55e'); // 2 to 3
-    expect(data[7].itemStyle.color).toBe('#22c55e'); // > 3
+    expect(data[4].itemStyle.color).toBe(LIGHT.positive); // 0 to 1
+    expect(data[5].itemStyle.color).toBe(LIGHT.positive); // 1 to 2
+    expect(data[6].itemStyle.color).toBe(LIGHT.positive); // 2 to 3
+    expect(data[7].itemStyle.color).toBe(LIGHT.positive); // > 3
+  });
+
+  it('uses chartPalette grid/axis tokens for axes', () => {
+    render(
+      <RDistributionChart
+        rDistribution={SAMPLE_R_DISTRIBUTION}
+      />,
+    );
+    const chart = screen.getByTestId('echarts-mock');
+    const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+    expect(option.xAxis.axisLabel.color).toBe(LIGHT.axis);
+    expect(option.xAxis.axisLine.lineStyle.color).toBe(LIGHT.grid);
+    expect(option.yAxis.axisLabel.color).toBe(LIGHT.axis);
+    expect(option.yAxis.splitLine.lineStyle.color).toBe(withAlpha(LIGHT.grid, 0.5));
   });
 
   // ── Loading state ───────────────────────────────────────────────

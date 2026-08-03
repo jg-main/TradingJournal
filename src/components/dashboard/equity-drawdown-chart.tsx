@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { DashboardWidget } from '@/components/dashboard/dashboard-widget';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { EmptyState } from '@/components/empty-state';
+import { withAlpha, type ChartPalette } from '@/lib/chart-palette';
+import { useChartPalette } from '@/hooks/use-chart-palette';
 import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -54,6 +56,7 @@ function buildChartOption(
   equityCurve: EquityDataPoint[],
   drawdown: DrawdownDataPoint[],
   tradeMarkers: TradeMarkerPoint[],
+  palette: ChartPalette,
 ) {
   const hasEquity = equityCurve.length > 0;
   const hasDrawdown = drawdown.length > 0;
@@ -78,14 +81,14 @@ function buildChartOption(
       smooth: true,
       showSymbol: false,
       lineStyle: { width: 2 },
-      color: '#2563eb',
+      color: palette.primary,
       areaStyle: {
         color: {
           type: 'linear',
           x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
-            { offset: 0, color: 'rgba(37, 99, 235, 0.25)' },
-            { offset: 1, color: 'rgba(37, 99, 235, 0.01)' },
+            { offset: 0, color: withAlpha(palette.primary, 0.25) },
+            { offset: 1, color: withAlpha(palette.primary, 0.01) },
           ],
         },
       },
@@ -103,14 +106,14 @@ function buildChartOption(
       yAxisIndex: 1,
       smooth: true,
       showSymbol: false,
-      lineStyle: { width: 2, color: '#ef4444' },
+      lineStyle: { width: 2, color: palette.negative },
       areaStyle: {
         color: {
           type: 'linear',
           x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
-            { offset: 0, color: 'rgba(239, 68, 68, 0.25)' },
-            { offset: 1, color: 'rgba(239, 68, 68, 0.02)' },
+            { offset: 0, color: withAlpha(palette.negative, 0.25) },
+            { offset: 1, color: withAlpha(palette.negative, 0.02) },
           ],
         },
       },
@@ -131,7 +134,7 @@ function buildChartOption(
         symbol: 'triangle',
         symbolRotate: 0,
         symbolSize: 12,
-        color: '#22c55e',
+        color: palette.positive,
         data: entryMarkers.map(
           (m) => [Date.parse(m.date), m.equity] as [number, number],
         ),
@@ -147,7 +150,7 @@ function buildChartOption(
         symbol: 'triangle',
         symbolRotate: 180,
         symbolSize: 12,
-        color: '#ef4444',
+        color: palette.negative,
         data: exitMarkers.map(
           (m) => [Date.parse(m.date), m.equity] as [number, number],
         ),
@@ -209,12 +212,22 @@ function buildChartOption(
     tooltip,
     xAxis: {
       type: 'time',
+      axisLabel: { color: palette.axis },
+      axisLine: { lineStyle: { color: palette.grid } },
     },
     yAxis: [
       {
         type: 'value',
         axisLabel: {
+          color: palette.axis,
           formatter: '${value}',
+        },
+        splitLine: {
+          show: true,
+          lineStyle: {
+            type: 'dashed',
+            color: withAlpha(palette.grid, 0.5),
+          },
         },
       },
       {
@@ -223,13 +236,14 @@ function buildChartOption(
         max: drawdownMax * 1.15, // 15% headroom
         inverse: false,
         axisLabel: {
+          color: palette.axis,
           formatter: '{value}%',
         },
         splitLine: {
           show: true,
           lineStyle: {
             type: 'dashed',
-            color: 'rgba(0,0,0,0.06)',
+            color: withAlpha(palette.grid, 0.5),
           },
         },
       },
@@ -276,7 +290,14 @@ export function EquityDrawdownChart({
   testId,
 }: EquityDrawdownChartProps) {
   const hasData = equityCurve.length > 0 || drawdown.length > 0;
-  const chartOption = hasData ? buildChartOption(equityCurve, drawdown, tradeMarkers) : null;
+  const palette = useChartPalette();
+  const chartOption = useMemo(
+    () =>
+      hasData
+        ? buildChartOption(equityCurve, drawdown, tradeMarkers, palette)
+        : null,
+    [hasData, equityCurve, drawdown, tradeMarkers, palette],
+  );
 
   return (
     <DashboardWidget

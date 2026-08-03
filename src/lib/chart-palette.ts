@@ -112,6 +112,8 @@ export interface ChartPalette {
    * series `color` option or to `option.color` for automatic cycling.
    */
   series: readonly string[];
+  /** Primary series / identity color (Steel Blue, hue 235). */
+  primary: string;
   /** Profit color (green, financial meaning only). */
   positive: string;
   /** Loss color (red). */
@@ -298,6 +300,7 @@ function buildPalette(tokens: TokenSet, theme: ThemeName): ChartPalette {
       convertOklchToHex(tokens.chart4),
       convertOklchToHex(tokens.chart5),
     ],
+    primary: convertOklchToHex(tokens.primary),
     positive: convertOklchToHex(tokens.positive),
     negative: convertOklchToHex(tokens.negative),
     warning: convertOklchToHex(tokens.warning),
