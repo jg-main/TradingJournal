@@ -103,17 +103,17 @@ function getClassificationBadge(
     case 'match':
       return {
         label: 'Match',
-        className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+        className: 'bg-positive/10 text-positive',
       };
     case 'explained':
       return {
         label: 'Explained',
-        className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+        className: 'bg-info/10 text-info',
       };
     case 'unexplained':
       return {
         label: 'Unexplained',
-        className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+        className: 'bg-negative/10 text-negative',
       };
   }
 }
@@ -143,25 +143,25 @@ function getHistoryLabel(runStatus: string): string {
 function feedbackContentClass(outcome: MigrationFeedback['outcome']): string {
   switch (outcome) {
     case 'success':
-      return 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20';
+      return 'border-positive/30 bg-positive/10';
     case 'failure':
     case 'refused':
-      return 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20';
+      return 'border-destructive/30 bg-destructive/10';
     case 'pending':
-      return 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20';
+      return 'border-info/30 bg-info/10';
   }
 }
 
 function feedbackIcon(outcome: MigrationFeedback['outcome']) {
   switch (outcome) {
     case 'success':
-      return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />;
+      return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" />;
     case 'failure':
-      return <XCircle className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400" />;
+      return <XCircle className="mt-0.5 size-4 shrink-0 text-negative" />;
     case 'refused':
-      return <ShieldAlert className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400" />;
+      return <ShieldAlert className="mt-0.5 size-4 shrink-0 text-negative" />;
     case 'pending':
-      return <RefreshCw className="mt-0.5 size-4 animate-spin shrink-0 text-blue-600 dark:text-blue-400" />;
+      return <RefreshCw className="mt-0.5 size-4 animate-spin shrink-0 text-info" />;
   }
 }
 
@@ -303,7 +303,7 @@ export default function AccountReconciliationSummary({
     <div className="mb-8">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
           Reconciliation
         </h2>
         <div className="flex items-center gap-2">
@@ -311,7 +311,7 @@ export default function AccountReconciliationSummary({
           <button
             onClick={() => runMigration(true)}
             disabled={migrating}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+            className="inline-flex items-center gap-1 rounded-md border border-input bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
             title="Preview what would be migrated without writing any data"
             aria-label="Run dry-run migration inspection"
           >
@@ -322,7 +322,7 @@ export default function AccountReconciliationSummary({
           <button
             onClick={() => setShowConfirmRun(true)}
             disabled={migrating}
-            className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:bg-zinc-800 dark:text-amber-400 dark:hover:bg-zinc-700"
+            className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-card px-2.5 py-1 text-xs text-warning hover:bg-warning/10 disabled:opacity-50"
             title="Run a full migration from legacy data"
             aria-label="Run full migration"
           >
@@ -333,7 +333,7 @@ export default function AccountReconciliationSummary({
           <button
             onClick={fetchReport}
             disabled={loading || migrating}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+            className="inline-flex items-center gap-1 rounded-md border border-input bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
             title="Refresh reconciliation report"
             aria-label="Refresh reconciliation report"
           >
@@ -346,17 +346,17 @@ export default function AccountReconciliationSummary({
       {/* ── Confirmation Dialog ──────────────────────────────────────── */}
       {showConfirmRun && (
         <div
-          className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20"
+          className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-4"
           role="alertdialog"
           aria-label="Confirm migration"
         >
           <div className="flex items-start gap-3">
-            <ShieldAlert className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <ShieldAlert className="mt-0.5 size-5 shrink-0 text-warning" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              <p className="text-sm font-medium text-warning">
                 Run full migration?
               </p>
-              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              <p className="mt-1 text-xs text-warning">
                 This will import all legacy account transactions, trade executions,
                 and price snapshots into the accounting system and rebuild all projections.
                 Existing data is safe (duplicates are detected), but this action cannot be
@@ -365,14 +365,14 @@ export default function AccountReconciliationSummary({
               <div className="mt-3 flex items-center gap-2">
                 <button
                   onClick={() => setShowConfirmRun(false)}
-                  className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  className="inline-flex items-center gap-1 rounded-md border border-input bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
                   aria-label="Cancel migration"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => runMigration(false)}
-                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 dark:border-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600"
+                  className="inline-flex items-center gap-1 rounded-md border border-warning bg-warning px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-warning/90"
                   aria-label="Confirm migration"
                 >
                   <Play className="size-3" />
@@ -396,12 +396,12 @@ export default function AccountReconciliationSummary({
             <div className="flex-1">
               {migrationFeedback.outcome === 'pending' && (
                 <>
-                  <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                  <p className="text-sm font-medium text-info">
                     {migrationFeedback.dryRun
                       ? 'Inspecting legacy data...'
                       : 'Running migration...'}
                   </p>
-                  <p className="mt-1 text-xs text-blue-700 dark:text-blue-400">
+                  <p className="mt-1 text-xs text-info">
                     {migrationFeedback.dryRun
                       ? 'Counting records that would be migrated.'
                       : 'Importing records and rebuilding projections.'}
@@ -411,12 +411,12 @@ export default function AccountReconciliationSummary({
 
               {migrationFeedback.outcome === 'success' && migrationFeedback.result && (
                 <>
-                  <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                  <p className="text-sm font-medium text-positive">
                     {migrationFeedback.dryRun
                       ? 'Inspection complete'
                       : 'Migration completed successfully'}
                   </p>
-                  <div className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
+                  <div className="mt-1 text-xs text-positive">
                     <p>
                       {migrationFeedback.result.totalRecords} record
                       {migrationFeedback.result.totalRecords !== 1 ? 's' : ''} processed
@@ -440,10 +440,10 @@ export default function AccountReconciliationSummary({
 
               {migrationFeedback.outcome === 'failure' && (
                 <>
-                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                  <p className="text-sm font-medium text-destructive">
                     {migrationFeedback.dryRun ? 'Inspection failed' : 'Migration failed'}
                   </p>
-                  <p className="mt-1 text-xs text-red-700 dark:text-red-400">
+                  <p className="mt-1 text-xs text-destructive">
                     {migrationFeedback.errorMessage ?? 'An unexpected error occurred.'}
                   </p>
                 </>
@@ -451,10 +451,10 @@ export default function AccountReconciliationSummary({
 
               {migrationFeedback.outcome === 'refused' && (
                 <>
-                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                  <p className="text-sm font-medium text-destructive">
                     Migration refused
                   </p>
-                  <p className="mt-1 text-xs text-red-700 dark:text-red-400">
+                  <p className="mt-1 text-xs text-destructive">
                     {migrationFeedback.errorMessage ?? 'Request could not be processed.'}
                   </p>
                 </>
@@ -464,7 +464,7 @@ export default function AccountReconciliationSummary({
             {migrationFeedback.outcome !== 'pending' && (
               <button
                 onClick={() => setMigrationFeedback(null)}
-                className="shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
                 aria-label="Dismiss migration result"
               >
                 <XCircle className="size-4" />
@@ -476,9 +476,9 @@ export default function AccountReconciliationSummary({
 
       {/* ── Loading State ───────────────────────────────────────────── */}
       {loading && (
-        <div className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800">
-          <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+        <div className="rounded-lg border border-border p-8 text-center">
+          <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
             Loading reconciliation report...
           </p>
         </div>
@@ -487,16 +487,16 @@ export default function AccountReconciliationSummary({
       {/* ── Error / Not-Found State ─────────────────────────────────── */}
       {error && !loading && (
         <div
-          className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center"
           role="alert"
           aria-live="polite"
         >
-          <XCircle className="mx-auto mb-2 size-5 text-red-500" />
-          <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+          <XCircle className="mx-auto mb-2 size-5 text-destructive" />
+          <p className="text-sm text-destructive">{error}</p>
           {errorType === 'generic' && (
             <button
               onClick={fetchReport}
-              className="mt-3 inline-flex items-center gap-1 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 dark:border-red-700 dark:bg-red-950 dark:text-red-400 dark:hover:bg-red-900/30"
+              className="mt-3 inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-card px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
               aria-label="Retry loading reconciliation report"
             >
               <RefreshCw className="size-3" />
@@ -509,15 +509,15 @@ export default function AccountReconciliationSummary({
       {/* ── No Migration Run (expected for new/empty accounts) ──────── */}
       {!loading && !error && !hasReport && errorType === 'no-migration' && (
         <div
-          className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"
+          className="rounded-lg border border-dashed border-border p-6 text-center"
           role="status"
           aria-live="polite"
         >
-          <BookOpen className="mx-auto mb-2 size-6 text-zinc-400" />
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+          <BookOpen className="mx-auto mb-2 size-6 text-muted-foreground" />
+          <p className="text-sm text-foreground">
             No migration run recorded.
           </p>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-xs text-muted-foreground">
             Use the Inspect button above to preview what data would be migrated,
             then run a full migration to compare legacy source data against
             accounting projections.
@@ -527,26 +527,26 @@ export default function AccountReconciliationSummary({
 
       {/* ── Report Summary ──────────────────────────────────────────── */}
       {!loading && !error && hasReport && report && (
-        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="rounded-lg border border-border bg-card">
           {/* Eligibility Banner */}
           <div
             className={`flex items-start gap-3 rounded-t-lg border-b px-4 py-3 ${
               isEligible
-                ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20'
-                : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'
+                ? 'border-positive/30 bg-positive/10'
+                : 'border-warning/30 bg-warning/10'
             }`}
           >
             {isEligible ? (
-              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-positive" />
             ) : (
-              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning" />
             )}
             <div className="flex-1">
               <p
                 className={`text-sm font-medium ${
                   isEligible
-                    ? 'text-emerald-800 dark:text-emerald-300'
-                    : 'text-amber-800 dark:text-amber-300'
+                    ? 'text-positive'
+                    : 'text-warning'
                 }`}
               >
                 {isEligible
@@ -558,7 +558,7 @@ export default function AccountReconciliationSummary({
                   {report.cutoverRefusalReasons.map((reason, i) => (
                     <li
                       key={i}
-                      className="text-xs text-amber-700 dark:text-amber-400"
+                      className="text-xs text-warning"
                     >
                       {reason}
                     </li>
@@ -569,28 +569,28 @@ export default function AccountReconciliationSummary({
           </div>
 
           {/* Summary Stats */}
-          <div className="grid grid-cols-4 gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+          <div className="grid grid-cols-4 gap-3 border-b border-border px-4 py-3">
             <div className="text-center">
-              <p className="text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+              <p className="text-lg font-semibold tabular-nums text-foreground">
                 {report.totals.comparisons}
               </p>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
                 Comparisons
               </p>
             </div>
             <div className="text-center">
-              <p className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+              <p className="text-lg font-semibold tabular-nums text-positive">
                 {report.totals.matching}
               </p>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
                 Matching
               </p>
             </div>
             <div className="text-center">
-              <p className="text-lg font-semibold tabular-nums text-blue-600 dark:text-blue-400">
+              <p className="text-lg font-semibold tabular-nums text-info">
                 {report.totals.explained}
               </p>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
                 Explained
               </p>
             </div>
@@ -598,13 +598,13 @@ export default function AccountReconciliationSummary({
               <p
                 className={`text-lg font-semibold tabular-nums ${
                   anomalyCount > 0 || unexplainedCount > 0
-                    ? 'text-red-600 dark:text-red-400'
-                    : 'text-zinc-900 dark:text-zinc-50'
+                    ? 'text-negative'
+                    : 'text-foreground'
                 }`}
               >
                 {anomalyCount + unexplainedCount}
               </p>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
                 Issues
               </p>
             </div>
@@ -615,7 +615,7 @@ export default function AccountReconciliationSummary({
             <>
               <button
                 onClick={() => setExpanded((prev) => !prev)}
-                className="flex w-full items-center justify-between border-b border-zinc-100 px-4 py-2 text-left text-xs font-medium text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/50"
+                className="flex w-full items-center justify-between border-b border-border px-4 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted/50"
               >
                 <span>
                   {report.comparisons.length} comparison
@@ -632,45 +632,45 @@ export default function AccountReconciliationSummary({
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="bg-zinc-50 dark:bg-zinc-800/50">
-                        <th className="px-4 py-2 text-left font-medium text-zinc-500 dark:text-zinc-400">
+                      <tr className="bg-muted">
+                        <th className="px-4 py-2 text-left font-medium text-muted-foreground">
                           Dimension
                         </th>
-                        <th className="px-4 py-2 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">
                           Legacy
                         </th>
-                        <th className="px-4 py-2 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">
                           Accounting
                         </th>
-                        <th className="px-4 py-2 text-right font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="px-4 py-2 text-right font-medium text-muted-foreground">
                           Diff
                         </th>
-                        <th className="px-4 py-2 text-center font-medium text-zinc-500 dark:text-zinc-400">
+                        <th className="px-4 py-2 text-center font-medium text-muted-foreground">
                           Status
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    <tbody className="divide-y divide-border">
                       {report.comparisons.map((cmp) => {
                         const badge = getClassificationBadge(cmp.classification);
                         return (
                           <tr
                             key={cmp.key}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30"
+                            className="hover:bg-muted/50"
                           >
                             <td
-                              className="max-w-[160px] truncate px-4 py-2 text-zinc-700 dark:text-zinc-300"
+                              className="max-w-[160px] truncate px-4 py-2 text-foreground"
                               title={cmp.description}
                             >
                               {cmp.description}
                             </td>
-                            <td className="px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                            <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
                               {cmp.legacyValue}
                             </td>
-                            <td className="px-4 py-2 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                            <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
                               {cmp.accountingValue}
                             </td>
-                            <td className="px-4 py-2 text-right tabular-nums font-medium text-zinc-900 dark:text-zinc-50">
+                            <td className="px-4 py-2 text-right tabular-nums font-medium text-foreground">
                               {cmp.difference !== '0' ? cmp.difference : '0'}
                             </td>
                             <td className="px-4 py-2 text-center">
@@ -693,11 +693,11 @@ export default function AccountReconciliationSummary({
 
           {/* Anomaly Drill-Down */}
           {hasAnomalies && report.anomalies && (
-            <div className="border-t border-zinc-100 px-4 py-3 dark:border-zinc-800">
+            <div className="border-t border-border px-4 py-3">
               <div className="flex items-start gap-2">
-                <Info className="mt-0.5 size-4 shrink-0 text-zinc-400" />
+                <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 <div>
-                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <p className="text-xs font-medium text-muted-foreground">
                     {report.anomalies.length} anomaly type
                     {report.anomalies.length !== 1 ? 's' : ''}
                   </p>
@@ -705,7 +705,7 @@ export default function AccountReconciliationSummary({
                     {report.anomalies.map((a) => (
                       <li
                         key={a.anomalyCode}
-                        className="text-xs text-zinc-500 dark:text-zinc-400"
+                        className="text-xs text-muted-foreground"
                       >
                         {a.anomalyCode}: {a.count} record
                         {a.count !== 1 ? 's' : ''} ({a.sourceTable})
@@ -718,11 +718,11 @@ export default function AccountReconciliationSummary({
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-between border-t border-zinc-100 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/50">
-            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+          <div className="flex items-center justify-between border-t border-border bg-muted px-4 py-2">
+            <span className="text-xs text-muted-foreground">
               {getHistoryLabel(report.runStatus)} #{report.runId.slice(0, 8)}
             </span>
-            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            <span className="text-xs text-muted-foreground">
               {formatDateTime(report.computedAt)}
             </span>
           </div>
@@ -731,12 +731,12 @@ export default function AccountReconciliationSummary({
 
       {/* ── Unexpected state: report exists but no comparisons ────────── */}
       {!loading && !error && hasReport && !hasComparisons && report && (
-        <div className="rounded-lg border border-zinc-200 bg-white p-6 text-center dark:border-zinc-800 dark:bg-zinc-900">
-          <CheckCircle2 className="mx-auto mb-2 size-6 text-emerald-500" />
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+        <div className="rounded-lg border border-border bg-card p-6 text-center">
+          <CheckCircle2 className="mx-auto mb-2 size-6 text-positive" />
+          <p className="text-sm font-medium text-foreground">
             Migration completed with no comparison dimensions.
           </p>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-xs text-muted-foreground">
             Run ID: {report.runId.slice(0, 8)}
           </p>
         </div>

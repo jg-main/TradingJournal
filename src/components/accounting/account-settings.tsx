@@ -122,23 +122,23 @@ function EffectiveDefaultStatus({
     <div
       role="status"
       aria-label={label}
-      className="mt-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/50"
+      className="mt-2 rounded-md border border-border bg-muted px-3 py-2"
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Effective default</span>
+        <span className="text-xs font-medium text-muted-foreground">Effective default</span>
         <Badge
           variant="outline"
           className={cn(
             'tabular-nums',
-            result.source === 'overridden' && 'border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300',
-            result.source === 'inherited' && 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300',
-            result.source === 'unavailable' && 'border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300',
+            result.source === 'overridden' && 'border-info/40 text-info',
+            result.source === 'inherited' && 'border-positive/40 text-positive',
+            result.source === 'unavailable' && 'border-warning/40 text-warning',
           )}
         >
           {status}
         </Badge>
       </div>
-      <p className="mt-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
         {result.source === 'unavailable'
           ? 'Effective value unavailable'
           : `Effective value: ${formatValue(result.value)}`}
@@ -452,10 +452,10 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
       <div
         role="status"
         aria-live="polite"
-        className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800"
+        className="rounded-lg border border-border p-8 text-center"
       >
-        <RefreshCw aria-hidden="true" className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading settings...</p>
+        <RefreshCw aria-hidden="true" className="mx-auto mb-2 size-5 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading settings...</p>
       </div>
     );
   }
@@ -465,10 +465,10 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
     return (
       <div
         role="alert"
-        className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20"
+        className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center"
       >
-        <AlertTriangle aria-hidden="true" className="mx-auto mb-2 size-5 text-red-500" />
-        <p className="text-sm text-red-700 dark:text-red-400">{error ?? 'Account not found.'}</p>
+        <AlertTriangle aria-hidden="true" className="mx-auto mb-2 size-5 text-destructive" />
+        <p className="text-sm text-destructive">{error ?? 'Account not found.'}</p>
         <Button type="button" variant="outline" size="sm" onClick={fetchData} className="mt-3">
           <RefreshCw aria-hidden="true" className="size-3" />
           Retry
@@ -496,8 +496,8 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
           className={cn(
             'mb-6 rounded-lg border px-4 py-3 text-sm',
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400',
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive',
           )}
           role={message.type === 'success' ? 'status' : 'alert'}
           aria-live="polite"
@@ -517,22 +517,22 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
       <section className="mb-8" aria-labelledby="settings-identity-heading">
         <h2
           id="settings-identity-heading"
-          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-zinc-600 dark:text-zinc-300 uppercase"
+          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-muted-foreground uppercase"
         >
           <Settings className="size-4" />
           Account Identity
         </h2>
 
-        <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mt-4 rounded-lg border border-border bg-card p-6">
           {/* Status display */}
           <div className="mb-5 flex items-center gap-3">
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Status:</span>
+            <span className="text-xs font-medium text-muted-foreground">Status:</span>
             <span
               className={cn(
                 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
                 account.isActive
-                  ? 'border border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                  : 'border border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400',
+                  ? 'border border-positive/40 bg-positive/10 text-positive'
+                  : 'border border-border bg-muted text-muted-foreground',
               )}
             >
               {account.isActive ? 'Active' : 'Inactive'}
@@ -543,7 +543,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
           <div className="mb-5">
             <label
               htmlFor="settings-account-name"
-              className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+              className="mb-1.5 block text-xs font-medium text-foreground"
             >
               Account Name
             </label>
@@ -560,7 +560,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
               aria-describedby={nameError ? 'settings-name-error' : undefined}
             />
             {nameError && (
-              <p id="settings-name-error" className="mt-1 text-xs text-red-600 dark:text-red-400" role="alert">
+              <p id="settings-name-error" className="mt-1 text-xs text-destructive" role="alert">
                 {nameError}
               </p>
             )}
@@ -572,14 +572,14 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
       <section className="mb-8" aria-labelledby="settings-defaults-heading">
         <h2
           id="settings-defaults-heading"
-          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-zinc-600 dark:text-zinc-300 uppercase"
+          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-muted-foreground uppercase"
         >
           <Settings className="size-4" />
           Trading Defaults
         </h2>
 
-        <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-5 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="mt-4 rounded-lg border border-border bg-card p-6">
+          <p className="mb-5 text-xs text-muted-foreground">
             Opening cash is recorded as a cash transaction in the Ledger, not as an account setting.
           </p>
 
@@ -587,7 +587,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
           <div className="mb-5">
             <label
               htmlFor="settings-max-risk"
-              className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+              className="mb-1.5 block text-xs font-medium text-foreground"
             >
               Max Risk Per Trade (%)
             </label>
@@ -622,7 +622,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
                 result={effectiveMaxRisk}
                 formatValue={formatPct}
               />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {clearMaxRisk
                   ? 'Saving will store no account override and use the global value when available.'
                   : 'Saving will store this value as the account override.'}
@@ -634,7 +634,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
           <div className="mb-5">
             <label
               htmlFor="settings-default-commission"
-              className="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-300"
+              className="mb-1.5 block text-xs font-medium text-foreground"
             >
               Default Commission ($)
             </label>
@@ -668,7 +668,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
                 result={effectiveCommission}
                 formatValue={(value) => `$${formatCurrency(value)}`}
               />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {clearCommission
                   ? 'Saving will store no account override and use the global value when available.'
                   : 'Saving will store this value as the account override.'}
@@ -700,12 +700,12 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
       </div>
 
       {/* ── Lifecycle Controls ───────────────────────────────────────── */}
-      <hr className="my-8 border-zinc-200 dark:border-zinc-800" />
+      <hr className="my-8 border-border" />
 
       <section aria-labelledby="settings-lifecycle-heading">
         <h2
           id="settings-lifecycle-heading"
-          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-zinc-600 dark:text-zinc-300 uppercase"
+          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-muted-foreground uppercase"
         >
           <AlertTriangle className="size-4" />
           Account Lifecycle
@@ -713,14 +713,14 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
 
         {/* ── Closure Summary (shown after successful close) ────────── */}
         {closureSummary && (
-          <div className="mt-4 mb-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+          <div className="mt-4 mb-6 rounded-lg border border-positive/30 bg-positive/10 p-4">
             <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-positive" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                <p className="text-sm font-medium text-positive">
                   Account Closed
                 </p>
-                <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                <p className="mt-1 text-xs text-positive">
                   {closureSummary.accountName} closed at{' '}
                   {new Date(closureSummary.closedAt).toLocaleString(undefined, {
                     month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -732,28 +732,28 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
               </div>
               <button
                 onClick={() => setClosureSummary(null)}
-                className="shrink-0 text-xs text-emerald-600 underline hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-200"
+                className="shrink-0 text-xs text-positive underline hover:text-positive"
               >
                 Dismiss
               </button>
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-3 border-t border-emerald-200 pt-3 dark:border-emerald-800">
+            <div className="mt-3 grid grid-cols-3 gap-3 border-t border-positive/30 pt-3">
               <div>
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">Starting Balance</p>
-                <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
+                <p className="text-xs text-positive">Starting Balance</p>
+                <p className="text-sm font-semibold tabular-nums text-positive">
                   ${closureSummary.startingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">Deposits</p>
-                <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
+                <p className="text-xs text-positive">Deposits</p>
+                <p className="text-sm font-semibold tabular-nums text-positive">
                   ${closureSummary.depositsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">Realized P&amp;L</p>
+                <p className="text-xs text-positive">Realized P&amp;L</p>
                 <p className={`text-sm font-semibold tabular-nums ${
-                  closureSummary.realizedPnl >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+                  closureSummary.realizedPnl >= 0 ? 'text-positive' : 'text-negative'
                 }`}>
                   {closureSummary.realizedPnl >= 0 ? '+' : ''}${closureSummary.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
@@ -764,8 +764,8 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
 
         {/* ── Active account: Close Account ────────────────────────── */}
         {account.isActive && !closureSummary && (
-          <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <p className="mb-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          <div className="mt-4 rounded-lg border border-border bg-card p-6">
+            <p className="mb-3 text-xs font-medium text-muted-foreground">
               Close this account to archive it. A final balance will be computed and the account will be marked inactive.
             </p>
             <Button
@@ -780,8 +780,8 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
 
         {/* ── Inactive account: Reactivate and Delete ──────────────── */}
         {!account.isActive && (
-          <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <p className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300">Account Actions</p>
+          <div className="mt-4 rounded-lg border border-border bg-card p-6">
+            <p className="mb-4 text-sm font-medium text-foreground">Account Actions</p>
             <div className="flex flex-wrap gap-3">
               <Button
                 onClick={handleReactivateAccount}
@@ -799,7 +799,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
                 Delete Account
               </Button>
             </div>
-            <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
+            <p className="mt-3 text-xs text-muted-foreground">
               Deleting an account permanently removes it. Only accounts with no trade history can be deleted.
             </p>
           </div>

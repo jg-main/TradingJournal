@@ -72,23 +72,23 @@ export function formatPnl(v: string | number | null | undefined): string {
 /**
  * Return a Tailwind CSS class for P&L coloring.
  *
- * - null / undefined → "text-zinc-500 dark:text-zinc-400"
- * - NaN → "text-zinc-500 dark:text-zinc-400"
- * - 0 / -0 → "text-zinc-600 dark:text-zinc-400"
- * - positive → "text-emerald-600 dark:text-emerald-400"
- * - negative → "text-red-600 dark:text-red-400"
+ * - null / undefined → "text-muted-foreground"
+ * - NaN → "text-muted-foreground"
+ * - 0 / -0 → "text-muted-foreground"
+ * - positive → "text-positive"
+ * - negative → "text-negative"
  *
  * @param v - Numeric value, decimal string, or null/undefined.
  * @returns CSS class string for the P&L value.
  */
 export function formatPnlClass(v: string | number | null | undefined): string {
   const n = parseValue(v);
-  if (n === null) return 'text-zinc-500 dark:text-zinc-400';
+  if (n === null) return 'text-muted-foreground';
   const normalized = normalizeNegativeZero(n);
-  if (normalized === 0) return 'text-zinc-600 dark:text-zinc-400';
+  if (normalized === 0) return 'text-muted-foreground';
   return normalized > 0
-    ? 'text-emerald-600 dark:text-emerald-400'
-    : 'text-red-600 dark:text-red-400';
+    ? 'text-positive'
+    : 'text-negative';
 }
 
 /**

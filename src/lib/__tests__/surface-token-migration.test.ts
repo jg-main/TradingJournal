@@ -230,20 +230,7 @@ const EXEMPT_FILES: readonly string[] = [
 
   /* ── T03: dashboard widgets + root shared components (32 listed + formatting.ts) — MIGRATED in T03 ── */
 
-  /* ── T04: accounting components (13) ─────────────────────────────────── */
-  'src/components/accounting/account-activity.tsx',
-  'src/components/accounting/account-correction-form.tsx',
-  'src/components/accounting/account-detail-header.tsx',
-  'src/components/accounting/account-detail-nav.tsx',
-  'src/components/accounting/account-execution-form.tsx',
-  'src/components/accounting/account-executions-activity.tsx',
-  'src/components/accounting/account-ledger.tsx',
-  'src/components/accounting/account-overview.tsx',
-  'src/components/accounting/account-performance.tsx',
-  'src/components/accounting/account-positions.tsx',
-  'src/components/accounting/account-reconciliation-summary.tsx',
-  'src/components/accounting/account-settings.tsx',
-  'src/components/accounting/account-valuation-form.tsx',
+  /* ── T04: accounting components (13) — MIGRATED in T04 ──────────── */
 
   /* ── T05: legacy settings pages (14 flagged; the 5 accounts/[id] sub-pages
         and settings/accounts/[id]/* sub-pages are already token-clean) ─── */

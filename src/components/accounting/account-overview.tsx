@@ -94,45 +94,45 @@ function formatDateTime(isoString: string): string {
 }
 
 function getPnlClass(v: string | null): string {
-  if (v === null) return 'text-zinc-500 dark:text-zinc-400';
+  if (v === null) return 'text-muted-foreground';
   const n = parseFloat(v);
-  if (isNaN(n) || n === 0) return 'text-zinc-600 dark:text-zinc-400';
+  if (isNaN(n) || n === 0) return 'text-muted-foreground';
   return n >= 0
-    ? 'text-emerald-600 dark:text-emerald-400'
-    : 'text-red-600 dark:text-red-400';
+    ? 'text-positive'
+    : 'text-negative';
 }
 
 function getEventTypeBadge(eventType: string): { label: string; className: string } {
   switch (eventType) {
     case 'opening_balance':
-      return { label: 'Opening', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
+      return { label: 'Opening', className: 'bg-info/10 text-info' };
     case 'deposit':
-      return { label: 'Deposit', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+      return { label: 'Deposit', className: 'bg-positive/10 text-positive' };
     case 'withdrawal':
-      return { label: 'Withdrawal', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+      return { label: 'Withdrawal', className: 'bg-negative/10 text-negative' };
     case 'dividend':
-      return { label: 'Dividend', className: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' };
+      return { label: 'Dividend', className: 'bg-positive/10 text-positive' };
     case 'interest':
-      return { label: 'Interest', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
+      return { label: 'Interest', className: 'bg-positive/10 text-positive' };
     case 'fee':
-      return { label: 'Fee', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' };
+      return { label: 'Fee', className: 'bg-warning/10 text-warning' };
     case 'tax':
-      return { label: 'Tax', className: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' };
+      return { label: 'Tax', className: 'bg-negative/10 text-negative' };
     default:
-      return { label: eventType, className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300' };
+      return { label: eventType, className: 'bg-muted text-muted-foreground' };
   }
 }
 
 function getMarkStatusBadge(status: 'fresh' | 'stale' | 'missing' | 'pending'): { label: string; className: string } {
   switch (status) {
     case 'fresh':
-      return { label: 'Fresh', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+      return { label: 'Fresh', className: 'bg-positive/10 text-positive' };
     case 'stale':
-      return { label: 'Stale', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
+      return { label: 'Stale', className: 'bg-warning/10 text-warning' };
     case 'missing':
-      return { label: 'Missing', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+      return { label: 'Missing', className: 'bg-negative/10 text-negative' };
     case 'pending':
-      return { label: 'Pending', className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300' };
+      return { label: 'Pending', className: 'bg-muted text-muted-foreground' };
   }
 }
 
@@ -143,9 +143,9 @@ function getDirectionIcon(direction: string | null) {
 }
 
 function getDirectionColor(direction: string | null): string {
-  if (direction === 'long') return 'text-emerald-600 dark:text-emerald-400';
-  if (direction === 'short') return 'text-red-600 dark:text-red-400';
-  return 'text-zinc-400 dark:text-zinc-500';
+  if (direction === 'long') return 'text-positive';
+  if (direction === 'short') return 'text-negative';
+  return 'text-muted-foreground';
 }
 
 // ── Metric Card Sub-Component ──────────────────────────────────────────
@@ -159,23 +159,23 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, valueClass, icon }: MetricCardProps) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex-1">
-          <p className="text-[10px] font-medium tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">
+          <p className="text-[10px] font-medium tracking-wider text-muted-foreground uppercase">
             {label}
           </p>
           <p
             className={cn(
               'mt-0.5 text-lg font-semibold tabular-nums truncate',
-              valueClass ?? 'text-zinc-900 dark:text-zinc-50',
+              valueClass ?? 'text-foreground',
             )}
           >
             {value}
           </p>
         </div>
         {icon && (
-          <div className="ml-3 shrink-0 text-zinc-300 dark:text-zinc-600">
+          <div className="ml-3 shrink-0 text-muted-foreground">
             {icon}
           </div>
         )}
@@ -218,9 +218,9 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   // ── Loading State ──────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800">
-        <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading overview...</p>
+      <div className="rounded-lg border border-border p-8 text-center">
+        <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading overview...</p>
       </div>
     );
   }
@@ -228,12 +228,12 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   // ── Error State ────────────────────────────────────────────────────
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
-        <AlertTriangle className="mx-auto mb-2 size-5 text-red-500" />
-        <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+      <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+        <AlertTriangle className="mx-auto mb-2 size-5 text-destructive" />
+        <p className="text-sm text-destructive">{error}</p>
         <button
           onClick={fetchOverview}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-700 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-900/20"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-card px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
         >
           <RefreshCw className="size-3" />
           Retry
@@ -245,9 +245,9 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   // ── Guard: should not happen once loaded and no error ──────────────
   if (!data) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-        <BarChart3 className="mx-auto mb-2 size-6 text-zinc-400" />
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">No overview data available.</p>
+      <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <BarChart3 className="mx-auto mb-2 size-6 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No overview data available.</p>
       </div>
     );
   }
@@ -266,9 +266,9 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           valueClass={
             snapshot.nav !== null
               ? parseFloat(snapshot.nav) >= 0
-                ? 'text-zinc-900 dark:text-zinc-50'
-                : 'text-red-600 dark:text-red-400'
-              : 'text-zinc-500 dark:text-zinc-400'
+                ? 'text-foreground'
+                : 'text-negative'
+              : 'text-muted-foreground'
           }
           icon={<DollarSign className="size-5" />}
         />
@@ -280,9 +280,9 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           valueClass={
             snapshot.netCash !== null
               ? parseFloat(snapshot.netCash) >= 0
-                ? 'text-zinc-900 dark:text-zinc-50'
-                : 'text-red-600 dark:text-red-400'
-              : 'text-zinc-500 dark:text-zinc-400'
+                ? 'text-foreground'
+                : 'text-negative'
+              : 'text-muted-foreground'
           }
           icon={<DollarSign className="size-5" />}
         />
@@ -294,9 +294,9 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           valueClass={
             snapshot.markedPositions !== null
               ? parseFloat(snapshot.markedPositions) >= 0
-                ? 'text-zinc-900 dark:text-zinc-50'
-                : 'text-red-600 dark:text-red-400'
-              : 'text-zinc-500 dark:text-zinc-400'
+                ? 'text-foreground'
+                : 'text-negative'
+              : 'text-muted-foreground'
           }
           icon={<BarChart3 className="size-5" />}
         />
@@ -343,8 +343,8 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           value={snapshot.realizedFees !== null ? `$${formatCurrency(snapshot.realizedFees)}` : '—'}
           valueClass={
             snapshot.realizedFees !== null && parseFloat(snapshot.realizedFees) > 0
-              ? 'text-orange-600 dark:text-orange-400'
-              : 'text-zinc-500 dark:text-zinc-400'
+              ? 'text-warning'
+              : 'text-muted-foreground'
           }
         />
       </div>
@@ -352,10 +352,10 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
       {/* ── 2. Positions Preview (up to 5) ───────────────────────────── */}
       <div className="mb-6">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-wider text-zinc-600 dark:text-zinc-300 uppercase">
+          <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
             Open Positions
             {positionsTotal > 0 && (
-              <span className="ml-2 text-xs font-normal text-zinc-400 dark:text-zinc-500">
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
                 ({positionsTotal} total)
               </span>
             )}
@@ -363,7 +363,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           {positionsTotal > 0 && (
             <Link
               href={`/settings/accounts/${accountId}/positions`}
-              className="text-xs font-medium text-zinc-600 underline hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="text-xs font-medium text-muted-foreground underline hover:text-foreground"
             >
               View all →
             </Link>
@@ -372,10 +372,10 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
 
         {/* Empty State */}
         {positions.length === 0 && (
-          <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-            <BarChart3 className="mx-auto mb-2 size-6 text-zinc-400" />
-            <p className="text-sm text-zinc-600 dark:text-zinc-300">No open positions.</p>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="rounded-lg border border-dashed border-border p-8 text-center">
+            <BarChart3 className="mx-auto mb-2 size-6 text-muted-foreground" />
+            <p className="text-sm text-foreground">No open positions.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Post an execution to open a position.
             </p>
           </div>
@@ -383,49 +383,49 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
 
         {/* Positions Table */}
         {positions.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Symbol</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Dir</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Qty</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Avg Cost</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Mark</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Mkt Value</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Unreal.</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Status</th>
+                <tr className="border-b border-border bg-muted">
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Symbol</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Dir</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Qty</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Avg Cost</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Mark</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Mkt Value</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Unreal.</th>
+                  <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              <tbody className="divide-y divide-border">
                 {positions.map((pos) => {
                   const Icon = getDirectionIcon(pos.direction);
                   const badge = getMarkStatusBadge(pos.markStatus);
                   const directionColor = getDirectionColor(pos.direction);
 
                   return (
-                    <tr key={pos.symbol} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                      <td className="whitespace-nowrap px-3 py-2 font-medium text-zinc-900 dark:text-zinc-100">
+                    <tr key={pos.symbol} className="hover:bg-muted/50">
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-foreground">
                         {pos.symbol}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <span className="inline-flex items-center gap-1">
                           <Icon className={cn('size-3.5', directionColor)} />
-                          <span className="text-xs text-zinc-600 dark:text-zinc-400">
+                          <span className="text-xs text-muted-foreground">
                             {pos.direction ?? '—'}
                           </span>
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                         {parseFloat(pos.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                         ${formatCurrency(pos.averageCost)}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                         {pos.markPrice !== null ? `$${formatCurrency(pos.markPrice)}` : '—'}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                         {pos.markedValue !== null ? `$${formatCurrency(pos.markedValue)}` : '—'}
                       </td>
                       <td className={cn('whitespace-nowrap px-3 py-2 text-right tabular-nums', getPnlClass(pos.unrealizedPnl))}>
@@ -446,11 +446,11 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
               </tbody>
             </table>
             {positions.length < positionsTotal && (
-              <div className="border-t border-zinc-200 px-3 py-2 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+              <div className="border-t border-border px-3 py-2 text-center text-xs text-muted-foreground">
                 Showing {positions.length} of {positionsTotal} positions.
                 <Link
                   href={`/settings/accounts/${accountId}/positions`}
-                  className="ml-1 underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                  className="ml-1 underline hover:text-foreground"
                 >
                   View all →
                 </Link>
@@ -463,10 +463,10 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
       {/* ── 4. Recent Events Preview (up to 10) ──────────────────────── */}
       <div className="mb-6">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-wider text-zinc-600 dark:text-zinc-300 uppercase">
+          <h2 className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
             Recent Events
             {eventsTotal > 0 && (
-              <span className="ml-2 text-xs font-normal text-zinc-400 dark:text-zinc-500">
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
                 ({eventsTotal} total)
               </span>
             )}
@@ -474,7 +474,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           {eventsTotal > 0 && (
             <Link
               href={`/settings/accounts/${accountId}/ledger`}
-              className="text-xs font-medium text-zinc-600 underline hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="text-xs font-medium text-muted-foreground underline hover:text-foreground"
             >
               View all →
             </Link>
@@ -483,10 +483,10 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
 
         {/* Empty State */}
         {events.length === 0 && (
-          <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-            <Receipt className="mx-auto mb-2 size-6 text-zinc-400" />
-            <p className="text-sm text-zinc-600 dark:text-zinc-300">No events yet.</p>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="rounded-lg border border-dashed border-border p-8 text-center">
+            <Receipt className="mx-auto mb-2 size-6 text-muted-foreground" />
+            <p className="text-sm text-foreground">No events yet.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Post financial events to see activity here.
             </p>
           </div>
@@ -494,22 +494,22 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
 
         {/* Events Table */}
         {events.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Date</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Type</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Description</th>
-                  <th className="px-4 py-2 text-center text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Status</th>
+                <tr className="border-b border-border bg-muted">
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Description</th>
+                  <th className="px-4 py-2 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              <tbody className="divide-y divide-border">
                 {events.map((ev) => {
                   const badge = getEventTypeBadge(ev.eventType);
                   return (
-                    <tr key={ev.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                      <td className="whitespace-nowrap px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                    <tr key={ev.id} className="hover:bg-muted/50">
+                      <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
                         {formatDateTime(ev.postedAt)}
                       </td>
                       <td className="px-4 py-2">
@@ -517,18 +517,18 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
                           {badge.label}
                         </span>
                       </td>
-                      <td className="max-w-[240px] truncate px-4 py-2 text-zinc-700 dark:text-zinc-300">
+                      <td className="max-w-[240px] truncate px-4 py-2 text-foreground">
                         <div className="flex items-center gap-2">
                           <span className="truncate">
                             {ev.description ?? (
-                              <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                              <span className="text-muted-foreground">—</span>
                             )}
                           </span>
                           {/* Trade navigation link for trade_execution events with association */}
                           {ev.tradeId && ev.eventType === 'trade_execution' && (
                             <Link
                               href={`/trades/${ev.tradeId}`}
-                              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-cyan-600 underline hover:text-cyan-800 dark:text-cyan-400 dark:hover:text-cyan-200"
+                              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-info underline hover:text-info"
                               aria-label={`View trade ${ev.tradeId.slice(0, 8)}`}
                             >
                               <ExternalLink className="size-2.5" aria-hidden="true" />
@@ -542,8 +542,8 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
                           className={cn(
                             'inline-flex items-center gap-1 text-xs font-medium',
                             ev.status.hasEntry && ev.status.isBalanced
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-amber-600 dark:text-amber-400',
+                              ? 'text-positive'
+                              : 'text-warning',
                           )}
                         >
                           {ev.status.hasEntry && ev.status.isBalanced ? (

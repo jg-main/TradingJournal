@@ -316,7 +316,7 @@ export default function AccountExecutionForm({
 
   const inputClass = (field: string): string => {
     return fieldError(field)
-      ? 'border-red-400 focus:border-red-500 focus:ring-red-500/30 dark:border-red-600'
+      ? 'border-destructive focus:border-destructive focus:ring-destructive/30'
       : '';
   };
 
@@ -325,20 +325,20 @@ export default function AccountExecutionForm({
   return (
     <div className="mb-8">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+      <h2 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">
         Trade Executions
       </h2>
 
       {/* ── Success Result Card ─────────────────────────────────────── */}
       {successResult && (
-        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-900/20">
+        <div className="mb-4 rounded-lg border border-positive/30 bg-positive/10 p-4">
           <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-positive" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+              <p className="text-sm font-medium text-positive">
                 Execution Posted
               </p>
-              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+              <p className="mt-1 text-xs text-positive">
                 {successResult.execution?.action?.toUpperCase()}{' '}
                 {successResult.execution?.quantity} {successResult.execution?.symbol}{' '}
                 @ {successResult.execution?.price}
@@ -349,27 +349,27 @@ export default function AccountExecutionForm({
             </div>
           </div>
           {successResult.position && (
-            <div className="mt-3 grid grid-cols-3 gap-3 border-t border-emerald-200 pt-3 dark:border-emerald-800">
+            <div className="mt-3 grid grid-cols-3 gap-3 border-t border-positive/30 pt-3">
               <div>
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">Position</p>
-                <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
+                <p className="text-xs text-positive">Position</p>
+                <p className="text-sm font-semibold tabular-nums text-positive">
                   {successResult.position.direction ?? 'Flat'}{' '}
                   {successResult.position.quantity}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">Avg Cost</p>
-                <p className="text-sm font-semibold tabular-nums text-emerald-900 dark:text-emerald-200">
+                <p className="text-xs text-positive">Avg Cost</p>
+                <p className="text-sm font-semibold tabular-nums text-positive">
                   ${parseFloat(successResult.position.averageCost).toFixed(2)}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">Realized P&amp;L</p>
+                <p className="text-xs text-positive">Realized P&amp;L</p>
                 <p
                   className={`text-sm font-semibold tabular-nums ${
                     parseFloat(successResult.position.realizedNetPnl) >= 0
-                      ? 'text-emerald-700 dark:text-emerald-400'
-                      : 'text-red-600 dark:text-red-400'
+                      ? 'text-positive'
+                      : 'text-negative'
                   }`}
                 >
                   {parseFloat(successResult.position.realizedNetPnl) >= 0 ? '+' : ''}
@@ -387,12 +387,12 @@ export default function AccountExecutionForm({
           role="alert"
           className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
               : message.type === 'conflict'
-              ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+              ? 'border-warning/30 bg-warning/10 text-warning'
               : message.type === 'validation'
-              ? 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-900/30 dark:text-orange-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-warning/30 bg-warning/10 text-warning'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           <div className="flex items-start gap-2">
@@ -439,9 +439,9 @@ export default function AccountExecutionForm({
       ) : (
         <form
           onSubmit={handleSubmit}
-          className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
+          className="rounded-lg border border-border bg-card p-6"
         >
-          <h3 className="mb-4 text-sm font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+          <h3 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             Post Execution Fill
           </h3>
 
@@ -451,7 +451,7 @@ export default function AccountExecutionForm({
               <div>
                 <label
                   htmlFor="exec-action"
-                  className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  className="mb-1 block text-sm font-medium text-foreground"
                 >
                   Action
                 </label>
@@ -459,7 +459,7 @@ export default function AccountExecutionForm({
                   id="exec-action"
                   value={form.action}
                   onChange={(e) => updateField('action', e.target.value)}
-                  className={`w-full rounded-md border bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 ${inputClass('action')}`}
+                  className={`w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring ${inputClass('action')}`}
                 >
                   {EXECUTION_ACTIONS.map((a) => (
                     <option key={a.value} value={a.value}>
@@ -468,14 +468,14 @@ export default function AccountExecutionForm({
                   ))}
                 </select>
                 {fieldError('action') && (
-                  <p className="mt-1 text-xs text-red-500">{fieldError('action')}</p>
+                  <p className="mt-1 text-xs text-destructive">{fieldError('action')}</p>
                 )}
               </div>
 
               <div>
                 <label
                   htmlFor="exec-symbol"
-                  className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  className="mb-1 block text-sm font-medium text-foreground"
                 >
                   Symbol
                 </label>
@@ -489,7 +489,7 @@ export default function AccountExecutionForm({
                   autoFocus
                 />
                 {fieldError('symbol') && (
-                  <p className="mt-1 text-xs text-red-500">{fieldError('symbol')}</p>
+                  <p className="mt-1 text-xs text-destructive">{fieldError('symbol')}</p>
                 )}
               </div>
             </div>
@@ -499,7 +499,7 @@ export default function AccountExecutionForm({
               <div>
                 <label
                   htmlFor="exec-quantity"
-                  className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  className="mb-1 block text-sm font-medium text-foreground"
                 >
                   Quantity
                 </label>
@@ -514,14 +514,14 @@ export default function AccountExecutionForm({
                   className={inputClass('quantity')}
                 />
                 {fieldError('quantity') && (
-                  <p className="mt-1 text-xs text-red-500">{fieldError('quantity')}</p>
+                  <p className="mt-1 text-xs text-destructive">{fieldError('quantity')}</p>
                 )}
               </div>
 
               <div>
                 <label
                   htmlFor="exec-price"
-                  className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                  className="mb-1 block text-sm font-medium text-foreground"
                 >
                   Price ($)
                 </label>
@@ -536,7 +536,7 @@ export default function AccountExecutionForm({
                   className={inputClass('price')}
                 />
                 {fieldError('price') && (
-                  <p className="mt-1 text-xs text-red-500">{fieldError('price')}</p>
+                  <p className="mt-1 text-xs text-destructive">{fieldError('price')}</p>
                 )}
               </div>
             </div>
@@ -545,9 +545,9 @@ export default function AccountExecutionForm({
             <div>
               <label
                 htmlFor="exec-fees"
-                className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                className="mb-1 block text-sm font-medium text-foreground"
               >
-                Fees ($) <span className="font-normal text-zinc-500">(optional, defaults to 0)</span>
+                Fees ($) <span className="font-normal text-muted-foreground">(optional, defaults to 0)</span>
               </label>
               <Input
                 id="exec-fees"
@@ -560,7 +560,7 @@ export default function AccountExecutionForm({
                 className={inputClass('fees')}
               />
               {fieldError('fees') && (
-                <p className="mt-1 text-xs text-red-500">{fieldError('fees')}</p>
+                <p className="mt-1 text-xs text-destructive">{fieldError('fees')}</p>
               )}
             </div>
 
@@ -568,9 +568,9 @@ export default function AccountExecutionForm({
             <div>
               <label
                 htmlFor="exec-description"
-                className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                className="mb-1 block text-sm font-medium text-foreground"
               >
-                Description <span className="font-normal text-zinc-500">(optional)</span>
+                Description <span className="font-normal text-muted-foreground">(optional)</span>
               </label>
               <Input
                 id="exec-description"
@@ -585,9 +585,9 @@ export default function AccountExecutionForm({
             <div>
               <label
                 htmlFor="exec-journal-trade"
-                className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                className="mb-1 block text-sm font-medium text-foreground"
               >
-                Journal Trade ID <span className="font-normal text-zinc-500">(optional, attribution only)</span>
+                Journal Trade ID <span className="font-normal text-muted-foreground">(optional, attribution only)</span>
               </label>
               <Input
                 id="exec-journal-trade"
@@ -596,7 +596,7 @@ export default function AccountExecutionForm({
                 onChange={(e) => updateField('journalTradeId', e.target.value)}
                 placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
               />
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Links this execution to a journal trade for attribution. Not used for P&amp;L calculation.
               </p>
             </div>

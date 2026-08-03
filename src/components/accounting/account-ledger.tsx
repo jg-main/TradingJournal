@@ -122,45 +122,45 @@ function formatCurrency(v: string | number | null | undefined): string {
 function getEventTypeBadge(eventType: string): { label: string; className: string } {
   switch (eventType) {
     case 'opening_balance':
-      return { label: 'Opening', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
+      return { label: 'Opening', className: 'bg-info/10 text-info' };
     case 'deposit':
-      return { label: 'Deposit', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+      return { label: 'Deposit', className: 'bg-positive/10 text-positive' };
     case 'withdrawal':
-      return { label: 'Withdrawal', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+      return { label: 'Withdrawal', className: 'bg-negative/10 text-negative' };
     case 'dividend':
-      return { label: 'Dividend', className: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' };
+      return { label: 'Dividend', className: 'bg-positive/10 text-positive' };
     case 'interest':
-      return { label: 'Interest', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
+      return { label: 'Interest', className: 'bg-positive/10 text-positive' };
     case 'fee':
-      return { label: 'Fee', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' };
+      return { label: 'Fee', className: 'bg-warning/10 text-warning' };
     case 'tax':
-      return { label: 'Tax', className: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' };
+      return { label: 'Tax', className: 'bg-negative/10 text-negative' };
     case 'trade_execution':
-      return { label: 'Trade', className: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' };
+      return { label: 'Trade', className: 'bg-info/10 text-info' };
     case 'adjustment':
     case 'manual_adjustment':
-      return { label: 'Adjust', className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' };
+      return { label: 'Adjust', className: 'bg-muted text-muted-foreground' };
     case 'transfer':
-      return { label: 'Transfer', className: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' };
+      return { label: 'Transfer', className: 'bg-info/10 text-info' };
     case 'stock_split':
-      return { label: 'Split', className: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400' };
+      return { label: 'Split', className: 'bg-info/10 text-info' };
     default:
-      return { label: eventType, className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300' };
+      return { label: eventType, className: 'bg-muted text-muted-foreground' };
   }
 }
 
 function getCashImpactClass(cashImpact: string | null): string {
-  if (cashImpact === null) return 'text-zinc-500 dark:text-zinc-400';
+  if (cashImpact === null) return 'text-muted-foreground';
   return cashImpact.startsWith('-')
-    ? 'text-red-600 dark:text-red-400'
-    : 'text-emerald-600 dark:text-emerald-400';
+    ? 'text-negative'
+    : 'text-positive';
 }
 
 function getStatusIcon(status: EventStatusDisplay): React.ReactNode {
   if (status.hasEntry && status.isBalanced) {
-    return <CheckCircle2 className="size-3.5 text-emerald-500" aria-hidden="true" />;
+    return <CheckCircle2 className="size-3.5 text-positive" aria-hidden="true" />;
   }
-  return <AlertTriangle className="size-3.5 text-amber-500" aria-hidden="true" />;
+  return <AlertTriangle className="size-3.5 text-warning" aria-hidden="true" />;
 }
 
 function getStatusLabel(status: EventStatusDisplay): string {
@@ -180,32 +180,32 @@ interface ExpandedPostingsProps {
 /** Expanded posting details shown below a ledger row. */
 function ExpandedPostings({ postings, idempotencyKey, correctionGroup }: ExpandedPostingsProps) {
   return (
-    <div className="border-t border-zinc-100 bg-zinc-50/50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+    <div className="border-t border-border bg-muted/50 px-4 py-3">
       {/* ── Posting Pairs ─────────────────────────────────────────── */}
       {postings && (
         <div className="mb-2">
-          <p className="mb-1.5 text-[10px] font-semibold tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">
+          <p className="mb-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
             Postings
           </p>
           <div className="grid grid-cols-2 gap-3">
             {/* Debit */}
-            <div className="rounded border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900">
-              <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase">Debit</p>
-              <p className="mt-0.5 text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+            <div className="rounded border border-border bg-card px-3 py-2">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase">Debit</p>
+              <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
                 {formatCurrency(postings.debit.amount)} {postings.debit.currency}
               </p>
-              <p className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
                 Seq {postings.debit.sequence} · ID: {postings.debit.id.slice(0, 8)}…
               </p>
             </div>
 
             {/* Credit */}
-            <div className="rounded border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900">
-              <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase">Credit</p>
-              <p className="mt-0.5 text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+            <div className="rounded border border-border bg-card px-3 py-2">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase">Credit</p>
+              <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
                 {formatCurrency(postings.credit.amount)} {postings.credit.currency}
               </p>
-              <p className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
                 Seq {postings.credit.sequence} · ID: {postings.credit.id.slice(0, 8)}…
               </p>
             </div>
@@ -213,12 +213,12 @@ function ExpandedPostings({ postings, idempotencyKey, correctionGroup }: Expande
 
           {/* Balance indicator */}
           {postings.debit.amountMicros === postings.credit.amountMicros ? (
-            <p className="mt-1.5 flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+            <p className="mt-1.5 flex items-center gap-1 text-[10px] text-positive">
               <CheckCircle2 className="size-3" aria-hidden="true" />
               Balanced
             </p>
           ) : (
-            <p className="mt-1.5 flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400">
+            <p className="mt-1.5 flex items-center gap-1 text-[10px] text-negative">
               <AlertTriangle className="size-3" aria-hidden="true" />
               Unbalanced
             </p>
@@ -229,10 +229,10 @@ function ExpandedPostings({ postings, idempotencyKey, correctionGroup }: Expande
       {/* ── Idempotency Key ───────────────────────────────────────── */}
       {idempotencyKey && (
         <div className="mb-2">
-          <p className="mb-0.5 text-[10px] font-semibold tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">
+          <p className="mb-0.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
             Idempotency Key
           </p>
-          <code className="rounded bg-zinc-200/60 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-400">
+          <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {idempotencyKey}
           </code>
         </div>
@@ -241,19 +241,19 @@ function ExpandedPostings({ postings, idempotencyKey, correctionGroup }: Expande
       {/* ── Correction Lineage ────────────────────────────────────── */}
       {correctionGroup && (
         <div>
-          <p className="mb-1.5 text-[10px] font-semibold tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">
+          <p className="mb-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
             Correction Lineage
           </p>
-          <div className="space-y-1 rounded border border-amber-200 bg-amber-50/50 px-3 py-2 dark:border-amber-800 dark:bg-amber-900/20">
+          <div className="space-y-1 rounded border border-warning/30 bg-warning/10 px-3 py-2">
             <CorrectionLineageRow label="Original" eventId={correctionGroup.originalEventId} />
             <CorrectionLineageRow label="Reversal" eventId={correctionGroup.reversalEventId} />
             <CorrectionLineageRow label="Replacement" eventId={correctionGroup.replacementEventId} />
             {correctionGroup.reason && (
-              <p className="mt-1 text-[10px] italic text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1 text-[10px] italic text-muted-foreground">
                 Reason: {correctionGroup.reason}
               </p>
             )}
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500">
+            <p className="text-[10px] text-muted-foreground">
               Corrected: {formatDateTime(correctionGroup.correctedAt)}
             </p>
           </div>
@@ -267,8 +267,8 @@ function ExpandedPostings({ postings, idempotencyKey, correctionGroup }: Expande
 function CorrectionLineageRow({ label, eventId }: { label: string; eventId: string }) {
   return (
     <div className="flex items-center gap-2 text-[11px]">
-      <span className="w-20 shrink-0 font-medium text-zinc-600 dark:text-zinc-400">{label}:</span>
-      <code className="rounded bg-zinc-200/60 px-1.5 py-0.5 text-[10px] text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+      <span className="w-20 shrink-0 font-medium text-muted-foreground">{label}:</span>
+      <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-foreground">
         {eventId.slice(0, 12)}…
       </code>
     </div>
@@ -285,7 +285,7 @@ interface CorrectionBadgeProps {
 function CorrectionBadge({ reason, correctedAt }: CorrectionBadgeProps) {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+      className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
       title={reason ?? `Corrected ${formatDateTime(correctedAt)}`}
     >
       <Layers className="size-2.5" aria-hidden="true" />
@@ -299,15 +299,15 @@ function CorrectionBadge({ reason, correctedAt }: CorrectionBadgeProps) {
 function EmptyLedgerState({ isFiltered, onClearFilter }: { isFiltered: boolean; onClearFilter: () => void }) {
   if (isFiltered) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-        <Filter className="mx-auto mb-2 size-6 text-zinc-400" />
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">No matching events.</p>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+      <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <Filter className="mx-auto mb-2 size-6 text-muted-foreground" />
+        <p className="text-sm text-foreground">No matching events.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
           No events match the current filter selection.
         </p>
         <button
           onClick={onClearFilter}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-input bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
         >
           Clear filter
         </button>
@@ -316,10 +316,10 @@ function EmptyLedgerState({ isFiltered, onClearFilter }: { isFiltered: boolean; 
   }
 
   return (
-    <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-      <Receipt className="mx-auto mb-2 size-6 text-zinc-400" />
-      <p className="text-sm text-zinc-600 dark:text-zinc-300">No ledger events yet.</p>
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+    <div className="rounded-lg border border-dashed border-border p-8 text-center">
+      <Receipt className="mx-auto mb-2 size-6 text-muted-foreground" />
+      <p className="text-sm text-foreground">No ledger events yet.</p>
+      <p className="mt-1 text-xs text-muted-foreground">
         Post financial events or executions to see activity here.
       </p>
     </div>
@@ -447,9 +447,9 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
   // ── Loading State ──────────────────────────────────────────────────
   if (loading && !data) {
     return (
-      <div className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800">
-        <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading ledger...</p>
+      <div className="rounded-lg border border-border p-8 text-center">
+        <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading ledger...</p>
       </div>
     );
   }
@@ -457,12 +457,12 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
   // ── Error State ────────────────────────────────────────────────────
   if (error && !data) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
-        <AlertTriangle className="mx-auto mb-2 size-5 text-red-500" />
-        <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+      <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+        <AlertTriangle className="mx-auto mb-2 size-5 text-destructive" />
+        <p className="text-sm text-destructive">{error}</p>
         <button
           onClick={handleRetry}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-700 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-900/20"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-card px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
         >
           <RefreshCw className="size-3" />
           Retry
@@ -492,8 +492,8 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
               className={cn(
                 'rounded-full px-3 py-1 text-xs font-medium transition-colors',
                 activeCategory === key
-                  ? 'bg-zinc-800 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700',
+                  ? 'bg-foreground text-background dark:bg-secondary dark:text-secondary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/70',
               )}
               aria-pressed={activeCategory === key}
             >
@@ -505,13 +505,13 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
 
       {/* ── Results Info ─────────────────────────────────────────────── */}
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs text-muted-foreground">
           {total === 0
             ? 'No events'
             : `${total} event${total !== 1 ? 's' : ''}${isFiltered ? ' (filtered)' : ''}`}
         </p>
         {totalPages > 1 && (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs text-muted-foreground">
             Page {page} of {totalPages}
           </p>
         )}
@@ -524,30 +524,30 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
 
       {/* ── Ledger Table ─────────────────────────────────────────────── */}
       {hasResults && (
-        <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+              <tr className="border-b border-border bg-muted">
                 <th className="w-8 px-2 py-2" />
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Date
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Type
                 </th>
-                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Description
                 </th>
-                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Cash Impact
                 </th>
-                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Status
                 </th>
                 <th className="w-16 px-2 py-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {events.map((evt) => {
                 const isExpanded = expandedRows.has(evt.eventId);
                 const badge = getEventTypeBadge(evt.eventType);
@@ -558,14 +558,14 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                   <tr key={evt.eventId} className="group">
                     {/* Primary Row */}
                     <td colSpan={7} className="p-0">
-                      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                      <div className="divide-y divide-border">
                         {/* Main row content */}
                         <div
                           className={cn(
                             'flex items-center px-2 py-2 transition-colors',
                             evt.correctionGroup
-                              ? 'bg-amber-50/30 dark:bg-amber-900/10'
-                              : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/50',
+                              ? 'bg-warning/10'
+                              : 'hover:bg-muted/50',
                           )}
                         >
                           {/* Expand button */}
@@ -573,7 +573,7 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                             {hasDetail && (
                               <button
                                 onClick={() => toggleRowExpansion(evt.eventId)}
-                                className="flex items-center justify-center rounded p-0.5 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200 dark:hover:text-zinc-300 dark:hover:bg-zinc-700"
+                                className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted"
                                 aria-expanded={isExpanded}
                                 aria-controls={expandSectionId}
                                 aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
@@ -589,7 +589,7 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
 
                           {/* Date */}
                           <div className="w-36 shrink-0 px-3">
-                            <p className="text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
+                            <p className="text-xs tabular-nums text-muted-foreground">
                               {formatDateTime(evt.postedAt)}
                             </p>
                           </div>
@@ -609,9 +609,9 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                           {/* Description */}
                           <div className="min-w-0 flex-1 px-3">
                             <div className="flex items-center gap-2">
-                              <p className="truncate text-sm text-zinc-700 dark:text-zinc-300">
+                              <p className="truncate text-sm text-foreground">
                                 {evt.description ?? (
-                                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                                  <span className="text-muted-foreground">—</span>
                                 )}
                               </p>
                               {/* Correction badge for grouped corrections */}
@@ -625,7 +625,7 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                               {evt.tradeId && evt.eventType === 'trade_execution' && (
                                 <Link
                                   href={`/trades/${evt.tradeId}`}
-                                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-cyan-600 underline hover:text-cyan-800 dark:text-cyan-400 dark:hover:text-cyan-200"
+                                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-info underline hover:text-info"
                                   aria-label={`View trade ${evt.tradeId.slice(0, 8)}`}
                                 >
                                   <ExternalLink className="size-2.5" aria-hidden="true" />
@@ -644,7 +644,7 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                                   : `$${formatCurrency(evt.cashImpact)}`}
                               </p>
                             ) : (
-                              <p className="text-sm text-zinc-400 dark:text-zinc-500">—</p>
+                              <p className="text-sm text-muted-foreground">—</p>
                             )}
                           </div>
 
@@ -654,8 +654,8 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                               className={cn(
                                 'inline-flex items-center gap-1 text-xs font-medium',
                                 evt.status.hasEntry && evt.status.isBalanced
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : 'text-amber-600 dark:text-amber-400',
+                                  ? 'text-positive'
+                                  : 'text-warning',
                               )}
                             >
                               {getStatusIcon(evt.status)}
@@ -690,7 +690,7 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
       {/* ── Pagination Controls ───────────────────────────────────────── */}
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs text-muted-foreground">
             Showing {(page - 1) * pageLimit + 1}–{Math.min(page * pageLimit, total)} of {total}
           </p>
           <div className="flex items-center gap-2">
@@ -700,8 +700,8 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
               className={cn(
                 'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
                 page <= 1
-                  ? 'border-zinc-200 text-zinc-400 dark:border-zinc-800 dark:text-zinc-600'
-                  : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800',
+                  ? 'border-border text-muted-foreground'
+                  : 'border-input text-muted-foreground hover:bg-muted',
               )}
               aria-label="Previous page"
             >
@@ -714,8 +714,8 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
               className={cn(
                 'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
                 page >= totalPages
-                  ? 'border-zinc-200 text-zinc-400 dark:border-zinc-800 dark:text-zinc-600'
-                  : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800',
+                  ? 'border-border text-muted-foreground'
+                  : 'border-input text-muted-foreground hover:bg-muted',
               )}
               aria-label="Next page"
             >

@@ -23,14 +23,14 @@ export function AccountDetailHeader({ name, broker, currency, isActive }: Accoun
   return (
     <div className="mb-6">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           {name}
         </h1>
         {!isActive && (
           <Badge variant="secondary">Inactive</Badge>
         )}
       </div>
-      <div className="mt-2 flex items-center gap-4 text-sm text-zinc-600 dark:text-zinc-300">
+      <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
         {broker && <span>{broker}</span>}
         <span>{currency}</span>
       </div>

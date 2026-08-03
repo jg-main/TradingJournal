@@ -88,35 +88,35 @@ function getEffectClass(effect: ParsedEffect | null): string {
   if (!effect) return '';
   if (effect.kind === 'cash') {
     return effect.direction === 'increase'
-      ? 'text-emerald-600 dark:text-emerald-400'
-      : 'text-red-600 dark:text-red-400';
+      ? 'text-positive'
+      : 'text-negative';
   }
-  if (effect.kind === 'market') return 'text-blue-600 dark:text-blue-400';
-  return 'text-zinc-500 dark:text-zinc-400';
+  if (effect.kind === 'market') return 'text-info';
+  return 'text-muted-foreground';
 }
 
 function getEventTypeBadge(eventType: string): { label: string; className: string } {
   switch (eventType) {
     case 'opening_balance':
-      return { label: 'Opening', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
+      return { label: 'Opening', className: 'bg-info/10 text-info' };
     case 'deposit':
-      return { label: 'Deposit', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+      return { label: 'Deposit', className: 'bg-positive/10 text-positive' };
     case 'withdrawal':
-      return { label: 'Withdrawal', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+      return { label: 'Withdrawal', className: 'bg-negative/10 text-negative' };
     case 'dividend':
-      return { label: 'Dividend', className: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' };
+      return { label: 'Dividend', className: 'bg-positive/10 text-positive' };
     case 'interest':
-      return { label: 'Interest', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
+      return { label: 'Interest', className: 'bg-positive/10 text-positive' };
     case 'fee':
-      return { label: 'Fee', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' };
+      return { label: 'Fee', className: 'bg-warning/10 text-warning' };
     case 'tax':
-      return { label: 'Tax', className: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' };
+      return { label: 'Tax', className: 'bg-negative/10 text-negative' };
     case 'stock_split':
-      return { label: 'Stock Split', className: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' };
+      return { label: 'Stock Split', className: 'bg-info/10 text-info' };
     case 'manual_adjustment':
-      return { label: 'Manual Adj.', className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300' };
+      return { label: 'Manual Adj.', className: 'bg-muted text-muted-foreground' };
     default:
-      return { label: eventType, className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300' };
+      return { label: eventType, className: 'bg-muted text-muted-foreground' };
   }
 }
 
@@ -314,10 +314,10 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
               : message.type === 'conflict'
-              ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-warning/30 bg-warning/10 text-warning'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -339,7 +339,7 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => { setShowForm(true); setMessage(null); }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <Plus className="size-4" />
               Post Event
@@ -347,25 +347,25 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
             <button
               onClick={fetchActivity}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              className="inline-flex items-center gap-1.5 rounded-md border border-input bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
               title="Refresh"
             >
               <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         ) : (
-          <form onSubmit={handlePost} className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="mb-4 text-sm font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+          <form onSubmit={handlePost} className="rounded-lg border border-border bg-card p-6">
+            <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
               Post Financial Event
             </h2>
 
             {/* Event Type Selector */}
             <div className="mb-4">
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Event Type</label>
+              <label className="mb-1 block text-sm font-medium text-foreground">Event Type</label>
               <select
                 value={eventType}
                 onChange={(e) => { setEventType(e.target.value); setMessage(null); }}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 {EVENT_TYPE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -377,46 +377,46 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
             {eventType === 'stock_split' ? (
               <div className="mb-4 grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Symbol</label>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Symbol</label>
                   <input
                     type="text"
                     value={symbol}
                     onChange={(e) => setSymbol(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="e.g. AAPL"
                     required
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Ratio</label>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Ratio</label>
                   <input
                     type="text"
                     value={ratio}
                     onChange={(e) => setRatio(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="e.g. 4:1"
                     required
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Old Shares</label>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Old Shares</label>
                   <input
                     type="number"
                     value={oldShares}
                     onChange={(e) => setOldShares(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="100"
                     min="1"
                     required
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">New Shares</label>
+                  <label className="mb-1 block text-sm font-medium text-foreground">New Shares</label>
                   <input
                     type="number"
                     value={newShares}
                     onChange={(e) => setNewShares(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder="400"
                     min="1"
                     required
@@ -427,7 +427,7 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
               <>
                 {/* Amount */}
                 <div className="mb-4">
-                  <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <label className="mb-1 block text-sm font-medium text-foreground">
                     {eventType === 'manual_adjustment' ? 'Amount (signed: positive = increase, negative = decrease)' : 'Amount ($)'}
                   </label>
                   <input
@@ -436,7 +436,7 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
                     min={eventType === 'manual_adjustment' ? undefined : '0.01'}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                    className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                     placeholder={eventType === 'manual_adjustment' ? 'e.g. 100.00 or -50.00' : 'e.g. 1000.00'}
                     autoFocus
                   />
@@ -445,12 +445,12 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
                 {/* Reason (manual_adjustment only) */}
                 {eventType === 'manual_adjustment' && (
                   <div className="mb-4">
-                    <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Reason</label>
+                    <label className="mb-1 block text-sm font-medium text-foreground">Reason</label>
                     <input
                       type="text"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
-                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                      className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                       placeholder="e.g. Rounding correction"
                     />
                   </div>
@@ -460,12 +460,12 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
 
             {/* Description (all types) */}
             <div className="mb-4">
-              <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Description (optional)</label>
+              <label className="mb-1 block text-sm font-medium text-foreground">Description (optional)</label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder={eventType === 'stock_split' ? 'e.g. 4:1 forward split' : 'e.g. Wire transfer deposit'}
               />
             </div>
@@ -475,14 +475,14 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {saving ? 'Posting...' : 'Post Event'}
               </button>
               <button
                 type="button"
                 onClick={() => { setShowForm(false); setMessage(null); }}
-                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                className="rounded-md border border-input bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
               >
                 Cancel
               </button>
@@ -492,31 +492,31 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
       </div>
 
       {/* ── Activity List ────────────────────────────────────────────── */}
-      <h2 className="mb-4 text-sm font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+      <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
         Account Activity
       </h2>
 
       {/* Loading State */}
       {loading && (
-        <div className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800">
-          <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading activity...</p>
+        <div className="rounded-lg border border-border p-8 text-center">
+          <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading activity...</p>
         </div>
       )}
 
       {/* Error State */}
       {error && !loading && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center dark:border-red-800 dark:bg-red-900/20">
-          <XCircle className="mx-auto mb-2 size-5 text-red-500" />
-          <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-8 text-center">
+          <XCircle className="mx-auto mb-2 size-5 text-destructive" />
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
       {/* Empty State */}
       {!loading && !error && activity && activity.events.length === 0 && (
-        <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">No financial events yet.</p>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="rounded-lg border border-dashed border-border p-8 text-center">
+          <p className="text-sm text-foreground">No financial events yet.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
             Post a deposit, withdrawal, or other event to see activity.
           </p>
         </div>
@@ -524,19 +524,19 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
 
       {/* Table */}
       {!loading && !error && activity && activity.events.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Effect</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Amount</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Description</th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Status</th>
+              <tr className="border-b border-border bg-muted">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Effect</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Description</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {activity.events.map((item) => {
                 const ev = item.event;
                 const badge = getEventTypeBadge(ev.eventType);
@@ -546,9 +546,9 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
                 const effectAmount = getEffectAmount(effect, ev.eventType);
 
                 return (
-                  <tr key={ev.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                  <tr key={ev.id} className="hover:bg-muted/50">
                     {/* Date */}
-                    <td className="whitespace-nowrap px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                       {formatDateTime(ev.postedAt)}
                     </td>
 
@@ -567,20 +567,20 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
                     {/* Amount */}
                     <td className={`whitespace-nowrap px-4 py-3 text-right tabular-nums font-medium ${
                       effectAmount?.startsWith('+')
-                        ? 'text-emerald-600 dark:text-emerald-400'
+                        ? 'text-positive'
                         : effectAmount?.startsWith('-')
-                        ? 'text-red-600 dark:text-red-400'
-                        : 'text-zinc-600 dark:text-zinc-400'
+                        ? 'text-negative'
+                        : 'text-muted-foreground'
                     }`}>
                       {effectAmount ?? '—'}
                     </td>
 
                     {/* Description */}
-                    <td className="max-w-[220px] truncate px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                    <td className="max-w-[220px] truncate px-4 py-3 text-foreground">
                       {ev.description ? (
                         ev.description
                       ) : ev.eventType === 'stock_split' ? (
-                        <span className="text-zinc-400 dark:text-zinc-500">
+                        <span className="text-muted-foreground">
                           {(() => {
                             try {
                               const p = JSON.parse(ev.payload ?? '{}');
@@ -589,7 +589,7 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
                           })()}
                         </span>
                       ) : (
-                        <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
 
@@ -598,8 +598,8 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
                       <span
                         className={`inline-flex items-center gap-1 text-xs font-medium ${
                           item.status.hasEntry && item.status.isBalanced
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-amber-600 dark:text-amber-400'
+                            ? 'text-positive'
+                            : 'text-warning'
                         }`}
                       >
                         {item.status.hasEntry && item.status.isBalanced ? (
@@ -620,7 +620,7 @@ export default function AccountActivity({ accountId }: AccountActivityProps) {
               })}
             </tbody>
           </table>
-          <div className="border-t border-zinc-200 bg-zinc-50 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          <div className="border-t border-border bg-muted px-4 py-2 text-xs text-muted-foreground">
             {activity.total} event{activity.total !== 1 ? 's' : ''}
           </div>
         </div>

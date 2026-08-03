@@ -112,8 +112,8 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
         <div
           className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
           role="status"
           aria-live="polite"
@@ -133,22 +133,22 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
       {!showForm ? (
         <button
           onClick={() => { setShowForm(true); setMessage(null); }}
-          className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
           aria-label="Post valuation mark"
         >
           <Plus className="size-3.5" />
           Post Mark
         </button>
       ) : (
-        <form onSubmit={handleSubmit} className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               New Valuation Mark
             </h3>
             <button
               type="button"
               onClick={() => { setShowForm(false); setMessage(null); }}
-              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+              className="text-muted-foreground hover:text-foreground"
               aria-label="Cancel"
             >
               <X className="size-4" />
@@ -158,7 +158,7 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
           <div className="mb-3 grid grid-cols-2 gap-3">
             {/* Symbol */}
             <div>
-              <label htmlFor="vm-symbol" className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="vm-symbol" className="mb-1 block text-xs font-medium text-foreground">
                 Symbol
               </label>
               <input
@@ -166,7 +166,7 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
                 type="text"
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                className="w-full rounded-md border border-input bg-card px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder="e.g. AAPL"
                 autoFocus
                 required
@@ -175,7 +175,7 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
 
             {/* Price */}
             <div>
-              <label htmlFor="vm-price" className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="vm-price" className="mb-1 block text-xs font-medium text-foreground">
                 Price ($)
               </label>
               <input
@@ -185,7 +185,7 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
                 min="0.01"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                className="w-full rounded-md border border-input bg-card px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder="e.g. 150.75"
                 required
               />
@@ -195,14 +195,14 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
           <div className="mb-3 grid grid-cols-2 gap-3">
             {/* Source */}
             <div>
-              <label htmlFor="vm-source" className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="vm-source" className="mb-1 block text-xs font-medium text-foreground">
                 Source
               </label>
               <select
                 id="vm-source"
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border border-input bg-card px-2.5 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 {MARK_SOURCE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -212,7 +212,7 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
 
             {/* Timestamp */}
             <div>
-              <label htmlFor="vm-timestamp" className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="vm-timestamp" className="mb-1 block text-xs font-medium text-foreground">
                 Mark Timestamp
               </label>
               <input
@@ -220,7 +220,7 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
                 type="datetime-local"
                 value={markTimestamp}
                 onChange={(e) => setMarkTimestamp(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border border-input bg-card px-2.5 py-1.5 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 required
               />
             </div>
@@ -231,14 +231,14 @@ export default function AccountValuationForm({ accountId, onMarkSubmitted }: Acc
             <button
               type="submit"
               disabled={saving}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               {saving ? 'Posting...' : 'Post Mark'}
             </button>
             <button
               type="button"
               onClick={() => { setShowForm(false); setMessage(null); }}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              className="rounded-md border border-input bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
             >
               Cancel
             </button>

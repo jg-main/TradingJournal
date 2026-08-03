@@ -98,26 +98,26 @@ function formatDateTime(isoString: string | null): string {
 
 function getPnlClass(v: string): string {
   const n = parseFloat(v);
-  if (isNaN(n) || n === 0) return 'text-zinc-600 dark:text-zinc-400';
+  if (isNaN(n) || n === 0) return 'text-muted-foreground';
   return n >= 0
-    ? 'text-emerald-600 dark:text-emerald-400'
-    : 'text-red-600 dark:text-red-400';
+    ? 'text-positive'
+    : 'text-negative';
 }
 
 function getMarkStatusBadge(status: 'fresh' | 'stale' | 'missing'): { label: string; className: string } {
   switch (status) {
     case 'fresh':
-      return { label: 'Fresh', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+      return { label: 'Fresh', className: 'bg-positive/10 text-positive' };
     case 'stale':
-      return { label: 'Stale', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
+      return { label: 'Stale', className: 'bg-warning/10 text-warning' };
     case 'missing':
-      return { label: 'Missing', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+      return { label: 'Missing', className: 'bg-negative/10 text-negative' };
   }
 }
 
 function getDirectionIcon(direction: 'long' | 'short' | null) {
-  if (direction === 'long') return <TrendingUp className="size-3 text-emerald-600 dark:text-emerald-400" />;
-  if (direction === 'short') return <TrendingDown className="size-3 text-red-600 dark:text-red-400" />;
+  if (direction === 'long') return <TrendingUp className="size-3 text-positive" />;
+  if (direction === 'short') return <TrendingDown className="size-3 text-negative" />;
   return null;
 }
 
@@ -189,19 +189,19 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           Performance &amp; Valuation
         </h2>
         <div className="flex items-center gap-2">
           {performance && (
-            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            <span className="text-xs text-muted-foreground">
               v{performance.rebuildCount}
             </span>
           )}
           <button
             onClick={handleRebuild}
             disabled={rebuilding}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50"
             title="Rebuild performance projection"
             aria-label="Rebuild performance projection"
           >
@@ -216,8 +216,8 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
         <div
           className={`mb-4 rounded-lg border px-3 py-2 text-xs ${
             rebuildMessage.startsWith('Error:')
-              ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+              ? 'border-destructive/30 bg-destructive/10 text-destructive'
+              : 'border-positive/30 bg-positive/10 text-positive'
           }`}
           role="status"
           aria-live="polite"
@@ -228,16 +228,16 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
 
       {/* Warnings */}
       {hasWarnings && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-900/20">
+        <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
             <div>
-              <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              <p className="text-xs font-medium text-warning">
                 {performance!.warnings.length} data quality warning{performance!.warnings.length !== 1 ? 's' : ''}
               </p>
               <ul className="mt-1 space-y-0.5">
                 {performance!.warnings.map((w, i) => (
-                  <li key={i} className="text-xs text-amber-600 dark:text-amber-500">{w}</li>
+                  <li key={i} className="text-xs text-warning">{w}</li>
                 ))}
               </ul>
             </div>
@@ -247,26 +247,26 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
 
       {/* Loading State */}
       {loading && (
-        <div className="mb-4 rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-800">
-          <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-zinc-400" />
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading performance data...</p>
+        <div className="mb-4 rounded-lg border border-border p-8 text-center">
+          <RefreshCw className="mx-auto mb-2 size-5 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading performance data...</p>
         </div>
       )}
 
       {/* Error State */}
       {error && !loading && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-900/20">
-          <AlertTriangle className="mx-auto mb-2 size-5 text-red-500" />
-          <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+          <AlertTriangle className="mx-auto mb-2 size-5 text-destructive" />
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
       {/* Empty State */}
       {!loading && !error && performance && !hasPerformance && !hasPositions && (
-        <div className="mb-4 rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700">
-          <CircleDollarSign className="mx-auto mb-2 size-6 text-zinc-400" />
-          <p className="text-sm text-zinc-600 dark:text-zinc-300">No performance data yet.</p>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="mb-4 rounded-lg border border-dashed border-border p-6 text-center">
+          <CircleDollarSign className="mx-auto mb-2 size-6 text-muted-foreground" />
+          <p className="text-sm text-foreground">No performance data yet.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
             Post financial events and executions, then rebuild to see valuation and performance metrics.
           </p>
         </div>
@@ -276,21 +276,21 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
       {!loading && !error && performance && hasPerformance && (
         <>
           {/* Main NAV card */}
-          <div className="mb-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mb-4 rounded-lg border border-border bg-card p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Net Asset Value
                 </p>
                 <p className={`mt-1 text-2xl font-semibold tabular-nums ${
                   parseFloat(performance.nav) >= 0
-                    ? 'text-zinc-900 dark:text-zinc-50'
-                    : 'text-red-600 dark:text-red-400'
+                    ? 'text-foreground'
+                    : 'text-negative'
                 }`}>
                   ${formatCurrency(performance.nav)}
                 </p>
               </div>
-              <DollarSign className="size-8 text-zinc-300 dark:text-zinc-600" />
+              <DollarSign className="size-8 text-muted-foreground" />
             </div>
           </div>
 
@@ -300,13 +300,13 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
             <MetricCard
               label="Net Cash"
               value={`$${formatCurrency(performance.netCash)}`}
-              valueClass={parseFloat(performance.netCash) >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'}
+              valueClass={parseFloat(performance.netCash) >= 0 ? 'text-foreground' : 'text-negative'}
             />
             {/* Marked Positions */}
             <MetricCard
               label="Marked Pos."
               value={`$${formatCurrency(performance.markedPositions)}`}
-              valueClass={parseFloat(performance.markedPositions) >= 0 ? 'text-zinc-900 dark:text-zinc-50' : 'text-red-600 dark:text-red-400'}
+              valueClass={parseFloat(performance.markedPositions) >= 0 ? 'text-foreground' : 'text-negative'}
             />
             {/* Realized P&L */}
             <MetricCard
@@ -332,7 +332,7 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
             <MetricCard
               label="Realized Fees"
               value={`$${formatCurrency(performance.realizedFees)}`}
-              valueClass={parseFloat(performance.realizedFees) > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-zinc-600 dark:text-zinc-400'}
+              valueClass={parseFloat(performance.realizedFees) > 0 ? 'text-warning' : 'text-muted-foreground'}
             />
             {/* Gross Exposure */}
             <MetricCard
@@ -356,9 +356,9 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
               valueClass={
                 performance.twr !== null
                   ? parseFloat(performance.twr) >= 0
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-600 dark:text-red-400'
-                  : 'text-zinc-500 dark:text-zinc-400'
+                    ? 'text-positive'
+                    : 'text-negative'
+                  : 'text-muted-foreground'
               }
             />
             {/* Modified Dietz */}
@@ -368,9 +368,9 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
               valueClass={
                 performance.modifiedDietzReturn !== null
                   ? parseFloat(performance.modifiedDietzReturn) >= 0
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-600 dark:text-red-400'
-                  : 'text-zinc-500 dark:text-zinc-400'
+                    ? 'text-positive'
+                    : 'text-negative'
+                  : 'text-muted-foreground'
               }
             />
             {/* High-Water Mark */}
@@ -388,14 +388,14 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
               }
               valueClass={
                 performance.drawdownPct !== null && parseFloat(performance.drawdownPct) < 0
-                  ? 'text-red-600 dark:text-red-400'
-                  : 'text-zinc-600 dark:text-zinc-400'
+                  ? 'text-negative'
+                  : 'text-muted-foreground'
               }
             />
           </div>
 
           {/* Computed at timestamp */}
-          <p className="mb-4 text-xs text-zinc-400 dark:text-zinc-500">
+          <p className="mb-4 text-xs text-muted-foreground">
             As of {formatDateTime(performance.computedAt)}
             {performance.lastRebuiltAt ? ` · Last rebuilt ${formatDateTime(performance.lastRebuiltAt)}` : ''}
           </p>
@@ -403,46 +403,46 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
           {/* ── Positions Table ────────────────────────────────────────── */}
           {hasPositions && (
             <div>
-              <h3 className="mb-3 text-xs font-semibold text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+              <h3 className="mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Valuation Positions
               </h3>
-              <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Symbol</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Dir</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Qty</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Mark</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Mkt Value</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Unreal.</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Real.</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-400">Status</th>
+                    <tr className="border-b border-border bg-muted">
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Symbol</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Dir</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Qty</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Mark</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Mkt Value</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Unreal.</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Real.</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                  <tbody className="divide-y divide-border">
                     {performance.positions.map((pos) => {
                       const markBadge = getMarkStatusBadge(pos.markStatus);
                       return (
-                        <tr key={pos.instrumentId} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                          <td className="whitespace-nowrap px-3 py-2 font-medium text-zinc-900 dark:text-zinc-100">
+                        <tr key={pos.instrumentId} className="hover:bg-muted/50">
+                          <td className="whitespace-nowrap px-3 py-2 font-medium text-foreground">
                             {pos.symbol}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2">
                             <span className="inline-flex items-center gap-1">
                               {getDirectionIcon(pos.direction)}
-                              <span className="text-xs text-zinc-600 dark:text-zinc-400">
+                              <span className="text-xs text-muted-foreground">
                                 {pos.direction ?? '—'}
                               </span>
                             </span>
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                             {parseFloat(pos.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                             {pos.markPrice !== null ? `$${formatCurrency(pos.markPrice)}` : '—'}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                             {pos.markedValue !== null ? `$${formatCurrency(pos.markedValue)}` : '—'}
                           </td>
                           <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${getPnlClass(pos.unrealizedPnl ?? '0.00')}`}>
@@ -477,9 +477,9 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
 
           {/* Empty positions state */}
           {!hasPositions && (
-            <div className="rounded-lg border border-dashed border-zinc-300 p-4 text-center dark:border-zinc-700">
-              <GanttChartSquare className="mx-auto mb-1 size-5 text-zinc-400" />
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">No open positions to value.</p>
+            <div className="rounded-lg border border-dashed border-border p-4 text-center">
+              <GanttChartSquare className="mx-auto mb-1 size-5 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">No open positions to value.</p>
             </div>
           )}
         </>
@@ -487,9 +487,9 @@ export default function AccountPerformance({ accountId, refreshKey = 0 }: Accoun
 
       {/* Fallback for performance object present but no meaningful data */}
       {!loading && !error && performance && !hasPerformance && !hasPositions && !loading && (
-        <div className="rounded-lg border border-dashed border-zinc-300 p-4 text-center dark:border-zinc-700">
-          <ArrowUpDown className="mx-auto mb-1 size-5 text-zinc-400" />
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="rounded-lg border border-dashed border-border p-4 text-center">
+          <ArrowUpDown className="mx-auto mb-1 size-5 text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">
             Rebuild to compute performance metrics.
           </p>
         </div>
@@ -508,11 +508,11 @@ interface MetricCardProps {
 
 function MetricCard({ label, value, valueClass }: MetricCardProps) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
-      <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider truncate">
+    <div className="rounded-lg border border-border bg-card px-3 py-2">
+      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider truncate">
         {label}
       </p>
-      <p className={`mt-0.5 text-sm font-semibold tabular-nums truncate ${valueClass ?? 'text-zinc-900 dark:text-zinc-50'}`}>
+      <p className={`mt-0.5 text-sm font-semibold tabular-nums truncate ${valueClass ?? 'text-foreground'}`}>
         {value}
       </p>
     </div>

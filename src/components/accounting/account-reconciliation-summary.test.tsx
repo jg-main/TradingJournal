@@ -395,7 +395,7 @@ describe('AccountReconciliationSummary — healthy state', () => {
     });
 
     // Check for the CheckCircle icon by title (lucide icons render as SVGs)
-    const svg = document.querySelector('.text-emerald-600');
+    const svg = document.querySelector('.text-positive');
     expect(svg).toBeTruthy();
   });
 
