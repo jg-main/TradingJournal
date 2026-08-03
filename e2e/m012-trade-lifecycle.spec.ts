@@ -1,12 +1,23 @@
 import { test, expect } from '@playwright/test';
 
 /**
+ * Unique per-run suffix for created accounts. The shared readiness DB
+ * (playwright-readiness.db) persists across runs and the account DELETE API
+ * refuses accounts with any trade history, so fixed names would accumulate
+ * same-name duplicates on every run — and any spec clicking an account by
+ * name would then trip Playwright strict mode. Each run's accounts get a
+ * unique name (and are always the newest, which is what other specs resolve
+ * to), so repeated batch runs stop accumulating duplicates.
+ */
+const RUN_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+/**
  * Create a fully usable test account: creates the account, sets risk params,
  * activates it, and posts opening cash. Returns { id, name }.
  */
 async function setupAccount(page: import('@playwright/test').Page, name: string) {
   const createResp = await page.request.post('/api/accounts', {
-    data: { name, currency: 'USD' },
+    data: { name: `${name} ${RUN_ID}`, currency: 'USD' },
   });
   expect(createResp.status()).toBe(201);
   const account = (await createResp.json()) as { id: string; name: string };

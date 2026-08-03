@@ -24,6 +24,32 @@ async function fetchAccounts(page: Page): Promise<AccountRow[]> {
   return res.json();
 }
 
+/** Escape regex metacharacters so account names match literally. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** The exact text an account renders as inside selects/menus. */
+function accountLabel(name: string, broker: string | null): string {
+  return broker ? `${name} (${broker})` : name;
+}
+
+/**
+ * Pick a click target whose name is unique in the current account list.
+ *
+ * M012 lifecycle accounts used fixed names until S06/T04, so repeated batch
+ * runs accumulated same-name duplicates in the shared readiness DB. Clicking
+ * an option/menuitem by a repeated name trips Playwright strict mode even
+ * with an exact anchored match. The assertions below hold for any account,
+ * so resolve to the second newest uniquely-named account instead.
+ */
+function pickUniqueTarget(accounts: AccountRow[]): AccountRow {
+  const counts = new Map<string, number>();
+  for (const a of accounts) counts.set(a.name, (counts.get(a.name) ?? 0) + 1);
+  const unique = accounts.filter((a) => (counts.get(a.name) ?? 0) === 1);
+  return unique.length >= 2 ? unique[1] : accounts[1];
+}
+
 test.describe('Sidebar Global Account Selector', () => {
   test('/ fires exactly one /api/accounts request on mount', async ({ page }) => {
     const accountRequests: string[] = [];
@@ -78,7 +104,7 @@ test.describe('Sidebar Global Account Selector', () => {
   test('sidebar selection drives workstation live data and persists across reload', async ({ page }) => {
     const accounts = await fetchAccounts(page);
     test.skip(accounts.length < 2, 'Need at least 2 accounts in test DB');
-    const target = accounts[1];
+    const target = pickUniqueTarget(accounts);
 
     const v2Requests: string[] = [];
     page.on('request', (req) => {
@@ -90,9 +116,16 @@ test.describe('Sidebar Global Account Selector', () => {
     await hideDevOverlay(page);
     await expect(page.getByTestId('sidebar-account-trigger')).toBeVisible();
 
-    // Select the second account via the radix Select.
+    // Select the second account via the radix Select. The accessible name is
+    // matched exactly (escaped + anchored) and scoped to the open listbox, so
+    // duplicate names accumulated by other specs can never trip strict mode.
     await page.getByTestId('sidebar-account-trigger').click();
-    await page.getByRole('option', { name: new RegExp(target.name) }).click();
+    await page
+      .getByRole('listbox')
+      .getByRole('option', {
+        name: new RegExp(`^${escapeRegExp(accountLabel(target.name, target.broker))}$`),
+      })
+      .click();
 
     // Selection persisted.
     await expect
@@ -115,15 +148,21 @@ test.describe('Sidebar Global Account Selector', () => {
   test('collapsed sidebar switches accounts via icon dropdown', async ({ page }) => {
     const accounts = await fetchAccounts(page);
     test.skip(accounts.length < 2, 'Need at least 2 accounts in test DB');
-    const target = accounts[1];
+    const target = pickUniqueTarget(accounts);
 
     await page.goto('/');
     await hideDevOverlay(page);
     await page.locator('button[aria-label="Collapse sidebar"]').click();
     await expect(page.locator('aside')).toHaveCSS('width', '56px');
 
+    // Same exact anchored + escaped match, scoped to the open dropdown menu.
     await page.getByTestId('sidebar-account-collapsed-trigger').click();
-    await page.getByRole('menuitem', { name: new RegExp(target.name) }).click();
+    await page
+      .getByRole('menu')
+      .getByRole('menuitem', {
+        name: new RegExp(`^${escapeRegExp(accountLabel(target.name, target.broker))}$`),
+      })
+      .click();
 
     await expect
       .poll(() => page.evaluate(() => localStorage.getItem('app:account')))

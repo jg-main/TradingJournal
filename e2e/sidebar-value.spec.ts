@@ -64,7 +64,10 @@ test.describe('Sidebar Value Block', () => {
 
     const body = await res.json();
     expect(Array.isArray(body.accounts)).toBeTruthy();
-    expect(typeof body.totalBalance).toBe('string');
+    // Documented contract (src/app/api/accounts/summary/route.ts): totalBalance
+    // is a string when at least one account carries a balance, null when none
+    // does (or the DB is empty). Assert string-or-null, not string-only.
+    expect(body.totalBalance === null || typeof body.totalBalance === 'string').toBe(true);
     expect(typeof body.openTradeCount).toBe('number');
   });
 });

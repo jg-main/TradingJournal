@@ -104,11 +104,26 @@ function seedDeterministicEquity() {
 }
 
 async function createTrade(page: Page, accountId: string, data: Record<string, unknown>) {
-  const res = await page.request.post('/api/trades', {
-    data: { accountId, ...data },
-  });
-  expect(res.ok(), `trade creation for ${data.symbol} should succeed`).toBeTruthy();
-  return (await res.json()) as { id: string };
+  const symbol = String(data.symbol ?? 'trade');
+  // Under fullyParallel execution, sibling specs seed the same SQLite
+  // readiness DB, so transient SQLITE_BUSY ('database is locked') 500s can
+  // surface mid-seed (the FILL-028 50-trade loop is the hottest spot). Retry
+  // those with a short backoff; all other failures still fail immediately.
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const res = await page.request.post('/api/trades', {
+      data: { accountId, ...data },
+    });
+    if (res.ok()) return (await res.json()) as { id: string };
+    const details = await res.json().catch(() => null);
+    const retryable =
+      res.status() >= 500 && /sqlite_busy|database is locked/i.test(JSON.stringify(details ?? ''));
+    if (!retryable) {
+      expect(res.ok(), `trade creation for ${symbol} should succeed`).toBeTruthy();
+      return (await res.json()) as { id: string };
+    }
+    await new Promise((r) => setTimeout(r, 200 * attempt));
+  }
+  throw new Error(`trade creation for ${symbol} failed after 4 retries`);
 }
 
 async function executeTrade(page: Page, id: string, data: Record<string, unknown>) {
