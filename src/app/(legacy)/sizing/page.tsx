@@ -404,13 +404,13 @@ export default function SizingPage() {
                 <SelectContent>
                   <SelectItem value="long">
                     <span className="inline-flex items-center gap-1.5">
-                      <TrendingUp className="size-3.5 text-emerald-500" />
+                      <TrendingUp className="size-3.5 text-positive" />
                       Long
                     </span>
                   </SelectItem>
                   <SelectItem value="short">
                     <span className="inline-flex items-center gap-1.5">
-                      <TrendingDown className="size-3.5 text-red-500" />
+                      <TrendingDown className="size-3.5 text-negative" />
                       Short
                     </span>
                   </SelectItem>
@@ -462,7 +462,7 @@ export default function SizingPage() {
               </SelectContent>
             </Select>
             {selectedAccountId && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">
+              <p className="text-xs text-positive">
                 Using account: {accounts.find((a) => a.id === selectedAccountId)?.name ?? 'Unknown'}
               </p>
             )}
@@ -481,7 +481,7 @@ export default function SizingPage() {
             </p>
           )}
           {settingsError && (
-            <p className="mt-4 text-xs text-amber-600 dark:text-amber-400">
+            <p className="mt-4 text-xs text-warning">
               Note: {settingsError} Using manual entry.
             </p>
           )}
@@ -498,7 +498,7 @@ export default function SizingPage() {
 
       {/* Error */}
       {calcError && (
-        <div className="mb-8 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800/30 dark:bg-red-900/10 dark:text-red-400">
+        <div className="mb-8 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <span>{calcError}</span>
         </div>
@@ -509,7 +509,7 @@ export default function SizingPage() {
         <Card className="mb-8">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="size-4 text-emerald-500" />
+              <CheckCircle className="size-4 text-positive" />
               Results
             </CardTitle>
           </CardHeader>
@@ -541,17 +541,17 @@ export default function SizingPage() {
                     <span>
                       {result.rewardRiskRatio.toFixed(2)}
                       {result.rewardRiskRatio >= 2 && (
-                        <Badge variant="secondary" className="ml-2 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        <Badge variant="secondary" className="ml-2 bg-positive/10 text-positive">
                           Good
                         </Badge>
                       )}
                       {result.rewardRiskRatio >= 1 && result.rewardRiskRatio < 2 && (
-                        <Badge variant="secondary" className="ml-2 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                        <Badge variant="secondary" className="ml-2 bg-warning/10 text-warning">
                           Fair
                         </Badge>
                       )}
                       {result.rewardRiskRatio < 1 && (
-                        <Badge variant="secondary" className="ml-2 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                        <Badge variant="secondary" className="ml-2 bg-negative/10 text-negative">
                           Poor
                         </Badge>
                       )}
@@ -592,9 +592,9 @@ export default function SizingPage() {
 
       {/* Trade created link */}
       {createdTrade && (
-        <Card className="mb-8 border-emerald-200 dark:border-emerald-800/30">
+        <Card className="mb-8 border-positive/30">
           <CardContent className="flex items-center gap-3 pt-4">
-            <CheckCircle className="size-5 text-emerald-500" />
+            <CheckCircle className="size-5 text-positive" />
             <div className="flex-1 text-sm">
               <span className="font-medium text-foreground">
                 {createdTrade.tradeCode}
@@ -615,7 +615,7 @@ export default function SizingPage() {
 
       {/* Create error */}
       {createError && (
-        <div className="mb-8 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800/30 dark:bg-red-900/10 dark:text-red-400">
+        <div className="mb-8 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <span>{createError}</span>
         </div>

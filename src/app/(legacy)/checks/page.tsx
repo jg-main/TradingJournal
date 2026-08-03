@@ -142,33 +142,33 @@ function generateId(): string {
 function severityColor(severity: ValidationRule['severity']): string {
   switch (severity) {
     case 'error':
-      return 'border-red-200 bg-red-50 dark:border-red-800/30 dark:bg-red-900/10';
+      return 'border-destructive/30 bg-destructive/10';
     case 'warning':
-      return 'border-amber-200 bg-amber-50 dark:border-amber-800/30 dark:bg-amber-900/10';
+      return 'border-warning/30 bg-warning/10';
     case 'info':
-      return 'border-blue-200 bg-blue-50 dark:border-blue-800/30 dark:bg-blue-900/10';
+      return 'border-info/30 bg-info/10';
   }
 }
 
 function severityIcon(severity: ValidationRule['severity']) {
   switch (severity) {
     case 'error':
-      return <AlertTriangle className="size-4 shrink-0 text-red-500" />;
+      return <AlertTriangle className="size-4 shrink-0 text-destructive" />;
     case 'warning':
-      return <AlertTriangle className="size-4 shrink-0 text-amber-500" />;
+      return <AlertTriangle className="size-4 shrink-0 text-warning" />;
     case 'info':
-      return <ShieldCheck className="size-4 shrink-0 text-blue-500" />;
+      return <ShieldCheck className="size-4 shrink-0 text-info" />;
   }
 }
 
 function severityBadgeClass(severity: ValidationRule['severity']): string {
   switch (severity) {
     case 'error':
-      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+      return 'bg-destructive/10 text-destructive';
     case 'warning':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+      return 'bg-warning/10 text-warning';
     case 'info':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+      return 'bg-info/10 text-info';
   }
 }
 
@@ -235,8 +235,8 @@ function weightLabel(weight: number): string {
 
 function weightColor(weight: number): string {
   switch (weight) {
-    case 3: return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
-    case 2: return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+    case 3: return 'bg-destructive/10 text-destructive';
+    case 2: return 'bg-warning/10 text-warning';
     default: return 'bg-muted text-muted-foreground';
   }
 }
@@ -565,7 +565,7 @@ export default function ChecksPage() {
                             }}
                           />
                           <button
-                            className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-emerald-500 hover:text-emerald-600"
+                            className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-positive hover:text-positive/80"
                             onClick={handleRenameConfirm}
                             aria-label="Confirm rename"
                           >
@@ -601,7 +601,7 @@ export default function ChecksPage() {
                       <div className="flex items-center gap-2">
                         <div className="flex h-1.5 w-20 overflow-hidden rounded-full bg-muted-foreground/20">
                           <div
-                            className="rounded-full bg-emerald-500 transition-all"
+                            className="rounded-full bg-positive transition-all"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
@@ -646,7 +646,7 @@ export default function ChecksPage() {
                           className="mt-0.5 shrink-0"
                         >
                           {item.checked ? (
-                            <CheckCircle2 className="size-4 text-emerald-500" />
+                            <CheckCircle2 className="size-4 text-positive" />
                           ) : (
                             <Circle className="size-4 text-muted-foreground" />
                           )}
@@ -667,7 +667,7 @@ export default function ChecksPage() {
                                 }}
                               />
                               <button
-                                className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-emerald-500 hover:text-emerald-600"
+                                className="rounded p-0.5 min-w-11 min-h-11 flex items-center justify-center text-positive hover:text-positive/80"
                                 onClick={handleEditItemConfirm}
                                 aria-label="Confirm edit"
                               >
@@ -816,10 +816,10 @@ export default function ChecksPage() {
             style={{
               borderTopColor:
                 rule.severity === 'error'
-                  ? 'var(--color-red-500)'
+                  ? 'var(--destructive)'
                   : rule.severity === 'warning'
-                    ? 'var(--color-amber-500)'
-                    : 'var(--color-blue-500)',
+                    ? 'var(--warning)'
+                    : 'var(--info)',
             }}
           >
             <CardHeader>
@@ -868,15 +868,15 @@ export default function ChecksPage() {
         <CardContent className="pt-4">
           <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
-              <AlertTriangle className="size-3.5 text-red-500" />
+              <AlertTriangle className="size-3.5 text-destructive" />
               {VALIDATION_RULES.filter((r) => r.severity === 'error').length} Error rules
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <AlertTriangle className="size-3.5 text-amber-500" />
+              <AlertTriangle className="size-3.5 text-warning" />
               {VALIDATION_RULES.filter((r) => r.severity === 'warning').length} Warning rules
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="size-3.5 text-blue-500" />
+              <ShieldCheck className="size-3.5 text-info" />
               {VALIDATION_RULES.filter((r) => r.severity === 'info').length} Info rules
             </span>
             <span className="text-muted-foreground">|</span>

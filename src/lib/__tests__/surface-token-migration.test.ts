@@ -233,21 +233,10 @@ const EXEMPT_FILES: readonly string[] = [
   /* ── T04: accounting components (13) — MIGRATED in T04 ──────────── */
 
   /* ── T05: legacy settings pages (14) — MIGRATED in T05 ───────────── */
-  /* ── T06: remaining legacy pages + trades page (9 flagged; (legacy)/page.tsx
-        and (legacy)/account/page.tsx are already token-clean) ──────────── */
-  'src/app/(legacy)/reviews/page.tsx',
-  'src/app/(legacy)/checks/page.tsx',
-  'src/app/(legacy)/help/page.tsx',
-  'src/app/(legacy)/lookups/page.tsx',
-  'src/app/(legacy)/sizing/page.tsx',
-  'src/app/(legacy)/watchlist/page.tsx',
-  'src/app/(legacy)/alerts/page.tsx',
-  'src/app/(legacy)/trades/new/page.tsx',
-  'src/app/(trades)/trades/page.tsx',
 
-  /* ── Additional surfaces found by the T01 repo scan (not in the task
-        file lists; cleared by the relevant task sweep or T06's final pass) ── */
-  'src/components/sidebar/sidebar.tsx', // bg-black/20 mobile scrim → bg-overlay
+  /* ── T06: remaining legacy pages, trades page, and sidebar — MIGRATED in T06.
+        The allowlist is now EMPTY: every surface in src/app and src/components
+        is token-clean. Any reintroduced arbitrary color literal fails group 3. ── */
 ];
 
 const EXEMPT_SET = new Set(EXEMPT_FILES.map((f) => path.normalize(f)));

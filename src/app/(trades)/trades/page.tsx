@@ -165,11 +165,11 @@ function SkeletonRows() {
 
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="mb-4 flex items-center justify-between rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-400">
+    <div className="mb-4 flex items-center justify-between rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
       <span>{message}</span>
       <button
         onClick={onDismiss}
-        className="ml-4 rounded p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-800/50"
+        className="ml-4 rounded p-1 text-destructive hover:bg-destructive/10"
         aria-label="Dismiss error"
       >
         ×
@@ -236,7 +236,7 @@ function TotalsGroup({
 }) {
   const items = [
     { label: 'Gross P&L', content: <PnlCell value={totals.grossRealizedPnl} /> },
-    { label: 'Fees', content: <span className="tabular-nums text-red-600 dark:text-red-400">{formatCurrency(totals.totalFees, currency)}</span> },
+    { label: 'Fees', content: <span className="tabular-nums text-negative">{formatCurrency(totals.totalFees, currency)}</span> },
     { label: 'Net P&L', content: <PnlCell value={totals.netRealizedPnl} /> },
     ...(count != null ? [{ label: 'Trades', content: <span className="tabular-nums">{count}</span> }] : []),
   ];
@@ -294,7 +294,7 @@ function UnrealizedPnlFooterValue({
   if (unpriced > 0) {
     // Some positions priced, some not — the aggregate is partial, never complete.
     return (
-      <span className="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-500">
+      <span className="text-lg font-semibold tabular-nums text-warning">
         Partial — {unpriced} unpriced
       </span>
     );
@@ -649,9 +649,9 @@ const openColumns: ColumnDef<TradeRow>[] = [
     cell: ({ getValue }) => {
       const minutes = getValue<number | null>();
       if (minutes == null) return <span className="text-muted-foreground">—</span>;
-      if (minutes < 1) return <span className="inline-flex items-center gap-1 text-xs text-green-600"><Clock className="size-3" /> fresh</span>;
-      if (minutes < 5) return <span className="inline-flex items-center gap-1 text-xs text-amber-600"><Clock className="size-3" /> {minutes}m ago</span>;
-      return <span className="inline-flex items-center gap-1 text-xs text-red-600"><Clock className="size-3" /> {minutes}m ago</span>;
+      if (minutes < 1) return <span className="inline-flex items-center gap-1 text-xs text-positive"><Clock className="size-3" /> fresh</span>;
+      if (minutes < 5) return <span className="inline-flex items-center gap-1 text-xs text-warning"><Clock className="size-3" /> {minutes}m ago</span>;
+      return <span className="inline-flex items-center gap-1 text-xs text-destructive"><Clock className="size-3" /> {minutes}m ago</span>;
     },
   },
   {

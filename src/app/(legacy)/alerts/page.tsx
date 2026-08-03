@@ -130,8 +130,8 @@ function summarizeEnabledConditions(config: AlertConfig | null): string {
 
 function directoryBadgeClass(direction: string): string {
   return direction === 'long'
-    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+    ? 'bg-positive/10 text-positive'
+    : 'bg-negative/10 text-negative';
 }
 
 // ── Columns: Configured Alerts ─────────────────────────────────────────

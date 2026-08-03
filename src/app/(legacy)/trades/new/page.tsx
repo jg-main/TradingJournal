@@ -84,8 +84,8 @@ export default function NewTradePage() {
   if (loading) {
     return (
       <div className="mx-auto flex max-w-4xl items-center justify-center px-8 py-20">
-        <Loader2 className="mr-2 size-5 animate-spin text-zinc-400" />
-        <p className="text-sm text-zinc-500">Loading form data...</p>
+        <Loader2 className="mr-2 size-5 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Loading form data...</p>
       </div>
     );
   }
@@ -95,19 +95,19 @@ export default function NewTradePage() {
       <div className="mx-auto max-w-4xl px-8 py-10">
         <Link
           href="/trades"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
           Back to Trades
         </Link>
         <EmptyState
-          icon={<AlertCircle className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+          icon={<AlertCircle className="size-12 text-muted-foreground" strokeWidth={1} />}
           title="Error"
           description={error}
           action={
             <Link
               href="/trades"
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <ArrowLeft className="size-4" />
               Back to Trades
@@ -122,13 +122,13 @@ export default function NewTradePage() {
     <div className="mx-auto max-w-4xl px-8 py-10">
       <Link
         href="/trades"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to Trades
       </Link>
 
-      <p className="mb-6 text-sm text-zinc-500 dark:text-zinc-400">
+      <p className="mb-6 text-sm text-muted-foreground">
         Set the ticker, direction, account, setup, and planned price levels.
       </p>
 

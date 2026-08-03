@@ -474,8 +474,8 @@ export default function WatchlistPage() {
         const isUp = quote.change >= 0;
         const sign = isUp ? '+' : '';
         const colorClass = isUp
-          ? 'text-emerald-600 dark:text-emerald-400'
-          : 'text-red-600 dark:text-red-400';
+          ? 'text-positive'
+          : 'text-negative';
         return (
           <span className={`tabular-nums ${colorClass}`}>
             {sign}{quote.change.toFixed(2)} ({sign}{quote.changePercent.toFixed(2)}%)
@@ -566,8 +566,8 @@ export default function WatchlistPage() {
               <div
                 className={`rounded-md border px-3 py-2 text-xs ${
                   message.type === 'success'
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+                    ? 'border-positive/30 bg-positive/10 text-positive'
+                    : 'border-destructive/30 bg-destructive/10 text-destructive'
                 }`}
               >
                 {message.text}
@@ -672,14 +672,14 @@ export default function WatchlistPage() {
 
       {/* Status message */}
       {message && message.type === 'success' && (
-        <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+        <div className="mb-6 rounded-lg border border-positive/30 bg-positive/10 px-4 py-3 text-sm text-positive">
           {message.text}
         </div>
       )}
 
       {/* Notification permission state */}
       {denied && isSupported && (
-        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+        <div className="mb-6 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2 text-xs text-warning">
           Notifications blocked · enable browser notifications for alerts.
         </div>
       )}

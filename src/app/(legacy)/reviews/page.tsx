@@ -140,35 +140,35 @@ function gradeLabelFromScore(score: number | null): string {
 function gradeBadgeClass(grade: string): string {
   switch (grade) {
     case 'A':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+      return 'bg-positive/10 text-positive';
     case 'B':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+      return 'bg-info/10 text-info';
     case 'C':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+      return 'bg-warning/10 text-warning';
     case 'D':
-      return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+      return 'bg-warning/10 text-warning';
     default:
-      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+      return 'bg-destructive/10 text-destructive';
   }
 }
 
 function actionStatusBadgeClass(status: ActionItem['status']): string {
   switch (status) {
     case 'open':
-      return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400';
+      return 'bg-muted text-muted-foreground';
     case 'in_progress':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+      return 'bg-info/10 text-info';
     case 'done':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+      return 'bg-positive/10 text-positive';
     case 'cancelled':
-      return 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400';
+      return 'bg-muted text-muted-foreground';
   }
 }
 
 function pnlBadgeClass(pnl: number): string {
-  if (pnl > 0) return 'text-emerald-600 dark:text-emerald-400';
-  if (pnl < 0) return 'text-red-600 dark:text-red-400';
-  return 'text-zinc-600 dark:text-zinc-300';
+  if (pnl > 0) return 'text-positive';
+  if (pnl < 0) return 'text-negative';
+  return 'text-muted-foreground';
 }
 
 // ── Dashboard Helpers ──────────────────────────────────────────────────
@@ -176,13 +176,13 @@ function pnlBadgeClass(pnl: number): string {
 function sampleSizeBadgeClass(level: DashboardSetupPerformance['sampleSizeWarning']): string {
   switch (level) {
     case 'very_small':
-      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+      return 'bg-destructive/10 text-destructive';
     case 'small':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+      return 'bg-warning/10 text-warning';
     case 'moderate':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+      return 'bg-info/10 text-info';
     case 'adequate':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+      return 'bg-positive/10 text-positive';
   }
 }
 
@@ -365,7 +365,7 @@ export default function ReviewsPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl px-8 py-10">
-        <p className="text-sm text-zinc-500">Loading reviews...</p>
+        <p className="text-sm text-muted-foreground">Loading reviews...</p>
       </div>
     );
   }
@@ -374,13 +374,13 @@ export default function ReviewsPage() {
     <div className="mx-auto max-w-4xl px-8 py-10">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Reviews
         </h1>
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setMessage(null); }}>
           <DialogTrigger asChild>
             <button
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <CalendarPlus className="size-4" />
               Generate Review
@@ -396,13 +396,13 @@ export default function ReviewsPage() {
             </DialogHeader>
 
             {message && message.type === 'error' && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                 {message.text}
               </div>
             )}
 
             <div className="py-2">
-              <label htmlFor="weekStart" className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="weekStart" className="mb-1.5 block text-sm font-medium text-foreground">
                 Week of (Monday)
               </label>
               <input
@@ -410,9 +410,9 @@ export default function ReviewsPage() {
                 type="date"
                 value={weekDate}
                 onChange={(e) => setWeekDate(e.target.value)}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-1.5 text-xs text-muted-foreground">
                 Only trades closed between this Monday and the following Sunday
                 will be included.
               </p>
@@ -423,7 +423,7 @@ export default function ReviewsPage() {
                 <DialogClose asChild>
                   <button
                     type="button"
-                    className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
                   >
                     Cancel
                   </button>
@@ -431,7 +431,7 @@ export default function ReviewsPage() {
                 <button
                   onClick={handleGenerate}
                   disabled={generating}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
                 >
                   {generating ? (
                     <>
@@ -450,7 +450,7 @@ export default function ReviewsPage() {
 
       {/* Success message */}
       {message && message.type === 'success' && (
-        <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+        <div className="mb-6 rounded-lg border border-positive/30 bg-positive/10 px-4 py-3 text-sm text-positive">
           {message.text}
         </div>
       )}
@@ -458,13 +458,13 @@ export default function ReviewsPage() {
       {/* Empty state */}
       {items.length === 0 ? (
         <EmptyState
-          icon={<Star className="size-12 text-zinc-300 dark:text-zinc-600" strokeWidth={1} />}
+          icon={<Star className="size-12 text-muted-foreground" strokeWidth={1} />}
           title="No reviews completed"
           description="Weekly reviews help you spot patterns in your trading behavior and track your improvement over time. Generate your first review to see aggregated metrics from a week of closed trades."
           action={
             <button
               onClick={() => setDialogOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <CalendarPlus className="size-4" />
               Generate Review
@@ -472,32 +472,32 @@ export default function ReviewsPage() {
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+              <tr className="border-b border-border bg-muted/50">
                 <th className="w-8 px-2 py-3" />
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Week
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                   Trades
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                   Net P&amp;L
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                   Win Rate
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                   Avg R
                 </th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                   Grade
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {items.map((review) => {
                 const grade = gradeLabelFromScore(review.avgProcessScore);
                 const isExpanded = expandedReviewId === review.id;
@@ -508,12 +508,12 @@ export default function ReviewsPage() {
                   <Fragment key={review.id}>
                     {/* Main review row */}
                     <tr
-                      className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                      className="cursor-pointer hover:bg-muted/50"
                       onClick={() => toggleExpand(review.id)}
                     >
                       <td className="px-2 py-3">
                         <button
-                          className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                          className="text-muted-foreground hover:text-foreground"
                           onClick={(e) => { e.stopPropagation(); toggleExpand(review.id); }}
                         >
                           {isExpanded ? (
@@ -523,19 +523,19 @@ export default function ReviewsPage() {
                           )}
                         </button>
                       </td>
-                      <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                      <td className="px-4 py-3 font-medium text-foreground">
                         {tzFormatWeekRange(review.weekStart, review.weekEnd)}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                         {review.closedTrades}
                       </td>
                       <td className={`px-4 py-3 text-right tabular-nums font-medium ${pnlBadgeClass(review.netPnl)}`}>
                         {formatCurrency(review.netPnl)}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                         {formatPercent(review.winRate)}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                         {formatDecimal(review.avgR)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -550,22 +550,22 @@ export default function ReviewsPage() {
                     {/* Expanded action items row */}
                     {isExpanded && (
                       <tr key={`${review.id}-actions`}>
-                        <td colSpan={7} className="bg-zinc-50 px-4 py-3 dark:bg-zinc-900/30">
+                        <td colSpan={7} className="bg-muted/50 px-4 py-3">
                           {loadingActions ? (
-                            <p className="text-xs text-zinc-400">Loading action items...</p>
+                            <p className="text-xs text-muted-foreground">Loading action items...</p>
                           ) : actionItems.length === 0 ? (
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                            <p className="text-xs text-muted-foreground">
                               No action items for this review.
                             </p>
                           ) : (
                             <div className="space-y-1.5">
-                              <p className="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                              <p className="mb-2 text-xs font-medium text-muted-foreground">
                                 Action Items
                               </p>
                               {actionItems.map((ai) => (
                                 <div
                                   key={ai.id}
-                                  className="flex items-center gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+                                  className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2"
                                 >
                                   <button
                                     onClick={() =>
@@ -580,11 +580,11 @@ export default function ReviewsPage() {
                                       {ai.status === 'in_progress' ? 'In Progress' : ai.status.charAt(0).toUpperCase() + ai.status.slice(1)}
                                     </span>
                                   </button>
-                                  <span className="flex-1 text-sm text-zinc-700 dark:text-zinc-300">
+                                  <span className="flex-1 text-sm text-foreground">
                                     {ai.actionText}
                                   </span>
                                   {ai.dueDate && (
-                                    <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
+                                    <span className="shrink-0 text-xs text-muted-foreground">
                                       Due {tzFormatDate(ai.dueDate)}
                                     </span>
                                   )}
@@ -605,7 +605,7 @@ export default function ReviewsPage() {
 
       {/* Dashboard Sections */}
       {dashboardError && (
-        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+        <div className="mt-6 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <div className="flex items-center gap-2">
             <AlertTriangle className="size-4 shrink-0" />
             <span>{dashboardError}</span>
@@ -615,48 +615,48 @@ export default function ReviewsPage() {
 
       {dashboardLoading && !dashboardData && (
         <div className="mt-6">
-          <p className="text-sm text-zinc-400">Loading dashboard data...</p>
+          <p className="text-sm text-muted-foreground">Loading dashboard data...</p>
         </div>
       )}
 
       {dashboardData && (
         <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
           {/* Setup Performance */}
-          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          <div className="rounded-lg border border-border p-4">
+            <h2 className="mb-3 text-base font-semibold text-foreground">
               Setup Performance
             </h2>
             {dashboardData.setupPerformance.length === 0 ? (
-              <p className="text-xs text-zinc-400">No setup data available.</p>
+              <p className="text-xs text-muted-foreground">No setup data available.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                      <th className="px-2 py-1.5 text-left font-medium text-zinc-500">Setup</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Trades</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Win Rate</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Avg R</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Score</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Sample</th>
+                    <tr className="border-b border-border">
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Setup</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Trades</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Win Rate</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Avg R</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Score</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Sample</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                  <tbody className="divide-y divide-border">
                     {dashboardData.setupPerformance.map((setup) => (
-                      <tr key={setup.setupId ?? 'unknown'} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/30">
-                        <td className="px-2 py-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                      <tr key={setup.setupId ?? 'unknown'} className="hover:bg-muted/50">
+                        <td className="px-2 py-1.5 font-medium text-foreground">
                           {setup.setupName}
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                           {setup.count}
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                           {formatPercent(setup.winRate)}
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                           {formatDecimal(setup.avgR)}
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                           {formatDecimal(setup.avgProcessScore, 1)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
@@ -673,33 +673,33 @@ export default function ReviewsPage() {
           </div>
 
           {/* Grade Trends */}
-          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          <div className="rounded-lg border border-border p-4">
+            <h2 className="mb-3 text-base font-semibold text-foreground">
               Grade Trends
             </h2>
             {items.filter((r) => r.avgProcessScore != null).length === 0 ? (
-              <p className="text-xs text-zinc-400">No grade data available.</p>
+              <p className="text-xs text-muted-foreground">No grade data available.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                      <th className="px-2 py-1.5 text-left font-medium text-zinc-500">Week</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Score</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Grade</th>
+                    <tr className="border-b border-border">
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Week</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Score</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Grade</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                  <tbody className="divide-y divide-border">
                     {items
                       .filter((r) => r.avgProcessScore != null)
                       .map((review) => {
                         const grade = gradeLabelFromScore(review.avgProcessScore);
                         return (
-                          <tr key={review.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/30">
-                            <td className="px-2 py-1.5 text-zinc-800 dark:text-zinc-200">
+                          <tr key={review.id} className="hover:bg-muted/50">
+                            <td className="px-2 py-1.5 text-foreground">
                               {tzFormatWeekRange(review.weekStart, review.weekEnd)}
                             </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                            <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                               {formatDecimal(review.avgProcessScore, 1)}
                             </td>
                             <td className="px-2 py-1.5 text-right">
@@ -717,44 +717,44 @@ export default function ReviewsPage() {
           </div>
 
           {/* Mistake Frequency */}
-          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          <div className="rounded-lg border border-border p-4">
+            <h2 className="mb-3 text-base font-semibold text-foreground">
               Mistake Frequency
             </h2>
             {dashboardData.mistakeFrequency.length === 0 ? (
-              <p className="text-xs text-zinc-400">No mistake data available.</p>
+              <p className="text-xs text-muted-foreground">No mistake data available.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-zinc-200 dark:border-zinc-800">
-                      <th className="px-2 py-1.5 text-left font-medium text-zinc-500">Type</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Minor</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Mod</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Major</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Crit</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-zinc-500">Total</th>
+                    <tr className="border-b border-border">
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">Type</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Minor</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Mod</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Major</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Crit</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">Total</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
+                  <tbody className="divide-y divide-border">
                     {dashboardData.mistakeFrequency.map((mf) => (
-                      <tr key={mf.mistakeType} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/30">
-                        <td className="px-2 py-1.5 font-medium text-zinc-800 dark:text-zinc-200">
+                      <tr key={mf.mistakeType} className="hover:bg-muted/50">
+                        <td className="px-2 py-1.5 font-medium text-foreground">
                           {mf.mistakeType}
                         </td>
-                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.minor > 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-600'}`}>
+                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.minor > 0 ? 'text-muted-foreground' : 'text-muted-foreground/50'}`}>
                           {mf.minor}
                         </td>
-                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.moderate > 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-600'}`}>
+                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.moderate > 0 ? 'text-muted-foreground' : 'text-muted-foreground/50'}`}>
                           {mf.moderate}
                         </td>
-                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.major > 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-600'}`}>
+                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.major > 0 ? 'text-muted-foreground' : 'text-muted-foreground/50'}`}>
                           {mf.major}
                         </td>
-                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.critical > 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-300 dark:text-zinc-600'}`}>
+                        <td className={`px-2 py-1.5 text-right tabular-nums ${mf.critical > 0 ? 'text-muted-foreground' : 'text-muted-foreground/50'}`}>
                           {mf.critical}
                         </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-medium text-zinc-700 dark:text-zinc-300">
+                        <td className="px-2 py-1.5 text-right tabular-nums font-medium text-foreground">
                           {mf.total}
                         </td>
                       </tr>
@@ -766,30 +766,30 @@ export default function ReviewsPage() {
           </div>
 
           {/* Quick Actions */}
-          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          <div className="rounded-lg border border-border p-4">
+            <h2 className="mb-3 text-base font-semibold text-foreground">
               Quick Actions
             </h2>
             {dashboardData.ungradedTrades.length === 0 ? (
-              <p className="text-xs text-zinc-400">All trades have been graded.</p>
+              <p className="text-xs text-muted-foreground">All trades have been graded.</p>
             ) : (
               <div className="space-y-1.5">
                 {dashboardData.ungradedTrades.slice(0, 10).map((trade) => (
                   <Link
                     key={trade.id}
                     href={`/trades/${trade.id}`}
-                    className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50 dark:hover:bg-zinc-800"
+                    className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs hover:bg-muted"
                   >
-                    <span className="font-mono text-zinc-500">{trade.tradeCode}</span>
-                    <span className="font-medium text-zinc-800 dark:text-zinc-200">{trade.symbol}</span>
-                    <span className={`text-[10px] ${trade.direction === 'long' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    <span className="font-mono text-muted-foreground">{trade.tradeCode}</span>
+                    <span className="font-medium text-foreground">{trade.symbol}</span>
+                    <span className={`text-[10px] ${trade.direction === 'long' ? 'text-positive' : 'text-negative'}`}>
                       {trade.direction === 'long' ? 'LONG' : 'SHORT'}
                     </span>
-                    <span className="ml-auto text-zinc-400">Grade &rarr;</span>
+                    <span className="ml-auto text-muted-foreground">Grade &rarr;</span>
                   </Link>
                 ))}
                 {dashboardData.ungradedTrades.length > 10 && (
-                  <p className="pt-1 text-center text-xs text-zinc-400">
+                  <p className="pt-1 text-center text-xs text-muted-foreground">
                     +{dashboardData.ungradedTrades.length - 10} more ungraded trades
                   </p>
                 )}

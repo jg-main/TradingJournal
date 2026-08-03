@@ -117,7 +117,7 @@ export default function LookupsPage() {
   };
 
   if (loading) {
-    return <div className="p-8"><p className="text-zinc-500">Loading lookups...</p></div>;
+    return <div className="p-8"><p className="text-muted-foreground">Loading lookups...</p></div>;
   }
 
   const activeValues = groups[activeTab]?.filter((v) => v.isActive) ?? [];
@@ -126,13 +126,13 @@ export default function LookupsPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Lookups
         </h1>
         {!showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
           >
             + Add Value
           </button>
@@ -143,8 +143,8 @@ export default function LookupsPage() {
         <div
           className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
           }`}
         >
           {message.text}
@@ -152,15 +152,15 @@ export default function LookupsPage() {
       )}
 
       {/* Tab bar */}
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-border">
         {LOOKUP_TYPES.map((t) => (
           <button
             key={t.key}
             onClick={() => { setActiveTab(t.key); resetForm(); }}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === t.key
-                ? 'border-b-2 border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100'
-                : 'text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                ? 'border-b-2 border-foreground text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {t.label}
@@ -170,21 +170,21 @@ export default function LookupsPage() {
 
       {/* Add/Edit form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-8 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-4 text-sm font-medium text-zinc-600 dark:text-zinc-300 uppercase tracking-wider">
+        <form onSubmit={handleSubmit} className="mb-8 rounded-lg border border-border bg-card p-6">
+          <h2 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">
             {editingId ? 'Edit Value' : 'New Value'}
           </h2>
           <div className="space-y-4">
             {!editingId && (
               <div>
-                <label htmlFor="formType" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                <label htmlFor="formType" className="mb-1 block text-sm font-medium text-foreground">
                   Type
                 </label>
                 <select
                   id="formType"
                   value={form.type}
                   onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   {LOOKUP_TYPES.map((t) => (
                     <option key={t.key} value={t.key}>{t.label}</option>
@@ -193,7 +193,7 @@ export default function LookupsPage() {
               </div>
             )}
             <div>
-              <label htmlFor="formValue" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="formValue" className="mb-1 block text-sm font-medium text-foreground">
                 Value *
               </label>
               <input
@@ -201,11 +201,11 @@ export default function LookupsPage() {
                 type="text"
                 value={form.value}
                 onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
             <div>
-              <label htmlFor="formDesc" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="formDesc" className="mb-1 block text-sm font-medium text-foreground">
                 Description
               </label>
               <input
@@ -213,11 +213,11 @@ export default function LookupsPage() {
                 type="text"
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
             <div>
-              <label htmlFor="formSort" className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              <label htmlFor="formSort" className="mb-1 block text-sm font-medium text-foreground">
                 Sort Order
               </label>
               <input
@@ -226,21 +226,21 @@ export default function LookupsPage() {
                 min="0"
                 value={form.sortOrder}
                 onChange={(e) => setForm((f) => ({ ...f, sortOrder: parseInt(e.target.value) || 0 }))}
-                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
           </div>
           <div className="mt-4 flex gap-2">
             <button
               type="submit"
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               {editingId ? 'Update' : 'Create'}
             </button>
             <button
               type="button"
               onClick={resetForm}
-              className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
             >
               Cancel
             </button>
@@ -250,36 +250,36 @@ export default function LookupsPage() {
 
       {/* Active values table */}
       {activeValues.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-zinc-300 p-12 text-center dark:border-zinc-700">
-          <p className="text-zinc-600 dark:text-zinc-300">No values for this type yet. Add one to get started.</p>
+        <div className="rounded-lg border border-dashed border-border p-12 text-center">
+          <p className="text-muted-foreground">No values for this type yet. Add one to get started.</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="overflow-hidden rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Value</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Description</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-600 dark:text-zinc-300">Order</th>
-                <th className="px-4 py-3 text-right font-medium text-zinc-600 dark:text-zinc-300">Actions</th>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Value</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Order</th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {activeValues.map((item) => (
-                <tr key={item.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                  <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">{item.value}</td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{item.description ?? '-'}</td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{item.sortOrder}</td>
+                <tr key={item.id} className="hover:bg-muted/50">
+                  <td className="px-4 py-3 font-medium text-foreground">{item.value}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{item.description ?? '-'}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{item.sortOrder}</td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => openEdit(item)}
-                      className="mr-2 text-sm text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      className="mr-2 text-sm text-muted-foreground hover:text-foreground"
                     >
                       Edit
                     </button>
                     <button
                       onClick={() => handleDelete(item.id, item.value)}
-                      className="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                      className="text-sm text-destructive hover:text-destructive/80"
                     >
                       Delete
                     </button>
@@ -294,12 +294,12 @@ export default function LookupsPage() {
       {/* Inactive values (collapsed) */}
       {inactiveValues.length > 0 && (
         <details className="mt-4">
-          <summary className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+          <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
             {inactiveValues.length} inactive value{inactiveValues.length !== 1 ? 's' : ''}
           </summary>
           <ul className="mt-2 space-y-1 pl-4">
             {inactiveValues.map((item) => (
-              <li key={item.id} className="text-sm text-zinc-500 dark:text-zinc-400">
+              <li key={item.id} className="text-sm text-muted-foreground">
                 {item.value}
               </li>
             ))}

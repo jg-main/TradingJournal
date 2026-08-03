@@ -58,7 +58,7 @@ export function Sidebar() {
       </button>
 
       {sidebarOpen && (
-        <div className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-30 bg-overlay md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       <aside
