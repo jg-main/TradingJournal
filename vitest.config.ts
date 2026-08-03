@@ -18,6 +18,8 @@ export default defineConfig({
       'src/lib/readiness.test.ts',
       'src/lib/restore.test.ts',
       'src/lib/__tests__/error-utils.test.ts',
+      'src/lib/__tests__/chart-palette.test.ts',
+      'src/lib/__tests__/token-structure.test.ts',
       'src/lib/__tests__/scorecard.test.ts',
       'src/app/api/app-profile/__tests__/route.test.ts',
       'src/app/api/readiness/__tests__/route.test.ts',
