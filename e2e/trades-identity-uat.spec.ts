@@ -816,7 +816,12 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
       .poll(() => page.evaluate(() => (document.activeElement as HTMLElement | null)?.textContent?.trim() ?? ''))
       .toContain('Planned');
 
-    // Action menu opens and closes with the keyboard.
+    // Action menu opens and closes with the keyboard. The roving-tabindex
+    // walk above ended focused on the Planned tab (Open → Closed → Planned),
+    // which activates that panel — return to the Open tab where the KBOP
+    // open-position row lives.
+    await openTab(page, 'open');
+    await expect(tradeRow(page, `KBOP-${TS}`)).toBeVisible({ timeout: 10_000 });
     const actionBtn = tradeRow(page, `KBOP-${TS}`).getByRole('button', { name: 'Trade actions' });
     await actionBtn.focus();
     await page.keyboard.press('Enter');
@@ -843,20 +848,56 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await selectAccountFilter(page, account.name);
     await expect(tradeRow(page, `THLG-${TS}`)).toBeVisible({ timeout: 10_000 });
 
+    // M014 identity tokens are declared in oklch (Tailwind v4), so
+    // getComputedStyle serializes them as lab(...)/oklch(...). Chrome's canvas
+    // fillStyle getter preserves that color space (round-tripping the string
+    // does NOT convert), so we draw the color into a 1x1 canvas and read the
+    // pixel back — always true sRGB rgb(r, g, b). The channel/hue helpers
+    // below stay format-agnostic.
     const bodyColor = () =>
-      page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+      page.evaluate(() => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return `rgb(${r}, ${g}, ${b})`;
+      });
     const sidebarColor = () =>
-      page.locator('aside').evaluate((el) => getComputedStyle(el as HTMLElement).backgroundColor);
+      page.locator('aside').evaluate((el) => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.fillStyle = getComputedStyle(el as HTMLElement).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return `rgb(${r}, ${g}, ${b})`;
+      });
     const primaryColor = () =>
-      page.getByRole('button', { name: 'Plan Trade' }).evaluate((el) => getComputedStyle(el as HTMLElement).backgroundColor);
+      page.getByRole('button', { name: 'Plan Trade' }).evaluate((el) => {
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.fillStyle = getComputedStyle(el as HTMLElement).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return `rgb(${r}, ${g}, ${b})`;
+      });
     const posCellColor = () =>
       tradeRow(page, `THLG-${TS}`)
         .locator('span.text-emerald-600').first()
-        .evaluate((el) => getComputedStyle(el as HTMLElement).color);
+        .evaluate((el) => {
+          const ctx = document.createElement('canvas').getContext('2d')!;
+          ctx.fillStyle = getComputedStyle(el as HTMLElement).color;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+          return `rgb(${r}, ${g}, ${b})`;
+        });
     const negCellColor = () =>
       tradeRow(page, `THSH-${TS}`)
         .locator('span.text-red-600').first()
-        .evaluate((el) => getComputedStyle(el as HTMLElement).color);
+        .evaluate((el) => {
+          const ctx = document.createElement('canvas').getContext('2d')!;
+          ctx.fillStyle = getComputedStyle(el as HTMLElement).color;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+          return `rgb(${r}, ${g}, ${b})`;
+        });
 
     // ── Light theme (default, no .dark class) ────────────────────────
     await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(false);
@@ -875,6 +916,12 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     // ── Dark theme via the .dark class on documentElement ────────────
     await page.evaluate(() => document.documentElement.classList.add('dark'));
     await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true);
+    // The Plan Trade button carries `transition-colors` (150ms), so computed
+    // style returns interpolated values mid-transition. Wait until the button
+    // has actually reached its dark token before sampling the palette.
+    await expect
+      .poll(() => primaryColor(), 'primary button should settle on its dark token')
+      .not.toBe(lightPrimary);
 
     const darkBody = await bodyColor();
     const darkSidebar = await sidebarColor();
@@ -900,6 +947,9 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     // Toggling back removes the class and restores the light surface.
     await page.evaluate(() => document.documentElement.classList.remove('dark'));
     await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(false);
+    await expect
+      .poll(() => primaryColor(), 'primary button should settle back on its light token')
+      .toBe(lightPrimary);
     expect(await bodyColor()).toBe(lightBody);
   });
 });
