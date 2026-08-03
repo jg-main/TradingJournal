@@ -107,6 +107,7 @@ export default defineConfig({
       'src/components/dashboard/dashboard-toolbar.test.tsx',
       'src/components/dashboard/use-dashboard-layout.test.ts',
       'src/components/dashboard/account-selector.test.tsx',
+      'src/components/dashboard/__tests__/chart-palette-migration.test.ts',
       'src/components/dashboard/formatting.test.ts',
       'src/components/dashboard/kpi-card.test.tsx',
       'src/components/dashboard/account-performance-panel.test.tsx',
