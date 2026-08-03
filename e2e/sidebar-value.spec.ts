@@ -2,31 +2,18 @@ import { test, expect } from '@playwright/test';
 import { hideDevOverlay } from './helpers';
 
 /**
- * M007 S03 — Sidebar value block evidence.
+ * M014 S02 — Sidebar value block evidence.
  *
- * Covers: total balance rendering, tabular-nums, Live dot visibility,
- * collapsed compact format, and endpoint response shape.
+ * Covers: Live indicator rendering (expanded + collapsed) driven by the
+ * accounts summary endpoint, and endpoint response shape.
+ *
+ * The monetary total was removed from the sidebar value block per user
+ * request (pre-M014); the block now shows only a Live badge when open
+ * trades exist. Assertions therefore check the badge, not a balance.
  */
 
 test.describe('Sidebar Value Block', () => {
-  test('renders total balance with tabular-nums on /', async ({ page }) => {
-    await page.goto('/');
-    await hideDevOverlay(page);
-
-    const total = page.getByTestId('sidebar-value-total');
-    await expect(total).toBeVisible();
-
-    // Tabular-nums class ensures monospaced digits
-    const cls = await total.getAttribute('class');
-    expect(cls).toContain('tabular-nums');
-
-    // Value is a currency string (starts with $ or other symbol)
-    const text = await total.textContent();
-    expect(text).not.toBe('—');
-    expect(text).not.toBe('');
-  });
-
-  test('Live dot reflects open trade count from summary endpoint', async ({ page }) => {
+  test('LIVE indicator reflects open trade count from summary endpoint', async ({ page }) => {
     await page.goto('/');
     await hideDevOverlay(page);
 
@@ -34,31 +21,41 @@ test.describe('Sidebar Value Block', () => {
     const res = await page.request.get('/api/accounts/summary');
     const body = await res.json();
 
-    const sidebarValue = page.getByTestId('sidebar-value');
-    const dot = sidebarValue.getByTestId('sidebar-value-live-dot');
-    const liveLabel = sidebarValue.locator('text=LIVE');
+    const valueBlock = page.getByTestId('sidebar-value');
+    // Expanded-mode Live dot carries the --positive token (T03 migration).
+    const dot = valueBlock.locator('span.bg-positive');
+    const liveLabel = valueBlock.locator('text=LIVE');
 
     if (body.openTradeCount > 0) {
+      await expect(valueBlock).toBeVisible();
       await expect(dot).toBeVisible();
       await expect(liveLabel).toBeVisible();
     } else {
-      await expect(dot).toHaveCount(0);
+      // No open trades → the block renders nothing.
+      await expect(valueBlock).toHaveCount(0);
       await expect(liveLabel).toHaveCount(0);
     }
   });
 
-  test('collapsed mode shows compact value with Live dot', async ({ page }) => {
+  test('collapsed mode shows Live dot', async ({ page }) => {
     await page.goto('/');
     await hideDevOverlay(page);
+
+    const res = await page.request.get('/api/accounts/summary');
+    const body = await res.json();
 
     await page.locator('button[aria-label="Collapse sidebar"]').click();
     await expect(page.locator('aside')).toHaveCSS('width', '56px');
 
-    // Compact value rendered (short format, e.g. $12.3k or $1.2M or $123)
-    const valueBlock = page.getByTestId('sidebar-value');
-    await expect(valueBlock).toBeVisible();
-    const text = await valueBlock.textContent();
-    expect(text?.trim()).not.toBe('');
+    if (body.openTradeCount > 0) {
+      // Collapsed: the block renders the compact Live dot only — no label.
+      const valueBlock = page.getByTestId('sidebar-value');
+      await expect(valueBlock).toBeVisible();
+      await expect(valueBlock.getByTestId('sidebar-value-live-dot')).toBeVisible();
+      await expect(valueBlock.locator('text=LIVE')).toHaveCount(0);
+    } else {
+      await expect(page.getByTestId('sidebar-value')).toHaveCount(0);
+    }
   });
 
   test('summary endpoint returns expected shape', async ({ page }) => {

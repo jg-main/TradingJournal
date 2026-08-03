@@ -2,39 +2,54 @@ import { test, expect } from '@playwright/test';
 import { hideDevOverlay } from './helpers';
 
 /**
- * M007 S01 — Sidebar shell evidence.
+ * M014 S02 — Sidebar shell evidence.
  *
- * Covers: grouped navigation sections, Checks nav addition, active rail,
- * collapsed icon-only mode, collapse persistence across reload (saved
- * browser state), and tooltip labels in collapsed mode.
+ * Covers: grouped navigation sections (Trading/Accounts/Analysis/System),
+ * active rail, collapsed icon-only mode, collapse persistence across reload
+ * (saved browser state), and tooltip labels in collapsed mode.
  */
 
 const COLLAPSE_TOGGLE = 'button[aria-label="Collapse sidebar"]';
 const EXPAND_TOGGLE = 'button[aria-label="Expand sidebar"]';
 
 test.describe('Sidebar Shell', () => {
-  test('renders grouped sections in order with Checks under Trading', async ({ page }) => {
+  test('renders Trading/Accounts/Analysis/System sections in order with expected items', async ({ page }) => {
     await page.goto('/trades');
     const nav = page.locator('aside nav');
 
     const headers = nav.locator('div.uppercase');
-    await expect(headers).toHaveText(['Workspace', 'Trading', 'Tools', 'System']);
+    await expect(headers).toHaveText(['Trading', 'Accounts', 'Analysis', 'System']);
 
-    // Trading section contains Trades, Reviews, Checks
+    // Trading section contains the daily workflow: Dashboard, Watchlist, Trades, Reviews, Checks
     const tradingSection = nav.locator('div', { has: page.locator('div.uppercase', { hasText: 'Trading' }) }).first();
-    await expect(tradingSection.getByRole('link', { name: 'Trades' })).toBeVisible();
-    await expect(tradingSection.getByRole('link', { name: 'Reviews' })).toBeVisible();
-    await expect(tradingSection.getByRole('link', { name: 'Checks' })).toBeVisible();
+    for (const label of ['Dashboard', 'Watchlist', 'Trades', 'Reviews', 'Checks']) {
+      await expect(tradingSection.getByRole('link', { name: label })).toBeVisible();
+    }
+
+    // Accounts section contains the Accounts link
+    const accountsSection = nav.locator('div', { has: page.locator('div.uppercase', { hasText: 'Accounts' }) }).first();
+    await expect(accountsSection.getByRole('link', { name: 'Accounts' })).toBeVisible();
+
+    // Analysis section contains Sizing
+    const analysisSection = nav.locator('div', { has: page.locator('div.uppercase', { hasText: 'Analysis' }) }).first();
+    await expect(analysisSection.getByRole('link', { name: 'Sizing' })).toBeVisible();
+
+    // System section contains Alerts, Settings, Help
+    const systemSection = nav.locator('div', { has: page.locator('div.uppercase', { hasText: 'System' }) }).first();
+    for (const label of ['Alerts', 'Settings', 'Help']) {
+      await expect(systemSection.getByRole('link', { name: label })).toBeVisible();
+    }
   });
 
   test('active route shows primary rail', async ({ page }) => {
     await page.goto('/trades');
     const tradesLink = page.locator('aside').getByRole('link', { name: 'Trades' });
 
-    // Active link carries the before: rail classes (bg-sidebar-primary)
+    // Active link carries the before: rail (bg-sidebar-primary) and the sidebar
+    // accent fill (bg-sidebar-accent) — T02 migrated the active state off bg-muted
     const cls = await tradesLink.getAttribute('class');
     expect(cls).toContain('before:bg-sidebar-primary');
-    expect(cls).toContain('bg-muted');
+    expect(cls).toContain('bg-sidebar-accent');
 
     // Inactive link has no rail
     const reviewsLink = page.locator('aside').getByRole('link', { name: 'Reviews' });
@@ -68,7 +83,7 @@ test.describe('Sidebar Shell', () => {
     // Expand again
     await page.locator(EXPAND_TOGGLE).click();
     await expect(page.locator('aside')).toHaveCSS('width', '224px');
-    await expect(page.locator('aside nav div.uppercase').first()).toHaveText('Workspace');
+    await expect(page.locator('aside nav div.uppercase').first()).toHaveText('Trading');
   });
 
   test('collapsed mode shows tooltip labels on hover', async ({ page }) => {
