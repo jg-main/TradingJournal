@@ -7,6 +7,8 @@ import { DashboardChart } from '@/components/dashboard-chart';
 import { EmptyState } from '@/components/empty-state';
 import { toEChartsCalendarData, type CalendarHeatmapYearData } from '@/lib/calendar-heatmap';
 import { formatCurrency } from '@/components/dashboard/formatting';
+import { type ChartPalette } from '@/lib/chart-palette';
+import { useChartPalette } from '@/hooks/use-chart-palette';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -25,38 +27,25 @@ export interface CalendarHeatmapWidgetProps {
   testId?: string;
 }
 
-// ── Palette ────────────────────────────────────────────────────────────
-
-/**
- * Green-red symmetrical colour palette for daily P&L.
- * Index 0 = most negative (deep red), centre = neutral, last = most positive (deep green).
- * ECharts visualMap will interpolate through these stops.
- */
-const PNL_COLORS = [
-  '#7f1d1d', // -max: dark red
-  '#dc2626', // strong red
-  '#fca5a5', // light red
-  '#fef2f2', // near-zero negative
-  '#f0fdf4', // near-zero positive
-  '#86efac', // light green
-  '#22c55e', // strong green
-  '#166534', // +max: dark green
-];
-
 // ── Chart Option Builder ───────────────────────────────────────────────
 
 /**
  * Build the ECharts option for a single-year calendar heatmap.
  *
  * Uses ECharts' calendar coordinate system with:
- * - A visualMap for green/red P&L intensity colouring
- * - Day-of-week and month labels
+ * - A visualMap for P&L intensity colouring via the theme-aware
+ *   `palette.heatmap` ramp (8 stops, deep negative → pale → deep positive)
+ * - Day-of-week and month labels coloured with the axis token
  * - Custom tooltip showing date and P&L
  *
  * @param yearData One year's worth of calendar heatmap data
+ * @param palette  Active theme's ChartPalette (rebuilds the option on theme switch)
  * @returns ECharts option object, or null if no data
  */
-function buildChartOption(yearData: CalendarHeatmapYearData): Record<string, unknown> | null {
+function buildChartOption(
+  yearData: CalendarHeatmapYearData,
+  palette: ChartPalette,
+): Record<string, unknown> | null {
   if (!yearData || yearData.days.length === 0) return null;
 
   const echartsData = toEChartsCalendarData(yearData);
@@ -83,7 +72,7 @@ function buildChartOption(yearData: CalendarHeatmapYearData): Record<string, unk
       min: -maxAbs,
       max: maxAbs,
       inRange: {
-        color: PNL_COLORS,
+        color: palette.heatmap,
       },
       calculable: false,
       orient: 'horizontal',
@@ -104,7 +93,7 @@ function buildChartOption(yearData: CalendarHeatmapYearData): Record<string, unk
         splitLine: {
           show: true,
           lineStyle: {
-            color: '#e4e4e7',
+            color: palette.grid,
             width: 1,
           },
         },
@@ -116,11 +105,13 @@ function buildChartOption(yearData: CalendarHeatmapYearData): Record<string, unk
           firstDay: 0,
           nameMap: 'en',
           margin: 5,
+          color: palette.axis,
         },
         monthLabel: {
           show: true,
           margin: 8,
           position: 'start',
+          color: palette.axis,
         },
         yearLabel: {
           show: true,
@@ -128,6 +119,7 @@ function buildChartOption(yearData: CalendarHeatmapYearData): Record<string, unk
           margin: 10,
           fontWeight: 'bold',
           fontSize: 14,
+          color: palette.axis,
         },
       },
     ],
@@ -218,7 +210,11 @@ export function CalendarHeatmapWidget({
   const yearData = hasData && selectedYearIdx >= 0 && selectedYearIdx < heatmapData.length
     ? heatmapData[selectedYearIdx]
     : null;
-  const chartOption = yearData ? buildChartOption(yearData) : null;
+  const palette = useChartPalette();
+  const chartOption = useMemo(
+    () => (yearData ? buildChartOption(yearData, palette) : null),
+    [yearData, palette],
+  );
 
   // P&L summary stats for the selected year
   const stats = useMemo(() => {

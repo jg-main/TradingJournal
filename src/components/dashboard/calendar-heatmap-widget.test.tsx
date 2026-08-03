@@ -13,7 +13,12 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { CalendarHeatmapWidget } from './calendar-heatmap-widget';
 import { CustomizingProvider } from '@/lib/customizing-context';
+import { chartPalette } from '@/lib/chart-palette';
 import type { CalendarHeatmapYearData } from '@/lib/calendar-heatmap';
+
+// Light palette — jsdom has no 'dark' class on documentElement, so the
+// useChartPalette hook resolves the light theme.
+const LIGHT = chartPalette.light;
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
@@ -155,6 +160,40 @@ describe('CalendarHeatmapWidget', () => {
     expect(option.visualMap.inRange).toBeTruthy();
     expect(Array.isArray(option.visualMap.inRange.color)).toBe(true);
     expect(option.visualMap.inRange.color).toHaveLength(8);
+  });
+
+  // ── Chart palette colours ───────────────────────────────────────
+
+  it('uses the chartPalette heatmap ramp for visualMap colours', () => {
+    render(
+      <CalendarHeatmapWidget
+        heatmapData={SINGLE_YEAR_DATA}
+      />,
+    );
+    const chart = screen.getByTestId('echarts-mock');
+    const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+    // 8-stop diverging ramp: index 0 = deepest negative, index 7 = deepest positive
+    expect(option.visualMap.inRange.color).toEqual(LIGHT.heatmap);
+    expect(option.visualMap.inRange.color).toHaveLength(8);
+  });
+
+  it('uses chartPalette grid/axis tokens for the calendar chrome', () => {
+    render(
+      <CalendarHeatmapWidget
+        heatmapData={SINGLE_YEAR_DATA}
+      />,
+    );
+    const chart = screen.getByTestId('echarts-mock');
+    const option = JSON.parse(chart.getAttribute('data-option') ?? '{}');
+
+    const calendar = option.calendar[0];
+    // Split lines use the grid token
+    expect(calendar.splitLine.lineStyle.color).toBe(LIGHT.grid);
+    // Day/month/year labels use the axis token
+    expect(calendar.dayLabel.color).toBe(LIGHT.axis);
+    expect(calendar.monthLabel.color).toBe(LIGHT.axis);
+    expect(calendar.yearLabel.color).toBe(LIGHT.axis);
   });
 
   it('builds chart option with symmetrical visualMap range centred on zero', () => {
