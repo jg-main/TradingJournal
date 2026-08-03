@@ -74,13 +74,13 @@ export function SidebarValue({ collapsed = false }: SidebarValueProps) {
     >
       {collapsed ? (
         <span
-          className="size-1.5 rounded-full bg-emerald-500"
+          className="size-1.5 rounded-full bg-positive"
           data-testid="sidebar-value-live-dot"
         />
       ) : (
         <div className="flex items-center gap-1.5">
-          <span className="size-1.5 rounded-full bg-emerald-500" />
-          <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+          <span className="size-1.5 rounded-full bg-positive" />
+          <span className="text-[10px] font-medium uppercase tracking-wider text-positive">
             LIVE
           </span>
         </div>
