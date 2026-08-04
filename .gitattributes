@@ -1,0 +1,2 @@
+# Requirement documents use Markdown hard line breaks (two trailing spaces).
+docs/requirements/*.md whitespace=-trailing-space

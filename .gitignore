@@ -69,8 +69,13 @@ coverage/
 # ── User uploads (created at runtime) ──
 public/uploads/
 
-# ── Stale docs ──
-docs/
+# ── Documentation artifacts ──
+# Durable product documentation, requirements, and selected UAT evidence under
+# docs/ are versioned. Only generated or local tooling artifacts stay ignored.
+docs/.gsd/
+docs/uat/generated/
+docs/gsd/
+docs/*.zip
 
 # ── Runtime directories ──
 .trading-journal/
