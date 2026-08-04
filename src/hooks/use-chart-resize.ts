@@ -41,8 +41,9 @@ export interface UseChartResizeOptions {
  * the hook works correctly even when the instance is set after the
  * ResizeObserver effect has already started (via `onChartReady`).
  *
- * ResizeObserver errors are caught and logged to `console.warn` so
- * they do not crash the page.
+ * Environments without ResizeObserver (SSR and lightweight DOM test runners)
+ * are ignored. Constructor/runtime errors in supporting browsers are caught
+ * and logged so they do not crash the page.
  *
  * @param containerRef - React ref to the container element to observe
  * @param echartsInstanceRef - Mutable ref holding the ECharts instance
@@ -76,11 +77,13 @@ export function useChartResize(
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    if (typeof ResizeObserver === 'undefined') return;
 
     // ── Resize handler ──────────────────────────────────────────
     const handleResize = () => {
       const instance = echartsInstanceRef.current;
       if (!instance) return;
+      if (instance.isDisposed?.()) return;
       try {
         instance.resize();
       } catch (err) {

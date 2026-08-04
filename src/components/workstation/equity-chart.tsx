@@ -10,10 +10,12 @@
 // context (DashboardResponse). S06 swaps the fixture source for live API data
 // without touching this component.
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { ECharts } from 'echarts';
 import ReactECharts from 'echarts-for-react';
+import { useChartPalette } from '@/hooks/use-chart-palette';
 import { useChartResize } from '@/hooks/use-chart-resize';
+import { withAlpha, type ChartPalette } from '@/lib/chart-palette';
 import type { EquityDataPoint, DrawdownDataPoint, TradeMarkerPoint } from '@/lib/equity';
 
 export interface EquityChartProps {
@@ -58,6 +60,7 @@ function buildChartOption(
   equityCurve: EquityDataPoint[],
   drawdown: DrawdownDataPoint[],
   tradeMarkers: TradeMarkerPoint[],
+  palette: ChartPalette,
 ) {
   const hasEquity = equityCurve.length > 0;
   const hasDrawdown = drawdown.length > 0;
@@ -83,7 +86,7 @@ function buildChartOption(
       showSymbol: false,
       symbol: 'none',
       lineStyle: { width: 2 },
-      color: '#2563eb',
+      color: palette.primary,
       areaStyle: {
         color: {
           type: 'linear',
@@ -92,8 +95,8 @@ function buildChartOption(
           x2: 0,
           y2: 1,
           colorStops: [
-            { offset: 0, color: 'rgba(37, 99, 235, 0.25)' },
-            { offset: 1, color: 'rgba(37, 99, 235, 0.01)' },
+            { offset: 0, color: withAlpha(palette.primary, 0.25) },
+            { offset: 1, color: withAlpha(palette.primary, 0.01) },
           ],
         },
       },
@@ -113,7 +116,7 @@ function buildChartOption(
       smooth: true,
       showSymbol: false,
       symbol: 'none',
-      lineStyle: { width: 2, color: '#ef4444' },
+      lineStyle: { width: 2, color: palette.negative },
       areaStyle: {
         color: {
           type: 'linear',
@@ -122,8 +125,8 @@ function buildChartOption(
           x2: 0,
           y2: 1,
           colorStops: [
-            { offset: 0, color: 'rgba(239, 68, 68, 0.25)' },
-            { offset: 1, color: 'rgba(239, 68, 68, 0.02)' },
+            { offset: 0, color: withAlpha(palette.negative, 0.25) },
+            { offset: 1, color: withAlpha(palette.negative, 0.02) },
           ],
         },
       },
@@ -148,7 +151,7 @@ function buildChartOption(
         symbol: 'triangle',
         symbolRotate: 0,
         symbolSize: 12,
-        color: '#22c55e',
+        color: palette.positive,
         data: entryMarkers.map(
           (m) => [Date.parse(m.date), m.equity] as [number, number],
         ),
@@ -165,7 +168,7 @@ function buildChartOption(
         symbol: 'triangle',
         symbolRotate: 180,
         symbolSize: 12,
-        color: '#ef4444',
+        color: palette.negative,
         data: exitMarkers.map(
           (m) => [Date.parse(m.date), m.equity] as [number, number],
         ),
@@ -242,12 +245,15 @@ function buildChartOption(
     grid,
     xAxis: {
       type: 'time',
+      axisLabel: { color: palette.axis },
+      axisLine: { lineStyle: { color: palette.grid } },
     },
     yAxis: [
       {
         type: 'value',
         axisLabel: {
           formatter: '${value}',
+          color: palette.axis,
         },
       },
       {
@@ -257,12 +263,13 @@ function buildChartOption(
         inverse: false,
         axisLabel: {
           formatter: '{value}%',
+          color: palette.axis,
         },
         splitLine: {
           show: true,
           lineStyle: {
             type: 'dashed',
-            color: 'rgba(0,0,0,0.06)',
+            color: withAlpha(palette.grid, 0.65),
           },
         },
       },
@@ -299,6 +306,7 @@ export function EquityChart({
   drawdown,
   tradeMarkers,
 }: EquityChartProps) {
+  const palette = useChartPalette();
   const containerRef = useRef<HTMLDivElement>(null);
   const echartsInstanceRef = useRef<ECharts | null>(null);
 
@@ -309,9 +317,13 @@ export function EquityChart({
   }, []);
 
   const isEmpty = equityCurve.length === 0;
-  const chartOption = !isEmpty
-    ? buildChartOption(equityCurve, drawdown, tradeMarkers)
-    : null;
+  const chartOption = useMemo(
+    () =>
+      !isEmpty
+        ? buildChartOption(equityCurve, drawdown, tradeMarkers, palette)
+        : null,
+    [drawdown, equityCurve, isEmpty, palette, tradeMarkers],
+  );
 
   if (isEmpty) {
     return (

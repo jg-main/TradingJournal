@@ -59,6 +59,11 @@ import path from 'node:path';
 const APP_DIR = path.resolve(process.cwd(), 'src/app');
 const COMPONENTS_DIR = path.resolve(process.cwd(), 'src/components');
 
+const WORKSTATION_TOKEN_BOUNDARY_FILES = [
+  'src/app/(workstation)/workspace/workstation.css',
+  'src/components/workstation/equity-chart.tsx',
+] as const;
+
 /**
  * Recursively collect surface source files:
  *   - under src/app: .tsx only (pages/layouts), skipping api/ and dev/
@@ -216,6 +221,18 @@ function violationsInFile(file: string): Violation[] {
   return findViolations(fs.readFileSync(file, 'utf-8'));
 }
 
+/** Hard-coded CSS/ECharts colors that bypass the theme-aware semantic palette. */
+function findHardcodedColorLiterals(source: string): Violation[] {
+  const hits: Violation[] = [];
+  const literalColor = /#[0-9a-f]{3,8}\b|\b(?:rgb|hsl)a?\s*\(/gi;
+  for (const [index, line] of source.split('\n').entries()) {
+    for (const match of line.matchAll(literalColor)) {
+      hits.push({ line: index + 1, literal: match[0] });
+    }
+  }
+  return hits;
+}
+
 /* ── Allowlist: files still awaiting migration (shrinks per task T02–T06) ── */
 
 /**
@@ -316,6 +333,20 @@ describe('S05 surface token migration contract', () => {
           hits.map((h) => `  line ${h.line}: ${h.literal}`).join('\n'),
       ).toEqual([]);
     });
+
+    it.each(WORKSTATION_TOKEN_BOUNDARY_FILES)(
+      '%s contains no hard-coded CSS or ECharts color literals',
+      (rel) => {
+        const hits = findHardcodedColorLiterals(
+          fs.readFileSync(path.resolve(process.cwd(), rel), 'utf-8'),
+        );
+        expect(
+          hits,
+          `${rel} bypasses the M014 theme-aware semantic token boundary:\n` +
+            hits.map((hit) => `  line ${hit.line}: ${hit.literal}`).join('\n'),
+        ).toEqual([]);
+      },
+    );
   });
 
   /* ── Group 4: scanner self-test ───────────────────────────────────────── */

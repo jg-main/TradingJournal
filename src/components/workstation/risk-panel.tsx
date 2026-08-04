@@ -143,7 +143,7 @@ export function RiskPanel() {
           <StatRow
             label="Missing Stops"
             value={fmtInt(risk.current.missingStops)}
-            className={risk.current.missingStops > 0 ? 'ws-neg' : ''}
+            className={risk.current.missingStops > 0 ? 'ws-severity-critical' : ''}
           />
           <StatRow
             label="Stop Coverage"

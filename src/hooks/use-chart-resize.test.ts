@@ -6,8 +6,8 @@
  * Covers: ResizeObserver setup and teardown, throttle behavior, custom
  * throttleMs, immediate resize on chart:resize-final event, cancellation
  * of pending throttle on final resize, cleanup on unmount, null ref
- * safety, missing echarts instance, and error handling for both
- * ResizeObserver construction and echarts.resize() failures.
+ * safety, missing ResizeObserver/echarts instances, and error handling for
+ * both ResizeObserver construction and echarts.resize() failures.
  *
  * Run: npx vitest run src/hooks/use-chart-resize.test.ts
  */
@@ -63,7 +63,7 @@ function dispatchFinalResizeEvent(): void {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function createMockEChartsInstance(): ECharts {
-  return { resize: vi.fn() } as unknown as ECharts;
+  return { resize: vi.fn(), isDisposed: vi.fn(() => false) } as unknown as ECharts;
 }
 
 function mountContainer(): HTMLDivElement {
@@ -114,6 +114,25 @@ describe('useChartResize', () => {
 
     // No ResizeObserver should have been created because the effect returns early
     expect(resizeObserverInstance).toBeNull();
+  });
+
+  it('does nothing when ResizeObserver is unavailable', () => {
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      value: undefined,
+      writable: true,
+    });
+    const containerRef = React.createRef<HTMLDivElement>();
+    const echartsRef = { current: createMockEChartsInstance() };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (containerRef as any).current = mountContainer();
+
+    renderHook(() => useChartResize(containerRef, echartsRef));
+
+    expect(resizeObserverInstance).toBeNull();
+    expect(consoleWarnSpy).not.toHaveBeenCalled();
+    consoleWarnSpy.mockRestore();
   });
 
   // ── Throttled resize ────────────────────────────────────────────
@@ -342,6 +361,25 @@ describe('useChartResize', () => {
     vi.advanceTimersByTime(100);
 
     expect(instance.resize).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resize an ECharts instance that has already been disposed', () => {
+    const containerRef = React.createRef<HTMLDivElement>();
+    const echartsInstance = {
+      resize: vi.fn(),
+      isDisposed: vi.fn(() => true),
+    } as unknown as ECharts;
+    const echartsRef = { current: echartsInstance };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (containerRef as any).current = mountContainer();
+
+    renderHook(() => useChartResize(containerRef, echartsRef));
+
+    simulateResize();
+    vi.advanceTimersByTime(100);
+
+    expect(echartsInstance.isDisposed).toHaveBeenCalledTimes(1);
+    expect(echartsInstance.resize).not.toHaveBeenCalled();
   });
 
   // ── Error handling ──────────────────────────────────────────────
