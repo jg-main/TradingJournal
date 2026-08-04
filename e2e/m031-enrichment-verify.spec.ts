@@ -54,6 +54,12 @@ test.describe('M031 Sector & Industry Enrichment', () => {
   });
 
   test('Enrich button shows loading state and results on click', async ({ page }) => {
+    await page.route('**/api/market-data/enrich-profiles', async (route) => {
+      const response = await route.fetch();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await route.fulfill({ response });
+    });
+
     await page.goto('/settings/market-data');
     await page.waitForLoadState('networkidle');
 
@@ -65,20 +71,9 @@ test.describe('M031 Sector & Industry Enrichment', () => {
     // Verify the button transitions to loading state (disabled + "Enriching...")
     await expect(page.getByRole('button', { name: /enriching/i })).toBeVisible({ timeout: 3000 });
 
-    // Wait for the result to appear (the button returns to normal or shows result)
-    await page.waitForTimeout(3000);
-
-    // Verify some result is displayed (either success summary or an error)
-    const resultRegion = page.locator('text=/enriched|errored|no missing|error/i');
-    // May or may not appear depending on DB contents — just verify no crash
-    const isVisible = await resultRegion.isVisible().catch(() => false);
-    // If visible, it should contain reasonable text; if not, the button should be re-enabled
-    if (isVisible) {
-      const text = await resultRegion.textContent();
-      expect(text).toBeTruthy();
-    } else {
-      await expect(page.getByRole('button', { name: /enrich missing profiles/i })).toBeEnabled();
-    }
+    await expect(page.getByText('Enrichment complete')).toBeVisible();
+    await expect(page.getByText(/Enriched: \d+ \| Errors: \d+ \| Total: \d+ symbols/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /enrich missing profiles/i })).toBeEnabled();
   });
 
   test('Trade detail hero renders with MTM data after refresh', async ({ page }) => {
