@@ -280,4 +280,4 @@ artifacts aligned with the implementation.
 - Do not modify a preserved legacy surface during a parallel greenfield slice
   unless the slice explicitly includes compatibility work.
 - The `docs/` directory is preserved by `npm run clean:artifacts`.
-- `CLAUDE.md` is a compatibility pointer only; keep operational guidance here.
+
