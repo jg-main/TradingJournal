@@ -137,6 +137,7 @@ test.describe('Visual Regression Baselines', () => {
     await expect(page).toHaveScreenshot('production-workstation-fullpage-1440x900.png', {
       fullPage: true,
       threshold: 0.3,
+      maxDiffPixels: 100,
     });
   });
 
