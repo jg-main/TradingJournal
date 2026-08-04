@@ -649,21 +649,22 @@ test.describe('Account Cutover Integration', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 7: Settings persistence — edit account name and verify reload
+  // Test 7: Settings persistence — edit account name and verify a new page load
   // ═════════════════════════════════════════════════════════════════════
 
-  test('persists account name edit through API and displays updated value after reload', async ({
+  test('persists account name edit through API and displays updated value in a new page', async ({
     page,
   }) => {
     const { errors, failed } = setupErrorCapture(page);
 
-    await page.goto(`/settings/accounts/${populatedAccountId}/settings`);
-
-    await page.waitForResponse(
+    const initialAccountResponse = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}`) &&
         res.status() === 200,
     );
+    await page.goto(`/settings/accounts/${populatedAccountId}/settings`);
+    await initialAccountResponse;
+    await page.waitForLoadState('networkidle');
 
     const newName = `Renamed Cutover ${Date.now()}`;
 
@@ -674,17 +675,19 @@ test.describe('Account Cutover Integration', () => {
     );
     expect(apiResponse.status()).toBe(200);
 
-    // Reload the page and verify
-    const reloadedAccountResponse = page.waitForResponse(
+    // A new document proves persistence without cancelling the captured
+    // page's in-flight requests during a WebKit reload.
+    const verificationPage = await page.context().newPage();
+    const verificationAccountResponse = verificationPage.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}`) &&
         res.status() === 200,
     );
-    await page.reload();
-    await reloadedAccountResponse;
-    await page.waitForLoadState('networkidle');
-
-    await expect(page.getByLabel(/account name/i)).toHaveValue(newName);
+    await verificationPage.goto(`/settings/accounts/${populatedAccountId}/settings`);
+    await verificationAccountResponse;
+    await verificationPage.waitForLoadState('networkidle');
+    await expect(verificationPage.getByLabel(/account name/i)).toHaveValue(newName);
+    await verificationPage.close();
 
     // ── Clean up: restore original name ─────────────────────────────
     const restoreResponse = await page.request.put(
