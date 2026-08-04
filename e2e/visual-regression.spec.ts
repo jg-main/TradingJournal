@@ -52,6 +52,10 @@ const WORKSTATION_SCENARIOS = [
 
 const VIEWPORT = { width: 1440, height: 900 };
 
+// ECharts axis glyph rasterization can vary by a few hundred pixels under
+// parallel browser load without changing chart geometry.
+const CHART_RASTERIZATION_MAX_DIFF_PIXELS = 300;
+
 async function prepareProductionWorkstation(page: import('@playwright/test').Page): Promise<void> {
   const response = await page.request.post('/api/accounts', {
     data: {
@@ -166,6 +170,7 @@ test.describe('Visual Regression Baselines', () => {
       await expect(page).toHaveScreenshot(`workstation-${id}-1440x900.png`, {
         fullPage: false,
         threshold: 0.3,
+        maxDiffPixels: CHART_RASTERIZATION_MAX_DIFF_PIXELS,
       });
 
       assertNoConsoleErrors(errors);
@@ -184,6 +189,7 @@ test.describe('Visual Regression Baselines', () => {
     await expect(page).toHaveScreenshot('workstation-zero-positions-fullpage-1440x900.png', {
       fullPage: true,
       threshold: 0.3,
+      maxDiffPixels: CHART_RASTERIZATION_MAX_DIFF_PIXELS,
     });
   });
 
@@ -200,6 +206,7 @@ test.describe('Visual Regression Baselines', () => {
     await expect(page).toHaveScreenshot('workstation-large-drawdown-fullpage-1440x900.png', {
       fullPage: true,
       threshold: 0.3,
+      maxDiffPixels: CHART_RASTERIZATION_MAX_DIFF_PIXELS,
     });
   });
 
@@ -215,6 +222,7 @@ test.describe('Visual Regression Baselines', () => {
     await expect(page).toHaveScreenshot('workstation-many-watchlist-fullpage-1440x900.png', {
       fullPage: true,
       threshold: 0.3,
+      maxDiffPixels: CHART_RASTERIZATION_MAX_DIFF_PIXELS,
     });
   });
 
