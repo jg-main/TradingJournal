@@ -219,10 +219,11 @@ test.describe('Settings Hub — Market Data Route', () => {
     await page.waitForLoadState('networkidle');
 
     await page.getByRole('link', { name: /integrations/i }).click();
-    await page.getByRole('link', { name: /market data/i }).click();
-    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL('/settings/integrations');
+    await page.getByRole('link', { name: /^Market Data/ }).click();
 
-    await expect(page.locator('h1')).toContainText('Market Data');
+    await expect(page).toHaveURL('/settings/market-data');
+    await expect(page.getByRole('heading', { name: 'Market Data', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: /back to settings/i })).toBeVisible();
   });
 });
