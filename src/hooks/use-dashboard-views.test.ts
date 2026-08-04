@@ -465,7 +465,9 @@ describe('useDashboardViews', () => {
 
       // Wait for the async API hydration to override localStorage data
       await waitFor(() => {
-        expect(result.current.views).toHaveLength(1);
+        expect(result.current.views).toEqual([
+          expect.objectContaining({ id: 'api-fresh', name: 'Fresh API View' }),
+        ]);
       });
 
       expect(result.current.views[0].name).toBe('Fresh API View');
