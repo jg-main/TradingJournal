@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppTimezone } from '@/lib/timezone-context';
+import { BACKUP_TABLE_LABELS } from '@/lib/backup-tables';
 import { AlertTriangle, CircleCheck, Clock, Loader2, Upload, X } from 'lucide-react';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -25,48 +26,6 @@ interface BackupManifest {
 
 // ── Constants ───────────────────────────────────────────────────────────
 
-const TABLE_LABELS: Record<string, string> = {
-  app_profile: 'App Profile',
-  ai_settings: 'AI Settings',
-  accounts: 'Accounts',
-  settings: 'Settings',
-  market_data_settings: 'Market Data Settings',
-  schwab_tokens: 'Schwab Tokens',
-  instruments: 'Instruments',
-  accounting_executions: 'Accounting Executions',
-  correction_lineage: 'Correction Lineage',
-  accounting_migration_runs: 'Accounting Migration Runs',
-  accounting_migration_records: 'Accounting Migration Records',
-  account_positions: 'Account Positions',
-  account_performance: 'Account Performance',
-  valuation_marks: 'Valuation Marks',
-  fifo_lots: 'FIFO Lots',
-  financial_events: 'Financial Events',
-  ledger_entries: 'Ledger Entries',
-  ledger_postings: 'Ledger Postings',
-  lot_matches: 'Lot Matches',
-  lookup_values: 'Lookup Values',
-  setup_definitions: 'Setup Definitions',
-  checklist_definitions: 'Checklist Definitions',
-  play_evaluation_fields: 'Play Evaluation Fields',
-  trades: 'Trades',
-  trade_executions: 'Trade Executions',
-  trade_risk_snapshots: 'Trade Risk Snapshots',
-  trade_stop_adjustments: 'Trade Stop Adjustments',
-  trade_assets: 'Trade Assets',
-  trade_grades: 'Trade Grades',
-  trade_mistakes: 'Trade Mistakes',
-  trade_check_results: 'Trade Check Results',
-  position_price_snapshots: 'Position Price Snapshots',
-  trade_assessment_snapshots: 'Trade Assessment Snapshots',
-  watchlist_items: 'Watchlist Items',
-  account_transactions: 'Account Transactions',
-  account_rollforward: 'Account Rollforward',
-  weekly_reviews: 'Weekly Reviews',
-  review_action_items: 'Review Action Items',
-  alert_log: 'Alert Log',
-  dashboard_views: 'Dashboard Views',
-};
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -364,7 +323,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
                 <thead className="sticky top-0 border-b border-border bg-muted"><tr><th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Table</th><th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">Rows</th></tr></thead>
                 <tbody className="divide-y divide-border">
                   {Object.entries(previewData.manifest.tables).map(([tableName, count]) => (
-                    <tr key={tableName} className="hover:bg-muted/50"><td className="px-3 py-1.5 text-foreground">{TABLE_LABELS[tableName] ?? tableName}</td><td className="px-3 py-1.5 text-right text-muted-foreground">{count < 0 ? 'Error' : count.toLocaleString()}</td></tr>
+                    <tr key={tableName} className="hover:bg-muted/50"><td className="px-3 py-1.5 text-foreground">{BACKUP_TABLE_LABELS[tableName] ?? tableName}</td><td className="px-3 py-1.5 text-right text-muted-foreground">{count < 0 ? 'Error' : count.toLocaleString()}</td></tr>
                   ))}
                 </tbody>
               </table>

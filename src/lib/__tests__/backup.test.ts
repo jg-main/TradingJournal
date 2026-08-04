@@ -7,7 +7,7 @@
  *  - Positive: createBackupBuffer returns a Buffer with valid ZIP structure
  *  - Positive: ZIP contains manifest.json and all data/*.json for all 23 tables
  *  - Positive: ZIP contents match database state (correct row counts in manifest)
- *  - Negative: tableless DB gracefully produces a ZIP with -1 error indicators
+ *  - Negative: tableless DB fails closed instead of producing a partial ZIP
  *  - Edge: schemaVersion in ZIP manifest matches migration file count
  *  - Edge: backupTimestamp in manifest is valid ISO-8601
  *
@@ -179,28 +179,24 @@ async function runTests() {
     }
   }
 
-  // ── Test 4: Empty/tableless DB produces ZIP with -1 error counts ─────
-  console.log('\n\u25B6 Tableless database resilience');
+  // ── Test 4: Empty/tableless DB fails closed ───────────────────────────
+  console.log('\n\u25B6 Tableless database fails closed');
 
   {
     try {
       const sqlite = new Database(':memory:');
       const badDb = drizzle(sqlite, { schema });
 
-      const buffer = await createBackupBuffer(badDb);
-      assert(Buffer.isBuffer(buffer), 'tableless DB: returns a Buffer');
-      assert(buffer.length > 0, 'tableless DB: Buffer is non-empty');
-
-      const hasZipSig = buffer[0] === 0x50 && buffer[1] === 0x4B;
-      assert(hasZipSig, 'tableless DB: Buffer is a valid ZIP (PK signature)');
-
-      const zip = new AdmZip(buffer);
-      const entries = zip.getEntries().map((e) => e.entryName);
-      assert(entries.some((e) => e === 'manifest.json'), 'tableless DB: ZIP contains manifest.json');
-
+      let threw = false;
+      try {
+        await createBackupBuffer(badDb);
+      } catch (e) {
+        threw = e instanceof Error && e.message.includes('Backup failed while reading table');
+      }
+      assert(threw, 'tableless DB: backup fails closed with table-read error');
       sqlite.close();
     } catch (e) {
-      assert(false, `tableless DB: did not throw — ${e}`);
+      assert(false, `tableless DB: test errored — ${e}`);
     }
   }
 

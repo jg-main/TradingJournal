@@ -25,6 +25,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { serializeBackup, TABLE_REGISTRY } from './backup-serializer';
+import { BACKUP_ASSET_FILENAME } from './backup-tables';
 
 // ── Configuration ───────────────────────────────────────────────────────
 
@@ -141,6 +142,17 @@ export async function createBackupBuffer(
 
   // Step 2: Serialize all tables via the JSON serializer
   const backupData = await serializeBackup(database);
+  const incompleteTables = TABLE_REGISTRY
+    .filter(({ name }) => {
+      const count = backupData.manifest.tables[name];
+      return typeof count !== 'number' || count < 0;
+    })
+    .map(({ name }) => name);
+  if (incompleteTables.length > 0) {
+    throw new Error(
+      `Backup failed: incomplete table counts for ${incompleteTables.join(', ')}`,
+    );
+  }
 
   // Step 3: Create the archiver ZIP instance
   const archive = new ZipArchive({ zlib: { level: 9 } });
@@ -161,6 +173,9 @@ export async function createBackupBuffer(
     for (const file of files) {
       // Skip .gitkeep placeholder — it has no useful content
       if (file === '.gitkeep') continue;
+      if (!BACKUP_ASSET_FILENAME.test(file)) {
+        throw new Error(`Backup failed: unsupported upload asset "${file}"`);
+      }
 
       const filePath = join(uploadsDir, file);
       if (statSync(filePath).isFile()) {

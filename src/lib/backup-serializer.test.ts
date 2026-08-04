@@ -375,7 +375,7 @@ async function runTests() {
     }
   }
 
-  // ── Negative: invalid DB throws gracefully ───────────────────────────
+  // ── Negative: invalid DB fails closed ─────────────────────────────────
   console.log('\n\u25B6 Invalid database connection');
 
   {
@@ -384,15 +384,11 @@ async function runTests() {
       const badSqlite = new Database(':memory:'); // empty, no schema
       const badDb = drizzle(badSqlite, { schema });
 
-      // Should still produce a result with -1 counts for table queries
-      const result: BackupData = await serializeBackup(badDb);
-
-      // The function catches individual table query errors and records -1
-      const allNegative = Object.values(result.manifest.tables).every((c) => c === -1);
-      assert(allNegative, 'empty schema DB: all table counts set to -1 (error indicator)');
-      assert(typeof result.manifest.appVersion === 'string', 'manifest still populated on error');
-      assert(typeof result.manifest.backupTimestamp === 'string', 'backupTimestamp still populated on error');
-      assert(typeof result.manifest.schemaVersion === 'number', 'schemaVersion still populated on error');
+      await expectRejects(
+        () => serializeBackup(badDb),
+        'Backup failed while reading table',
+        'empty schema DB: serialization fails closed',
+      );
 
       badSqlite.close();
     } finally {
@@ -409,6 +405,22 @@ async function runTests() {
     process.exit(1);
   } else {
     console.log('         All tests passed!\n');
+  }
+}
+
+async function expectRejects(
+  operation: () => Promise<unknown>,
+  expectedMessage: string,
+  msg: string,
+) {
+  try {
+    await operation();
+    assert(false, `${msg} (did not reject)`);
+  } catch (error) {
+    assert(
+      error instanceof Error && error.message.includes(expectedMessage),
+      `${msg} (rejected with expected error)`,
+    );
   }
 }
 

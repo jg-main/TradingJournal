@@ -15,24 +15,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-
-function parseStringArrayFromSource(
-  path: string,
-  variableName: string,
-): string[] {
-  const src = readFileSync(path, 'utf-8');
-  const start = src.indexOf(`export const ${variableName}`);
-  if (start === -1) throw new Error(`${variableName} not found in ${path}`);
-  const bracket = src.indexOf('[', start);
-  const end = src.indexOf('];', bracket);
-  const block = src.substring(bracket + 1, end);
-  return [...block.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-}
-
-function parseRegistryNames(path: string): string[] {
-  const src = readFileSync(path, 'utf-8');
-  return [...src.matchAll(/name: '([^']+)'/g)].map((m) => m[1]);
-}
+import { BACKUP_TABLES, BACKUP_TABLE_LABELS } from '../backup-tables';
 
 function parseSchemaTableNames(path: string): string[] {
   const src = readFileSync(path, 'utf-8');
@@ -41,64 +24,18 @@ function parseSchemaTableNames(path: string): string[] {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
-const EXPECTED_LABEL_KEYS = new Set([
-  'app_profile',
-  'ai_settings',
-  'accounts',
-  'settings',
-  'market_data_settings',
-  'schwab_tokens',
-  'instruments',
-  'accounting_executions',
-  'correction_lineage',
-  'accounting_migration_runs',
-  'accounting_migration_records',
-  'account_positions',
-  'account_performance',
-  'valuation_marks',
-  'fifo_lots',
-  'financial_events',
-  'ledger_entries',
-  'ledger_postings',
-  'lot_matches',
-  'lookup_values',
-  'setup_definitions',
-  'checklist_definitions',
-  'play_evaluation_fields',
-  'trades',
-  'trade_executions',
-  'trade_risk_snapshots',
-  'trade_stop_adjustments',
-  'trade_assets',
-  'trade_grades',
-  'trade_mistakes',
-  'trade_check_results',
-  'position_price_snapshots',
-  'trade_assessment_snapshots',
-  'watchlist_items',
-  'account_transactions',
-  'account_rollforward',
-  'weekly_reviews',
-  'review_action_items',
-  'alert_log',
-  'dashboard_views',
-]);
-
 describe('Backup/Restore Table Consistency', () => {
-  const registryNames = parseRegistryNames(
-    resolve(ROOT, 'src/lib/backup-serializer.ts'),
-  );
-  const insertOrder = parseStringArrayFromSource(
-    resolve(ROOT, 'src/lib/restore.ts'),
-    'INSERT_ORDER',
-  );
+  const registryNames = BACKUP_TABLES.map(({ name }) => name);
+  const insertOrder: string[] = [...BACKUP_TABLES]
+    .sort((a, b) => a.restoreOrder - b.restoreOrder)
+    .map(({ name }) => String(name));
   const schemaTableNames = parseSchemaTableNames(
     resolve(ROOT, 'src/db/schema.ts'),
   );
 
   it('TABLE_REGISTRY covers every Drizzle schema table', () => {
-    const registrySet = new Set(registryNames);
-    const schemaSet = new Set(schemaTableNames);
+    const registrySet = new Set<string>(registryNames);
+    const schemaSet = new Set<string>(schemaTableNames);
 
     const missing = [...schemaSet].filter((name) => !registrySet.has(name));
     const stale = [...registrySet].filter((name) => !schemaSet.has(name));
@@ -108,8 +45,8 @@ describe('Backup/Restore Table Consistency', () => {
   });
 
   it('INSERT_ORDER covers all TABLE_REGISTRY entries', () => {
-    const registrySet = new Set(registryNames);
-    const orderSet = new Set(insertOrder);
+    const registrySet = new Set<string>(registryNames);
+    const orderSet = new Set<string>(insertOrder);
 
     const onlyInRegistry = [...registrySet].filter((n) => !orderSet.has(n));
     const onlyInOrder = [...orderSet].filter((n) => !registrySet.has(n));
@@ -131,13 +68,21 @@ describe('Backup/Restore Table Consistency', () => {
   });
 
   it('TABLE_LABELS keys cover all INSERT_ORDER tables', () => {
-    const missing = insertOrder.filter((t) => !EXPECTED_LABEL_KEYS.has(t));
-    const extra = [...EXPECTED_LABEL_KEYS].filter(
+    const labelKeys = new Set<string>(Object.keys(BACKUP_TABLE_LABELS));
+    const missing = insertOrder.filter((t) => !labelKeys.has(t));
+    const extra = [...labelKeys].filter(
       (t) => !insertOrder.includes(t),
     );
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
+  });
+
+  it('server consumers derive registry and restore order from shared metadata', () => {
+    const serializerSource = readFileSync(resolve(ROOT, 'src/lib/backup-serializer.ts'), 'utf-8');
+    const restoreSource = readFileSync(resolve(ROOT, 'src/lib/restore.ts'), 'utf-8');
+    expect(serializerSource).toContain('BACKUP_TABLES.map');
+    expect(restoreSource).toContain('...BACKUP_TABLES');
   });
 
   it('TABLE_REGISTRY has no duplicates', () => {

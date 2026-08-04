@@ -6,7 +6,7 @@
  *
  * Negative tests (Q7 coverage):
  * - Missing uploads directory -> gracefully skipped, ZIP contains manifest.json
- * - Empty/tableless DB         -> gracefully handled, ZIP contains manifest with -1 counts
+ * - Empty/tableless DB         -> fails closed instead of producing a partial ZIP
  * - Missing DB file            -> throws Error when no dbParam provided
  * - No files in uploads        -> ZIP contains manifest.json and data/ files only
  *
@@ -128,40 +128,24 @@ async function runTests() {
     }
   }
 
-  // ── Negative: empty/tableless DB (error-resilience) ─────────────────
+  // ── Negative: empty/tableless DB fails closed ───────────────────────
   {
-    console.log('\n## Empty/tableless database (error resilience)');
+    console.log('\n## Empty/tableless database (fails closed)');
 
     try {
       setupTestDir();
-      // Create a database with no tables — serializeBackup will catch query errors
+      // Create a database with no tables. A backup must never encode failed
+      // table reads as an apparently valid archive.
       const sqlite = new Database(':memory:');
       const testDb = drizzle(sqlite, { schema });
 
-      // Function should not throw despite missing tables
       let threw = false;
-      let stream: ReadableStream<Uint8Array> | null = null;
       try {
-        stream = await createBackupArchive(testDb);
+        await createBackupArchive(testDb);
       } catch {
         threw = true;
       }
-      assert(!threw, 'tableless DB -> does not throw');
-
-      assert(stream instanceof ReadableStream, 'tableless DB -> returns a ReadableStream');
-
-      const buffer = await streamToBuffer(stream!);
-      assert(buffer.length > 0, 'tableless DB -> ZIP buffer has data');
-
-      const hasZipSig = buffer[0] === 0x50 && buffer[1] === 0x4B;
-      assert(hasZipSig, 'tableless DB -> buffer is a valid ZIP (PK signature)');
-
-      const contents = buffer.toString('latin1');
-      const hasManifest = contents.includes('manifest.json');
-      assert(hasManifest, 'tableless DB -> ZIP contains manifest.json');
-
-      const hasDataDir = contents.includes('data/');
-      assert(hasDataDir, 'tableless DB -> ZIP contains data/ prefix entries');
+      assert(threw, 'tableless DB -> backup creation fails closed');
 
       sqlite.close();
     } finally {

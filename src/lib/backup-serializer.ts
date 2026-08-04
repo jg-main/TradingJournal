@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import type * as schemaTypes from '@/db/schema';
 import * as tables from '@/db/schema';
+import { BACKUP_TABLES } from './backup-tables';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -96,60 +97,56 @@ export interface BackupTableRegistration {
   optionalInExistingBackups?: boolean;
 }
 
-export const TABLE_REGISTRY: BackupTableRegistration[] = [
-  { name: 'app_profile', ref: tables.appProfile },
-  { name: 'ai_settings', ref: tables.aiSettings },
-  { name: 'market_data_settings', ref: tables.marketDataSettings },
-  { name: 'schwab_tokens', ref: tables.schwabTokens },
-  { name: 'settings', ref: tables.settings },
-  { name: 'accounts', ref: tables.accounts },
-  { name: 'instruments', ref: tables.instruments },
-  { name: 'accounting_executions', ref: tables.accountingExecutions },
-  { name: 'correction_lineage', ref: tables.correctionLineage },
-  {
-    name: 'accounting_migration_runs',
-    ref: tables.accountingMigrationRuns,
-    optionalInExistingBackups: true,
-  },
-  {
-    name: 'accounting_migration_records',
-    ref: tables.accountingMigrationRecords,
-    optionalInExistingBackups: true,
-  },
-  { name: 'account_positions', ref: tables.accountPositions },
-  { name: 'account_performance', ref: tables.accountPerformance },
-  { name: 'valuation_marks', ref: tables.valuationMarks },
-  { name: 'fifo_lots', ref: tables.fifoLots },
-  { name: 'financial_events', ref: tables.financialEvents },
-  { name: 'ledger_entries', ref: tables.ledgerEntries },
-  { name: 'ledger_postings', ref: tables.ledgerPostings },
-  { name: 'lot_matches', ref: tables.lotMatches },
-  { name: 'lookup_values', ref: tables.lookupValues },
-  { name: 'setup_definitions', ref: tables.setupDefinitions },
-  { name: 'checklist_definitions', ref: tables.checklistDefinitions },
-  { name: 'play_evaluation_fields', ref: tables.playEvaluationFields },
-  { name: 'trades', ref: tables.trades },
-  { name: 'trade_executions', ref: tables.tradeExecutions },
-  { name: 'trade_risk_snapshots', ref: tables.tradeRiskSnapshots },
-  { name: 'trade_stop_adjustments', ref: tables.tradeStopAdjustments },
-  { name: 'trade_assets', ref: tables.tradeAssets },
-  { name: 'trade_grades', ref: tables.tradeGrades },
-  { name: 'trade_mistakes', ref: tables.tradeMistakes },
-  { name: 'trade_check_results', ref: tables.tradeCheckResults },
-  { name: 'position_price_snapshots', ref: tables.positionPriceSnapshots },
-  { name: 'trade_assessment_snapshots', ref: tables.tradeAssessmentSnapshots },
-  { name: 'watchlist_items', ref: tables.watchlistItems },
-  { name: 'alert_log', ref: tables.alertLog },
-  { name: 'account_transactions', ref: tables.accountTransactions },
-  { name: 'account_rollforward', ref: tables.accountRollforward },
-  { name: 'weekly_reviews', ref: tables.weeklyReviews },
-  { name: 'review_action_items', ref: tables.reviewActionItems },
-  {
-    name: 'dashboard_views',
-    ref: tables.dashboardViews,
-    optionalInExistingBackups: true,
-  },
-];
+const TABLE_REFS: Record<string, unknown> = {
+  app_profile: tables.appProfile,
+  ai_settings: tables.aiSettings,
+  market_data_settings: tables.marketDataSettings,
+  schwab_tokens: tables.schwabTokens,
+  settings: tables.settings,
+  accounts: tables.accounts,
+  instruments: tables.instruments,
+  accounting_executions: tables.accountingExecutions,
+  correction_lineage: tables.correctionLineage,
+  accounting_migration_runs: tables.accountingMigrationRuns,
+  accounting_migration_records: tables.accountingMigrationRecords,
+  account_positions: tables.accountPositions,
+  account_performance: tables.accountPerformance,
+  valuation_marks: tables.valuationMarks,
+  fifo_lots: tables.fifoLots,
+  financial_events: tables.financialEvents,
+  ledger_entries: tables.ledgerEntries,
+  ledger_postings: tables.ledgerPostings,
+  lot_matches: tables.lotMatches,
+  lookup_values: tables.lookupValues,
+  setup_definitions: tables.setupDefinitions,
+  checklist_definitions: tables.checklistDefinitions,
+  play_evaluation_fields: tables.playEvaluationFields,
+  trades: tables.trades,
+  trade_executions: tables.tradeExecutions,
+  trade_risk_snapshots: tables.tradeRiskSnapshots,
+  trade_stop_adjustments: tables.tradeStopAdjustments,
+  trade_assets: tables.tradeAssets,
+  trade_grades: tables.tradeGrades,
+  trade_mistakes: tables.tradeMistakes,
+  trade_check_results: tables.tradeCheckResults,
+  position_price_snapshots: tables.positionPriceSnapshots,
+  trade_assessment_snapshots: tables.tradeAssessmentSnapshots,
+  watchlist_items: tables.watchlistItems,
+  alert_log: tables.alertLog,
+  account_transactions: tables.accountTransactions,
+  account_rollforward: tables.accountRollforward,
+  weekly_reviews: tables.weeklyReviews,
+  review_action_items: tables.reviewActionItems,
+  dashboard_views: tables.dashboardViews,
+};
+
+export const TABLE_REGISTRY: BackupTableRegistration[] = BACKUP_TABLES.map((table) => ({
+  name: table.name,
+  ref: TABLE_REFS[table.name],
+  ...(('optionalInExistingBackups' in table && table.optionalInExistingBackups)
+    ? { optionalInExistingBackups: true }
+    : {}),
+}));
 
 /**
  * Number of tables registered in the schema.
@@ -162,9 +159,9 @@ export const TABLE_COUNT = TABLE_REGISTRY.length;
  * Serialize all tables in the database to per-table JSON arrays with a
  * manifest.
  *
- * Each table is queried independently so a failure in one table does not
- * prevent the others from being backed up. Failed tables record -1 in the
- * manifest and return an empty rows array.
+ * Every registered table must be readable for a backup to be considered
+ * valid. A partial archive is more dangerous than a failed backup because it
+ * can pass through restore validation and delete rows that were never saved.
  *
  * @param dbParam - A Drizzle ORM instance backed by better-sqlite3.
  * @returns BackupData containing the manifest and per-table row arrays.
@@ -180,10 +177,13 @@ export async function serializeBackup(
       const rows: unknown[] = await dbParam.select().from(ref);
       tablesData[name] = rows;
       tableCounts[name] = rows.length;
-    } catch {
-      // Record failure rather than crashing the whole backup
-      tablesData[name] = [];
-      tableCounts[name] = -1;
+    } catch (error) {
+      throw new Error(
+        `Backup failed while reading table "${name}": ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
     }
   }
 
