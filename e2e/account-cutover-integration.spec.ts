@@ -580,13 +580,14 @@ test.describe('Account Cutover Integration', () => {
   }) => {
     const { errors, failed } = setupErrorCapture(page);
 
-    await page.goto(`/settings/accounts/${populatedAccountId}/settings`);
-
-    await page.waitForResponse(
+    const initialAccountResponse = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}`) &&
         res.status() === 200,
     );
+    await page.goto(`/settings/accounts/${populatedAccountId}/settings`);
+    await initialAccountResponse;
+    await page.waitForLoadState('networkidle');
 
     // ── Settings tab is active ──────────────────────────────────────
     await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute(
@@ -674,12 +675,14 @@ test.describe('Account Cutover Integration', () => {
     expect(apiResponse.status()).toBe(200);
 
     // Reload the page and verify
-    await page.reload();
-    await page.waitForResponse(
+    const reloadedAccountResponse = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}`) &&
         res.status() === 200,
     );
+    await page.reload();
+    await reloadedAccountResponse;
+    await page.waitForLoadState('networkidle');
 
     await expect(page.getByLabel(/account name/i)).toHaveValue(newName);
 
@@ -699,7 +702,8 @@ test.describe('Account Cutover Integration', () => {
       (f) =>
         !f.includes('favicon') &&
         !f.includes('NS_BINDING_ABORTED') &&
-        !f.includes('ERR_ABORTED'),
+        !f.includes('ERR_ABORTED') &&
+        !f.includes('Load request cancelled'),
     );
     expect(apiFailures).toEqual([]);
   });

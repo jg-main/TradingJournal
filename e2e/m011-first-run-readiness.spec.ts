@@ -274,10 +274,13 @@ test.describe('first-run readiness', () => {
       (r) => r.url().includes('/api/setup-definitions') && r.request().method() === 'POST',
     );
     await page.getByRole('button', { name: 'Create' }).click();
-    expect((await setupPost).status()).toBe(201);
+    const setupPostResponse = await setupPost;
+    expect(setupPostResponse.status()).toBe(201);
+    const createdSetup = await setupPostResponse.json() as { id: string };
 
     // The plays page navigates to the new setup detail page after creation.
     // Navigate back to the settings hub to verify the checklist is complete.
+    await page.waitForURL(`/settings/plays/${createdSetup.id}`, { timeout: 10_000 });
     await page.goto('/settings', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: 'Setup your journal' })).toHaveCount(0, { timeout: 5_000 });
     await expect(page.getByText('All set')).toBeVisible();

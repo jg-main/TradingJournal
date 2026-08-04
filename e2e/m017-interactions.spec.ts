@@ -157,17 +157,23 @@ test.describe('M017 Interactions', () => {
     const delRes = await page.request.delete(`/api/trades/${trade.id}`);
     expect(delRes.ok()).toBeTruthy();
 
-    // Re-navigate to /trades and switch to Planned tab
-    await page.goto('/trades');
-    await expect(page.locator('h1')).toContainText('Trades');
-    await page.getByRole('tab', { name: /planned/i }).click();
+    // Verify in a fresh page so pending client navigation from the original
+    // Trades tab cannot race WebKit's explicit navigation.
+    const verificationPage = await page.context().newPage();
+    await verificationPage.goto('/trades');
+    await expect(verificationPage.locator('h1')).toContainText('Trades');
+    await verificationPage.getByRole('tab', { name: /planned/i }).click();
 
     // The deleted trade should no longer appear in the table
-    await expect(page.locator('tr').filter({ hasText: `M017DEL${TS}` })).not.toBeVisible();
+    await expect(verificationPage.locator('tr').filter({ hasText: `M017DEL${TS}` })).not.toBeVisible();
+    await verificationPage.close();
 
-    // Navigate to the deleted trade detail page — should show "Trade not found"
-    await page.goto(`/trades/${trade.id}`);
-    await expect(page.getByText('Trade not found')).toBeVisible();
+    // Use a fresh page so the direct detail navigation cannot race the
+    // preceding Trades-tab client navigation in WebKit.
+    const detailPage = await page.context().newPage();
+    await detailPage.goto(`/trades/${trade.id}`);
+    await expect(detailPage.getByText('Trade not found')).toBeVisible();
+    await detailPage.close();
   });
 
   test('/trades/new renders PlanTradeForm with Symbol input and Direction select', async ({ page }) => {
