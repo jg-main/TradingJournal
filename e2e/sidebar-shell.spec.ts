@@ -86,6 +86,22 @@ test.describe('Sidebar Shell', () => {
     await expect(page.locator('aside nav div.uppercase').first()).toHaveText('Trading');
   });
 
+  test('hydrates cleanly when collapsed mode was persisted before navigation', async ({ page }) => {
+    const browserErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') browserErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => browserErrors.push(error.message));
+    await page.addInitScript(() => localStorage.setItem('sidebar:collapsed', '1'));
+
+    await page.goto('/trades');
+    await hideDevOverlay(page);
+    await expect(page.locator(EXPAND_TOGGLE)).toBeVisible();
+    await expect(page.locator('aside')).toHaveCSS('width', '56px');
+
+    expect(browserErrors.filter((message) => /hydrat|server rendered html/i.test(message))).toEqual([]);
+  });
+
   test('collapsed mode shows tooltip labels on hover', async ({ page }) => {
     await page.goto('/trades');
     await hideDevOverlay(page);

@@ -71,13 +71,17 @@ test.describe('Accounts', () => {
     const account = await createAccount(page, accountName);
 
     await page.goto('/account');
-    await expect(page).toHaveURL(/\/accounts/);
+    await expect(page).toHaveURL(/\/settings\/accounts$/);
     await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
     // Account name is rendered inside a clickable <TableRow>, not an <a>/<Link> element.
     // Use a cell or row locator instead of getByRole('link').
     await expect(page.getByRole('cell', { name: accountName, exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     expect(account.id).toBeTruthy();
+
+    await page.goto('/accounts');
+    await expect(page).toHaveURL(/\/settings\/accounts$/);
+    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
   });
 
   test('persists deposit and withdrawal through Settings workflow', async ({ page }) => {

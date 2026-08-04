@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
 import { Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ import { SidebarAccount } from './sidebar-account';
 import { SidebarValue } from './sidebar-value';
 
 const COLLAPSED_STORAGE_KEY = 'sidebar:collapsed';
+const COLLAPSED_CHANGE_EVENT = 'sidebar:collapsed-change';
 
 function readCollapsed(): boolean {
   if (typeof window === 'undefined') return false;
@@ -23,28 +24,41 @@ function readCollapsed(): boolean {
   }
 }
 
+function subscribeCollapsed(onStoreChange: () => void): () => void {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === COLLAPSED_STORAGE_KEY) onStoreChange();
+  };
+  window.addEventListener('storage', handleStorage);
+  window.addEventListener(COLLAPSED_CHANGE_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener('storage', handleStorage);
+    window.removeEventListener(COLLAPSED_CHANGE_EVENT, onStoreChange);
+  };
+}
+
+function getServerCollapsed(): boolean {
+  return false;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   // Single active item across all sections; longest-matching-href wins so
   // nested routes (e.g. /settings/accounts) highlight the specific item.
   const activeHref = resolveActiveHref(pathname);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState<boolean>(readCollapsed);
+  const collapsed = useSyncExternalStore(subscribeCollapsed, readCollapsed, getServerCollapsed);
 
   // Collapsed visuals apply only on desktop. When the mobile drawer is open,
   // always render the full expanded sidebar with labels.
   const effectiveCollapsed = collapsed && !sidebarOpen;
 
   const toggleCollapsed = () => {
-    setCollapsed((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem(COLLAPSED_STORAGE_KEY, next ? '1' : '0');
-      } catch {
-        // localStorage unavailable — collapse still works for the session
-      }
-      return next;
-    });
+    try {
+      localStorage.setItem(COLLAPSED_STORAGE_KEY, collapsed ? '0' : '1');
+      window.dispatchEvent(new Event(COLLAPSED_CHANGE_EVENT));
+    } catch {
+      // localStorage unavailable — leave the persisted preference unchanged
+    }
   };
 
   return (

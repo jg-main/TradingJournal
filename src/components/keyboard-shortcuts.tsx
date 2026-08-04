@@ -25,6 +25,10 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // A nested surface (for example the workstation) may own the same key.
+      // Its capture-phase handler prevents the event before this global
+      // navigation layer sees it, avoiding duplicate overlays/actions.
+      if (e.defaultPrevented) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.metaKey || e.ctrlKey) return;

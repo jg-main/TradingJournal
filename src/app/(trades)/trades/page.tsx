@@ -1163,34 +1163,44 @@ function TradesPageInner() {
   });
   const [activeTab, setActiveTab] = useState<TabId>('open');
 
-  // Filter state
-  // Filter state — initialised from URL search params, falling back to localStorage
+  // Filter state starts from the URL so the server render and first client
+  // render are identical. Persisted browser-only values are restored after
+  // hydration below.
   const [fromDate, setFromDate] = useState(() => {
-    const urlVal = searchParams.get('from');
-    if (urlVal) return urlVal;
-    try { return localStorage.getItem('trades:fromDate') ?? ''; } catch { return ''; }
+    return searchParams.get('from') ?? '';
   });
   const [toDate, setToDate] = useState(() => {
-    const urlVal = searchParams.get('to');
-    if (urlVal) return urlVal;
-    try { return localStorage.getItem('trades:toDate') ?? ''; } catch { return ''; }
+    return searchParams.get('to') ?? '';
   });
   const [accountId, setAccountId] = useState(() => {
-    const urlVal = searchParams.get('accountId');
-    if (urlVal) return urlVal;
-    try { return localStorage.getItem('trades:accountId') ?? 'all'; } catch { return 'all'; }
+    return searchParams.get('accountId') ?? 'all';
   });
   const [direction, setDirection] = useState(() => {
-    const urlVal = searchParams.get('direction');
-    if (urlVal) return urlVal;
-    try { return localStorage.getItem('trades:direction') ?? 'all'; } catch { return 'all'; }
+    return searchParams.get('direction') ?? 'all';
   });
   const [refreshing, setRefreshing] = useState(false);
   const [activePreset, setActivePreset] = useState<string | null>(() => {
-    const urlVal = searchParams.get('preset');
-    if (urlVal) return urlVal;
-    try { return localStorage.getItem('trades:preset') || null; } catch { return null; }
+    return searchParams.get('preset');
   });
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
+
+  useEffect(() => {
+    const restorePersistedFilters = window.setTimeout(() => {
+      try {
+        if (!searchParams.has('from')) setFromDate(localStorage.getItem('trades:fromDate') ?? '');
+        if (!searchParams.has('to')) setToDate(localStorage.getItem('trades:toDate') ?? '');
+        if (!searchParams.has('accountId')) setAccountId(localStorage.getItem('trades:accountId') ?? 'all');
+        if (!searchParams.has('direction')) setDirection(localStorage.getItem('trades:direction') ?? 'all');
+        if (!searchParams.has('preset')) setActivePreset(localStorage.getItem('trades:preset') || null);
+      } catch {
+        // Browser storage may be unavailable; URL/default state remains valid.
+      } finally {
+        setFiltersHydrated(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(restorePersistedFilters);
+  }, [searchParams]);
 
   // Date-range presets
   const datePresets = useMemo(() => {
@@ -1251,6 +1261,8 @@ function TradesPageInner() {
 
   // Sync filter state to URL search params and localStorage for persistence
   useEffect(() => {
+    if (!filtersHydrated) return;
+
     const params = new URLSearchParams();
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
@@ -1269,7 +1281,7 @@ function TradesPageInner() {
       if (activePreset) localStorage.setItem('trades:preset', activePreset);
       else localStorage.removeItem('trades:preset');
     } catch { /* localStorage unavailable */ }
-  }, [fromDate, toDate, accountId, direction, activePreset, router]);
+  }, [fromDate, toDate, accountId, direction, activePreset, filtersHydrated, router]);
 
   // Account options for the filter dropdown
   const [accounts, setAccounts] = useState<AccountOption[]>([]);

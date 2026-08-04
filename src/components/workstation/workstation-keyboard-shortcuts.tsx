@@ -15,9 +15,9 @@
 // contentEditable elements.  Also ignores events when Ctrl, Alt, or Meta is
 // held so system / browser shortcuts pass through unchanged.
 //
-// Isolated from the legacy KeyboardShortcutsProvider: the workstation layout
-// at (workstation)/layout.tsx intentionally omits it, so no shortcut conflict
-// is possible on the /workspace route.
+// The development harness is isolated from the application shortcut provider.
+// On the production root, this listener runs in the capture phase and prevents
+// handled workstation keys before the global navigation layer sees them.
 //
 // The shortcut overlay is rendered inline (no portal) inside the workstation
 // component tree so it inherits the workstation CSS scope (.ws) and theme
@@ -327,8 +327,8 @@ export function WorkstationKeyboardShortcuts() {
       }
     };
 
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [cycleAccount, focusPanel, announce]);
 
   // ── Overlay (conditional) / ARIA announcer ──────────────────────────

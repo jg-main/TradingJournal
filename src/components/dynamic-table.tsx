@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   useReactTable,
   getCoreRowModel,
@@ -139,8 +138,6 @@ export default function DynamicTable<TData>({
   columnSelector,
   alwaysVisible,
 }: DynamicTableProps<TData>) {
-  const router = useRouter();
-
   // Ensure alwaysVisible columns are never hidden
   const safeInitialVisibility = useMemo(() => {
     if (!alwaysVisible) return initialVisibility ?? {};
@@ -303,7 +300,6 @@ export default function DynamicTable<TData>({
               onClick={() => onRowClick?.(row)}
               onKeyDown={e => { if (e.key === 'Enter') onRowClick?.(row); }}
               tabIndex={onRowClick ? 0 : undefined}
-              role={onRowClick ? 'link' : undefined}
               className={cn(
                 'border-b transition-colors',
                 onRowClick && 'cursor-pointer hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',

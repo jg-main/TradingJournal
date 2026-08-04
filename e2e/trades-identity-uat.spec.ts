@@ -538,6 +538,31 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     expect(storedDirection).toBe('short');
   });
 
+  test('persisted filters hydrate without replacing the server-rendered trade shell', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('trades:fromDate', '2020-01-01');
+      localStorage.setItem('trades:toDate', '');
+      localStorage.setItem('trades:accountId', 'all');
+      localStorage.setItem('trades:direction', 'short');
+      localStorage.setItem('trades:preset', 'YTD');
+    });
+
+    const hydrationErrors: string[] = [];
+    page.on('pageerror', (error) => {
+      if (/hydration|server rendered html/i.test(error.message)) {
+        hydrationErrors.push(error.message);
+      }
+    });
+
+    await page.goto('/trades');
+    await hideDevOverlay(page);
+
+    await expect(page.locator('#filter-from')).toHaveValue('2020-01-01');
+    await expect(page.locator('#filter-direction')).toContainText('Short');
+    await expect(page.getByRole('button', { name: 'YTD' })).toHaveClass(/bg-primary/);
+    await expect.poll(() => hydrationErrors).toEqual([]);
+  });
+
   test('Action menus: correct items per trade status', async ({ page }) => {
     const account = await setupAccount(page, `UAT-MENU-${TS}`);
 
@@ -773,7 +798,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
       '#filter-direction',
       'role=tab',
       '"Columns"',
-      'role=link',
+      `"KBOP-${TS}`,
       'aria="Trade actions"',
     ];
     for (let i = 0; i < 80 && !landmarks.every((l) => seq.some((s) => s.desc.includes(l))); i += 1) {
