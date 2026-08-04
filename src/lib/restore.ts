@@ -52,6 +52,8 @@ export const INSERT_ORDER: string[] = [
   'instruments',
   'accounting_executions',
   'correction_lineage',
+  'accounting_migration_runs',
+  'accounting_migration_records',
   'account_positions',
   'account_performance',
   'valuation_marks',
@@ -80,6 +82,7 @@ export const INSERT_ORDER: string[] = [
   'account_rollforward',
   'weekly_reviews',
   'review_action_items',
+  'dashboard_views',
 ];
 
 /**
@@ -87,6 +90,85 @@ export const INSERT_ORDER: string[] = [
  * Ensures no FK violations when PRAGMA foreign_keys = ON and deferred.
  */
 export const DELETE_ORDER: string[] = [...INSERT_ORDER].reverse();
+
+const IMMUTABLE_DELETE_TRIGGERS = [
+  {
+    name: 'trg_financial_events_prevent_delete',
+    table: 'financial_events',
+    error: 'Cannot delete a posted financial event (table: financial_events)',
+  },
+  {
+    name: 'trg_ledger_entries_prevent_delete',
+    table: 'ledger_entries',
+    error: 'Cannot delete a posted ledger entry (table: ledger_entries)',
+  },
+  {
+    name: 'trg_ledger_postings_prevent_delete',
+    table: 'ledger_postings',
+    error: 'Cannot delete a posted ledger posting (table: ledger_postings)',
+  },
+  {
+    name: 'trg_accounting_executions_prevent_delete',
+    table: 'accounting_executions',
+    error: 'Cannot delete an accounting execution (table: accounting_executions)',
+  },
+  {
+    name: 'trg_correction_lineage_prevent_delete',
+    table: 'correction_lineage',
+    error: 'Cannot delete a correction lineage record (table: correction_lineage)',
+  },
+  {
+    name: 'trg_valuation_marks_prevent_delete',
+    table: 'valuation_marks',
+    error: 'Cannot delete a valuation mark (table: valuation_marks)',
+  },
+  {
+    name: 'trg_migration_runs_prevent_delete',
+    table: 'accounting_migration_runs',
+    error: 'Cannot delete a migration run (table: accounting_migration_runs)',
+  },
+  {
+    name: 'trg_migration_records_prevent_delete',
+    table: 'accounting_migration_records',
+    error: 'Cannot delete a migration record (table: accounting_migration_records)',
+  },
+] as const;
+
+/**
+ * Run a destructive maintenance transaction without weakening accounting
+ * immutability after the transaction completes.
+ *
+ * SQLite schema changes participate in transactions. Dropping and recreating
+ * the DELETE triggers inside the same transaction means a failure rolls the
+ * trigger changes back together with the data changes. Recreating from the
+ * canonical definitions also repairs databases affected by the former
+ * restore implementation, which dropped these triggers permanently.
+ */
+export function runMaintenanceDeleteTransaction<T>(
+  sqlite: Database.Database,
+  operation: () => T,
+): T {
+  return sqlite.transaction(() => {
+    for (const trigger of IMMUTABLE_DELETE_TRIGGERS) {
+      sqlite.exec(`DROP TRIGGER IF EXISTS "${trigger.name}"`);
+    }
+
+    const result = operation();
+
+    for (const trigger of IMMUTABLE_DELETE_TRIGGERS) {
+      sqlite.exec(
+        `CREATE TRIGGER "${trigger.name}"
+         BEFORE DELETE ON "${trigger.table}"
+         FOR EACH ROW
+         BEGIN
+           SELECT RAISE(ABORT, '${trigger.error}');
+         END`,
+      );
+    }
+
+    return result;
+  })();
+}
 
 // ── Internal Helpers ────────────────────────────────────────────────────
 
@@ -143,7 +225,8 @@ function checkOpenTrades():
  * 1. ZIP integrity — open with adm-zip, catch errors
  * 2. Manifest exists — manifest.json present and valid JSON matching BackupManifest
  * 3. Schema version match — manifest.schemaVersion === getMigrationCount()
- * 4. All tables present — every TABLE_REGISTRY entry has data/<name>.json in ZIP
+ * 4. All required tables present — compatibility entries may be absent from
+ *    backups created before those tables were registered
  * 5. Data file integrity — each data file is valid JSON and row count matches manifest
  * 6. Ledger balance validation — sum of debits equals sum of credits in ledger_postings
  * 7. Open trades check — SELECT COUNT(*) FROM trades WHERE status = 'open' returns 0
@@ -219,9 +302,9 @@ export function validateRestoreZip(
 
   // Step 4: All tables present
   const missingTables: string[] = [];
-  for (const { name } of TABLE_REGISTRY) {
+  for (const { name, optionalInExistingBackups } of TABLE_REGISTRY) {
     if (!zip.getEntry(`data/${name}.json`)) {
-      missingTables.push(name);
+      if (!optionalInExistingBackups) missingTables.push(name);
     }
   }
   if (missingTables.length > 0) {
@@ -448,29 +531,12 @@ export async function executeRestore(
   let restoredTables = 0;
   let restoredRows = 0;
 
-  // DROP immutable accounting DELETE triggers before the transaction.
-  // These unconditionally block DELETE on ledger/accounting/valuation
-  // tables (migrations 0024, 0026, 0027). DDL auto-commits in SQLite,
-  // so DROP must run outside the transactional wipe below. The triggers
-  // will be recreated on next startup via migration CREATE TRIGGER IF NOT EXISTS.
-  const deleteTriggers = [
-    'trg_financial_events_prevent_delete',
-    'trg_ledger_entries_prevent_delete',
-    'trg_ledger_postings_prevent_delete',
-    'trg_accounting_executions_prevent_delete',
-    'trg_correction_lineage_prevent_delete',
-    'trg_valuation_marks_prevent_delete',
-  ];
-  for (const trigger of deleteTriggers) {
-    sqlite.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
-  }
-
   // Defer FK constraint checking until commit.
   // PRAGMA defer_foreign_keys MUST be set before the transaction starts;
   // inside a BEGIN block it is a no-op in SQLite.
   sqlite.exec('PRAGMA defer_foreign_keys = ON');
 
-  sqlite.transaction(() => {
+  runMaintenanceDeleteTransaction(sqlite, () => {
     // DELETE all existing rows in reverse FK order
     for (const tableName of DELETE_ORDER) {
       sqlite.exec(`DELETE FROM "${tableName}"`);
@@ -479,7 +545,8 @@ export async function executeRestore(
     // INSERT backup data in FK-safe order
     for (const tableName of INSERT_ORDER) {
       const entry = zip.getEntry(`data/${tableName}.json`);
-      // Defensive: skip if entry is missing (validation guaranteed all exist)
+      // Compatibility tables can be absent from backups created before they
+      // were registered. Their current rows were still cleared above.
       if (!entry) continue;
 
       const raw = entry.getData().toString('utf-8');
@@ -519,7 +586,7 @@ export async function executeRestore(
       restoredTables++;
       restoredRows += rows.length;
     }
-  })();
+  });
 
   // Step 7: Rebuild FIFO position projections after restore.
   // After replacing accounting_executions with backup data, the FIFO positions,

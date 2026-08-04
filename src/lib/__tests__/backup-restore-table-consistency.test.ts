@@ -34,6 +34,11 @@ function parseRegistryNames(path: string): string[] {
   return [...src.matchAll(/name: '([^']+)'/g)].map((m) => m[1]);
 }
 
+function parseSchemaTableNames(path: string): string[] {
+  const src = readFileSync(path, 'utf-8');
+  return [...src.matchAll(/sqliteTable\('([^']+)'/g)].map((m) => m[1]);
+}
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 const EXPECTED_LABEL_KEYS = new Set([
@@ -46,6 +51,8 @@ const EXPECTED_LABEL_KEYS = new Set([
   'instruments',
   'accounting_executions',
   'correction_lineage',
+  'accounting_migration_runs',
+  'accounting_migration_records',
   'account_positions',
   'account_performance',
   'valuation_marks',
@@ -74,6 +81,7 @@ const EXPECTED_LABEL_KEYS = new Set([
   'weekly_reviews',
   'review_action_items',
   'alert_log',
+  'dashboard_views',
 ]);
 
 describe('Backup/Restore Table Consistency', () => {
@@ -84,6 +92,20 @@ describe('Backup/Restore Table Consistency', () => {
     resolve(ROOT, 'src/lib/restore.ts'),
     'INSERT_ORDER',
   );
+  const schemaTableNames = parseSchemaTableNames(
+    resolve(ROOT, 'src/db/schema.ts'),
+  );
+
+  it('TABLE_REGISTRY covers every Drizzle schema table', () => {
+    const registrySet = new Set(registryNames);
+    const schemaSet = new Set(schemaTableNames);
+
+    const missing = [...schemaSet].filter((name) => !registrySet.has(name));
+    const stale = [...registrySet].filter((name) => !schemaSet.has(name));
+
+    expect(missing).toEqual([]);
+    expect(stale).toEqual([]);
+  });
 
   it('INSERT_ORDER covers all TABLE_REGISTRY entries', () => {
     const registrySet = new Set(registryNames);

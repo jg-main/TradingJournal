@@ -104,6 +104,18 @@ describe('Restore Pipeline', () => {
         sqlite.prepare(`INSERT INTO correction_lineage (id, account_id, original_execution_id, reversal_execution_id, replacement_execution_id, reason, corrected_at, created_at)
           VALUES (?, ?, ?, ?, ?, 'Price correction', ?, ?)`)
           .run('rt-cl-1', 'rt-acc-1', 'rt-ae-1', 'rt-ae-rev', 'rt-ae-rep', later, now);
+        sqlite.prepare(`INSERT INTO accounting_migration_runs
+          (id, account_id, status, total_records, mapped_count, anomaly_count, unsupported_count, duplicate_count, started_at, completed_at, created_at)
+          VALUES (?, ?, 'completed', 1, 1, 0, 0, 0, ?, ?, ?)`)
+          .run('rt-mr-1', 'rt-acc-1', now, later, now);
+        sqlite.prepare(`INSERT INTO accounting_migration_records
+          (id, run_id, source_table, source_id, status, record_type, created_at)
+          VALUES (?, ?, 'trade_executions', ?, 'mapped', 'execution', ?)`)
+          .run('rt-mrec-1', 'rt-mr-1', 'rt-ae-1', now);
+        sqlite.prepare(`INSERT INTO dashboard_views
+          (id, name, layout, hidden_widget_ids, created_at, updated_at, is_system, is_default)
+          VALUES (?, 'Restore View', '[]', '[]', ?, ?, 0, 1)`)
+          .run('rt-view-1', now, now);
 
         const backupData = await serializeBackup(testDb);
         const bakZip = new AdmZip();
@@ -121,17 +133,37 @@ describe('Restore Pipeline', () => {
         expect(result.success).toBe(true);
         expect(result.snapshotPath).toBeTruthy();
 
-        const accts = sqlite.prepare('SELECT id FROM accounts ORDER BY id').all() as { id: string }[];
+        const restoredSqlite = getSqliteHandle();
+        const accts = restoredSqlite.prepare('SELECT id FROM accounts ORDER BY id').all() as { id: string }[];
         expect(accts.length).toBe(1);
         expect(accts[0].id).toBe('rt-acc-1');
 
-        const execs = sqlite.prepare('SELECT id, action FROM accounting_executions ORDER BY id').all() as { id: string; action: string }[];
+        const execs = restoredSqlite.prepare('SELECT id, action FROM accounting_executions ORDER BY id').all() as { id: string; action: string }[];
         expect(execs.length).toBe(3);
         expect(execs.find((r: { id: string }) => r.id === 'rt-ae-1')?.action).toBe('buy');
 
-        const cl = sqlite.prepare('SELECT id FROM correction_lineage').all() as { id: string }[];
+        const cl = restoredSqlite.prepare('SELECT id FROM correction_lineage').all() as { id: string }[];
         expect(cl.length).toBe(1);
         expect(cl[0].id).toBe('rt-cl-1');
+
+        expect(
+          restoredSqlite.prepare('SELECT id FROM accounting_migration_runs').get(),
+        ).toEqual({ id: 'rt-mr-1' });
+        expect(
+          restoredSqlite.prepare('SELECT id FROM accounting_migration_records').get(),
+        ).toEqual({ id: 'rt-mrec-1' });
+        expect(
+          restoredSqlite.prepare('SELECT id FROM dashboard_views').get(),
+        ).toEqual({ id: 'rt-view-1' });
+
+        // Maintenance restore temporarily bypasses immutable DELETE triggers,
+        // but must restore them before committing.
+        expect(() => {
+          restoredSqlite.prepare('DELETE FROM ledger_postings WHERE id = ?').run('rt-lp-1');
+        }).toThrow(/Cannot delete a posted ledger posting/);
+        expect(() => {
+          restoredSqlite.prepare('DELETE FROM accounting_migration_runs WHERE id = ?').run('rt-mr-1');
+        }).toThrow(/Cannot delete a migration run/);
       } finally {
         rmSync(testDir, { recursive: true, force: true });
       }
@@ -203,6 +235,28 @@ describe('Restore Pipeline', () => {
           expect(validation.error.toLowerCase()).toContain('missing');
         }
       } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+
+    it('accepts existing backups that predate late-registered tables', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-compat-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name, optionalInExistingBackups } of TABLE_REGISTRY) {
+          if (optionalInExistingBackups) continue;
+          const rows = backupData.tables[name] ?? [];
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'));
+        }
+
+        expect(validateRestoreZip(bakZip.toBuffer())).toEqual({ valid: true });
+      } finally {
+        sqlite.close();
         rmSync(testDir, { recursive: true, force: true });
       }
     });

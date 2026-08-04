@@ -88,8 +88,15 @@ export function getMigrationCount(): number {
  * Each entry maps a snake_case database name to its Drizzle table object,
  * used for both querying (db.select().from(ref)) and output naming.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const TABLE_REGISTRY: { name: string; ref: any }[] = [
+export interface BackupTableRegistration {
+  name: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ref: any;
+  /** Older backups from the same schema version may omit tables added here late. */
+  optionalInExistingBackups?: boolean;
+}
+
+export const TABLE_REGISTRY: BackupTableRegistration[] = [
   { name: 'app_profile', ref: tables.appProfile },
   { name: 'ai_settings', ref: tables.aiSettings },
   { name: 'market_data_settings', ref: tables.marketDataSettings },
@@ -99,6 +106,16 @@ export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'instruments', ref: tables.instruments },
   { name: 'accounting_executions', ref: tables.accountingExecutions },
   { name: 'correction_lineage', ref: tables.correctionLineage },
+  {
+    name: 'accounting_migration_runs',
+    ref: tables.accountingMigrationRuns,
+    optionalInExistingBackups: true,
+  },
+  {
+    name: 'accounting_migration_records',
+    ref: tables.accountingMigrationRecords,
+    optionalInExistingBackups: true,
+  },
   { name: 'account_positions', ref: tables.accountPositions },
   { name: 'account_performance', ref: tables.accountPerformance },
   { name: 'valuation_marks', ref: tables.valuationMarks },
@@ -127,6 +144,11 @@ export const TABLE_REGISTRY: { name: string; ref: any }[] = [
   { name: 'account_rollforward', ref: tables.accountRollforward },
   { name: 'weekly_reviews', ref: tables.weeklyReviews },
   { name: 'review_action_items', ref: tables.reviewActionItems },
+  {
+    name: 'dashboard_views',
+    ref: tables.dashboardViews,
+    optionalInExistingBackups: true,
+  },
 ];
 
 /**

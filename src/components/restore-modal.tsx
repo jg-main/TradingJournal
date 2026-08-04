@@ -34,6 +34,9 @@ const TABLE_LABELS: Record<string, string> = {
   schwab_tokens: 'Schwab Tokens',
   instruments: 'Instruments',
   accounting_executions: 'Accounting Executions',
+  correction_lineage: 'Correction Lineage',
+  accounting_migration_runs: 'Accounting Migration Runs',
+  accounting_migration_records: 'Accounting Migration Records',
   account_positions: 'Account Positions',
   account_performance: 'Account Performance',
   valuation_marks: 'Valuation Marks',
@@ -44,6 +47,8 @@ const TABLE_LABELS: Record<string, string> = {
   lot_matches: 'Lot Matches',
   lookup_values: 'Lookup Values',
   setup_definitions: 'Setup Definitions',
+  checklist_definitions: 'Checklist Definitions',
+  play_evaluation_fields: 'Play Evaluation Fields',
   trades: 'Trades',
   trade_executions: 'Trade Executions',
   trade_risk_snapshots: 'Trade Risk Snapshots',
@@ -51,12 +56,16 @@ const TABLE_LABELS: Record<string, string> = {
   trade_assets: 'Trade Assets',
   trade_grades: 'Trade Grades',
   trade_mistakes: 'Trade Mistakes',
+  trade_check_results: 'Trade Check Results',
+  position_price_snapshots: 'Position Price Snapshots',
+  trade_assessment_snapshots: 'Trade Assessment Snapshots',
   watchlist_items: 'Watchlist Items',
   account_transactions: 'Account Transactions',
   account_rollforward: 'Account Rollforward',
   weekly_reviews: 'Weekly Reviews',
   review_action_items: 'Review Action Items',
   alert_log: 'Alert Log',
+  dashboard_views: 'Dashboard Views',
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -242,7 +251,7 @@ export default function RestoreModal({ onClose, initialFile }: { onClose: () => 
       aria-label="Restore backup"
     >
       <div className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl">
-        <button onClick={handleClose} className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground hover:text-foreground" aria-label="Close restore modal">
+        <button onClick={handleClose} className="absolute right-4 top-4 z-20 rounded-md p-1 text-muted-foreground hover:text-foreground" aria-label="Close restore modal">
           <X className="size-5" />
         </button>
 

@@ -18,19 +18,18 @@
 
 import { NextResponse } from 'next/server';
 import { getSqliteHandle } from '@/db/index';
-import { DELETE_ORDER } from '@/lib/restore';
+import { DELETE_ORDER, runMaintenanceDeleteTransaction } from '@/lib/restore';
 
 export async function POST() {
   try {
     const sqlite = getSqliteHandle();
 
-    sqlite.transaction(() => {
-      sqlite.exec('PRAGMA defer_foreign_keys = ON');
-
+    sqlite.exec('PRAGMA defer_foreign_keys = ON');
+    runMaintenanceDeleteTransaction(sqlite, () => {
       for (const tableName of DELETE_ORDER) {
         sqlite.exec(`DELETE FROM "${tableName}"`);
       }
-    })();
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

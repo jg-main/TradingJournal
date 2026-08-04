@@ -507,8 +507,8 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     });
 
     // On success: 200 { success, restoredTables, restoredRows, snapshotPath }
-    expect(restoreRes.status()).toBe(200);
     const restoreResult = await restoreRes.json();
+    expect(restoreRes.status(), JSON.stringify(restoreResult)).toBe(200);
     expect(restoreResult.success).toBe(true);
     expect(restoreResult.restoredTables).toBeGreaterThan(0);
     expect(restoreResult.restoredRows).toBeGreaterThan(0);

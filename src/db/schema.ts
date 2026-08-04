@@ -767,6 +767,53 @@ export const correctionLineage = sqliteTable('correction_lineage', {
   index('idx_correction_lineage_replacement_execution_id').on(t.replacementExecutionId),
 ]);
 
+// ── Legacy Accounting Migration Audit ──────────────────────────────────
+
+export const accountingMigrationRuns = sqliteTable('accounting_migration_runs', {
+  id: text('id').primaryKey().notNull(),
+  accountId: text('account_id').references(() => accounts.id).notNull(),
+  status: text('status', {
+    enum: ['in_progress', 'completed', 'failed', 'rolled_back'],
+  }).notNull().default('in_progress'),
+  totalRecords: integer('total_records').notNull().default(0),
+  mappedCount: integer('mapped_count').notNull().default(0),
+  anomalyCount: integer('anomaly_count').notNull().default(0),
+  unsupportedCount: integer('unsupported_count').notNull().default(0),
+  duplicateCount: integer('duplicate_count').notNull().default(0),
+  rebuildFingerprint: text('rebuild_fingerprint'),
+  startedAt: text('started_at').notNull(),
+  completedAt: text('completed_at'),
+  errorMessage: text('error_message'),
+  createdAt: text('created_at').notNull().default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_migration_runs_account_id').on(t.accountId),
+  index('idx_migration_runs_status').on(t.status),
+]);
+
+export const accountingMigrationRecords = sqliteTable('accounting_migration_records', {
+  id: text('id').primaryKey().notNull(),
+  runId: text('run_id').references(() => accountingMigrationRuns.id).notNull(),
+  sourceTable: text('source_table').notNull(),
+  sourceId: text('source_id').notNull(),
+  status: text('status', {
+    enum: ['mapped', 'anomaly', 'unsupported', 'duplicate'],
+  }).notNull(),
+  recordType: text('record_type', {
+    enum: ['cash_event', 'execution', 'price_mark', 'unsupported'],
+  }).notNull(),
+  anomalyCode: text('anomaly_code'),
+  anomalyField: text('anomaly_field'),
+  anomalyDetail: text('anomaly_detail'),
+  idempotencyKey: text('idempotency_key'),
+  accountingEventId: text('accounting_event_id'),
+  accountingExecutionId: text('accounting_execution_id'),
+  accountingMarkId: text('accounting_mark_id'),
+  createdAt: text('created_at').notNull().default(sql`(current_timestamp)`),
+}, (t) => [
+  index('idx_migration_records_run_id').on(t.runId),
+  index('idx_migration_records_source').on(t.sourceTable, t.sourceId),
+]);
+
 // ── Lot Matches ─────────────────────────────────────────────────────────
 
 export const lotMatches = sqliteTable('lot_matches', {
