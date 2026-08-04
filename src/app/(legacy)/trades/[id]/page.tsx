@@ -393,7 +393,12 @@ export default function TradeDetailPage() {
   const perfMetrics: PerfMetrics | null = metrics
     ? {
         duration: deriveDuration(metrics.position.openedAt, metrics.position.closedAt),
-        returnPercent: metrics.returnMetrics.returnPct,
+        // Canonical trade metrics expose a decimal fraction (0.0552), while
+        // TradePnlCard formats percentage points (5.52).
+        returnPercent:
+          metrics.returnMetrics.returnPct == null
+            ? null
+            : metrics.returnMetrics.returnPct * 100,
         totalFees: metrics.fees.totalFees,
       }
     : null;

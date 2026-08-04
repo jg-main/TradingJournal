@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 test.describe('M020 Per-Trade Performance Metrics', () => {
   test.describe.configure({ mode: 'serial' });
@@ -10,6 +11,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create a trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -40,12 +42,10 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     await page.goto(`/trades/${trade.id}`);
     await expect(page.locator('h1')).toContainText('PERF-C');
 
-    // Verify P&L-R Metrics card is present
-    const pnlCard = page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' });
-    await expect(pnlCard).toBeVisible();
-
-    // Scope to the enclosing div.mb-8 that wraps the Card
-    const card = page.locator('.mb-8').filter({ has: pnlCard }).first();
+    const card = page.locator('[data-slot="card"]').filter({
+      has: page.getByText('Total Fees', { exact: true }),
+    }).first();
+    await expect(card).toBeVisible();
 
     // Verify Duration label and value
     await expect(card.getByText('Duration')).toBeVisible();
@@ -54,7 +54,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
 
     // Verify Return % label and value
     await expect(card.getByText('Return %')).toBeVisible();
-    await expect(card.getByText('5.52%')).toBeVisible();
+    await expect(card.getByText('+5.52%')).toBeVisible();
 
     // Verify Total Fees label and value
     await expect(card.getByText('Total Fees')).toBeVisible();
@@ -62,9 +62,9 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
 
     // Verify existing P&L-R Metrics fields still render correctly
     await expect(card.getByText('Realized P&L')).toBeVisible();
-    await expect(card.getByText('$497.00')).toBeVisible();
+    await expect(card.getByText('+$497.00')).toBeVisible();
     await expect(card.getByText('R Multiple')).toBeVisible();
-    await expect(card.getByText('Avg Entry Price')).toBeVisible();
+    await expect(card.getByText('Avg Entry')).toBeVisible();
     await expect(card.getByText('180.00')).toBeVisible();
   });
 
@@ -75,6 +75,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create a trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -101,18 +102,17 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
     await expect(page.locator('h1')).toContainText('PERF-O');
 
-    // Verify P&L-R Metrics card is present
-    const pnlCard = page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' });
-    await expect(pnlCard).toBeVisible();
-
-    const card = page.locator('.mb-8').filter({ has: pnlCard }).first();
+    const card = page.locator('[data-slot="card"]').filter({
+      has: page.getByText('Total Fees', { exact: true }),
+    }).first();
+    await expect(card).toBeVisible();
 
     // Verify Duration label — value is dynamic (now - openedAt)
     await expect(card.getByText('Duration')).toBeVisible();
 
-    // Verify Return % label — zero P&L, zero fees = 0.00%
-    await expect(card.getByText('Return %')).toBeVisible();
-    await expect(card.getByText('0.00%')).toBeVisible();
+    // Without a current market mark, canonical open-trade return is unknown.
+    const returnMetric = card.getByText('Return %').locator('..');
+    await expect(returnMetric).toContainText('—');
 
     // Verify Total Fees label — zero fees for this test
     await expect(card.getByText('Total Fees')).toBeVisible();
@@ -129,6 +129,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create a planned trade (no executions)
     const tradeRes = await page.request.post('/api/trades', {
@@ -142,10 +143,8 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     await page.goto(`/trades/${trade.id}`);
     await expect(page.locator('h1')).toContainText('PERF-P');
 
-    // P&L-R Metrics card should NOT be rendered for planned trades (no executions)
-    await expect(
-      page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' })
-    ).not.toBeVisible();
+    // Performance metrics are not rendered for planned trades.
+    await expect(page.getByText('Total Fees', { exact: true })).toHaveCount(0);
   });
 
   test('negative P&L trade shows negative Return % correctly', async ({ page }) => {
@@ -155,6 +154,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create a losing trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -186,10 +186,10 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     await page.goto(`/trades/${trade.id}`);
     await expect(page.locator('h1')).toContainText('PERF-L');
 
-    const pnlCard = page.locator('[data-slot="card-title"]').filter({ hasText: 'P&L-R Metrics' });
-    await expect(pnlCard).toBeVisible();
-
-    const card = page.locator('.mb-8').filter({ has: pnlCard }).first();
+    const card = page.locator('[data-slot="card"]').filter({
+      has: page.getByText('Total Fees', { exact: true }),
+    }).first();
+    await expect(card).toBeVisible();
 
     // Verify negative Return %: (-2000 - 5 fees) / 10000 * 100 = -20.05%
     await expect(card.getByText('Return %')).toBeVisible();
