@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { notFound } from "next/navigation";
 import "../globals.css";
 
 const geistSans = Geist({
@@ -30,6 +31,13 @@ export default function DevRootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.ENABLE_DEV_SURFACES !== "true"
+  ) {
+    notFound();
+  }
+
   return (
     <html
       lang="en"
