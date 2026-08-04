@@ -56,7 +56,9 @@ test-watch: ## Run unit tests in watch mode
 	$(NPX) vitest --reporter verbose
 
 playwright: ## Run Playwright e2e tests (headless)
-	$(NPX) playwright test
+	$(NPX) playwright test --project=chromium
+	$(NPX) playwright test --project=firefox
+	$(NPX) playwright test --project=webkit
 
 playwright-ui: ## Run Playwright e2e tests in UI mode
 	$(NPX) playwright test --ui
