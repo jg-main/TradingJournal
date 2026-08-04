@@ -1,22 +1,33 @@
 import { defineConfig, devices } from '@playwright/test';
 
-process.env.DB_FILE_NAME ??= './.trading-journal/playwright-readiness.db';
+const requestedPort = Number.parseInt(process.env.PLAYWRIGHT_PORT ?? '', 10);
+const playwrightPort =
+  Number.isInteger(requestedPort) && requestedPort > 0 && requestedPort < 65_536
+    ? requestedPort
+    : 31_000 + (process.pid % 1_000);
+process.env.PLAYWRIGHT_PORT = String(playwrightPort);
+
+// A Playwright invocation owns one disposable database. Reusing a checked-out
+// SQLite file lets immutable records from earlier runs leak into later suites
+// (notably restore-readiness checks for open trades). The app server is shared,
+// so running DB-mutating specs concurrently would still target the same file.
+process.env.DB_FILE_NAME ??= `/tmp/trading-journal-playwright-${process.pid}/journal.db`;
 
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: `http://localhost:${playwrightPort}`,
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'npm run dev',
-    port: 3000,
-    reuseExistingServer: true,
+    command: `npm run dev -- -p ${playwrightPort}`,
+    port: playwrightPort,
+    reuseExistingServer: false,
     timeout: 30_000,
     env: {
       DB_FILE_NAME: process.env.DB_FILE_NAME,

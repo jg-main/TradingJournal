@@ -1,7 +1,7 @@
 /**
  * M005-22kf6a S01 T04 — Workstation Shell browser evidence at 1440x900.
  *
- * Proves the terminal-dense layout concept for the greenfield /workspace
+ * Proves the terminal-dense layout concept for the greenfield /dev/workstation
  * workstation: the full shell (toolbar + CSS Grid panels) fits a 1440x900
  * viewport without page scrolling, panels populate with realistic fixture
  * data, the FIXTURE badge and console.warn signal fixture mode, scenario
@@ -9,7 +9,7 @@
  * dashboard at / is unaffected.
  *
  * The fixture scenario never touches the database, so this spec needs no
- * API stubbing — /workspace renders entirely from src/lib/workstation-fixtures.
+ * API stubbing — /dev/workstation renders entirely from src/lib/workstation-fixtures.
  *
  * Coverage:
  * 1. Toolbar renders: brand, account selector, scenario selector, FIXTURE badge
@@ -54,7 +54,7 @@ test.describe('workstation shell at 1440x900', () => {
   test('toolbar renders with account selector, scenario selector, and FIXTURE badge', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
 
     const toolbar = page.getByTestId('ws-toolbar');
     await expect(toolbar).toBeVisible();
@@ -88,7 +88,7 @@ test.describe('workstation shell at 1440x900', () => {
   test('all named grid panels render and fit inside the viewport without page scroll', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
 
     const grid = page.getByTestId('ws-grid');
     await expect(grid).toBeVisible();
@@ -115,7 +115,7 @@ test.describe('workstation shell at 1440x900', () => {
   });
 
   test('fixture data populates KPI strip and data panels', async ({ page }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
 
     const kpis = page.getByTestId('ws-panel-kpis');
     await expect(kpis.getByText('Net P&L')).toBeVisible();
@@ -152,7 +152,7 @@ test.describe('workstation shell at 1440x900', () => {
     page.on('console', (msg) => {
       if (msg.type() === 'warning') warnings.push(msg.text());
     });
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     // The grid is SSR-visible before hydration; warnFixtureMode fires in a
@@ -168,7 +168,7 @@ test.describe('workstation shell at 1440x900', () => {
   test('scenario switching swaps fixture data; edge scenarios render correctly', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     // zero-positions: positions panel shows its empty state.
@@ -194,7 +194,7 @@ test.describe('workstation shell at 1440x900', () => {
 
   test('malformed ?scenario= param degrades to default without crashing', async ({ page }) => {
     const { pageErrors } = watchForErrors(page);
-    await page.goto('/workspace?scenario=bogus-scenario');
+    await page.goto('/dev/workstation?scenario=bogus-scenario');
 
     await expect(page.getByTestId('ws-grid')).toBeVisible();
     await expect(page.getByTestId('ws-scenario-select')).toHaveValue('default');
@@ -205,7 +205,7 @@ test.describe('workstation shell at 1440x900', () => {
   test('no unexpected console errors or page errors during the full flow', async ({ page }) => {
     const { consoleErrors, pageErrors } = watchForErrors(page);
 
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
     await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
     await page.getByTestId('ws-scenario-select').selectOption('many-watchlist');
@@ -215,23 +215,23 @@ test.describe('workstation shell at 1440x900', () => {
     expect(consoleErrors, 'console.error output').toEqual([]);
   });
 
-  test('legacy dashboard at / still renders with its sidebar (zero regression)', async ({
+  test('production root renders the live workstation inside the application sidebar', async ({
     page,
   }) => {
     await page.goto('/');
-    // Legacy chrome: the sidebar nav renders (the open/close toggle button is
-    // md:hidden and only exists below the 768px breakpoint).
+
     await expect(
       page.getByRole('complementary').getByRole('link', { name: 'Dashboard' }),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-    // The workstation shell must not leak into the legacy route.
-    await expect(page.getByTestId('ws-toolbar')).toHaveCount(0);
-    await expect(page.getByTestId('ws-grid')).toHaveCount(0);
+    await expect(page.getByTestId('ws-toolbar')).toBeVisible();
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+    await expect(page.getByTestId('ws-live-badge')).toBeVisible();
+    await expect(page.getByTestId('ws-fixture-badge')).toHaveCount(0);
+    await expect(page.getByTestId('ws-scenario-select')).toHaveCount(0);
   });
 
-  test('/workspace has no legacy sidebar (isolation proof)', async ({ page }) => {
-    await page.goto('/workspace');
+  test('/dev/workstation has no legacy sidebar (isolation proof)', async ({ page }) => {
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
     await expect(
       page.getByRole('button', { name: /open sidebar|close sidebar/i }),
@@ -241,7 +241,7 @@ test.describe('workstation shell at 1440x900', () => {
   test('market strip renders all 4 index cards with color-coded changes', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     const strip = page.getByTestId('ws-market-strip');
@@ -265,7 +265,7 @@ test.describe('workstation shell at 1440x900', () => {
   test('enhanced watchlist table has 7 columns with gap and proximity styling', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     const table = page.getByTestId('ws-watchlist-table');
@@ -312,7 +312,7 @@ test.describe('workstation shell at 1440x900', () => {
   test('proximity indicators highlight rows approaching trigger levels', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=many-watchlist');
+    await page.goto('/dev/workstation?scenario=many-watchlist');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     // many-watchlist has 28 items — some should be approaching triggers.
@@ -338,7 +338,7 @@ test.describe('workstation shell at 1440x900', () => {
     // component handles it defensively. The zero-positions scenario still
     // has watchlist items, so we verify the panel renders with data.
     // (Empty-state coverage lives in the component's manual verification.)
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
 
     // The populated state renders — empty state text is NOT present.
@@ -347,7 +347,7 @@ test.describe('workstation shell at 1440x900', () => {
   });
 
   test('screenshot evidence at 1440x900', async ({ page }, testInfo) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
     await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
 
@@ -367,7 +367,7 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   test('renders 7 column headers (Symbol, Side, Size, Entry, Mark, uP&L, R)', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
 
     const headers = page.getByTestId('ws-positions-table').locator('thead th');
@@ -383,7 +383,7 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   test('populates position rows with per-symbol data-testid and all columns', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
 
     // Default scenario: 3 open positions.
@@ -414,7 +414,7 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   test('R-multiple column renders with data-testid and sign prefix', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
 
     // Every position row has the R cell.
@@ -438,7 +438,7 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   test('stale mark indicator renders for positions with stale/missing markStatus', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
 
     // Default: TSLA is stale — indicator visible.
     await expect(
@@ -468,7 +468,7 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   });
 
   test('empty state renders when positions array is empty', async ({ page }) => {
-    await page.goto('/workspace?scenario=zero-positions');
+    await page.goto('/dev/workstation?scenario=zero-positions');
     await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
     await expect(page.getByTestId('ws-positions-empty')).toBeVisible();
     await expect(page.getByTestId('ws-positions-empty')).toHaveText(
@@ -480,7 +480,7 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   test('R-multiple renders — when data is unavailable (large-drawdown)', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=large-drawdown');
+    await page.goto('/dev/workstation?scenario=large-drawdown');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
 
     // Missing marks mean no unrealized P&L, so R = —.
@@ -492,7 +492,7 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   });
 
   test('panel header shows open position count', async ({ page }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(
       page
         .getByTestId('ws-panel-positions')
@@ -512,7 +512,7 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
   test('renders PTD and Current section headers with sub-header hierarchy', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
     // PTD section.
@@ -544,7 +544,7 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
   test('PTD section shows Realized P&L, Realized Fees, and Drawdown', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     const ptdSection = page.getByTestId('ws-risk-ptd-section');
     await expect(ptdSection).toBeVisible();
 
@@ -564,7 +564,7 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
   test('Current State section shows Open P&L, Open Risk, Portfolio Heat, Missing Stops, Stop Coverage, Exposure', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     const currentSection = page.getByTestId('ws-risk-current-section');
     await expect(currentSection).toBeVisible();
 
@@ -577,7 +577,7 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
   });
 
   test('Portfolio Heat renders as percentage in Current section', async ({ page }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     const heatRow = page
       .getByTestId('ws-risk-current-section')
       .locator('.ws-stat-row')
@@ -586,8 +586,8 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
     await expect(heatValue).toContainText('%');
   });
 
-  test('Missing Stops = 2 in large-drawdown renders with ws-neg', async ({ page }) => {
-    await page.goto('/workspace?scenario=large-drawdown');
+  test('Missing Stops = 2 in large-drawdown renders with critical-risk severity', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=large-drawdown');
     const stopsRow = page
       .getByTestId('ws-risk-current-section')
       .locator('.ws-stat-row')
@@ -595,11 +595,11 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
     const stopsValue = stopsRow.locator('.ws-num');
     await expect(stopsValue).toHaveText('2');
     const stopsClass = await stopsValue.evaluate((el) => el.className);
-    expect(stopsClass).toMatch(/ws-neg/);
+    expect(stopsClass).toMatch(/ws-severity-critical/);
   });
 
   test('zero-positions scenario shows zeroed risk metrics', async ({ page }) => {
-    await page.goto('/workspace?scenario=zero-positions');
+    await page.goto('/dev/workstation?scenario=zero-positions');
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
     // Open P&L is $0.00.
@@ -609,20 +609,20 @@ test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
       .filter({ hasText: 'Open P&L' });
     await expect(openPnlRow.locator('.ws-num')).toContainText('0');
 
-    // Missing Stops is 0 (no ws-neg).
+    // Missing Stops is 0 (no critical-risk severity).
     const stopsRow = page
       .getByTestId('ws-risk-current-section')
       .locator('.ws-stat-row')
       .filter({ hasText: 'Missing Stops' });
     await expect(stopsRow.locator('.ws-num')).toHaveText('0');
     const stopsClass = await stopsRow.locator('.ws-num').evaluate((el) => el.className);
-    expect(stopsClass).not.toMatch(/ws-neg/);
+    expect(stopsClass).not.toMatch(/ws-severity-critical/);
   });
 
   test('Many-watchlist scenario: positions and risk panels render without viewport overflow', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=many-watchlist');
+    await page.goto('/dev/workstation?scenario=many-watchlist');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
@@ -648,7 +648,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('renders all three sub-panels with data-testid attributes', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     const insights = page.getByTestId('ws-panel-insights');
@@ -663,7 +663,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('setup ranking table has 5 columns in correct order', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
 
     const headers = page
@@ -680,7 +680,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('setup ranking shows per-setup rows with data-testid and populated numeric columns', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
 
     // 4 setup rows.
@@ -711,7 +711,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('sample-size warnings render for very_small and small setups only', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
 
     // Gap Continuation (setup-gap) has very_small → ws-severity-critical class.
@@ -742,7 +742,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('large-drawdown reorders setup ranking and shows different data', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=large-drawdown');
+    await page.goto('/dev/workstation?scenario=large-drawdown');
     await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
 
     const rows = page
@@ -766,7 +766,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('attention insights list renders with severity badges and correct classes', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
 
     const list = page.getByTestId('ws-attention-insights-list');
@@ -800,7 +800,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('large-drawdown scenario shows critical severity insight', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=large-drawdown');
+    await page.goto('/dev/workstation?scenario=large-drawdown');
     await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
 
     // drawdown insight → critical.
@@ -820,7 +820,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('trade ideas table has 7 columns in correct order', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
 
     const headers = page.getByTestId('ws-ideas-table').locator('thead th');
@@ -837,7 +837,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('trade ideas rows have per-symbol data-testid and direction badges', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
 
     const rows = page.getByTestId('ws-ideas-table').locator('tbody tr');
@@ -867,14 +867,14 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('many-watchlist scenario yields more trade ideas than default', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=many-watchlist');
+    await page.goto('/dev/workstation?scenario=many-watchlist');
     await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
     const manyCount = await page
       .getByTestId('ws-ideas-table')
       .locator('tbody tr')
       .count();
 
-    await page.goto('/workspace?scenario=default');
+    await page.goto('/dev/workstation?scenario=default');
     await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
     const defaultCount = await page
       .getByTestId('ws-ideas-table')
@@ -887,7 +887,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('zero-positions scenario still renders setup ranking and insights (historical data)', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=zero-positions');
+    await page.goto('/dev/workstation?scenario=zero-positions');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     // Setup ranking and insights persist — they are historical, not position-dependent.
@@ -899,7 +899,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('panel fits inside the viewport at 1440x900 without page scroll', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
 
     const insights = page.getByTestId('ws-panel-insights');
@@ -923,7 +923,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   }) => {
     const { consoleErrors, pageErrors } = watchForErrors(page);
 
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
     await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
     await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
@@ -939,7 +939,7 @@ test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
   test('screenshot evidence at 1440x900 for S04 setups and ideas', async ({
     page,
   }, testInfo) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
     await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
     await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
@@ -969,7 +969,7 @@ test.describe('S05 EquityChart — ECharts dual-Y-axis equity/drawdown chart', (
   test('renders ECharts canvas inside equity panel at ws-equity-chart', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     const chartContainer = page.getByTestId('ws-equity-chart');
@@ -992,7 +992,7 @@ test.describe('S05 EquityChart — ECharts dual-Y-axis equity/drawdown chart', (
     page,
   }) => {
     const { consoleErrors, pageErrors } = watchForErrors(page);
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
     await expect(page.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
 
@@ -1012,7 +1012,7 @@ test.describe('S05 EquityChart — ECharts dual-Y-axis equity/drawdown chart', (
       'large-drawdown',
       'many-watchlist',
     ]) {
-      await page.goto(`/workspace?scenario=${scenario}`);
+      await page.goto(`/dev/workstation?scenario=${scenario}`);
       await expect(page.getByTestId('ws-grid')).toBeVisible();
       await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
       await expect(
@@ -1028,7 +1028,7 @@ test.describe('S05 PerformanceSummary — monthly table and drawdown block', () 
   test('monthly performance table renders with 4 columns and populated rows', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
 
     const table = page.getByTestId('ws-perf-monthly-table');
@@ -1054,7 +1054,7 @@ test.describe('S05 PerformanceSummary — monthly table and drawdown block', () 
   test('monthly table shows negative P&L with ws-neg class in large-drawdown', async ({
     page,
   }) => {
-    await page.goto('/workspace?scenario=large-drawdown');
+    await page.goto('/dev/workstation?scenario=large-drawdown');
     await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
 
     const table = page.getByTestId('ws-perf-monthly-table');
@@ -1070,7 +1070,7 @@ test.describe('S05 PerformanceSummary — monthly table and drawdown block', () 
   test('drawdown summary shows max DD, max DD %, current DD, current DD %', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
 
     const drawdown = page.getByTestId('ws-perf-drawdown-summary');
@@ -1105,7 +1105,7 @@ test.describe('S05 PerformanceSummary — monthly table and drawdown block', () 
       'large-drawdown',
       'many-watchlist',
     ]) {
-      await page.goto(`/workspace?scenario=${scenario}`);
+      await page.goto(`/dev/workstation?scenario=${scenario}`);
       await expect(page.getByTestId('ws-grid')).toBeVisible();
       await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
       await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
@@ -1118,7 +1118,7 @@ test.describe('S05 PerformanceSummary — monthly table and drawdown block', () 
   test('performance summary fits inside viewport at 1440x900 without page scroll', async ({
     page,
   }) => {
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
     // Both S05 elements exist in the DOM.

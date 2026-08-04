@@ -1,9 +1,9 @@
 /**
  * M005 S07 T03 — Playwright Visual Regression Baselines
  *
- * Captures visual baselines at 1440×900 for both layouts:
- * 1. Legacy Dashboard (/) — the reference surface
- * 2. Workstation (/workspace) — all 4 fixture scenarios
+ * Captures visual baselines at 1440×900 for both workstation contexts:
+ * 1. Production root (/) — live workstation inside the application shell
+ * 2. Development harness (/dev/workstation) — all 4 fixture scenarios
  *
  * These baselines serve as automated visual diff detection for future
  * UI changes. When run with `--update-snapshots`, they overwrite the
@@ -52,34 +52,70 @@ const WORKSTATION_SCENARIOS = [
 
 const VIEWPORT = { width: 1440, height: 900 };
 
+async function prepareProductionWorkstation(page: import('@playwright/test').Page): Promise<void> {
+  const response = await page.request.post('/api/accounts', {
+    data: {
+      name: 'Visual Baseline Account',
+      broker: 'Visual Regression',
+      currency: 'USD',
+    },
+  });
+  expect(response.status()).toBe(201);
+  const account = await response.json() as { id: string };
+  const settings = await page.request.put('/api/settings', {
+    data: {
+      defaultAccountId: account.id,
+      startingAccountValue: 50000,
+    },
+  });
+  expect(settings.ok()).toBeTruthy();
+  const activate = await page.request.put(`/api/accounts/${account.id}`, {
+    data: { isActive: true },
+  });
+  expect(activate.ok()).toBeTruthy();
+  await page.addInitScript((accountId) => {
+    localStorage.setItem('app:account', accountId);
+  }, account.id);
+}
+
+async function waitForProductionWorkstation(page: import('@playwright/test').Page): Promise<void> {
+  await expect(page.getByTestId('ws-external-account')).toHaveText(
+    'Visual Baseline Account',
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId('ws-panel-kpis')).toContainText('$50,000.00');
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 test.describe('Visual Regression Baselines', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Tracked visual baselines use Chromium; functional specs cover every browser.');
     await page.setViewportSize(VIEWPORT);
   });
 
-  // ── Legacy Dashboard ──────────────────────────────────────────────
+  // ── Production workstation root ──────────────────────────────────
 
-  test('legacy dashboard renders with correct layout at 1440x900', async ({ page }) => {
+  test('production workstation renders with the application shell at 1440x900', async ({ page }) => {
     const errors = captureConsoleErrors(page);
 
+    await prepareProductionWorkstation(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
+    await waitForProductionWorkstation(page);
     // Allow ECharts and other chart libraries to finish painting
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500);
 
-    // Primary heading should be visible
-    await expect(page.locator('h1')).toContainText('Dashboard');
-
-    // KPI cards should be visible
-    await expect(page.getByText('Total Trades').first()).toBeVisible();
+    await expect(page.locator('aside').first()).toBeVisible();
+    await expect(page.getByTestId('ws-live-badge')).toBeVisible();
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
     await expect(page.getByText('Net P&L').first()).toBeVisible();
+    await expect(page.getByTestId('ws-scenario-select')).toHaveCount(0);
 
     // Visual baseline — full viewport screenshot
-    await expect(page).toHaveScreenshot('legacy-dashboard-1440x900.png', {
+    await expect(page).toHaveScreenshot('production-workstation-1440x900.png', {
       fullPage: false,
       threshold: 0.3,
     });
@@ -87,13 +123,15 @@ test.describe('Visual Regression Baselines', () => {
     assertNoConsoleErrors(errors);
   });
 
-  test('legacy dashboard full-page layout at 1440x900', async ({ page }) => {
+  test('production workstation full-page layout at 1440x900', async ({ page }) => {
+    await prepareProductionWorkstation(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await waitForProductionWorkstation(page);
+    await page.waitForTimeout(500);
 
     // Full-page visual baseline (entire scrollable content)
-    await expect(page).toHaveScreenshot('legacy-dashboard-fullpage-1440x900.png', {
+    await expect(page).toHaveScreenshot('production-workstation-fullpage-1440x900.png', {
       fullPage: true,
       threshold: 0.3,
     });
@@ -105,7 +143,7 @@ test.describe('Visual Regression Baselines', () => {
     test(`workstation ${label} renders correctly at 1440x900`, async ({ page }) => {
       const errors = captureConsoleErrors(page);
 
-      await page.goto(`/workspace?scenario=${id}`);
+      await page.goto(`/dev/workstation?scenario=${id}`);
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(1500);
 
@@ -131,7 +169,7 @@ test.describe('Visual Regression Baselines', () => {
   }
 
   test('workstation zero-positions scenario has empty Positions panel', async ({ page }) => {
-    await page.goto('/workspace?scenario=zero-positions');
+    await page.goto('/dev/workstation?scenario=zero-positions');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500);
 
@@ -146,7 +184,7 @@ test.describe('Visual Regression Baselines', () => {
   });
 
   test('workstation large-drawdown scenario renders negative metrics', async ({ page }) => {
-    await page.goto('/workspace?scenario=large-drawdown');
+    await page.goto('/dev/workstation?scenario=large-drawdown');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500);
 
@@ -162,7 +200,7 @@ test.describe('Visual Regression Baselines', () => {
   });
 
   test('workstation many-watchlist scenario renders full symbol list', async ({ page }) => {
-    await page.goto('/workspace?scenario=many-watchlist');
+    await page.goto('/dev/workstation?scenario=many-watchlist');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500);
 
@@ -178,24 +216,26 @@ test.describe('Visual Regression Baselines', () => {
 
   // ── Cross-Surface Visual Audit ──────────────────────────────────
 
-  test('legacy and workstation layouts are visually distinct (not leaking)', async ({ page }) => {
-    // Capture legacy dashboard
+  test('production shell and fixture harness remain visually distinct', async ({ page }) => {
+    // Capture the production workstation with application chrome.
+    await prepareProductionWorkstation(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
-    const legacyScreenshot = await page.screenshot({ fullPage: false });
+    await waitForProductionWorkstation(page);
+    await page.waitForTimeout(500);
+    const productionScreenshot = await page.screenshot({ fullPage: false });
 
     // Capture workstation default scenario
-    await page.goto('/workspace?scenario=default');
+    await page.goto('/dev/workstation?scenario=default');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500);
     const workstationScreenshot = await page.screenshot({ fullPage: false });
 
-    // The two screenshots should be different — they're different surfaces
-    // If they were identical, it'd mean the workstation leaked into legacy
-    const legacyBuffer = Buffer.from(legacyScreenshot);
+    // The panels are shared, but the production shell has the sidebar and
+    // live controls while the deterministic harness exposes fixture controls.
+    const productionBuffer = Buffer.from(productionScreenshot);
     const wsBuffer = Buffer.from(workstationScreenshot);
-    const areSame = legacyBuffer.equals(wsBuffer);
+    const areSame = productionBuffer.equals(wsBuffer);
     expect(areSame).toBe(false);
   });
 });

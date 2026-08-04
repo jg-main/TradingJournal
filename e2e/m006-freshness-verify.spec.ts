@@ -22,6 +22,7 @@ test.describe.configure({ mode: 'serial' });
 
 // ── Shared state ──────────────────────────────────────────────────────────
 let accountId: string;
+let accountName: string;
 
 // ── Test data — matches pipeline-integration.test.ts scenario ────────────
 const TRADES = [
@@ -43,13 +44,16 @@ async function ensureAppProfile(request: APIRequestContext) {
   expect(res.ok()).toBeTruthy();
 }
 
-async function createAccount(request: APIRequestContext): Promise<string> {
+async function createAccount(
+  request: APIRequestContext,
+): Promise<{ id: string; name: string }> {
   const name = `M006 Freshness ${Date.now()}`;
   const res = await request.post('/api/accounts', {
-    data: { name, broker: 'E2E Test', currency: 'USD', startingBalance: 0 },
+    data: { name, broker: 'E2E Test', currency: 'USD' },
   });
   expect(res.status()).toBe(201);
-  return (await res.json()).id;
+  const account = (await res.json()) as { id: string };
+  return { id: account.id, name };
 }
 
 async function postOpeningBalance(request: APIRequestContext, id: string) {
@@ -131,6 +135,32 @@ async function captureFailedRequests(page: Page): Promise<string[]> {
   return failed;
 }
 
+async function selectApplicationAccount(page: Page) {
+  const accountSelect = page
+    .getByRole('complementary')
+    .getByLabel('Select account');
+  await expect(accountSelect).toBeVisible();
+
+  if (!(await accountSelect.textContent())?.includes(accountName)) {
+    const dashboardResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/dashboard') &&
+        response.url().includes(`accountId=${accountId}`) &&
+        response.ok(),
+    );
+    await accountSelect.click();
+    await page
+      .getByRole('option', {
+        name: `${accountName} (E2E Test)`,
+        exact: true,
+      })
+      .click();
+    await dashboardResponse;
+  }
+
+  await expect(page.getByTestId('ws-external-account')).toHaveText(accountName);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -139,7 +169,9 @@ test.describe('M006 Data Freshness Pipeline', () => {
   // ── Setup: seed account with 3 positions matching integration test ───
   test.beforeAll(async ({ request }) => {
     await ensureAppProfile(request);
-    accountId = await createAccount(request);
+    const account = await createAccount(request);
+    accountId = account.id;
+    accountName = account.name;
     await postOpeningBalance(request, accountId);
 
     // Post 3 trade executions
@@ -198,20 +230,14 @@ test.describe('M006 Data Freshness Pipeline', () => {
     const consoleErrors = await captureConsoleErrors(page);
     const failedRequests = await captureFailedRequests(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
 
     // Verify the toolbar and LIVE badge
     const toolbar = page.getByTestId('ws-toolbar');
     await expect(toolbar).toBeVisible();
     await expect(page.getByTestId('ws-live-badge')).toBeVisible();
 
-    // Account selector should have our test account
-    const accountSelect = toolbar.getByLabel('Active account');
-    await expect(accountSelect).toBeVisible();
-
-    // Select our account
-    await accountSelect.selectOption(accountId);
-    await page.waitForTimeout(1500);
+    await selectApplicationAccount(page);
 
     // Wait for the positions panel
     const positions = page.getByTestId('ws-panel-positions');
@@ -249,6 +275,7 @@ test.describe('M006 Data Freshness Pipeline', () => {
 
     // Home page renders the workstation in live mode
     await page.goto('/');
+    await selectApplicationAccount(page);
 
     // KPI strip should render with live data
     const kpis = page.getByTestId('ws-panel-kpis');
@@ -283,12 +310,8 @@ test.describe('M006 Data Freshness Pipeline', () => {
     const consoleErrors = await captureConsoleErrors(page);
     const failedRequests = await captureFailedRequests(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
-
-    // Select our account
-    const accountSelect = page.getByTestId('ws-toolbar').getByLabel('Active account');
-    await accountSelect.selectOption(accountId);
-    await page.waitForTimeout(1500);
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await selectApplicationAccount(page);
 
     // MTM polling indicator should appear
     await expect(page.getByTestId('ws-mtm-active'))

@@ -1,16 +1,16 @@
 /**
- * M005 S07 T03 — Legacy Dashboard Regression Proof
+ * Application shell and retained-route regression proof.
  *
- * Verifies that all legacy route families still render correctly after the
- * workstation (M005) changes — zero visual or functional regression.
+ * Verifies the live workstation cutover at `/` and the retained application
+ * route families that continue to share the sidebar shell.
  *
  * Coverage:
- * 1. All 12 legacy route families render without crash/console errors
- * 2. Legacy keyboard shortcuts (d, t, w, s, r, c, n, ?) work on legacy routes
- * 3. Dark mode renders all legacy routes without errors
+ * 1. The production root and retained route families render without errors
+ * 2. Global navigation and workstation shortcuts coexist without duplicate actions
+ * 3. Dark mode renders the production root and retained routes without errors
  * 4. Sidebar navigation is present across all routes
  * 5. KeyboardShortcutsProvider wraps legacy routes (confirmed via shortcut behavior)
- * 6. Workstation route does NOT leak into legacy surface
+ * 6. `/workspace` preserves the production-root redirect contract
  */
 
 import { test, expect } from '@playwright/test';
@@ -46,7 +46,6 @@ function assertNoConsoleErrors(errors: string[]): void {
 // ── Route Families ──────────────────────────────────────────────────
 
 const LEGACY_ROUTES = [
-  { path: '/', heading: 'Dashboard', family: 'dashboard' },
   { path: '/trades', heading: 'Trades', family: 'trades' },
   { path: '/watchlist', heading: 'Watchlist', family: 'watchlist' },
   { path: '/alerts', heading: 'Alerts', family: 'alerts' },
@@ -61,8 +60,21 @@ const LEGACY_ROUTES = [
 
 // ── Tests: Route Rendering ─────────────────────────────────────────
 
-test.describe('Legacy Route Rendering Regression', () => {
+test.describe('Application Route Rendering Regression', () => {
   test.describe.configure({ mode: 'parallel' });
+
+  test('production root renders the live workstation in the sidebar shell', async ({ page }) => {
+    const errors = captureConsoleErrors(page);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByTestId('ws-toolbar')).toBeVisible();
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+    await expect(page.getByTestId('ws-live-badge')).toBeVisible();
+    await expect(page.locator('aside').first()).toBeVisible();
+    assertNoConsoleErrors(errors);
+  });
 
   for (const { path, heading, family } of LEGACY_ROUTES) {
     test(`${family} — ${path} renders with heading "${heading}" and no console errors`, async ({ page }) => {
@@ -127,7 +139,7 @@ test.describe('Legacy Keyboard Shortcut Navigation', () => {
     await page.keyboard.press('d');
     await page.waitForURL('/');
     await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Dashboard');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
   });
 
   test('"t" key navigates to Trades', async ({ page }) => {
@@ -180,12 +192,11 @@ test.describe('Legacy Keyboard Shortcut Navigation', () => {
     await page.keyboard.press('?');
     await page.waitForTimeout(300);
 
-    // The overlay backdrop should be visible (fixed inset-0 with bg-black/40)
-    const overlayBackdrop = page.locator('.fixed.inset-0.bg-black\\/40');
+    const overlayBackdrop = page.getByTestId('ws-keynav-backdrop');
     await expect(overlayBackdrop).toBeVisible();
 
     // The overlay heading should be visible
-    await expect(page.getByText('Keyboard Shortcuts')).toBeVisible();
+    await expect(page.getByTestId('ws-keynav-overlay')).toBeVisible();
 
     // Press ? again to dismiss
     await page.keyboard.press('?');
@@ -232,6 +243,17 @@ test.describe('Legacy Keyboard Shortcut Navigation', () => {
 test.describe('Legacy Dark Mode Rendering', () => {
   test.describe.configure({ mode: 'parallel' });
 
+  test('production root renders the live workstation in dark mode without errors', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    const errors = captureConsoleErrors(page);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+    await expect(page.locator('aside').first()).toBeVisible();
+    assertNoConsoleErrors(errors);
+  });
+
   for (const { path, family } of LEGACY_ROUTES) {
     test(`${family} — ${path} renders in dark mode without errors`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: 'dark' });
@@ -252,54 +274,57 @@ test.describe('Legacy Dark Mode Rendering', () => {
   }
 });
 
-// ── Tests: Isolation — Workstation Does NOT Leak into Legacy ─────────
+// ── Tests: Workstation cutover and shortcut ownership ───────────────
 
-test.describe('Workstation-Legacy Isolation', () => {
-  test('legacy Dashboard does NOT render workstation panels', async ({ page }) => {
+test.describe('Workstation cutover contract', () => {
+  test('production root combines workstation panels with the application sidebar', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Workstation-specific test IDs must NOT be present on legacy routes
-    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-equity')).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-positions')).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-risk')).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-insights')).toHaveCount(0);
+    await expect(page.getByTestId('ws-panel-kpis')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-equity')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
+    await expect(page.locator('aside').first()).toBeVisible();
   });
 
-  test('legacy routes do NOT render workstation skip link', async ({ page }) => {
-    await page.goto('/');
+  test('retained non-root routes do not render workstation-only content', async ({ page }) => {
+    await page.goto('/trades');
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByTestId('ws-skip-link')).toHaveCount(0);
+    await expect(page.getByTestId('ws-grid')).toHaveCount(0);
   });
 
-  test('workstation /workspace does NOT render legacy sidebar KeyboardShortcuts overlay', async ({ page }) => {
+  test('/workspace redirects to the production root workstation', async ({ page }) => {
     const errors = captureConsoleErrors(page);
 
     await page.goto('/workspace');
     await page.waitForLoadState('networkidle');
 
-    // Workstation page should render
+    await expect(page).toHaveURL('/');
     await expect(page.getByTestId('ws-toolbar')).toBeVisible();
+    await expect(page.getByTestId('ws-live-badge')).toBeVisible();
+    await expect(page.getByTestId('ws-scenario-select')).toHaveCount(0);
+    await expect(page.locator('aside').first()).toBeVisible();
 
     assertNoConsoleErrors(errors);
   });
 
-  test('keyboard shortcuts on legacy routes use legacy system (not workstation)', async ({ page }) => {
+  test('workstation-owned shortcuts do not also open the global overlay', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Legacy ? overlay should work
     await page.keyboard.press('?');
-    await page.waitForTimeout(300);
-    await expect(page.getByText('Keyboard Shortcuts')).toBeVisible();
-
-    // Workstation-specific overlay (ws-shortcut-overlay) must NOT appear
-    await expect(page.getByTestId('ws-shortcut-overlay')).toHaveCount(0);
+    await expect(page.getByTestId('ws-keynav-overlay')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Keyboard Shortcuts' }),
+    ).toHaveCount(0);
 
     await page.keyboard.press('?');
+    await expect(page.getByTestId('ws-keynav-overlay')).toHaveCount(0);
   });
 });
 

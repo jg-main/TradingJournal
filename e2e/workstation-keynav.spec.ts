@@ -71,7 +71,7 @@ test.describe('Workstation Keyboard Navigation', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await page.waitForLoadState('networkidle');
     // Dismiss any initial overlay that might be present from prior state.
     // Ensure the overlay is closed at the start of each test.
@@ -281,7 +281,7 @@ test.describe('Workstation Keyboard Navigation', () => {
 
     // Navigate fresh (beforeEach already does this, but console capture
     // needs to start before navigation)
-    await page.goto('/workspace');
+    await page.goto('/dev/workstation');
     await page.waitForLoadState('networkidle');
 
     // Open and close overlay

@@ -1,11 +1,12 @@
 /**
  * M005-22kf6a S06 T04 — Live Mode E2E Playwright Verification
  *
- * Proves that /workspace?live=true connects to real /api/dashboard,
+ * Proves that the production root workstation connects to real /api/dashboard,
  * /api/dashboard/v2, /api/watchlist, and /api/accounts endpoints.
  * Account switching works end-to-end. Live MTM polling runs at 30s,
  * visibility-aware, gated on open positions > 0. All financial values
- * render correctly. Existing fixture mode is preserved (no regression).
+ * render correctly. The development fixture harness remains available for
+ * deterministic scenario regression coverage.
  *
  * Uses the accounting execution flow (POST /api/accounts/:id/executions)
  * to create real accounting positions that populate the dashboard V2
@@ -22,6 +23,7 @@ test.describe.configure({ mode: 'serial' });
 
 // ── Shared state ──────────────────────────────────────────────────────────
 let liveAccountId: string;
+let liveAccountName: string;
 
 // ── API helpers ───────────────────────────────────────────────────────────
 
@@ -36,13 +38,16 @@ async function ensureAppProfile(request: APIRequestContext) {
   expect(res.ok()).toBeTruthy();
 }
 
-async function createLiveAccount(request: APIRequestContext): Promise<string> {
+async function createLiveAccount(
+  request: APIRequestContext,
+): Promise<{ id: string; name: string }> {
   const name = `Live E2E ${Date.now()}`;
   const res = await request.post('/api/accounts', {
-    data: { name, broker: 'E2E Test', currency: 'USD', startingBalance: 0 },
+    data: { name, broker: 'E2E Test', currency: 'USD' },
   });
   expect(res.status()).toBe(201);
-  return (await res.json()).id;
+  const account = (await res.json()) as { id: string };
+  return { id: account.id, name };
 }
 
 async function postOpeningBalance(request: APIRequestContext, id: string) {
@@ -156,6 +161,34 @@ function captureFailedRequests(page: Page): string[] {
   return failed;
 }
 
+async function selectApplicationAccount(
+  page: Page,
+  accountId: string,
+  accountName: string,
+) {
+  const accountSelect = page
+    .getByRole('complementary')
+    .getByLabel('Select account');
+  await expect(accountSelect).toBeVisible();
+
+  if (!(await accountSelect.textContent())?.includes(accountName)) {
+    const dataResponse = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/dashboard') &&
+        res.url().includes(`accountId=${accountId}`) &&
+        res.ok(),
+    );
+    await accountSelect.click();
+    await page
+      .getByRole('option', { name: `${accountName} (E2E Test)`, exact: true })
+      .click();
+    await dataResponse;
+  }
+
+  await expect(page.getByTestId('ws-external-account')).toHaveText(accountName);
+  return accountSelect;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -164,7 +197,9 @@ test.describe('Live Mode E2E', () => {
   // ── Setup: create account with opening balance + open position ──────
   test.beforeAll(async ({ request }) => {
     await ensureAppProfile(request);
-    liveAccountId = await createLiveAccount(request);
+    const liveAccount = await createLiveAccount(request);
+    liveAccountId = liveAccount.id;
+    liveAccountName = liveAccount.name;
     await postOpeningBalance(request, liveAccountId);
 
     // Post accounting execution to create an open position (AAPL long 100 shares @ $175).
@@ -192,7 +227,7 @@ test.describe('Live Mode E2E', () => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
 
     const toolbar = page.getByTestId('ws-toolbar');
     await expect(toolbar).toBeVisible();
@@ -206,10 +241,12 @@ test.describe('Live Mode E2E', () => {
     await expect(page.getByTestId('ws-scenario-select')).not.toBeVisible();
 
     // Account selector is populated with real accounts.
-    const accountSelect = toolbar.getByLabel('Active account');
-    await expect(accountSelect).toBeVisible();
-    const options = await accountSelect.locator('option').allTextContents();
-    expect(options.some((o) => o.includes('Live E2E'))).toBe(true);
+    const accountSelect = await selectApplicationAccount(
+      page,
+      liveAccountId,
+      liveAccountName,
+    );
+    await expect(accountSelect).toContainText(liveAccountName);
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -221,7 +258,7 @@ test.describe('Live Mode E2E', () => {
   }) => {
     const consoleErrors = captureConsoleErrors(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
 
     const grid = page.getByTestId('ws-grid');
     await expect(grid).toBeVisible();
@@ -256,7 +293,8 @@ test.describe('Live Mode E2E', () => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await selectApplicationAccount(page, liveAccountId, liveAccountName);
 
     // KPI strip has real labels and values.
     const kpis = page.getByTestId('ws-panel-kpis');
@@ -279,12 +317,6 @@ test.describe('Live Mode E2E', () => {
     const emptyVisible = await equity.getByTestId('ws-equity-chart-empty').isVisible().catch(() => false);
     expect(chartVisible || emptyVisible).toBe(true);
 
-    // PerformanceSummary sections are conditional on data; at least one must render.
-    const hasMonthly = await equity.getByTestId('ws-perf-monthly-table').isVisible().catch(() => false);
-    const hasDrawdown = await equity.getByTestId('ws-perf-drawdown-summary').isVisible().catch(() => false);
-    // For a brand-new account both may be absent — that's expected.
-    // For an account with history, at least the drawdown summary should appear.
-
     // Risk panel has metric content.
     const risk = page.getByTestId('ws-panel-risk');
     await expect(risk.getByText('Portfolio Heat')).toBeVisible({ timeout: 10000 });
@@ -301,7 +333,7 @@ test.describe('Live Mode E2E', () => {
 
   // ── Test 4: Watchlist panel renders from /api/watchlist ─────────────
   test('watchlist panel renders from /api/watchlist', async ({ page }) => {
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
 
     const watchlist = page.getByTestId('ws-panel-watchlist');
     // Panel is visible even if empty (renders empty state).
@@ -317,7 +349,8 @@ test.describe('Live Mode E2E', () => {
     const failedRequests = captureFailedRequests(page);
 
     // Create a second account with different data.
-    const secondAccountId = await createLiveAccount(request);
+    const secondAccount = await createLiveAccount(request);
+    const secondAccountId = secondAccount.id;
     await postOpeningBalance(request, secondAccountId);
     await postAccountingExecution(request, secondAccountId, {
       symbol: 'MSFT',
@@ -329,10 +362,13 @@ test.describe('Live Mode E2E', () => {
     await postValuationMark(request, secondAccountId, 'MSFT', '320.00');
     await rebuildPerformance(request, secondAccountId);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
 
-    const accountSelect = page.getByTestId('ws-toolbar').getByLabel('Active account');
-    await expect(accountSelect).toBeVisible();
+    const accountSelect = await selectApplicationAccount(
+      page,
+      liveAccountId,
+      liveAccountName,
+    );
 
     // Capture initial KPI value before switching.
     const initialKpiValue = await page
@@ -342,7 +378,20 @@ test.describe('Live Mode E2E', () => {
       .textContent();
 
     // Switch to the second account.
-    await accountSelect.selectOption(secondAccountId);
+    const switchedResponse = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/dashboard') &&
+        res.url().includes(`accountId=${secondAccountId}`) &&
+        res.ok(),
+    );
+    await accountSelect.click();
+    await page
+      .getByRole('option', {
+        name: `${secondAccount.name} (E2E Test)`,
+        exact: true,
+      })
+      .click();
+    await switchedResponse;
 
     // Wait for data to reload.
     await page.waitForTimeout(2000);
@@ -368,7 +417,8 @@ test.describe('Live Mode E2E', () => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await selectApplicationAccount(page, liveAccountId, liveAccountName);
 
     // With an open position, MTM polling should be active after data loads.
     await expect(page.getByTestId('ws-mtm-active'))
@@ -389,17 +439,13 @@ test.describe('Live Mode E2E', () => {
     const failedRequests = captureFailedRequests(page);
     const consoleInfos = captureConsoleInfo(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
 
-    const accountsMsg = consoleInfos.find((m) =>
-      m.includes('LIVE MODE — fetching accounts'),
-    );
-    expect(accountsMsg).toBeDefined();
-
-    const loadedMsg = consoleInfos.find((m) =>
-      m.includes('LIVE MODE') && m.includes('account(s) loaded'),
-    );
-    expect(loadedMsg).toBeDefined();
+    // The global AccountProvider owns the account list on the production
+    // shell, so the workstation must not perform a duplicate account fetch.
+    expect(
+      consoleInfos.some((m) => m.includes('LIVE MODE — fetching accounts')),
+    ).toBe(false);
 
     const dataMsg = consoleInfos.find((m) =>
       m.includes('LIVE MODE — data fetched'),
@@ -417,7 +463,7 @@ test.describe('Live Mode E2E', () => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
 
-    await page.goto('/workspace?live=true', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'networkidle' });
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -430,7 +476,7 @@ test.describe('Live Mode E2E', () => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
 
-    await page.goto('/workspace', { waitUntil: 'networkidle' });
+    await page.goto('/dev/workstation', { waitUntil: 'networkidle' });
 
     const toolbar = page.getByTestId('ws-toolbar');
     await expect(toolbar).toBeVisible();
@@ -462,7 +508,7 @@ test.describe('Live Mode E2E', () => {
   }) => {
     const consoleErrors = captureConsoleErrors(page);
 
-    await page.goto('/workspace', { waitUntil: 'networkidle' });
+    await page.goto('/dev/workstation', { waitUntil: 'networkidle' });
 
     const scenarioSelect = page.getByTestId('ws-scenario-select');
 
