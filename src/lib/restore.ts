@@ -526,11 +526,9 @@ function stageUploadSwap(zip: AdmZip): UploadSwap {
   const uploadEntries = zip.getEntries().filter(
     (entry) => entry.entryName.startsWith(UPLOAD_PREFIX) && entry.entryName !== `${UPLOAD_PREFIX}.gitkeep`,
   );
-  // Older backups may not contain an uploads section. Preserve current assets
-  // in that compatibility case rather than treating absence as an empty set.
-  if (uploadEntries.length === 0) {
-    return { swap() {}, rollback() {}, cleanup() {} };
-  }
+  // An archive with no upload entries represents an empty upload directory.
+  // Swapping in an empty staging directory prevents assets from a previous
+  // database state from surviving a restore and creating mixed backup state.
 
   const parentDir = dirname(uploadsDir);
   mkdirSync(parentDir, { recursive: true });
