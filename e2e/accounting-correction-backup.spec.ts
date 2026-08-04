@@ -12,15 +12,15 @@
  * 5. Create a backup via POST /api/backup/now
  * 6. Validate backup accounting tables via POST /api/restore/preview
  * 7. Execute full restore + verify data integrity
- * 8. Navigate to Dashboard V2 and verify ledger-derived labels + integrity
- * 9. Navigate to account page and verify correction state + journal attribution
+ * 8. Navigate to the production workstation and verify restored position data
+ * 9. Navigate through current account Overview, Positions, and Ledger surfaces
  *
  * Run: npx playwright test -- e2e/accounting-correction-backup.spec.ts
  */
 
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { readFileSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -37,7 +37,7 @@ let backupFilename: string;
 async function createAccountViaApi(request: APIRequestContext): Promise<string> {
   const name = `Correction E2E ${Date.now()}`;
   const res = await request.post('/api/accounts', {
-    data: { name, broker: 'E2E Test', currency: 'USD', startingBalance: 0 },
+    data: { name, broker: 'E2E Test', currency: 'USD' },
   });
   expect(res.status()).toBe(201);
   return (await res.json()).id;
@@ -111,12 +111,12 @@ async function seedSettingsForBackup(request: APIRequestContext) {
   expect(res.ok()).toBeTruthy();
 }
 
-function getDbFile(): string {
-  return process.env.DB_FILE_NAME ?? './.trading-journal/journal.db';
-}
-
-function getBackupDir(): string {
-  return join(dirname(getDbFile()), 'backups');
+async function getBackupDir(request: APIRequestContext): Promise<string> {
+  const response = await request.get('/api/backup/status');
+  expect(response.status()).toBe(200);
+  const status = await response.json() as { backupDir?: unknown };
+  expect(typeof status.backupDir).toBe('string');
+  return status.backupDir as string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -187,20 +187,18 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
   // Test 1: Initial account detail page
   // ─────────────────────────────────────────────────────────────────────────
 
-  test('account detail page shows header, balance, and initial empty state', async ({ page }) => {
+  test('account overview shows identity, opening cash event, and empty positions', async ({ page }) => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
 
     await page.goto(`/settings/accounts/${accountId}`);
 
     // Account name should be visible
-    await expect(page.getByText('Correction E2E')).toBeVisible();
-    // Current Balance should be visible (~$100,000 from opening balance)
-    await expect(page.getByText('Current Balance')).toBeVisible();
-    // Account performance (ledger) label should be visible
-    await expect(page.getByText('Account performance (ledger)')).toBeVisible();
-    // Starting Balance summary card
-    await expect(page.getByText('Starting Balance').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Correction E2E/ })).toBeVisible();
+    await expect(page.getByText('Net Asset Value')).toBeVisible();
+    await expect(page.getByText('Net Cash')).toBeVisible();
+    await expect(page.getByText('No open positions.')).toBeVisible();
+    await expect(page.getByText('E2E opening balance for correction flow')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -249,15 +247,12 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     expect(positions.positions[0].direction).toBe('long');
     expect(positions.positions[0].quantity).toBe('100.00');
 
-    // ── Verify account has ledger-derived metrics ────────────────────────
+    // ── Verify the account API exposes flattened accounting metrics ──────
     const account = await getAccountApi(request, accountId);
-    expect(account.accounting).toBeDefined();
-    expect(account.accounting.ledgerDerived).toBe(true);
-    expect(account.accounting.projection).toBeDefined();
-    expect(account.accounting.projection.netCash).toBeDefined();
-    expect(account.accounting.projection.nav).toBeDefined();
-    expect(account.accounting.projection.realizedPnl).toBeDefined();
-    const nav = parseFloat(account.accounting.projection.nav);
+    expect(account.netCash).not.toBeNull();
+    expect(account.nav).not.toBeNull();
+    expect(account.realizedPnl).not.toBeNull();
+    const nav = Number(account.nav);
     expect(nav).toBeGreaterThan(0);
 
     // ── Verify via page — the account performance component ─────────────
@@ -269,8 +264,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     await expect(page.getByText('Net Asset Value').first()).toBeVisible();
     // Realized P&L metric should exist
     await expect(page.getByText('Realized P&L').first()).toBeVisible();
-    // Performance & Valuation header
-    await expect(page.getByText('Performance & Valuation')).toBeVisible();
+    await expect(page.getByText('Open Positions', { exact: false }).first()).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -366,8 +360,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
 
     // AAPL should still show
     await expect(page.getByText('AAPL').first()).toBeVisible();
-    // Account performance (ledger) label should still be visible
-    await expect(page.getByText('Account performance (ledger)')).toBeVisible();
+    await expect(page.getByText('Net Asset Value')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -427,7 +420,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     expect(backupFilename).toMatch(/^backup-\d{4}/);
 
     // ── Read the backup file from the filesystem ────────────────────────
-    const backupDir = getBackupDir();
+    const backupDir = await getBackupDir(request);
     const backupPath = join(backupDir, backupFilename);
     expect(existsSync(backupPath)).toBe(true);
     const backupBuffer = readFileSync(backupPath);
@@ -497,7 +490,7 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     // ── Ensure we have a backup file available ──────────────────────────
     expect(backupFilename).toBeDefined();
 
-    const backupDir = getBackupDir();
+    const backupDir = await getBackupDir(request);
     const backupPath = join(backupDir, backupFilename);
     expect(existsSync(backupPath)).toBe(true);
     const backupBuffer = readFileSync(backupPath);
@@ -524,9 +517,8 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     // ── Verify account data survived the restore ─────────────────────────
     const account = await getAccountApi(request, accountId);
     expect(account.id).toBe(accountId);
-    expect(account.accounting).toBeDefined();
-    expect(account.accounting.ledgerDerived).toBe(true);
-    expect(account.accounting.projection).toBeDefined();
+    expect(account.nav).not.toBeNull();
+    expect(account.netCash).not.toBeNull();
 
     // ── Verify correction lineage survived ───────────────────────────────
     const executionsRes = await request.get(
@@ -548,10 +540,10 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Test 7: Dashboard V2 shows ledger-derived labels and integrity state
+  // Test 7: Production workstation shows restored ledger-derived state
   // ─────────────────────────────────────────────────────────────────────────
 
-  test('Dashboard V2 shows ledger-derived metrics, integrity state, and journal attribution', async ({
+  test('production workstation shows restored metrics and positions', async ({
     page,
     request,
   }) => {
@@ -562,43 +554,23 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     await postMarkViaApi(request, accountId, 'AAPL', '162.00');
     await rebuildPerformanceViaApi(request, accountId);
 
-    // ── Navigate to the root Dashboard ──────────────────────────────────
+    await page.addInitScript((id) => localStorage.setItem('app:account', id), accountId);
     await page.goto('/');
 
-    // The Dashboard V2 component should be visible
-    await expect(page.getByText('Account Performance')).toBeVisible({ timeout: 10000 });
-
-    // The account name should appear in the info header
-    await expect(
-      page.locator('span').filter({ hasText: 'Correction E2E' }).first(),
-    ).toBeVisible();
-
-    // ── Verify ledger-derived metric labels ──────────────────────────────
-    await expect(page.getByText('NAV').first()).toBeVisible();
-    await expect(page.getByText('Cash').first()).toBeVisible();
-    await expect(page.getByText('Marked Positions').first()).toBeVisible();
-    await expect(page.getByText('Realized P&L', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Unrealized P&L').first()).toBeVisible();
-    await expect(page.getByText('Realized Fees').first()).toBeVisible();
-    await expect(page.getByText('Gross Exposure').first()).toBeVisible();
-    await expect(page.getByText('Net Exposure').first()).toBeVisible();
-
-    // ── Verify account-versus-journal labels ─────────────────────────────
-    await expect(page.getByText('Account performance', { exact: true })).toBeVisible();
-    await expect(page.getByText('Journal attribution')).toBeVisible();
-
-    // ── Verify valuation completeness ───────────────────────────────────
-    await expect(page.getByText('Valuation Completeness').first()).toBeVisible();
+    await expect(page.getByTestId('ws-external-account')).toContainText('Correction E2E');
+    await expect(page.getByTestId('ws-panel-kpis').getByText('NAV (V2)')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk').getByText('Portfolio Heat')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-positions').getByText('AAPL')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Test 8: Account detail page shows correction state + journal attribution
+  // Test 8: Current account workspaces show correction-derived state
   // ─────────────────────────────────────────────────────────────────────────
 
-  test('account detail page shows correction execution, ledger-derived integrity, and journal attribution', async ({
+  test('account overview, positions, and ledger show correction-derived state', async ({
     page,
     request,
   }) => {
@@ -618,27 +590,22 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     await page.goto(`/settings/accounts/${accountId}`, { waitUntil: 'networkidle' });
 
     // ── Verify account header remains intact ─────────────────────────────
-    await expect(page.getByText('Correction E2E')).toBeVisible();
-    await expect(page.getByText('Current Balance')).toBeVisible();
-
-    // ── Verify ledger-derived performance and integrity state ────────────
-    await expect(page.getByText('Account performance (ledger)')).toBeVisible();
-
-    // Net Asset Value should be visible from the performance section
+    await expect(page.getByRole('heading', { name: /Correction E2E/ })).toBeVisible();
     await expect(page.getByText('Net Asset Value').first()).toBeVisible();
     await expect(page.getByText('Total P&L').first()).toBeVisible();
 
-    // ── Verify execution activity shows the correction entries ───────────
-    await expect(page.getByText('Execution Activity')).toBeVisible();
-
     // ── Verify positions survived the restore ────────────────────────────
+    await page.goto(`/settings/accounts/${accountId}/positions`);
     await expect(page.getByText('Current Positions').first()).toBeVisible();
     await expect(page.getByText('AAPL').first()).toBeVisible();
 
-    // ── Verify journal attribution via waitForFunction ───────────────────
-    await expect(page.getByText('Journal attribution')).toBeVisible({
-      timeout: 15000,
-    });
+    // ── Verify the immutable execution history remains visible in Ledger ─
+    await page.goto(`/settings/accounts/${accountId}/ledger`);
+    await expect(page.getByRole('tab', { name: 'Ledger' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(page.getByText('Trade', { exact: true }).first()).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);

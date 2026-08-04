@@ -43,7 +43,7 @@ function buildTabs(accountId: string): AccountNavTab[] {
 /**
  * Account detail workspace navigation bar.
  *
- * Renders horizontal tab links for the five account workspace areas.
+ * Renders horizontal tab links for the four current account workspace areas.
  * The active tab is highlighted with a bottom-border and dark text.
  *
  * @param accountId - The account id used to build tab hrefs.

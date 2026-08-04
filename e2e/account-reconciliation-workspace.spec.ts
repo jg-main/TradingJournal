@@ -15,15 +15,14 @@ import { expect, test, type Page } from '@playwright/test';
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Create an account via the API with an optional starting balance.
+ * Create an account via the API. Opening cash is posted as a financial event.
  */
-async function createAccount(page: Page, name: string, startingBalance = 0) {
+async function createAccount(page: Page, name: string) {
   const response = await page.request.post('/api/accounts', {
     data: {
       name,
       broker: 'E2E Broker',
       currency: 'USD',
-      startingBalance,
     },
   });
   expect(response.status()).toBe(201);
@@ -38,7 +37,6 @@ async function setAccountRiskParams(page: Page, accountId: string) {
     data: {
       maxRiskPerTradePct: 2.0,
       defaultCommission: 1.0,
-      startingBalance: 0,
     },
   });
   expect(response.status()).toBe(200);
@@ -116,9 +114,7 @@ function setupErrorCapture(
 test.describe('Account Reconciliation Workspace', () => {
   test.describe.configure({ mode: 'serial' });
 
-  let healthyAccountId: string;
   let healthyAccountName: string;
-  let blockedAccountId: string;
   let blockedAccountName: string;
 
   // ═════════════════════════════════════════════════════════════════════
@@ -133,8 +129,7 @@ test.describe('Account Reconciliation Workspace', () => {
 
     // ── 1. Create & prepare account ────────────────────────────────
     healthyAccountName = `Recon Healthy ${ts}`;
-    const account = await createAccount(page, healthyAccountName, 0);
-    healthyAccountId = account.id;
+    const account = await createAccount(page, healthyAccountName);
     await setAccountRiskParams(page, account.id);
     await activateAccount(page, account.id);
 
@@ -163,7 +158,7 @@ test.describe('Account Reconciliation Workspace', () => {
       page.getByRole('link', { name: /back to accounts/i }),
     ).toBeVisible();
 
-    // ── 6. All workspace tabs are present ──────────────────────────
+    // ── 6. Current workspace tabs remain available ─────────────────
     await expect(
       page.getByRole('tab', { name: 'Overview' }),
     ).toBeVisible();
@@ -174,10 +169,10 @@ test.describe('Account Reconciliation Workspace', () => {
       page.getByRole('tab', { name: 'Positions' }),
     ).toBeVisible();
 
-    // ── 7. Reconciliation tab is active ─────────────────────────────
-    const reconTab = page.getByRole('tab', { name: 'Reconciliation' });
-    await expect(reconTab).toBeVisible();
-    await expect(reconTab).toHaveAttribute('aria-selected', 'true');
+    // Reconciliation is intentionally a diagnostic deep link after cutover,
+    // so it must not reappear as an ongoing workspace tab.
+    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { selected: true })).toHaveCount(0);
 
     await expect(
       page.getByRole('tab', { name: 'Settings' }),
@@ -288,7 +283,7 @@ test.describe('Account Reconciliation Workspace', () => {
     // columns — this is the real value, not fabricated.
     // Verify that "Matching" stat shows the correct number
     const matchingStat = page
-      .locator('p.tabular-nums.text-emerald-600')
+      .locator('p.tabular-nums.text-positive')
       .first();
     await expect(matchingStat).toBeVisible();
     const matchingNum = await matchingStat.textContent();
@@ -312,7 +307,6 @@ test.describe('Account Reconciliation Workspace', () => {
     // ── 1. Create account with no migration ─────────────────────────
     blockedAccountName = `Recon Blocked ${ts}`;
     const account = await createAccount(page, blockedAccountName);
-    blockedAccountId = account.id;
     await setAccountRiskParams(page, account.id);
     await activateAccount(page, account.id);
 
@@ -331,12 +325,11 @@ test.describe('Account Reconciliation Workspace', () => {
       page.getByRole('heading', { name: blockedAccountName }),
     ).toBeVisible();
 
-    // ── 5. Reconciliation tab is selected ──────────────────────────
-    const reconTab = page.getByRole('tab', { name: 'Reconciliation' });
-    await expect(reconTab).toBeVisible();
-    await expect(reconTab).toHaveAttribute('aria-selected', 'true');
+    // ── 5. Diagnostic route does not restore the retired tab ────────
+    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { selected: true })).toHaveCount(0);
 
-    // ── 6. All workspace tabs are present ──────────────────────────
+    // ── 6. All current workspace tabs are present ──────────────────
     await expect(
       page.getByRole('tab', { name: 'Overview' }),
     ).toBeVisible();

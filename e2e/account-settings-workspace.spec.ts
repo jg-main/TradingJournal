@@ -2,12 +2,12 @@
  * E2E browser test for the Account Settings workspace.
  *
  * Verifies:
- * 1. Deep-link to /settings/settings/accounts/[id]/settings renders identity & trading defaults
+ * 1. Deep-link to /settings/accounts/[id]/settings renders identity & trading defaults
  * 2. No legacy performance/balance/transaction sections on the settings tab
  * 3. Edit identity and reload values (persistence)
  * 4. Close account with confirmation dialog and closure summary
  * 5. Reactivate account from inactive state
- * 6. Settings tab direct route: /settings/settings/accounts/[id]/settings renders identity, defaults, lifecycle
+ * 6. Settings tab direct route: /settings/accounts/[id]/settings renders identity, defaults, lifecycle
  * 7. Unknown account 404 error state on the settings tab
  * 8. Console/request diagnostics
  *
@@ -21,13 +21,12 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * Create an account via the API.
  */
-async function createAccount(page: Page, name: string, startingBalance = 0) {
+async function createAccount(page: Page, name: string) {
   const response = await page.request.post('/api/accounts', {
     data: {
       name,
       broker: 'E2E Broker',
       currency: 'USD',
-      startingBalance,
     },
   });
   expect(response.status()).toBe(201);
@@ -42,7 +41,6 @@ async function setAccountRiskParams(page: Page, accountId: string) {
     data: {
       maxRiskPerTradePct: 2.0,
       defaultCommission: 1.0,
-      startingBalance: 10000,
     },
   });
   expect(response.status()).toBe(200);
@@ -70,20 +68,6 @@ async function postDeposit(page: Page, accountId: string, amount: string, descri
     },
   });
   expect(response.status()).toBe(201);
-}
-
-/**
- * Set a global setting value so NULL-to-global fallback can be tested.
- */
-async function setGlobalSetting(page: Page, key: string, value: number | string) {
-  // Read existing settings first
-  const getRes = await page.request.get('/api/settings');
-  const existing = getRes.ok() ? await getRes.json() : {};
-
-  const response = await page.request.put('/api/settings', {
-    data: { ...existing, [key]: value },
-  });
-  expect(response.ok()).toBeTruthy();
 }
 
 /**
@@ -117,7 +101,7 @@ test.describe('Account Settings Workspace', () => {
       const page = await browser.newPage();
       const ts = Date.now();
       accountName = `Settings E2E ${ts}`;
-      const account = await createAccount(page, accountName, 10000);
+      const account = await createAccount(page, accountName);
       accountId = account.id;
       await setAccountRiskParams(page, accountId);
       await postDeposit(page, accountId, '10000.00', 'E2E test deposit');
@@ -165,10 +149,8 @@ test.describe('Account Settings Workspace', () => {
       await expect(commissionInput).toBeVisible();
       await expect(commissionInput).toHaveValue('1');
 
-      // ── Starting balance field ──────────────────────────────────────
-      const startBalInput = page.locator('#settings-starting-balance');
-      await expect(startBalInput).toBeVisible();
-      await expect(startBalInput).toHaveValue('10000');
+      // Opening cash is ledger-owned and is not editable as an account default.
+      await expect(page.locator('#settings-starting-balance')).toHaveCount(0);
     });
 
     test('does NOT show legacy performance, balance, or transaction sections', async ({ page }) => {
@@ -211,7 +193,7 @@ test.describe('Account Settings Workspace', () => {
     test.beforeAll(async ({ browser }) => {
       const page = await browser.newPage();
       const ts = Date.now();
-      const account = await createAccount(page, `Edit Test ${ts}`, 10000);
+      const account = await createAccount(page, `Edit Test ${ts}`);
       testAccountId = account.id;
       await setAccountRiskParams(page, testAccountId);
       await activateAccount(page, testAccountId);
@@ -229,14 +211,14 @@ test.describe('Account Settings Workspace', () => {
       // ── Verify initial values from API setup ────────────────────────
       await expect(page.getByLabel(/account name/i)).toHaveValue(/^Edit Test/);
       await expect(page.locator('#settings-max-risk')).toHaveValue('2');
-      await expect(page.locator('#settings-starting-balance')).toHaveValue('10000');
+      await expect(page.locator('#settings-default-commission')).toHaveValue('1');
 
       // ── Persist updated values via direct API call ───────────────────
       const apiResponse = await page.request.put(`/api/accounts/${testAccountId}`, {
         data: {
           name: 'Renamed Account',
           maxRiskPerTradePct: 3.5,
-          startingBalance: 25000,
+          defaultCommission: 2.5,
         },
       });
       expect(apiResponse.status()).toBe(200);
@@ -249,7 +231,7 @@ test.describe('Account Settings Workspace', () => {
 
       await expect(page.getByLabel(/account name/i)).toHaveValue('Renamed Account');
       await expect(page.locator('#settings-max-risk')).toHaveValue('3.5');
-      await expect(page.locator('#settings-starting-balance')).toHaveValue('25000');
+      await expect(page.locator('#settings-default-commission')).toHaveValue('2.5');
 
       // ── Verify no API or page errors (filter turbopack dev HMR infra) ─
       const appErrors = errorCapture.errors.filter(
@@ -271,7 +253,7 @@ test.describe('Account Settings Workspace', () => {
       const page = await browser.newPage();
       const ts = Date.now();
       lifecycleAccountName = `Lifecycle E2E ${ts}`;
-      const account = await createAccount(page, lifecycleAccountName, 50000);
+      const account = await createAccount(page, lifecycleAccountName);
       lifecycleAccountId = account.id;
       await setAccountRiskParams(page, lifecycleAccountId);
       await postDeposit(page, lifecycleAccountId, '50000.00', 'Initial funding');
@@ -378,7 +360,7 @@ test.describe('Account Settings Workspace', () => {
   });
 
   test.describe('Settings tab direct route and unknown account', () => {
-    test('/settings/settings/accounts/[id]/settings renders identity and lifecycle controls', async ({ page }) => {
+    test('/settings/accounts/[id]/settings renders identity and lifecycle controls', async ({ page }) => {
       // Use the account created in the first test group
       const ts = Date.now();
       const testAccount = await createAccount(page, `Direct Route E2E ${ts}`);

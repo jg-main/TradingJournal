@@ -43,7 +43,6 @@ async function setAccountRiskParams(page: Page, accountId: string) {
     data: {
       maxRiskPerTradePct: 2.0,
       defaultCommission: 1.0,
-      startingBalance: 10000,
     },
   });
   expect(response.status()).toBe(200);
@@ -114,7 +113,7 @@ test.describe('Account Overview Workspace', () => {
 
     await expect(page.getByRole('tab', { name: 'Ledger' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Positions' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'Settings' })).toBeVisible();
 
     // ── Primary metric cards (4-column grid) ────────────────────────
@@ -131,9 +130,9 @@ test.describe('Account Overview Workspace', () => {
     await expect(page.getByText('TOTAL P&L').first()).toBeVisible();
     await expect(page.getByText('REALIZED FEES').first()).toBeVisible();
 
-    // ── Reconciliation section ───────────────────────────────────────
-    // No reconciliation run performed, so stale/null state
-    await expect(page.getByText(/no reconciliation data yet/i)).toBeVisible();
+    // Reconciliation is no longer part of the ongoing Overview workspace
+    // after accounting cutover.
+    await expect(page.getByText(/reconciliation/i)).toHaveCount(0);
 
     // ── Positions section ────────────────────────────────────────────
     await expect(page.getByText('OPEN POSITIONS').first()).toBeVisible();
@@ -206,8 +205,8 @@ test.describe('Account Overview Workspace', () => {
     await expect(page.getByText('No events yet.')).toBeVisible();
     await expect(page.getByText('Post financial events to see activity here.')).toBeVisible();
 
-    // ── Reconciliation stale state ───────────────────────────────────
-    await expect(page.getByText(/no reconciliation data yet/i)).toBeVisible();
+    // Reconciliation remains absent from the ongoing Overview workspace.
+    await expect(page.getByText(/reconciliation/i)).toHaveCount(0);
 
     // ── "View all" links should NOT be present when empty ────────────
     await expect(page.getByRole('link', { name: /view all/i })).toHaveCount(0);

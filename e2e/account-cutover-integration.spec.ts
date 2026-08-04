@@ -3,26 +3,26 @@
  *
  * Proves the shared shell, deep links, persisted account state, trade
  * navigation, and legacy redirect work together in one coherent operator
- * journey across all five tabs: Overview, Ledger, Positions,
- * Reconciliation, and Settings.
+ * journey across the four current tabs (Overview, Ledger, Positions, and
+ * Settings) plus the retained reconciliation diagnostic deep link.
  *
  * Covers:
  * 1. Populated account fixture: account creation, risk params, deposits,
  *    trade creation & execution, and accounting migration
- * 2. Base route visit: all five workspace tabs visible, Overview selected
+ * 2. Base route visit: all four workspace tabs visible, Overview selected
  * 3. Overview tab: primary metrics, P&L summary, events preview, no legacy
  *    labels absent from the new authoritative surface
  * 4. Ledger tab: category filter, trade execution event with trade link,
  *    clicking the trade link navigates to /trades/[id], verifying trade identity
  * 5. Return to account workspace (back nav preserves tab context)
  * 6. Positions tab: position count, FIFO lot expansion, empty state
- * 7. Reconciliation tab: cutover eligibility banner, comparison dimensions
+ * 7. Reconciliation diagnostic: cutover eligibility banner and comparisons
  * 8. Settings tab: identity section, trading defaults, lifecycle controls,
  *    no legacy balance/performance sections
  * 9. Settings persistence: edit account name and verify after reload
- * 10. Settings tab direct route: /settings/settings/accounts/[id]/settings renders identity, defaults, lifecycle
+ * 10. Settings tab direct route: /settings/accounts/[id]/settings renders identity, defaults, lifecycle
  * 11. Empty account: empty states on Overview, Ledger, Positions,
- *     Reconciliation (no migration), Settings with no fabricated defaults
+ *     reconciliation diagnostic (no migration), Settings with no fabricated defaults
  * 12. Console and request diagnostics: no unhandled errors or failures
  *
  * Precondition: Next.js dev-server running on port 3000.
@@ -49,9 +49,9 @@ interface TradeResult {
 
 // ── Fixture Helpers ─────────────────────────────────────────────────────
 
-async function createAccount(page: Page, name: string, startingBalance = 0) {
+async function createAccount(page: Page, name: string) {
   const response = await page.request.post('/api/accounts', {
-    data: { name, broker: 'E2E Broker', currency: 'USD', startingBalance },
+    data: { name, broker: 'E2E Broker', currency: 'USD' },
   });
   expect(response.status()).toBe(201);
   return (await response.json()) as AccountResult;
@@ -62,7 +62,6 @@ async function setAccountRiskParams(page: Page, accountId: string) {
     data: {
       maxRiskPerTradePct: 2.0,
       defaultCommission: 1.0,
-      startingBalance: 50000,
     },
   });
   expect(response.status()).toBe(200);
@@ -203,7 +202,7 @@ test.describe('Account Cutover Integration', () => {
     populatedAccountName = `Cutover E2E ${ts}`;
 
     // 1. Create account
-    const account = await createAccount(page, populatedAccountName, 50000);
+    const account = await createAccount(page, populatedAccountName);
     populatedAccountId = account.id;
 
     // 2. Set risk params (required for trade creation and activation)
@@ -251,10 +250,10 @@ test.describe('Account Cutover Integration', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 1: Base route visit — all five tabs present
+  // Test 1: Base route visit — all current tabs present
   // ═════════════════════════════════════════════════════════════════════
 
-  test('base route shows all five workspace tabs with Overview selected', async ({ page }) => {
+  test('base route shows all four current workspace tabs with Overview selected', async ({ page }) => {
     // Navigate to the account base route (Overview default tab)
     await page.goto(`/settings/accounts/${populatedAccountId}`);
 
@@ -273,14 +272,15 @@ test.describe('Account Cutover Integration', () => {
       page.getByRole('link', { name: /back to accounts/i }),
     ).toBeVisible();
 
-    // ── All five workspace tabs present ─────────────────────────────
+    // Reconciliation is intentionally retained as a diagnostic deep link,
+    // not as an ongoing account-workspace tab after accounting cutover.
     const overviewTab = page.getByRole('tab', { name: 'Overview' });
     await expect(overviewTab).toBeVisible();
     await expect(overviewTab).toHaveAttribute('aria-selected', 'true');
 
     await expect(page.getByRole('tab', { name: 'Ledger' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Positions' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'Settings' })).toBeVisible();
 
     // ── Tab list has accessible label ───────────────────────────────
@@ -407,9 +407,9 @@ test.describe('Account Cutover Integration', () => {
     await expect(page.getByText(tradeCode)).toBeVisible();
     await expect(page.getByText('AAPL')).toBeVisible();
 
-    // Trade detail page has a back link to the trade log
+    // Trade detail page has a back link to the trades list.
     await expect(
-      page.getByRole('link', { name: /back to trade log/i }),
+      page.getByRole('link', { name: /back to trades/i }),
     ).toBeVisible();
 
     // ── Navigate back to account workspace ──────────────────────────
@@ -491,10 +491,10 @@ test.describe('Account Cutover Integration', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 5: Reconciliation tab — migration completed with comparison
+  // Test 5: Reconciliation diagnostic — migration completed with comparison
   // ═════════════════════════════════════════════════════════════════════
 
-  test('Reconciliation tab shows cutover eligibility with comparison dimensions', async ({
+  test('Reconciliation diagnostic deep link shows cutover eligibility with comparison dimensions', async ({
     page,
   }) => {
     const { errors, failed } = setupErrorCapture(page);
@@ -509,11 +509,9 @@ test.describe('Account Cutover Integration', () => {
         ) && res.status() === 200,
     );
 
-    // ── Reconciliation tab is active ────────────────────────────────
-    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    // The retired workflow remains reachable only as a diagnostic deep link.
+    await expect(page.getByRole('tab', { name: 'Reconciliation' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { selected: true })).toHaveCount(0);
 
     // ── Cutover eligibility banner ──────────────────────────────────
     // The trade fee ($12.50) creates unexplained differences between
@@ -557,7 +555,7 @@ test.describe('Account Cutover Integration', () => {
 
     // The comparison table MUST show "Legacy" and "Accounting" columns
     // (the explicitly labeled legacy comparison values are expected here
-    // on the Reconciliation tab as the intended legacy reference surface)
+    // on the reconciliation diagnostic as the intended legacy reference surface)
     await expect(page.getByText('Legacy').first()).toBeVisible();
     await expect(page.getByText('Accounting').first()).toBeVisible();
     await expect(page.getByText('Diff').first()).toBeVisible();
@@ -611,7 +609,10 @@ test.describe('Account Cutover Integration', () => {
     ).toBeVisible();
     await expect(page.locator('#settings-max-risk')).toBeVisible();
     await expect(page.locator('#settings-default-commission')).toBeVisible();
-    await expect(page.locator('#settings-starting-balance')).toBeVisible();
+    await expect(page.locator('#settings-starting-balance')).toHaveCount(0);
+    await expect(
+      page.getByText(/Opening cash is recorded as a cash transaction in the Ledger/i),
+    ).toBeVisible();
 
     // ── Account Lifecycle section ──────────────────────────────────
     await expect(
@@ -704,10 +705,10 @@ test.describe('Account Cutover Integration', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 8: Settings tab direct route — /settings/settings/accounts/[id]/settings renders
+  // Test 8: Settings tab direct route — /settings/accounts/[id]/settings renders
   // ═════════════════════════════════════════════════════════════════════
 
-  test('/settings/settings/accounts/[id]/settings renders identity section and lifecycle controls', async ({
+  test('/settings/accounts/[id]/settings renders identity section and lifecycle controls', async ({
     page,
   }) => {
     // Navigate directly to the Settings tab
@@ -715,7 +716,7 @@ test.describe('Account Cutover Integration', () => {
 
     // Should land at the same URL (no redirect needed)
     await expect(page).toHaveURL(
-      `/accounts/${populatedAccountId}/settings`,
+      `/settings/accounts/${populatedAccountId}/settings`,
     );
 
     // Verify settings content rendered
@@ -794,7 +795,7 @@ test.describe('Account Cutover Integration', () => {
       page.getByText(/Post an execution to open a position/),
     ).toBeVisible();
 
-    // ── Reconciliation tab (no migration — blocked state) ──────────
+    // ── Reconciliation diagnostic (no migration — blocked state) ───
     await page.goto(`/settings/accounts/${emptyAccount.id}/reconciliation`);
 
     await page.waitForResponse(

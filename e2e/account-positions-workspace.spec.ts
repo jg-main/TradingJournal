@@ -3,7 +3,7 @@
  *
  * Verifies the full runtime path from account navigation through
  * populated positions table, FIFO lot expansion, missing-price state,
- * empty state, and 404 handling at /settings/settings/accounts/[id]/positions.
+ * empty state, and 404 handling at /settings/accounts/[id]/positions.
  *
  * No valuation marks are inserted for the test account, so all positions
  * naturally show the "Missing" markStatus and "—" display values —
@@ -11,7 +11,7 @@
  *
  * Covers:
  * 1. Positions tab navigation from account base route
- * 2. Direct deep-link to /settings/settings/accounts/[id]/positions
+ * 2. Direct deep-link to /settings/accounts/[id]/positions
  * 3. Populated state: summary strip with position count, table with
  *    symbols and column headers, "Current Positions" heading
  * 4. FIFO lot expansion: expand/collapse with lot detail columns
@@ -44,7 +44,6 @@ async function setAccountRiskParams(page: Page, accountId: string) {
     data: {
       maxRiskPerTradePct: 2.0,
       defaultCommission: 1.0,
-      startingBalance: 100000,
     },
   });
   expect(response.status()).toBe(200);
@@ -170,7 +169,7 @@ test.describe('Account Positions Workspace', () => {
     expect(missingStatusPositions.length).toBe(2);
   });
 
-  test('Positions tab navigation: click tab navigates to /settings/settings/accounts/[id]/positions', async ({
+  test('Positions tab navigation: click tab navigates to /settings/accounts/[id]/positions', async ({
     page,
   }) => {
     // Navigate to the account detail page (Overview default tab)
@@ -252,11 +251,13 @@ test.describe('Account Positions Workspace', () => {
     // Wait for the table to be fully rendered
     await expect(page.getByText('Current Positions')).toBeVisible();
 
-    // Find the first expand button (AAPL row). After clicking,
+    // Find the AAPL row explicitly; position ordering can change as later
+    // executions update other symbols. After clicking,
     // its aria-label changes from "Expand FIFO lots" to "Collapse FIFO lots",
     // so we use the label transition for verification rather than
-    // stalen locator references.
-    const expandBtn = page.getByLabel('Expand FIFO lots').first();
+    // stale locator references.
+    const aaplRow = page.getByRole('row', { name: /AAPL/ });
+    const expandBtn = aaplRow.getByLabel('Expand FIFO lots');
     await expect(expandBtn).toBeVisible();
 
     // Verify initial collapsed state
@@ -266,7 +267,7 @@ test.describe('Account Positions Workspace', () => {
     await expandBtn.click();
 
     // After clicking, the button label changes to "Collapse FIFO lots"
-    const collapseBtn = page.getByLabel('Collapse FIFO lots');
+    const collapseBtn = aaplRow.getByLabel('Collapse FIFO lots');
     await expect(collapseBtn).toBeVisible();
 
     // FIFO lot sub-table column headers should be visible
@@ -278,7 +279,7 @@ test.describe('Account Positions Workspace', () => {
     await expect(page.getByText('Opened')).toBeVisible();
 
     // The expanded region should have role="region" with accessible label
-    const region = page.getByRole('region', { name: 'Open FIFO lots' });
+    const region = aaplRow.getByRole('region', { name: 'Open FIFO lots' });
     await expect(region).toBeVisible();
 
     // Lot detail values should be present (100 shares, $150.00 entry, $15.00 fees)

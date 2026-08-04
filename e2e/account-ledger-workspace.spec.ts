@@ -3,7 +3,7 @@
  *
  * Verifies the full runtime path from account navigation through
  * filtering, pagination, expansion, and correction audit inspection
- * at /settings/settings/accounts/[id]/ledger.
+ * at /settings/accounts/[id]/ledger.
  *
  * Covers:
  * 1. Ledger tab navigation and deep-link
@@ -39,7 +39,6 @@ async function setAccountRiskParams(page: Page, accountId: string) {
     data: {
       maxRiskPerTradePct: 2.0,
       defaultCommission: 1.0,
-      startingBalance: 100000,
     },
   });
   expect(response.status()).toBe(200);
@@ -198,7 +197,7 @@ test.describe('Account Ledger Workspace', () => {
     expect(correctionEvents.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('renders Ledger tab, deep-links to /settings/settings/accounts/[id]/ledger', async ({ page }) => {
+  test('renders Ledger tab, deep-links to /settings/accounts/[id]/ledger', async ({ page }) => {
     // Navigate to the account detail page (Overview default tab)
     await page.goto(`/settings/accounts/${accountId}`);
     await page.waitForSelector('text=Overview');

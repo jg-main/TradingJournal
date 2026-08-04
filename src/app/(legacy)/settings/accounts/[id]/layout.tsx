@@ -23,7 +23,7 @@ interface AccountBasic {
  * Fetches the account identity for the header and renders:
  * - Back link to /accounts
  * - Account header (name, broker, currency, status badge)
- * - Workspace tab navigation (Overview, Ledger, Positions, Reconciliation, Settings)
+ * - Workspace tab navigation (Overview, Ledger, Positions, Settings)
  * - Active tab content from the child route
  *
  * Loading, not-found, and error states are handled within this layout.
