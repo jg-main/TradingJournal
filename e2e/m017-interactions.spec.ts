@@ -45,7 +45,7 @@ test.describe('M017 Interactions', () => {
     await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Plan Trade' })).toBeVisible();
   });
 
-  test('Trade code is plain text (not a link)', async ({ page }) => {
+  test('Trade symbol is a native detail link while trade code stays out of the table', async ({ page }) => {
     const account = await setupAccount(page, `M017-PlainText-${TS}`);
 
     // Create a planned trade via API
@@ -69,8 +69,11 @@ test.describe('M017 Interactions', () => {
     const symbolCell = row.locator('td').first();
     await expect(symbolCell).toContainText(`M017PT${TS}`);
 
-    // No <a> tag should exist inside the row (plain text, no link wrapping)
-    await expect(row.locator('td a')).toHaveCount(0);
+    const symbolLink = row.getByRole('link', {
+      name: new RegExp(`View trade .*: M017PT${TS}`),
+    });
+    await expect(symbolLink).toHaveAttribute('href', `/trades/${trade.id}`);
+    await expect(row.locator('td a')).toHaveCount(1);
   });
 
   test('Edit and Execute buttons absent from trade log rows', async ({ page }) => {
@@ -118,13 +121,16 @@ test.describe('M017 Interactions', () => {
     await expect(page.locator('h1')).toContainText('Trades');
     await page.getByRole('tab', { name: /planned/i }).click();
 
-    // Find the trade row (DynamicTable rows are not directly clickable on the
-    // new page — verify the row exists, then navigate via URL)
+    // The principal Symbol cell is a native link, while the rest of the row
+    // remains a mouse convenience without becoming a duplicate keyboard stop.
     const row = page.locator('tr').filter({ hasText: `M017RC${TS}` }).first();
     await expect(row).toBeVisible({ timeout: 10_000 });
+    await expect(row).not.toHaveAttribute('tabindex');
 
-    // Navigate directly to the trade detail page
-    await page.goto(`/trades/${trade.id}`);
+    const tradeLink = page.getByRole('link', { name: new RegExp(`View trade .*: M017RC${TS}`) });
+    await tradeLink.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/trades/${trade.id}$`));
     await expect(page.locator('h1')).toContainText(`M017RC${TS}`);
   });
 
@@ -182,7 +188,7 @@ test.describe('M017 Interactions', () => {
 
   test('Form submission creates trade and redirects to detail', async ({ page }) => {
     // First create a fully usable account via helper
-    await setupAccount(page, `M017-Form-${TS}`);
+    const account = await setupAccount(page, `M017-Form-${TS}`);
 
     const uniqueSymbol = `M017FM${TS}`;
 
@@ -192,6 +198,11 @@ test.describe('M017 Interactions', () => {
 
     // Fill the Symbol field with a unique ticker
     await page.fill('input[placeholder="e.g. AAPL"]', uniqueSymbol);
+
+    // Account creation intentionally does not change the user's persisted
+    // default account, so select the fixture explicitly.
+    await page.locator('#plan-account').click();
+    await page.getByRole('option', { name: account.name }).click();
 
     // Wait for the POST /api/trades response (API returns 201 Created)
     const responsePromise = page.waitForResponse(

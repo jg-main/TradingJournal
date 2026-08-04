@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { createTradingAccount } from './helpers/trading-account';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -19,9 +20,11 @@ test.describe('M004 review system flow', () => {
   let reviewId: string;
 
   test('01 - create account and closed trade with executions', async ({ page }) => {
-    // ── Create a long trade (will use the seed/default account) ──
+    const account = await createTradingAccount(page.request, 'M004 Review Account');
+
+    // ── Create a long trade ──
     const tradeRes = await page.request.post('/api/trades', {
-      data: { symbol: 'NVDA', direction: 'long' },
+      data: { symbol: 'NVDA', direction: 'long', accountId: account.id },
     });
     expect(tradeRes.ok()).toBeTruthy();
     const trade = await tradeRes.json();

@@ -1,8 +1,16 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 const TS = Date.now();
+
+async function openAssessAction(page: Page) {
+  await page.getByRole('button', { name: 'More actions' }).click();
+  const action = page.getByRole('menuitem', { name: 'Assess', exact: true });
+  await expect(action).toBeVisible();
+  return action;
+}
 const DB_PATH = process.env.DB_FILE_NAME || './.trading-journal/playwright-readiness.db';
 
 /**
@@ -65,6 +73,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M021SA${TS}`, direction: 'long', accountId: account.id },
@@ -84,8 +93,8 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     await expect(assessmentSection.first()).toBeVisible();
 
     // ── Verify TradeDetailHeader has the "Assess" button ──────────
-    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
-    await expect(assessBtn).toBeVisible();
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
 
     // ── Verify empty state shows "Request Assessment" button ──────
     const requestBtn = page.getByRole('button', { name: 'Request Assessment' });
@@ -95,7 +104,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     await expect(page.getByText('No AI assessment yet')).toBeVisible();
 
     // ── Verify TradePlanCard renders before AssessmentCard ────────
-    const planCardTexts = page.getByText('Trade Plan');
+    const planCardTexts = page.getByText('Trade Definition');
     const firstPlanCard = planCardTexts.first();
 
     // The plan card should be in the DOM and visible before the assessment card
@@ -110,6 +119,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M021LB${TS}`, direction: 'short', accountId: account.id },
@@ -122,13 +132,14 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Verify initial state ──────────────────────────────────────
-    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
 
     // ── Click the Assess button ───────────────────────────────────
     // This will send a POST request to the API. The request may fail
     // because no AI provider is configured in test, but we verify the
     // UI reacts with proper loading state and error handling.
-    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
+    const assessAction = await openAssessAction(page);
 
     // Click and wait for the API call to resolve or reject
     await Promise.all([
@@ -138,12 +149,13 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
           resp.url().includes('/assessments') &&
           resp.request().method() === 'POST',
       ),
-      assessBtn.click(),
+      assessAction.click(),
     ]);
 
     // After the request completes (even with an error), the button
     // should return to its 'Assess' label (loading state finished)
-    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
 
     // Either an error message or the scorecard should be visible
     // (the API call will likely fail in test env without AI config)
@@ -162,6 +174,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M021CL${TS}`, direction: 'long', accountId: account.id },
@@ -215,6 +228,7 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M021NL${TS}`, direction: 'long', accountId: account.id },
@@ -243,13 +257,14 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     console.log('COLLAPSIBLE_NULL_RESULT: PASS');
   });
 
-  test('Execute button and Assess button both visible in header', async ({ page }) => {
+  test('Execute button and Assess action are both available in the header', async ({ page }) => {
     // ── Seed data ─────────────────────────────────────────────────
     const accRes = await page.request.post('/api/accounts', {
       data: { name: `M021-S05-Btns-${TS}`, isActive: true, startingBalance: 50000 },
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M021BT${TS}`, direction: 'long', accountId: account.id },
@@ -262,7 +277,8 @@ test.describe('M021 S05 Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Both buttons visible in the header area ───────────────────
-    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Execute' })).toBeVisible();
 
     // Verify no console errors on page load

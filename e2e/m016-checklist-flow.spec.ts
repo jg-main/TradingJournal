@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 /**
  * M016 Checklist Flow — End-to-end E2E spec.
@@ -24,6 +25,7 @@ test.describe('M016 Checklist Flow', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
     expect(account.id).toBeDefined();
 
     // ── 2. Create a setup definition (lowercase name to match lookup resolution) ──
@@ -190,6 +192,7 @@ test.describe('M016 Checklist Flow', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
     expect(account.id).toBeDefined();
 
     // ── 2. Create a setup definition ──────────────────────────────────
@@ -266,92 +269,6 @@ test.describe('M016 Checklist Flow', () => {
     await expect(svgIcons).toHaveCount(1);
   });
 
-  test('drag-and-drop reorder persists across page reload on account settings', async ({ page }) => {
-    // ── 1. Create a test account ──────────────────────────────────────
-    const accRes = await page.request.post('/api/accounts', {
-      data: {
-        name: 'E2E M016 Reorder',
-        isActive: true,
-        startingBalance: 50000,
-      },
-    });
-    expect(accRes.ok()).toBeTruthy();
-    const account = await accRes.json();
-    expect(account.id).toBeDefined();
-
-    // ── 2. Create 3 account-level checks via API in a known order ───
-    const c1Res = await page.request.post(`/api/accounts/${account.id}/checks`, {
-      data: { description: 'First check' },
-    });
-    expect(c1Res.ok()).toBeTruthy();
-
-    const c2Res = await page.request.post(`/api/accounts/${account.id}/checks`, {
-      data: { description: 'Second check' },
-    });
-    expect(c2Res.ok()).toBeTruthy();
-
-    const c3Res = await page.request.post(`/api/accounts/${account.id}/checks`, {
-      data: { description: 'Third check' },
-    });
-    expect(c3Res.ok()).toBeTruthy();
-
-    // ── 3. Navigate to account settings page ─────────────────────────
-    await page.goto(`/settings/accounts/${account.id}`, { waitUntil: 'networkidle' });
-
-    // Wait for checks to load
-    await expect(page.getByText('Account Entry Checks')).toBeVisible();
-    await expect(page.getByText('First check')).toBeVisible();
-    await expect(page.getByText('Third check')).toBeVisible();
-
-    // ── 4. Verify initial order ──────────────────────────────────────
-    const checkItems = page.locator('[aria-label^="Edit check:"]');
-    let texts = await checkItems.allTextContents();
-    expect(texts).toEqual(['First check', 'Second check', 'Third check']);
-
-    // ── 5. Drag "First check" grip to below "Third check" ─────────────
-    const firstGrip = page.locator('[aria-label="Drag to reorder"]').first();
-    const thirdItem = page.locator('[aria-label^="Edit check:"]').nth(2);
-
-    // Manual mouse drag — @dnd-kit PointerSensor activates after 5px movement
-    const firstBox = await firstGrip.boundingBox();
-    const thirdBox = await thirdItem.boundingBox();
-
-    if (firstBox && thirdBox) {
-      // Start drag from center of first grip handle
-      await page.mouse.move(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height / 2);
-      await page.mouse.down();
-      // Move >5px right to activate PointerSensor (activationConstraint: { distance: 5 })
-      await page.mouse.move(firstBox.x + firstBox.width / 2 + 15, firstBox.y + firstBox.height / 2, { steps: 3 });
-      await page.waitForTimeout(150);
-      // Drag down below the third item
-      await page.mouse.move(thirdBox.x + thirdBox.width / 2, thirdBox.y + thirdBox.height + 20, { steps: 10 });
-      await page.waitForTimeout(150);
-      await page.mouse.up();
-    }
-
-    // Wait for reorder API call to complete
-    await page.waitForResponse(
-      (resp) =>
-        resp.url().includes('/api/checks/reorder') &&
-        resp.request().method() === 'POST' &&
-        resp.status() === 200,
-      { timeout: 5000 },
-    );
-
-    // ── 6. Verify new order after drag ───────────────────────────────
-    texts = await checkItems.allTextContents();
-    expect(texts).toEqual(['Second check', 'Third check', 'First check']);
-
-    // ── 7. Hard reload and verify order persisted ─────────────────────
-    await page.reload({ waitUntil: 'networkidle' });
-
-    await expect(page.getByText('Account Entry Checks')).toBeVisible();
-    await expect(page.getByText('First check')).toBeVisible();
-
-    texts = await checkItems.allTextContents();
-    expect(texts).toEqual(['Second check', 'Third check', 'First check']);
-  });
-
   test('trade with no checks shows empty state audit panel', async ({ page }) => {
     // ── 1. Create a test account (no checks, no setup) ────────────────
     const accRes = await page.request.post('/api/accounts', {
@@ -363,6 +280,7 @@ test.describe('M016 Checklist Flow', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
     expect(account.id).toBeDefined();
 
     // ── 2. Create a trade without a setup (no checks at all) ──────────

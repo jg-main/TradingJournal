@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 /**
  * Minimal valid 1x1 PNG (base64). Small enough to inline, but contains
@@ -17,6 +18,7 @@ test.describe('Trade Assets Lightbox', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: 'LBOX', direction: 'long', accountId: account.id },
@@ -77,6 +79,7 @@ test.describe('Trade Assets Lightbox', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: 'LBOX2', direction: 'long', accountId: account.id },

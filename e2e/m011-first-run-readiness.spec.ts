@@ -152,7 +152,7 @@ test.describe('first-run readiness', () => {
     await page.goto('/settings', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('heading', { name: 'Setup your journal' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Plays' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Journal Setup' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Workspace' })).toBeVisible();
   });
 
@@ -232,14 +232,14 @@ test.describe('first-run readiness', () => {
     // as their own domain outside the Setup Checklist)
     await page.goto('/settings/accounts', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Add Account' }).click();
-    await page.waitForSelector('#account-name', { state: 'visible', timeout: 5_000 });
-    await page.locator('#account-name').fill('Guided Account');
-    await page.locator('#account-broker').fill('Playwright Broker');
+    await page.waitForSelector('#name', { state: 'visible', timeout: 5_000 });
+    await page.locator('#name').fill('Guided Account');
+    await page.locator('#broker').fill('Playwright Broker');
     await page.waitForTimeout(300);
     const accountPost = page.waitForResponse(
       (r) => r.url().includes('/api/accounts') && r.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Add Account' }).click();
+    await page.getByRole('button', { name: 'Create' }).click();
     const accountPostResponse = await accountPost;
     expect(accountPostResponse.status()).toBe(201);
     const createdAccount = await accountPostResponse.json() as { id: string };

@@ -1,14 +1,14 @@
 /**
  * E2E cross-domain ownership journey for the Settings Ownership Reorganization milestone.
  *
- * Proves all six Settings domains are reachable via the hub, the Accounts workspace
+ * Proves all seven Settings domains are reachable via the hub, the Accounts workspace
  * is accessible, and the global-default → account-override → reset → reload → restart
  * journey works end-to-end.
  *
  * Covers:
- * 1. Settings hub renders all six domain cards with working links
+ * 1. Settings hub renders all seven domain cards with working links
  * 2. Each Settings domain page renders its heading (Workspace, Risk Defaults,
- *    Journal Setup, Integrations, Data &amp; Backups, Danger Zone)
+ *    Journal Setup, Integrations, Backup, Danger Zone)
  * 3. Accounts page is reachable with default-account controls
  * 4. Account workspace (Overview, Ledger, Positions, Settings tabs)
  *    is reachable via /settings/accounts/[id]
@@ -102,6 +102,12 @@ interface SettingsDomain {
 
 const SETTINGS_DOMAINS: SettingsDomain[] = [
   {
+    name: 'Accounts',
+    href: '/settings/accounts',
+    heading: 'Accounts',
+    cardText: /accounts/i,
+  },
+  {
     name: 'Workspace',
     href: '/settings/workspace',
     heading: 'Workspace',
@@ -126,10 +132,10 @@ const SETTINGS_DOMAINS: SettingsDomain[] = [
     cardText: /integrations/i,
   },
   {
-    name: 'Data & Backups',
-    href: '/settings/data-and-backups',
-    heading: /data.*backups/i,
-    cardText: /data.*backups/i,
+    name: 'Backup',
+    href: '/settings/backup',
+    heading: 'Backup',
+    cardText: /^backup$/i,
   },
   {
     name: 'Danger Zone',
@@ -186,10 +192,10 @@ test.describe('Settings Ownership Journey', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 1: Settings hub renders all six domain cards with working links
+  // Test 1: Settings hub renders all seven domain cards with working links
   // ═════════════════════════════════════════════════════════════════════
 
-  test('Settings hub renders all six domain cards with correct hrefs', async ({ page }) => {
+  test('Settings hub renders all seven domain cards with correct hrefs', async ({ page }) => {
     const diagnostics = captureDiagnostics(page);
     diagnosticPages.push(page);
 
@@ -206,10 +212,6 @@ test.describe('Settings Ownership Journey', () => {
       await expect(card).toBeVisible();
       await expect(card).toHaveAttribute('href', domain.href);
     }
-
-    // Verify hub page has no stale /settings/accounts links
-    const accountsLinks = page.getByRole('link').filter({ hasText: /settings\/accounts/ });
-    await expect(accountsLinks).toHaveCount(0);
 
     // Diagnostic check
     expect(diagnostics.errors).toEqual([]);
@@ -232,7 +234,7 @@ test.describe('Settings Ownership Journey', () => {
       await page.waitForLoadState('networkidle');
 
       // Verify page heading
-      await expect(page.getByRole('heading', { name: domain.heading })).toBeVisible();
+      await expect(page.getByRole('heading', { name: domain.heading, exact: true })).toBeVisible();
 
       // Verify back link to Settings hub
       const backLink = page.getByRole('link', { name: /back to settings/i });
@@ -390,25 +392,18 @@ test.describe('Settings Ownership Journey', () => {
   });
 
   // ═════════════════════════════════════════════════════════════════════
-  // Test 5: Verify no stale /settings/accounts links in sidebar or hub
+  // Test 5: Verify canonical account and Settings links in the sidebar
   // ═════════════════════════════════════════════════════════════════════
 
-  test('no stale /settings/accounts references in sidebar navigation', async ({ page }) => {
+  test('sidebar uses the canonical account and Settings routes', async ({ page }) => {
     const diagnostics = captureDiagnostics(page);
     diagnosticPages.push(page);
 
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
-    // Check sidebar for any /settings/accounts links
-    const sidebarLinks = page.locator('nav a');
-    const sidebarLinksCount = await sidebarLinks.count();
-    for (let i = 0; i < sidebarLinksCount; i++) {
-      const href = await sidebarLinks.nth(i).getAttribute('href');
-      if (href) {
-        expect(href).not.toContain('/settings/accounts');
-      }
-    }
+    await expect(page.getByRole('link', { name: 'Accounts', exact: true }).first())
+      .toHaveAttribute('href', '/settings/accounts');
 
     // Verify Settings sidebar link points to /settings
     const settingsNavLink = page.getByRole('link', { name: 'Settings' }).first();

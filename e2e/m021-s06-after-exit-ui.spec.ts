@@ -1,8 +1,16 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 const TS = Date.now();
+
+async function openAssessAction(page: Page) {
+  await page.getByRole('button', { name: 'More actions' }).click();
+  const action = page.getByRole('menuitem', { name: 'Assess', exact: true });
+  await expect(action).toBeVisible();
+  return action;
+}
 const DB_PATH = process.env.DB_FILE_NAME || './.trading-journal/playwright-readiness.db';
 
 /**
@@ -63,6 +71,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M06AE${TS}`, direction: 'long', accountId: account.id },
@@ -91,9 +100,9 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     // ── Verify page loads with trade symbol ────────────────────────
     await expect(page.locator('h1')).toContainText(`M06AE${TS}`);
 
-    // ── Verify the "Assess" button in the header ───────────────────
-    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
-    await expect(assessBtn).toBeVisible();
+    // Assessment is available from the header's actions menu.
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
 
     // ── Verify AssessmentCard section is present ───────────────────
     await expect(page.getByText('AI Quality Assessment').first()).toBeVisible();
@@ -121,6 +130,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M06LB${TS}`, direction: 'short', accountId: account.id },
@@ -145,21 +155,23 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Verify Assess button is visible ────────────────────────────
-    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
 
     // ── Click Assess and wait for the POST to settle ───────────────
-    const assessBtn = page.getByRole('button', { name: 'Assess', exact: true });
+    const assessAction = await openAssessAction(page);
     const responsePromise = page.waitForResponse(
       (resp) =>
         resp.url().includes('/api/trades') &&
         resp.url().includes('/assessments') &&
         resp.request().method() === 'POST',
     );
-    await assessBtn.click();
+    await assessAction.click();
     await responsePromise;
 
     // ── After request completes, button returns to 'Assess' text ───
-    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible({ timeout: 5000 });
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
 
     // ── Verify either error message OR assessment heading is shown ─
     const hasError = await page.getByText('AI not configured').isVisible().catch(() => false);
@@ -176,6 +188,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M06CL${TS}`, direction: 'long', accountId: account.id },
@@ -230,6 +243,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: `M06CD${TS}`, direction: 'long', accountId: account.id },
@@ -254,7 +268,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await page.waitForLoadState('networkidle');
 
     // ── Verify P&L card is visible (key after-exit component) ─────
-    const pnlCard = page.getByText('P&L-R Metrics').first();
+    const pnlCard = page.getByText('Total Fees', { exact: true });
     await expect(pnlCard).toBeVisible();
 
     // ── Verify execution card with trade details ───────────────────
@@ -270,12 +284,13 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await expect(stopCard).toBeVisible();
 
     // ── Verify both Assess button and assessment sections ──────────
-    await expect(page.getByRole('button', { name: 'Assess', exact: true })).toBeVisible();
+    await openAssessAction(page);
+    await page.keyboard.press('Escape');
     await expect(page.getByText('AI Quality Assessment').first()).toBeVisible();
     await expect(page.getByText('Assessment History').first()).toBeVisible();
 
     // ── Verify lifecycle stepper shows all phases ──────────────────
-    await expect(page.getByText('Review').first()).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Grade$/ }).first()).toBeVisible();
 
     console.log('CLOSED_CARDS_RESULT: PASS');
   });

@@ -8,6 +8,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 test.describe('M031 Sector & Industry Enrichment', () => {
   test.describe.configure({ mode: 'serial' });
@@ -87,6 +88,7 @@ test.describe('M031 Sector & Industry Enrichment', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create a trade with a known real ticker
     const tradeRes = await page.request.post('/api/trades', {
@@ -118,8 +120,8 @@ test.describe('M031 Sector & Industry Enrichment', () => {
     // Verify the trade symbol is rendered in the hero card header
     await expect(page.getByRole('heading', { name: 'AAPL' })).toBeVisible();
 
-    // Verify the hero card renders the ticker symbol in the profile header
-    await expect(page.locator('span').filter({ hasText: /^AAPL$/ })).toBeVisible();
+    // The trade symbol is the page's primary heading.
+    await expect(page.getByRole('heading', { name: 'AAPL', exact: true })).toBeVisible();
 
     // Verify the hero card renders (presence of P&L labels confirms it)
     await expect(page.getByText(/realized p&l|unrealized p&l/i).first()).toBeVisible();

@@ -46,6 +46,13 @@ test.describe('Schwab Connection UI', () => {
   });
 
   test('shows Connect Schwab button when disconnected', async ({ page }) => {
+    await page.route('**/api/schwab/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ connected: false, expiresAt: null, errorType: 'not_configured' }),
+      });
+    });
     await page.goto('/settings/market-data');
     await page.waitForLoadState('networkidle');
 
@@ -249,6 +256,13 @@ test.describe('Schwab Connection UI', () => {
   });
 
   test('shows configure env vars hint when not_configured', async ({ page }) => {
+    await page.route('**/api/schwab/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ connected: false, expiresAt: null, errorType: 'not_configured' }),
+      });
+    });
     await page.goto('/settings/market-data');
     await page.waitForLoadState('networkidle');
 

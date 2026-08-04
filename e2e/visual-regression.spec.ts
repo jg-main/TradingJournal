@@ -118,6 +118,9 @@ test.describe('Visual Regression Baselines', () => {
     await expect(page).toHaveScreenshot('production-workstation-1440x900.png', {
       fullPage: false,
       threshold: 0.3,
+      // Font/chart antialiasing can shift a few dozen pixels under full-suite
+      // load. Keep tolerance below 0.01% of this 1.3M-pixel viewport.
+      maxDiffPixels: 100,
     });
 
     assertNoConsoleErrors(errors);

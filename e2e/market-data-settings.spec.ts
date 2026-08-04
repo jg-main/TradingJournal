@@ -37,8 +37,7 @@ test.describe('Market Data Settings — UI', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.locator('h2', { hasText: 'Provider Status' })).toBeVisible();
-    // Active provider shows ClickHouse by default
-    await expect(page.getByText('ClickHouse', { exact: true })).toBeVisible();
+    await expect(page.locator('select').filter({ has: page.locator('option[value="clickhouse"]') })).toHaveValue('clickhouse');
   });
 
   test('renders ClickHouse Configuration section with all fields', async ({ page }) => {
@@ -62,21 +61,29 @@ test.describe('Market Data Settings — UI', () => {
     await page.goto('/settings/market-data');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByRole('button', { name: /save/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible();
+    const clickHouseSection = page.getByRole('heading', { name: 'ClickHouse Configuration' }).locator('..');
+    await expect(clickHouseSection.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    await expect(clickHouseSection.getByRole('button', { name: 'Test Connection' })).toBeVisible();
   });
 
   test('changing any ClickHouse field clears connection result', async ({ page }) => {
     await page.goto('/settings/market-data');
     await page.waitForLoadState('networkidle');
 
-    // The test-connection endpoint doesn't exist yet, so clicking it shows an error
+    await page.route('**/api/market-data/clickhouse/test-connection', async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: false, error: 'Connection unavailable for test.' }),
+      });
+    });
+
     await page.getByRole('button', { name: /test connection/i }).click();
-    await expect(page.getByText('Test connection endpoint not available yet.', { exact: true })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Connection unavailable for test.', { exact: true })).toBeVisible({ timeout: 5000 });
 
     // Typing in any field should clear the connection result
     await page.locator('#chHost').fill('new-host');
-    await expect(page.getByText('Test connection endpoint not available yet.', { exact: true })).not.toBeVisible();
+    await expect(page.getByText('Connection unavailable for test.', { exact: true })).not.toBeVisible();
   });
 
   test('renders Enrich Missing Profiles section with button', async ({ page }) => {
@@ -108,10 +115,11 @@ test.describe('Market Data Settings — Save and Persist', () => {
     await page.locator('#chDatabase').fill('analysis');
 
     // Submit the form
-    await page.getByRole('button', { name: /^save$/i }).click();
+    const clickHouseSection = page.getByRole('heading', { name: 'ClickHouse Configuration' }).locator('..');
+    await clickHouseSection.getByRole('button', { name: 'Save', exact: true }).click();
 
     // Verify success message appears
-    await expect(page.locator('text=Market data settings saved')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('ClickHouse configuration saved.')).toBeVisible({ timeout: 5000 });
 
     // Verify data was persisted via the API directly
     const resp = await page.request.get('/api/market-data/settings');
@@ -140,8 +148,8 @@ test.describe('Market Data Settings — Save and Persist', () => {
     await page.locator('#chPassword').fill('secret');
     await page.locator('#chDatabase').fill('marketdata');
 
-    await page.getByRole('button', { name: /^save$/i }).click();
-    await expect(page.locator('text=Market data settings saved')).toBeVisible({ timeout: 5000 });
+    await page.getByRole('heading', { name: 'ClickHouse Configuration' }).locator('..').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('ClickHouse configuration saved.')).toBeVisible({ timeout: 5000 });
 
     // Reload and verify fields are populated from GET
     await page.goto('/settings/market-data');
@@ -168,17 +176,17 @@ test.describe('Market Data Settings — Save and Persist', () => {
     await page.locator('#chPassword').fill('password1');
     await page.locator('#chDatabase').fill('market');
 
-    await page.getByRole('button', { name: /^save$/i }).click();
-    await expect(page.locator('text=Market data settings saved')).toBeVisible({ timeout: 5000 });
+    await page.getByRole('heading', { name: 'ClickHouse Configuration' }).locator('..').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('ClickHouse configuration saved.')).toBeVisible({ timeout: 5000 });
 
     // Now reload the page, fill only password (all other fields populated from GET), and save
     await page.goto('/settings/market-data');
     await page.waitForLoadState('networkidle');
 
     await page.locator('#chPassword').fill('new-password');
-    await page.getByRole('button', { name: /^save$/i }).click();
+    await page.getByRole('heading', { name: 'ClickHouse Configuration' }).locator('..').getByRole('button', { name: 'Save', exact: true }).click();
 
-    await expect(page.locator('text=Market data settings saved')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('ClickHouse configuration saved.')).toBeVisible({ timeout: 5000 });
 
     // Verify via API that existing data was preserved
     const resp = await page.request.get('/api/market-data/settings');
@@ -195,11 +203,13 @@ test.describe('Market Data Settings — Save and Persist', () => {
 });
 
 // Settings Hub tests are independent and can run in parallel
-test.describe('Settings Hub — Market Data Card', () => {
-  test('settings hub shows Market Data card', async ({ page }) => {
+test.describe('Settings Hub — Market Data Route', () => {
+  test('settings hub exposes Market Data through Integrations', async ({ page }) => {
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
+    await page.getByRole('link', { name: /integrations/i }).click();
+    await expect(page).toHaveURL('/settings/integrations');
     await expect(page.getByRole('link', { name: /market data/i })).toBeVisible();
     await expect(page.getByText('Configure market data providers and connection settings.')).toBeVisible();
   });
@@ -208,6 +218,7 @@ test.describe('Settings Hub — Market Data Card', () => {
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
+    await page.getByRole('link', { name: /integrations/i }).click();
     await page.getByRole('link', { name: /market data/i }).click();
     await page.waitForLoadState('networkidle');
 

@@ -1,7 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { resolve } from 'path';
-
-const SEED_BACKUP_PATH = resolve(process.cwd(), 'data/settings_init.zip');
 
 test('uploading a backup zip advances to the restore confirmation step', async ({ page }) => {
   await page.goto('/settings/backup');
@@ -12,7 +9,13 @@ test('uploading a backup zip advances to the restore confirmation step', async (
   await expect(modal).toBeVisible();
   await expect(modal.getByText(/restore from backup/i)).toBeVisible();
 
-  await modal.locator('input[type="file"]').setInputFiles(SEED_BACKUP_PATH);
+  const backupResponse = await page.request.get('/api/backup');
+  expect(backupResponse.ok()).toBeTruthy();
+  await modal.locator('input[type="file"]').setInputFiles({
+    name: 'current-schema-backup.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(await backupResponse.body()),
+  });
 
   await expect(modal.getByRole('heading', { name: /backup uploaded\. confirm restore\./i })).toBeVisible();
   await expect(modal.getByText(/uploaded and validated successfully/i)).toBeVisible();

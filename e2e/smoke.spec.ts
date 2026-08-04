@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 test.describe('Smoke tests — new M002 pages', () => {
   test('/sizing renders with Sizing heading', async ({ page }) => {
@@ -27,9 +28,11 @@ test.describe('Smoke tests — new M002 pages', () => {
       data: { name: 'Smoke Test Account', isActive: true },
     });
     expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
-      data: { symbol: 'AAPL', direction: 'long' },
+      data: { symbol: 'AAPL', direction: 'long', accountId: account.id },
     });
     expect(tradeRes.ok()).toBeTruthy();
     const trade = await tradeRes.json();

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 test.describe('M003 cross-slice flow', () => {
   test('full flow: create trade + stop adjustment + external link + verify on detail page', async ({ page }) => {
@@ -7,10 +8,12 @@ test.describe('M003 cross-slice flow', () => {
       data: { name: 'M003 Flow Test Account', isActive: true },
     });
     expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // ── Step 2: Create a trade ─────────────────────────────────────────────
     const tradeRes = await page.request.post('/api/trades', {
-      data: { symbol: 'M003FLOW', direction: 'long' },
+      data: { symbol: 'M003FLOW', direction: 'long', accountId: account.id },
     });
     expect(tradeRes.ok()).toBeTruthy();
     const trade = await tradeRes.json();
@@ -25,11 +28,11 @@ test.describe('M003 cross-slice flow', () => {
 
     // The lifecycle stepper should be visible with step labels
     // Use exact match for stepper step labels — 'Plan' without 'ned', 'Exit' without 'ed', etc.
-    await expect(page.getByText('Plan', { exact: true })).toBeVisible();
-    await expect(page.getByText('Manage', { exact: true })).toBeVisible();
-    await expect(page.getByText('Exit', { exact: true })).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Plan$/ }).first()).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Manage$/ }).first()).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Exit$/ }).first()).toBeVisible();
     // Grade step label (also visible)
-    await expect(page.getByText('Grade', { exact: true })).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Grade$/ }).first()).toBeVisible();
     console.log('Lifecycle stepper visible with all step labels');
 
     // h1 should show the symbol

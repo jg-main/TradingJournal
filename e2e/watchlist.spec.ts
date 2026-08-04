@@ -31,12 +31,10 @@ test.describe('Watchlist', () => {
     // Dialog title should appear
     await expect(page.getByText('Add to Watchlist')).toBeVisible();
 
-    // Fill form (setup is optional and requires a valid lookup value that may not be seeded in test DB)
+    // Fill the current watchlist form. Trigger direction is configured through
+    // Alert Conditions rather than a second trigger-price field.
     await page.locator('#symbol').fill('META');
     await page.locator('#keyLevel').fill('500');
-    await page.locator('#triggerPrice').fill('510');
-    // Status select is the second select in the form
-    await page.locator('form select').nth(1).selectOption('watching');
 
     // Submit with "Add" button
     await page.getByRole('button', { name: 'Add' }).click();
@@ -67,7 +65,7 @@ test.describe('Watchlist', () => {
     await page.goto('/watchlist');
     await page.waitForLoadState('networkidle');
 
-    const filterTrigger = page.getByRole('combobox');
+    const filterTrigger = page.getByRole('combobox', { name: 'Filter:' });
     await expect(filterTrigger).toBeVisible();
 
     await filterTrigger.click();

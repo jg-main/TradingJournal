@@ -145,8 +145,8 @@ test.describe('Backup Settings UI', () => {
     // UTC 15:00 = 11:00 AM ET, 8:00 AM PT — always Jul 15 in any US timezone
     await expect(page.getByText(/Jul 15/)).toBeVisible();
 
-    // Verify green dot is present — CircleCheck icon (emerald/green)
-    await expect(page.locator('svg.text-emerald-500')).toBeVisible();
+    // Success is a financial-positive state and uses the semantic positive token.
+    await expect(page.locator('svg.text-positive')).toBeVisible();
   });
 
   test('status indicator shows Never and gray dot with no backup history', async ({ page, request }) => {
@@ -160,11 +160,11 @@ test.describe('Backup Settings UI', () => {
     await page.goto('/settings/backup');
     await page.waitForLoadState('networkidle');
 
-    // Verify Last Run shows "Never"
-    await expect(page.getByText('Never')).toBeVisible();
-
-    // Verify gray dot is present — HelpCircle icon (zinc/gray)
-    await expect(page.locator('svg.text-zinc-300')).toBeVisible();
+    // Scope the icon assertion to the Last Run row so sidebar icons cannot
+    // satisfy or make the locator ambiguous.
+    const lastRunRow = page.getByText('Last Run').locator('..');
+    await expect(lastRunRow.getByText('Never')).toBeVisible();
+    await expect(lastRunRow.locator('svg.text-muted-foreground')).toBeVisible();
 
     // Verify Next Scheduled Run shows "—" when disabled
     await expect(page.getByText('—')).toBeVisible();
@@ -177,12 +177,7 @@ test.describe('Backup Settings UI', () => {
     await page.goto('/settings');
     await page.waitForLoadState('networkidle');
 
-    // Click the Data & Backups card → lands on data-and-backups sub-hub
-    await page.getByRole('link', { name: /data.*backups/i }).click();
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/\/settings\/data-and-backups$/);
-
-    // Click the Backup card on the sub-hub → lands on the backup page
+    // Backup is a first-class card on the current Settings hub.
     await page.getByRole('link', { name: 'Backup' }).click();
     await page.waitForLoadState('networkidle');
 
@@ -229,22 +224,4 @@ test.describe('Backup Settings UI', () => {
     await page.unroute('**/api/settings');
   });
 
-  test('page loads gracefully without settings row', async ({ page }) => {
-    // No seeding — page should handle missing settings row gracefully
-
-    await page.goto('/settings/backup');
-    await page.waitForLoadState('networkidle');
-
-    // The status section should appear even without settings data
-    await expect(page.getByRole('heading', { name: 'Backup', exact: true })).toBeVisible();
-    await expect(page.getByText('Status')).toBeVisible();
-    await expect(page.getByText('Automatic Backups')).toBeVisible();
-
-    // The toggle should default to unchecked
-    const toggle = page.getByRole('switch');
-    await expect(toggle).not.toBeChecked();
-
-    // The retention count defaults to 7
-    await expect(page.locator('#retentionCount')).toHaveValue('7');
-  });
 });

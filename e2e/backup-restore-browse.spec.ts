@@ -11,6 +11,11 @@ import { join, dirname } from 'path';
  */
 const DB_FILE = process.env.DB_FILE_NAME ?? './.trading-journal/journal.db';
 const BACKUP_DIR = join(dirname(DB_FILE), 'backups');
+const SOURCE_BACKUP_PATH = join(
+  process.cwd(),
+  'data',
+  'trading-journal-backup-2026-07-29.zip',
+);
 
 const SEED_BACKUP_FILENAME = 'backup-2026-07-15T14-00-00-000Z.zip';
 const SEED_BACKUP_PATH = join(BACKUP_DIR, SEED_BACKUP_FILENAME);
@@ -36,19 +41,17 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
   test.beforeAll(() => {
     // Create backup directory and seed a test backup file
     mkdirSync(BACKUP_DIR, { recursive: true });
-    const sourceFile = join(process.cwd(), 'data', 'test-backup.zip');
-    if (existsSync(sourceFile)) {
-      copyFileSync(sourceFile, SEED_BACKUP_PATH);
-      console.log(`[seed] Copied test-backup.zip → ${SEED_BACKUP_PATH}`);
+    if (existsSync(SOURCE_BACKUP_PATH)) {
+      copyFileSync(SOURCE_BACKUP_PATH, SEED_BACKUP_PATH);
+      console.log(`[seed] Copied backup fixture → ${SEED_BACKUP_PATH}`);
     }
   });
 
   test.beforeEach(() => {
     // Re-seed backup file before each test (parallel-safe)
     mkdirSync(BACKUP_DIR, { recursive: true });
-    const sourceFile = join(process.cwd(), 'data', 'test-backup.zip');
-    if (existsSync(sourceFile) && !existsSync(SEED_BACKUP_PATH)) {
-      copyFileSync(sourceFile, SEED_BACKUP_PATH);
+    if (existsSync(SOURCE_BACKUP_PATH) && !existsSync(SEED_BACKUP_PATH)) {
+      copyFileSync(SOURCE_BACKUP_PATH, SEED_BACKUP_PATH);
       console.log(`[seed] Re-seeded ${SEED_BACKUP_PATH}`);
     }
   });
@@ -182,10 +185,14 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
   });
 
   test('empty state shows when no backup files exist', async ({ page, request }) => {
-    // Temporarily remove the seeded file
-    try { unlinkSync(SEED_BACKUP_PATH); } catch { /* ok if missing */ }
-
     await seedBackupSettings(request);
+    await page.route('**/api/backup/files', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '[]',
+      });
+    });
 
     // Navigate directly to /settings/backup and open the RestoreModal
     await page.goto('/settings/backup');
@@ -199,12 +206,5 @@ test.describe('RestoreModal — Browse Scheduled Backups', () => {
 
     // Empty state: "No scheduled backups found." should appear
     await expect(modal.getByText(/no scheduled backups found/i)).toBeVisible();
-
-    // Re-seed for cleanup
-    const sourceFile = join(process.cwd(), 'data', 'test-backup.zip');
-    if (existsSync(sourceFile)) {
-      mkdirSync(BACKUP_DIR, { recursive: true });
-      copyFileSync(sourceFile, SEED_BACKUP_PATH);
-    }
   });
 });

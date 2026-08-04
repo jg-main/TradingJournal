@@ -14,6 +14,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -117,6 +118,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // ── Create a planned trade ─────────────────────────────────────
     const tradeRes = await page.request.post('/api/trades', {
@@ -201,6 +203,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: 'MSFT', direction: 'long', accountId: account.id },
@@ -270,6 +273,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: 'GOOGL', direction: 'long', accountId: account.id },
@@ -360,6 +364,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create trade (long)
     const tradeRes = await page.request.post('/api/trades', {
@@ -433,6 +438,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create trade (long)
     const tradeRes = await page.request.post('/api/trades', {
@@ -528,6 +534,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create and execute open trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -644,6 +651,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create and execute open trade
     const tradeRes = await page.request.post('/api/trades', {
@@ -789,6 +797,7 @@ test.describe('M033 S04 PriceWidget E2E', () => {
     });
     expect(accRes.ok()).toBeTruthy();
     const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
 
     // Create and execute open trade
     const tradeRes = await page.request.post('/api/trades', {

@@ -7,11 +7,10 @@ test.describe('Lookups', () => {
     await page.goto('/lookups');
     await expect(page.locator('h1')).toContainText('Lookups');
 
-    // Tab bar should show all lookup types
-    await expect(page.getByRole('button', { name: 'Setups' })).toBeVisible();
+    // Setup definitions and mistake types have dedicated Settings surfaces;
+    // this page owns only reference lookups.
     await expect(page.getByRole('button', { name: 'Sectors' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Market Conditions' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Mistake Types' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Execution Reasons' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Phases' })).toBeVisible();
   });
@@ -39,7 +38,7 @@ test.describe('Lookups', () => {
     await page.goto('/lookups');
     await page.waitForLoadState('networkidle');
 
-    // Setups tab is default - verify it has the active class/look
+    // Sectors is the default reference lookup tab.
     const sectorsTab = page.getByRole('button', { name: 'Sectors' });
 
     // Get the class of the active tab to verify tab switching works
@@ -89,7 +88,7 @@ test.describe('Lookups', () => {
     await page.getByRole('button', { name: 'Add Value' }).click();
 
     // Fill the form
-    await page.locator('#formType').selectOption('setup');
+    await page.locator('#formType').selectOption('sector');
     await page.locator('#formValue').fill(uniqueValue);
     await page.locator('#formDesc').fill('Created by Playwright e2e test');
     await page.locator('#formSort').fill('1');
