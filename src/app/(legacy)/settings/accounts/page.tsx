@@ -407,6 +407,9 @@ export default function AccountsPage() {
           columns={columns}
           storageKey="accounts"
           onRowClick={row => router.push('/settings/accounts/' + row.original.id)}
+          rowHref={row => `/settings/accounts/${row.original.id}`}
+          rowLinkColumnId="name"
+          rowLinkLabel={row => `Open account ${row.original.name}`}
         />
       )}
     </div>

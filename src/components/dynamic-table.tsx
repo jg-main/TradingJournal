@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import Link from 'next/link';
 import {
   useReactTable,
   getCoreRowModel,
@@ -48,6 +49,12 @@ export interface DynamicTableProps<TData> {
   columns: ColumnDef<TData, unknown>[];
   storageKey: string;
   onRowClick?: (row: Row<TData>) => void;
+  /** Native destination exposed from one principal cell for keyboard and assistive technology users. */
+  rowHref?: (row: Row<TData>) => string;
+  /** Column whose rendered value becomes the native row link. Required with rowHref. */
+  rowLinkColumnId?: string;
+  /** Accessible name for the native row link. */
+  rowLinkLabel?: (row: Row<TData>) => string;
   rowClassName?: (row: Row<TData>) => string;
   emptyState?: React.ReactNode;
   className?: string;
@@ -131,6 +138,9 @@ export default function DynamicTable<TData>({
   columns,
   storageKey,
   onRowClick,
+  rowHref,
+  rowLinkColumnId,
+  rowLinkLabel,
   rowClassName,
   emptyState,
   className,
@@ -298,17 +308,26 @@ export default function DynamicTable<TData>({
             <tr
               key={row.id}
               onClick={() => onRowClick?.(row)}
-              onKeyDown={e => { if (e.key === 'Enter') onRowClick?.(row); }}
-              tabIndex={onRowClick ? 0 : undefined}
               className={cn(
                 'border-b transition-colors',
-                onRowClick && 'cursor-pointer hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                onRowClick && 'cursor-pointer hover:bg-muted',
                 rowClassName?.(row),
               )}
             >
               {row.getVisibleCells().map(cell => (
                 <td key={cell.id} className="px-3 py-2">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  {rowHref && cell.column.id === rowLinkColumnId ? (
+                    <Link
+                      href={rowHref(row)}
+                      aria-label={rowLinkLabel?.(row)}
+                      onClick={(event) => event.stopPropagation()}
+                      className="inline-flex rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </Link>
+                  ) : (
+                    flexRender(cell.column.columnDef.cell, cell.getContext())
+                  )}
                 </td>
               ))}
             </tr>

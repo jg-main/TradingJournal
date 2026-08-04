@@ -1499,6 +1499,11 @@ function TradesPageInner() {
           columns={colMap[tab.id]}
           storageKey={`trades:${tab.id}:v2`}
           onRowClick={(row) => router.push(`/trades/${row.original.id}`)}
+          rowHref={(row) => `/trades/${row.original.id}`}
+          rowLinkColumnId="symbol"
+          rowLinkLabel={(row) =>
+            `View trade ${row.original.tradeCode}: ${row.original.symbol}`
+          }
           columnSelector
           alwaysVisible={['symbol', 'actions']}
           initialVisibility={visibilityDefaults[tab.id]}
