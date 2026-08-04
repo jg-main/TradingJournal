@@ -42,7 +42,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '@/db/schema';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from '@/lib/backup-serializer';
-import { validateRestoreZip, executeRestore } from '@/lib/restore';
+import { validateRestoreZip, executeRestore, validateRestoreUploadEntries } from '@/lib/restore';
 import { getSqliteHandle } from '@/db/index';
 
 vi.mock('server-only', () => ({}));
@@ -63,6 +63,34 @@ function createSchemaDb(dbPath: string) {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 describe('Restore Pipeline', () => {
+  describe('restore upload validation', () => {
+    const fakeZip = (...entryNames: string[]) => ({
+      getEntries: () => entryNames.map((entryName) => ({ entryName })),
+    }) as unknown as AdmZip;
+
+    it.each([
+      'uploads/../../../.env',
+      'uploads/..\\..\\.env',
+      'uploads/nested/screenshot.png',
+      'uploads/screenshot.exe',
+    ])('rejects unsafe or duplicate upload entry %s', (entryName) => {
+      expect(validateRestoreUploadEntries(fakeZip(entryName))).toMatchObject({ valid: false });
+    });
+
+    it('rejects duplicate upload names', () => {
+      expect(
+        validateRestoreUploadEntries(fakeZip('uploads/screenshot.png', 'uploads/screenshot.png')),
+      ).toMatchObject({ valid: false });
+    });
+
+    it('accepts a flat application-generated image entry', () => {
+      const zip = new AdmZip();
+      zip.addFile('uploads/screenshot.png', Buffer.from('asset'));
+
+      expect(validateRestoreUploadEntries(zip)).toEqual({ valid: true });
+    });
+  });
+
   describe('validateRestoreZip — accounting-table round-trip', () => {
     it('preserves accounting tables through backup + restore cycle', async () => {
       const testDir = mkdtempSync(join(tmpdir(), 'restore-rt-'));
@@ -259,6 +287,32 @@ describe('Restore Pipeline', () => {
         sqlite.close();
         rmSync(testDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('validateRestoreZip — manifest integrity', () => {
+    it('rejects a negative table count instead of treating it as an error indicator', () => {
+      const zip = new AdmZip();
+      const tables: Record<string, number> = {};
+      for (const { name } of TABLE_REGISTRY) {
+        tables[name] = 0;
+        zip.addFile(`data/${name}.json`, Buffer.from('[]', 'utf-8'));
+      }
+      tables.accounts = -1;
+      zip.addFile(
+        'manifest.json',
+        Buffer.from(JSON.stringify({
+          schemaVersion: getMigrationCount(),
+          backupTimestamp: new Date().toISOString(),
+          appVersion: '0.0.0',
+          tables,
+        }), 'utf-8'),
+      );
+
+      expect(validateRestoreZip(zip.toBuffer())).toMatchObject({
+        valid: false,
+        error: 'Invalid table counts in backup manifest',
+      });
     });
   });
 

@@ -59,8 +59,9 @@ export function rebuildPositions(
   sqlite: Database.Database,
   accountId: string,
   instrumentId?: string,
+  options?: { withinTransaction?: boolean },
 ): RebuildResult {
-  const transaction = sqlite.transaction(() => {
+  const rebuild = () => {
     // ── 1. Clear existing projection rows ──────────────────────────────
     if (instrumentId) {
       deleteProjectionByAccountInstrument(sqlite, accountId, instrumentId);
@@ -278,7 +279,20 @@ export function rebuildPositions(
     };
 
     return result;
-  });
+  };
 
-  return transaction();
+  return options?.withinTransaction ? rebuild() : sqlite.transaction(rebuild)();
+}
+
+/**
+ * Rebuild projections while an outer transaction already owns the SQLite
+ * connection. SQLite does not support starting a nested transaction, so
+ * restore uses this explicit entry point after replacing source rows.
+ */
+export function rebuildPositionsWithinTransaction(
+  sqlite: Database.Database,
+  accountId: string,
+  instrumentId?: string,
+): RebuildResult {
+  return rebuildPositions(sqlite, accountId, instrumentId, { withinTransaction: true });
 }

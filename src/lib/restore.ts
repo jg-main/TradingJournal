@@ -15,13 +15,22 @@
  */
 
 import AdmZip from 'adm-zip';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import {
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  renameSync,
+} from 'node:fs';
+import { join, dirname, resolve, sep } from 'node:path';
 import Database from 'better-sqlite3';
 import { db, getSqliteHandle } from '@/db/index';
-import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
+import { TABLE_REGISTRY, getMigrationCount } from './backup-serializer';
 import type { BackupManifest } from './backup-serializer';
-import { rebuildPositions } from './positions/rebuild';
+import { createBackupBuffer } from './create-backup';
+import { BACKUP_ASSET_FILENAME, BACKUP_TABLES } from './backup-tables';
+import { rebuildPositionsWithinTransaction } from './positions/rebuild';
 
 // ── Configuration ───────────────────────────────────────────────────────
 
@@ -42,54 +51,81 @@ function getSnapshotDir(): string {
 // Parents first, children last — guarantees FK satisfaction at INSERT time
 // when PRAGMA foreign_keys = ON.
 
-export const INSERT_ORDER: string[] = [
-  'app_profile',
-  'ai_settings',
-  'market_data_settings',
-  'schwab_tokens',
-  'accounts',
-  'settings',
-  'instruments',
-  'accounting_executions',
-  'correction_lineage',
-  'accounting_migration_runs',
-  'accounting_migration_records',
-  'account_positions',
-  'account_performance',
-  'valuation_marks',
-  'fifo_lots',
-  'financial_events',
-  'ledger_entries',
-  'ledger_postings',
-  'lot_matches',
-  'lookup_values',
-  'setup_definitions',
-  'checklist_definitions',
-  'play_evaluation_fields',
-  'trades',
-  'trade_executions',
-  'trade_risk_snapshots',
-  'trade_stop_adjustments',
-  'trade_assets',
-  'trade_grades',
-  'position_price_snapshots',
-  'trade_assessment_snapshots',
-  'trade_mistakes',
-  'trade_check_results',
-  'watchlist_items',
-  'alert_log',
-  'account_transactions',
-  'account_rollforward',
-  'weekly_reviews',
-  'review_action_items',
-  'dashboard_views',
-];
+export const INSERT_ORDER: string[] = [...BACKUP_TABLES]
+  .sort((a, b) => a.restoreOrder - b.restoreOrder)
+  .map(({ name }) => name);
 
 /**
  * Reverse FK order for DELETE — children first, then parents.
  * Ensures no FK violations when PRAGMA foreign_keys = ON and deferred.
  */
 export const DELETE_ORDER: string[] = [...INSERT_ORDER].reverse();
+
+const UPLOAD_PREFIX = 'uploads/';
+
+/**
+ * Validate archive upload entries before anything is written to disk.
+ * Application-created assets are flat image files under public/uploads/trades.
+ */
+export function validateRestoreUploadEntries(
+  zip: AdmZip,
+): { valid: true } | { valid: false; error: string; details: { entry: string } } {
+  const seen = new Set<string>();
+  const uploadsDir = resolve(process.cwd(), 'public', 'uploads', 'trades');
+  const uploadsRoot = `${uploadsDir}${sep}`;
+
+  for (const entry of zip.getEntries()) {
+    const rawEntryName = entry.rawEntryName?.toString('utf8') ?? entry.entryName;
+    const normalizedEntryName = entry.entryName;
+
+    // AdmZip normalizes some traversal names while parsing. Reject the raw
+    // name and any unexpected top-level entry so normalization cannot turn an
+    // unsafe upload into a silently ignored file.
+    if (
+      rawEntryName !== normalizedEntryName &&
+      (rawEntryName.includes('..') || rawEntryName.includes('\\') || rawEntryName.startsWith('/'))
+    ) {
+      return {
+        valid: false,
+        error: 'Unsafe upload entry in backup',
+        details: { entry: rawEntryName },
+      };
+    }
+    if (!normalizedEntryName.startsWith(UPLOAD_PREFIX)) {
+      if (normalizedEntryName === 'manifest.json' || normalizedEntryName.startsWith('data/')) continue;
+      return {
+        valid: false,
+        error: 'Unexpected entry in backup',
+        details: { entry: rawEntryName },
+      };
+    }
+
+    const relativePath = normalizedEntryName.slice(UPLOAD_PREFIX.length);
+    const unsafe =
+      !relativePath ||
+      relativePath === '.gitkeep' ||
+      relativePath.includes('\0') ||
+      relativePath.includes('\\') ||
+      relativePath.startsWith('/') ||
+      relativePath.split('/').includes('..') ||
+      relativePath.includes('/') ||
+      !BACKUP_ASSET_FILENAME.test(relativePath) ||
+      seen.has(relativePath);
+
+    const targetPath = resolve(uploadsDir, relativePath);
+    if (unsafe || !targetPath.startsWith(uploadsRoot)) {
+      return {
+        valid: false,
+        error: 'Unsafe upload entry in backup',
+        details: { entry: rawEntryName },
+      };
+    }
+
+    seen.add(relativePath);
+  }
+
+  return { valid: true };
+}
 
 const IMMUTABLE_DELETE_TRIGGERS = [
   {
@@ -147,27 +183,42 @@ const IMMUTABLE_DELETE_TRIGGERS = [
 export function runMaintenanceDeleteTransaction<T>(
   sqlite: Database.Database,
   operation: () => T,
+  onRollback?: () => void,
 ): T {
-  return sqlite.transaction(() => {
-    for (const trigger of IMMUTABLE_DELETE_TRIGGERS) {
-      sqlite.exec(`DROP TRIGGER IF EXISTS "${trigger.name}"`);
-    }
+  try {
+    return sqlite.transaction(() => {
+      for (const trigger of IMMUTABLE_DELETE_TRIGGERS) {
+        sqlite.exec(`DROP TRIGGER IF EXISTS "${trigger.name}"`);
+      }
 
-    const result = operation();
+      const result = operation();
 
-    for (const trigger of IMMUTABLE_DELETE_TRIGGERS) {
-      sqlite.exec(
-        `CREATE TRIGGER "${trigger.name}"
-         BEFORE DELETE ON "${trigger.table}"
-         FOR EACH ROW
-         BEGIN
-           SELECT RAISE(ABORT, '${trigger.error}');
-         END`,
+      for (const trigger of IMMUTABLE_DELETE_TRIGGERS) {
+        sqlite.exec(
+          `CREATE TRIGGER "${trigger.name}"
+           BEFORE DELETE ON "${trigger.table}"
+           FOR EACH ROW
+           BEGIN
+             SELECT RAISE(ABORT, '${trigger.error}');
+           END`,
+        );
+      }
+
+      return result;
+    })();
+  } catch (error) {
+    try {
+      onRollback?.();
+    } catch (rollbackError) {
+      console.error(
+        JSON.stringify({
+          event: 'restore_rollback_failed',
+          error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+        }),
       );
     }
-
-    return result;
-  })();
+    throw error;
+  }
 }
 
 // ── Internal Helpers ────────────────────────────────────────────────────
@@ -250,6 +301,9 @@ export function validateRestoreZip(
     };
   }
 
+  const uploadValidation = validateRestoreUploadEntries(zip);
+  if (!uploadValidation.valid) return uploadValidation;
+
   // Step 2: Manifest exists and is valid JSON
   const manifestEntry = zip.getEntry('manifest.json');
   if (!manifestEntry) {
@@ -276,7 +330,8 @@ export function validateRestoreZip(
     !manifest ||
     typeof manifest !== 'object' ||
     typeof (manifest as Record<string, unknown>).schemaVersion !== 'number' ||
-    typeof (manifest as Record<string, unknown>).backupTimestamp !== 'string'
+    typeof (manifest as Record<string, unknown>).backupTimestamp !== 'string' ||
+    !((manifest as Record<string, unknown>).tables instanceof Object)
   ) {
     return {
       valid: false,
@@ -286,6 +341,25 @@ export function validateRestoreZip(
   }
 
   const typedManifest = manifest as BackupManifest;
+
+  // A negative or missing count is not an error indicator; it is evidence that
+  // the archive is incomplete. Accepting it would allow restore to delete
+  // existing rows without a replacement payload.
+  const invalidTableCounts = TABLE_REGISTRY
+    .filter(({ name, optionalInExistingBackups }) => {
+      const count = typedManifest.tables?.[name];
+      return count === undefined
+        ? !optionalInExistingBackups
+        : !Number.isInteger(count) || count < 0;
+    })
+    .map(({ name }) => name);
+  if (invalidTableCounts.length > 0) {
+    return {
+      valid: false,
+      error: 'Invalid table counts in backup manifest',
+      details: { invalidTableCounts },
+    };
+  }
 
   // Step 3: Schema version match
   const currentVersion = getMigrationCount();
@@ -340,9 +414,9 @@ export function validateRestoreZip(
       };
     }
 
-    // Verify row count matches manifest when manifest has a positive count
+    // Verify row count matches the manifest count.
     const manifestCount = typedManifest.tables[name];
-    if (typeof manifestCount === 'number' && manifestCount >= 0 && rows.length !== manifestCount) {
+    if (typeof manifestCount === 'number' && rows.length !== manifestCount) {
       return {
         valid: false,
         error: `Row count mismatch for ${name}: manifest says ${manifestCount}, data has ${rows.length}`,
@@ -436,6 +510,90 @@ export function previewRestore(zipBuffer: Buffer): { manifest: BackupManifest } 
   return { manifest };
 }
 
+interface UploadSwap {
+  swap(): void;
+  rollback(): void;
+  cleanup(): void;
+}
+
+/**
+ * Materialize restored assets beside the live directory. The active directory
+ * is untouched until the database transaction is ready to commit; rollback
+ * restores the previous directory if SQLite rejects the transaction.
+ */
+function stageUploadSwap(zip: AdmZip): UploadSwap {
+  const uploadsDir = join(process.cwd(), 'public', 'uploads', 'trades');
+  const uploadEntries = zip.getEntries().filter(
+    (entry) => entry.entryName.startsWith(UPLOAD_PREFIX) && entry.entryName !== `${UPLOAD_PREFIX}.gitkeep`,
+  );
+  // Older backups may not contain an uploads section. Preserve current assets
+  // in that compatibility case rather than treating absence as an empty set.
+  if (uploadEntries.length === 0) {
+    return { swap() {}, rollback() {}, cleanup() {} };
+  }
+
+  const parentDir = dirname(uploadsDir);
+  mkdirSync(parentDir, { recursive: true });
+  const stagingDir = mkdtempSync(join(parentDir, '.restore-uploads-'));
+  let previousDir: string | null = null;
+  let swapped = false;
+
+  try {
+    for (const entry of uploadEntries) {
+      const relativePath = entry.entryName.slice(UPLOAD_PREFIX.length);
+      writeFileSync(join(stagingDir, relativePath), entry.getData(), { flag: 'wx' });
+    }
+  } catch (error) {
+    rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
+
+  const rollback = () => {
+    if (swapped && existsSync(uploadsDir)) {
+      if (existsSync(uploadsDir)) rmSync(uploadsDir, { recursive: true, force: true });
+    }
+    if (previousDir && existsSync(previousDir) && !existsSync(uploadsDir)) {
+      renameSync(previousDir, uploadsDir);
+    }
+    swapped = false;
+    if (existsSync(stagingDir)) rmSync(stagingDir, { recursive: true, force: true });
+  };
+
+  return {
+    swap() {
+      if (swapped) return;
+      previousDir = `${uploadsDir}.pre-restore-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      try {
+        if (existsSync(uploadsDir)) renameSync(uploadsDir, previousDir);
+        renameSync(stagingDir, uploadsDir);
+        swapped = true;
+      } catch (error) {
+        rollback();
+        throw error;
+      }
+    },
+    rollback,
+    cleanup() {
+      try {
+        if (existsSync(stagingDir)) rmSync(stagingDir, { recursive: true, force: true });
+        if (previousDir && existsSync(previousDir)) {
+          rmSync(previousDir, { recursive: true, force: true });
+        }
+      } catch (error) {
+        // The active directory and database are already consistent. Leave the
+        // old directory for manual cleanup rather than reporting a false
+        // restore failure after commit.
+        console.warn(
+          JSON.stringify({
+            event: 'restore_upload_cleanup_failed',
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+    },
+  };
+}
+
 // ── Execute Restore (transactional) ─────────────────────────────────────
 
 /**
@@ -467,31 +625,14 @@ export async function executeRestore(
     throw { error: validation.error, details: validation.details };
   }
 
-  // Step 1: Create pre-restore snapshot
+  // Step 1: Create a complete pre-restore snapshot, including uploads.
   let snapshotPath: string;
   try {
     const snapshotDir = getSnapshotDir();
+    const snapshotBuffer = await createBackupBuffer(db);
     mkdirSync(snapshotDir, { recursive: true });
-
-    // Use serializeBackup with the existing Drizzle ORM instance
-    const backupData = await serializeBackup(db);
-
-    // Build the snapshot ZIP using adm-zip
-    const snapshotZip = new AdmZip();
-    snapshotZip.addFile(
-      'manifest.json',
-      Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'),
-    );
-    for (const { name } of TABLE_REGISTRY) {
-      const rows = backupData.tables[name] ?? [];
-      snapshotZip.addFile(
-        `data/${name}.json`,
-        Buffer.from(JSON.stringify(rows, null, 2), 'utf-8'),
-      );
-    }
-
     snapshotPath = join(snapshotDir, 'backup.zip');
-    snapshotZip.writeZip(snapshotPath);
+    writeFileSync(snapshotPath, snapshotBuffer, { flag: 'wx' });
   } catch (err) {
     throw {
       error: 'Failed to create pre-restore snapshot',
@@ -499,34 +640,10 @@ export async function executeRestore(
     };
   }
 
-  // Step 2: Extract uploaded screenshot files before DB transaction
-  // Use cwd (project root) which works in both dev and Docker environments.
-  // Previously derived from DB path, which breaks in Docker where DB
-  // lives at /data/journal.db but public/ is at /app/public.
-  const uploadsDir = join(process.cwd(), 'public', 'uploads', 'trades');
-  const zipAll = new AdmZip(zipBuffer);
-  const uploadEntries = zipAll.getEntries().filter((e) => e.entryName.startsWith('uploads/'));
-  if (uploadEntries.length > 0) {
-    mkdirSync(uploadsDir, { recursive: true });
-    for (const entry of uploadEntries) {
-      const filename = entry.entryName.replace('uploads/', '');
-      if (!filename || filename === '.gitkeep') continue;
-      const targetPath = join(uploadsDir, filename);
-      const data = entry.getData();
-      writeFileSync(targetPath, data);
-    }
-    console.log(
-      JSON.stringify({
-        event: 'restore_uploads',
-        fileCount: uploadEntries.length,
-        uploadsDir,
-      }),
-    );
-  }
-
-  // Step 3–6: Transactional wipe-and-replace
+  // Step 2: Stage uploaded assets without touching the live directory.
   const sqlite = getSqliteHandle();
   const zip = new AdmZip(zipBuffer);
+  const uploadSwap = stageUploadSwap(zip);
 
   let restoredTables = 0;
   let restoredRows = 0;
@@ -536,88 +653,96 @@ export async function executeRestore(
   // inside a BEGIN block it is a no-op in SQLite.
   sqlite.exec('PRAGMA defer_foreign_keys = ON');
 
-  runMaintenanceDeleteTransaction(sqlite, () => {
-    // DELETE all existing rows in reverse FK order
-    for (const tableName of DELETE_ORDER) {
-      sqlite.exec(`DELETE FROM "${tableName}"`);
-    }
-
-    // INSERT backup data in FK-safe order
-    for (const tableName of INSERT_ORDER) {
-      const entry = zip.getEntry(`data/${tableName}.json`);
-      // Compatibility tables can be absent from backups created before they
-      // were registered. Their current rows were still cleared above.
-      if (!entry) continue;
-
-      const raw = entry.getData().toString('utf-8');
-      const rows: Record<string, unknown>[] = JSON.parse(raw);
-
-      if (rows.length === 0) continue;
-
-      // Build a parameterised INSERT dynamically from the column names
-      // of the first row. All rows in a table share the same shape.
-      //
-      // Drizzle ORM serialises row objects with camelCase property names
-      // (e.g. "isActive"), but the SQLite columns are snake_case
-      // (e.g. "is_active"). We map camelCase keys to snake_case column
-      // names for the SQL statement while using the original keys to
-      // extract values from the row objects.
-      const originalKeys = Object.keys(rows[0]);
-      const columnNames = originalKeys.map(camelToSnake);
-      const quotedColumns = columnNames.map((c) => `"${c}"`).join(', ');
-      const placeholders = columnNames.map(() => '?').join(', ');
-      const stmt = sqlite.prepare(
-        `INSERT INTO "${tableName}" (${quotedColumns}) VALUES (${placeholders})`,
-      );
-
-      for (const row of rows) {
-        const values = originalKeys.map((key) => {
-          const val = row[key];
-          // Drizzle serialises boolean columns as JS booleans via select()
-          // which end up in JSON as true/false. better-sqlite3 cannot bind
-          // booleans — convert them to 0/1 integers.
-          if (typeof val === 'boolean') return val ? 1 : 0;
-          // Preserve null vs undefined — SQLite treats both as NULL
-          return val ?? null;
-        });
-        stmt.run(...values);
+  try {
+    runMaintenanceDeleteTransaction(sqlite, () => {
+      // DELETE all existing rows in reverse FK order
+      for (const tableName of DELETE_ORDER) {
+        sqlite.exec(`DELETE FROM "${tableName}"`);
       }
 
-      restoredTables++;
-      restoredRows += rows.length;
-    }
-  });
+      // INSERT backup data in FK-safe order
+      for (const tableName of INSERT_ORDER) {
+        const entry = zip.getEntry(`data/${tableName}.json`);
+        // Compatibility tables can be absent from backups created before they
+        // were registered. Their current rows were still cleared above.
+        if (!entry) continue;
 
-  // Step 7: Rebuild FIFO position projections after restore.
-  // After replacing accounting_executions with backup data, the FIFO positions,
-  // lots, and lot_matches are stale projections. Rebuild them for every account
-  // that has accounting_executions in the restored data.
-  const accountsWithExecutions = sqlite
-    .prepare('SELECT DISTINCT account_id FROM accounting_executions')
-    .all() as { account_id: string }[];
+        const raw = entry.getData().toString('utf-8');
+        const rows: Record<string, unknown>[] = JSON.parse(raw);
 
-  let rebuiltAccountCount = 0;
-  let rebuiltExecutionCount = 0;
-  let rebuiltLotCount = 0;
-  let rebuiltMatchCount = 0;
+        if (rows.length === 0) continue;
 
-  for (const { account_id } of accountsWithExecutions) {
-    const result = rebuildPositions(sqlite, account_id);
-    rebuiltAccountCount++;
-    rebuiltExecutionCount += result.executionCount || 0;
-    rebuiltLotCount += result.lotCount || 0;
-    rebuiltMatchCount += result.matchCount || 0;
+        // Build a parameterised INSERT dynamically from the column names
+        // of the first row. All rows in a table share the same shape.
+        //
+        // Drizzle ORM serialises row objects with camelCase property names
+        // (e.g. "isActive"), but the SQLite columns are snake_case
+        // (e.g. "is_active"). We map camelCase keys to snake_case column
+        // names for the SQL statement while using the original keys to
+        // extract values from the row objects.
+        const originalKeys = Object.keys(rows[0]);
+        const columnNames = originalKeys.map(camelToSnake);
+        const quotedColumns = columnNames.map((c) => `"${c}"`).join(', ');
+        const placeholders = columnNames.map(() => '?').join(', ');
+        const stmt = sqlite.prepare(
+          `INSERT INTO "${tableName}" (${quotedColumns}) VALUES (${placeholders})`,
+        );
+
+        for (const row of rows) {
+          const values = originalKeys.map((key) => {
+            const val = row[key];
+            // Drizzle serialises boolean columns as JS booleans via select()
+            // which end up in JSON as true/false. better-sqlite3 cannot bind
+            // booleans — convert them to 0/1 integers.
+            if (typeof val === 'boolean') return val ? 1 : 0;
+            // Preserve null vs undefined — SQLite treats both as NULL
+            return val ?? null;
+          });
+          stmt.run(...values);
+        }
+
+        restoredTables++;
+        restoredRows += rows.length;
+      }
+
+      // Rebuild replaceable FIFO projections before the transaction commits.
+      // A projection failure therefore rolls back the source-table restore too.
+      const accountsWithExecutions = sqlite
+        .prepare('SELECT DISTINCT account_id FROM accounting_executions')
+        .all() as { account_id: string }[];
+      let rebuiltAccountCount = 0;
+      let rebuiltExecutionCount = 0;
+      let rebuiltLotCount = 0;
+      let rebuiltMatchCount = 0;
+
+      for (const { account_id } of accountsWithExecutions) {
+        const result = rebuildPositionsWithinTransaction(sqlite, account_id);
+        rebuiltAccountCount++;
+        rebuiltExecutionCount += result.executionCount || 0;
+        rebuiltLotCount += result.lotCount || 0;
+        rebuiltMatchCount += result.matchCount || 0;
+      }
+
+      uploadSwap.swap();
+      console.log(
+        JSON.stringify({
+          event: 'restore_rebuild',
+          accountsRebuilt: rebuiltAccountCount,
+          executionCount: rebuiltExecutionCount,
+          lotCount: rebuiltLotCount,
+          matchCount: rebuiltMatchCount,
+        }),
+      );
+    }, uploadSwap.rollback);
+  } catch (error) {
+    uploadSwap.rollback();
+    throw {
+      error: 'Restore failed before commit',
+      details: error instanceof Error ? error.message : String(error),
+    };
   }
 
-  console.log(
-    JSON.stringify({
-      event: 'restore_rebuild',
-      accountsRebuilt: rebuiltAccountCount,
-      executionCount: rebuiltExecutionCount,
-      lotCount: rebuiltLotCount,
-      matchCount: rebuiltMatchCount,
-    }),
-  );
+  uploadSwap.cleanup();
 
   return {
     success: true,
