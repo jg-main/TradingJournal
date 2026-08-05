@@ -153,9 +153,13 @@ test.describe('M017 Interactions', () => {
     const row = page.locator('tr').filter({ hasText: `M017DEL${TS}` }).first();
     await expect(row).toBeVisible({ timeout: 10_000 });
 
-    // Delete the trade via API (the new page has no delete button in the table)
+    // Delete the trade via API (the new page has no delete button in the table).
+    // D057/R027: DELETE is a planned-only soft-delete (scratch) — the response
+    // message distinguishes it from the old hard-delete 'Trade deleted'.
     const delRes = await page.request.delete(`/api/trades/${trade.id}`);
     expect(delRes.ok()).toBeTruthy();
+    const delBody = await delRes.json();
+    expect(delBody.message).toBe('Trade scratched');
 
     // Verify in a fresh page so pending client navigation from the original
     // Trades tab cannot race WebKit's explicit navigation.
@@ -164,15 +168,22 @@ test.describe('M017 Interactions', () => {
     await expect(verificationPage.locator('h1')).toContainText('Trades');
     await verificationPage.getByRole('tab', { name: /planned/i }).click();
 
-    // The deleted trade should no longer appear in the table
+    // The deleted trade should no longer appear in the Planned tab — the scratch
+    // flips the row to status='deleted' (excluded by the status=planned filter).
+    // The row itself is preserved (soft-delete, not hard-delete).
     await expect(verificationPage.locator('tr').filter({ hasText: `M017DEL${TS}` })).not.toBeVisible();
     await verificationPage.close();
 
     // Use a fresh page so the direct detail navigation cannot race the
-    // preceding Trades-tab client navigation in WebKit.
+    // preceding Trades-tab client navigation in WebKit. The scratched row
+    // survives the DELETE, so the detail page renders its deleted state
+    // instead of a 404.
     const detailPage = await page.context().newPage();
-    await detailPage.goto(`/trades/${trade.id}`);
-    await expect(detailPage.getByText('Trade not found')).toBeVisible();
+    // networkidle: the deleted-phase view is compiled on first render (webpack
+    // dev) — wait for the API fetch + chunk load to settle before asserting.
+    await detailPage.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await expect(detailPage.locator('h1')).toContainText(`M017DEL${TS}`);
+    await expect(detailPage.getByText('This trade has been deleted')).toBeVisible();
     await detailPage.close();
   });
 

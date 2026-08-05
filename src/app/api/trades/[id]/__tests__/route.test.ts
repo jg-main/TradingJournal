@@ -1,7 +1,8 @@
 /**
  * trade by id route test
  *
- * Tests GET (by id), PUT (update), and DELETE (hard-delete) handlers.
+ * Tests GET (by id), PUT (update), and DELETE (planned-only soft-delete /
+ * scratch) handlers.
  * GET now uses computeTradeMetrics() for realizedPnl, unrealizedPnl,
  * returnPct, riskPct, and nested metrics.
  *
@@ -714,20 +715,39 @@ console.log('\n7. DELETE scratches a planned trade (soft-delete, row preserved):
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
-  // Seed with a stale updatedAt so the scratch timestamp is provably stamped.
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', updatedAt: '2024-01-01T00:00:00.000Z' });
+  // Seed with a stale updatedAt so the scratch timestamp is provably stamped,
+  // plus a full planned-trade payload to prove the row is preserved field-by-field.
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'planned',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    thesis: 'Scratch me',
+    plannedEntry: 150.5,
+    plannedStop: 148.0,
+    plannedQuantity: 100,
+  });
 
   const result = doDeleteTrade(trade.id as string);
 
   assert(result.status === 200, 'returns 200');
   assertEqual((result.data as { message: string }).message, 'Trade scratched', 'message distinguishes scratch from hard-delete');
 
+  // Dataset-level proof: a soft-delete preserves the row, so the trades table
+  // still contains exactly one row after the DELETE (a hard-delete would drop it).
+  assertEqual(db.select().from(schema.trades).all().length, 1, 'row count unchanged — soft-delete preserves the row');
+
   // Verify DB: row preserved with status='deleted' and updatedAt stamped
   const updated = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
   assertNotNull(updated, 'trade row is preserved (not hard-deleted)');
   assertEqual(updated.status, 'deleted', 'status transitions to deleted');
   assert(updated.updatedAt != null && updated.updatedAt !== '2024-01-01T00:00:00.000Z', 'updatedAt is stamped on scratch (auditable scratch time)');
-  assertEqual(updated.symbol, 'AAPL', 'trade fields preserved after scratch');
+  // Only status and updatedAt may change on scratch — every other field survives
+  assertEqual(updated.symbol, 'AAPL', 'symbol preserved after scratch');
+  assertEqual(updated.direction, 'long', 'direction preserved after scratch');
+  assertEqual(updated.thesis, 'Scratch me', 'thesis preserved after scratch');
+  assertEqual(updated.plannedEntry, 150.5, 'plannedEntry preserved after scratch');
+  assertEqual(updated.plannedStop, 148.0, 'plannedStop preserved after scratch');
+  assertEqual(updated.plannedQuantity, 100, 'plannedQuantity preserved after scratch');
 }
 
 // ── 8. DELETE: 404 for nonexistent id ──────────────────────────────
@@ -816,6 +836,58 @@ console.log('\n9d. DELETE scratch preserves watchlist promotedTradeId audit link
   assertEqual(wl.promotedTradeId, trade.id, 'promotedTradeId still points at scratched trade');
   const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
   assertEqual(row.status, 'deleted', 'trade row preserved as deleted');
+}
+
+// 9e. DELETE: Second scratch attempt is a 400 no-op (idempotency boundary)
+
+console.log('\n9e. DELETE second scratch attempt returns 400 and is a no-op:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', updatedAt: '2024-01-01T00:00:00.000Z' });
+
+  // First scratch: transitions planned → deleted and stamps updatedAt
+  const first = doDeleteTrade(trade.id as string);
+  assert(first.status === 200, 'first scratch returns 200');
+  const rowAfterFirst = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  const firstScratchAt = rowAfterFirst.updatedAt;
+  assertEqual(rowAfterFirst.status, 'deleted', 'first scratch transitions status to deleted');
+  assert(firstScratchAt != null && firstScratchAt !== '2024-01-01T00:00:00.000Z', 'first scratch stamps updatedAt');
+
+  // Second scratch on the same trade: rejected — a scratched trade is idempotently
+  // impossible to scratch again (this exercises the real transition path, unlike 9c
+  // which seeds a pre-deleted row).
+  const second = doDeleteTrade(trade.id as string);
+  assert(second.status === 400, 'second scratch returns 400');
+  assertEqual((second.data as { error: string }).error, 'Trade is already scratched.', 'descriptive error for repeated scratch');
+
+  // Rejection is a no-op: status and updatedAt are untouched by the failed attempt
+  const rowAfterSecond = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(rowAfterSecond.status, 'deleted', 'status unchanged after rejected second scratch');
+  assertEqual(rowAfterSecond.updatedAt, firstScratchAt, 'updatedAt unchanged — rejected scratch does not re-stamp');
+  assertEqual(db.select().from(schema.trades).all().length, 1, 'row count still 1 — no row created or removed');
+}
+
+// 9f. GET detail: Scratched trade is still fetchable by id (deliberate)
+
+console.log('\n9f. GET detail returns the scratched trade with status deleted:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', symbol: 'AAPL' });
+
+  const scratch = doDeleteTrade(trade.id as string);
+  assert(scratch.status === 200, 'scratch succeeds');
+
+  // The detail route is a targeted lookup, not an unfiltered listing: it still
+  // returns the scratched row so its audit trail remains reachable. S03 may decide
+  // to change this — this test pins the current deliberate behavior so any change
+  // is an explicit contract decision, not a silent regression.
+  const result = doGetTrade(trade.id as string);
+  assert(result.status === 200, 'detail GET returns 200 for scratched trade');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.id, trade.id, 'scratched trade id returned');
+  assertEqual(data.status, 'deleted', 'scratched trade status is deleted');
 }
 
 // ── 10. GET: Returns plannedQuantity matching what was posted ───────
