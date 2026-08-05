@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAppTimezone } from '@/lib/timezone-context';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import type { CheckResult, MtmData } from '@/components/trade-detail/types';
 import { EmptyState } from '@/components/empty-state';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 
 import type { TradeMetricsResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
@@ -228,6 +229,7 @@ export default function TradeDetailPage() {
   const { timezone } = useAppTimezone();
   const params = useParams();
   const id = params?.id as string;
+  const router = useRouter();
 
   const [trade, setTrade] = useState<Trade | null>(null);
   const [executions, setExecutions] = useState<Execution[]>([]);
@@ -254,6 +256,10 @@ export default function TradeDetailPage() {
   const [executeOpen, setExecuteOpen] = useState(false);
   const [executeData, setExecuteData] = useState<ExecuteTradeData | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  // Trade awaiting scratch confirmation (M015/S02/T02). The page owns the
+  // ConfirmDialog and the DELETE /api/trades/[id] call; PlannedPhaseView only
+  // triggers the request via its onScratch callback.
+  const [scratchOpen, setScratchOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -475,6 +481,28 @@ export default function TradeDetailPage() {
     }
   }, [id]);
 
+  /** Scratch (planned-only soft-delete, R027/D057) — DELETE, then navigate to /trades. */
+  const handleConfirmScratch = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/trades/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        // Error states are logged (app pattern — no toast system); the user
+        // stays on the detail page with the trade still planned.
+        const errBody = await res.json().catch(() => ({}));
+        console.error('Scratch trade failed:', res.status, errBody.error ?? res.statusText);
+        return;
+      }
+      // Success — the trade is now 'deleted'. Navigate back to the trades
+      // list: DeletedPhaseView is a terminal informational view with only a
+      // "Back to Trades" link, so there is nothing useful to do here.
+      router.push('/trades');
+    } catch (err) {
+      console.error('Scratch trade failed:', err);
+    } finally {
+      setScratchOpen(false);
+    }
+  }, [id, router]);
+
   if (loading) return (
     <div className="mx-auto flex max-w-4xl items-center justify-center px-8 py-20">
       <Loader2 className="mr-2 size-5 animate-spin text-muted-foreground" />
@@ -498,7 +526,7 @@ export default function TradeDetailPage() {
         </Link>
       </div>
 
-      {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} onEdit={() => setEditOpen(true)} />}
+      {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} onEdit={() => setEditOpen(true)} onScratch={() => setScratchOpen(true)} />}
       {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} unrealizedPnl={unrealizedPnl} unrealizedReturnPct={unrealizedReturnPct} unrealizedRMultiple={unrealizedRMultiple} onEdit={() => setEditOpen(true)} />}
       {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} onEdit={() => setEditOpen(true)} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
@@ -540,6 +568,21 @@ export default function TradeDetailPage() {
             .catch(() => {});
         }}
         setupName={trade.setupName ?? null}
+      />
+
+      {/* Scratch confirmation (M015/S02/T02) — destructive, closes before DELETE */}
+      <ConfirmDialog
+        open={scratchOpen}
+        onOpenChange={setScratchOpen}
+        onConfirm={handleConfirmScratch}
+        title={trade ? `Scratch ${trade.symbol}?` : 'Scratch this trade?'}
+        description={
+          trade
+            ? `${trade.tradeCode} will be removed from your Planned tab and marked as scratched.`
+            : 'The planned trade will be removed from your Planned tab and marked as scratched.'
+        }
+        confirmLabel="Scratch"
+        destructive
       />
 
       <p className="mt-8 text-xs text-muted-foreground">Created {formatDate(trade.createdAt, timezone)}{trade.updatedAt && ` · Updated ${formatDate(trade.updatedAt, timezone)}`}</p>

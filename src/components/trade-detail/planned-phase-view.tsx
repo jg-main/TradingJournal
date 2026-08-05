@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Play, Brain, Loader2, MoreHorizontal, Pencil } from 'lucide-react';
+import { Play, Brain, Loader2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import {
   DropdownMenu,
@@ -62,6 +62,8 @@ interface PlannedPhaseViewProps {
   onAssetsChanged: () => Promise<void>;
   onExecute: () => void;
   onEdit?: () => void;
+  /** Open the scratch confirmation — the page owns the dialog, DELETE call, and navigation. */
+  onScratch?: () => void;
 }
 
 export default function PlannedPhaseView({
@@ -70,6 +72,7 @@ export default function PlannedPhaseView({
   onAssetsChanged,
   onExecute,
   onEdit,
+  onScratch,
 }: PlannedPhaseViewProps) {
   const preTradeAssets = assets.filter((a) => a.phase === 'pre_trade');
 
@@ -227,6 +230,10 @@ export default function PlannedPhaseView({
                 <DropdownMenuItem onClick={() => onEdit?.()}>
                   <Pencil className="size-4" />
                   Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onScratch?.()}>
+                  <Trash2 className="size-4" />
+                  Scratch
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
                   {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
