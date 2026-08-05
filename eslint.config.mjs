@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Playwright artifacts
     "playwright-report/**",
     "test-results/**",
+    // Next.js dev-server working dir (git-ignored; generated per dev run)
+    "tmp/**",
     // GSD system state (phase artifacts, generated evidence scripts)
     ".gsd/**",
   ]),
