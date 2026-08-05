@@ -353,13 +353,13 @@ test.describe('Account Cutover Integration', () => {
   // ═════════════════════════════════════════════════════════════════════
 
   test('Ledger tab shows trade execution event with trade navigation link', async ({ page }) => {
-    await page.goto(`/settings/accounts/${populatedAccountId}/ledger`);
-
-    await page.waitForResponse(
+    const ledgerResponse = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}/ledger`) &&
         res.status() === 200,
     );
+    await page.goto(`/settings/accounts/${populatedAccountId}/ledger`);
+    await ledgerResponse;
 
     // ── Ledger tab is active ────────────────────────────────────────
     const ledgerTab = page.getByRole('tab', { name: 'Ledger' });
@@ -393,14 +393,15 @@ test.describe('Account Cutover Integration', () => {
     expect(href).toContain('/trades/');
 
     // ── Click the trade link → navigates to trade detail ─────────────
+    const tradeResponse = page.waitForResponse(
+      (res) =>
+        res.url().includes(`/api/trades/${tradeId}`) && res.status() === 200,
+    );
     await tradeLink.first().click();
 
     // Wait for the trade detail page to load
     await page.waitForURL(new RegExp(`/trades/${tradeId}`));
-    await page.waitForResponse(
-      (res) =>
-        res.url().includes(`/api/trades/${tradeId}`) && res.status() === 200,
-    );
+    await tradeResponse;
 
     // ── Trade identity verification ─────────────────────────────────
     // The trade detail page shows the trade code and symbol
@@ -413,12 +414,13 @@ test.describe('Account Cutover Integration', () => {
     ).toBeVisible();
 
     // ── Navigate back to account workspace ──────────────────────────
-    await page.goto(`/settings/accounts/${populatedAccountId}/ledger`);
-    await page.waitForResponse(
+    const returnLedgerResponse = page.waitForResponse(
       (res) =>
         res.url().includes(`/api/accounts/${populatedAccountId}/ledger`) &&
         res.status() === 200,
     );
+    await page.goto(`/settings/accounts/${populatedAccountId}/ledger`);
+    await returnLedgerResponse;
 
     // Verify we're back on the account workspace
     await expect(
