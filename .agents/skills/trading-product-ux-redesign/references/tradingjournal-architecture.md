@@ -21,5 +21,5 @@ Principles:
 - Use one polling lifecycle per live domain.
 - Avoid fetching from every widget or panel.
 - Validate persisted configuration.
-- Namespace legacy and replacement persistence during parallel builds.
-- Use feature flags or separate routes for coexistence.
+- Use feature flags, separate routes, or namespaced persistence only when an
+  explicitly approved coexistence strategy requires them.

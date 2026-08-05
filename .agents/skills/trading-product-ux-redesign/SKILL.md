@@ -1,14 +1,14 @@
 ---
 name: trading-product-ux-redesign
-description: Plan, design, critique, implement, and verify substantial UX redesigns for TradingJournal using GSD-Pi. Use for full-application UX redesign, navigation and information architecture, dashboards and workstations, trade planning and journaling flows, account and ledger workflows, review experiences, forms, tables, dialogs, settings, import/export, and other user-facing milestones. Supports greenfield parallel builds and evolutionary redesigns. Prioritizes trader utility, workflow clarity, information density, evidence-driven visual review, and preservation of domain logic. Rejects generic SaaS, executive-dashboard, marketing-site, and mobile-first defaults unless explicitly required.
+description: Plan, critique, implement, and verify substantial TradingJournal UX work using GSD-Pi. Use for navigation and information architecture, dashboards and workstations, trade planning and journaling flows, account and ledger workflows, review experiences, forms, tables, dialogs, settings, import/export, and other user-facing milestones. Prioritizes trader utility, workflow clarity, information density, evidence-driven visual review, and preservation of domain logic.
 compatibility: GSD-Pi, Next.js, React, TypeScript, Tailwind CSS, shadcn/Radix, react-grid-layout, ECharts, TanStack Table, SQLite, Drizzle, Vitest, Playwright
 ---
 
-# Trading Product UX Redesign
+# Trading Product UX
 
 ## Purpose
 
-Use this skill for any substantial redesign of TradingJournal’s user experience, not only the dashboard.
+Use this skill for substantial TradingJournal UX work, not only dashboards.
 
 Applicable surfaces include:
 
@@ -26,7 +26,10 @@ Applicable surfaces include:
 - Empty, loading, error, and reconciliation states.
 - Cross-surface user journeys.
 
-This skill governs product reasoning, information architecture, interaction design, visual hierarchy, density, component architecture, migration strategy, screenshot review, and GSD-Pi decomposition.
+This skill governs product reasoning, information architecture, interaction
+design, visual acceptance, and GSD-Pi decomposition. For visual tokens,
+primitives, density values, and prohibited patterns, follow
+`docs/design-system.md`; do not restate or replace it here.
 
 Read `AGENTS.md`, repository preferences, and the active GSD context first.
 
@@ -68,22 +71,19 @@ General design skills may refine the result but must not override product identi
 
 At the start of a milestone or substantial UX task, select exactly one primary mode:
 
-- `full-application-greenfield`
-- `surface-greenfield`
 - `evolutionary-redesign`
 - `dashboard-workstation`
 - `workflow-redesign`
 - `visual-critique`
 - `implementation`
-- `migration-cutover`
 
-Read the matching file under `modes/` and record the selected mode in GSD context.
-
-Do not combine greenfield and evolutionary assumptions silently.
+Read the matching file under `modes/` and record the selected mode in GSD
+context. Use `implementation` when the workflow and visual direction are
+already approved.
 
 ## Mandatory Discovery
 
-Before proposing a redesign:
+Before proposing a material workflow or structure change:
 
 1. Read `AGENTS.md`.
 2. Read the active GSD milestone and prior slice evidence.
@@ -94,7 +94,6 @@ Before proposing a redesign:
 7. Render the current surface when browser tooling is available.
 8. Capture current viewport and interaction evidence.
 9. Separate reusable domain logic from optional UI reuse.
-10. Identify legacy assumptions that must not be inherited.
 
 Do not infer UX from filenames alone.
 
@@ -119,11 +118,9 @@ explore → plan → implement loop → review → verify → archive → commit
 - Scope and exclusions.
 - Selected UX mode.
 - Domain invariants.
-- Reuse and non-reuse boundaries.
 - Visual direction.
 - Required routes and journeys.
 - Evidence plan.
-- Coexistence or cutover strategy.
 - Acceptance criteria.
 
 ### Slice must deliver
@@ -225,21 +222,6 @@ Reject or challenge these unless the workflow clearly justifies them:
 - Visual polish without realistic data.
 - Completion claims based only on tests.
 
-## Visual Character
-
-Default character:
-
-- Industrial.
-- Precise.
-- Restrained.
-- Analytical.
-- Fast.
-- Quiet until attention is required.
-
-Use neutral surfaces, fine borders, compact headers, tabular numerals, clear alignment, restrained semantic color, dense tables/forms, strong focus states, short labels, and contextual help.
-
-Color communicates P&L, risk breach, missing/stale data, integrity failure, selection, validation, and workflow status—not decoration.
-
 ## Evidence Requirements
 
 Every substantial visual slice must include:
@@ -273,7 +255,6 @@ Do not call a UX milestone complete unless:
 
 - The redesigned workflow is end-to-end usable.
 - Domain invariants are preserved.
-- Reuse and non-reuse boundaries were respected.
 - Realistic data was used.
 - Visual evidence was reviewed.
 - Primary degraded states were reviewed.
@@ -281,7 +262,6 @@ Do not call a UX milestone complete unless:
 - No duplicate state or conflicting controls remain.
 - The result is recognizably TradingJournal.
 - Unmet acceptance criteria are recorded.
-- Cutover or coexistence behavior is defined.
 
 ## References
 

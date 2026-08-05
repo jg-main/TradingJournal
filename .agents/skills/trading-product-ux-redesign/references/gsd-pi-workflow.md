@@ -11,13 +11,11 @@
 ## Out of scope
 ## Selected UX mode
 ## Domain invariants
-## Reuse boundary
-## Non-reuse boundary
+## Reuse constraints (when relevant)
 ## Target routes
 ## Core journeys
 ## Visual direction
 ## Evidence plan
-## Coexistence or cutover strategy
 ## Acceptance criteria
 ```
 

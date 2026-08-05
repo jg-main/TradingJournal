@@ -51,61 +51,20 @@
 
 ## UX Redesign Policy
 
-Use the project-local `trading-product-ux-redesign` skill for substantial
-changes to:
+For substantial user-facing work—navigation, dashboards, tables, forms,
+dialogs, workflows, or cross-page journeys—use the project-local
+`trading-product-ux-redesign` skill. Select the narrowest applicable mode and
+load only its needed references.
 
-- Navigation and information architecture.
-- Dashboards and trading workstations.
-- Trade planning, entry, journal, and review workflows.
-- Account, ledger, cash, and reconciliation surfaces.
-- Tables, forms, dialogs, settings, empty states, and cross-page journeys.
+`docs/design-system.md` is the authoritative visual reference for product
+identity, tokens, density, primitives, chart semantics, and prohibited
+patterns. `src/app/globals.css` and `src/lib/chart-palette.ts` are the
+authoritative token implementations. Do not create a competing design guide.
 
-At milestone or slice start, declare the applicable skill mode, such as:
-
-- `full-application-greenfield`
-- `surface-greenfield`
-- `evolutionary-redesign`
-- `dashboard-workstation`
-- `workflow-redesign`
-- `visual-critique`
-- `implementation`
-- `migration-cutover`
-
-Use progressive disclosure: load the core skill and only the mode/reference
-files needed for the active unit. Do not inject the complete standalone skill
-into every task.
-
-### Greenfield and parallel work
-
-When the active milestone selects a greenfield or parallel mode:
-
-- Reuse authoritative data, schemas, APIs, domain services, and pure
-  calculations.
-- Do not reuse legacy information architecture, layout, visual components, or
-  state boundaries unless the milestone explicitly approves them.
-- Preserve the existing experience until a separate cutover slice is approved.
-- Namespace routes, persisted preferences, and saved layouts so the legacy and
-  replacement experiences can coexist.
-- Build realistic fixture-data prototypes and obtain browser evidence before
-  completing deep production integration.
-
-### Evolutionary work
-
-Reuse existing components when their responsibilities and interaction model
-support the approved UX. Do not preserve a structurally wrong surface merely to
-minimize the diff; switch to a greenfield mode when evidence shows incremental
-changes would retain the defect.
-
-### Design-skill hierarchy
-
-- `trading-product-ux-redesign` owns workflow, information architecture,
-  density, hierarchy, and visual acceptance.
-- `frontend-design`, Impeccable, and similar skills may implement or refine an
-  approved direction.
-- General design skills must not transform the product into a generic SaaS,
-  executive-dashboard, marketing, or mobile-first interface.
-- Passing tests does not constitute visual acceptance. Use realistic data,
-  browser evidence, and exact viewport review.
+The current application design is established. Treat `implementation` as the
+normal mode; use redesign modes only when a task explicitly changes workflow
+structure or information architecture. Any future parallel replacement needs
+an explicit coexistence and cutover decision.
 
 ## Commands
 
@@ -187,26 +146,15 @@ workflow.
 
 ## Frontend Conventions
 
-- Use existing shadcn/Radix-style components in `src/components/ui` before
-  adding generic primitives.
-- A greenfield UX milestone may introduce product-specific primitives when the
-  existing component structure cannot express the approved interaction or
-  density. Document the limitation before adding them.
-- Use `lucide-react` for icon buttons and actions where an icon adds meaning.
-  Do not add icons merely to decorate routine metrics or labels.
-- The app is an operational journal. Prefer dense, scannable, predictable
-  interfaces over marketing-style or executive-summary layouts.
-- Match Tailwind v4 and global token usage in `src/app/globals.css`. Avoid
-  unrelated one-off color systems.
+- Follow `docs/design-system.md` for visual and interaction conventions; reuse
+  the normalized primitives in `src/components/ui` before adding a new one.
+- Use semantic Tailwind utilities backed by `globals.css`; do not introduce
+  arbitrary colors, spacing systems, or competing visual tokens.
+- Use `lucide-react` only when an icon adds action meaning. The product remains
+  a dense, scannable operational journal, not a marketing or executive surface.
 - Add `'use client'` only where browser state, effects, or events require it.
 - Preserve keyboard access, visible focus, semantic controls, and accessible
   labels.
-- Tables should use compact rows, aligned numeric columns, tabular numerals,
-  useful sorting/filtering, and bounded internal scrolling where appropriate.
-- Charts must respond to their container dimensions; do not use fixed chart
-  heights inside resizable containers without an explicit resize mechanism.
-- Loading, empty, stale, missing-data, validation, and error states are part of
-  the feature and must be designed deliberately.
 
 ## Computation Ownership
 
