@@ -402,6 +402,10 @@ test.describe('Account Cutover Integration', () => {
     // Wait for the trade detail page to load
     await page.waitForURL(new RegExp(`/trades/${tradeId}`));
     await tradeResponse;
+    await expect(
+      page.getByText('Loading trade details...', { exact: true }),
+    ).toBeHidden({ timeout: 15_000 });
+    await page.waitForLoadState('load');
 
     // ── Trade identity verification ─────────────────────────────────
     // The trade detail page shows the trade code and symbol
@@ -419,7 +423,7 @@ test.describe('Account Cutover Integration', () => {
         res.url().includes(`/api/accounts/${populatedAccountId}/ledger`) &&
         res.status() === 200,
     );
-    await page.goto(`/settings/accounts/${populatedAccountId}/ledger`);
+    await page.goBack({ waitUntil: 'domcontentloaded' });
     await returnLedgerResponse;
 
     // Verify we're back on the account workspace
