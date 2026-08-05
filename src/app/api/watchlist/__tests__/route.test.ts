@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, ne, desc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 
@@ -102,6 +102,10 @@ function doGetWatchlist(params: { status?: string } = {}): { status: number; dat
 
     if (params.status) {
       query.where(eq(schema.watchlistItems.status, params.status as 'pending' | 'watching' | 'triggered' | 'skipped' | 'expired'));
+    } else {
+      // Default view excludes soft-deleted (expired) rows; only an explicit
+      // ?status=expired request returns them.
+      query.where(ne(schema.watchlistItems.status, 'expired'));
     }
 
     const rows = query.all();
@@ -210,19 +214,26 @@ console.log('\n1. GET returns empty list:');
   assertEqual(data.length, 0, 'array is empty');
 }
 
-// ── 2. GET: Returns all items when no filter ────────────────────────
+// ── 2. GET: Excludes expired items when no filter; returns them on demand ──
 
-console.log('\n2. GET returns all items when no filter:');
+console.log('\n2. GET excludes expired items by default; returns them with status=expired:');
 {
   cleanup();
   seedWatchlistItem({ symbol: 'AAPL', status: 'pending' });
   seedWatchlistItem({ symbol: 'MSFT', status: 'watching' });
   seedWatchlistItem({ symbol: 'GOOGL', status: 'triggered' });
+  seedWatchlistItem({ symbol: 'NFLX', status: 'expired' });
 
   const result = doGetWatchlist();
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>[];
-  assertEqual(data.length, 3, 'returns all 3 items');
+  assertEqual(data.length, 3, 'returns 3 active items (expired excluded)');
+
+  const expired = doGetWatchlist({ status: 'expired' });
+  assert(expired.status === 200, 'status=expired returns 200');
+  const de = expired.data as Record<string, unknown>[];
+  assertEqual(de.length, 1, 'status=expired returns only the expired item');
+  assertEqual(de[0].symbol, 'NFLX', 'expired item symbol matches');
 }
 
 // ── 3. GET: Status filter ──────────────────────────────────────────

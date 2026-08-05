@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { watchlistItems } from '@/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, ne, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { YahooFinanceProvider } from '@/lib/market-quote';
 import { fetchYahooProfiles } from '@/lib/profile-enricher';
@@ -25,6 +25,10 @@ export async function GET(request: NextRequest) {
 
     if (status) {
       query.where(eq(watchlistItems.status, status as 'pending' | 'watching' | 'triggered' | 'skipped' | 'expired'));
+    } else {
+      // Default view excludes soft-deleted (expired) rows so "Remove" behaves
+      // like a delete. Pass ?status=expired to audit removed items.
+      query.where(ne(watchlistItems.status, 'expired'));
     }
 
     const rows = query.all();

@@ -133,9 +133,15 @@ export default function WatchlistPage() {
 
   // ── Data ────────────────────────────────────────────────────────────
 
-  const fetchItems = useCallback(async () => {
+  const fetchItems = useCallback(async (status?: string) => {
     try {
-      const res = await fetch('/api/watchlist');
+      // Fetch with the selected status so the "Expired" filter can audit
+      // soft-deleted items; 'all' (no param) excludes expired rows server-side.
+      const url =
+        status && status !== 'all'
+          ? `/api/watchlist?status=${encodeURIComponent(status)}`
+          : '/api/watchlist';
+      const res = await fetch(url);
       const data = await res.json();
       if (Array.isArray(data)) setItems(data);
     } catch {
@@ -386,7 +392,7 @@ export default function WatchlistPage() {
       }
 
       resetForm();
-      fetchItems();
+      fetchItems(statusFilter);
     } catch {
       setMessage({ type: 'error', text: 'Failed to save watchlist item.' });
     }
@@ -402,11 +408,11 @@ export default function WatchlistPage() {
         return;
       }
       setMessage({ type: 'success', text: `"${symbol}" removed from watchlist.` });
-      fetchItems();
+      fetchItems(statusFilter);
     } catch {
       setMessage({ type: 'error', text: 'Failed to remove item.' });
     }
-  }, [fetchItems]);
+  }, [fetchItems, statusFilter]);
 
   const formatPrice = (v: number | null) => {
     if (v === null || v === undefined) return '-';
@@ -684,11 +690,12 @@ export default function WatchlistPage() {
         </div>
       )}
 
-      {/* Filter */}
-      {items.length > 0 && (
+      {/* Filter — always visible when loaded so the "Expired" audit view
+          stays reachable even after the last active item is removed. */}
+      {!loading && (
         <div className="mb-6 flex items-center gap-2">
           <label htmlFor="watchlist-filter" className="text-sm font-medium text-muted-foreground">Filter:</label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); fetchItems(v); }}>
             <SelectTrigger id="watchlist-filter" className="w-36">
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
