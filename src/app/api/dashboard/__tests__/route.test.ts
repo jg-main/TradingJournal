@@ -17,7 +17,7 @@ process.env.DB_FILE_NAME = './.test-m05-s03-db';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, ne } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import {
@@ -300,11 +300,12 @@ function doGetDashboard(
       };
     }
 
-    // 1. Fetch all trades for this account
+    // 1. Fetch all trades for this account (mirrors route.ts — excludes
+    // soft-deleted status='deleted' rows, matching the D057/R027 contract)
     const allTrades = db
       .select()
       .from(schema.trades)
-      .where(eq(schema.trades.accountId, accountId))
+      .where(and(eq(schema.trades.accountId, accountId), ne(schema.trades.status, 'deleted')))
       .all();
 
     const allTradeIds = allTrades.map((t) => t.id);
@@ -989,6 +990,38 @@ cleanup();
   const result = doGetDashboard(accountId);
   assertClose(result.body.kpis?.netPnl, -10, 'Scratch has net negative due to fees');
   assert(result.body.kpis?.winRate === 0, 'winRate is 0 (scratch counts as loss)');
+}
+
+// ── Test 8b: Deleted (scratched) trades excluded from dashboard (R027/D057) ──
+console.log('▶ Deleted Trades Exclusion (R027)');
+
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // One real closed trade: buy 100 @ 100, sell 100 @ 120 → netPnl 2000
+  const t1 = seedTrade(accountId, { symbol: 'REAL', direction: 'long', status: 'closed' });
+  seedExecution(t1, { action: 'buy', quantity: 100, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 100, price: 120 });
+
+  // One soft-deleted (scratched) trade with executions — must be invisible
+  // to the unfiltered dashboard (R027: scratched rows only surface in the
+  // Deleted tab via ?status=deleted). Without the ne(status,'deleted')
+  // filter in the route's allTrades query, totalTrades inflates to 2.
+  const t2 = seedTrade(accountId, { symbol: 'SCRATCHED', direction: 'long', status: 'deleted' });
+  seedExecution(t2, { action: 'buy', quantity: 100, price: 200 });
+  seedExecution(t2, { action: 'sell', quantity: 100, price: 400 }); // +20000 if leaked
+
+  const result = doGetDashboard(accountId);
+
+  // totalTrades must count only the visible closed trade, not the deleted one
+  assert(result.body.kpis?.totalTrades === 1, 'totalTrades excludes deleted (scratched) trade');
+  assert(result.body.kpis?.openTrades === 0, 'openTrades is 0');
+  // netPnl must not include the deleted trade's +20000
+  assertClose(result.body.kpis?.netPnl, 2000, 'netPnl excludes deleted trade P&L');
+  // winRate: 1 win / 1 decision = 1 (deleted trade is not a decision)
+  assertClose(result.body.kpis?.winRate, 1, 'winRate is 1 (deleted trade not counted)');
 }
 
 // ── Test 9: Mixed trades with grades and without grades ───────────────

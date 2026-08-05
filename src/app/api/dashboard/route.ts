@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts, lookupValues } from '@/db/schema';
-import { eq, inArray, desc, and } from 'drizzle-orm';
+import { eq, inArray, desc, and, ne } from 'drizzle-orm';
 import { type ExecutionData } from '@/lib/trade-metrics';
 import { computeMarkToMarketSummary } from '@/lib/mark-to-market';
 import {
@@ -100,11 +100,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 1. Fetch all trades for this account in a single query
+    // 1. Fetch all trades for this account in a single query.
+    // D057/R027: soft-deleted (scratched) trades are excluded from every
+    // unfiltered aggregation — they must only surface in the Deleted tab
+    // (?status=deleted). Without this ne() the deleted rows would flow into
+    // allKpiInputs (inflating totalTrades) and drive batch-fetches of
+    // executions/grades/risk snapshots for rows the dashboard never displays.
     const allTrades = db
       .select()
       .from(trades)
-      .where(eq(trades.accountId, accountId))
+      .where(and(eq(trades.accountId, accountId), ne(trades.status, 'deleted')))
       .all();
 
     const allTradeIds = allTrades.map((t) => t.id);
