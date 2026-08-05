@@ -136,6 +136,25 @@ make test-all
 Run targeted Playwright or browser verification for every changed user-facing
 workflow.
 
+### Browser test runtime and generated artifacts
+
+- Playwright's configured web server must launch Next with `--webpack`. This is
+  the stable development path for this workspace; do not switch the browser
+  server to the default Turbopack path without investigating `.next` ownership
+  and cache behavior first.
+- Local Playwright reports and test results are written to a per-run directory
+  under `/tmp` (or to `PLAYWRIGHT_ARTIFACT_DIR` when explicitly set). CI keeps
+  its report directories in the repository so workflow artifact upload can
+  collect them. These outputs are never source files and must not be committed.
+- When running Playwright or Next in Docker with the repository bind-mounted,
+  run the container as the host user and group, for example
+  `--user "$(id -u):$(id -g)"`. This prevents root-owned `.next`, report, and
+  test-result files that later cause local development and cleanup failures.
+- If a browser run reports a Turbopack panic or permission error, inspect the
+  configured web-server command and ownership of ignored generated artifacts
+  before changing product code. Repair only those generated artifacts; do not
+  broaden cleanup to tracked source files.
+
 ## Database and Data Rules
 
 - The default runtime database is `./.trading-journal/journal.db`; tests may use
@@ -280,4 +299,3 @@ artifacts aligned with the implementation.
 - Do not modify a preserved legacy surface during a parallel greenfield slice
   unless the slice explicitly includes compatibility work.
 - The `docs/` directory is preserved by `npm run clean:artifacts`.
-
