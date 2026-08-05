@@ -18,8 +18,9 @@
   2. Explicit user requirements.
   3. Active GSD milestone, slice, and task context.
   4. This file and documented domain invariants.
-  5. Applicable project skills.
-  6. General framework or design conventions.
+  5. Applicable project skills, such as `trading-product-ux`.
+  6. Shared engineering skills installed in `~/.agents/skills`.
+  7. General framework or design conventions.
 
 ## Project Shape
 
@@ -49,12 +50,57 @@
   when the approved milestone or slice requires them.
 - Record unmet acceptance criteria rather than silently weakening them.
 
+## Skill Usage
+
+Shared engineering skills are installed for every harness and resolve from
+`~/.agents/skills`. Project-local skills under `.agents/skills` take precedence
+over them on name collision.
+
+GSD-Pi also reads machine-readable routing rules from the `skill_rules` block in
+`.gsd/PREFERENCES.md`. Other harnesses do not read that file, so the same
+expectations are restated here in prose. When you change one, change the other.
+
+Select the narrowest applicable skill and load only the references the active
+task needs. A skill supplies technique; it does not override this file,
+`docs/design-system.md`, or a documented domain invariant.
+
+| Situation | Use | Also consider |
+|---|---|---|
+| Substantial UX work on navigation, dashboards, tables, forms, dialogs, or cross-page journeys | `trading-product-ux` | `accessibility`, `web-design-guidelines` |
+| React components, Next.js routes, client fetching, charts, or UI-affecting handlers | `react-best-practices` | `accessibility`, `lint` |
+| Implementing an approved visual direction or focused visual refinement | `frontend-design` | `make-interfaces-feel-better`, `accessibility` |
+| API route handlers, Drizzle schema, migrations, backup/export, import normalization, persisted contracts | `api-design` | `tdd`, `test`, `review` |
+| Auth, secrets, filesystem access, database writes from untrusted input, export surfaces | `security-review` | `api-design`, `test` |
+| Tests fail, builds fail, runtime behavior is unexpected, or a prior fix did not hold | `systematic-debugging` | `debug-like-expert`, `test` |
+| Slow rendering, large trade datasets, bundle growth, or query cost | `code-optimizer` | `react-best-practices`, `core-web-vitals` |
+| Planning a milestone or slice | `decompose-into-slices` | `grill-me`, `codebase-recon` |
+| Upgrading dependencies | `dependency-upgrade` | `test`, `review` |
+| Writing or restructuring durable documentation | `write-docs` | — |
+| Before claiming a task, slice, or milestone complete | `verify-before-complete` | `test`, `lint` |
+
+Some names resolve differently per harness. Treat the *Situation* column as the
+instruction and the skill name as a hint:
+
+- Browser verification is harness-specific. Use the browser automation the
+  active harness provides, and fall back to the repository's Playwright specs
+  in `e2e/`. The evidence requirement in *Testing and Evidence* is identical
+  either way.
+- `review` and `security-review` resolve to built-in equivalents in some
+  harnesses. In Claude Code, use `/code-review` for the working diff and
+  `/security-review` for pending changes; the built-in `review` targets a
+  GitHub pull request rather than local changes.
+
 ## UX Design Policy
 
 For substantial user-facing work—navigation, dashboards, tables, forms,
 dialogs, workflows, or cross-page journeys—use the project-local
 `trading-product-ux` skill. Select the narrowest applicable mode and
 load only its needed references.
+
+`trading-product-ux` owns workflow structure, information architecture, and
+visual acceptance for this product. The general frontend skills above supply
+implementation technique only; where they disagree with `trading-product-ux` or
+`docs/design-system.md`, this repository's guidance wins.
 
 `docs/design-system.md` is the authoritative visual reference for product
 identity, tokens, density, primitives, chart semantics, and prohibited
@@ -223,6 +269,11 @@ contract review.
 - Preserve screenshots or equivalent browser evidence when the active
   milestone requires visual acceptance.
 - Report tests not run, evidence not captured, and acceptance criteria not met.
+- When a feature has a clear observable contract, drive it with `tdd` rather
+  than writing tests after the fact.
+- Apply `verify-before-complete` before claiming a task, slice, or milestone is
+  done. Evidence must be produced in the current message, not recalled from
+  earlier in the session. Passing tests are not visual acceptance.
 
 ## Documentation
 
@@ -236,7 +287,13 @@ Update durable documentation when a change affects:
 - New project-local skills.
 
 Place durable project documentation under `docs/`. Keep GSD milestone and slice
-artifacts aligned with the implementation.
+artifacts aligned with the implementation. Use `write-docs` for proposals,
+specs, ADRs, and any document that must be readable without the authoring
+session's context.
+
+When a change adds, removes, or repurposes a skill, update both the *Skill
+Usage* table in this file and the `skill_rules` block in `.gsd/PREFERENCES.md`
+so every harness sees the same policy.
 
 ## Repository Hygiene
 
