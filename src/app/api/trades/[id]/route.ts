@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, watchlistItems, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, settings, accounts, accountRollforward, accountPerformance } from '@/db/schema';
+import { trades, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, settings, accounts, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -342,20 +342,30 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Hard delete: nullify watchlist FK references first, then delete
-    db.update(watchlistItems)
-      .set({ promotedTradeId: null })
-      .where(eq(watchlistItems.promotedTradeId, id))
-      .run();
+    // D057/R027: planned-only soft-delete (scratch). Only planned trades can be
+    // scratched — open/closed trades hold live or historical state that must not
+    // be hidden, and an already-scratched trade is idempotently rejected. The
+    // row is preserved with status='deleted' and updatedAt stamped for an
+    // auditable scratch time. The watchlist_items.promotedTradeId link is
+    // intentionally NOT nullified: the row still exists (no FK integrity issue),
+    // so the promotion audit trail survives the scratch.
+    if (existing.status !== 'planned') {
+      const error =
+        existing.status === 'deleted'
+          ? 'Trade is already scratched.'
+          : `Only planned trades can be scratched; this trade is ${existing.status}.`;
+      return NextResponse.json({ error }, { status: 400 });
+    }
 
-    db.delete(trades)
+    db.update(trades)
+      .set({ status: 'deleted', updatedAt: new Date().toISOString() })
       .where(eq(trades.id, id))
       .run();
 
-    return NextResponse.json({ message: 'Trade deleted' });
+    return NextResponse.json({ message: 'Trade scratched' });
   } catch (error) {
     return NextResponse.json(
-      { error: 'Failed to delete trade', details: String(error) },
+      { error: 'Failed to scratch trade', details: String(error) },
       { status: 500 }
     );
   }

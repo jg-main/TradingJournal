@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
-import { eq, and, desc, sql, inArray, gte, lte } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
@@ -69,6 +69,14 @@ export async function GET(request: NextRequest) {
 
     if (status) {
       filters.push(eq(trades.status, status as TradeStatus));
+    } else {
+      // D057/R027: soft-deleted (scratched) trades are excluded from the
+      // unfiltered listing by default. Callers that need deleted rows must opt
+      // in explicitly with ?status=deleted (Deleted tab, S03). Without this,
+      // scratched rows would leak into every unfiltered view — the same leak
+      // class as the watchlist soft-delete bug (MEM315). allMatchingIdsR below
+      // reuses whereClause, so totals and counts stay consistent with the list.
+      filters.push(ne(trades.status, 'deleted'));
     }
     // Status-aware date filtering
     // open → date filters ignored (all open positions visible regardless of date)

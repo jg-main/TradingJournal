@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, desc, and, sql, inArray, gte, lte } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray, gte, lte, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import Decimal from 'decimal.js';
 
@@ -247,6 +247,11 @@ function doGetTrades(params: {
 
     if (statusFilter) {
       filters.push(eq(schema.trades.status, statusFilter));
+    } else {
+      // D057/R027: mirror of route.ts — the unfiltered listing excludes
+      // soft-deleted (scratched) trades by default; callers opt in with
+      // ?status=deleted (Deleted tab, S03).
+      filters.push(ne(schema.trades.status, 'deleted'));
     }
     // Status-aware date filtering (matching route.ts logic)
     // open → date filters ignored (all open positions visible regardless of date)
@@ -2269,6 +2274,34 @@ console.log('\n42. M013/S01: closed tab (status=closed) totals unaffected by unp
   assertEqual(d.totals.grossUnrealizedPnl, 0, 'totals.grossUnrealizedPnl = 0 (numeric, unchanged)');
   assertEqual(d.totals.netUnrealizedPnl, 0, 'totals.netUnrealizedPnl = 0 (numeric, unchanged)');
   assertEqual(d.totals.netRealizedPnl, 992, 'totals.netRealizedPnl = 992 (realized totals unchanged)');
+}
+
+// ── 43. GET: Default listing excludes soft-deleted (scratched) trades ──
+
+console.log('\n43. GET default listing excludes deleted trades (status=deleted opts in):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const planned = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+  const deleted = seedTrade({ accountId: 'test-account-id', status: 'deleted' });
+  const open = seedTrade({ accountId: 'test-account-id', status: 'open' });
+
+  // Default (no status param): deleted trade must not leak into the listing
+  const r1 = doGetTrades({});
+  assert(r1.status === 200, 'returns 200 for unfiltered listing');
+  const d1 = r1.data as { total: number; data: Array<{ id: string; status: string }> };
+  assertEqual(d1.total, 2, 'default total excludes the deleted trade (2 of 3 rows)');
+  assert(!d1.data.some((t) => t.id === (deleted.id as string)), 'deleted trade absent from unfiltered rows');
+  assert(d1.data.some((t) => t.id === (planned.id as string)), 'planned trade present in unfiltered rows');
+  assert(d1.data.some((t) => t.id === (open.id as string)), 'open trade present in unfiltered rows');
+
+  // Explicit ?status=deleted: deleted trades are returned (opt-in, Deleted tab)
+  const r2 = doGetTrades({ status: 'deleted' });
+  assert(r2.status === 200, 'returns 200 for status=deleted');
+  const d2 = r2.data as { total: number; data: Array<{ id: string; status: string }> };
+  assertEqual(d2.total, 1, 'status=deleted total includes the scratched trade');
+  assertEqual(d2.data[0]?.id, deleted.id, 'scratched trade returned via status=deleted');
+  assertEqual(d2.data[0]?.status, 'deleted', 'scratched row carries status deleted');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

@@ -499,19 +499,26 @@ function doDeleteTrade(id: string): { status: number; data: unknown } {
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
-    // Hard delete: nullify watchlist FK references first, then delete
-    db.update(schema.watchlistItems)
-      .set({ promotedTradeId: null })
-      .where(eq(schema.watchlistItems.promotedTradeId, id))
-      .run();
+    // D057/R027: planned-only soft-delete (scratch). Non-planned trades are
+    // rejected with 400; the row is preserved with status='deleted' and
+    // updatedAt stamped for audit. watchlist_items.promotedTradeId is
+    // intentionally NOT nullified so the promotion audit trail survives.
+    if (existing.status !== 'planned') {
+      const error =
+        existing.status === 'deleted'
+          ? 'Trade is already scratched.'
+          : `Only planned trades can be scratched; this trade is ${existing.status}.`;
+      return { status: 400, data: { error } };
+    }
 
-    db.delete(schema.trades)
+    db.update(schema.trades)
+      .set({ status: 'deleted', updatedAt: new Date().toISOString() })
       .where(eq(schema.trades.id, id))
       .run();
 
-    return { status: 200, data: { message: 'Trade deleted' } };
+    return { status: 200, data: { message: 'Trade scratched' } };
   } catch (error) {
-    return { status: 500, data: { error: 'Failed to delete trade', details: String(error) } };
+    return { status: 500, data: { error: 'Failed to scratch trade', details: String(error) } };
   }
 }
 
@@ -701,22 +708,26 @@ console.log('\n6. PUT returns 404 for nonexistent id:');
   assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
 }
 
-// ── 7. DELETE: Hard-deletes trade permanently ───────────────────────
+// ── 7. DELETE: Scratches a planned trade (soft-delete, row preserved) ──
 
-console.log('\n7. DELETE hard-deletes trade permanently from DB:');
+console.log('\n7. DELETE scratches a planned trade (soft-delete, row preserved):');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+  // Seed with a stale updatedAt so the scratch timestamp is provably stamped.
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', updatedAt: '2024-01-01T00:00:00.000Z' });
 
   const result = doDeleteTrade(trade.id as string);
 
   assert(result.status === 200, 'returns 200');
-  assertEqual((result.data as { message: string }).message, 'Trade deleted', 'message matches');
+  assertEqual((result.data as { message: string }).message, 'Trade scratched', 'message distinguishes scratch from hard-delete');
 
-  // Verify DB: row no longer exists
-  const updated = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown> | undefined;
-  assert(updated === undefined, 'trade is permanently removed from DB');
+  // Verify DB: row preserved with status='deleted' and updatedAt stamped
+  const updated = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertNotNull(updated, 'trade row is preserved (not hard-deleted)');
+  assertEqual(updated.status, 'deleted', 'status transitions to deleted');
+  assert(updated.updatedAt != null && updated.updatedAt !== '2024-01-01T00:00:00.000Z', 'updatedAt is stamped on scratch (auditable scratch time)');
+  assertEqual(updated.symbol, 'AAPL', 'trade fields preserved after scratch');
 }
 
 // ── 8. DELETE: 404 for nonexistent id ──────────────────────────────
@@ -729,9 +740,9 @@ console.log('\n8. DELETE returns 404 for nonexistent id:');
   assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
 }
 
-// 9. DELETE: Nullifies watchlist_items.promotedTradeId
+// 9. DELETE: Rejects non-planned trade with 400 and preserves promotedTradeId
 
-console.log('\n9. DELETE nullifies watchlist promotedTradeId:');
+console.log('\n9. DELETE rejects open trade with 400 and preserves promotedTradeId:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
@@ -744,15 +755,67 @@ console.log('\n9. DELETE nullifies watchlist promotedTradeId:');
   });
 
   const result = doDeleteTrade(trade.id as string);
-  assert(result.status === 200, 'returns 200 (NextResponse.json() defaults to 200)');
+  assert(result.status === 400, 'returns 400 for non-planned trade');
+  assert((result.data as { error: string }).error.includes('Only planned trades'), 'descriptive error names the planned-only rule');
 
-  // Verify watchlist FK is nullified
+  // Watchlist promotedTradeId preserved — the audit link survives (row never deleted)
   const wl = db.select().from(schema.watchlistItems).where(eq(schema.watchlistItems.id, wlItem.id as string)).get() as Record<string, unknown>;
-  assertEqual(wl.promotedTradeId, null, 'promotedTradeId is null after trade delete');
+  assertEqual(wl.promotedTradeId, trade.id, 'promotedTradeId preserved (not nullified)');
 
-  // Verify trade is gone
-  const deleted = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get();
-  assertEqual(deleted, undefined, 'trade row is removed from database');
+  // Trade row untouched
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.status, 'open', 'trade row unchanged after rejected scratch');
+}
+
+// 9b. DELETE: Rejects closed trade with 400
+
+console.log('\n9b. DELETE rejects closed trade with 400:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'closed' });
+
+  const result = doDeleteTrade(trade.id as string);
+  assert(result.status === 400, 'returns 400 for closed trade');
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.status, 'closed', 'closed trade row unchanged');
+}
+
+// 9c. DELETE: Rejects already-deleted trade with 400
+
+console.log('\n9c. DELETE rejects already-deleted trade with 400:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'deleted' });
+
+  const result = doDeleteTrade(trade.id as string);
+  assert(result.status === 400, 'returns 400 for already-deleted trade');
+  assertEqual((result.data as { error: string }).error, 'Trade is already scratched.', 'descriptive error for already-scratched trade');
+}
+
+// 9d. DELETE: Successful scratch preserves watchlist promotedTradeId
+
+console.log('\n9d. DELETE scratch preserves watchlist promotedTradeId audit link:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+  const wlItem = seedWatchlistItem({
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'triggered',
+    promotedTradeId: trade.id as string,
+  });
+
+  const result = doDeleteTrade(trade.id as string);
+  assert(result.status === 200, 'returns 200 for planned trade');
+
+  // Row preserved and watchlist link intact — the promotion audit trail survives
+  const wl = db.select().from(schema.watchlistItems).where(eq(schema.watchlistItems.id, wlItem.id as string)).get() as Record<string, unknown>;
+  assertEqual(wl.promotedTradeId, trade.id, 'promotedTradeId still points at scratched trade');
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.status, 'deleted', 'trade row preserved as deleted');
 }
 
 // ── 10. GET: Returns plannedQuantity matching what was posted ───────
