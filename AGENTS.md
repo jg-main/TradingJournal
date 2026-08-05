@@ -49,7 +49,7 @@
   when the approved milestone or slice requires them.
 - Record unmet acceptance criteria rather than silently weakening them.
 
-## UX Redesign Policy
+## UX Design Policy
 
 For substantial user-facing work—navigation, dashboards, tables, forms,
 dialogs, workflows, or cross-page journeys—use the project-local
