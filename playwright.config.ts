@@ -25,7 +25,11 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: `npm run dev -- -p ${playwrightPort}`,
+    // Keep browser runs on the same stable Webpack dev path used by `make dev`.
+    // Next's default Turbopack path can leave or reuse .next state in a way
+    // that causes permission failures when the workspace was previously used
+    // from a container.
+    command: `npm run dev -- --webpack -p ${playwrightPort}`,
     port: playwrightPort,
     reuseExistingServer: false,
     timeout: 30_000,
