@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Star,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -18,6 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { useTradesScratch } from '@/components/trades/scratch-context';
 
 /** Minimal row shape ActionsCell needs from the trades list row. */
 export interface ActionsCellRow {
@@ -36,16 +38,23 @@ export interface ActionsCellRow {
  */
 export function ActionsCell({ row }: { row: ActionsCellRow }) {
   const router = useRouter();
+  const { requestScratch } = useTradesScratch();
 
   const statusActions = useMemo(() => {
     const go = () => router.push(`/trades/${row.id}`);
     switch (row.status) {
       case 'planned':
         return (
-          <DropdownMenuItem onClick={go}>
-            <Pencil className="size-4" />
-            Edit
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem onClick={go}>
+              <Pencil className="size-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => requestScratch(row.id)}>
+              <Trash2 className="size-4" />
+              Scratch
+            </DropdownMenuItem>
+          </>
         );
       case 'open':
         return (
@@ -76,7 +85,7 @@ export function ActionsCell({ row }: { row: ActionsCellRow }) {
       default:
         return null;
     }
-  }, [row.status, row.id, router]);
+  }, [row.status, row.id, router, requestScratch]);
 
   return (
     <DropdownMenu>

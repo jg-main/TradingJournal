@@ -7,6 +7,8 @@ import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ActionsCell } from '@/components/trades/actions-cell';
+import { TradesScratchContext } from '@/components/trades/scratch-context';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -1179,6 +1181,10 @@ function TradesPageInner() {
     return searchParams.get('direction') ?? 'all';
   });
   const [refreshing, setRefreshing] = useState(false);
+  // Trade awaiting scratch confirmation (M015/S02/T01). The page owns the
+  // ConfirmDialog, the DELETE /api/trades/[id] call, and the planned-tab
+  // refetch; ActionsCell only triggers the request via context.
+  const [scratchTargetId, setScratchTargetId] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string | null>(() => {
     return searchParams.get('preset');
   });
@@ -1346,6 +1352,40 @@ function TradesPageInner() {
       setTabLoading((prev) => ({ ...prev, [tab.id]: false }));
     }
   }, [fromDate, toDate, accountId, direction]);
+
+  // ── Scratch (planned-only soft-delete, R027/D057) ─────────────────────
+
+  /** Context consumer entry point: open the scratch confirmation dialog. */
+  const requestScratch = useCallback((tradeId: string) => {
+    setScratchTargetId(tradeId);
+  }, []);
+
+  /** The planned trade pending scratch confirmation, resolved for the dialog. */
+  const scratchTarget = scratchTargetId
+    ? tabData.planned.find((t) => t.id === scratchTargetId) ?? null
+    : null;
+
+  /** Confirm handler: DELETE the trade, then refetch the planned tab. */
+  const handleConfirmScratch = useCallback(async () => {
+    if (!scratchTargetId) return;
+    try {
+      const res = await fetch(`/api/trades/${scratchTargetId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        // Error states are logged (app pattern — no toast system); the trade
+        // simply stays in the Planned tab.
+        const errBody = await res.json().catch(() => ({}));
+        console.error('Scratch trade failed:', res.status, errBody.error ?? res.statusText);
+        return;
+      }
+      // Success — refetch the planned tab so the scratched trade disappears.
+      const plannedTab = TABS.find((t) => t.id === 'planned');
+      if (plannedTab) fetchTab(plannedTab, tabPage.planned);
+    } catch (err) {
+      console.error('Scratch trade failed:', err);
+    } finally {
+      setScratchTargetId(null);
+    }
+  }, [scratchTargetId, fetchTab, tabPage.planned]);
 
   // ── Page header button handlers ──────────────────────────────────────
 
@@ -1524,6 +1564,7 @@ function TradesPageInner() {
   // ── Render ───────────────────────────────────────────────────────
 
   return (
+    <TradesScratchContext.Provider value={{ requestScratch }}>
     <div className="px-4 py-3 sm:px-8 sm:py-10">
       <h1 className="mb-6 text-2xl font-semibold tracking-tight text-foreground">
         Trades
@@ -1694,5 +1735,23 @@ function TradesPageInner() {
         ))}
       </Tabs>
     </div>
+
+    {/* Scratch confirmation (M015/S02/T01) — destructive, closes before DELETE */}
+    <ConfirmDialog
+      open={scratchTargetId !== null}
+      onOpenChange={(open) => {
+        if (!open) setScratchTargetId(null);
+      }}
+      onConfirm={handleConfirmScratch}
+      title={scratchTarget ? `Scratch ${scratchTarget.symbol}?` : 'Scratch this trade?'}
+      description={
+        scratchTarget
+          ? `${scratchTarget.tradeCode} will be removed from your Planned tab and marked as scratched.`
+          : 'The planned trade will be removed from your Planned tab and marked as scratched.'
+      }
+      confirmLabel="Scratch"
+      destructive
+    />
+    </TradesScratchContext.Provider>
   );
 }
