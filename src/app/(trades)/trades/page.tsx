@@ -113,7 +113,7 @@ interface AccountOption {
 
 // ── Tab definitions ────────────────────────────────────────────────────
 
-type TabId = 'open' | 'closed' | 'planned';
+type TabId = 'open' | 'closed' | 'planned' | 'deleted';
 
 interface TabDef {
   id: TabId;
@@ -125,6 +125,9 @@ const TABS: TabDef[] = [
   { id: 'open', label: 'Open', apiStatus: 'open' },
   { id: 'closed', label: 'Closed', apiStatus: 'closed' },
   { id: 'planned', label: 'Planned', apiStatus: 'planned' },
+  // R027/D057: scratched (soft-deleted) trades are an explicit audit view.
+  // The API opts in via ?status=deleted; unfiltered consumers exclude them.
+  { id: 'deleted', label: 'Deleted', apiStatus: 'deleted' },
 ];
 
 const PAGE_SIZE = 50;
@@ -335,6 +338,22 @@ function TotalsFooter({
             <span className="text-xs text-muted-foreground">Trades</span>
             <span className="text-lg font-semibold tabular-nums">{plannedTotals.count}</span>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Deleted tab: scratched trades carry no realized/unrealized P&L aggregates,
+  // so the footer is a count-only audit summary (R027).
+  if (tabId === 'deleted') {
+    return (
+      <div className="mt-3 rounded-lg border bg-muted/30 p-4">
+        <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Scratched Trades
+        </div>
+        <div className="flex flex-col">
+          <span className="text-xs text-muted-foreground">Trades</span>
+          <span className="text-lg font-semibold tabular-nums">{count}</span>
         </div>
       </div>
     );
@@ -1051,6 +1070,171 @@ const plannedColumns: ColumnDef<TradeRow>[] = [
   },
 ];
 
+/**
+ * Deleted tab columns (R027 audit view).
+ *
+ * Scratched trades are planned-only soft-deletes (M015/S02 contract: DELETE
+ * /api/trades/[id] is restricted to planned trades), so a scratched row's only
+ * meaningful data is its planning fields — it has no executions, risk
+ * snapshots, or realized/unrealized P&L. The column set mirrors the Planned
+ * tab with the same null-guarded formatters; metrics-derived columns would be
+ * permanently empty for these rows and are deliberately omitted.
+ */
+const deletedColumns: ColumnDef<TradeRow>[] = [
+  {
+    id: 'symbol',
+    header: 'Symbol',
+    accessorKey: 'symbol',
+    cell: ({ getValue }) => (
+      <span className="font-medium">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'direction',
+    header: 'Direction',
+    accessorKey: 'direction',
+    cell: ({ getValue }) => <DirectionBadge direction={getValue<string>()} />,
+  },
+  {
+    id: 'setup',
+    header: 'Setup',
+    accessorKey: 'setupName',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'plannedDate',
+    header: 'Planned Date',
+    accessorKey: 'createdAt',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'plannedSize',
+    header: 'Planned Size',
+    accessorKey: 'plannedQuantity',
+    cell: ({ getValue }) => {
+      const qty = getValue<number | null>();
+      return <span className="tabular-nums text-muted-foreground">{qty != null ? qty.toLocaleString() : '—'}</span>;
+    },
+  },
+  {
+    id: 'entryTrigger',
+    header: 'Entry Trigger',
+    accessorKey: 'plannedEntry',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'stop',
+    header: 'Stop',
+    accessorKey: 'plannedStop',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'target',
+    header: 'Target',
+    accessorKey: 'plannedTarget1',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatPrice(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'plannedRisk',
+    header: 'Planned Risk',
+    accessorFn: (row) =>
+      computePlannedRisk(row.direction, row.plannedEntry, row.plannedStop, row.plannedQuantity),
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  // ── Optional hidden-by-default columns ───────────────────────────
+  {
+    id: 'account',
+    header: 'Account',
+    accessorFn: (row) => row.accountName,
+    cell: ({ getValue }) => {
+      const name = getValue<string | null>();
+      return (
+        <span className="text-muted-foreground">{name ?? '—'}</span>
+      );
+    },
+  },
+  {
+    id: 'sector',
+    header: 'Sector',
+    accessorFn: (row) => row.sectorName,
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'thesis',
+    header: 'Thesis',
+    accessorKey: 'thesis',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'invalidation',
+    header: 'Invalidation',
+    accessorKey: 'invalidationCondition',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'preTradePlan',
+    header: 'Pre-trade Plan',
+    accessorKey: 'preTradePlan',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'plannedCapital',
+    header: 'Planned Capital',
+    accessorFn: (row) => {
+      const entry = row.plannedEntry;
+      const qty = row.plannedQuantity;
+      if (entry != null && qty != null) return entry * qty;
+      return null;
+    },
+    cell: ({ getValue }) => (
+      <span className="tabular-nums">{formatCurrency(getValue<number | null>())}</span>
+    ),
+  },
+  {
+    id: 'marketCondition',
+    header: 'Market Condition',
+    accessorKey: 'marketConditionName',
+    cell: ({ getValue }) => (
+      <span className="text-muted-foreground">{getValue<string>() ?? '—'}</span>
+    ),
+  },
+  {
+    id: 'dateAdded',
+    header: 'Date Added',
+    accessorKey: 'createdAt',
+    cell: ({ getValue }) => (
+      <span className="tabular-nums text-muted-foreground">{formatDateShort(getValue<string | null>())}</span>
+    ),
+  },
+  {
+    id: 'actions',
+    header: '',
+    accessorFn: () => null,
+    cell: ({ row }) => <ActionsCell row={row.original} />,
+    enableSorting: false,
+  },
+];
+
 // ── Per-tab default visibility (optional columns hidden by default) ──────
 
 const openDefaultVisibility: VisibilityState = {
@@ -1102,10 +1286,22 @@ const plannedDefaultVisibility: VisibilityState = {
   currentMarketPrice: false,
 };
 
+const deletedDefaultVisibility: VisibilityState = {
+  account: false,
+  sector: false,
+  thesis: false,
+  invalidation: false,
+  preTradePlan: false,
+  plannedCapital: false,
+  marketCondition: false,
+  dateAdded: false,
+};
+
 const visibilityDefaults: Record<TabId, VisibilityState> = {
   open: openDefaultVisibility,
   closed: closedDefaultVisibility,
   planned: plannedDefaultVisibility,
+  deleted: deletedDefaultVisibility,
 };
 
 // ── Page Component ─────────────────────────────────────────────────────
@@ -1132,16 +1328,19 @@ function TradesPageInner() {
     open: [],
     closed: [],
     planned: [],
+    deleted: [],
   });
   const [tabTotal, setTabTotal] = useState<Record<TabId, number>>({
     open: 0,
     closed: 0,
     planned: 0,
+    deleted: 0,
   });
   const [tabTotals, setTabTotals] = useState<Record<TabId, TradesResponse['totals']>>({
     open: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, unpricedOpenPositions: 0 },
     closed: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, unpricedOpenPositions: 0 },
     planned: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, unpricedOpenPositions: 0 },
+    deleted: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0, unpricedOpenPositions: 0 },
   });
   const [plannedTotalsState, setPlannedTotalsState] = useState<PlannedTotalsShape>({
     totalPlannedRisk: 0,
@@ -1152,16 +1351,19 @@ function TradesPageInner() {
     open: true,
     closed: true,
     planned: true,
+    deleted: true,
   });
   const [tabError, setTabError] = useState<Record<TabId, string | null>>({
     open: null,
     closed: null,
     planned: null,
+    deleted: null,
   });
   const [tabPage, setTabPage] = useState<Record<TabId, number>>({
     open: 1,
     closed: 1,
     planned: 1,
+    deleted: 1,
   });
   const [activeTab, setActiveTab] = useState<TabId>('open');
 
@@ -1457,7 +1659,7 @@ function TradesPageInner() {
 
     debounceRef.current = setTimeout(() => {
       // Reset all pages to 1 when filters change
-      setTabPage({ open: 1, closed: 1, planned: 1 });
+      setTabPage({ open: 1, closed: 1, planned: 1, deleted: 1 });
       TABS.forEach((tab) => fetchTab(tab, 1));
     }, 300);
 
@@ -1473,6 +1675,7 @@ function TradesPageInner() {
     open: openColumns,
     closed: closedColumns,
     planned: plannedColumns,
+    deleted: deletedColumns,
   }), []);
 
   // ── Render per-tab content ───────────────────────────────────────
@@ -1512,6 +1715,10 @@ function TradesPageInner() {
         planned: {
           title: 'No planned trades',
           description: 'Plan your next trade to see it here. Use the Plan Trade button to get started.',
+        },
+        deleted: {
+          title: 'No scratched trades',
+          description: 'Scratched trades appear here after you remove a planned trade. This is an audit view of soft-deleted trades.',
         },
       };
       const msg = messages[tab.id];

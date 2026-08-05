@@ -5,6 +5,7 @@
  * - Page header buttons: Plan Trade, Export CSV, Refresh Prices
  * - Error paths log to console for operator visibility
  * - Direction filter renders, defaults to all, and updates URL/localStorage
+ * - Deleted tab (R027): status=deleted fetch, scratched rows, empty state, count-only footer
  * - Negative tests: direction validation on the API route
  *
  * Run: npx vitest run --reporter verbose src/app/(trades)/trades/__tests__/page.test.tsx
@@ -520,7 +521,7 @@ function makeMinimalTradeRow(overrides?: Partial<{
   id: string;
   symbol: string;
   direction: 'long' | 'short';
-  status: 'open' | 'closed' | 'planned';
+  status: 'open' | 'closed' | 'planned' | 'deleted';
 }>): Record<string, unknown> {
   return {
     id: overrides?.id ?? 't1',
@@ -809,6 +810,126 @@ describe('Footer totals', () => {
       expect(within(plannedTab).getByText('$5,000.00')).toBeTruthy();
       expect(within(plannedTab).getByText('3')).toBeTruthy();
     });
+  });
+});
+
+// ── Deleted tab (R027) ─────────────────────────────────────────────────
+// The Deleted tab is the explicit opt-in view for soft-deleted (scratched)
+// trades: it fetches GET /api/trades?status=deleted and renders a count-only
+// audit footer (scratched trades carry no P&L aggregates). The Tabs mock
+// renders all TabsContent nodes at once, so assertions are scoped with
+// within() to the deleted tab's content region.
+
+describe('Deleted tab (R027)', () => {
+  // Serves status-specific rows: status=deleted URLs return the scratched
+  // fixtures, all other tabs return empty.
+  function setupDeletedTabMocks(scratched: Array<Record<string, unknown>>) {
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        const isDeleted = urlStr.includes('status=deleted');
+        return new Response(JSON.stringify({
+          data: isDeleted ? scratched : [],
+          total: isDeleted ? scratched.length : 0,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+  }
+
+  it('renders the Deleted tab trigger with a Deleted label', async () => {
+    setupDeletedTabMocks([]);
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      const trigger = screen.getByTestId('tab-trigger-deleted');
+      expect(trigger).toBeTruthy();
+      expect(within(trigger).getByText('Deleted')).toBeTruthy();
+    });
+  });
+
+  it('fetches /api/trades with status=deleted for the Deleted tab', async () => {
+    setupDeletedTabMocks([]);
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('status=deleted'),
+      );
+    });
+  });
+
+  it('renders scratched trades with a count badge and count-only audit footer', async () => {
+    const scratched = [
+      makeMinimalTradeRow({ id: 'd1', symbol: 'TSLA', status: 'deleted' }),
+      makeMinimalTradeRow({ id: 'd2', symbol: 'NVDA', status: 'deleted' }),
+    ];
+    setupDeletedTabMocks(scratched);
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const deletedTab = screen.getByTestId('tab-content-deleted');
+    await vi.waitFor(() => {
+      // Count badge on the tab trigger reflects the scratched-trade total
+      expect(within(screen.getByTestId('tab-trigger-deleted')).getByText('2')).toBeTruthy();
+      // Showing line and table rows
+      expect(within(deletedTab).getByText(/Showing 2 of 2 deleted trades\./)).toBeTruthy();
+      expect(within(deletedTab).getByTestId('dynamic-table')).toBeTruthy();
+      // Count-only footer — never P&L aggregates for scratched trades
+      expect(within(deletedTab).getByText('Scratched Trades')).toBeTruthy();
+      expect(within(deletedTab).getByText('Trades')).toBeTruthy();
+      expect(within(deletedTab).queryByText('Gross P&L')).toBeNull();
+      expect(within(deletedTab).queryByText('Net P&L')).toBeNull();
+      expect(within(deletedTab).queryByText('Planned Totals')).toBeNull();
+    });
+  });
+
+  it('renders the empty state when there are no scratched trades', async () => {
+    setupDeletedTabMocks([]);
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const deletedTab = screen.getByTestId('tab-content-deleted');
+    await vi.waitFor(() => {
+      // Regex matcher: the EmptyState mock concatenates title+description into
+      // one text node, so substring matching is required.
+      expect(within(deletedTab).getByText(/No scratched trades/)).toBeTruthy();
+      expect(within(deletedTab).queryByTestId('dynamic-table')).toBeNull();
+    });
+  });
+
+  it('surfaces the fetch error in the Deleted tab content area', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        if (urlStr.includes('status=deleted')) {
+          return new Response(JSON.stringify({ error: 'Scratched fetch failed' }), { status: 500 });
+        }
+        return new Response(JSON.stringify({ data: [], total: 0, totals: {} }), { status: 200 });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const deletedTab = screen.getByTestId('tab-content-deleted');
+    await vi.waitFor(() => {
+      // fetchTab throws on non-ok → ErrorBanner with the API error message
+      expect(within(deletedTab).getByText('Scratched fetch failed')).toBeTruthy();
+      expect(within(deletedTab).queryByTestId('dynamic-table')).toBeNull();
+    });
+
+    consoleSpy.mockRestore();
   });
 });
 
