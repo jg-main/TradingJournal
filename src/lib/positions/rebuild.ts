@@ -160,9 +160,15 @@ export function rebuildPositions(
       );
 
       if (result.status === 'rejected') {
-        // Rejected executions should never happen in a valid rebuild —
-        // the executions were already validated when posted. If a rejection
-        // occurs, skip it (the error was already surfaced at posting time).
+        // A restore must fail closed when immutable source events cannot be
+        // replayed. Best-effort rebuild callers retain the historical skip
+        // behavior, but transactional restore callers must roll back rather
+        // than commit source rows without matching projections.
+        if (options?.withinTransaction) {
+          throw new Error(
+            `FIFO rebuild rejected execution ${exec.id}: ${result.code} — ${result.message}`,
+          );
+        }
         continue;
       }
 

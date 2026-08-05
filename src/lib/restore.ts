@@ -127,6 +127,55 @@ export function validateRestoreUploadEntries(
   return { valid: true };
 }
 
+function validateTradeAssetReferences(
+  rows: unknown[],
+  archiveAssetNames: Set<string>,
+): { valid: true } | { valid: false; error: string; details: Record<string, unknown> } {
+  const missingAssets = new Set<string>();
+
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') {
+      return {
+        valid: false,
+        error: 'Corrupt data file: trade_assets.json contains a non-object row',
+        details: { table: 'trade_assets' },
+      };
+    }
+
+    const record = row as Record<string, unknown>;
+    const filePath = record.filePath ?? record.file_path;
+    if (filePath === null || filePath === undefined || filePath === '') continue;
+    if (typeof filePath !== 'string') {
+      return {
+        valid: false,
+        error: 'Invalid local asset path in backup',
+        details: { filePath },
+      };
+    }
+
+    const match = /^\/?uploads\/trades\/([^/\\]+)$/.exec(filePath);
+    const filename = match?.[1];
+    if (!filename || !BACKUP_ASSET_FILENAME.test(filename)) {
+      return {
+        valid: false,
+        error: 'Invalid local asset path in backup',
+        details: { filePath },
+      };
+    }
+    if (!archiveAssetNames.has(filename)) missingAssets.add(filename);
+  }
+
+  if (missingAssets.size > 0) {
+    return {
+      valid: false,
+      error: 'Backup is missing referenced upload assets',
+      details: { missingAssets: [...missingAssets].sort() },
+    };
+  }
+
+  return { valid: true };
+}
+
 const IMMUTABLE_DELETE_TRIGGERS = [
   {
     name: 'trg_financial_events_prevent_delete',
@@ -377,8 +426,21 @@ export function validateRestoreZip(
   // Step 4: All tables present
   const missingTables: string[] = [];
   for (const { name, optionalInExistingBackups } of TABLE_REGISTRY) {
-    if (!zip.getEntry(`data/${name}.json`)) {
-      if (!optionalInExistingBackups) missingTables.push(name);
+    const entry = zip.getEntry(`data/${name}.json`);
+    const manifestCount = typedManifest.tables[name];
+    if (!entry) {
+      // Legacy compatibility applies only when the old archive omitted both
+      // the manifest key and its data file. A present count, especially a
+      // positive one, must always have a replacement payload.
+      if (!(optionalInExistingBackups && manifestCount === undefined)) {
+        missingTables.push(name);
+      }
+    } else if (manifestCount === undefined) {
+      return {
+        valid: false,
+        error: 'Backup manifest is missing table counts',
+        details: { table: name },
+      };
     }
   }
   if (missingTables.length > 0) {
@@ -390,6 +452,7 @@ export function validateRestoreZip(
   }
 
   // Step 5: Data file integrity — validate JSON and row counts match manifest
+  const tableRows = new Map<string, unknown[]>();
   for (const { name } of TABLE_REGISTRY) {
     const entry = zip.getEntry(`data/${name}.json`);
     if (!entry) continue; // Already checked in Step 4
@@ -414,6 +477,8 @@ export function validateRestoreZip(
       };
     }
 
+    tableRows.set(name, rows);
+
     // Verify row count matches the manifest count.
     const manifestCount = typedManifest.tables[name];
     if (typeof manifestCount === 'number' && rows.length !== manifestCount) {
@@ -424,6 +489,18 @@ export function validateRestoreZip(
       };
     }
   }
+
+  const archiveAssetNames = new Set(
+    zip.getEntries()
+      .filter((entry) => entry.entryName.startsWith(UPLOAD_PREFIX))
+      .map((entry) => entry.entryName.slice(UPLOAD_PREFIX.length))
+      .filter((name) => name !== '.gitkeep'),
+  );
+  const assetValidation = validateTradeAssetReferences(
+    tableRows.get('trade_assets') ?? [],
+    archiveAssetNames,
+  );
+  if (!assetValidation.valid) return assetValidation;
 
   // Step 6: Ledger balance validation
   const ledgerEntry = zip.getEntry('data/ledger_postings.json');
@@ -510,7 +587,7 @@ export function previewRestore(zipBuffer: Buffer): { manifest: BackupManifest } 
   return { manifest };
 }
 
-interface UploadSwap {
+export interface UploadSwap {
   swap(): void;
   rollback(): void;
   cleanup(): void;
@@ -521,8 +598,10 @@ interface UploadSwap {
  * is untouched until the database transaction is ready to commit; rollback
  * restores the previous directory if SQLite rejects the transaction.
  */
-function stageUploadSwap(zip: AdmZip): UploadSwap {
-  const uploadsDir = join(process.cwd(), 'public', 'uploads', 'trades');
+export function stageUploadSwap(
+  zip: AdmZip,
+  uploadsDir = join(process.cwd(), 'public', 'uploads', 'trades'),
+): UploadSwap {
   const uploadEntries = zip.getEntries().filter(
     (entry) => entry.entryName.startsWith(UPLOAD_PREFIX) && entry.entryName !== `${UPLOAD_PREFIX}.gitkeep`,
   );
@@ -611,6 +690,7 @@ function stageUploadSwap(zip: AdmZip): UploadSwap {
  */
 export async function executeRestore(
   zipBuffer: Buffer,
+  options: { uploadsDir?: string } = {},
 ): Promise<{
   success: true;
   snapshotPath: string;
@@ -641,7 +721,7 @@ export async function executeRestore(
   // Step 2: Stage uploaded assets without touching the live directory.
   const sqlite = getSqliteHandle();
   const zip = new AdmZip(zipBuffer);
-  const uploadSwap = stageUploadSwap(zip);
+  const uploadSwap = stageUploadSwap(zip, options.uploadsDir);
 
   let restoredTables = 0;
   let restoredRows = 0;

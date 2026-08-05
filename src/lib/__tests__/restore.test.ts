@@ -24,7 +24,7 @@
 
 process.env.DB_FILE_NAME = './.test-restore-units.db';
 
-import { mkdirSync, rmSync, mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
@@ -33,7 +33,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '@/db/schema';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from '@/lib/backup-serializer';
-import { validateRestoreZip, executeRestore, INSERT_ORDER } from '@/lib/restore';
+import { validateRestoreZip, executeRestore } from '@/lib/restore';
 
 let passed = 0;
 let failed = 0;
@@ -59,6 +59,10 @@ function createSchemaDb(dbPath: string) {
   const migrationsDir = join(process.cwd(), 'src/db/migrations');
   migrate(testDb, { migrationsFolder: migrationsDir });
   return { sqlite, db: testDb };
+}
+
+function restoreOptions(testDir: string) {
+  return { uploadsDir: join(testDir, 'uploads') };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -138,7 +142,7 @@ async function runTests() {
       assert(validation.valid === true, 'Backup ZIP validates successfully for round-trip');
 
       // Execute restore into the same DB (wipe + replace)
-      const result = await executeRestore(zipBuffer);
+      const result = await executeRestore(zipBuffer, restoreOptions(testDir));
       assert(result.success === true, 'executeRestore succeeds for round-trip');
       assert(typeof result.snapshotPath === 'string' && result.snapshotPath.length > 0, 'Pre-restore snapshot path is non-empty');
       assert(result.restoredTables > 0, `Restored ${result.restoredTables} tables`);
@@ -521,7 +525,7 @@ async function runTests() {
       migrate(db2, { migrationsFolder: migrationsDir });
 
       // Restore once
-      const result1 = await executeRestore(zipBuffer);
+      const result1 = await executeRestore(zipBuffer, restoreOptions(testDir));
       assert(result1.success === true, 'First restore succeeds');
 
       // Snapshot first restore state
@@ -530,7 +534,7 @@ async function runTests() {
       const pos1 = sqlite2.prepare('SELECT COUNT(*) AS cnt FROM account_positions').get() as { cnt: number };
 
       // Restore again (replay)
-      const result2 = await executeRestore(zipBuffer);
+      const result2 = await executeRestore(zipBuffer, restoreOptions(testDir));
       assert(result2.success === true, 'Second restore (replay) succeeds');
 
       const accts2 = sqlite2.prepare('SELECT id, name FROM accounts ORDER BY id').all() as { id: string; name: string }[];
@@ -581,7 +585,7 @@ async function runTests() {
       assert(validation.valid === true, 'Empty backup: validation passes');
 
       // Restore should succeed
-      const result = await executeRestore(zipBuffer);
+      const result = await executeRestore(zipBuffer, restoreOptions(testDir));
       assert(result.success === true, 'Empty backup: restore succeeds');
       assert(result.restoredTables >= 0, 'Empty backup: restored at least 0 tables');
 

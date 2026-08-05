@@ -33,7 +33,7 @@ vi.hoisted(() => {
 });
 
 import { describe, it, expect, vi } from 'vitest';
-import { mkdirSync, rmSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, rmSync, mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
@@ -42,7 +42,12 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '@/db/schema';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from '@/lib/backup-serializer';
-import { validateRestoreZip, executeRestore, validateRestoreUploadEntries } from '@/lib/restore';
+import {
+  validateRestoreZip,
+  executeRestore,
+  validateRestoreUploadEntries,
+  stageUploadSwap,
+} from '@/lib/restore';
 import { getSqliteHandle } from '@/db/index';
 
 vi.mock('server-only', () => ({}));
@@ -58,6 +63,10 @@ function createSchemaDb(dbPath: string) {
   const migrationsDir = join(process.cwd(), 'src/db/migrations');
   migrate(testDb, { migrationsFolder: migrationsDir });
   return { sqlite, db: testDb };
+}
+
+function restoreOptions(testDir: string) {
+  return { uploadsDir: join(testDir, 'uploads') };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -88,6 +97,32 @@ describe('Restore Pipeline', () => {
       zip.addFile('uploads/screenshot.png', Buffer.from('asset'));
 
       expect(validateRestoreUploadEntries(zip)).toEqual({ valid: true });
+    });
+
+    it('restores the previous directory on rollback and clears empty archives', () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-upload-swap-'));
+      const uploadsDir = join(testDir, 'uploads');
+      mkdirSync(uploadsDir, { recursive: true });
+      writeFileSync(join(uploadsDir, 'old.png'), 'old');
+
+      try {
+        const replacementZip = new AdmZip();
+        replacementZip.addFile('uploads/new.png', Buffer.from('new'));
+        const replacement = stageUploadSwap(replacementZip, uploadsDir);
+        replacement.swap();
+        expect(readFileSync(join(uploadsDir, 'new.png'), 'utf8')).toBe('new');
+        replacement.rollback();
+        expect(readFileSync(join(uploadsDir, 'old.png'), 'utf8')).toBe('old');
+        expect(existsSync(join(uploadsDir, 'new.png'))).toBe(false);
+        replacement.cleanup();
+
+        const empty = stageUploadSwap(new AdmZip(), uploadsDir);
+        empty.swap();
+        expect(existsSync(join(uploadsDir, 'old.png'))).toBe(false);
+        empty.cleanup();
+      } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -157,7 +192,7 @@ describe('Restore Pipeline', () => {
         const validation = validateRestoreZip(zipBuffer);
         expect(validation.valid).toBe(true);
 
-        const result = await executeRestore(zipBuffer);
+        const result = await executeRestore(zipBuffer, restoreOptions(testDir));
         expect(result.success).toBe(true);
         expect(result.snapshotPath).toBeTruthy();
 
@@ -275,6 +310,9 @@ describe('Restore Pipeline', () => {
       try {
         const backupData = await serializeBackup(testDb);
         const bakZip = new AdmZip();
+        for (const { name, optionalInExistingBackups } of TABLE_REGISTRY) {
+          if (optionalInExistingBackups) delete backupData.manifest.tables[name];
+        }
         bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
         for (const { name, optionalInExistingBackups } of TABLE_REGISTRY) {
           if (optionalInExistingBackups) continue;
@@ -283,6 +321,31 @@ describe('Restore Pipeline', () => {
         }
 
         expect(validateRestoreZip(bakZip.toBuffer())).toEqual({ valid: true });
+      } finally {
+        sqlite.close();
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects an optional table count when its data file is absent', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-optional-count-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        backupData.manifest.tables.dashboard_views = 1;
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          if (name === 'dashboard_views') continue;
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupData.tables[name] ?? []), 'utf-8'));
+        }
+
+        expect(validateRestoreZip(bakZip.toBuffer())).toMatchObject({
+          valid: false,
+          error: 'Backup is missing data files',
+        });
       } finally {
         sqlite.close();
         rmSync(testDir, { recursive: true, force: true });
@@ -312,6 +375,43 @@ describe('Restore Pipeline', () => {
       expect(validateRestoreZip(zip.toBuffer())).toMatchObject({
         valid: false,
         error: 'Invalid table counts in backup manifest',
+      });
+    });
+  });
+
+  describe('validateRestoreZip — asset references', () => {
+    it('rejects a local trade asset reference with no matching ZIP entry', () => {
+      const zip = new AdmZip();
+      const tables: Record<string, unknown[]> = {};
+      const counts: Record<string, number> = {};
+
+      for (const { name } of TABLE_REGISTRY) {
+        tables[name] = [];
+        counts[name] = 0;
+      }
+      tables.trade_assets = [{
+        id: 'asset-1',
+        tradeId: 'trade-1',
+        assetType: 'screenshot',
+        phase: 'entry',
+        filePath: '/uploads/trades/missing.png',
+        externalUrl: null,
+      }];
+      counts.trade_assets = 1;
+
+      zip.addFile('manifest.json', Buffer.from(JSON.stringify({
+        schemaVersion: getMigrationCount(),
+        backupTimestamp: new Date().toISOString(),
+        appVersion: '0.0.0',
+        tables: counts,
+      }), 'utf-8'));
+      for (const { name } of TABLE_REGISTRY) {
+        zip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(tables[name]), 'utf-8'));
+      }
+
+      expect(validateRestoreZip(zip.toBuffer())).toMatchObject({
+        valid: false,
+        error: 'Backup is missing referenced upload assets',
       });
     });
   });
@@ -555,7 +655,7 @@ describe('Restore Pipeline', () => {
         const db2 = drizzle(sqlite2, { schema });
         migrate(db2, { migrationsFolder: join(process.cwd(), 'src/db/migrations') });
 
-        const result1 = await executeRestore(zipBuffer);
+        const result1 = await executeRestore(zipBuffer, restoreOptions(testDir));
         expect(result1.success).toBe(true);
 
         const state1 = {
@@ -564,7 +664,7 @@ describe('Restore Pipeline', () => {
           posCount: (sqlite2.prepare('SELECT COUNT(*) AS c FROM account_positions').get() as { c: number }).c,
         };
 
-        const result2 = await executeRestore(zipBuffer);
+        const result2 = await executeRestore(zipBuffer, restoreOptions(testDir));
         expect(result2.success).toBe(true);
 
         const state2 = {
@@ -579,6 +679,59 @@ describe('Restore Pipeline', () => {
 
         sqlite2.close();
       } finally {
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('executeRestore — FIFO replay failures', () => {
+    it('rolls back source rows when FIFO rejects an immutable execution', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-fifo-reject-'));
+      const sourceDbPath = join(testDir, 'source', '.trading-journal', 'journal.db');
+      const { sqlite: sourceSqlite, db: sourceDb } = createSchemaDb(sourceDbPath);
+      const targetSqlite = getSqliteHandle();
+      const now = new Date().toISOString();
+
+      try {
+        sourceSqlite.prepare(`INSERT INTO accounts
+          (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'Malformed Source', 'USD', 1, 100000, ?, ?)`)
+          .run('fifo-reject-account', now, now);
+        sourceSqlite.prepare(`INSERT INTO instruments
+          (id, symbol, name, type, currency, is_active, created_at)
+          VALUES (?, 'AAPL', 'Apple Inc.', 'stock', 'USD', 1, ?)`)
+          .run('fifo-reject-instrument', now);
+        sourceSqlite.prepare(`INSERT INTO accounting_executions
+          (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
+          VALUES (?, ?, ?, 'sell', '1.00', '100.00', '0.00', ?, ?)`)
+          .run('fifo-reject-execution', 'fifo-reject-account', 'fifo-reject-instrument', now, now);
+
+        const backupData = await serializeBackup(sourceDb);
+        const zip = new AdmZip();
+        zip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest), 'utf-8'));
+        for (const { name } of TABLE_REGISTRY) {
+          zip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupData.tables[name] ?? []), 'utf-8'));
+        }
+
+        targetSqlite.prepare(`INSERT OR IGNORE INTO accounts
+          (id, name, currency, is_active, starting_balance, created_at, updated_at)
+          VALUES (?, 'Restore Sentinel', 'USD', 1, 50000, ?, ?)`)
+          .run('restore-sentinel', now, now);
+
+        await expect(
+          executeRestore(zip.toBuffer(), restoreOptions(testDir)),
+        ).rejects.toMatchObject({
+          error: 'Restore failed before commit',
+        });
+
+        expect(targetSqlite.prepare('SELECT id FROM accounts WHERE id = ?').get('restore-sentinel'))
+          .toEqual({ id: 'restore-sentinel' });
+        expect(targetSqlite.prepare('SELECT id FROM accounts WHERE id = ?').get('fifo-reject-account'))
+          .toBeUndefined();
+        expect(targetSqlite.prepare('SELECT id FROM accounting_executions WHERE id = ?').get('fifo-reject-execution'))
+          .toBeUndefined();
+      } finally {
+        sourceSqlite.close();
         rmSync(testDir, { recursive: true, force: true });
       }
     });
@@ -603,7 +756,7 @@ describe('Restore Pipeline', () => {
         const validation = validateRestoreZip(zipBuffer);
         expect(validation.valid).toBe(true);
 
-        const result = await executeRestore(zipBuffer);
+        const result = await executeRestore(zipBuffer, restoreOptions(testDir));
         expect(result.success).toBe(true);
       } finally {
         rmSync(testDir, { recursive: true, force: true });
