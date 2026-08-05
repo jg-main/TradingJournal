@@ -17,7 +17,7 @@ process.env.DB_FILE_NAME = './.test-m06-s01-t02-db';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
@@ -261,10 +261,13 @@ function doGetExport(queryAccountId?: string | null): ExportRouteResult {
     }
 
     // 1. Fetch all trades for this account
+    // Mirror of the route: D057/R027 excludes soft-deleted (scratched) trades
+    // from the export. Single where(and(...)) — chained .where() calls would
+    // replace the accountId clause in this drizzle version (MEM329).
     const allTrades = db
       .select()
       .from(schema.trades)
-      .where(eq(schema.trades.accountId, accountId))
+      .where(and(eq(schema.trades.accountId, accountId), ne(schema.trades.status, 'deleted')))
       .all();
 
     const allTradeIds = allTrades.map((t) => t.id);
@@ -978,6 +981,44 @@ cleanup();
   const result = doGetExport(accountId);
   assert(result.status === 200, 'Empty trades returns 200');
   assert(result.csv! === '\uFEFF' + CSV_COLUMNS.map((c) => c.label).join(',') + '\n', 'Header-only CSV with trailing newline');
+}
+
+// ── Test 10: Deleted trades excluded from export (R027) ────────────────
+console.log('▶ Deleted Trades Exclusion (R027)');
+
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // Real closed trade that MUST appear in the CSV
+  const t1 = seedTrade(accountId, {
+    tradeCode: 'DEL-EXCL-REAL',
+    symbol: 'AAPL',
+    direction: 'long',
+    status: 'closed',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110 });
+
+  // Soft-deleted (scratched) trade that MUST NOT leak into the CSV.
+  // Large fake P&L (+20000 if leaked) makes any leak immediately visible.
+  const t2 = seedTrade(accountId, {
+    tradeCode: 'DEL-EXCL-SCRATCHED',
+    symbol: 'MSFT',
+    direction: 'long',
+    status: 'deleted',
+  });
+  seedExecution(t2, { action: 'buy', quantity: 100, price: 200 });
+  seedExecution(t2, { action: 'sell', quantity: 100, price: 400 });
+
+  const result = doGetExport(accountId);
+  assert(result.status === 200, 'Deleted exclusion test returns 200');
+
+  const dataLines = result.csv!.split('\n').filter((l) => l.startsWith('DEL-EXCL'));
+  assert(dataLines.length === 1, 'Only the real trade appears in CSV (deleted excluded)');
+  assert(dataLines[0].includes('DEL-EXCL-REAL'), 'CSV row is the real trade');
+  assert(dataLines[0].includes('AAPL'), 'CSV row contains the real trade symbol');
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────

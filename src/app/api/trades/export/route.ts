@@ -24,7 +24,7 @@ import {
   settings,
   accounts,
 } from '@/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, and, inArray, ne } from 'drizzle-orm';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
 import { exportTradesToCsv, type ExportTradeRow } from '@/lib/export-csv';
@@ -60,10 +60,16 @@ export async function GET(request: NextRequest) {
     }
 
     // 1. Fetch all trades for this account
+    // D057/R027: soft-deleted (scratched) trades are excluded from CSV exports by
+    // default. Deleted rows are only visible in the Deleted tab audit view
+    // (GET /api/trades?status=deleted); they must never leak into exported data.
+    // The accountId filter and the deleted-status exclusion must live in a single
+    // where(and(...)) — a second chained .where() would REPLACE the first clause
+    // in this repo's drizzle version (MEM329).
     const allTrades = db
       .select()
       .from(trades)
-      .where(eq(trades.accountId, accountId))
+      .where(and(eq(trades.accountId, accountId), ne(trades.status, 'deleted')))
       .all();
 
     const allTradeIds = allTrades.map((t) => t.id);
