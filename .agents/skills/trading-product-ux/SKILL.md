@@ -1,7 +1,6 @@
 ---
-name: trading-product-ux-redesign
+name: trading-product-ux
 description: Plan, critique, implement, and verify substantial TradingJournal UX work using GSD-Pi. Use for navigation and information architecture, dashboards and workstations, trade planning and journaling flows, account and ledger workflows, review experiences, forms, tables, dialogs, settings, import/export, and other user-facing milestones. Prioritizes trader utility, workflow clarity, information density, evidence-driven visual review, and preservation of domain logic.
-compatibility: GSD-Pi, Next.js, React, TypeScript, Tailwind CSS, shadcn/Radix, react-grid-layout, ECharts, TanStack Table, SQLite, Drizzle, Vitest, Playwright
 ---
 
 # Trading Product UX
@@ -182,7 +181,9 @@ Do not hide current risk or required actions behind optional disclosure.
 
 ### Preserve domain semantics
 
-A redesign must not weaken accounting integrity, trade lifecycle semantics, execution relationships, R calculations, risk limits, review states, reconciliation, or auditability.
+UX work must not weaken accounting integrity, trade lifecycle semantics,
+execution relationships, R calculations, risk limits, review states,
+reconciliation, or auditability.
 
 ### Explicit modes
 
@@ -197,30 +198,6 @@ Unless scope explicitly changes:
 - Preserve data density.
 - Do not collapse into mobile card stacks.
 - Support desktop window resizing without sacrificing structure.
-
-## Forbidden Defaults
-
-Reject or challenge these unless the workflow clearly justifies them:
-
-- One large card per metric.
-- Oversized icon boxes.
-- Large empty headers.
-- Marketing gradients.
-- Excessive rounding and shadows.
-- Generic KPI grids.
-- Full-width low-information charts.
-- Repeated section descriptions.
-- Long pages created by stacked dashboard sections.
-- Mobile-first stacking on a desktop operational tool.
-- Hidden critical warnings.
-- Multiple selectors controlling the same domain.
-- Components independently refetching shared data.
-- Generic CRUD forms that ignore the decision sequence.
-- Modal overload.
-- Wizard flows for simple expert tasks.
-- Empty states that consume large areas.
-- Visual polish without realistic data.
-- Completion claims based only on tests.
 
 ## Evidence Requirements
 

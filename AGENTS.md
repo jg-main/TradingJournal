@@ -53,7 +53,7 @@
 
 For substantial user-facing work—navigation, dashboards, tables, forms,
 dialogs, workflows, or cross-page journeys—use the project-local
-`trading-product-ux-redesign` skill. Select the narrowest applicable mode and
+`trading-product-ux` skill. Select the narrowest applicable mode and
 load only its needed references.
 
 `docs/design-system.md` is the authoritative visual reference for product
@@ -141,8 +141,8 @@ workflow.
 - Separate live market-state refresh from historical analytics.
 - Keep business calculations outside visual components.
 - Validate persisted user configuration and saved layouts with explicit schemas.
-- During parallel redesigns, namespace new persisted state so it cannot
-  overwrite legacy preferences.
+- Namespace replacement state only when an explicitly approved coexistence
+  strategy requires it.
 
 ## Frontend Conventions
 
