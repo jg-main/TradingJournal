@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { join } from 'node:path';
 
 const requestedPort = Number.parseInt(process.env.PLAYWRIGHT_PORT ?? '', 10);
 const playwrightPort =
@@ -6,6 +7,12 @@ const playwrightPort =
     ? requestedPort
     : 31_000 + (process.pid % 1_000);
 process.env.PLAYWRIGHT_PORT = String(playwrightPort);
+
+const playwrightArtifactRoot =
+  process.env.PLAYWRIGHT_ARTIFACT_DIR ??
+  (process.env.CI ? process.cwd() : join('/tmp', `trading-journal-playwright-${process.pid}`));
+const playwrightReportDir = join(playwrightArtifactRoot, 'playwright-report');
+const playwrightTestResultsDir = join(playwrightArtifactRoot, 'test-results');
 
 // A Playwright invocation owns one disposable database. Reusing a checked-out
 // SQLite file lets immutable records from earlier runs leak into later suites
@@ -19,7 +26,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  outputDir: playwrightTestResultsDir,
+  reporter: [['list'], ['html', { open: 'never', outputFolder: playwrightReportDir }]],
   use: {
     baseURL: `http://localhost:${playwrightPort}`,
     trace: 'on-first-retry',
