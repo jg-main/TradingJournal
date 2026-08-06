@@ -2,7 +2,8 @@
 # Convenience commands for common dev tasks.
 # Run `make` or `make help` to see all targets.
 
-.PHONY: help dev dev-alt build start lint typecheck test test-all test-watch playwright playwright-ui \
+.PHONY: help dev dev-alt build start lint typecheck test test-all test-watch playwright playwright-chromium \
+        playwright-firefox playwright-webkit playwright-targeted playwright-ui \
         db-generate db-migrate db-studio seed seed-settings setup reset-db clean \
         docker-build docker-up docker-upgrade docker-down docker-restart docker-logs
 
@@ -56,9 +57,22 @@ test-watch: ## Run unit tests in watch mode
 	$(NPX) vitest --reporter verbose
 
 playwright: ## Run Playwright e2e tests (headless)
+	$(MAKE) playwright-chromium
+	$(MAKE) playwright-firefox
+	$(MAKE) playwright-webkit
+
+playwright-chromium: ## Run the full Playwright suite in Chromium
 	$(NPX) playwright test --project=chromium
+
+playwright-firefox: ## Run the full Playwright suite in Firefox
 	$(NPX) playwright test --project=firefox
+
+playwright-webkit: ## Run the full Playwright suite in WebKit
 	$(NPX) playwright test --project=webkit
+
+playwright-targeted: ## Run one spec (SPEC=e2e/foo.spec.ts, PROJECT=chromium)
+	@test -n "$(SPEC)" || (echo "Usage: make playwright-targeted SPEC=e2e/example.spec.ts [PROJECT=chromium]" && false)
+	$(NPX) playwright test "$(SPEC)" --project="$(or $(PROJECT),chromium)"
 
 playwright-ui: ## Run Playwright e2e tests in UI mode
 	$(NPX) playwright test --ui

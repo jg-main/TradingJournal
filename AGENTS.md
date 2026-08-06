@@ -129,6 +129,17 @@ an explicit coexistence and cutover decision.
 For small changes, run the narrowest relevant command first, then broaden when
 the change touches shared contracts, database schema, or cross-page workflows.
 
+### GSD verification time budget
+
+- GSD host verification has a per-command time limit. Run browser verification,
+  lint, typecheck, build, and test orchestration as separate commands; do not
+  join them into one long `&&` chain.
+- Use a targeted Playwright spec for the active workflow during task execution.
+  Run the full browser matrix separately at the slice/milestone boundary or in
+  CI, where its longer runtime is explicitly budgeted.
+- `make playwright` runs the entire suite once per configured browser. It is a
+  full-matrix command, not an appropriate default for a single GSD task.
+
 The slice-completion quality gate is:
 
 ```bash
