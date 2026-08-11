@@ -98,6 +98,7 @@ export default defineConfig({
       'src/app/api/accounts/[id]/migration/__tests__/route.test.ts',
       'src/lib/accounting/dashboard-v2.test.ts',
       'src/lib/accounting/__tests__/dashboard-journal-linked.test.ts',
+      'src/lib/accounting/__tests__/dashboard-journal-reconciliation.test.ts',
       'src/lib/accounting/__tests__/dashboard-snapshot-contract.test.ts',
       'src/lib/accounting/__tests__/freshness-policy.test.ts',
       'src/app/api/dashboard/v2/__tests__/route.test.ts',
