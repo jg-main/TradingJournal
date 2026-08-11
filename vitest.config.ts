@@ -97,6 +97,7 @@ export default defineConfig({
       'src/app/api/accounts/[id]/reconciliation/__tests__/route.test.ts',
       'src/app/api/accounts/[id]/migration/__tests__/route.test.ts',
       'src/lib/accounting/dashboard-v2.test.ts',
+      'src/lib/accounting/__tests__/dashboard-snapshot-contract.test.ts',
       'src/app/api/dashboard/v2/__tests__/route.test.ts',
       'src/app/settings/workspace/__tests__/page.test.tsx',
       'src/app/settings/risk-defaults/__tests__/page.test.tsx',
