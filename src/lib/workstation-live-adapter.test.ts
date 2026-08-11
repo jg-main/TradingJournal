@@ -190,6 +190,14 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
             status: 'fresh',
           },
           risk: { hasValidStop: true, stopPrice: 127.9, currentRiskToStop: '474.00', openTrades: 1 },
+          journalLinkedMetrics: {
+            remainingQty: 120,
+            openAvgCost: 128.4,
+            grossRealizedPnl: 1210.5,
+            netRealizedPnl: 1190.2,
+            netUnrealizedPnl: 409.7,
+            openFees: 4.3,
+          },
         },
         {
           instrumentId: 'inst-amd', symbol: 'AMD', direction: 'long',
@@ -204,6 +212,14 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
             status: 'fresh',
           },
           risk: { hasValidStop: true, stopPrice: 115.2, currentRiskToStop: '257.60', openTrades: 1 },
+          journalLinkedMetrics: {
+            remainingQty: 80,
+            openAvgCost: 112.1,
+            grossRealizedPnl: 320.75,
+            netRealizedPnl: 311.45,
+            netUnrealizedPnl: 503.1,
+            openFees: 2.5,
+          },
         },
         {
           instrumentId: 'inst-tsla', symbol: 'TSLA', direction: 'short',
@@ -218,6 +234,7 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
             status: 'stale',
           },
           risk: { hasValidStop: false, stopPrice: null, currentRiskToStop: null, openTrades: 1 },
+          journalLinkedMetrics: null,
         },
       ],
       provenance: {
@@ -234,6 +251,74 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
       accountOnlyExecutionCount: 3,
       provenance: {
         source: 'accounting_executions',
+        asOf: '2026-07-24T20:15:00.000Z',
+        computedAt: '2026-07-24T20:15:00.000Z',
+        status: 'complete',
+        presentationLabel: null,
+      },
+    },
+    journalLinked: {
+      tradeCount: 3,
+      positionCount: 2,
+      remainingQty: '200.00',
+      openAvgCost: '121.88',
+      grossRealizedPnl: '1531.25',
+      netRealizedPnl: '1501.65',
+      netUnrealizedPnl: '912.80',
+      openFees: '6.80',
+      comparisons: [
+        {
+          key: 'remainingQty',
+          description: 'Remaining open quantity',
+          dashboardValue: '200.00',
+          tradesValue: '200.00',
+          difference: '0.00',
+          status: 'match',
+        },
+        {
+          key: 'openAvgCost',
+          description: 'Average cost of remaining open quantity',
+          dashboardValue: '121.88',
+          tradesValue: '121.88',
+          difference: '0.00',
+          status: 'match',
+        },
+        {
+          key: 'grossRealizedPnl',
+          description: 'Gross realized P&L (before fees)',
+          dashboardValue: '1531.25',
+          tradesValue: '1531.25',
+          difference: '0.00',
+          status: 'match',
+        },
+        {
+          key: 'netRealizedPnl',
+          description: 'Net realized P&L (after allocated fees)',
+          dashboardValue: '1501.65',
+          tradesValue: '1501.65',
+          difference: '0.00',
+          status: 'match',
+        },
+        {
+          key: 'netUnrealizedPnl',
+          description: 'Net unrealized P&L (market movement minus open entry fees)',
+          dashboardValue: '912.80',
+          tradesValue: '912.80',
+          difference: '0.00',
+          status: 'match',
+        },
+        {
+          key: 'openFees',
+          description: 'Fees remaining on open entry lots',
+          dashboardValue: '6.80',
+          tradesValue: '6.80',
+          difference: '0.00',
+          status: 'match',
+        },
+      ],
+      provenance: {
+        source:
+          'accounting_executions + trades + trade_executions + trade_risk_snapshots + trade_stop_adjustments + fifo_lots',
         asOf: '2026-07-24T20:15:00.000Z',
         computedAt: '2026-07-24T20:15:00.000Z',
         status: 'complete',
@@ -617,6 +702,7 @@ describe('adaptPositions', () => {
           status: 'fresh',
         },
         risk: { hasValidStop: true, stopPrice: 127.9, currentRiskToStop: '474.00', openTrades: 1 },
+        journalLinkedMetrics: null,
       },
     ];
     const result = adaptPositions(v2Positions);
@@ -649,6 +735,7 @@ describe('adaptPositions', () => {
           status: 'missing',
         },
         risk: { hasValidStop: false, stopPrice: null, currentRiskToStop: null, openTrades: 0 },
+        journalLinkedMetrics: null,
       },
     ];
     const result = adaptPositions(v2Positions);
@@ -1041,6 +1128,7 @@ describe('negative tests (Q7)', () => {
           status: 'missing',
         },
         risk: { hasValidStop: false, stopPrice: null, currentRiskToStop: null, openTrades: 0 },
+        journalLinkedMetrics: null,
       };
       const result = adaptPositions([pos]);
       expect(result).toHaveLength(1);
@@ -1075,6 +1163,7 @@ describe('negative tests (Q7)', () => {
           status: 'fresh',
         },
         risk: { hasValidStop: true, stopPrice: 95, currentRiskToStop: '150.00', openTrades: 1 },
+        journalLinkedMetrics: null,
       }];
       const copy = JSON.parse(JSON.stringify(input));
       adaptPositions(input);

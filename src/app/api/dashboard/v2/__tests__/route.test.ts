@@ -437,10 +437,22 @@ describe('GET /api/dashboard/v2', () => {
     expect(body).toHaveProperty('metrics');
     expect(body).toHaveProperty('valuation');
     expect(body).toHaveProperty('journalAttribution');
+    expect(body).toHaveProperty('journalLinked');
     expect(body).toHaveProperty('reconciliation');
     expect(body).toHaveProperty('riskSummary');
     expect(body).toHaveProperty('integrity');
     expect(body).toHaveProperty('computedAt');
+
+    // Journal-linked section structure: aggregate + provenance + comparisons
+    const journalLinked = body.journalLinked as Record<string, unknown>;
+    expect(typeof journalLinked.tradeCount).toBe('number');
+    expect(typeof journalLinked.positionCount).toBe('number');
+    expect(typeof journalLinked.remainingQty).toBe('string');
+    expect(Array.isArray(journalLinked.comparisons)).toBe(true);
+    const jlProvenance = journalLinked.provenance as Record<string, unknown>;
+    expect(['complete', 'partial', 'unavailable']).toContain(jlProvenance.status);
+    expect(jlProvenance.computedAt).toBe(body.computedAt);
+    expect(jlProvenance.presentationLabel).toBeNull();
 
     // Snapshot envelope: deterministic snapshotId + scope declarations
     expect(typeof body.snapshotId).toBe('string');
@@ -700,18 +712,19 @@ describe('GET /api/dashboard/v2', () => {
 
     const body = result.body as Record<string, unknown>;
 
-    // All 10 top-level keys should be present (7 sections + snapshotId, scopes, computedAt)
+    // All 11 top-level keys should be present (8 sections + snapshotId, scopes, computedAt)
     expect(body).toHaveProperty('snapshotId');
     expect(body).toHaveProperty('account');
     expect(body).toHaveProperty('scopes');
     expect(body).toHaveProperty('metrics');
     expect(body).toHaveProperty('valuation');
     expect(body).toHaveProperty('journalAttribution');
+    expect(body).toHaveProperty('journalLinked');
     expect(body).toHaveProperty('reconciliation');
     expect(body).toHaveProperty('riskSummary');
     expect(body).toHaveProperty('integrity');
     expect(body).toHaveProperty('computedAt');
-    expect(Object.keys(body).length).toBe(10);
+    expect(Object.keys(body).length).toBe(11);
   });
 
   // ── Field combinations (MTM polling and must-have coverage) ─────────
@@ -781,18 +794,19 @@ describe('GET /api/dashboard/v2', () => {
 
     const body = result.body as Record<string, unknown>;
 
-    // All 10 top-level keys should be present (7 sections + snapshotId, scopes, computedAt)
+    // All 11 top-level keys should be present (8 sections + snapshotId, scopes, computedAt)
     expect(body).toHaveProperty('snapshotId');
     expect(body).toHaveProperty('account');
     expect(body).toHaveProperty('scopes');
     expect(body).toHaveProperty('metrics');
     expect(body).toHaveProperty('valuation');
     expect(body).toHaveProperty('journalAttribution');
+    expect(body).toHaveProperty('journalLinked');
     expect(body).toHaveProperty('reconciliation');
     expect(body).toHaveProperty('riskSummary');
     expect(body).toHaveProperty('integrity');
     expect(body).toHaveProperty('computedAt');
-    expect(Object.keys(body).length).toBe(10);
+    expect(Object.keys(body).length).toBe(11);
 
     // Validate structural equivalence with full response
     const account = body.account as Record<string, unknown>;

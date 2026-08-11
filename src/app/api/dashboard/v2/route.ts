@@ -86,8 +86,10 @@ function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | 
  * Return one timestamped, typed current-state snapshot for one account.
  * The snapshot carries a deterministic snapshotId, scope metadata declaring
  * what each section represents, per-position attribution and mark
- * provenance, completeness state for price-derived aggregates, and risk
- * state with stop coverage. Unknown values are null, never '0.00'.
+ * provenance, completeness state for price-derived aggregates, risk
+ * state with stop coverage, and journal-linked per-trade metrics with a
+ * dashboard-vs-Trades reconciliation section. Unknown values are null,
+ * never '0.00'.
  * The envelope fields (snapshotId, scopes, computedAt) are always present.
  *
  * Query parameters:
@@ -97,8 +99,8 @@ function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | 
  *   for a fresh valuation mark (default 1440 = 24h).
  * - fields (comma-separated, optional): subset of sections to return.
  *   Valid values: account, metrics, valuation, journalAttribution,
- *   reconciliation, riskSummary, integrity. When omitted, the full
- *   response is returned (backward compatible).
+ *   journalLinked, reconciliation, riskSummary, integrity. When omitted,
+ *   the full response is returned (backward compatible).
  *
  * Responses:
  * - 200: Dashboard V2 current-state snapshot (see DashboardV2Response)
