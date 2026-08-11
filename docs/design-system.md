@@ -14,6 +14,7 @@ and cross-referenced with, the actual implementation:
 
 | Concern | Authoritative source |
 |---|---|
+| Product role and workflow priority | `PRODUCT.md` |
 | CSS custom properties (light/dark) | `src/app/globals.css` — `:root` (light), `.dark`, and `@theme inline` blocks |
 | Chart colors (ECharts-consumable) | `src/lib/chart-palette.ts` — `chartTokens`, `chartPalette`, `deriveChartPalette`, `withAlpha`, `convertOklchToHex` |
 | Navigation structure | `src/components/sidebar/nav-config.ts` — `NAV_SECTIONS` |
@@ -507,6 +508,52 @@ identical to a destructive-delete action.
 
 ---
 
+## Dashboard workstation standard
+
+`PRODUCT.md` defines the dashboard's risk-first job. This section turns that
+job into a visual and data-state contract: first screen answers what is open,
+what is at risk, and whether the displayed market state is trustworthy. Period
+performance and analytical widgets are the second layer.
+
+**Default composition.** The normal view is a curated, stable workstation, not
+a wall of equally weighted KPI cards. Current risk, open positions, unrealized
+P&L/data completeness, account state, and material warnings appear before
+retrospective analytics. Saved views may rearrange the workstation for a
+specific workflow; drag/resize affordances appear only in explicit
+customization mode.
+
+**Readability contract.** Review the dashboard at `2560 × 1440` with normal
+browser zoom and at a `1920 × 1200` laptop using 125% display scaling
+(approximately `1536 × 960` effective CSS pixels). The first screen must be
+comfortably readable without zooming the browser. `1440 × 900` may reveal
+structural breakage, but it is not a substitute for those visual-acceptance
+viewports.
+
+- Dashboard decision labels and table headers use `--font-size-sm` (12px) or
+  larger. `--font-size-xs` is for secondary metadata, status chips, and
+  timestamps—not labels needed to interpret risk or P&L.
+- Table cells use `--font-size-md` (13px) or larger and the existing
+  `--density-row-sm`/`--density-row-md` row scale. Do not compress dashboard
+  rows below the system density tokens to fit more panels.
+- Current-risk and primary financial values use `--font-size-lg` (16px) to
+  `--font-size-xl` (20px), with tabular numerals. Reserve `--font-size-3xl`
+  for a genuinely dominant KPI, not every number.
+
+**Market-data state is part of the value.** Every price-derived dashboard
+total carries the account and period scope that determines it and exposes its
+market-data state beside the value. Use the existing semantic hierarchy:
+
+- current and complete: normal financial treatment;
+- stale: an explicit `--warning` state with as-of time;
+- partial: an explicit `--missing` state and affected-position count;
+- unavailable: an em dash or clear awaiting-price state, never `$0.00`.
+
+Expose a known price source in that panel or its immediate detail. Do not let
+a global freshness indicator make an individual P&L total appear current when
+one of its positions is stale, unpriced, or otherwise incomplete.
+
+---
+
 ## Navigation and shell
 
 **Navigation model.** The shell organizes routes by user job
@@ -768,6 +815,10 @@ this document.
    buttons, tables, dialogs, or tabs per page. A greenfield surface may add
    product-specific primitives only when the existing set cannot express the
    approved interaction — document the limitation first.
+6. **For dashboards, apply the workstation standard.** The risk-first
+   hierarchy, normal-zoom readability, explicit customization mode, and
+   market-data-state treatment above are acceptance criteria, not decorative
+   preferences.
 
 ### Extending the token system
 
@@ -821,3 +872,6 @@ vice versa) fails the suite.
   dialog/sheet backdrops.
 - **D056** — `design-system-docs.test.ts` guards this document against drift
   from the token code.
+- **D061** — dashboard direction prioritizes live risk and open positions,
+  requires normal-zoom readability on the user's desktop environments, and
+  makes data freshness part of displayed P&L meaning.

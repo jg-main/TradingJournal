@@ -66,7 +66,7 @@ task needs. A skill supplies technique; it does not override this file,
 
 | Situation | Use | Also consider |
 |---|---|---|
-| Substantial UX work on navigation, dashboards, tables, forms, dialogs, or cross-page journeys | `trading-product-ux` | `accessibility`, `web-design-guidelines` |
+| Substantial UX work on navigation, dashboards, tables, forms, dialogs, or cross-page journeys | `trading-product-ux` — use `dashboard-workstation` for dashboard direction and `visual-critique` before changing an existing dashboard | `accessibility`, `web-design-guidelines` |
 | React components, Next.js routes, client fetching, charts, or UI-affecting handlers | `react-best-practices` | `accessibility`, `lint` |
 | Implementing an approved visual direction or focused visual refinement | `frontend-design` | `make-interfaces-feel-better`, `accessibility` |
 | API route handlers, Drizzle schema, migrations, backup/export, import normalization, persisted contracts | `api-design` | `tdd`, `test`, `review` |
@@ -106,6 +106,11 @@ implementation technique only; where they disagree with `trading-product-ux` or
 identity, tokens, density, primitives, chart semantics, and prohibited
 patterns. `src/app/globals.css` and `src/lib/chart-palette.ts` are the
 authoritative token implementations. Do not create a competing design guide.
+
+For dashboard work, `PRODUCT.md` defines the risk-first product role and
+`docs/design-system.md` defines the workstation readability and data-state
+rules. General visual skills can improve implementation craft, but must not
+replace these priorities or invent a separate dashboard direction.
 
 The current application design is established. Treat `implementation` as the
 normal mode; use redesign modes only when a task explicitly changes workflow

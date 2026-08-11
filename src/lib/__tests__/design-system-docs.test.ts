@@ -11,7 +11,8 @@
  *
  * Contract groups:
  *   1. Document inventory — docs/design-system.md exists, is non-trivial, and
- *      declares the 15 canonical top-level sections (D053 content areas).
+ *      declares the 16 canonical top-level sections (D053 content areas plus
+ *      the D061 dashboard workstation standard).
  *   2. Required content — identity phrases, financial conventions, the
  *      chart-palette API surface, all 14 normalized primitives, and all 9
  *      dashboard chart categories are present.
@@ -128,6 +129,7 @@ const REQUIRED_SECTIONS = [
   '## Radius and elevation',
   '## Financial number conventions',
   '## Warning-state hierarchy',
+  '## Dashboard workstation standard',
   '## Navigation and shell',
   '## Component usage guidance',
   '## Chart palette and categories',
@@ -163,6 +165,7 @@ const REQUIRED_PHRASES = [
   'D054',
   'D055',
   'D056',
+  'D061',
 ] as const;
 
 /** All 14 normalized primitives, referenced by their component source file. */
@@ -199,7 +202,7 @@ const CHART_CATEGORY_IDS = [
 /* ── 1. Document inventory ──────────────────────────────────────────────── */
 
 describe('design-system doc inventory', () => {
-  it('declares all 15 canonical top-level sections', () => {
+  it('declares all 16 canonical top-level sections', () => {
     for (const heading of REQUIRED_SECTIONS) {
       expect(docSource, `missing section heading "${heading}"`).toContain(heading);
     }

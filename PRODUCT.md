@@ -14,6 +14,27 @@ Context: focused, analytical, often after a session of active trading. They want
 
 A local-first trading journal that helps traders track ideas, plans, executions, risk, reviews, account activity, and performance dashboards — all on their own machine. Success means the trader journals consistently, spots patterns in their behavior, and improves their process over time.
 
+## Dashboard Role
+
+The dashboard is the live workstation. Its default first-screen job is to
+answer, without browser zoom or configuration: **what is open, what is at
+risk, and whether the displayed market state is trustworthy enough to act on.**
+
+Open positions, current risk, unrealized P&L, account state, and material
+warnings therefore take precedence over period performance. Performance review
+is the second layer: it should be immediately available, but must not displace
+live risk from the initial view.
+
+The default workstation is curated and stable. Traders may create or select
+saved views to arrange the information for a specific workflow, but layout
+editing is an explicit mode rather than the default experience. The dashboard
+must not become a blank canvas or a collection of miniature widgets.
+
+Price-derived values earn trust by making their scope and data state legible.
+The interface must distinguish a current, complete value from a stale, partial,
+or unavailable one; it must not silently make incomplete market data look like
+valid P&L.
+
 ## Brand Personality
 
 **Sharp, Disciplined, Analytical.** Not warm, not cold — precise. The interface commands respect through clarity and restraint. Every pixel has a job. The trader trusts it because it never surprises them.
@@ -37,6 +58,11 @@ Voice: direct, minimal, professional. No metaphor, no personality sign-off. Data
 4. **Progress over performance.** The journal is for learning, not ego. Process grades and mistake tracking are presented plainly — framed as data for improvement, not judgment. Empty states encourage without coddling.
 
 5. **Local-first, trust-first.** The data lives on the trader's machine. The interface should feel equally solid — snappy navigation, instant saves, no spinners where local data suffices.
+
+6. **Current state before retrospective.** The dashboard resolves immediate
+   position and risk decisions before it presents historical analysis. A
+   number is only actionable when its account, period, and market-data state
+   are understandable where it is shown.
 
 ## Accessibility & Inclusion
 
