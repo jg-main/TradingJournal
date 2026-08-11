@@ -79,6 +79,10 @@ const MOCK_DASHBOARD: DashboardV2Response = {
     fresh: 2,
     stale: 0,
     missing: 0,
+    state: 'complete',
+    coveragePct: '100.00',
+    presentationLabel: null,
+    markedSubsetPnl: '120.00',
     positions: [
       {
         instrumentId: 'inst-1',
@@ -125,6 +129,14 @@ const MOCK_DASHBOARD: DashboardV2Response = {
     portfolioHeat: '2.86',
     missingStops: 0,
     positionsWithStop: 2,
+    openRiskToStop: '300.00',
+    stopCoverage: {
+      openTrades: 2,
+      withStop: 2,
+      withoutStop: 0,
+      state: 'complete',
+      presentationLabel: null,
+    },
   },
   computedAt: new Date().toISOString(),
 };
@@ -264,11 +276,6 @@ describe('DashboardV2', () => {
     await waitFor(() => {
       expect(screen.getByText('critical')).toBeTruthy();
     });
-
-
-  });
-
-
   });
 
   // ── Valuation completeness ───────────────────────────────────────
@@ -318,6 +325,10 @@ describe('DashboardV2', () => {
         fresh: 0,
         stale: 0,
         missing: 1,
+        state: 'unavailable',
+        coveragePct: '0.00',
+        presentationLabel: '— Unavailable — 1 unpriced',
+        markedSubsetPnl: null,
         positions: [
           {
             instrumentId: 'inst-3',
@@ -361,6 +372,108 @@ describe('DashboardV2', () => {
 
     // Missing count should show 1
     expect(screen.getByText('Missing: 1')).toBeTruthy();
+  });
+
+  // ── Partial valuation: presentationLabel is the primary value ───────
+
+  it('renders presentationLabel instead of a signed total when valuation is partial', async () => {
+    // One unpriced position of three: the API sends presentationLabel
+    // '— Partial — 1 unpriced' and markedSubsetPnl for the 2 fresh marks.
+    // The UI must render the label as the primary Open P&L value and never
+    // a signed total (the +$10.94-style partial-total defect).
+    const partialDashboard: DashboardV2Response = {
+      ...MOCK_DASHBOARD,
+      metrics: {
+        ...MOCK_DASHBOARD.metrics,
+        unrealizedPnl: '120.00',
+      },
+      valuation: {
+        positionsTotal: 3,
+        fresh: 2,
+        stale: 0,
+        missing: 1,
+        state: 'partial',
+        coveragePct: '66.67',
+        presentationLabel: '— Partial — 1 unpriced',
+        markedSubsetPnl: '120.00',
+        positions: [
+          {
+            instrumentId: 'inst-1',
+            symbol: 'AAPL',
+            direction: 'long',
+            quantity: '10.00',
+            averageCost: '150.00',
+            markStatus: 'fresh',
+            markPrice: '152.00',
+            markedValue: '1520.00',
+            unrealizedPnl: '20.00',
+            markTimestamp: new Date().toISOString(),
+            markAgeMinutes: 5,
+          },
+          {
+            instrumentId: 'inst-2',
+            symbol: 'MSFT',
+            direction: 'long',
+            quantity: '20.00',
+            averageCost: '350.00',
+            markStatus: 'fresh',
+            markPrice: '355.00',
+            markedValue: '7100.00',
+            unrealizedPnl: '100.00',
+            markTimestamp: new Date().toISOString(),
+            markAgeMinutes: 5,
+          },
+          {
+            instrumentId: 'inst-3',
+            symbol: 'GOOGL',
+            direction: 'long',
+            quantity: '5.00',
+            averageCost: '180.00',
+            markStatus: 'missing',
+            markPrice: null,
+            markedValue: null,
+            unrealizedPnl: null,
+            markTimestamp: null,
+            markAgeMinutes: null,
+          },
+        ],
+      },
+    };
+
+    let callCount = 0;
+    global.fetch = vi.fn(() => {
+      callCount++;
+      if (callCount <= 1) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(MOCK_ACCOUNTS),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(partialDashboard),
+      } as Response);
+    });
+
+    render(<TooltipProvider><DashboardV2 /></TooltipProvider>);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('— Partial — 1 unpriced').length).toBeGreaterThan(0);
+    });
+
+    // The Unrealized P&L card's primary value must be the presentationLabel,
+    // never a signed currency total (the +$10.94-style partial-total defect).
+    const unrealizedLabel = screen.getByText('Unrealized P&L');
+    const cardBody = unrealizedLabel.parentElement;
+    const valueEl = cardBody?.querySelector('p');
+    expect(valueEl?.textContent).toContain('— Partial — 1 unpriced');
+    expect(valueEl?.textContent).not.toMatch(/\$/);
+
+    // The API-classified completeness state badge is surfaced.
+    expect(screen.getByText('Partial')).toBeTruthy();
+    expect(screen.getByText(/Known over marked subset/)).toBeTruthy();
   });
 
   // ── Journal attribution labels ───────────────────────────────────
@@ -453,3 +566,4 @@ describe('DashboardV2', () => {
       expect(fetchCount).toBeGreaterThan(callsBefore);
     });
   });
+});

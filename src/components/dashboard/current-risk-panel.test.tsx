@@ -35,6 +35,14 @@ const SAMPLE_RISK_SUMMARY: RiskSummary = {
   portfolioHeat: '0.085',
   missingStops: 2,
   positionsWithStop: 5,
+  openRiskToStop: '1500.00',
+  stopCoverage: {
+    openTrades: 7,
+    withStop: 5,
+    withoutStop: 2,
+    state: 'partial',
+    presentationLabel: 'Incomplete — 2 without a valid stop',
+  },
 };
 
 const SAMPLE_VALUATION: ValuationCompleteness = {
@@ -42,6 +50,10 @@ const SAMPLE_VALUATION: ValuationCompleteness = {
   fresh: 4,
   stale: 2,
   missing: 1,
+  state: 'partial',
+  coveragePct: '57.14',
+  presentationLabel: '— Partial — 3 unpriced',
+  markedSubsetPnl: '500.00',
   positions: [
     {
       instrumentId: 'AAPL',
@@ -92,6 +104,14 @@ const NEGATIVE_RISK_SUMMARY: RiskSummary = {
   portfolioHeat: '0.085',
   missingStops: 2,
   positionsWithStop: 5,
+  openRiskToStop: '1500.00',
+  stopCoverage: {
+    openTrades: 7,
+    withStop: 5,
+    withoutStop: 2,
+    state: 'partial',
+    presentationLabel: 'Incomplete — 2 without a valid stop',
+  },
 };
 
 /** RiskSummary with zero values */
@@ -101,6 +121,14 @@ const ZERO_RISK_SUMMARY: RiskSummary = {
   portfolioHeat: null,
   missingStops: 0,
   positionsWithStop: 0,
+  openRiskToStop: '0.00',
+  stopCoverage: {
+    openTrades: 0,
+    withStop: 0,
+    withoutStop: 0,
+    state: 'complete',
+    presentationLabel: null,
+  },
 };
 
 const ZERO_VALUATION: ValuationCompleteness = {
@@ -108,6 +136,10 @@ const ZERO_VALUATION: ValuationCompleteness = {
   fresh: 0,
   stale: 0,
   missing: 0,
+  state: 'complete',
+  coveragePct: null,
+  presentationLabel: null,
+  markedSubsetPnl: null,
   positions: [],
 };
 

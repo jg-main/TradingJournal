@@ -25,6 +25,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
+import { cn } from '@/lib/utils';
 import {
   Tooltip,
   TooltipContent,
@@ -37,13 +38,23 @@ import {
 
 export type IntegrityStatus = 'healthy' | 'warning' | 'critical' | 'unknown';
 
+/** Freshness classification of one mark — produced by the central policy, never by the UI. */
+export type MarkStatus = 'fresh' | 'stale' | 'missing';
+
+/** Completeness of a price-derived aggregate — produced by the central policy. */
+export type SnapshotCompletenessState =
+  | 'complete'
+  | 'partial'
+  | 'stale'
+  | 'unavailable';
+
 export interface DashboardPositionSummary {
   instrumentId: string;
   symbol: string;
   direction: string | null;
   quantity: string;
   averageCost: string;
-  markStatus: string;
+  markStatus: MarkStatus;
   markPrice: string | null;
   markedValue: string | null;
   unrealizedPnl: string | null;
@@ -56,21 +67,68 @@ export interface ValuationCompleteness {
   fresh: number;
   stale: number;
   missing: number;
+  /** Completeness state of every price-derived aggregate in this snapshot. */
+  state: SnapshotCompletenessState;
+  /** Freshness coverage as a percentage (canonical, already ×100), or null when no positions. */
+  coveragePct: string | null;
+  /**
+   * Qualified display hint the UI renders instead of a signed total:
+   * '— Partial — N unpriced' / '— Unavailable — N unpriced', or null when
+   * the aggregate is safe to present as-is (complete or stale).
+   */
+  presentationLabel: string | null;
+  /**
+   * Known P&L over the freshly marked subset (M of N coverage), or null
+   * when no position has a fresh mark. Subordinate display only — never
+   * presented as Open P&L.
+   */
+  markedSubsetPnl: string | null;
   positions: DashboardPositionSummary[];
+}
+
+/** Stop coverage across open journal trades. */
+export interface StopCoverage {
+  /** Number of open trades. */
+  openTrades: number;
+  /** Number of open trades with a valid planned stop. */
+  withStop: number;
+  /** Number of open trades without a valid planned stop. */
+  withoutStop: number;
+  /** 'complete' when every open trade has a stop (or none exist), else 'partial'. */
+  state: SnapshotCompletenessState;
+  /**
+   * Qualified display hint: 'Incomplete — N without a valid stop' when
+   * coverage is 'partial', else null. The UI renders this instead of a
+   * deceptively complete Open risk / Portfolio heat numeric total.
+   */
+  presentationLabel: string | null;
 }
 
 /** Risk summary derived from open positions and journal trades. */
 export interface RiskSummary {
-  /** Sum of unrealizedPnl across all open positions (canonical decimal). */
-  openPnl: string;
-  /** Sum of initialRiskAmount from open journal trades (canonical decimal). */
-  openRisk: string;
+  /**
+   * Sum of unrealizedPnl across all open positions, or null when any position
+   * lacks a fresh mark — a partial sum is never presented as complete.
+   */
+  openPnl: string | null;
+  /**
+   * Sum of initialRiskAmount from open journal trades, or null when some open
+   * trades have no risk snapshot (partial data).
+   */
+  openRisk: string | null;
   /** openRisk / NAV * 100 as a percentage (canonical decimal), or null when NAV is zero. */
   portfolioHeat: string | null;
   /** Number of open trades without a planned_stop. */
   missingStops: number;
   /** Number of open trades with a planned_stop set. */
   positionsWithStop: number;
+  /**
+   * Sum of per-position risk-to-stop, or null when any open position cannot be
+   * evaluated (missing mark or missing valid stop).
+   */
+  openRiskToStop: string | null;
+  /** Stop coverage completeness across open journal trades. */
+  stopCoverage: StopCoverage;
 }
 
 export interface JournalAttribution {
@@ -82,15 +140,15 @@ export interface JournalAttribution {
 export interface DashboardV2Response {
   account: { id: string; name: string; currency: string };
   metrics: {
-    cash: string;
-    nav: string;
-    markedPositions: string;
-    realizedPnl: string;
-    unrealizedPnl: string;
-    totalPnl: string;
-    realizedFees: string;
-    grossExposure: string;
-    netExposure: string;
+    cash: string | null;
+    nav: string | null;
+    markedPositions: string | null;
+    realizedPnl: string | null;
+    unrealizedPnl: string | null;
+    totalPnl: string | null;
+    realizedFees: string | null;
+    grossExposure: string | null;
+    netExposure: string | null;
     drawdown: string | null;
     drawdownPct: string | null;
     modifiedDietzReturn: string | null;
@@ -225,7 +283,10 @@ function MetricCard({
           {icon}
         </div>
         <p
-          className={`text-2xl font-bold tabular-nums text-foreground ${valueClassName ?? ''}`}
+          className={cn(
+            'text-2xl font-bold tabular-nums text-foreground',
+            valueClassName,
+          )}
         >
           {value}
         </p>
@@ -291,6 +352,38 @@ function ValuationBadge({ status }: { status: string }) {
       {status === 'fresh' ? 'Fresh' : status === 'stale' ? 'Stale' : 'Missing'}
     </Badge>
   );
+}
+
+/** Human label for an aggregate completeness state — read from the API, never re-derived. */
+const VALUATION_STATE_LABEL: Record<SnapshotCompletenessState, string> = {
+  complete: 'Complete',
+  partial: 'Partial',
+  stale: 'Stale',
+  unavailable: 'Unavailable',
+};
+
+const VALUATION_STATE_CLASS: Record<SnapshotCompletenessState, string> = {
+  complete: 'border-positive/30 bg-positive/10 text-positive',
+  partial: 'border-warning/30 bg-warning/10 text-warning',
+  stale: 'border-border bg-muted text-muted-foreground',
+  unavailable: 'border-destructive/30 bg-destructive/10 text-destructive',
+};
+
+/** Badge showing the API-classified completeness state of the snapshot's aggregates. */
+function ValuationStateBadge({ state }: { state: SnapshotCompletenessState }) {
+  return (
+    <Badge variant="outline" className={VALUATION_STATE_CLASS[state]}>
+      {VALUATION_STATE_LABEL[state]}
+    </Badge>
+  );
+}
+
+/** Format a coverage percentage already expressed ×100 (canonical decimal * 100). */
+function formatCoveragePct(v: string | null | undefined): string {
+  if (v === null || v === undefined) return '--';
+  const n = parseFloat(v);
+  if (isNaN(n)) return '--';
+  return `${n.toFixed(1)}%`;
 }
 
 /** Direction icon helper */
@@ -459,6 +552,11 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
   const journalAttribution = dashboard?.journalAttribution;
   const integrity = dashboard?.integrity;
 
+  // The primary Open P&L value is the API's qualified display hint whenever
+  // the aggregate is partial or unavailable — a signed total is never
+  // rendered for an incomplete aggregate.
+  const openPnlPresentationLabel = valuation?.presentationLabel ?? null;
+
   // ── Render ───────────────────────────────────────────────────────────
 
   return (
@@ -582,16 +680,30 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
             <MetricCard
               icon={<TrendingUp className="size-4 text-foreground" />}
               iconBg={
-                metrics.unrealizedPnl !== null
-                  ? parseFloat(metrics.unrealizedPnl) >= 0
-                    ? 'bg-positive/10'
-                    : 'bg-negative/10'
-                  : 'bg-muted'
+                openPnlPresentationLabel
+                  ? 'bg-muted'
+                  : metrics.unrealizedPnl !== null
+                    ? parseFloat(metrics.unrealizedPnl) >= 0
+                      ? 'bg-positive/10'
+                      : 'bg-negative/10'
+                    : 'bg-muted'
               }
-              value={formatCurrencySigned(metrics.unrealizedPnl)}
-              valueClassName={pnlColorValue(metrics.unrealizedPnl)}
+              value={
+                openPnlPresentationLabel ??
+                formatCurrencySigned(metrics.unrealizedPnl)
+              }
+              valueClassName={
+                openPnlPresentationLabel
+                  ? 'text-lg leading-tight'
+                  : pnlColorValue(metrics.unrealizedPnl)
+              }
               label="Unrealized P&amp;L"
-              tooltip="Unrealized profit and loss on open positions at latest marks."
+              tooltip={
+                openPnlPresentationLabel
+                  ? `Open P&L is not a complete total (${openPnlPresentationLabel}). ` +
+                    `Known P&L over the freshly marked subset: ${formatCurrencySigned(valuation?.markedSubsetPnl)}.`
+                  : 'Unrealized profit and loss on open positions at latest marks.'
+              }
             />
 
             {/* Realized Fees */}
@@ -656,9 +768,32 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
           {/* Valuation completeness section */}
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle>Valuation Completeness</CardTitle>
+              <div className="flex w-full items-center justify-between gap-2">
+                <CardTitle>Valuation Completeness</CardTitle>
+                {valuation?.state && (
+                  <ValuationStateBadge state={valuation.state} />
+                )}
+              </div>
             </CardHeader>
             <CardContent>
+              {/* Qualified display hint: never present a partial sum as a complete total */}
+              {valuation?.presentationLabel && (
+                <div
+                  role="status"
+                  className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
+                >
+                  <span className="font-medium text-warning">
+                    {valuation.presentationLabel}
+                  </span>
+                  {valuation.markedSubsetPnl !== null && (
+                    <span className="text-muted-foreground">
+                      Known over marked subset:{' '}
+                      {formatCurrencySigned(valuation.markedSubsetPnl)}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="mb-4 flex flex-wrap gap-4">
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">
@@ -676,6 +811,14 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
                   <Badge variant="destructive">
                     Missing: {valuation?.missing ?? '--'}
                   </Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Coverage:
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums text-foreground">
+                    {formatCoveragePct(valuation?.coveragePct)}
+                  </span>
                 </div>
               </div>
 
@@ -747,7 +890,18 @@ export function DashboardV2({ initialAccountId }: DashboardV2Props) {
                               : '--'}
                           </td>
                           <td className="py-2">
-                            <ValuationBadge status={pos.markStatus} />
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span tabIndex={0}>
+                                  <ValuationBadge status={pos.markStatus} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="max-w-56 text-xs">
+                                {pos.markStatus === 'missing'
+                                  ? 'No mark available for this position — classified by the central freshness policy.'
+                                  : `Mark as of ${pos.markTimestamp ? new Date(pos.markTimestamp).toLocaleString() : 'unknown'}${pos.markAgeMinutes !== null ? ` · ${pos.markAgeMinutes} min old` : ''} — classified by the central freshness policy.`}
+                              </TooltipContent>
+                            </Tooltip>
                           </td>
                         </tr>
                       ))}

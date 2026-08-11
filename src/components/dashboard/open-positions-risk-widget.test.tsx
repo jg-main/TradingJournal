@@ -98,6 +98,10 @@ const SAMPLE_VALUATION: ValuationCompleteness = {
   fresh: 3,
   stale: 1,
   missing: 1,
+  state: 'partial',
+  coveragePct: '60.00',
+  presentationLabel: '— Partial — 2 unpriced',
+  markedSubsetPnl: '700.00',
   positions: [
     SAMPLE_POSITION,
     NEGATIVE_POSITION,
@@ -112,6 +116,10 @@ const EMPTY_VALUATION: ValuationCompleteness = {
   fresh: 0,
   stale: 0,
   missing: 0,
+  state: 'complete',
+  coveragePct: null,
+  presentationLabel: null,
+  markedSubsetPnl: null,
   positions: [],
 };
 
@@ -120,6 +128,10 @@ const VALUATION_ZERO_ENTRY_POSITIONS: ValuationCompleteness = {
   fresh: 0,
   stale: 0,
   missing: 0,
+  state: 'complete',
+  coveragePct: null,
+  presentationLabel: null,
+  markedSubsetPnl: null,
   positions: [],
 };
 
@@ -129,6 +141,14 @@ const SAMPLE_RISK: RiskSummary = {
   portfolioHeat: '3.5',
   missingStops: 1,
   positionsWithStop: 4,
+  openRiskToStop: '980.00',
+  stopCoverage: {
+    openTrades: 5,
+    withStop: 4,
+    withoutStop: 1,
+    state: 'partial',
+    presentationLabel: 'Incomplete — 1 without a valid stop',
+  },
 };
 
 const ZERO_MISSING_RISK: RiskSummary = {
@@ -137,6 +157,14 @@ const ZERO_MISSING_RISK: RiskSummary = {
   portfolioHeat: '2.1',
   missingStops: 0,
   positionsWithStop: 5,
+  openRiskToStop: '0.00',
+  stopCoverage: {
+    openTrades: 5,
+    withStop: 5,
+    withoutStop: 0,
+    state: 'complete',
+    presentationLabel: null,
+  },
 };
 
 const NULL_HEAT_RISK: RiskSummary = {
@@ -145,6 +173,14 @@ const NULL_HEAT_RISK: RiskSummary = {
   portfolioHeat: null,
   missingStops: 0,
   positionsWithStop: 0,
+  openRiskToStop: '0.00',
+  stopCoverage: {
+    openTrades: 0,
+    withStop: 0,
+    withoutStop: 0,
+    state: 'complete',
+    presentationLabel: null,
+  },
 };
 
 const NEGATIVE_PNL_RISK: RiskSummary = {
@@ -153,6 +189,14 @@ const NEGATIVE_PNL_RISK: RiskSummary = {
   portfolioHeat: '2.8',
   missingStops: 2,
   positionsWithStop: 3,
+  openRiskToStop: '620.00',
+  stopCoverage: {
+    openTrades: 5,
+    withStop: 3,
+    withoutStop: 2,
+    state: 'partial',
+    presentationLabel: 'Incomplete — 2 without a valid stop',
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

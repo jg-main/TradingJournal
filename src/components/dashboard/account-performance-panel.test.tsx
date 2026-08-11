@@ -41,6 +41,10 @@ const SAMPLE_DATA: DashboardV2Response = {
     fresh: 2,
     stale: 0,
     missing: 0,
+    state: 'complete',
+    coveragePct: '100.00',
+    presentationLabel: null,
+    markedSubsetPnl: '42.50',
     positions: [],
   },
   journalAttribution: {
@@ -58,6 +62,14 @@ const SAMPLE_DATA: DashboardV2Response = {
     portfolioHeat: '5.79',
     missingStops: 0,
     positionsWithStop: 2,
+    openRiskToStop: '800.00',
+    stopCoverage: {
+      openTrades: 2,
+      withStop: 2,
+      withoutStop: 0,
+      state: 'complete',
+      presentationLabel: null,
+    },
   },
   computedAt: '2026-07-17T20:00:00.000Z',
 };
