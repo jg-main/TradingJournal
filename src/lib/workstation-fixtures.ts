@@ -39,7 +39,11 @@ import type { CalendarHeatmapYearData } from '@/lib/calendar-heatmap';
 import type { PeriodMatrixResult } from '@/lib/period-matrix';
 import type { SetupPerfResult } from '@/lib/review-dashboard';
 import type { AttentionInsight } from '@/lib/attention-insights';
-import type { DashboardV2Response } from '@/lib/accounting/dashboard-v2';
+import type {
+  AggregateProvenance,
+  DashboardV2Response,
+  SnapshotCompletenessState,
+} from '@/lib/accounting/dashboard-v2';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Response Shapes (mirrors of the API route contracts)
@@ -788,6 +792,53 @@ function buildPeriodMatrix(dailyPnl: { date: string; pnl: number }[]): Record<st
   return { wow, mom, qoq };
 }
 
+// ── Snapshot contract constants shared by all fixture scenarios ──────────
+
+const FIXTURE_COMPUTED_AT = '2026-07-17T20:15:00.000Z';
+const FIXTURE_MARK_AS_OF = '2026-07-17T19:58:00.000Z';
+const FIXTURE_PERF_AS_OF = '2026-07-17T20:00:00.000Z';
+
+/** Build one AggregateProvenance with the shared fixture computed-at. */
+function fixtureProvenance(
+  source: string,
+  asOf: string | null,
+  status: SnapshotCompletenessState,
+): AggregateProvenance {
+  return { source, asOf, computedAt: FIXTURE_COMPUTED_AT, status };
+}
+
+/** Build one RiskSummary mirroring the v2 API contract (incl. stop coverage). */
+function fixtureRiskSummary(opts: {
+  openPnl: string | null;
+  openRisk: string;
+  portfolioHeat: string | null;
+  missingStops: number;
+  positionsWithStop: number;
+  openRiskToStop: string | null;
+  provenanceStatus: SnapshotCompletenessState;
+}): DashboardV2Response['riskSummary'] {
+  const openTrades = opts.missingStops + opts.positionsWithStop;
+  return {
+    openPnl: opts.openPnl,
+    openRisk: opts.openRisk,
+    portfolioHeat: opts.portfolioHeat,
+    missingStops: opts.missingStops,
+    positionsWithStop: opts.positionsWithStop,
+    openRiskToStop: opts.openRiskToStop,
+    stopCoverage: {
+      openTrades,
+      withStop: opts.positionsWithStop,
+      withoutStop: opts.missingStops,
+      state: openTrades === 0 || opts.missingStops === 0 ? 'complete' : 'partial',
+    },
+    provenance: fixtureProvenance(
+      'account_positions + trades + trade_risk_snapshots',
+      FIXTURE_MARK_AS_OF,
+      opts.provenanceStatus,
+    ),
+  };
+}
+
 function buildDashboardV2(opts: {
   cash: string;
   nav: string;
@@ -801,8 +852,51 @@ function buildDashboardV2(opts: {
   riskSummary: DashboardV2Response['riskSummary'];
   integrity: DashboardV2Response['integrity'];
 }): DashboardV2Response {
+  const total = opts.positions.length;
+  const fresh = opts.positions.filter((p) => p.markStatus === 'fresh').length;
+  const stale = opts.positions.filter((p) => p.markStatus === 'stale').length;
+  const missing = opts.positions.filter((p) => p.markStatus === 'missing').length;
+  const state: SnapshotCompletenessState =
+    total === 0
+      ? 'complete'
+      : missing === total
+        ? 'unavailable'
+        : fresh === total
+          ? 'complete'
+          : stale === total
+            ? 'stale'
+            : 'partial';
+  const coveragePct = total === 0 ? null : ((fresh / total) * 100).toFixed(2);
+
   return {
+    snapshotId: `snap:${FIXTURE_ACCOUNT.id}:${FIXTURE_COMPUTED_AT}`,
     account: { ...FIXTURE_ACCOUNT },
+    scopes: {
+      accountPositions: {
+        id: 'account_positions',
+        section: 'valuation',
+        description:
+          'Open positions with their latest valuation marks, attribution, and per-position risk.',
+        source: 'account_positions + valuation_marks',
+        asOf: FIXTURE_MARK_AS_OF,
+      },
+      journalTrades: {
+        id: 'journal_trades',
+        section: 'journalAttribution',
+        description:
+          'Journal trade linkage for accounting executions, attribution, and open-trade risk.',
+        source: 'accounting_executions + trades',
+        asOf: FIXTURE_COMPUTED_AT,
+      },
+      periodPerformance: {
+        id: 'period_performance',
+        section: 'metrics',
+        description:
+          'Period-to-date performance projection: cash, NAV, realized and unrealized P&L.',
+        source: 'account_performance',
+        asOf: FIXTURE_PERF_AS_OF,
+      },
+    },
     metrics: {
       cash: opts.cash,
       nav: opts.nav,
@@ -817,28 +911,34 @@ function buildDashboardV2(opts: {
       drawdownPct: opts.drawdownPct,
       modifiedDietzReturn: '0.0524',
       twr: '0.0518',
+      provenance: fixtureProvenance('account_performance', FIXTURE_PERF_AS_OF, state),
     },
     valuation: {
-      positionsTotal: opts.positions.length,
-      fresh: opts.positions.filter((p) => p.markStatus === 'fresh').length,
-      stale: opts.positions.filter((p) => p.markStatus === 'stale').length,
-      missing: opts.positions.filter((p) => p.markStatus === 'missing').length,
+      positionsTotal: total,
+      fresh,
+      stale,
+      missing,
+      state,
+      coveragePct,
       positions: opts.positions,
+      provenance: fixtureProvenance('account_positions + valuation_marks', FIXTURE_MARK_AS_OF, state),
     },
     journalAttribution: {
       hasJournalTrades: opts.positions.length > 0,
       journalExecutionCount: 214,
       accountOnlyExecutionCount: 3,
+      provenance: fixtureProvenance('accounting_executions', FIXTURE_COMPUTED_AT, 'complete'),
     },
     reconciliation: {
       eligible: true,
       refusalReasons: [],
       comparisons: null,
       totals: null,
+      provenance: fixtureProvenance('reconciliation_report', FIXTURE_COMPUTED_AT, 'complete'),
     },
     riskSummary: opts.riskSummary,
     integrity: opts.integrity,
-    computedAt: '2026-07-17T20:15:00.000Z',
+    computedAt: FIXTURE_COMPUTED_AT,
   };
 }
 
@@ -853,8 +953,16 @@ const DEFAULT_POSITIONS: DashboardV2Response['valuation']['positions'] = [
     markPrice: '131.85',
     markedValue: '15822.00',
     unrealizedPnl: '414.00',
-    markTimestamp: '2026-07-17T19:58:00.000Z',
+    markTimestamp: FIXTURE_MARK_AS_OF,
     markAgeMinutes: 17,
+    attribution: { kind: 'journal', executionCount: 214, journalTradeCount: 214 },
+    markProvenance: {
+      source: 'market_data',
+      asOf: FIXTURE_MARK_AS_OF,
+      computedAt: FIXTURE_COMPUTED_AT,
+      status: 'fresh',
+    },
+    risk: { hasValidStop: true, stopPrice: 127.9, currentRiskToStop: '474.00', openTrades: 1 },
   },
   {
     instrumentId: 'inst-amd',
@@ -866,8 +974,16 @@ const DEFAULT_POSITIONS: DashboardV2Response['valuation']['positions'] = [
     markPrice: '118.42',
     markedValue: '9473.60',
     unrealizedPnl: '505.60',
-    markTimestamp: '2026-07-17T19:58:00.000Z',
+    markTimestamp: FIXTURE_MARK_AS_OF,
     markAgeMinutes: 17,
+    attribution: { kind: 'mixed', executionCount: 3, journalTradeCount: 2 },
+    markProvenance: {
+      source: 'market_data',
+      asOf: FIXTURE_MARK_AS_OF,
+      computedAt: FIXTURE_COMPUTED_AT,
+      status: 'fresh',
+    },
+    risk: { hasValidStop: true, stopPrice: 115.2, currentRiskToStop: '257.60', openTrades: 1 },
   },
   {
     instrumentId: 'inst-tsla',
@@ -881,6 +997,14 @@ const DEFAULT_POSITIONS: DashboardV2Response['valuation']['positions'] = [
     unrealizedPnl: '-78.25',
     markTimestamp: '2026-07-16T20:00:00.000Z',
     markAgeMinutes: 1455,
+    attribution: { kind: 'account_only', executionCount: 3, journalTradeCount: 0 },
+    markProvenance: {
+      source: 'user',
+      asOf: '2026-07-16T20:00:00.000Z',
+      computedAt: FIXTURE_COMPUTED_AT,
+      status: 'stale',
+    },
+    risk: { hasValidStop: false, stopPrice: null, currentRiskToStop: null, openTrades: 1 },
   },
 ];
 
@@ -965,13 +1089,15 @@ function buildDefaultScenario(): WorkstationFixtures {
     drawdown: String(lastDrawdown.drawdownAmount.toFixed(2)),
     drawdownPct: String((lastDrawdown.drawdownPct * 100).toFixed(2)),
     positions: DEFAULT_POSITIONS,
-    riskSummary: {
+    riskSummary: fixtureRiskSummary({
       openPnl: '841.35',
       openRisk: '1450.00',
       portfolioHeat: '2.80',
       missingStops: 1,
       positionsWithStop: 2,
-    },
+      openRiskToStop: '731.60',
+      provenanceStatus: 'partial',
+    }),
     integrity: {
       status: 'warning',
       warnings: ['TSLA mark is stale (24h old) — refresh before relying on unrealized P&L.'],
@@ -1089,19 +1215,22 @@ function buildZeroPositionsScenario(): WorkstationFixtures {
     drawdown: '0.00',
     drawdownPct: '0.00',
     positions: [],
-    riskSummary: {
+    riskSummary: fixtureRiskSummary({
       openPnl: '0.00',
       openRisk: '0.00',
       portfolioHeat: '0.00',
       missingStops: 0,
       positionsWithStop: 0,
-    },
+      openRiskToStop: '0.00',
+      provenanceStatus: 'complete',
+    }),
     integrity: { status: 'healthy', warnings: [] },
   });
   dashboardV2.journalAttribution = {
     hasJournalTrades: true,
     journalExecutionCount: 214,
     accountOnlyExecutionCount: 0,
+    provenance: fixtureProvenance('accounting_executions', FIXTURE_COMPUTED_AT, 'complete'),
   };
 
   const watchlist = buildWatchlistItems(4);
@@ -1237,14 +1366,31 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
     totalPnl: '-9240.00',
     drawdown: String(worstDrawdown.drawdownAmount.toFixed(2)),
     drawdownPct: String((worstDrawdown.drawdownPct * 100).toFixed(2)),
-    positions: DEFAULT_POSITIONS.slice(0, 2).map((p) => ({ ...p, markStatus: 'missing', markPrice: null, markedValue: null, unrealizedPnl: null, markTimestamp: null, markAgeMinutes: null })),
-    riskSummary: {
-      openPnl: '-1234.80',
+    positions: DEFAULT_POSITIONS.slice(0, 2).map((p) => ({
+      ...p,
+      markStatus: 'missing',
+      markPrice: null,
+      markedValue: null,
+      unrealizedPnl: null,
+      markTimestamp: null,
+      markAgeMinutes: null,
+      markProvenance: {
+        source: null,
+        asOf: null,
+        computedAt: FIXTURE_COMPUTED_AT,
+        status: 'missing',
+      },
+      risk: { ...p.risk, currentRiskToStop: null },
+    })),
+    riskSummary: fixtureRiskSummary({
+      openPnl: null,
       openRisk: '2100.00',
       portfolioHeat: '5.15',
       missingStops: 2,
       positionsWithStop: 0,
-    },
+      openRiskToStop: null,
+      provenanceStatus: 'unavailable',
+    }),
     integrity: {
       status: 'critical',
       warnings: [

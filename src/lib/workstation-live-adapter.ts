@@ -272,12 +272,12 @@ export function adaptRisk(
           : null,
     },
     current: {
-      openPnl: v2.riskSummary.openPnl,
-      openRisk: v2.riskSummary.openRisk,
+      openPnl: v2.riskSummary.openPnl ?? '0.00',
+      openRisk: v2.riskSummary.openRisk ?? '0.00',
       portfolioHeat: v2.riskSummary.portfolioHeat,
       missingStops: v2.riskSummary.missingStops,
       positionsWithStop: v2.riskSummary.positionsWithStop,
-      exposure: v2.metrics.markedPositions,
+      exposure: v2.metrics.markedPositions ?? '0.00',
     },
   };
 }

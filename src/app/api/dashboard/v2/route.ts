@@ -83,20 +83,25 @@ function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | 
 /**
  * GET /api/dashboard/v2
  *
- * Return a ledger-derived dashboard aggregation for one account.
+ * Return one timestamped, typed current-state snapshot for one account.
+ * The snapshot carries a deterministic snapshotId, scope metadata declaring
+ * what each section represents, per-position attribution and mark
+ * provenance, completeness state for price-derived aggregates, and risk
+ * state with stop coverage. Unknown values are null, never '0.00'.
+ * The envelope fields (snapshotId, scopes, computedAt) are always present.
  *
  * Query parameters:
  * - accountId (UUID, optional): target account.  Falls back to
  *   settings.defaultAccountId, then the first active account.
  * - freshnessThresholdMinutes (number, optional): max age in minutes
  *   for a fresh valuation mark (default 1440 = 24h).
- * - fields (comma-separated, optional): subset of fields to return.
+ * - fields (comma-separated, optional): subset of sections to return.
  *   Valid values: account, metrics, valuation, journalAttribution,
  *   reconciliation, riskSummary, integrity. When omitted, the full
  *   response is returned (backward compatible).
  *
  * Responses:
- * - 200: Dashboard V2 aggregation (see DashboardV2Response)
+ * - 200: Dashboard V2 current-state snapshot (see DashboardV2Response)
  * - 400: No account resolved, invalid query params, or account not found
  * - 500: Unexpected server error
  */

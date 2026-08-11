@@ -546,6 +546,16 @@ describe('computeDashboardV2', () => {
     expect(pos.unrealizedPnl).toBeNull();
     expect(pos.markTimestamp).toBeNull();
     expect(pos.markAgeMinutes).toBeNull();
+
+    // Completeness state: no marks at all → unavailable
+    expect(result!.valuation.state).toBe('unavailable');
+    expect(result!.valuation.coveragePct).toBe('0.00');
+    expect(result!.metrics.provenance.status).toBe('unavailable');
+    expect(result!.riskSummary.provenance.status).toBe('unavailable');
+
+    // No partial sum presented as complete — openPnl stays null
+    expect(result!.riskSummary.openPnl).toBeNull();
+    expect(result!.riskSummary.openRiskToStop).toBeNull();
   });
 
   it('separates journal attribution correctly', () => {
@@ -635,10 +645,13 @@ describe('computeDashboardV2', () => {
     expect(result).toBeDefined();
     expect(result!.account.id).toBe(emptyAccountId);
 
-    // Metrics should be zero — no performance projection exists
-    expect(result!.metrics.cash).toBe('0.00');
-    expect(result!.metrics.nav).toBe('0.00');
-    expect(result!.metrics.markedPositions).toBe('0.00');
+    // Metrics should be null — no performance projection exists (unknown ≠ zero)
+    expect(result!.metrics.cash).toBeNull();
+    expect(result!.metrics.nav).toBeNull();
+    expect(result!.metrics.markedPositions).toBeNull();
+    expect(result!.metrics.realizedPnl).toBeNull();
+    expect(result!.metrics.unrealizedPnl).toBeNull();
+    expect(result!.metrics.totalPnl).toBeNull();
 
     // No positions
     expect(result!.valuation.positionsTotal).toBe(0);
@@ -787,6 +800,364 @@ describe('computeDashboardV2', () => {
     const pos = result!.valuation.positions[0];
     expect(pos.markStatus).toBe('stale');
     expect(pos.markPrice).toBe('260.00');
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Snapshot Contract Tests (scopes, attribution, provenance, completeness,
+  // risk state, nullability)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  it('emits a deterministic snapshot envelope shared across all sections', () => {
+    const result = computeDashboardV2(ctx.sqlite, ctx.healthyAccountId);
+    expect(result).toBeDefined();
+
+    // Deterministic snapshotId derived from account + computed-at
+    expect(result!.snapshotId).toMatch(/^snap:/);
+    expect(result!.snapshotId).toContain(ctx.healthyAccountId);
+
+    // One computedAt shared by every section and mark
+    expect(result!.metrics.provenance.computedAt).toBe(result!.computedAt);
+    expect(result!.valuation.provenance.computedAt).toBe(result!.computedAt);
+    expect(result!.riskSummary.provenance.computedAt).toBe(result!.computedAt);
+    expect(result!.journalAttribution.provenance.computedAt).toBe(result!.computedAt);
+    expect(result!.reconciliation.provenance.computedAt).toBe(result!.computedAt);
+    for (const p of result!.valuation.positions) {
+      expect(p.markProvenance.computedAt).toBe(result!.computedAt);
+    }
+
+    // Scopes declare what each section represents (no unlabelled substitutes)
+    expect(result!.scopes.accountPositions.section).toBe('valuation');
+    expect(result!.scopes.journalTrades.section).toBe('journalAttribution');
+    expect(result!.scopes.periodPerformance.section).toBe('metrics');
+    expect(result!.scopes.accountPositions.asOf).toBe(result!.valuation.provenance.asOf);
+    expect(result!.scopes.periodPerformance.asOf).toBe(result!.metrics.provenance.asOf);
+  });
+
+  it('classifies per-position attribution as journal / account_only / mixed', () => {
+    const result = computeDashboardV2(ctx.sqlite, ctx.healthyAccountId);
+    expect(result).toBeDefined();
+
+    const aapl = result!.valuation.positions.find((p) => p.symbol === 'AAPL');
+    const msft = result!.valuation.positions.find((p) => p.symbol === 'MSFT');
+
+    // AAPL: 1 journal-linked execution + 1 account-only execution → mixed
+    expect(aapl!.attribution.kind).toBe('mixed');
+    expect(aapl!.attribution.executionCount).toBe(2);
+    expect(aapl!.attribution.journalTradeCount).toBe(1);
+
+    // MSFT: only account-only executions → account_only
+    expect(msft!.attribution.kind).toBe('account_only');
+    expect(msft!.attribution.executionCount).toBe(1);
+    expect(msft!.attribution.journalTradeCount).toBe(0);
+
+    // No journal executions at all → account_only (never an unlabelled substitute)
+    const noMarks = computeDashboardV2(ctx.sqlite, ctx.noMarksAccountId);
+    expect(noMarks!.valuation.positions[0].attribution.kind).toBe('account_only');
+  });
+
+  it('attaches mark provenance (source, as-of, computed-at, status) to every position', () => {
+    const result = computeDashboardV2(ctx.sqlite, ctx.healthyAccountId);
+    expect(result).toBeDefined();
+
+    for (const p of result!.valuation.positions) {
+      expect(p.markProvenance.source).toBe('user');
+      expect(p.markProvenance.asOf).toBe(p.markTimestamp);
+      expect(p.markProvenance.computedAt).toBe(result!.computedAt);
+      expect(p.markProvenance.status).toBe(p.markStatus);
+    }
+
+    // Missing marks keep status + computedAt but null source/as-of
+    const noMarks = computeDashboardV2(ctx.sqlite, ctx.noMarksAccountId);
+    expect(noMarks!.valuation.positions[0].markProvenance.source).toBeNull();
+    expect(noMarks!.valuation.positions[0].markProvenance.asOf).toBeNull();
+    expect(noMarks!.valuation.positions[0].markProvenance.status).toBe('missing');
+  });
+
+  it('classifies completeness state and coverage for price-derived aggregates', () => {
+    const healthy = computeDashboardV2(ctx.sqlite, ctx.healthyAccountId)!;
+    expect(healthy.valuation.state).toBe('complete');
+    expect(healthy.valuation.coveragePct).toBe('100.00');
+    expect(healthy.metrics.provenance.status).toBe('complete');
+    expect(healthy.riskSummary.provenance.status).toBe('complete');
+
+    const noMarks = computeDashboardV2(ctx.sqlite, ctx.noMarksAccountId)!;
+    expect(noMarks.valuation.state).toBe('unavailable');
+    expect(noMarks.valuation.coveragePct).toBe('0.00');
+    expect(noMarks.metrics.provenance.status).toBe('unavailable');
+  });
+
+  it('marks partial completeness when some positions lack marks (no partial sums)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Partial Marks Account', 'Test', 'USD', now, now);
+
+    const markedId = randomUUID();
+    const unmarkedId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(markedId, 'PART1', 'Partial One', 'stock', now, now);
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(unmarkedId, 'PART2', 'Partial Two', 'stock', now, now);
+
+    const insertPosition = (instrumentId: string, quantity: string) => {
+      ctx.sqlite
+        .prepare(
+          `INSERT INTO account_positions
+           (id, account_id, instrument_id, direction, quantity, average_cost,
+            total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+            last_updated, created_at, updated_at)
+           VALUES (?, ?, ?, 'long', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          accountId,
+          instrumentId,
+          quantity,
+          '100.00',
+          String(Number(quantity) * 100),
+          '0.00',
+          '0.00',
+          '0.00',
+          now,
+          now,
+          now,
+        );
+    };
+    insertPosition(markedId, '5.00');
+    insertPosition(unmarkedId, '5.00');
+
+    // Only the first instrument gets a fresh mark
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO valuation_marks
+         (id, account_id, instrument_id, price, price_micros, source, mark_timestamp)
+         VALUES (?, ?, ?, '110.00', 110000000, 'user', ?)`,
+      )
+      .run(randomUUID(), accountId, markedId, now);
+
+    const result = computeDashboardV2(ctx.sqlite, accountId);
+    expect(result).toBeDefined();
+
+    // Mixed coverage → partial (not complete, not unavailable)
+    expect(result!.valuation.positionsTotal).toBe(2);
+    expect(result!.valuation.fresh).toBe(1);
+    expect(result!.valuation.missing).toBe(1);
+    expect(result!.valuation.state).toBe('partial');
+    expect(result!.valuation.coveragePct).toBe('50.00');
+    expect(result!.metrics.provenance.status).toBe('partial');
+    expect(result!.valuation.provenance.status).toBe('partial');
+
+    // A partial sum would be presented as complete otherwise — openPnl is null
+    expect(result!.riskSummary.openPnl).toBeNull();
+  });
+
+  it('reports per-position risk state and stop coverage from open trades', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Risk State Account', 'Test', 'USD', now, now);
+
+    const instrId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(instrId, 'RISK1', 'Risk Instrument', 'stock', now, now);
+
+    // Long position: 5 @ 250, mark 260, stop 245 → risk-to-stop = (260-245)*5 = 75
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO account_positions
+         (id, account_id, instrument_id, direction, quantity, average_cost,
+          total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+          last_updated, created_at, updated_at)
+         VALUES (?, ?, ?, 'long', '5.00', '250.00', '1250.00', '0.00', '0.00', '0.00', ?, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now, now, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO valuation_marks
+         (id, account_id, instrument_id, price, price_micros, source, mark_timestamp)
+         VALUES (?, ?, ?, '260.00', 260000000, 'user', ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now);
+
+    const tradeId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trades
+         (id, trade_code, account_id, symbol, direction, status, planned_stop, current_price, created_at, updated_at)
+         VALUES (?, ?, ?, 'RISK1', 'long', 'open', 245, 260, ?, ?)`,
+      )
+      .run(tradeId, `T-${randomUUID().slice(0, 8)}`, accountId, now, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trade_risk_snapshots
+         (id, trade_id, account_equity_at_open, initial_entry_price, initial_stop_price,
+          initial_quantity, risk_per_share, initial_risk_amount, account_risk_pct,
+          planned_reward_risk, created_at)
+         VALUES (?, ?, 10000, 250, 245, 5, 5, 75.00, 0.75, 3, ?)`,
+      )
+      .run(randomUUID(), tradeId, now);
+
+    const result = computeDashboardV2(ctx.sqlite, accountId);
+    expect(result).toBeDefined();
+
+    const pos = result!.valuation.positions[0];
+    expect(pos.risk.hasValidStop).toBe(true);
+    expect(pos.risk.stopPrice).toBe(245);
+    expect(pos.risk.currentRiskToStop).toBe('75.00');
+    expect(pos.risk.openTrades).toBe(1);
+
+    expect(result!.riskSummary.missingStops).toBe(0);
+    expect(result!.riskSummary.positionsWithStop).toBe(1);
+    expect(result!.riskSummary.stopCoverage).toEqual({
+      openTrades: 1,
+      withStop: 1,
+      withoutStop: 0,
+      state: 'complete',
+    });
+    expect(result!.riskSummary.openRisk).toBe('75.00');
+    expect(result!.riskSummary.openRiskToStop).toBe('75.00');
+  });
+
+  it('computes risk-to-stop for short positions as (stop - mark) × qty', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Short Risk Account', 'Test', 'USD', now, now);
+
+    const instrId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(instrId, 'SHORT1', 'Short Instrument', 'stock', now, now);
+
+    // Short position: 5 @ 250, mark 240, stop 260 → risk-to-stop = (260-240)*5 = 100
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO account_positions
+         (id, account_id, instrument_id, direction, quantity, average_cost,
+          total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+          last_updated, created_at, updated_at)
+         VALUES (?, ?, ?, 'short', '5.00', '250.00', '1250.00', '0.00', '0.00', '0.00', ?, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now, now, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO valuation_marks
+         (id, account_id, instrument_id, price, price_micros, source, mark_timestamp)
+         VALUES (?, ?, ?, '240.00', 240000000, 'user', ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trades
+         (id, trade_code, account_id, symbol, direction, status, planned_stop, current_price, created_at, updated_at)
+         VALUES (?, ?, ?, 'SHORT1', 'short', 'open', 260, 240, ?, ?)`,
+      )
+      .run(randomUUID(), `T-${randomUUID().slice(0, 8)}`, accountId, now, now);
+
+    const result = computeDashboardV2(ctx.sqlite, accountId);
+    expect(result).toBeDefined();
+    expect(result!.valuation.positions[0].risk.currentRiskToStop).toBe('100.00');
+  });
+
+  it('reports missing stops as partial stop coverage with null aggregate risk', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'No Stop Account', 'Test', 'USD', now, now);
+
+    const instrId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(instrId, 'NOSTOP', 'No Stop Instrument', 'stock', now, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO account_positions
+         (id, account_id, instrument_id, direction, quantity, average_cost,
+          total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+          last_updated, created_at, updated_at)
+         VALUES (?, ?, ?, 'long', '5.00', '250.00', '1250.00', '0.00', '0.00', '0.00', ?, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now, now, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO valuation_marks
+         (id, account_id, instrument_id, price, price_micros, source, mark_timestamp)
+         VALUES (?, ?, ?, '260.00', 260000000, 'user', ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now);
+
+    // Open trade WITHOUT a planned stop and without a risk snapshot
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trades
+         (id, trade_code, account_id, symbol, direction, status, planned_stop, current_price, created_at, updated_at)
+         VALUES (?, ?, ?, 'NOSTOP', 'long', 'open', NULL, 260, ?, ?)`,
+      )
+      .run(randomUUID(), `T-${randomUUID().slice(0, 8)}`, accountId, now, now);
+
+    const result = computeDashboardV2(ctx.sqlite, accountId);
+    expect(result).toBeDefined();
+
+    const pos = result!.valuation.positions[0];
+    expect(pos.risk.hasValidStop).toBe(false);
+    expect(pos.risk.stopPrice).toBeNull();
+    expect(pos.risk.currentRiskToStop).toBeNull();
+
+    expect(result!.riskSummary.missingStops).toBe(1);
+    expect(result!.riskSummary.positionsWithStop).toBe(0);
+    expect(result!.riskSummary.stopCoverage).toEqual({
+      openTrades: 1,
+      withStop: 0,
+      withoutStop: 1,
+      state: 'partial',
+    });
+    // Open trade has no risk snapshot → partial data → null, not a partial sum
+    expect(result!.riskSummary.openRisk).toBeNull();
+    expect(result!.riskSummary.openRiskToStop).toBeNull();
   });
 
   // ══════════════════════════════════════════════════════════════════════════

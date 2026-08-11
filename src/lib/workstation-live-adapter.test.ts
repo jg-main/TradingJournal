@@ -120,7 +120,31 @@ function makeDashboardResponse(overrides: Partial<DashboardResponse> = {}): Dash
 // Minimal realistic dashboard V2 response
 function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): DashboardV2Response {
   return {
+    snapshotId: 'snap:acct-1:2026-07-24T20:15:00.000Z',
     account: { id: 'acct-1', name: 'Primary Margin', currency: 'USD' },
+    scopes: {
+      accountPositions: {
+        id: 'account_positions',
+        section: 'valuation',
+        description: 'Open positions with their latest valuation marks, attribution, and per-position risk.',
+        source: 'account_positions + valuation_marks',
+        asOf: '2026-07-24T19:58:00Z',
+      },
+      journalTrades: {
+        id: 'journal_trades',
+        section: 'journalAttribution',
+        description: 'Journal trade linkage for accounting executions, attribution, and open-trade risk.',
+        source: 'accounting_executions + trades',
+        asOf: '2026-07-24T20:15:00.000Z',
+      },
+      periodPerformance: {
+        id: 'period_performance',
+        section: 'metrics',
+        description: 'Period-to-date performance projection: cash, NAV, realized and unrealized P&L.',
+        source: 'account_performance',
+        asOf: '2026-07-24T20:00:00.000Z',
+      },
+    },
     metrics: {
       cash: '24150.75',
       nav: '62380.50',
@@ -135,43 +159,93 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
       drawdownPct: '-0.82',
       modifiedDietzReturn: '0.0524',
       twr: '0.0518',
+      provenance: {
+        source: 'account_performance',
+        asOf: '2026-07-24T20:00:00.000Z',
+        computedAt: '2026-07-24T20:15:00.000Z',
+        status: 'partial',
+      },
     },
     valuation: {
       positionsTotal: 3,
       fresh: 2,
       stale: 1,
       missing: 0,
+      state: 'partial',
+      coveragePct: '66.67',
       positions: [
         {
           instrumentId: 'inst-nvda', symbol: 'NVDA', direction: 'long',
           quantity: '120', averageCost: '128.40', markStatus: 'fresh',
           markPrice: '131.85', markedValue: '15822.00', unrealizedPnl: '414.00',
           markTimestamp: '2026-07-24T19:58:00Z', markAgeMinutes: 17,
+          attribution: { kind: 'journal', executionCount: 214, journalTradeCount: 214 },
+          markProvenance: {
+            source: 'market_data',
+            asOf: '2026-07-24T19:58:00Z',
+            computedAt: '2026-07-24T20:15:00.000Z',
+            status: 'fresh',
+          },
+          risk: { hasValidStop: true, stopPrice: 127.9, currentRiskToStop: '474.00', openTrades: 1 },
         },
         {
           instrumentId: 'inst-amd', symbol: 'AMD', direction: 'long',
           quantity: '80', averageCost: '112.10', markStatus: 'fresh',
           markPrice: '118.42', markedValue: '9473.60', unrealizedPnl: '505.60',
           markTimestamp: '2026-07-24T19:58:00Z', markAgeMinutes: 17,
+          attribution: { kind: 'mixed', executionCount: 3, journalTradeCount: 2 },
+          markProvenance: {
+            source: 'market_data',
+            asOf: '2026-07-24T19:58:00Z',
+            computedAt: '2026-07-24T20:15:00.000Z',
+            status: 'fresh',
+          },
+          risk: { hasValidStop: true, stopPrice: 115.2, currentRiskToStop: '257.60', openTrades: 1 },
         },
         {
           instrumentId: 'inst-tsla', symbol: 'TSLA', direction: 'short',
           quantity: '25', averageCost: '246.80', markStatus: 'stale',
           markPrice: '249.93', markedValue: '6248.25', unrealizedPnl: '-78.25',
           markTimestamp: '2026-07-23T20:00:00Z', markAgeMinutes: 1455,
+          attribution: { kind: 'account_only', executionCount: 3, journalTradeCount: 0 },
+          markProvenance: {
+            source: 'user',
+            asOf: '2026-07-23T20:00:00Z',
+            computedAt: '2026-07-24T20:15:00.000Z',
+            status: 'stale',
+          },
+          risk: { hasValidStop: false, stopPrice: null, currentRiskToStop: null, openTrades: 1 },
         },
       ],
+      provenance: {
+        source: 'account_positions + valuation_marks',
+        asOf: '2026-07-24T19:58:00Z',
+        computedAt: '2026-07-24T20:15:00.000Z',
+        status: 'partial',
+      },
     },
     journalAttribution: {
       hasJournalTrades: true,
       journalExecutionCount: 214,
       accountOnlyExecutionCount: 3,
+      provenance: {
+        source: 'accounting_executions',
+        asOf: '2026-07-24T20:15:00.000Z',
+        computedAt: '2026-07-24T20:15:00.000Z',
+        status: 'complete',
+      },
     },
     reconciliation: {
       eligible: true,
       refusalReasons: [],
       comparisons: null,
       totals: null,
+      provenance: {
+        source: 'reconciliation_report',
+        asOf: '2026-07-24T20:15:00.000Z',
+        computedAt: '2026-07-24T20:15:00.000Z',
+        status: 'complete',
+      },
     },
     riskSummary: {
       openPnl: '841.35',
@@ -179,6 +253,19 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
       portfolioHeat: '2.80',
       missingStops: 1,
       positionsWithStop: 2,
+      openRiskToStop: '731.60',
+      stopCoverage: {
+        openTrades: 3,
+        withStop: 2,
+        withoutStop: 1,
+        state: 'partial',
+      },
+      provenance: {
+        source: 'account_positions + trades + trade_risk_snapshots',
+        asOf: '2026-07-24T19:58:00Z',
+        computedAt: '2026-07-24T20:15:00.000Z',
+        status: 'partial',
+      },
     },
     integrity: { status: 'warning', warnings: ['TSLA mark is stale.'] },
     computedAt: '2026-07-24T20:15:00.000Z',
@@ -514,6 +601,14 @@ describe('adaptPositions', () => {
         quantity: '120', averageCost: '128.40', markStatus: 'fresh',
         markPrice: '131.85', markedValue: '15822.00', unrealizedPnl: '414.00',
         markTimestamp: '2026-07-24T19:58:00Z', markAgeMinutes: 17,
+        attribution: { kind: 'journal', executionCount: 214, journalTradeCount: 214 },
+        markProvenance: {
+          source: 'market_data',
+          asOf: '2026-07-24T19:58:00Z',
+          computedAt: '2026-07-24T20:15:00.000Z',
+          status: 'fresh',
+        },
+        risk: { hasValidStop: true, stopPrice: 127.9, currentRiskToStop: '474.00', openTrades: 1 },
       },
     ];
     const result = adaptPositions(v2Positions);
@@ -538,6 +633,14 @@ describe('adaptPositions', () => {
         quantity: '50', averageCost: '10.00', markStatus: 'missing',
         markPrice: null, markedValue: null, unrealizedPnl: null,
         markTimestamp: null, markAgeMinutes: null,
+        attribution: { kind: 'account_only', executionCount: 0, journalTradeCount: 0 },
+        markProvenance: {
+          source: null,
+          asOf: null,
+          computedAt: '2026-07-24T20:15:00.000Z',
+          status: 'missing',
+        },
+        risk: { hasValidStop: false, stopPrice: null, currentRiskToStop: null, openTrades: 0 },
       },
     ];
     const result = adaptPositions(v2Positions);
@@ -922,6 +1025,14 @@ describe('negative tests (Q7)', () => {
         quantity: '0', averageCost: '0', markStatus: 'missing',
         markPrice: null, markedValue: null, unrealizedPnl: null,
         markTimestamp: null, markAgeMinutes: null,
+        attribution: { kind: 'account_only', executionCount: 0, journalTradeCount: 0 },
+        markProvenance: {
+          source: null,
+          asOf: null,
+          computedAt: '2026-07-24T20:15:00.000Z',
+          status: 'missing',
+        },
+        risk: { hasValidStop: false, stopPrice: null, currentRiskToStop: null, openTrades: 0 },
       };
       const result = adaptPositions([pos]);
       expect(result).toHaveLength(1);
@@ -948,6 +1059,14 @@ describe('negative tests (Q7)', () => {
         quantity: '10', averageCost: '100', markStatus: 'fresh',
         markPrice: '110', markedValue: '1100', unrealizedPnl: '100',
         markTimestamp: 'now', markAgeMinutes: 1,
+        attribution: { kind: 'journal', executionCount: 1, journalTradeCount: 1 },
+        markProvenance: {
+          source: 'user',
+          asOf: 'now',
+          computedAt: '2026-07-24T20:15:00.000Z',
+          status: 'fresh',
+        },
+        risk: { hasValidStop: true, stopPrice: 95, currentRiskToStop: '150.00', openTrades: 1 },
       }];
       const copy = JSON.parse(JSON.stringify(input));
       adaptPositions(input);

@@ -1,9 +1,13 @@
 /**
  * Dashboard V2 view-model: ledger-derived aggregation boundary.
  *
- * Consumes the S04 performance projection and S05 reconciliation report,
- * queries valuation mark completeness and journal attribution, and
- * assembles a unified cutover-integrity state for the root dashboard.
+ * Produces one timestamped, typed current-state snapshot for the active
+ * account. The response is self-describing for data-quality diagnosis:
+ * every section declares its scope and provenance, every position carries
+ * mark provenance and attribution, and every price-derived aggregate
+ * declares a completeness state with coverage counts. Unknown values are
+ * represented as explicit null — never coerced to '0.00' — and partial
+ * sums are never presented as complete.
  *
  * Pure aggregation logic on top of SQL queries — no mutations, no
  * random IDs, no side effects.  Every call with the same data
@@ -33,6 +37,102 @@ import type { ReconciliationReport } from './reconciliation';
 /** High-level integrity status of the accounting cutover. */
 export type IntegrityStatus = 'healthy' | 'warning' | 'critical' | 'unknown';
 
+/** Freshness classification of a single valuation mark. */
+export type MarkStatus = 'fresh' | 'stale' | 'missing';
+
+/**
+ * Completeness of a price-derived aggregate:
+ * - 'complete': every open position has a fresh mark (or there are no positions)
+ * - 'partial': some positions lack a fresh mark (missing and/or stale)
+ * - 'stale': every position has a mark, but none are fresh
+ * - 'unavailable': no mark exists for any open position
+ */
+export type SnapshotCompletenessState =
+  | 'complete'
+  | 'partial'
+  | 'stale'
+  | 'unavailable';
+
+/** Per-position data-source attribution: which source owns this position. */
+export type PositionAttributionKind = 'journal' | 'account_only' | 'mixed';
+
+/**
+ * Provenance of one valuation mark. Lets callers diagnose data-quality
+ * issues from the API response alone (source, as-of, computed-at, status).
+ */
+export interface MarkProvenance {
+  /** Source of the mark ('user', 'market_data', ...), or null when missing. */
+  source: string | null;
+  /** As-of timestamp of the underlying mark (ISO-8601), or null when missing. */
+  asOf: string | null;
+  /** Snapshot-wide computed-at timestamp shared by every field. */
+  computedAt: string;
+  /** Freshness classification of the mark. */
+  status: MarkStatus;
+}
+
+/**
+ * Provenance of one aggregate section. The status uses the shared
+ * completeness vocabulary so a caller can gate on it uniformly.
+ */
+export interface AggregateProvenance {
+  /** Source system/table the section's values were derived from. */
+  source: string;
+  /** As-of timestamp of the underlying data, or null when unavailable. */
+  asOf: string | null;
+  /** Snapshot-wide computed-at timestamp shared by every field. */
+  computedAt: string;
+  /** Data-quality status of the price-derived portion of this section. */
+  status: SnapshotCompletenessState;
+}
+
+/** Per-position attribution: which source produced this position's fills. */
+export interface PositionAttribution {
+  /** 'journal' = all fills linked to journal trades; 'account_only' = none; 'mixed' = some. */
+  kind: PositionAttributionKind;
+  /** Number of accounting executions contributing to this position. */
+  executionCount: number;
+  /** Number of distinct journal trades linked to this position's executions. */
+  journalTradeCount: number;
+}
+
+/** Per-position risk state derived from open journal trades. */
+export interface PositionRiskState {
+  /** True when at least one open trade has a valid planned stop (> 0). */
+  hasValidStop: boolean;
+  /** Planned stop of the most recent open trade, or null when none is valid. */
+  stopPrice: number | null;
+  /**
+   * Dollar risk from the current mark to the stop ((mark - stop) × qty for
+   * longs, (stop - mark) × qty for shorts), or null when no mark, no valid
+   * stop, or no open trade exists.
+   */
+  currentRiskToStop: string | null;
+  /** Number of open journal trades for this instrument. */
+  openTrades: number;
+}
+
+/** Scope metadata declaring what one response section represents. */
+export interface SnapshotScope {
+  /** Stable machine-readable scope id. */
+  id: 'account_positions' | 'journal_trades' | 'period_performance';
+  /** Response section this scope maps to. */
+  section: string;
+  /** Human-readable description of the scope. */
+  description: string;
+  /** Source tables the section is derived from. */
+  source: string;
+  /** As-of timestamp of the underlying data, or null when unavailable. */
+  asOf: string | null;
+}
+
+/** Scope declaration block — no section is used as an unlabelled substitute. */
+export interface SnapshotScopes {
+  accountPositions: SnapshotScope;
+  journalTrades: SnapshotScope;
+  periodPerformance: SnapshotScope;
+}
+
 /** Summarised position valuation for the dashboard (no lot detail). */
 export interface DashboardPositionSummary {
   instrumentId: string;
@@ -40,12 +140,18 @@ export interface DashboardPositionSummary {
   direction: string | null;
   quantity: string;
   averageCost: string;
-  markStatus: string;
+  markStatus: MarkStatus;
   markPrice: string | null;
   markedValue: string | null;
   unrealizedPnl: string | null;
   markTimestamp: string | null;
   markAgeMinutes: number | null;
+  /** Which source (journal / account / mixed) produced this position. */
+  attribution: PositionAttribution;
+  /** Provenance of the position's latest mark. */
+  markProvenance: MarkProvenance;
+  /** Risk state from open journal trades on this instrument. */
+  risk: PositionRiskState;
 }
 
 /** Journal attribution counts. */
@@ -56,6 +162,8 @@ export interface JournalAttribution {
   journalExecutionCount: number;
   /** Number of accounting executions without a journal trade link. */
   accountOnlyExecutionCount: number;
+  /** Provenance of the attribution section. */
+  provenance: AggregateProvenance;
 }
 
 /** Valuation completeness summary. */
@@ -68,6 +176,10 @@ export interface ValuationCompleteness {
   stale: number;
   /** Count of positions with no mark at all. */
   missing: number;
+  /** Completeness state of every price-derived aggregate in this snapshot. */
+  state: SnapshotCompletenessState;
+  /** Freshness coverage as a percentage (canonical decimal), or null when no positions. */
+  coveragePct: string | null;
 }
 
 /** Reconciliation summary for the dashboard. */
@@ -95,27 +207,57 @@ export interface DashboardReconciliationSummary {
     anomalies: number;
     unexplained: number;
   } | null;
+  /** Provenance of the reconciliation section. */
+  provenance: AggregateProvenance;
 }
 
-/** Risk summary derived from open positions and journal trades. */
+/** Aggregate risk state for open positions and journal trades. */
 export interface RiskSummary {
-  /** Sum of unrealizedPnl across all open positions (canonical decimal). */
-  openPnl: string;
-  /** Sum of initialRiskAmount from open journal trades (canonical decimal). */
-  openRisk: string;
+  /**
+   * Sum of unrealizedPnl across all open positions. Null when any position
+   * lacks a fresh mark — a partial sum is never presented as complete.
+   */
+  openPnl: string | null;
+  /**
+   * Sum of initialRiskAmount from open journal trades that have a risk
+   * snapshot. Null when some open trades have no snapshot (partial data).
+   */
+  openRisk: string | null;
   /** openRisk / NAV * 100 as a percentage (canonical decimal), or null when NAV is zero. */
   portfolioHeat: string | null;
-  /** Number of open trades without a planned_stop. */
+  /** Number of open trades without a valid planned stop. */
   missingStops: number;
-  /** Number of open trades with a planned_stop set. */
+  /** Number of open trades with a valid planned stop. */
   positionsWithStop: number;
+  /**
+   * Sum of per-position risk-to-stop. Null when any open position cannot be
+   * evaluated (missing mark or missing valid stop).
+   */
+  openRiskToStop: string | null;
+  /** Stop coverage completeness across open journal trades. */
+  stopCoverage: {
+    /** Number of open trades. */
+    openTrades: number;
+    /** Number of open trades with a valid planned stop. */
+    withStop: number;
+    /** Number of open trades without a valid planned stop. */
+    withoutStop: number;
+    /** 'complete' when every open trade has a stop (or none exist), else 'partial'. */
+    state: SnapshotCompletenessState;
+  };
+  /** Provenance of the risk section. */
+  provenance: AggregateProvenance;
 }
 
-export type DashboardV2Field = keyof Omit<DashboardV2Response, 'computedAt'>;
+export type DashboardV2Field = keyof Omit<
+  DashboardV2Response,
+  'computedAt' | 'snapshotId' | 'scopes'
+>;
 
 /**
  * All valid dashboard V2 field names, in their canonical order.
  * Used for fields-parameter validation and response filtering.
+ * The snapshot envelope (snapshotId, scopes, computedAt) is always present.
  */
 export const ALL_DASHBOARD_V2_FIELDS: readonly DashboardV2Field[] = [
   'account',
@@ -127,31 +269,43 @@ export const ALL_DASHBOARD_V2_FIELDS: readonly DashboardV2Field[] = [
   'integrity',
 ] as const;
 
-/** Dashboard V2 aggregation for one account. */
+/** Dashboard V2 current-state snapshot for one account. */
 export interface DashboardV2Response {
+  /**
+   * Deterministic snapshot id derived from account + computed-at:
+   * `snap:<accountId>:<computedAt>`. Identifies this exact snapshot.
+   */
+  snapshotId: string;
   account: {
     id: string;
     name: string;
     currency: string;
   };
+  /** Scope metadata declaring what each section represents. */
+  scopes: SnapshotScopes;
   metrics: {
-    cash: string;
-    nav: string;
-    markedPositions: string;
-    realizedPnl: string;
-    unrealizedPnl: string;
-    totalPnl: string;
-    realizedFees: string;
-    grossExposure: string;
-    netExposure: string;
+    /** Null when no performance projection exists for the account. */
+    cash: string | null;
+    nav: string | null;
+    markedPositions: string | null;
+    realizedPnl: string | null;
+    unrealizedPnl: string | null;
+    totalPnl: string | null;
+    realizedFees: string | null;
+    grossExposure: string | null;
+    netExposure: string | null;
     drawdown: string | null;
     drawdownPct: string | null;
     modifiedDietzReturn: string | null;
     twr: string | null;
+    /** Provenance of the price-derived portion of this section. */
+    provenance: AggregateProvenance;
   };
   valuation: ValuationCompleteness & {
     /** Per-position valuation detail. */
     positions: DashboardPositionSummary[];
+    /** Provenance of the valuation section. */
+    provenance: AggregateProvenance;
   };
   journalAttribution: JournalAttribution;
   reconciliation: DashboardReconciliationSummary;
@@ -162,7 +316,7 @@ export interface DashboardV2Response {
     /** Actionable warnings from performance and valuation. */
     warnings: string[];
   };
-  /** ISO-8601 timestamp of when this aggregation was computed. */
+  /** ISO-8601 timestamp when this snapshot was computed — shared by all fields. */
   computedAt: string;
 }
 
@@ -189,7 +343,7 @@ function classifyMarkStatus(
   markAgeMinutes: number | null,
   computedAt: Date,
   freshnessThresholdMinutes: number,
-): 'fresh' | 'stale' | 'missing' {
+): MarkStatus {
   if (!markTimestamp) return 'missing';
 
   // If markAgeMinutes was pre-computed, use it
@@ -208,6 +362,34 @@ function classifyMarkStatus(
   } catch {
     return 'missing';
   }
+}
+
+/**
+ * Classify the completeness of a price-derived aggregate from coverage counts.
+ *
+ * - total === 0            → 'complete' (nothing to mark; zero values are exact)
+ * - missing === total      → 'unavailable' (no mark exists for any position)
+ * - fresh === total        → 'complete'
+ * - stale === total        → 'stale' (all marks present but outdated)
+ * - otherwise              → 'partial' (mixed freshness or partial coverage)
+ */
+function classifyCompleteness(
+  total: number,
+  fresh: number,
+  stale: number,
+  missing: number,
+): SnapshotCompletenessState {
+  if (total === 0) return 'complete';
+  if (missing === total) return 'unavailable';
+  if (fresh === total) return 'complete';
+  if (stale === total) return 'stale';
+  return 'partial';
+}
+
+/** Freshness coverage as a percentage (canonical decimal), or null when no positions. */
+function computeCoveragePct(total: number, fresh: number): string | null {
+  if (total === 0) return null;
+  return normalizeDecimal((fresh / total) * 100);
 }
 
 /**
@@ -271,26 +453,57 @@ function resolvePositionSymbols(
   return cache;
 }
 
+/**
+ * Dollar risk from a mark price to a planned stop for a position:
+ * (mark - stop) × qty for longs, (stop - mark) × qty for shorts.
+ * Returns null when either price is unavailable.
+ */
+function computeRiskToStop(
+  direction: string | null,
+  quantity: string,
+  markPrice: string | null,
+  stopPrice: number | null,
+): string | null {
+  if (markPrice === null || stopPrice === null) return null;
+  try {
+    const priceMicros = toMicros(markPrice);
+    const stopMicros = toMicros(normalizeDecimal(stopPrice));
+    const qtyMicros = toMicros(quantity);
+    const diffMicros =
+      direction === 'short' ? stopMicros - priceMicros : priceMicros - stopMicros;
+    const riskMicros = Number(
+      (BigInt(diffMicros) * BigInt(qtyMicros)) / BigInt(1_000_000),
+    );
+    return fromMicros(riskMicros);
+  } catch {
+    return null;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Main Aggregation Function
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Compute the Dashboard V2 aggregation for a single account.
+ * Compute the Dashboard V2 current-state snapshot for a single account.
  *
  * Queries the S04 performance projection, S05 reconciliation report, latest
- * valuation marks, open positions, and journal attribution data to assemble
- * a complete cutover-integrity view-model.
+ * valuation marks, open positions, journal attribution, and open trades to
+ * assemble one timestamped snapshot with explicit scopes, per-position
+ * attribution, mark provenance, completeness state, risk state with stop
+ * coverage, and explicit nullability.
  *
  * @param sqlite                        - Raw better-sqlite3 Database handle.
  * @param accountId                     - The account to aggregate.
  * @param options.freshnessThresholdMinutes - Max age in minutes for a fresh
  *                                          mark (default 1440 = 24h).
- * @param options.fields                   - Optional subset of fields to return.
- *                                          When specified, only those sections
- *                                          plus computedAt are returned.
- *                                          When omitted, the full response
- *                                          is returned (backward compatible).
+ * @param options.fields                   - Optional subset of sections to
+ *                                          return. When specified, only those
+ *                                          sections plus the snapshot envelope
+ *                                          (snapshotId, scopes, computedAt)
+ *                                          are returned. When omitted, the
+ *                                          full response is returned
+ *                                          (backward compatible).
  * @returns                               - DashboardV2Response, or undefined
  *                                         if the account does not exist.
  */
@@ -303,6 +516,7 @@ export function computeDashboardV2(
   },
 ): DashboardV2Response | undefined {
   const computedAt = new Date().toISOString();
+  const snapshotId = `snap:${accountId}:${computedAt}`;
 
   // 1. Verify account exists
   if (!accountExists(sqlite, accountId)) {
@@ -359,6 +573,59 @@ export function computeDashboardV2(
     markByInstrument.set(mark.instrument_id, mark);
   }
 
+  // ── Journal attribution by instrument (for per-position attribution) ──
+  const attributionByInstrument = new Map<
+    string,
+    { total: number; with_journal: number; distinct_journal: number }
+  >();
+  const attributionRows = sqlite
+    .prepare(
+      `SELECT
+         instrument_id,
+         COUNT(*) AS total,
+         SUM(CASE WHEN journal_trade_id IS NOT NULL THEN 1 ELSE 0 END) AS with_journal,
+         COUNT(DISTINCT CASE WHEN journal_trade_id IS NOT NULL THEN journal_trade_id END) AS distinct_journal
+       FROM accounting_executions
+       WHERE account_id = ?
+       GROUP BY instrument_id`,
+    )
+    .all(accountId) as Array<{
+    instrument_id: string;
+    total: number;
+    with_journal: number;
+    distinct_journal: number;
+  }>;
+  for (const row of attributionRows) {
+    attributionByInstrument.set(row.instrument_id, {
+      total: row.total,
+      with_journal: row.with_journal,
+      distinct_journal: row.distinct_journal,
+    });
+  }
+
+  // ── Open journal trades by symbol (for per-position risk state) ──────
+  const openTradeRows = sqlite
+    .prepare(
+      `SELECT id, symbol, direction, planned_stop, created_at
+       FROM trades
+       WHERE account_id = ? AND status = 'open'
+       ORDER BY created_at ASC, id ASC`,
+    )
+    .all(accountId) as Array<{
+    id: string;
+    symbol: string;
+    direction: string;
+    planned_stop: number | null;
+    created_at: string;
+  }>;
+  const openTradesBySymbol = new Map<string, typeof openTradeRows>();
+  for (const trade of openTradeRows) {
+    const key = trade.symbol.toUpperCase();
+    const list = openTradesBySymbol.get(key) ?? [];
+    list.push(trade);
+    openTradesBySymbol.set(key, list);
+  }
+
   // Compute the current time for mark age calculations
   const now = new Date();
   const computedDate = now;
@@ -367,6 +634,7 @@ export function computeDashboardV2(
   let freshCount = 0;
   let staleCount = 0;
   let missingCount = 0;
+  let latestMarkTimestamp: string | null = null;
 
   const dashboardPositions: DashboardPositionSummary[] = [];
   const symbolCache = resolvePositionSymbols(sqlite, openPositions);
@@ -374,7 +642,7 @@ export function computeDashboardV2(
   for (const pos of positionsWithQuantity) {
     const mark = markByInstrument.get(pos.instrument_id);
 
-    let markStatus: 'fresh' | 'stale' | 'missing';
+    let markStatus: MarkStatus;
     let markPrice: string | null = null;
     let markedValue: string | null = null;
     let unrealizedPnl: string | null = null;
@@ -429,9 +697,44 @@ export function computeDashboardV2(
       markTimestamp = mark.mark_timestamp;
     }
 
+    // Track the latest mark timestamp across positions (for scope as-of)
+    if (markTimestamp && (!latestMarkTimestamp || markTimestamp > latestMarkTimestamp)) {
+      latestMarkTimestamp = markTimestamp;
+    }
+
+    // ── Per-position attribution ──────────────────────────────────────
+    const attr = attributionByInstrument.get(pos.instrument_id);
+    const attrTotal = attr?.total ?? 0;
+    const attrWithJournal = attr?.with_journal ?? 0;
+    const attributionKind: PositionAttributionKind =
+      attrWithJournal > 0 && attrTotal - attrWithJournal > 0
+        ? 'mixed'
+        : attrWithJournal > 0
+          ? 'journal'
+          : 'account_only';
+
+    // ── Per-position risk state ───────────────────────────────────────
+    const symbol = symbolCache.get(pos.instrument_id) ?? 'UNKNOWN';
+    const symbolTrades = openTradesBySymbol.get(symbol.toUpperCase()) ?? [];
+    // Trades are ordered by created_at ASC — the last valid stop is the
+    // most recent open trade that actually carries a stop.
+    const validStops = symbolTrades.filter(
+      (t) => t.planned_stop !== null && t.planned_stop > 0,
+    );
+    const hasValidStop = validStops.length > 0;
+    const stopPrice = hasValidStop
+      ? (validStops[validStops.length - 1].planned_stop as number)
+      : null;
+    const currentRiskToStop = computeRiskToStop(
+      pos.direction,
+      pos.quantity,
+      markPrice,
+      stopPrice,
+    );
+
     dashboardPositions.push({
       instrumentId: pos.instrument_id,
-      symbol: symbolCache.get(pos.instrument_id) ?? 'UNKNOWN',
+      symbol,
       direction: pos.direction,
       quantity: pos.quantity,
       averageCost: pos.average_cost,
@@ -441,14 +744,40 @@ export function computeDashboardV2(
       unrealizedPnl,
       markTimestamp,
       markAgeMinutes,
+      attribution: {
+        kind: attributionKind,
+        executionCount: attrTotal,
+        journalTradeCount: attr?.distinct_journal ?? 0,
+      },
+      markProvenance: {
+        source: mark?.source ?? null,
+        asOf: mark?.mark_timestamp ?? null,
+        computedAt,
+        status: markStatus,
+      },
+      risk: {
+        hasValidStop,
+        stopPrice,
+        currentRiskToStop,
+        openTrades: symbolTrades.length,
+      },
     });
   }
+
+  const valuationState = classifyCompleteness(
+    positionsWithQuantity.length,
+    freshCount,
+    staleCount,
+    missingCount,
+  );
 
   const valuationCompleteness: ValuationCompleteness = {
     positionsTotal: positionsWithQuantity.length,
     fresh: freshCount,
     stale: staleCount,
     missing: missingCount,
+    state: valuationState,
+    coveragePct: computeCoveragePct(positionsWithQuantity.length, freshCount),
   };
 
   // ── Journal attribution ─────────────────────────────────────────────
@@ -457,7 +786,8 @@ export function computeDashboardV2(
       `SELECT
          COUNT(*) AS total,
          SUM(CASE WHEN journal_trade_id IS NOT NULL THEN 1 ELSE 0 END) AS with_journal,
-         SUM(CASE WHEN journal_trade_id IS NULL THEN 1 ELSE 0 END) AS without_journal
+         SUM(CASE WHEN journal_trade_id IS NULL THEN 1 ELSE 0 END) AS without_journal,
+         MAX(posted_at) AS max_posted_at
        FROM accounting_executions
        WHERE account_id = ?`,
     )
@@ -465,12 +795,19 @@ export function computeDashboardV2(
     total: number;
     with_journal: number;
     without_journal: number;
+    max_posted_at: string | null;
   };
 
   const journalAttribution: JournalAttribution = {
     hasJournalTrades: (journalCounts?.with_journal ?? 0) > 0,
     journalExecutionCount: journalCounts?.with_journal ?? 0,
     accountOnlyExecutionCount: journalCounts?.without_journal ?? 0,
+    provenance: {
+      source: 'accounting_executions',
+      asOf: journalCounts?.max_posted_at ?? null,
+      computedAt,
+      status: 'complete',
+    },
   };
 
   // ── Reconciliation summary ──────────────────────────────────────────
@@ -495,6 +832,12 @@ export function computeDashboardV2(
           anomalies: reconciliationReport.totals.anomalies,
           unexplained: reconciliationReport.totals.unexplained,
         },
+        provenance: {
+          source: 'reconciliation_report',
+          asOf: reconciliationReport.computedAt,
+          computedAt,
+          status: 'complete',
+        },
       }
     : {
         eligible: false,
@@ -503,46 +846,80 @@ export function computeDashboardV2(
         ],
         comparisons: null,
         totals: null,
+        provenance: {
+          source: 'reconciliation_report',
+          asOf: null,
+          computedAt,
+          status: 'unavailable',
+        },
       };
 
   // ── Risk Summary ──────────────────────────────────────────────────
-  const openPnlValues = dashboardPositions
-    .map((p) => p.unrealizedPnl)
-    .filter((v): v is string => v !== null);
-  const openPnl = sumDecimals(openPnlValues);
+  // openPnl: a partial sum is never presented as complete — when any
+  // position lacks a mark, openPnl is null (the coverage counts and
+  // completeness state explain why).
+  const openPnlValues = dashboardPositions.map((p) => p.unrealizedPnl);
+  const openPnl =
+    dashboardPositions.length === 0
+      ? '0.00'
+      : openPnlValues.every((v) => v !== null)
+        ? sumDecimals(openPnlValues as string[])
+        : null;
 
   const riskRow = sqlite
     .prepare(
       `SELECT
-         COALESCE(SUM(CASE WHEN t.planned_stop IS NULL THEN 1 ELSE 0 END), 0) AS missing_stops,
-         COALESCE(SUM(CASE WHEN t.planned_stop IS NOT NULL THEN 1 ELSE 0 END), 0) AS with_stop,
-         COALESCE(SUM(trs.initial_risk_amount), 0) AS total_risk
+         COUNT(*) AS open_trades,
+         COALESCE(SUM(CASE WHEN t.planned_stop IS NULL OR t.planned_stop <= 0 THEN 1 ELSE 0 END), 0) AS missing_stops,
+         COALESCE(SUM(CASE WHEN t.planned_stop IS NOT NULL AND t.planned_stop > 0 THEN 1 ELSE 0 END), 0) AS with_stop,
+         COALESCE(SUM(trs.initial_risk_amount), 0) AS total_risk,
+         COUNT(trs.id) AS with_snapshot
        FROM trades t
        LEFT JOIN trade_risk_snapshots trs ON trs.trade_id = t.id
        WHERE t.account_id = ? AND t.status = 'open'`,
     )
     .get(accountId) as
-    | { missing_stops: number; with_stop: number; total_risk: number }
+    | {
+        open_trades: number;
+        missing_stops: number;
+        with_stop: number;
+        total_risk: number;
+        with_snapshot: number;
+      }
     | undefined;
 
+  const openTrades = riskRow?.open_trades ?? 0;
   const missingStops = riskRow?.missing_stops ?? 0;
   const positionsWithStop = riskRow?.with_stop ?? 0;
-  const openRisk = riskRow ? normalizeDecimal(riskRow.total_risk) : '0.00';
+
+  // openRisk is null when some open trades have no risk snapshot (partial).
+  const riskSnapshotsCovered =
+    openTrades === 0 || (riskRow?.with_snapshot ?? 0) === openTrades;
+  const openRisk: string | null = riskSnapshotsCovered
+    ? normalizeDecimal(riskRow?.total_risk ?? 0)
+    : null;
 
   // Portfolio heat = openRisk / NAV * 100
   const nav = performance?.nav;
   let portfolioHeat: string | null = null;
-  if (nav && nav !== '0.00') {
-    const navMicros = toMicros(nav);
-    const riskMicros = toMicros(openRisk);
-    if (riskMicros > 0) {
+  if (openRisk !== null) {
+    if (nav && nav !== '0.00' && openRisk !== '0.00') {
+      const navMicros = toMicros(nav);
+      const riskMicros = toMicros(openRisk);
       portfolioHeat = normalizeDecimal((riskMicros / navMicros) * 100);
-    } else {
+    } else if (openRisk === '0.00') {
       portfolioHeat = '0.00';
     }
-  } else if (openRisk === '0.00') {
-    portfolioHeat = '0.00';
   }
+
+  // Aggregate risk-to-stop: null unless every open position can be evaluated.
+  const riskToStopValues = dashboardPositions.map((p) => p.risk.currentRiskToStop);
+  const openRiskToStop =
+    dashboardPositions.length === 0
+      ? '0.00'
+      : riskToStopValues.every((v) => v !== null)
+        ? sumDecimals(riskToStopValues as string[])
+        : null;
 
   const riskSummary: RiskSummary = {
     openPnl,
@@ -550,6 +927,20 @@ export function computeDashboardV2(
     portfolioHeat,
     missingStops,
     positionsWithStop,
+    openRiskToStop,
+    stopCoverage: {
+      openTrades,
+      withStop: positionsWithStop,
+      withoutStop: missingStops,
+      state:
+        openTrades === 0 || missingStops === 0 ? 'complete' : 'partial',
+    },
+    provenance: {
+      source: 'account_positions + trades + trade_risk_snapshots',
+      asOf: latestMarkTimestamp,
+      computedAt,
+      status: valuationState,
+    },
   };
 
   // ── Integrity status ────────────────────────────────────────────────
@@ -560,29 +951,68 @@ export function computeDashboardV2(
 
   // ── Assemble response ───────────────────────────────────────────────
   const fullResponse: DashboardV2Response = {
+    snapshotId,
     account: {
       id: accountRow.id,
       name: accountRow.name,
       currency: accountRow.currency ?? 'USD',
     },
+    scopes: {
+      accountPositions: {
+        id: 'account_positions',
+        section: 'valuation',
+        description:
+          'Open positions with their latest valuation marks, attribution, and per-position risk.',
+        source: 'account_positions + valuation_marks',
+        asOf: latestMarkTimestamp,
+      },
+      journalTrades: {
+        id: 'journal_trades',
+        section: 'journalAttribution',
+        description:
+          'Journal trade linkage for accounting executions, attribution, and open-trade risk.',
+        source: 'accounting_executions + trades',
+        asOf: journalCounts?.max_posted_at ?? null,
+      },
+      periodPerformance: {
+        id: 'period_performance',
+        section: 'metrics',
+        description:
+          'Period-to-date performance projection: cash, NAV, realized and unrealized P&L.',
+        source: 'account_performance',
+        asOf: performance?.computed_as_of ?? null,
+      },
+    },
     metrics: {
-      cash: performance?.net_cash ?? '0.00',
-      nav: performance?.nav ?? '0.00',
-      markedPositions: performance?.marked_positions ?? '0.00',
-      realizedPnl: performance?.realized_pnl ?? '0.00',
-      unrealizedPnl: performance?.unrealized_pnl ?? '0.00',
-      totalPnl: performance?.total_pnl ?? '0.00',
-      realizedFees: performance?.realized_fees ?? '0.00',
-      grossExposure: performance?.gross_exposure ?? '0.00',
-      netExposure: performance?.net_exposure ?? '0.00',
+      cash: performance?.net_cash ?? null,
+      nav: performance?.nav ?? null,
+      markedPositions: performance?.marked_positions ?? null,
+      realizedPnl: performance?.realized_pnl ?? null,
+      unrealizedPnl: performance?.unrealized_pnl ?? null,
+      totalPnl: performance?.total_pnl ?? null,
+      realizedFees: performance?.realized_fees ?? null,
+      grossExposure: performance?.gross_exposure ?? null,
+      netExposure: performance?.net_exposure ?? null,
       drawdown: performance?.drawdown ?? null,
       drawdownPct: performance?.drawdown_pct ?? null,
       modifiedDietzReturn: performance?.modified_dietz_return ?? null,
       twr: performance?.twr ?? null,
+      provenance: {
+        source: 'account_performance',
+        asOf: performance?.computed_as_of ?? null,
+        computedAt,
+        status: valuationState,
+      },
     },
     valuation: {
       ...valuationCompleteness,
       positions: dashboardPositions,
+      provenance: {
+        source: 'account_positions + valuation_marks',
+        asOf: latestMarkTimestamp,
+        computedAt,
+        status: valuationState,
+      },
     },
     journalAttribution,
     reconciliation: reconciliationSummary,
@@ -594,7 +1024,11 @@ export function computeDashboardV2(
   // ── Filter by fields if specified ──────────────────────────────────
   if (options?.fields && options.fields.length < ALL_DASHBOARD_V2_FIELDS.length) {
     const response = fullResponse as unknown as Record<string, unknown>;
-    const filtered: Record<string, unknown> = { computedAt };
+    const filtered: Record<string, unknown> = {
+      snapshotId,
+      scopes: fullResponse.scopes,
+      computedAt,
+    };
     for (const field of options.fields) {
       filtered[field] = response[field];
     }

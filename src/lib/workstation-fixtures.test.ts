@@ -137,7 +137,7 @@ function expectValidDashboardV2(v2: DashboardV2Response): void {
 
   // All non-null metric fields are canonical decimal strings
   for (const [key, value] of Object.entries(v2.metrics)) {
-    if (value === null) continue;
+    if (value === null || key === 'provenance') continue;
     expect(Number.isNaN(parseFloat(value as string)), `metrics.${key}`).toBe(false);
   }
 
@@ -198,7 +198,7 @@ describe('default scenario', () => {
     expect(fixtures.dashboardV2.integrity.status).toBe('warning');
     expect(fixtures.dashboardV2.integrity.warnings.length).toBeGreaterThan(0);
     // NAV ≈ cash + marked positions
-    const nav = parseFloat(fixtures.dashboardV2.metrics.nav);
+    const nav = parseFloat(fixtures.dashboardV2.metrics.nav ?? '0');
     expect(nav).toBeGreaterThan(0);
   });
 
