@@ -85,6 +85,15 @@ export interface AggregateProvenance {
   computedAt: string;
   /** Data-quality status of the price-derived portion of this section. */
   status: SnapshotCompletenessState;
+  /**
+   * Qualified display hint the UI should render in place of a bare signed
+   * total for this aggregate, or null when the aggregate is safe to present
+   * as-is. For price-derived aggregates this is the Open P&L completeness
+   * label ('— Partial — N unpriced' / '— Unavailable — N unpriced'); it is
+   * always null for aggregates with no signed-total presentation (journal
+   * attribution, reconciliation).
+   */
+  presentationLabel: string | null;
 }
 
 /** Per-position attribution: which source produced this position's fills. */
@@ -245,6 +254,12 @@ export interface RiskSummary {
     withoutStop: number;
     /** 'complete' when every open trade has a stop (or none exist), else 'partial'. */
     state: SnapshotCompletenessState;
+    /**
+     * Qualified display hint: 'Incomplete — N without a valid stop' when
+     * coverage is 'partial', else null. The UI renders this instead of a
+     * deceptively complete Open risk / Portfolio heat numeric total.
+     */
+    presentationLabel: string | null;
   };
   /** Provenance of the risk section. */
   provenance: AggregateProvenance;
@@ -305,6 +320,21 @@ export interface DashboardV2Response {
   valuation: ValuationCompleteness & {
     /** Per-position valuation detail. */
     positions: DashboardPositionSummary[];
+    /**
+     * Qualified display hint for the primary Open P&L value: null when the
+     * aggregate is complete (all marks fresh) or stale (every position is
+     * priced and staleness is conveyed by state + provenance), else
+     * '— Partial — N unpriced' / '— Unavailable — N unpriced'. The UI
+     * renders this instead of a signed total so a partial sum can never
+     * look like a complete total.
+     */
+    presentationLabel: string | null;
+    /**
+     * Known P&L over the freshly marked subset (M of N coverage), or null
+     * when no position has a fresh mark. Subordinate display only — it is
+     * never presented as Open P&L.
+     */
+    markedSubsetPnl: string | null;
     /** Provenance of the valuation section. */
     provenance: AggregateProvenance;
   };
@@ -411,6 +441,42 @@ function computeRiskToStop(
   } catch {
     return null;
   }
+}
+
+/**
+ * Build the Open P&L completeness presentation label for a price-derived
+ * aggregate. Returns null when the aggregate is safe to present as a signed
+ * total ('complete' — every position has a fresh mark — or 'stale', where
+ * every position is priced and the staleness is conveyed by the aggregate
+ * state and provenance). For 'partial' and 'unavailable' the returned label
+ * is the primary value the UI must render instead of any numeric total — a
+ * partial sum can never look complete.
+ */
+function buildValuationPresentationLabel(
+  state: SnapshotCompletenessState,
+  unpricedCount: number,
+): string | null {
+  switch (state) {
+    case 'partial':
+      return `— Partial — ${unpricedCount} unpriced`;
+    case 'unavailable':
+      return `— Unavailable — ${unpricedCount} unpriced`;
+    case 'complete':
+    case 'stale':
+      return null;
+  }
+}
+
+/**
+ * Build the stop-coverage presentation hint for Open risk / Portfolio heat.
+ * Non-null only when coverage is partial: 'Incomplete — N without a valid
+ * stop'. The UI renders this instead of a deceptively complete numeric
+ * total.
+ */
+function buildStopCoveragePresentationLabel(withoutStop: number): string | null {
+  return withoutStop > 0
+    ? `Incomplete — ${withoutStop} without a valid stop`
+    : null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -729,6 +795,29 @@ export function computeDashboardV2(
     ),
   };
 
+  // ── Qualified display hints ────────────────────────────────────────
+  // Unpriced = positions without a fresh mark, matching the coverage model
+  // (coveragePct counts only fresh marks). A partial or unavailable
+  // aggregate must never be presented as a complete signed total — the
+  // presentationLabel is the primary value the UI renders instead.
+  const unpricedCount =
+    valuationCompleteness.positionsTotal - valuationCompleteness.fresh;
+  const valuationPresentationLabel = buildValuationPresentationLabel(
+    valuationState,
+    unpricedCount,
+  );
+
+  // Marked subset P&L: the known amount over positions with a fresh mark
+  // (M of N coverage), or null when no position is freshly priced. It is a
+  // subordinate display amount — never presented as Open P&L.
+  const markedSubsetValues = dashboardPositions
+    .filter((p) => p.markStatus === 'fresh' && p.unrealizedPnl !== null)
+    .map((p) => p.unrealizedPnl as string);
+  const markedSubsetPnl =
+    markedSubsetValues.length === 0
+      ? null
+      : sumDecimals(markedSubsetValues);
+
   // ── Journal attribution ─────────────────────────────────────────────
   const journalCounts = sqlite
     .prepare(
@@ -756,6 +845,7 @@ export function computeDashboardV2(
       asOf: journalCounts?.max_posted_at ?? null,
       computedAt,
       status: 'complete',
+      presentationLabel: null,
     },
   };
 
@@ -786,6 +876,7 @@ export function computeDashboardV2(
           asOf: reconciliationReport.computedAt,
           computedAt,
           status: 'complete',
+          presentationLabel: null,
         },
       }
     : {
@@ -800,13 +891,17 @@ export function computeDashboardV2(
           asOf: null,
           computedAt,
           status: 'unavailable',
+          presentationLabel: null,
         },
       };
 
   // ── Risk Summary ──────────────────────────────────────────────────
   // openPnl: a partial sum is never presented as complete — when any
-  // position lacks a mark, openPnl is null (the coverage counts and
-  // completeness state explain why).
+  // position's unrealized P&L cannot be computed (no mark), openPnl is null
+  // (the coverage counts and completeness state explain why). A stale mark
+  // still yields a computable value, so the 'stale' aggregate carries a
+  // full sum that is qualified by the aggregate state and provenance, not
+  // by nulling openPnl.
   const openPnlValues = dashboardPositions.map((p) => p.unrealizedPnl);
   const openPnl =
     dashboardPositions.length === 0
@@ -883,12 +978,14 @@ export function computeDashboardV2(
       withoutStop: missingStops,
       state:
         openTrades === 0 || missingStops === 0 ? 'complete' : 'partial',
+      presentationLabel: buildStopCoveragePresentationLabel(missingStops),
     },
     provenance: {
       source: 'account_positions + trades + trade_risk_snapshots',
       asOf: latestMarkTimestamp,
       computedAt,
       status: valuationState,
+      presentationLabel: valuationPresentationLabel,
     },
   };
 
@@ -951,16 +1048,20 @@ export function computeDashboardV2(
         asOf: performance?.computed_as_of ?? null,
         computedAt,
         status: valuationState,
+        presentationLabel: valuationPresentationLabel,
       },
     },
     valuation: {
       ...valuationCompleteness,
       positions: dashboardPositions,
+      presentationLabel: valuationPresentationLabel,
+      markedSubsetPnl,
       provenance: {
         source: 'account_positions + valuation_marks',
         asOf: latestMarkTimestamp,
         computedAt,
         status: valuationState,
+        presentationLabel: valuationPresentationLabel,
       },
     },
     journalAttribution,

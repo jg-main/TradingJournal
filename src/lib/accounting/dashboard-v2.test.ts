@@ -962,6 +962,16 @@ describe('computeDashboardV2', () => {
 
     // A partial sum would be presented as complete otherwise — openPnl is null
     expect(result!.riskSummary.openPnl).toBeNull();
+
+    // The primary value is the qualified presentation label — never a signed
+    // total — and the known marked-subset amount carries M-of-N coverage.
+    expect(result!.valuation.presentationLabel).toBe(
+      '— Partial — 1 unpriced',
+    );
+    expect(result!.valuation.markedSubsetPnl).toBe('50.00');
+    expect(result!.valuation.provenance.presentationLabel).toBe(
+      '— Partial — 1 unpriced',
+    );
   });
 
   it('reports per-position risk state and stop coverage from open trades', () => {
@@ -1037,6 +1047,7 @@ describe('computeDashboardV2', () => {
       withStop: 1,
       withoutStop: 0,
       state: 'complete',
+      presentationLabel: null,
     });
     expect(result!.riskSummary.openRisk).toBe('75.00');
     expect(result!.riskSummary.openRiskToStop).toBe('75.00');
@@ -1154,6 +1165,7 @@ describe('computeDashboardV2', () => {
       withStop: 0,
       withoutStop: 1,
       state: 'partial',
+      presentationLabel: 'Incomplete — 1 without a valid stop',
     });
     // Open trade has no risk snapshot → partial data → null, not a partial sum
     expect(result!.riskSummary.openRisk).toBeNull();

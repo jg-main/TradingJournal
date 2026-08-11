@@ -259,6 +259,8 @@ interface ScenarioAccounts {
   noMarks: string;
   /** Two positions, one fresh mark → 'partial'. */
   partial: string;
+  /** Three positions, two fresh marks → 'partial' with one unpriced. */
+  partialOfThree: string;
   /** One position with a 5-day-old mark → 'stale'. */
   stale: string;
   /** One position, all executions journal-linked → 'journal'. */
@@ -319,6 +321,19 @@ function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
   insertMark(sqlite, partial, partialMarked, '110.00', 110_000_000, 'user', now);
   insertPosition(sqlite, partial, partialMarked, 'long', '5.00', '100.00');
   insertPosition(sqlite, partial, partialUnmarked, 'long', '5.00', '100.00');
+
+  // ── Partial of three account (2 of 3 positions marked) ───────────────
+  // Matches DASH-AC-02: one unpriced of three, two marked rows sum to a
+  // known marked-subset amount that must never render as Open P&L.
+  const partialOfThree = createAccount(sqlite, 'Contract Partial Of Three Account');
+  const p3MarkedA = insertInstrument(sqlite, 'P3A');
+  const p3MarkedB = insertInstrument(sqlite, 'P3B');
+  const p3Unmarked = insertInstrument(sqlite, 'P3C');
+  insertMark(sqlite, partialOfThree, p3MarkedA, '110.00', 110_000_000, 'user', now);
+  insertMark(sqlite, partialOfThree, p3MarkedB, '120.00', 120_000_000, 'user', now);
+  insertPosition(sqlite, partialOfThree, p3MarkedA, 'long', '5.00', '100.00');
+  insertPosition(sqlite, partialOfThree, p3MarkedB, 'long', '5.00', '100.00');
+  insertPosition(sqlite, partialOfThree, p3Unmarked, 'long', '5.00', '100.00');
 
   // ── Stale marks account (all marks present, none fresh) ──────────────
   const stale = createAccount(sqlite, 'Contract Stale Account');
@@ -388,6 +403,7 @@ function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
     empty,
     noMarks,
     partial,
+    partialOfThree,
     stale,
     journalOnly,
     zeroExecutions,
@@ -819,6 +835,7 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
       withStop: 1,
       withoutStop: 0,
       state: 'complete',
+      presentationLabel: null,
     });
     expect(result.riskSummary.openRisk).toBe('75.00');
     expect(result.riskSummary.openRiskToStop).toBe('75.00');
@@ -850,6 +867,7 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
       withStop: 0,
       withoutStop: 1,
       state: 'partial',
+      presentationLabel: 'Incomplete — 1 without a valid stop',
     });
     // Open trade has no risk snapshot → partial → null, never a partial sum.
     expect(result.riskSummary.openRisk).toBeNull();
@@ -882,6 +900,7 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
       withStop: 2,
       withoutStop: 0,
       state: 'complete',
+      presentationLabel: null,
     });
     // Both trades have snapshots → openRisk is the full sum, not partial.
     expect(result.riskSummary.openRisk).toBe('110.00');
@@ -893,5 +912,112 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     const result = computeDashboardV2(sqlite, accounts.riskWithSnapshot)!;
     // openRisk 75.00 / nav 10000.00 × 100 = 0.75
     expect(result.riskSummary.portfolioHeat).toBe('0.75');
+  });
+});
+
+describe('dashboard snapshot contract — qualified display hints (presentationLabel, markedSubsetPnl)', () => {
+  let sqlite: Database.Database;
+  let accounts: ScenarioAccounts;
+
+  beforeAll(() => {
+    if (existsSync(TEST_DB_PATH)) unlinkSync(TEST_DB_PATH);
+    sqlite = new Database(TEST_DB_PATH);
+    sqlite.pragma('journal_mode = WAL');
+    sqlite.pragma('foreign_keys = ON');
+    applyAllMigrations(sqlite);
+    accounts = seedScenarioDatabase(sqlite);
+  });
+
+  afterAll(() => destroyTestDatabase(sqlite));
+
+  it('renders "— Partial — 1 unpriced" as the primary value for one unpriced of three (DASH-AC-02)', () => {
+    const result = computeDashboardV2(sqlite, accounts.partialOfThree)!;
+
+    // Coverage: 2 fresh of 3 → partial, one unpriced.
+    expect(result.valuation.positionsTotal).toBe(3);
+    expect(result.valuation.fresh).toBe(2);
+    expect(result.valuation.missing).toBe(1);
+    expect(result.valuation.state).toBe('partial');
+
+    // The primary value is the qualified label — never a signed total.
+    expect(result.valuation.presentationLabel).toBe('— Partial — 1 unpriced');
+    // openPnl stays null: the unmarked position cannot be summed.
+    expect(result.riskSummary.openPnl).toBeNull();
+
+    // The known amount carries M-of-N coverage: 50.00 + 100.00 of 3.
+    expect(result.valuation.markedSubsetPnl).toBe('150.00');
+
+    // The label propagates to every price-derived aggregate provenance.
+    expect(result.valuation.provenance.presentationLabel).toBe(
+      '— Partial — 1 unpriced',
+    );
+    expect(result.metrics.provenance.presentationLabel).toBe(
+      '— Partial — 1 unpriced',
+    );
+    expect(result.riskSummary.provenance.presentationLabel).toBe(
+      '— Partial — 1 unpriced',
+    );
+  });
+
+  it('renders "— Unavailable — N unpriced" when no position has a mark', () => {
+    const result = computeDashboardV2(sqlite, accounts.noMarks)!;
+    expect(result.valuation.state).toBe('unavailable');
+    expect(result.valuation.presentationLabel).toBe(
+      '— Unavailable — 1 unpriced',
+    );
+    // Nothing is freshly priced → no known marked-subset amount.
+    expect(result.valuation.markedSubsetPnl).toBeNull();
+    expect(result.riskSummary.openPnl).toBeNull();
+  });
+
+  it('renders "Incomplete — N without a valid stop" for partial stop coverage (DASH-AC-06)', () => {
+    const result = computeDashboardV2(sqlite, accounts.riskNoSnapshot)!;
+    expect(result.riskSummary.stopCoverage.state).toBe('partial');
+    expect(result.riskSummary.stopCoverage.presentationLabel).toBe(
+      'Incomplete — 1 without a valid stop',
+    );
+    // A deceptively complete numeric total is never surfaced.
+    expect(result.riskSummary.openRiskToStop).toBeNull();
+    expect(result.riskSummary.openRisk).toBeNull();
+
+    // Complete coverage has no label.
+    const withStop = computeDashboardV2(sqlite, accounts.riskWithSnapshot)!;
+    expect(withStop.riskSummary.stopCoverage.state).toBe('complete');
+    expect(withStop.riskSummary.stopCoverage.presentationLabel).toBeNull();
+  });
+
+  it('surfaces no presentation label and a signed total when all marks are fresh', () => {
+    // riskWithSnapshot: one position with a fresh mark and a canonical cost
+    // basis → the aggregate is complete and openPnl is a real signed amount.
+    const result = computeDashboardV2(sqlite, accounts.riskWithSnapshot)!;
+    expect(result.valuation.state).toBe('complete');
+    expect(result.valuation.presentationLabel).toBeNull();
+    expect(result.valuation.provenance.presentationLabel).toBeNull();
+    expect(result.metrics.provenance.presentationLabel).toBeNull();
+    expect(result.riskSummary.provenance.presentationLabel).toBeNull();
+
+    // openPnl is a real signed amount; with M = N the marked subset is the
+    // full sum.
+    expect(result.riskSummary.openPnl).toBe('50.00');
+    expect(result.valuation.markedSubsetPnl).toBe(result.riskSummary.openPnl);
+  });
+
+  it('produces different classifications for the same mark under different injected policies', () => {
+    // The stale scenario has one 5-day-old mark: stale under the default
+    // 1440-minute (24h) policy...
+    const strict = computeDashboardV2(sqlite, accounts.stale)!;
+    expect(strict.valuation.positions[0].markStatus).toBe('stale');
+    expect(strict.valuation.state).toBe('stale');
+    expect(strict.valuation.coveragePct).toBe('0.00');
+    expect(strict.valuation.markedSubsetPnl).toBeNull();
+
+    // ...but fresh under a 7-day policy injected through the public surface.
+    const lenient = computeDashboardV2(sqlite, accounts.stale, {
+      freshnessPolicy: { defaultThresholdMinutes: 7 * 24 * 60 },
+    })!;
+    expect(lenient.valuation.positions[0].markStatus).toBe('fresh');
+    expect(lenient.valuation.state).toBe('complete');
+    expect(lenient.valuation.coveragePct).toBe('100.00');
+    expect(lenient.valuation.markedSubsetPnl).toBe('50.00');
   });
 });

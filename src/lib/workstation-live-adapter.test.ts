@@ -164,6 +164,7 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
         asOf: '2026-07-24T20:00:00.000Z',
         computedAt: '2026-07-24T20:15:00.000Z',
         status: 'partial',
+        presentationLabel: '— Partial — 1 unpriced',
       },
     },
     valuation: {
@@ -173,6 +174,8 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
       missing: 0,
       state: 'partial',
       coveragePct: '66.67',
+      presentationLabel: '— Partial — 1 unpriced',
+      markedSubsetPnl: '919.60',
       positions: [
         {
           instrumentId: 'inst-nvda', symbol: 'NVDA', direction: 'long',
@@ -222,6 +225,7 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
         asOf: '2026-07-24T19:58:00Z',
         computedAt: '2026-07-24T20:15:00.000Z',
         status: 'partial',
+        presentationLabel: '— Partial — 1 unpriced',
       },
     },
     journalAttribution: {
@@ -233,6 +237,7 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
         asOf: '2026-07-24T20:15:00.000Z',
         computedAt: '2026-07-24T20:15:00.000Z',
         status: 'complete',
+        presentationLabel: null,
       },
     },
     reconciliation: {
@@ -245,6 +250,7 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
         asOf: '2026-07-24T20:15:00.000Z',
         computedAt: '2026-07-24T20:15:00.000Z',
         status: 'complete',
+        presentationLabel: null,
       },
     },
     riskSummary: {
@@ -259,12 +265,14 @@ function makeDashboardV2Response(overrides: Partial<DashboardV2Response> = {}): 
         withStop: 2,
         withoutStop: 1,
         state: 'partial',
+        presentationLabel: 'Incomplete — 1 without a valid stop',
       },
       provenance: {
         source: 'account_positions + trades + trade_risk_snapshots',
         asOf: '2026-07-24T19:58:00Z',
         computedAt: '2026-07-24T20:15:00.000Z',
         status: 'partial',
+        presentationLabel: '— Partial — 1 unpriced',
       },
     },
     integrity: { status: 'warning', warnings: ['TSLA mark is stale.'] },

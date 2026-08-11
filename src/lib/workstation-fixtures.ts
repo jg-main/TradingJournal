@@ -803,8 +803,9 @@ function fixtureProvenance(
   source: string,
   asOf: string | null,
   status: SnapshotCompletenessState,
+  presentationLabel: string | null = null,
 ): AggregateProvenance {
-  return { source, asOf, computedAt: FIXTURE_COMPUTED_AT, status };
+  return { source, asOf, computedAt: FIXTURE_COMPUTED_AT, status, presentationLabel };
 }
 
 /** Build one RiskSummary mirroring the v2 API contract (incl. stop coverage). */
@@ -816,6 +817,8 @@ function fixtureRiskSummary(opts: {
   positionsWithStop: number;
   openRiskToStop: string | null;
   provenanceStatus: SnapshotCompletenessState;
+  /** Mirrors valuation.provenance.presentationLabel for the same snapshot. */
+  provenancePresentationLabel?: string | null;
 }): DashboardV2Response['riskSummary'] {
   const openTrades = opts.missingStops + opts.positionsWithStop;
   return {
@@ -830,11 +833,16 @@ function fixtureRiskSummary(opts: {
       withStop: opts.positionsWithStop,
       withoutStop: opts.missingStops,
       state: openTrades === 0 || opts.missingStops === 0 ? 'complete' : 'partial',
+      presentationLabel:
+        opts.missingStops > 0
+          ? `Incomplete — ${opts.missingStops} without a valid stop`
+          : null,
     },
     provenance: fixtureProvenance(
       'account_positions + trades + trade_risk_snapshots',
       FIXTURE_MARK_AS_OF,
       opts.provenanceStatus,
+      opts.provenancePresentationLabel ?? null,
     ),
   };
 }
@@ -867,6 +875,23 @@ function buildDashboardV2(opts: {
             ? 'stale'
             : 'partial';
   const coveragePct = total === 0 ? null : ((fresh / total) * 100).toFixed(2);
+
+  // Qualified display hints mirroring the real contract: the valuation label
+  // for partial/unavailable aggregates and the known marked-subset amount.
+  const unpriced = total - fresh;
+  const valuationLabel =
+    state === 'partial'
+      ? `— Partial — ${unpriced} unpriced`
+      : state === 'unavailable'
+        ? `— Unavailable — ${unpriced} unpriced`
+        : null;
+  const markedSubsetPnl =
+    fresh === 0
+      ? null
+      : opts.positions
+          .filter((p) => p.markStatus === 'fresh' && p.unrealizedPnl !== null)
+          .reduce((acc, p) => acc + Number(p.unrealizedPnl), 0)
+          .toFixed(2);
 
   return {
     snapshotId: `snap:${FIXTURE_ACCOUNT.id}:${FIXTURE_COMPUTED_AT}`,
@@ -911,7 +936,7 @@ function buildDashboardV2(opts: {
       drawdownPct: opts.drawdownPct,
       modifiedDietzReturn: '0.0524',
       twr: '0.0518',
-      provenance: fixtureProvenance('account_performance', FIXTURE_PERF_AS_OF, state),
+      provenance: fixtureProvenance('account_performance', FIXTURE_PERF_AS_OF, state, valuationLabel),
     },
     valuation: {
       positionsTotal: total,
@@ -920,8 +945,10 @@ function buildDashboardV2(opts: {
       missing,
       state,
       coveragePct,
+      presentationLabel: valuationLabel,
+      markedSubsetPnl,
       positions: opts.positions,
-      provenance: fixtureProvenance('account_positions + valuation_marks', FIXTURE_MARK_AS_OF, state),
+      provenance: fixtureProvenance('account_positions + valuation_marks', FIXTURE_MARK_AS_OF, state, valuationLabel),
     },
     journalAttribution: {
       hasJournalTrades: opts.positions.length > 0,
@@ -1097,6 +1124,7 @@ function buildDefaultScenario(): WorkstationFixtures {
       positionsWithStop: 2,
       openRiskToStop: '731.60',
       provenanceStatus: 'partial',
+      provenancePresentationLabel: '— Partial — 1 unpriced',
     }),
     integrity: {
       status: 'warning',
@@ -1390,6 +1418,7 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
       positionsWithStop: 0,
       openRiskToStop: null,
       provenanceStatus: 'unavailable',
+      provenancePresentationLabel: '— Unavailable — 2 unpriced',
     }),
     integrity: {
       status: 'critical',
