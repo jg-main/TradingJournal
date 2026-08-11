@@ -21,6 +21,15 @@ import Database from 'better-sqlite3';
 import { fromMicros, toMicros, normalizeDecimal, sumDecimals } from './decimal';
 import type { CanonicalDecimal } from './types';
 import {
+  DEFAULT_FRESHNESS_POLICY_CONFIG,
+  createFreshnessPolicy,
+} from './freshness-policy';
+import type {
+  FreshnessPolicyConfig,
+  MarkStatus,
+  SnapshotCompletenessState,
+} from './freshness-policy';
+import {
   accountExists,
   findAccountPerformance,
   listLatestValuationMarks,
@@ -37,21 +46,13 @@ import type { ReconciliationReport } from './reconciliation';
 /** High-level integrity status of the accounting cutover. */
 export type IntegrityStatus = 'healthy' | 'warning' | 'critical' | 'unknown';
 
-/** Freshness classification of a single valuation mark. */
-export type MarkStatus = 'fresh' | 'stale' | 'missing';
-
-/**
- * Completeness of a price-derived aggregate:
- * - 'complete': every open position has a fresh mark (or there are no positions)
- * - 'partial': some positions lack a fresh mark (missing and/or stale)
- * - 'stale': every position has a mark, but none are fresh
- * - 'unavailable': no mark exists for any open position
- */
-export type SnapshotCompletenessState =
-  | 'complete'
-  | 'partial'
-  | 'stale'
-  | 'unavailable';
+// Freshness classification vocabulary now lives in the central freshness
+// policy library. Re-exported here so existing importers of this module keep
+// working — the canonical home is ./freshness-policy.
+export type {
+  MarkStatus,
+  SnapshotCompletenessState,
+} from './freshness-policy';
 
 /** Per-position data-source attribution: which source owns this position. */
 export type PositionAttributionKind = 'journal' | 'account_only' | 'mixed';
@@ -321,76 +322,8 @@ export interface DashboardV2Response {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Constants
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** Default freshness threshold in minutes (24 hours). */
-const DEFAULT_FRESHNESS_THRESHOLD_MINUTES = 1440;
-
-// ═══════════════════════════════════════════════════════════════════════════
 // Internal Helpers
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Determine mark freshness status.
- *
- * - 'missing': no mark exists for this instrument
- * - 'fresh': mark exists and its age is <= freshnessThresholdMinutes
- * - 'stale': mark exists but its age exceeds freshnessThresholdMinutes
- */
-function classifyMarkStatus(
-  markTimestamp: string | null,
-  markAgeMinutes: number | null,
-  computedAt: Date,
-  freshnessThresholdMinutes: number,
-): MarkStatus {
-  if (!markTimestamp) return 'missing';
-
-  // If markAgeMinutes was pre-computed, use it
-  if (markAgeMinutes !== null) {
-    return markAgeMinutes <= freshnessThresholdMinutes ? 'fresh' : 'stale';
-  }
-
-  // Fall back to computing age from timestamps
-  try {
-    const markTime = new Date(markTimestamp).getTime();
-    const now = computedAt.getTime();
-    const ageMs = now - markTime;
-    if (ageMs < 0) return 'fresh'; // Future timestamps are treated as fresh
-    const ageMinutes = ageMs / 60_000;
-    return ageMinutes <= freshnessThresholdMinutes ? 'fresh' : 'stale';
-  } catch {
-    return 'missing';
-  }
-}
-
-/**
- * Classify the completeness of a price-derived aggregate from coverage counts.
- *
- * - total === 0            → 'complete' (nothing to mark; zero values are exact)
- * - missing === total      → 'unavailable' (no mark exists for any position)
- * - fresh === total        → 'complete'
- * - stale === total        → 'stale' (all marks present but outdated)
- * - otherwise              → 'partial' (mixed freshness or partial coverage)
- */
-function classifyCompleteness(
-  total: number,
-  fresh: number,
-  stale: number,
-  missing: number,
-): SnapshotCompletenessState {
-  if (total === 0) return 'complete';
-  if (missing === total) return 'unavailable';
-  if (fresh === total) return 'complete';
-  if (stale === total) return 'stale';
-  return 'partial';
-}
-
-/** Freshness coverage as a percentage (canonical decimal), or null when no positions. */
-function computeCoveragePct(total: number, fresh: number): string | null {
-  if (total === 0) return null;
-  return normalizeDecimal((fresh / total) * 100);
-}
 
 /**
  * Compute the integrity status based on performance warnings and valuation
@@ -497,6 +430,10 @@ function computeRiskToStop(
  * @param accountId                     - The account to aggregate.
  * @param options.freshnessThresholdMinutes - Max age in minutes for a fresh
  *                                          mark (default 1440 = 24h).
+ * @param options.freshnessPolicy          - Centrally configured freshness
+ *                                          policy (default threshold + per-
+ *                                          scope overrides). Takes precedence
+ *                                          over freshnessThresholdMinutes.
  * @param options.fields                   - Optional subset of sections to
  *                                          return. When specified, only those
  *                                          sections plus the snapshot envelope
@@ -512,6 +449,7 @@ export function computeDashboardV2(
   accountId: string,
   options?: {
     freshnessThresholdMinutes?: number;
+    freshnessPolicy?: FreshnessPolicyConfig;
     fields?: DashboardV2Field[];
   },
 ): DashboardV2Response | undefined {
@@ -523,7 +461,15 @@ export function computeDashboardV2(
     return undefined;
   }
 
-  const freshnessThreshold = options?.freshnessThresholdMinutes ?? DEFAULT_FRESHNESS_THRESHOLD_MINUTES;
+  // Freshness policy comes from the central config — never a hard-coded
+  // threshold in this module. An explicit freshnessPolicy config wins;
+  // otherwise the legacy freshnessThresholdMinutes number is wrapped as a
+  // default threshold; otherwise the canonical default config applies.
+  const policyConfig: FreshnessPolicyConfig =
+    options?.freshnessPolicy ??
+    (options?.freshnessThresholdMinutes !== undefined
+      ? { defaultThresholdMinutes: options.freshnessThresholdMinutes }
+      : DEFAULT_FRESHNESS_POLICY_CONFIG);
 
   // ── Account info ──────────────────────────────────────────────────────
   const accountRow = sqlite
@@ -630,6 +576,12 @@ export function computeDashboardV2(
   const now = new Date();
   const computedDate = now;
 
+  // Central freshness policy, bound to this snapshot's clock so age
+  // derivation and classification are deterministic per snapshot. The
+  // threshold comes from the centrally configured policy — never a
+  // hard-coded value in this module.
+  const freshnessPolicy = createFreshnessPolicy(policyConfig, undefined, () => computedDate);
+
   // Count mark statuses
   let freshCount = 0;
   let staleCount = 0;
@@ -653,16 +605,10 @@ export function computeDashboardV2(
       markStatus = 'missing';
       missingCount++;
     } else {
-      // Compute mark age
-      try {
-        const markTime = new Date(mark.mark_timestamp).getTime();
-        const ageMs = computedDate.getTime() - markTime;
-        markAgeMinutes = Math.round(ageMs / 60_000);
-      } catch {
-        markAgeMinutes = null;
-      }
+      // Compute mark age via the central policy's clock.
+      markAgeMinutes = freshnessPolicy.computeMarkAgeMinutes(mark.mark_timestamp);
 
-      markStatus = classifyMarkStatus(mark.mark_timestamp, markAgeMinutes, computedDate, freshnessThreshold);
+      markStatus = freshnessPolicy.classifyMarkStatus(mark.mark_timestamp, markAgeMinutes);
 
       if (markStatus === 'fresh') freshCount++;
       else staleCount++;
@@ -764,7 +710,7 @@ export function computeDashboardV2(
     });
   }
 
-  const valuationState = classifyCompleteness(
+  const valuationState = freshnessPolicy.classifyCompleteness(
     positionsWithQuantity.length,
     freshCount,
     staleCount,
@@ -777,7 +723,10 @@ export function computeDashboardV2(
     stale: staleCount,
     missing: missingCount,
     state: valuationState,
-    coveragePct: computeCoveragePct(positionsWithQuantity.length, freshCount),
+    coveragePct: freshnessPolicy.computeCoveragePct(
+      positionsWithQuantity.length,
+      freshCount,
+    ),
   };
 
   // ── Journal attribution ─────────────────────────────────────────────
