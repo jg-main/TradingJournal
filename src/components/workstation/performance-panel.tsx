@@ -21,7 +21,6 @@
 // ws-risk-section-header, ws-table, ws-empty
 
 import { useWorkstation } from './workstation-context';
-import type { DashboardResponse } from '@/lib/workstation-fixtures';
 
 // ── Formatters ──────────────────────────────────────────────────────────
 
