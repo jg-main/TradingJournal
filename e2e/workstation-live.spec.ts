@@ -264,8 +264,8 @@ test.describe('Live Mode E2E', () => {
     expect(failedRequests).toEqual([]);
   });
 
-  // ── Test 2: All named grid panels render without page scroll ────────
-  test('all named grid panels render and fit inside the viewport', async ({
+  // ── Test 2: Curated grid panels render in one document-scroll flow ───
+  test('curated grid panels render without horizontal overflow', async ({
     page,
   }) => {
     const consoleErrors = captureConsoleErrors(page);
@@ -279,7 +279,6 @@ test.describe('Live Mode E2E', () => {
       'kpis',
       'account-state',
       'positions',
-      'watchlist',
       'risk',
       'process-review',
       'performance',
@@ -292,15 +291,16 @@ test.describe('Live Mode E2E', () => {
       expect(box!.x, `panel ${area} inside left edge`).toBeGreaterThanOrEqual(0);
       expect(box!.y, `panel ${area} inside top edge`).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width, `panel ${area} inside right edge`).toBeLessThanOrEqual(1440);
-      expect(box!.y + box!.height, `panel ${area} inside bottom edge`).toBeLessThanOrEqual(900);
     }
 
-    // No page-level scroll.
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
+
+    // Risk & Positions uses the browser document as its normal scroll path.
     const scroll = await page.evaluate(() => ({
       scrollHeight: document.documentElement.scrollHeight,
       clientHeight: document.documentElement.clientHeight,
     }));
-    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
 
     expect(consoleErrors).toEqual([]);
   });
@@ -360,15 +360,6 @@ test.describe('Live Mode E2E', () => {
     await expect(shortRow).toBeVisible({ timeout: 10000 });
     await expect(shortRow.getByTestId('ws-position-cell-side')).toContainText('S 5.00');
     await expect(shortRow.getByTestId('ws-position-cell-pnl')).toHaveText('$50.00');
-  });
-
-  // ── Test 4: Watchlist panel renders from /api/watchlist ─────────────
-  test('watchlist panel renders from /api/watchlist', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'networkidle' });
-
-    const watchlist = page.getByTestId('ws-panel-watchlist');
-    // Panel is visible even if empty (renders empty state).
-    await expect(watchlist).toBeVisible();
   });
 
   // ── Test 5: Account switching re-fetches live data ──────────────────
@@ -524,7 +515,7 @@ test.describe('Live Mode E2E', () => {
       toolbar.locator('[data-testid^="ws-mtm-"]'),
     ).not.toBeVisible();
 
-    for (const area of ['kpis', 'account-state', 'positions', 'watchlist', 'risk', 'process-review', 'performance']) {
+    for (const area of ['kpis', 'account-state', 'positions', 'risk', 'process-review', 'performance']) {
       await expect(page.getByTestId(`ws-panel-${area}`)).toBeVisible();
     }
 
@@ -557,11 +548,11 @@ test.describe('Live Mode E2E', () => {
     await expect(drawdownKpis).toBeVisible();
     await expect(drawdownKpis.getByText('Net P&L')).toBeVisible();
 
-    // Many-watchlist scenario: watchlist table has rows.
+    // Many-watchlist remains valid fixture data, but Watchlist is intentionally
+    // absent from the curated default.
     await scenarioSelect.selectOption('many-watchlist');
     await page.waitForTimeout(300);
-    const watchlist = page.getByTestId('ws-panel-watchlist');
-    await expect(watchlist.locator('tbody tr').first()).toBeVisible();
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
 
     expect(consoleErrors).toEqual([]);
   });

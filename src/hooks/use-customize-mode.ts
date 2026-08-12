@@ -45,6 +45,7 @@ import {
   WORKSTATION_PANEL_CATALOGUE,
   WORKSTATION_PANEL_ID_LIST,
   WORKSTATION_PANEL_IDS,
+  WORKSTATION_TEMPLATE_IDS,
   WORKSTATION_TEMPLATES,
   cloneWorkstationViewConfig,
   resetViewToTemplate,
@@ -112,11 +113,12 @@ function withNormalizedHiddenOrder(config: WorkstationViewConfig): WorkstationVi
  * - Showing a hidden panel restores it at the panel's region in the current
  *   template's base grid when every one of those cells is empty and in
  *   bounds (the round-trip path). Otherwise — a panel the template hides by
- *   default, e.g. watchlist in the Performance template, has no template
- *   region — the panel is placed in a new right-rail row inserted just
- *   above the fixed KPI band (or appended at the bottom when the grid has
- *   no KPI band). Any optional panel can therefore be shown in any view;
- *   the grid stays rectangular and catalogue-valid.
+ *   default, e.g. Watchlist in Risk & Positions or Performance, has no
+ *   template region — the panel is inserted above the fixed KPI band (or
+ *   appended at the bottom when the grid has no KPI band). Risk & Positions
+ *   adds it as a full-width document row; the rail-based templates retain a
+ *   compact rail cell. Any optional panel can therefore be shown in any
+ *   view; the grid stays rectangular and catalogue-valid.
  * - Fixed panels (`canHide: false`) and unknown ids return null.
  *
  * The result is valid by construction (`validateWorkstationViewConfig`
@@ -155,17 +157,21 @@ export function togglePanelVisibilityInConfig(
     }
 
     // Fallback: the template hides this panel by default (no region) or the
-    // region is occupied. Place it in a new right-rail row above the fixed
-    // KPI band. Empty rows are pruned first so show/hide cycles are stable.
+    // region is occupied. The document-flow Risk & Positions template gets a
+    // full-width row; secondary templates retain a compact right-rail cell.
+    // Empty rows are pruned first so show/hide cycles are stable.
     if (!next.areas[0]) return null; // defensive: grids always have ≥1 row
     next.areas = next.areas.filter((row) => row.some((cell) => cell !== GRID_EMPTY_CELL));
-    const railRow: string[] = next.areas[0].map(() => GRID_EMPTY_CELL);
-    railRow[railRow.length - 1] = panelId;
+    const fallbackRow: string[] = next.templateId === WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS
+      ? next.areas[0].map(() => panelId)
+      : next.areas[0].map((_, index, row) =>
+          index === row.length - 1 ? panelId : GRID_EMPTY_CELL,
+        );
     const kpisRowIdx = next.areas.findIndex((row) =>
       row.includes(WORKSTATION_PANEL_IDS.KPIS),
     );
-    if (kpisRowIdx === -1) next.areas.push(railRow);
-    else next.areas.splice(kpisRowIdx, 0, railRow);
+    if (kpisRowIdx === -1) next.areas.push(fallbackRow);
+    else next.areas.splice(kpisRowIdx, 0, fallbackRow);
     next.hiddenPanels.splice(hiddenIdx, 1);
     return next;
   }

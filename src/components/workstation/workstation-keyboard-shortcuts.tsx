@@ -5,9 +5,9 @@
 //
 // Handles high-frequency workstation operations without modifier keys:
 //   [ / ]  — cycle through accounts (previous / next)
-//   1 – 7   — focus panels (KPIs, Account State, Positions, Watchlist, Risk,
-//             Process Review, Performance)
-//   ↑ / ↓   — navigate table rows within focused Positions / Watchlist panels
+//   1, 2, 3, 5, 6, 7 — focus the curated Risk & Positions panels (KPIs,
+//             Account State, Positions, Risk, Process Review, Performance)
+//   ↑ / ↓   — navigate table rows within the focused Positions panel
 //   Enter   — highlight/unhighlight the active row
 //   ?       — toggle keyboard shortcut overlay
 //   Escape  — dismiss the overlay
@@ -34,7 +34,6 @@ const PANEL_MAP: Record<string, { area: string; label: string }> = {
   '1': { area: 'kpis', label: 'KPIs' },
   '2': { area: 'account-state', label: 'Account State' },
   '3': { area: 'positions', label: 'Positions' },
-  '4': { area: 'watchlist', label: 'Watchlist' },
   '5': { area: 'risk', label: 'Risk' },
   '6': { area: 'process-review', label: 'Process Review' },
   '7': { area: 'performance', label: 'Performance' },
@@ -47,7 +46,6 @@ const SHORTCUT_ENTRIES: { keys: string; label: string }[] = [
   { keys: '1', label: 'Focus KPIs' },
   { keys: '2', label: 'Focus Account State' },
   { keys: '3', label: 'Focus Positions' },
-  { keys: '4', label: 'Focus Watchlist' },
   { keys: '5', label: 'Focus Risk' },
   { keys: '6', label: 'Focus Process Review' },
   { keys: '7', label: 'Focus Performance' },
@@ -58,7 +56,7 @@ const SHORTCUT_ENTRIES: { keys: string; label: string }[] = [
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 /** Table panel areas that support row navigation. */
-const TABLE_PANELS = new Set(['positions', 'watchlist']);
+const TABLE_PANELS = new Set(['positions']);
 
 function isEditableTarget(el: EventTarget | null): boolean {
   if (!el || !(el instanceof HTMLElement)) return false;
@@ -267,7 +265,7 @@ export function WorkstationKeyboardShortcuts() {
       }
 
       // ── Table row navigation (ArrowUp / ArrowDown / Enter) ─────────
-      // Only when focus is on a table panel (positions / watchlist).
+      // Only when focus is on the default Positions table panel.
       const focused = getFocusedTablePanel();
       if (!focused) return;
 

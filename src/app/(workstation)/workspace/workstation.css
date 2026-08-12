@@ -44,7 +44,8 @@
   font-size: var(--ws-text-md);
   line-height: 1.35;
 
-  /* Fixed, non-scrolling surface: panels scroll internally */
+  /* Contained workstation surface for Performance and Process Review.
+     Risk & Positions opts into document flow below. */
   height: 100dvh;
   overflow: hidden;
   display: flex;
@@ -90,6 +91,33 @@
   min-height: 0;
   overflow: auto;
   padding: var(--ws-space-3);
+}
+
+/* Risk & Positions is deliberately a single page-scrolling workflow. The
+   panel grid advertises the mode from WorkstationShell, allowing the root
+   surface to grow beyond the viewport and each panel to reveal its content
+   in normal document flow. This removes competing inner scrollbars from
+   Account State, Performance, Open Positions, and Process Review without
+   changing the saved Performance / Process Review workstations. */
+.ws:has(.ws-grid[data-scroll-mode='document']) {
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-grid {
+  flex: none;
+  min-height: auto;
+}
+
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel,
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel-body {
+  min-height: auto;
+  overflow: visible;
+}
+
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel-body {
+  flex: none;
 }
 
 .ws-num {
@@ -375,15 +403,12 @@
 
 /* ── CSS Grid shell ──────────────────────────────────────────────────────── */
 /*
- * Risk-first workstation grid (S04 T02, requirements §5.1): the risk
- * summary band spans the full width on top, the open-positions table is the
- * tall dominant left column, and account state / watchlist / insights stack
- * on the right rail. The period-performance KPI band sits at the bottom — a
- * compact summary below the risk area, never a competing first-row KPI
- * wall (§5.1 area 7, §8.1). The first four areas (command/state bar,
- * alert strip, risk summary, positions) stay above the fold at 2560×1440
- * and effective 1536×960 without zoom. Panels never move; content scrolls
- * inside them.
+ * Risk-first workstation grid (requirements §5.1): Risk spans the full
+ * width, Performance and Account State share a balanced overview row, and
+ * full-width Open Positions and Process Review follow in document flow. The
+ * period-performance KPI band remains at the bottom as compact supporting
+ * information, never as a first-row KPI wall. Watchlist is deliberately not
+ * in this curated default; it can be added to a saved view when needed.
  *
  * S06 (R035): the grid-template-columns / -rows / -areas are computed from
  * the active saved view's layout config and applied inline by
@@ -1001,12 +1026,10 @@
 /* Flex-based container that fills the equity panel body so the ECharts
    canvas sizes correctly via ResizeObserver (useChartResize).
 
-   S04 T02: the equity panel is now a secondary right-rail surface behind
-   the risk band and positions table, so at shorter viewports the body may
-   be smaller than chart + performance summary. A guaranteed min-height
-   keeps the chart from collapsing to 0 (ECharts refuses to init on a
-   0×0 container); the panel body scrolls internally, and the first-screen
-   areas (risk, positions) are unaffected. */
+   Account State appears beside Performance in the default document flow and
+   can appear in a constrained saved view. A guaranteed min-height keeps the
+   chart from collapsing to 0 (ECharts refuses to init on a 0×0 container)
+   in either mode. */
 .ws-chart-container {
   flex: 1;
   min-height: 160px;

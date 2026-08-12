@@ -166,18 +166,19 @@ test.describe('Visual Regression Baselines', () => {
       // Toolbar should be visible
       await expect(page.getByTestId('ws-toolbar')).toBeVisible();
 
-      // All 7 grid panels should be visible
+      // The curated Risk & Positions grid keeps Watchlist out of the default
+      // setup while retaining the operational review panels.
       await expect(page.getByTestId('ws-panel-kpis')).toBeVisible();
       await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
       await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
-      await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+      await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
       await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
       await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
       await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
 
-      // Visual baseline
+      // Full-page baseline captures the document-scroll workflow.
       await expect(page).toHaveScreenshot(`workstation-${id}-1440x900.png`, {
-        fullPage: false,
+        fullPage: true,
         threshold: 0.3,
         maxDiffPixels: CHART_RASTERIZATION_MAX_DIFF_PIXELS,
       });
@@ -219,13 +220,12 @@ test.describe('Visual Regression Baselines', () => {
     });
   });
 
-  test('workstation many-watchlist scenario renders full symbol list', async ({ page }) => {
+  test('workstation many-watchlist scenario keeps Watchlist outside the default', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=many-watchlist');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500);
 
-    // Watchlist panel should show rows
-    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
 
     // Full-page visual baseline
     await expect(page).toHaveScreenshot('workstation-many-watchlist-fullpage-1440x900.png', {

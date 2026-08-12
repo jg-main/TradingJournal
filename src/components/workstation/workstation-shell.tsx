@@ -14,8 +14,10 @@
 //
 // The data-quality alert strip (T01) renders above the grid, outside it, so
 // it stays visible in every view and can never be hidden or rearranged by a
-// saved layout. Panels scroll internally and the surface itself never
-// scrolls (see .ws and .ws-grid in workstation.css).
+// saved layout. The Risk & Positions template uses document flow so its
+// operational panels do not create competing nested scroll regions; the
+// other curated templates retain their contained workstation behavior (see
+// .ws and .ws-grid in workstation.css).
 
 import { Fragment, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { EyeOff } from 'lucide-react';
@@ -36,6 +38,7 @@ import {
   WORKSTATION_TEMPLATE_IDS,
   computeGridTemplateAreas,
   computeGridTemplateColumns,
+  computeDocumentFlowGridTemplateRows,
   computeGridTemplateRows,
   computeVisiblePanels,
   createViewFromTemplate,
@@ -187,10 +190,21 @@ export function WorkstationShell() {
     ? draft
     : (viewsState.activeView?.config ?? DEFAULT_VIEW_CONFIG);
 
+  // The curated Risk & Positions workflow is intentionally a vertically
+  // scrolling document: a trader scans the paired overview row, then Open
+  // Positions and Process Review, without having to discover separate panel
+  // scrollbars. User views derived from that template retain this workflow;
+  // the Performance and Process Review templates keep their contained grid.
+  const scrollMode = config.templateId === WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS
+    ? 'document'
+    : 'contained';
+
   const gridStyle = {
     gridTemplateAreas: computeGridTemplateAreas(config),
     gridTemplateColumns: computeGridTemplateColumns(config),
-    gridTemplateRows: computeGridTemplateRows(config),
+    gridTemplateRows: scrollMode === 'document'
+      ? computeDocumentFlowGridTemplateRows(config)
+      : computeGridTemplateRows(config),
   };
 
   const visiblePanels = computeVisiblePanels(config);
@@ -256,6 +270,7 @@ export function WorkstationShell() {
         className="ws-grid"
         style={gridStyle}
         data-testid="ws-grid"
+        data-scroll-mode={scrollMode}
         id="ws-main-content"
         tabIndex={-1}
       >

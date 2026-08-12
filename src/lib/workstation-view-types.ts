@@ -123,7 +123,7 @@ export const WORKSTATION_PANEL_CATALOGUE = {
   [WORKSTATION_PANEL_IDS.POSITIONS]: {
     id: WORKSTATION_PANEL_IDS.POSITIONS,
     title: 'Open Positions',
-    description: 'Open account positions table — the primary first-screen object (R034 area 4).',
+    description: 'Open account positions table — the primary full-width operational table in Risk & Positions.',
     canHide: false,
     canResize: true,
     fill: true,
@@ -159,7 +159,7 @@ export const WORKSTATION_PANEL_CATALOGUE = {
   [WORKSTATION_PANEL_IDS.WATCHLIST]: {
     id: WORKSTATION_PANEL_IDS.WATCHLIST,
     title: 'Watchlist',
-    description: 'Secondary attention surface on the right rail (R034 area 6).',
+    description: 'Optional saved-view attention surface; available separately from the curated Risk & Positions flow.',
     canHide: true,
     canResize: true,
     fill: true,
@@ -236,9 +236,12 @@ export interface WorkstationTemplate {
 /**
  * The three curated system templates (R035):
  *
- * - **risk-positions** — the immutable default and startup view. Every panel
- *   visible, positions dominant in the left column, right rail for account
- *   state / performance / process review / watchlist.
+ * - **risk-positions** — the immutable default and startup view. Current
+ *   risk spans the top, Performance and Account State share a balanced
+ *   overview row, and full-width Open Positions and Process Review follow
+ *   in document flow. Watchlist is deliberately excluded from this curated
+ *   starting layout, while remaining available to saved custom views and its
+ *   dedicated navigation surface.
  * - **performance** — positions and account state remain visible; a
  *   prominent full-width Performance panel dominates the lower grid; the
  *   watchlist and process-review panels are hidden by default.
@@ -251,17 +254,16 @@ export const WORKSTATION_TEMPLATES = {
     id: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
     name: 'Risk & Positions',
     description:
-      'The curated default: risk summary, dominant open-positions table, and the account/performance/review/watchlist rail. Immutable system default and startup view.',
-    columns: [2, 1],
+      'The curated default: risk summary, paired Performance and Account State, then full-width Open Positions and Process Review in document flow. Watchlist remains available through saved custom views and its dedicated page. Immutable system default and startup view.',
+    columns: [1, 1],
     areas: [
       ['risk', 'risk'],
-      ['positions', 'account'],
-      ['positions', 'perf'],
-      ['positions', 'review'],
-      ['positions', 'watchlist'],
+      ['perf', 'account'],
+      ['positions', 'positions'],
+      ['review', 'review'],
       ['kpis', 'kpis'],
     ],
-    defaultHidden: [],
+    defaultHidden: [WORKSTATION_PANEL_IDS.WATCHLIST],
     isSystemDefault: true,
   } satisfies WorkstationTemplate,
 
@@ -574,6 +576,17 @@ export function computeGridTemplateRows(config: WorkstationViewConfig): string {
       return hasFillPanel ? 'minmax(0, 1fr)' : 'auto';
     })
     .join(' ');
+}
+
+/**
+ * Compute content-sized grid rows for the document-flow Risk & Positions
+ * workflow. The contained Performance and Process Review views intentionally
+ * use `computeGridTemplateRows` to share available viewport height; applying
+ * those `1fr` tracks to a page-scrolling workflow would instead create large
+ * empty panels below otherwise compact operational content.
+ */
+export function computeDocumentFlowGridTemplateRows(config: WorkstationViewConfig): string {
+  return config.areas.map(() => 'auto').join(' ');
 }
 
 /**

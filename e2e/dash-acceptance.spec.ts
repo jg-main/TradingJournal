@@ -32,7 +32,8 @@
  *                 changes period data while current-state cells keep scope.
  *   DASH-AC-09  → default: saved-view layout changes persist only in the
  *                 saved view; returning to Risk & Positions restores the
- *                 immutable default; normal mode has no editing chrome.
+ *                 immutable default without Watchlist; normal mode has no
+ *                 editing chrome.
  *                 (Full user-view CRUD/persistence is e2e/workstation-views.)
  *   DASH-AC-10  → default at 2560×1440 and effective 1536×960: first screen
  *                 shows command/state bar, material alert, risk summary, and
@@ -384,7 +385,8 @@ test('DASH-AC-09: saved-view layout changes are view-scoped; normal mode has no 
   await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
   await expect(page.getByTestId('ws-data-quality-alert-strip')).toBeVisible();
 
-  // Returning to normal Risk & Positions restores the immutable default.
+  // Returning to normal Risk & Positions restores the immutable default,
+  // whose curated setup does not include Watchlist.
   await trigger.click();
   await expect(page.getByTestId('ws-view-switcher-content')).toBeVisible();
   await page.getByTestId('ws-view-item-ws-system-risk-positions').click();
@@ -392,7 +394,7 @@ test('DASH-AC-09: saved-view layout changes are view-scoped; normal mode has no 
   await expect(page.getByTestId('ws-view-switcher-current-name')).toHaveText(
     'Risk & Positions',
   );
-  await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+  await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
   await expect(page.getByTestId('ws-customize-bar')).toHaveCount(0);
 });
 

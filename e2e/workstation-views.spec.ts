@@ -49,20 +49,19 @@ const SYSTEM_VIEW_IDS = {
   PROCESS_REVIEW: 'ws-system-process-review',
 } as const;
 
-/** All catalogue panels in order (optional panels may be hidden per view). */
-const ALL_PANELS = [
+/** Catalogue panels visible in the curated Risk & Positions starting view. */
+const RISK_POSITIONS_PANELS = [
   'risk',
   'positions',
   'account-state',
   'performance',
   'process-review',
-  'watchlist',
   'kpis',
 ] as const;
 
 /** The panels each system template renders (fixed panels always render). */
 const TEMPLATE_PANELS: Record<string, readonly string[]> = {
-  'Risk & Positions': ALL_PANELS,
+  'Risk & Positions': RISK_POSITIONS_PANELS,
   Performance: ['risk', 'positions', 'account-state', 'performance', 'kpis'],
   'Process Review': ['risk', 'positions', 'account-state', 'process-review', 'kpis'],
 };
@@ -190,12 +189,12 @@ test.describe('workstation saved views', () => {
     await resetViewStore(page, request);
     await page.goto('/dev/workstation');
 
-    // ── Default startup view: Risk & Positions renders every panel ──
+    // ── Default startup view: operational panels render, Watchlist does not ──
     await expect(page.getByTestId('ws-toolbar')).toBeVisible();
     await expect(page.getByTestId('ws-view-switcher-current-name')).toHaveText(
       'Risk & Positions',
     );
-    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], []);
+    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], ['watchlist']);
 
     // The data-quality alert strip is visible (fixture valuation is
     // partial) and sits OUTSIDE the grid — a sibling, never a descendant.
@@ -249,15 +248,72 @@ test.describe('workstation saved views', () => {
       'watchlist',
     ]);
 
-    // ── Back to the immutable default: every panel renders again ──
+    // ── Back to the immutable default: the curated flow is restored ──
     await selectView(page, SYSTEM_VIEW_IDS.RISK_POSITIONS);
     await expect(page.getByTestId('ws-view-switcher-current-name')).toHaveText(
       'Risk & Positions',
     );
-    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], []);
+    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], ['watchlist']);
 
     expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
+  });
+
+  test('Risk & Positions uses one document scroll path with paired overview panels (1536x960)', async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1536, height: 960 });
+    await resetViewStore(page, request);
+    await page.goto('/dev/workstation');
+
+    const grid = page.getByTestId('ws-grid');
+    await expect(grid).toHaveAttribute('data-scroll-mode', 'document');
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
+
+    // The first detailed row is Performance + Account State. Open Positions
+    // and Process Review then occupy their own full-width document bands.
+    const [performanceBox, accountBox, positionsBox, reviewBox] = await Promise.all([
+      page.getByTestId('ws-panel-performance').boundingBox(),
+      page.getByTestId('ws-panel-account-state').boundingBox(),
+      page.getByTestId('ws-panel-positions').boundingBox(),
+      page.getByTestId('ws-panel-process-review').boundingBox(),
+    ]);
+    expect(performanceBox).not.toBeNull();
+    expect(accountBox).not.toBeNull();
+    expect(positionsBox).not.toBeNull();
+    expect(reviewBox).not.toBeNull();
+    expect(Math.abs(performanceBox!.y - accountBox!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(performanceBox!.width - accountBox!.width)).toBeLessThanOrEqual(1);
+    expect(positionsBox!.y).toBeGreaterThanOrEqual(performanceBox!.y + performanceBox!.height);
+    expect(reviewBox!.y).toBeGreaterThanOrEqual(positionsBox!.y + positionsBox!.height);
+    // Document-flow rows size to their actual content. They must not inherit
+    // the contained-workstation 1fr tracks and become large blank panels.
+    expect(positionsBox!.height).toBeLessThan(500);
+    expect(reviewBox!.height).toBeLessThan(700);
+
+    // These panels must expand into the document. Their bodies must not have
+    // separate scrollbars, and the browser document must be scrollable.
+    for (const id of ['account-state', 'performance', 'positions', 'process-review']) {
+      const body = page.getByTestId(`ws-panel-${id}`).locator('.ws-panel-body').first();
+      await expect(body).toBeVisible();
+      expect(await body.evaluate((element) => getComputedStyle(element).overflowY)).toBe('visible');
+    }
+    const pageScroll = await page.evaluate(() => ({
+      height: document.documentElement.scrollHeight,
+      viewport: document.documentElement.clientHeight,
+    }));
+    expect(pageScroll.height).toBeGreaterThan(pageScroll.viewport);
+
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect(page.getByTestId('ws-panel-process-review')).toBeInViewport();
+
+    const screenshotPath = testInfo.outputPath('risk-positions-document-flow-1536x960.png');
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    await testInfo.attach('risk-positions-document-flow-1536x960.png', {
+      path: screenshotPath,
+      contentType: 'image/png',
+    });
   });
 
   test('customize is an explicit editing mode with save/cancel/undo/reset (1536x960)', async ({
@@ -302,7 +358,10 @@ test.describe('workstation saved views', () => {
     await expect(page.getByTestId('ws-customize-title')).toHaveText(
       'Customizing: My View',
     );
-    await expect(page.getByTestId('ws-customize-all-visible')).toBeVisible();
+    // Watchlist is intentionally absent from the curated Risk & Positions
+    // starting view, but a user-created view may explicitly add it back.
+    await expect(page.getByTestId('ws-customize-all-visible')).toHaveCount(0);
+    await expect(page.getByTestId('ws-customize-show-watchlist')).toBeVisible();
     await expect(page.getByTestId('ws-customize-fixed-note')).toHaveText(
       'Risk · Open Positions · Period KPIs are always visible',
     );
@@ -328,53 +387,62 @@ test.describe('workstation saved views', () => {
       path: testInfo.outputPath('1536x960-customize-session.png'),
     });
 
-    // ── Hide an optional panel: live draft preview + dirty state ──
-    await page.getByTestId('ws-customize-hide-watchlist').click();
+    // ── Watchlist remains available to an explicit saved-view choice ──
+    await page.getByTestId('ws-customize-show-watchlist').click();
+    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
+    await page.getByTestId('ws-customize-undo').click();
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
+    await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
+
+    // ── Hide an optional panel: live draft preview + dirty state ──
+    await page.getByTestId('ws-customize-hide-perf').click();
+    await expect(page.getByTestId('ws-panel-performance')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
     await expect(page.getByTestId('ws-customize-save')).toBeEnabled();
     await expect(page.getByTestId('ws-customize-undo')).toBeEnabled();
-    await expect(page.getByTestId('ws-customize-show-watchlist')).toBeVisible();
+    await expect(page.getByTestId('ws-customize-show-perf')).toBeVisible();
 
     // ── Undo restores the previous draft state ──
     await page.getByTestId('ws-customize-undo').click();
-    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
     await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-save')).toBeDisabled();
 
     // ── Reset returns the draft to the template base (clean session) ──
-    await page.getByTestId('ws-customize-hide-watchlist').click();
+    await page.getByTestId('ws-customize-hide-perf').click();
     await page.getByTestId('ws-customize-reset').click();
-    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-save')).toBeDisabled();
 
     // ── Cancel discards the draft; the persisted view is untouched ──
-    await page.getByTestId('ws-customize-hide-watchlist').click();
+    await page.getByTestId('ws-customize-hide-perf').click();
     await page.getByTestId('ws-customize-cancel').click();
     await expect(bar).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
-    await expect(page.getByTestId('ws-customize-hide-watchlist')).toHaveCount(0);
+    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+    await expect(page.getByTestId('ws-customize-hide-perf')).toHaveCount(0);
 
     // ── Save persists the draft and exits the session ──
     await trigger.click();
-    await page.getByTestId('ws-customize-hide-watchlist').click();
+    await page.getByTestId('ws-customize-hide-perf').click();
     await page.getByTestId('ws-customize-save').click();
     await expect(bar).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
-    await expect(page.getByTestId('ws-customize-hide-watchlist')).toHaveCount(0);
+    await expect(page.getByTestId('ws-panel-performance')).toHaveCount(0);
+    await expect(page.getByTestId('ws-customize-hide-perf')).toHaveCount(0);
 
     // ── Re-enter on the persisted config: show chip + round-trip show ──
     await trigger.click();
-    await expect(page.getByTestId('ws-customize-show-watchlist')).toBeVisible();
-    await page.getByTestId('ws-customize-show-watchlist').click();
-    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
+    await expect(page.getByTestId('ws-customize-show-perf')).toBeVisible();
+    await page.getByTestId('ws-customize-show-perf').click();
+    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
     await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
-    // Cancel keeps the persisted config (watchlist hidden) intact.
+    // Cancel keeps the persisted config (Performance hidden) intact.
     await page.getByTestId('ws-customize-cancel').click();
     await expect(bar).toHaveCount(0);
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
-    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-performance')).toHaveCount(0);
 
     // No horizontal overflow at effective 1536×960.
     const overflow = await page.evaluate(

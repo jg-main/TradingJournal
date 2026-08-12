@@ -1,9 +1,8 @@
 /**
  * M005-22kf6a S01 T04 — Workstation Shell browser evidence at 1440x900.
  *
- * Proves the terminal-dense layout concept for the greenfield /dev/workstation
- * workstation: the full shell (toolbar + CSS Grid panels) fits a 1440x900
- * viewport without page scrolling, panels populate with realistic fixture
+ * Proves the dense /dev/workstation dashboard concept: the Risk & Positions
+ * shell uses a single document-scroll path while panels populate with realistic fixture
  * data, the FIXTURE badge and console.warn signal fixture mode, scenario
  * switching works, malformed scenario params degrade safely, and the legacy
  * dashboard at / is unaffected.
@@ -13,10 +12,10 @@
  *
  * Coverage:
  * 1. Toolbar renders: brand, account selector, scenario selector, FIXTURE badge
- * 2. All named grid panels render (risk, positions, account-state, performance,
- *    process-review, watchlist, kpis)
- * 3. No page scroll at 1440x900; every panel fits inside the viewport
- * 4. Fixture data populates panels (KPIs, position rows, watchlist rows)
+ * 2. Curated grid panels render (risk, positions, account-state, performance,
+ *    process-review, kpis); Watchlist stays outside the default setup
+ * 3. One page scroll at 1440x900; operational panels do not scroll internally
+ * 4. Fixture data populates the curated panels
  * 5. console.warn fixture-mode signal fires on load
  * 6. Scenario switch: zero-positions shows empty state; large-drawdown renders
  * 7. Malformed ?scenario= param falls back to default without crashing
@@ -45,7 +44,6 @@ const GRID_AREAS = [
   'kpis',
   'account-state',
   'positions',
-  'watchlist',
   'risk',
   'process-review',
   'performance',
@@ -99,7 +97,7 @@ test.describe('workstation shell at 1440x900', () => {
     expect(box!.height).toBeLessThanOrEqual(48);
   });
 
-  test('all named grid panels render and fit inside the viewport without page scroll', async ({
+  test('curated grid panels render without horizontal overflow in one document-scroll flow', async ({
     page,
   }) => {
     await page.goto('/dev/workstation');
@@ -117,15 +115,15 @@ test.describe('workstation shell at 1440x900', () => {
       expect(box!.x, `panel ${area} inside left edge`).toBeGreaterThanOrEqual(0);
       expect(box!.y, `panel ${area} inside top edge`).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width, `panel ${area} inside right edge`).toBeLessThanOrEqual(1440);
-      expect(box!.y + box!.height, `panel ${area} inside bottom edge`).toBeLessThanOrEqual(900);
     }
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
 
-    // The surface itself never scrolls (panels scroll internally).
+    // The browser document, rather than a panel body, is the normal flow.
     const scroll = await page.evaluate(() => ({
       scrollHeight: document.documentElement.scrollHeight,
       clientHeight: document.documentElement.clientHeight,
     }));
-    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
   });
 
   test('fixture data populates KPI strip and data panels', async ({ page }) => {
@@ -138,14 +136,13 @@ test.describe('workstation shell at 1440x900', () => {
     // KPI values are rendered (not all placeholder dashes).
     await expect(kpis.locator('.ws-kpi-value').first()).not.toHaveText('—');
 
-    // Default scenario: positions and watchlist tables have real rows.
+    // Default scenario: positions table has real rows; Watchlist is not part
+    // of the curated Risk & Positions setup.
     const positions = page.getByTestId('ws-panel-positions');
     await expect(positions.locator('tbody tr').first()).toBeVisible();
     expect(await positions.locator('tbody tr').count()).toBeGreaterThan(0);
 
-    const watchlist = page.getByTestId('ws-panel-watchlist');
-    await expect(watchlist.locator('tbody tr').first()).toBeVisible();
-    await expect(watchlist.getByText('AAPL')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
 
     // Account State panel shows §6.7 cells and the equity chart.
     const accountState = page.getByTestId('ws-panel-account-state');
@@ -221,12 +218,11 @@ test.describe('workstation shell at 1440x900', () => {
       .locator('.ws-kpi-value');
     await expect(drawdownKpi).toHaveClass(/ws-neg/);
 
-    // many-watchlist: more rows than the default scenario.
+    // many-watchlist keeps the fixture route healthy even though Watchlist is
+    // intentionally absent from the curated default.
     await page.getByTestId('ws-scenario-select').selectOption('many-watchlist');
-    const manyCount = await page.getByTestId('ws-panel-watchlist').locator('tbody tr').count();
-    await page.getByTestId('ws-scenario-select').selectOption('default');
-    const defaultCount = await page.getByTestId('ws-panel-watchlist').locator('tbody tr').count();
-    expect(manyCount).toBeGreaterThan(defaultCount);
+    await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
   });
 
   test('malformed ?scenario= param degrades to default without crashing', async ({ page }) => {
@@ -273,114 +269,6 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(
       page.getByRole('button', { name: /open sidebar|close sidebar/i }),
     ).toHaveCount(0);
-  });
-
-  test('market strip renders all 4 index cards with color-coded changes', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-grid')).toBeVisible();
-
-    const strip = page.getByTestId('ws-market-strip');
-    await expect(strip).toBeVisible();
-
-    // Verify all 4 market indices render.
-    for (const symbol of ['SPX', 'NDX', 'RUT', 'VIX']) {
-      const idx = page.getByTestId(`ws-market-index-${symbol}`);
-      await expect(idx).toBeVisible();
-      await expect(idx.getByText(symbol)).toBeVisible();
-      // Last price is a numeric value (not —).
-      const valueEl = idx.locator('.ws-market-index-value');
-      await expect(valueEl).not.toHaveText('—');
-    }
-
-    // At least one index should have ws-pos or ws-neg (markets move).
-    const coloredChange = strip.locator('.ws-market-index-change.ws-pos, .ws-market-index-change.ws-neg');
-    await expect(coloredChange.first()).toBeVisible();
-  });
-
-  test('enhanced watchlist table has 7 columns with gap and proximity styling', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-grid')).toBeVisible();
-
-    const table = page.getByTestId('ws-watchlist-table');
-    await expect(table).toBeVisible();
-
-    // Verify 7 column headers.
-    const headers = table.locator('thead th');
-    await expect(headers).toHaveCount(7);
-    await expect(headers.nth(0)).toHaveText('Symbol');
-    await expect(headers.nth(1)).toHaveText('Dir');
-    await expect(headers.nth(2)).toHaveText('Last');
-    await expect(headers.nth(3)).toHaveText('Gap%');
-    await expect(headers.nth(4)).toHaveText('Trigger');
-    await expect(headers.nth(5)).toHaveText('Dist%');
-    await expect(headers.nth(6)).toHaveText('Status');
-
-    // Verify rows render with data-testid per symbol.
-    const rows = table.locator('tbody tr');
-    const count = await rows.count();
-    expect(count).toBeGreaterThan(0);
-
-    // Spot-check: AAPL row exists and renders direction badge and status pill.
-    const aaplRow = page.getByTestId('ws-watchlist-row-AAPL');
-    await expect(aaplRow).toBeVisible();
-
-    // Direction column uses L/S badge with color class.
-    const dirCell = aaplRow.locator('td').nth(1);
-    const dirText = (await dirCell.textContent())?.trim();
-    expect(['L', 'S']).toContain(dirText);
-    expect(await dirCell.evaluate((el) => el.className)).toMatch(/ws-dir-(long|short)/);
-
-    // Status column uses ws-status-* pill class.
-    const statusCell = aaplRow.locator('td').nth(6);
-    const statusPill = statusCell.locator('[class*="ws-status-"]');
-    await expect(statusPill).toBeVisible();
-    await expect(statusPill).toHaveClass(/ws-status-(triggered|watching|pending|skipped|expired)/);
-
-    // Gap% column has color class (ws-pos or ws-neg).
-    const gapCell = aaplRow.locator('td').nth(3);
-    const gapClass = await gapCell.evaluate((el) => el.className);
-    expect(gapClass).toMatch(/ws-(pos|neg)/);
-  });
-
-  test('proximity indicators highlight rows approaching trigger levels', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation?scenario=many-watchlist');
-    await expect(page.getByTestId('ws-grid')).toBeVisible();
-
-    // many-watchlist has 28 items — some should be approaching triggers.
-    const table = page.getByTestId('ws-watchlist-table');
-    await expect(table).toBeVisible();
-
-    // At least one row should have a proximity class (approaching or urgent).
-    const proxRows = table.locator(
-      'td.ws-approaching, td.ws-urgent',
-    );
-    const count = await proxRows.count();
-    expect(count).toBeGreaterThan(0);
-
-    // At least one row has ws-approaching (<2%) styling.
-    const approaching = table.locator('td.ws-approaching').first();
-    await expect(approaching).toBeVisible();
-  });
-
-  test('watchlist empty state renders for zero-watchlist scenario', async ({
-    page,
-  }) => {
-    // The fixture system doesn't ship a zero-watchlist scenario, but the
-    // component handles it defensively. The zero-positions scenario still
-    // has watchlist items, so we verify the panel renders with data.
-    // (Empty-state coverage lives in the component's manual verification.)
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
-
-    // The populated state renders — empty state text is NOT present.
-    await expect(page.getByTestId('ws-watchlist-table')).toBeVisible();
-    await expect(page.getByTestId('ws-watchlist-empty')).toHaveCount(0);
   });
 
   test('screenshot evidence at 1440x900', async ({ page }, testInfo) => {
@@ -604,8 +492,8 @@ test.describe('S03 RiskPanel — current exposure and risk summary band (S04 T02
     await expect(page.getByTestId('ws-risk-cell-net')).toBeVisible();
   });
 
-  test('default scenario: partial valuation renders the qualified presentation label', async ({ page }) => {
-    await page.goto('/dev/workstation');
+  test('partial-valuation scenario renders the qualified presentation label', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=dash-ac-02-partial');
     const openPnl = page.getByTestId('ws-risk-cell-open-pnl');
     // DASH-AC-02: a partial sum is never presented as a signed total.
     await expect(openPnl.locator('.ws-risk-value')).toHaveText('— Partial — 1 unpriced');
@@ -673,7 +561,7 @@ test.describe('S03 RiskPanel — current exposure and risk summary band (S04 T02
     }
   });
 
-  test('Many-watchlist scenario: positions and risk panels render without viewport overflow', async ({ page }) => {
+  test('Many-watchlist fixture: positions and risk panels render in the document flow', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=many-watchlist');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
@@ -686,12 +574,13 @@ test.describe('S03 RiskPanel — current exposure and risk summary band (S04 T02
       page.getByTestId('ws-positions-table').locator('tbody tr'),
     ).toHaveCount(3);
 
-    // No viewport scroll.
+    // The default remains a page-scrolling document regardless of the
+    // fixture's Watchlist data volume.
     const scroll = await page.evaluate(() => ({
       scrollHeight: document.documentElement.scrollHeight,
       clientHeight: document.documentElement.clientHeight,
     }));
-    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
   });
 });
 // ═══════════════════════════════════════════════════════════════════════════
@@ -705,7 +594,7 @@ test.describe('S05 PerformancePanel — Tier 2 catalogue and Tier 3 gating', () 
     await expect(panel).toBeVisible();
 
     const kpis = panel.getByTestId('ws-performance-kpis');
-    for (const label of ['Net P&L', 'Win Rate', 'Profit Factor', 'Avg R', 'Avg Win', 'Avg Loss', 'Total Trades', 'Open Trades']) {
+    for (const label of ['Net P&L', 'Win Rate', 'Profit Factor', 'Avg R', 'Avg Win', 'Avg Loss', 'All Trades', 'Open Trades']) {
       await expect(kpis.getByText(label, { exact: true })).toBeVisible();
     }
     // Default fixture: 87 total trades, 3 open.
@@ -890,7 +779,7 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
     await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
   });
 
-  test('right-rail panels fit inside viewport at 1440x900 without page scroll', async ({ page }) => {
+  test('overview and review panels follow the document flow at 1440x900', async ({ page }) => {
     await page.goto('/dev/workstation');
     for (const testId of ['ws-panel-account-state', 'ws-panel-performance', 'ws-panel-process-review']) {
       const panel = page.getByTestId(testId);
@@ -900,14 +789,13 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
       expect(box!.x, `${testId} inside left edge`).toBeGreaterThanOrEqual(0);
       expect(box!.y, `${testId} inside top edge`).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width, `${testId} inside right edge`).toBeLessThanOrEqual(1440);
-      expect(box!.y + box!.height, `${testId} inside bottom edge`).toBeLessThanOrEqual(900);
     }
 
     const scroll = await page.evaluate(() => ({
       scrollHeight: document.documentElement.scrollHeight,
       clientHeight: document.documentElement.clientHeight,
     }));
-    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
   });
 
   test('no console errors or page errors across all 4 scenarios', async ({ page }) => {
@@ -970,10 +858,11 @@ test.describe('S05 AccountStatePanel — §6.7 unambiguous labels', () => {
   });
 
   test('NAV and marked positions inherit valuation completeness qualification', async ({ page }) => {
-    await page.goto('/dev/workstation');
+    await page.goto('/dev/workstation?scenario=dash-ac-02-partial');
     const panel = page.getByTestId('ws-panel-account-state');
 
-    // Default scenario is 'partial' → NAV 'Partial', marked 'Partial valuation'.
+    // The partial-valuation scenario uses qualified, rather than deceptively
+    // complete, NAV and marked-position values.
     await expect(panel.getByTestId('ws-account-state-nav')).toContainText('Partial');
     await expect(panel.getByTestId('ws-account-state-marked')).toContainText('Partial valuation');
 

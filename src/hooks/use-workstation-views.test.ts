@@ -50,7 +50,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: lsMock });
 const NOW = '2026-01-01T00:00:00.000Z';
 const KEY = 'workstation:views:v1';
 
-/** A customized risk-positions config with the watchlist hidden. */
+/** A customized risk-positions config that keeps the optional Watchlist hidden. */
 function customizedRiskPositionsConfig(): WorkstationViewConfig {
   return {
     templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
@@ -457,7 +457,7 @@ describe('useWorkstationViews', () => {
     expect(applied).toBe(false);
     expect(
       result.current.views.find((x) => x.id === v.id)?.config.hiddenPanels,
-    ).toEqual([]);
+    ).toEqual(['watchlist']);
   });
 
   it('updateViewConfig is blocked on system presets and unknown ids', () => {
@@ -475,7 +475,7 @@ describe('useWorkstationViews', () => {
       result.current.views.find(
         (v) => v.id === WORKSTATION_SYSTEM_VIEW_IDS.RISK_POSITIONS,
       )?.config.hiddenPanels,
-    ).toEqual([]);
+    ).toEqual(['watchlist']);
 
     expect(result.current.updateViewConfig('ws-unknown', customizedRiskPositionsConfig())).toBe(
       false,
@@ -492,7 +492,7 @@ describe('useWorkstationViews', () => {
     );
     act(() => result.current.resetView(v.id));
     const reset = result.current.views.find((x) => x.id === v.id)!;
-    expect(reset.config.hiddenPanels).toEqual([]);
+    expect(reset.config.hiddenPanels).toEqual(['watchlist']);
     expect(reset.config.areas).toEqual(
       WORKSTATION_TEMPLATES[WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS].areas,
     );

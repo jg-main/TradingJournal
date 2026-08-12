@@ -2,7 +2,7 @@
 
 **Status:** Ready for development planning  
 **Owner:** Trading Journal product  
-**Date:** 2026-08-11  
+**Date:** 2026-08-12  
 **Audience:** Development, QA, and product review
 
 ## 1. Purpose
@@ -31,6 +31,12 @@ This specification implements the approved risk-first dashboard direction:
 - The normal dashboard is a curated **Risk & Positions** workstation.
 - Saved views let a user organize information for a particular workflow, but
   customization is explicit and never turns the default into a blank canvas.
+- The default risk workflow uses one browser/document scroll path. It must not
+  make the trader scroll inside Account State, Performance, Open Positions, or
+  Process Review to inspect their normal content.
+- Watchlist is not part of the default Risk & Positions layout. It remains
+  available from the Watchlist navigation surface and as an explicit addition
+  to a saved custom view.
 - The acceptance viewports are a **2560 × 1440** desktop at normal browser zoom
   and a laptop effectively **1536 × 960** CSS pixels (**1920 × 1200** at 125%
   display scaling).
@@ -108,21 +114,27 @@ The default view is fixed in normal mode and follows this vertical priority:
 3. **Current exposure and risk summary** — account-position count, journal
    trade count when different, Open P&L state, open risk, portfolio heat, stop
    coverage, gross/net exposure, and largest concentration.
-4. **Open positions** — the primary table and primary first-screen object.
-   It must be large enough to scan and reconcile positions without opening a
-   second page.
-5. **Account state and drawdown** — compact NAV, cash, marked-value state,
-   current and maximum drawdown, and an appropriately sized equity/drawdown
-   view when history exists.
-6. **Attention items** — missing stops, stale/missing marks, reconciliation
-   exceptions, and other actionable issues.
-7. **Performance review** — a compact summary below the risk area or in the
-   Performance saved view; it is never a competing first-row KPI wall.
+4. **Performance and account state** — a balanced two-column overview row:
+   Performance on the left and Account State on the right. Account State
+   includes compact NAV, cash, marked-value state, current and maximum
+   drawdown, and an appropriately sized equity/drawdown view when history
+   exists.
+5. **Open positions** — the full-width primary table. It must be large enough
+   to scan and reconcile positions without opening a second page.
+6. **Process review** — a full-width review area for setup, direction,
+   execution-quality, checklist, and review metrics.
+7. **Period KPI strip** — a compact supporting summary below the operational
+   panels; it is never a competing first-row KPI wall.
 
-The first four areas must be visible at the target desktop and laptop
-viewports under normal data conditions. An equity chart, watchlist, setup
-ranking, or review widget must not consume this space when it has no data or
-lower operational value.
+The command/state bar, any material alert, risk summary, and the paired
+Performance/Account State overview must be readable at the target desktop and
+laptop viewports without browser zoom. Open Positions begins immediately after
+that overview and remains the next primary object in the browser's normal page
+scroll. The browser page is the only normal scrolling container for the default
+workflow; the panels listed above must grow to their content rather than each
+introducing its own scrollbar. An equity chart, watchlist, setup ranking, or
+review widget must not consume first-screen space when it has no data or lower
+operational value.
 
 ### 5.2 Position table contract
 
@@ -157,7 +169,9 @@ risk. Narrow fallback views may scroll horizontally with Symbol retained.
 Provide these curated starting views:
 
 - **Risk & Positions** — immutable system default and startup view until the
-  user explicitly selects another saved view.
+  user explicitly selects another saved view. It contains the risk summary,
+  paired Performance and Account State overview, full-width Open Positions,
+  full-width Process Review, and compact KPI strip. Watchlist starts hidden.
 - **Performance** — period performance, equity/drawdown, calendar, and
   performance breakdowns.
 - **Process Review** — setup, direction, execution-quality, checklist, and
@@ -165,8 +179,9 @@ Provide these curated starting views:
 
 Users may create a saved view from one of these templates, duplicate, rename,
 reorder supported panels, resize declared-resizable panels, hide optional
-panels, delete their own views, and reset a view to its template. A user view
-may be selected as their startup view.
+panels, show Watchlist when it is useful to that saved workflow, delete their
+own views, and reset a view to its template. A user view may be selected as
+their startup view.
 
 Normal mode has no drag handles or resize handles. **Customize** enters a clear
 editing state with Save, Cancel, Undo, and Reset. Critical data-quality alerts
@@ -375,7 +390,7 @@ following are acceptance criteria:
 - Standard table rows are 36–40px high, with adequate contrast and tabular
   numerals for financial columns.
 - Avoid a small-text terminal mode, tiny status abbreviations, or internal
-  scrollbars as the normal way to inspect the first screen.
+  scrollbars as the normal way to inspect the default Risk & Positions flow.
 - Do not allocate large blank panel surfaces to empty watchlist, chart, or
   insight content while primary risk information is compressed.
 - Dense information is welcome; equally weighted KPI cards, presentation-scale
@@ -423,7 +438,7 @@ exercise them in a populated browser scenario.
 | DASH-AC-07 | There are no non-flat account positions. | The table uses the compact no-position state; current Open P&L is $0.00; no price coverage is implied; polling does not claim live mark updates. |
 | DASH-AC-08 | The user changes the retrospective period. | Period-performance metrics update; current positions, risk, and current P&L retain their current-state scope and do not disappear or become period-filtered. |
 | DASH-AC-09 | The user creates a saved Performance view and returns to normal Risk & Positions. | Layout changes persist only in the saved user view; normal mode has no drag/resize affordances; the immutable system default can be restored. |
-| DASH-AC-10 | At both target viewports with realistic populated data. | First screen shows the command/state bar, any material alert, risk summary, and usable open-position table without browser zoom or clipped critical columns. |
+| DASH-AC-10 | At both target viewports with realistic populated data. | First screen shows the command/state bar, any material alert, risk summary, and paired Performance/Account State overview without browser zoom or clipped critical columns. Open Positions is the next full-width section in the normal browser scroll; Account State, Performance, Open Positions, and Process Review have no competing internal scrollbars. |
 
 ## 10. Delivery sequence
 
@@ -484,7 +499,9 @@ The dashboard is done only when:
 
 - It is visibly as readable as the Trades page at the user's normal desktop and
   laptop environments.
-- Its first screen is genuinely risk and open-position first.
+- Its default flow is genuinely risk and open-position first, with the paired
+  Performance/Account State overview above the next full-width Open Positions
+  section and no competing internal panel scrollbars.
 - Every current-value total is complete, qualified, or unavailable according
   to the mark and stop coverage contracts.
 - A user can reconcile a journal-linked dashboard value to Trades at the same
@@ -495,4 +512,3 @@ The dashboard is done only when:
   fictitious analytics or hiding their scope/assumptions.
 - Saved views are useful but do not compromise the curated default or critical
   warnings.
-

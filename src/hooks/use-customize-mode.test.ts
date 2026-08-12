@@ -53,18 +53,22 @@ afterEach(() => {
 // ── Pure helper: togglePanelVisibilityInConfig ─────────────────────────
 
 describe('togglePanelVisibilityInConfig', () => {
-  it('hides a visible optional panel: cells become "." and it enters hiddenPanels', () => {
+  it('shows default-hidden Watchlist as a full-width saved-view row', () => {
     const next = togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.WATCHLIST);
     expect(next).not.toBeNull();
-    // watchlist occupied [4][1] in the risk-positions template.
-    expect(next!.areas[4][1]).toBe('.');
-    expect(next!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    const kpisIdx = next!.areas.findIndex((row) => row.includes(WORKSTATION_PANEL_IDS.KPIS));
+    expect(next!.areas[kpisIdx - 1]).toEqual([
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
+    expect(next!.hiddenPanels).toEqual([]);
     // The result stays catalogue-valid at every step.
     expect(validateWorkstationViewConfig(next)).toEqual([]);
   });
 
   it('hides multiple panels and keeps hiddenPanels in catalogue order', () => {
-    let config = togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.ACCOUNT)!;
+    let config = togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.WATCHLIST)!;
+    config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.ACCOUNT)!;
     config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.PERFORMANCE)!;
     config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.PROCESS_REVIEW)!;
     config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.WATCHLIST)!;
@@ -105,13 +109,15 @@ describe('togglePanelVisibilityInConfig', () => {
   });
 
   it('hide/show round-trips a template-region panel back to the exact base grid', () => {
-    // risk-positions renders every optional panel, so hiding then showing
-    // watchlist restores it in place and the grid is byte-identical.
-    const hidden = togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.WATCHLIST)!;
-    expect(hidden.areas[4][1]).toBe('.');
+    // Risk & Positions starts with Watchlist hidden. Showing then hiding it
+    // returns exactly to the curated base; showing it again restores the
+    // same full-width custom row.
+    const shown = togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.WATCHLIST)!;
+    const hidden = togglePanelVisibilityInConfig(shown, WORKSTATION_PANEL_IDS.WATCHLIST)!;
+    expect(workstationConfigsEqual(hidden, RISK_POSITIONS)).toBe(true);
     const restored = togglePanelVisibilityInConfig(hidden, WORKSTATION_PANEL_IDS.WATCHLIST);
     expect(restored).not.toBeNull();
-    expect(workstationConfigsEqual(restored!, RISK_POSITIONS)).toBe(true);
+    expect(workstationConfigsEqual(restored!, shown)).toBe(true);
   });
 
   it('repeated hide/show cycles of a default-hidden panel do not grow the grid', () => {
@@ -169,7 +175,10 @@ describe('togglePanelVisibilityInConfig', () => {
     const next = togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.ACCOUNT);
     expect(next).not.toBeNull();
     expect(JSON.stringify(RISK_POSITIONS)).toBe(before);
-    expect(next!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.ACCOUNT]);
+    expect(next!.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
   });
 });
 
@@ -208,25 +217,28 @@ describe('useCustomizeMode', () => {
 
     // Mutating the caller's source config must not affect the draft.
     act(() => {
-      RISK_POSITIONS.areas[4][1] = '.';
-      RISK_POSITIONS.hiddenPanels.push(WORKSTATION_PANEL_IDS.WATCHLIST);
+      RISK_POSITIONS.areas[3][1] = '.';
+      RISK_POSITIONS.hiddenPanels.push(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
     });
-    expect(result.current.draft!.areas[4][1]).toBe(WORKSTATION_PANEL_IDS.WATCHLIST);
-    expect(result.current.draft!.hiddenPanels).toEqual([]);
+    expect(result.current.draft!.areas[3][1]).toBe(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
+    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
     // Restore fixture for later tests.
-    RISK_POSITIONS.areas[4][1] = WORKSTATION_PANEL_IDS.WATCHLIST;
-    RISK_POSITIONS.hiddenPanels = [];
+    RISK_POSITIONS.areas[3][1] = WORKSTATION_PANEL_IDS.PROCESS_REVIEW;
+    RISK_POSITIONS.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST];
   });
 
   it('toggle hides an optional panel, marks dirty, and enables undo', () => {
     const { result } = renderHook(() => useCustomizeMode());
     act(() => result.current.enterCustomize(RISK_POSITIONS));
-    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.WATCHLIST));
+    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.ACCOUNT));
 
     expect(result.current.isDirty).toBe(true);
     expect(result.current.canUndo).toBe(true);
-    expect(result.current.hiddenOptionalPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
-    expect(result.current.draft!.areas[4][1]).toBe('.');
+    expect(result.current.hiddenOptionalPanels).toEqual([
+      WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
+    expect(result.current.draft!.areas[1][1]).toBe('.');
     expect(validateWorkstationViewConfig(result.current.draft!)).toEqual([]);
   });
 
@@ -237,23 +249,26 @@ describe('useCustomizeMode', () => {
 
     expect(result.current.isDirty).toBe(false);
     expect(result.current.canUndo).toBe(false);
-    expect(result.current.hiddenOptionalPanels).toEqual([]);
+    expect(result.current.hiddenOptionalPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
   });
 
   it('undo restores the previous draft and is exhausted after one step', () => {
     const { result } = renderHook(() => useCustomizeMode());
     act(() => result.current.enterCustomize(RISK_POSITIONS));
-    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.WATCHLIST));
     act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.ACCOUNT));
+    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.PERFORMANCE));
 
     // Two edits → two undo levels.
     expect(result.current.canUndo).toBe(true);
     act(() => result.current.undo());
-    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
-    expect(result.current.draft!.areas[1][1]).toBe(WORKSTATION_PANEL_IDS.ACCOUNT);
+    expect(result.current.draft!.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
+    expect(result.current.draft!.areas[1][0]).toBe(WORKSTATION_PANEL_IDS.PERFORMANCE);
 
     act(() => result.current.undo());
-    expect(result.current.draft!.hiddenPanels).toEqual([]);
+    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
     expect(result.current.isDirty).toBe(false);
     expect(result.current.canUndo).toBe(false);
   });
@@ -269,11 +284,10 @@ describe('useCustomizeMode', () => {
   it('reset restores the template base grid and is undoable', () => {
     const { result } = renderHook(() => useCustomizeMode());
     act(() => result.current.enterCustomize(RISK_POSITIONS));
-    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.WATCHLIST));
     act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.ACCOUNT));
 
     act(() => result.current.resetDraft());
-    expect(result.current.draft!.hiddenPanels).toEqual([]);
+    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
     // The full grid is back to the template base.
     expect(workstationConfigsEqual(result.current.draft!, RISK_POSITIONS)).toBe(true);
     expect(result.current.isDirty).toBe(false);
@@ -298,7 +312,7 @@ describe('useCustomizeMode', () => {
   it('cancel discards the draft and exits without persisting anything', () => {
     const { result } = renderHook(() => useCustomizeMode());
     act(() => result.current.enterCustomize(RISK_POSITIONS));
-    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.WATCHLIST));
+    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.ACCOUNT));
     act(() => result.current.cancel());
 
     expect(result.current.isCustomizing).toBe(false);
@@ -310,7 +324,7 @@ describe('useCustomizeMode', () => {
   it('save returns the draft config (a clone) and exits the session', () => {
     const { result } = renderHook(() => useCustomizeMode());
     act(() => result.current.enterCustomize(RISK_POSITIONS));
-    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.WATCHLIST));
+    act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.ACCOUNT));
 
     let saved: WorkstationViewConfig | null = null;
     act(() => {
@@ -318,11 +332,14 @@ describe('useCustomizeMode', () => {
     });
 
     expect(saved).not.toBeNull();
-    expect(saved!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
-    expect(saved!.areas[4][1]).toBe('.');
+    expect(saved!.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
+    expect(saved!.areas[1][1]).toBe('.');
     // The returned config is a clone — mutating it cannot affect the hook.
     act(() => {
-      saved!.areas[4][1] = WORKSTATION_PANEL_IDS.WATCHLIST;
+      saved!.areas[1][1] = WORKSTATION_PANEL_IDS.ACCOUNT;
     });
     expect(result.current.isCustomizing).toBe(false);
     expect(result.current.draft).toBeNull();
@@ -374,8 +391,8 @@ describe('useCustomizeMode', () => {
     expect(result.current.canUndo).toBe(false);
     // 25 alternating toggles push 25 states; the cap keeps the last 20, so
     // 20 undos drain the stack and the draft settles on the state after the
-    // first 5 toggles (watchlist hidden again).
-    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    // first 5 toggles (Watchlist shown after the odd number of toggles).
+    expect(result.current.draft!.hiddenPanels).toEqual([]);
     expect(validateWorkstationViewConfig(result.current.draft!)).toEqual([]);
   });
 });
