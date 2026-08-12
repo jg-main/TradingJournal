@@ -87,7 +87,15 @@ async function waitForProductionWorkstation(page: import('@playwright/test').Pag
     'Visual Baseline Account',
     { timeout: 15_000 },
   );
-  await expect(page.getByTestId('ws-panel-kpis')).toContainText('$50,000.00');
+  // Live snapshot rendered: the Account State panel shows NAV with a
+  // valuation qualification (Full / Partial / Ledger only). The legacy
+  // 'Account Value' KPI with a fixed starting value moved out of the bottom
+  // KPI strip, so we wait on the qualified NAV row instead of a dollar figure.
+  const nav = page
+    .getByTestId('ws-panel-account-state')
+    .getByTestId('ws-account-state-nav');
+  await expect(nav).toContainText('NAV');
+  await expect(nav).toContainText(/Full|Partial|Ledger only/);
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -158,13 +166,14 @@ test.describe('Visual Regression Baselines', () => {
       // Toolbar should be visible
       await expect(page.getByTestId('ws-toolbar')).toBeVisible();
 
-      // All 6 panels should be visible
+      // All 7 grid panels should be visible
       await expect(page.getByTestId('ws-panel-kpis')).toBeVisible();
-      await expect(page.getByTestId('ws-panel-equity')).toBeVisible();
+      await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
       await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
       await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
       await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
-      await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
+      await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
+      await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
 
       // Visual baseline
       await expect(page).toHaveScreenshot(`workstation-${id}-1440x900.png`, {

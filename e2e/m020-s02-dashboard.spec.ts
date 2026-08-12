@@ -9,15 +9,18 @@ test.describe('Dashboard KPI enrichment and equity markers', () => {
     await expect(kpis.getByText('Net P&L', { exact: true })).toBeVisible();
     await expect(kpis.getByText('Avg R', { exact: true })).toBeVisible();
     await expect(kpis.getByText('Drawdown', { exact: true })).toBeVisible();
-    await expect(kpis.getByText('Account Value', { exact: true })).toBeVisible();
+
+    // Account Value moved to the Account State panel as NAV (with qualification).
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(accountState.getByTestId('ws-account-state-nav')).toContainText('NAV');
   });
 
   test('deterministic equity chart renders with marker-capable fixture data', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=default');
 
-    const equity = page.getByTestId('ws-panel-equity');
-    await expect(equity).toBeVisible();
-    await expect(equity.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(accountState).toBeVisible();
+    await expect(accountState.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
   });
 
   test('API response retains enriched KPIs and trade markers', async ({ request }) => {

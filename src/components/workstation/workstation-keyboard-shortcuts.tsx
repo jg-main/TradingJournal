@@ -5,7 +5,8 @@
 //
 // Handles high-frequency workstation operations without modifier keys:
 //   [ / ]  — cycle through accounts (previous / next)
-//   1 – 6   — focus panels (KPIs, Equity, Positions, Watchlist, Risk, Setups)
+//   1 – 7   — focus panels (KPIs, Account State, Positions, Watchlist, Risk,
+//             Process Review, Performance)
 //   ↑ / ↓   — navigate table rows within focused Positions / Watchlist panels
 //   Enter   — highlight/unhighlight the active row
 //   ?       — toggle keyboard shortcut overlay
@@ -31,11 +32,12 @@ import { useWorkstation } from './workstation-context';
 /** Grid-area label for each panel-number shortcut. */
 const PANEL_MAP: Record<string, { area: string; label: string }> = {
   '1': { area: 'kpis', label: 'KPIs' },
-  '2': { area: 'equity', label: 'Equity Curve' },
+  '2': { area: 'account-state', label: 'Account State' },
   '3': { area: 'positions', label: 'Positions' },
   '4': { area: 'watchlist', label: 'Watchlist' },
   '5': { area: 'risk', label: 'Risk' },
-  '6': { area: 'insights', label: 'Setups & Insights' },
+  '6': { area: 'process-review', label: 'Process Review' },
+  '7': { area: 'performance', label: 'Performance' },
 };
 
 /** Ordered entries rendered in the shortcut overlay. */
@@ -43,11 +45,12 @@ const SHORTCUT_ENTRIES: { keys: string; label: string }[] = [
   { keys: '[', label: 'Previous Account' },
   { keys: ']', label: 'Next Account' },
   { keys: '1', label: 'Focus KPIs' },
-  { keys: '2', label: 'Focus Equity Curve' },
+  { keys: '2', label: 'Focus Account State' },
   { keys: '3', label: 'Focus Positions' },
   { keys: '4', label: 'Focus Watchlist' },
   { keys: '5', label: 'Focus Risk' },
-  { keys: '6', label: 'Focus Setups & Insights' },
+  { keys: '6', label: 'Focus Process Review' },
+  { keys: '7', label: 'Focus Performance' },
   { keys: '?', label: 'Toggle Shortcut Overlay' },
   { keys: 'Escape', label: 'Dismiss Overlay' },
 ];
@@ -255,7 +258,7 @@ export function WorkstationKeyboardShortcuts() {
         return;
       }
 
-      // 1-6: focus panel
+      // 1-7: focus panel
       const panel = PANEL_MAP[key];
       if (panel) {
         e.preventDefault();

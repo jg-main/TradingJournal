@@ -282,11 +282,11 @@ test.describe('Workstation cutover contract', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByTestId('ws-panel-kpis')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-equity')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
     await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
     await expect(page.getByTestId('ws-panel-watchlist')).toBeVisible();
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
     await expect(page.locator('aside').first()).toBeVisible();
   });
 

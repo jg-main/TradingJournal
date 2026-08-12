@@ -263,10 +263,17 @@ test.describe('Live Mode E2E', () => {
     const grid = page.getByTestId('ws-grid');
     await expect(grid).toBeVisible();
 
-    const GRID_AREAS = ['kpis', 'equity', 'positions', 'watchlist', 'risk', 'insights'] as const;
+    const GRID_AREAS = [
+      'kpis',
+      'account-state',
+      'positions',
+      'watchlist',
+      'risk',
+      'process-review',
+      'performance',
+    ] as const;
     for (const area of GRID_AREAS) {
-      const testId = area === 'risk' ? 'ws-panel-risk' : `ws-panel-${area}`;
-      const panel = page.getByTestId(testId);
+      const panel = page.getByTestId(`ws-panel-${area}`);
       await expect(panel).toBeVisible();
       const box = await panel.boundingBox();
       expect(box, `panel ${area} has layout box`).not.toBeNull();
@@ -286,7 +293,7 @@ test.describe('Live Mode E2E', () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  // ── Test 3: Live data populates KPI strip, positions, and equity ────
+  // ── Test 3: Live data populates KPI strip, positions, and account state ──
   test('live data populates KPI strip, positions table, and equity chart', async ({
     page,
   }) => {
@@ -310,11 +317,11 @@ test.describe('Live Mode E2E', () => {
     // AAPL should show in the positions table.
     await expect(positions.getByText('AAPL')).toBeVisible();
 
-    // Equity chart: either the chart or empty state renders (new accounts may
-    // have no equity history; both states are valid live-mode behaviors).
-    const equity = page.getByTestId('ws-panel-equity');
-    const chartVisible = await equity.getByTestId('ws-equity-chart').isVisible().catch(() => false);
-    const emptyVisible = await equity.getByTestId('ws-equity-chart-empty').isVisible().catch(() => false);
+    // Account State panel: the equity chart or its empty state renders (new
+    // accounts may have no equity history; both states are valid live-mode).
+    const accountState = page.getByTestId('ws-panel-account-state');
+    const chartVisible = await accountState.getByTestId('ws-equity-chart').isVisible().catch(() => false);
+    const emptyVisible = await accountState.getByTestId('ws-equity-chart-empty').isVisible().catch(() => false);
     expect(chartVisible || emptyVisible).toBe(true);
 
     // Risk panel has metric content.
@@ -324,8 +331,8 @@ test.describe('Live Mode E2E', () => {
     const riskCellCount = await riskCells.count();
     expect(riskCellCount).toBeGreaterThan(0);
 
-    // Setups panel renders (may be empty for live mode since tradeIdeas is empty).
-    await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
+    // Process Review panel renders (discipline + attention catalogue).
+    await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -493,9 +500,8 @@ test.describe('Live Mode E2E', () => {
       toolbar.locator('[data-testid^="ws-mtm-"]'),
     ).not.toBeVisible();
 
-    for (const area of ['kpis', 'equity', 'positions', 'watchlist', 'risk', 'insights']) {
-      const testId = area === 'risk' ? 'ws-panel-risk' : `ws-panel-${area}`;
-      await expect(page.getByTestId(testId)).toBeVisible();
+    for (const area of ['kpis', 'account-state', 'positions', 'watchlist', 'risk', 'process-review', 'performance']) {
+      await expect(page.getByTestId(`ws-panel-${area}`)).toBeVisible();
     }
 
     expect(consoleErrors).toEqual([]);

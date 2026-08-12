@@ -9,7 +9,8 @@
  * 1. Shortcut overlay opens on '?' and dismisses on Escape
  * 2. Shortcut overlay dismisses on backdrop click
  * 3. Shortcut overlay dismisses on close button click
- * 4. Panel focus: 1→KPIs, 2→Equity, 3→Positions, 4→Watchlist, 5→Risk, 6→Insights
+ * 4. Panel focus: 1→KPIs, 2→Account State, 3→Positions, 4→Watchlist, 5→Risk,
+ *    6→Process Review, 7→Performance
  * 5. Panel focus applies visible focus ring (outline)
  * 6. Shortcuts are suppressed when focus is inside editable elements (input/select)
  * 7. Shortcuts are suppressed when modifier keys are held (Ctrl, Meta)
@@ -32,14 +33,15 @@ import { test, expect } from '@playwright/test';
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-/** Grid-area to label mapping matching the 1-6 panel focus shortcuts. */
+/** Grid-area to label mapping matching the 1-7 panel focus shortcuts. */
 const PANEL_SHORTCUTS: Record<string, { key: string; area: string }> = {
   '1': { key: '1', area: 'kpis' },
-  '2': { key: '2', area: 'equity' },
+  '2': { key: '2', area: 'account-state' },
   '3': { key: '3', area: 'positions' },
   '4': { key: '4', area: 'watchlist' },
   '5': { key: '5', area: 'risk' },
-  '6': { key: '6', area: 'insights' },
+  '6': { key: '6', area: 'process-review' },
+  '7': { key: '7', area: 'performance' },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -105,11 +107,12 @@ test.describe('Workstation Keyboard Navigation', () => {
     await expect(overlay).toContainText('Previous Account');
     await expect(overlay).toContainText('Next Account');
     await expect(overlay).toContainText('Focus KPIs');
-    await expect(overlay).toContainText('Focus Equity Curve');
+    await expect(overlay).toContainText('Focus Account State');
     await expect(overlay).toContainText('Focus Positions');
     await expect(overlay).toContainText('Focus Watchlist');
     await expect(overlay).toContainText('Focus Risk');
-    await expect(overlay).toContainText('Focus Setups & Insights');
+    await expect(overlay).toContainText('Focus Process Review');
+    await expect(overlay).toContainText('Focus Performance');
     await expect(overlay).toContainText('Toggle Shortcut Overlay');
     await expect(overlay).toContainText('Dismiss Overlay');
 
@@ -156,7 +159,7 @@ test.describe('Workstation Keyboard Navigation', () => {
     await expect(page.getByTestId('ws-keynav-backdrop')).not.toBeAttached();
   });
 
-  // ── 4. Panel focus: 1-6 keys focus corresponding panels ─────────
+  // ── 4. Panel focus: 1-7 keys focus corresponding panels ─────────
 
   for (const [digit, { area }] of Object.entries(PANEL_SHORTCUTS)) {
     test(`pressing ${digit} focuses the ${area} panel`, async ({ page }) => {
@@ -291,7 +294,7 @@ test.describe('Workstation Keyboard Navigation', () => {
     await page.waitForTimeout(100);
 
     // Focus panels
-    for (const digit of ['1', '2', '3', '4', '5', '6']) {
+    for (const digit of ['1', '2', '3', '4', '5', '6', '7']) {
       await page.keyboard.press(digit);
       await page.waitForTimeout(50);
     }

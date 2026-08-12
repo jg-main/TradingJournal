@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     include: [
       'src/lib/account-lifecycle.test.ts',
+      'src/lib/workstation-view-types.test.ts',
       'src/lib/account-context.test.tsx',
       'src/lib/workstation-fixtures.test.ts',
       'src/components/workstation/workstation-context.test.tsx',

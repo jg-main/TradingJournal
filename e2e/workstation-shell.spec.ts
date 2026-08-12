@@ -13,7 +13,8 @@
  *
  * Coverage:
  * 1. Toolbar renders: brand, account selector, scenario selector, FIXTURE badge
- * 2. All named grid panels render (kpis, equity, positions, watchlist, risk, insights)
+ * 2. All named grid panels render (risk, positions, account-state, performance,
+ *    process-review, watchlist, kpis)
  * 3. No page scroll at 1440x900; every panel fits inside the viewport
  * 4. Fixture data populates panels (KPIs, position rows, watchlist rows)
  * 5. console.warn fixture-mode signal fires on load
@@ -27,17 +28,28 @@
  * 13. S03: RiskPanel PTD/current-state visual separation with metric content
  * 14. S03: All 4 scenarios render positions and risk panels without viewport overflow
  * 15. S03: Empty/unavailable states across zero-positions and large-drawdown
- * 16. S05: ECharts equity/drawdown chart renders with canvas at ws-equity-chart inside equity panel
- * 17. S05: Monthly performance table (ws-perf-monthly-table) with 4 columns and populated rows
- * 18. S05: Drawdown summary (ws-perf-drawdown-summary) with max DD, current DD, and color coding
- * 19. S05: All 4 scenarios render the chart + summary without console/page errors
+ * 16. S05: AccountStatePanel renders §6.7 labels (Cash+as-of, Marked, NAV qualifier,
+ *    scoped P&L, negative-only Drawdown) and the equity chart
+ * 17. S05: PerformancePanel renders Tier 2 KPIs, monthly table, R distribution,
+ *    setup ranking, and Tier 3 metrics gated to Unavailable
+ * 18. S05: ProcessReviewPanel renders process score distribution, directional
+ *    performance, and attention items with severity badges
+ * 19. S05: All 4 scenarios render the S05 panels without console/page errors
  */
 
 import { test, expect, type Page } from '@playwright/test';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
-const GRID_AREAS = ['kpis', 'equity', 'positions', 'watchlist', 'risk', 'insights'] as const;
+const GRID_AREAS = [
+  'kpis',
+  'account-state',
+  'positions',
+  'watchlist',
+  'risk',
+  'process-review',
+  'performance',
+] as const;
 
 /** Collect console errors + page errors for the audit test. */
 function watchForErrors(page: Page) {
@@ -133,18 +145,27 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(watchlist.locator('tbody tr').first()).toBeVisible();
     await expect(watchlist.getByText('AAPL')).toBeVisible();
 
-    // Equity panel shows the ECharts chart + performance summary.
-    const equity = page.getByTestId('ws-panel-equity');
-    await expect(equity.getByTestId('ws-equity-chart')).toBeVisible();
-    await expect(equity.getByTestId('ws-perf-monthly-table')).toBeVisible();
-    await expect(equity.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
+    // Account State panel shows §6.7 cells and the equity chart.
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(accountState.getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(accountState.getByTestId('ws-account-state-cash')).toBeVisible();
+    await expect(accountState.getByTestId('ws-account-state-nav')).toBeVisible();
+    await expect(accountState.getByTestId('ws-account-state-drawdown')).toBeVisible();
+
+    // Performance panel shows Tier 2 catalogue sections.
+    const performance = page.getByTestId('ws-panel-performance');
+    await expect(performance.getByTestId('ws-performance-kpis')).toBeVisible();
+    await expect(performance.getByTestId('ws-performance-monthly')).toBeVisible();
+    await expect(performance.getByTestId('ws-performance-tier3')).toBeVisible();
+
+    // Process Review panel shows discipline and attention sections.
+    const processReview = page.getByTestId('ws-panel-process-review');
+    await expect(processReview.getByTestId('ws-process-score-dist')).toBeVisible();
+    await expect(processReview.getByTestId('ws-directional-performance')).toBeVisible();
+    await expect(processReview.getByTestId('ws-attention-items')).toBeVisible();
 
     // Risk panel shows its section headers and stat rows.
     await expect(page.getByTestId('ws-panel-risk').getByText('Portfolio Heat')).toBeVisible();
-    // S04: SetupsPanel replaces the legacy placeholder insights panel.
-    const insightsPanel = page.getByTestId('ws-panel-insights');
-    await expect(insightsPanel.getByText('Setups & Ideas')).toBeVisible();
-    await expect(insightsPanel.getByText('Setup Ranking')).toBeVisible();
   });
 
   test('fixture mode emits console.warn runtime signal', async ({ page }) => {
@@ -641,411 +662,43 @@ test.describe('S03 RiskPanel — current exposure and risk summary band (S04 T02
     expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
   });
 });
-
 // ═══════════════════════════════════════════════════════════════════════════
-// S04: SetupsPanel — Setup Ranking, Attention Insights, Trade Ideas
-// ═══════════════════════════════════════════════════════════════════════════
-
-test.describe('S04 SetupsPanel — three vertically-stacked sub-panels', () => {
-  test('renders all three sub-panels with data-testid attributes', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-grid')).toBeVisible();
-
-    const insights = page.getByTestId('ws-panel-insights');
-    await expect(insights).toBeVisible();
-
-    // Sub-panel data-testids.
-    await expect(insights.getByTestId('ws-setup-ranking-table')).toBeVisible();
-    await expect(insights.getByTestId('ws-attention-insights-list')).toBeVisible();
-    await expect(insights.getByTestId('ws-ideas-table')).toBeVisible();
-  });
-
-  test('setup ranking table has 5 columns in correct order', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
-
-    const headers = page
-      .getByTestId('ws-setup-ranking-table')
-      .locator('thead th');
-    await expect(headers).toHaveCount(5);
-    await expect(headers.nth(0)).toHaveText('Setup');
-    await expect(headers.nth(1)).toHaveText('Win %');
-    await expect(headers.nth(2)).toHaveText('N');
-    await expect(headers.nth(3)).toHaveText('Avg R');
-    await expect(headers.nth(4)).toHaveText('Score');
-  });
-
-  test('setup ranking shows per-setup rows with data-testid and populated numeric columns', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
-
-    // 4 setup rows.
-    const rows = page
-      .getByTestId('ws-setup-ranking-table')
-      .locator('tbody tr');
-    await expect(rows).toHaveCount(4);
-
-    // Each known setup has a per-setup id row.
-    const setupIds = ['setup-breakout', 'setup-pullback', 'setup-reversal', 'setup-gap'];
-    for (const sid of setupIds) {
-      await expect(page.getByTestId(`ws-setup-row-${sid}`)).toBeVisible();
-    }
-
-    // Opening Range Breakout: first row, all numeric columns are non-dash.
-    const breakoutRow = page.getByTestId('ws-setup-row-setup-breakout');
-    await expect(breakoutRow.locator('td').nth(0)).toHaveText('Opening Range Breakout');
-    // Win % contains a number + %.
-    await expect(breakoutRow.locator('td').nth(1)).toContainText('%');
-    // N column is an integer count (no % sign).
-    await expect(breakoutRow.locator('td').nth(2)).toHaveText(/^\d+$/);
-    // Score is a number.
-    const score = breakoutRow.locator('td').nth(4);
-    const scoreText = await score.textContent();
-    expect(parseFloat(scoreText!)).not.toBeNaN();
-  });
-
-  test('sample-size warnings render for very_small and small setups only', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
-
-    // Gap Continuation (setup-gap) has very_small → ws-severity-critical class.
-    const gapRow = page.getByTestId('ws-setup-row-setup-gap');
-    const gapWarning = gapRow.locator('[data-testid="ws-sample-size-warning"]');
-    await expect(gapWarning).toBeVisible();
-    const gapWarningClass = await gapWarning.evaluate((el) => el.className);
-    expect(gapWarningClass).toMatch(/ws-severity-critical/);
-    await expect(gapWarning).toContainText('<10');
-
-    // Exhaustion Reversal (setup-reversal) has small → ws-severity-warning class.
-    const revRow = page.getByTestId('ws-setup-row-setup-reversal');
-    const revWarning = revRow.locator('[data-testid="ws-sample-size-warning"]');
-    await expect(revWarning).toBeVisible();
-    const revWarningClass = await revWarning.evaluate((el) => el.className);
-    expect(revWarningClass).toMatch(/ws-severity-warning/);
-    await expect(revWarning).toContainText('<30');
-
-    // Opening Range Breakout (adequate) and Trend Pullback (moderate) have no warnings.
-    for (const sid of ['setup-breakout', 'setup-pullback']) {
-      const row = page.getByTestId(`ws-setup-row-${sid}`);
-      await expect(
-        row.locator('[data-testid="ws-sample-size-warning"]'),
-      ).toHaveCount(0);
-    }
-  });
-
-  test('large-drawdown reorders setup ranking and shows different data', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation?scenario=large-drawdown');
-    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
-
-    const rows = page
-      .getByTestId('ws-setup-ranking-table')
-      .locator('tbody tr');
-    await expect(rows).toHaveCount(4);
-
-    // First row: Exhaustion Reversal (reordered, most trades in drawdown).
-    const firstRow = rows.nth(0);
-    await expect(firstRow.locator('td').nth(0)).toContainText('Exhaustion');
-
-    // Opening Range Breakout has small → ws-severity-warning.
-    const breakoutRow = page.getByTestId('ws-setup-row-setup-breakout');
-    const breakoutWarning = breakoutRow.locator(
-      '[data-testid="ws-sample-size-warning"]',
-    );
-    await expect(breakoutWarning).toBeVisible();
-    await expect(breakoutWarning).toContainText('<30');
-  });
-
-  test('attention insights list renders with severity badges and correct classes', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
-
-    const list = page.getByTestId('ws-attention-insights-list');
-    const items = list.locator('li');
-    await expect(items).toHaveCount(2);
-
-    // First insight: best_day → info severity.
-    await expect(page.getByTestId('ws-insight-item-best_day')).toBeVisible();
-    const infoBadge = page.getByTestId('ws-severity-info');
-    await expect(infoBadge.first()).toBeVisible();
-    await expect(infoBadge.first()).toHaveText('INFO');
-    const infoBadgeClass = await infoBadge
-      .first()
-      .evaluate((el) => el.className);
-    expect(infoBadgeClass).toMatch(/ws-severity-info/);
-
-    // Second insight: oversizing → warning severity.
-    await expect(page.getByTestId('ws-insight-item-oversizing')).toBeVisible();
-    const warnBadge = page.getByTestId('ws-severity-warning');
-    await expect(warnBadge.first()).toBeVisible();
-    await expect(warnBadge.first()).toHaveText('WARN');
-
-    // Messages are visible (non-empty).
-    const messages = list.locator('.ws-insight-message');
-    for (const msg of await messages.all()) {
-      const text = await msg.textContent();
-      expect(text?.trim().length).toBeGreaterThan(0);
-    }
-  });
-
-  test('large-drawdown scenario shows critical severity insight', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation?scenario=large-drawdown');
-    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
-
-    // drawdown insight → critical.
-    await expect(page.getByTestId('ws-insight-item-drawdown')).toBeVisible();
-    const critBadge = page.getByTestId('ws-severity-critical');
-    await expect(critBadge.first()).toBeVisible();
-    await expect(critBadge.first()).toHaveText('CRIT');
-    const critBadgeClass = await critBadge
-      .first()
-      .evaluate((el) => el.className);
-    expect(critBadgeClass).toMatch(/ws-severity-critical/);
-
-    // revenge_trading → warning.
-    await expect(page.getByTestId('ws-insight-item-revenge_trading')).toBeVisible();
-  });
-
-  test('trade ideas table has 7 columns in correct order', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
-
-    const headers = page.getByTestId('ws-ideas-table').locator('thead th');
-    await expect(headers).toHaveCount(7);
-    await expect(headers.nth(0)).toHaveText('Symbol');
-    await expect(headers.nth(1)).toHaveText('Setup');
-    await expect(headers.nth(2)).toHaveText('Dir');
-    await expect(headers.nth(3)).toHaveText('Entry');
-    await expect(headers.nth(4)).toHaveText('Stop');
-    await expect(headers.nth(5)).toHaveText('Target');
-    await expect(headers.nth(6)).toHaveText('R/R');
-  });
-
-  test('trade ideas rows have per-symbol data-testid and direction badges', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
-
-    const rows = page.getByTestId('ws-ideas-table').locator('tbody tr');
-    const count = await rows.count();
-    expect(count).toBeGreaterThan(0);
-
-    // Each row has a per-symbol data-testid.
-    const rowSymbols = await page
-      .getByTestId('ws-ideas-table')
-      .locator('[data-testid^="ws-idea-row-"]')
-      .all();
-    for (const row of rowSymbols) {
-      const testId = await row.getAttribute('data-testid');
-      expect(testId).toMatch(/^ws-idea-row-[A-Z]+$/);
-    }
-
-    // Direction column uses L/S with color class.
-    const firstRow = rows.first();
-    const dirCell = firstRow.locator('td').nth(2);
-    const dirText = (await dirCell.textContent())?.trim();
-    expect(['L', 'S']).toContain(dirText);
-    expect(await dirCell.evaluate((el) => el.className)).toMatch(
-      /ws-dir-(long|short)/,
-    );
-  });
-
-  test('many-watchlist scenario yields more trade ideas than default', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation?scenario=many-watchlist');
-    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
-    const manyCount = await page
-      .getByTestId('ws-ideas-table')
-      .locator('tbody tr')
-      .count();
-
-    await page.goto('/dev/workstation?scenario=default');
-    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
-    const defaultCount = await page
-      .getByTestId('ws-ideas-table')
-      .locator('tbody tr')
-      .count();
-
-    expect(manyCount).toBeGreaterThan(defaultCount);
-  });
-
-  test('zero-positions scenario still renders setup ranking and insights (historical data)', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation?scenario=zero-positions');
-    await expect(page.getByTestId('ws-grid')).toBeVisible();
-
-    // Setup ranking and insights persist — they are historical, not position-dependent.
-    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
-    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
-    await expect(page.getByTestId('ws-setup-row-setup-breakout')).toBeVisible();
-  });
-
-  test('panel fits inside the viewport at 1440x900 without page scroll', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
-
-    const insights = page.getByTestId('ws-panel-insights');
-    const box = await insights.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.y).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
-    expect(box!.y + box!.height).toBeLessThanOrEqual(900);
-
-    // Workstation surface itself never scrolls.
-    const scroll = await page.evaluate(() => ({
-      scrollHeight: document.documentElement.scrollHeight,
-      clientHeight: document.documentElement.clientHeight,
-    }));
-    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
-  });
-
-  test('no console errors or page errors across all 4 scenarios', async ({
-    page,
-  }) => {
-    const { consoleErrors, pageErrors } = watchForErrors(page);
-
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-panel-insights')).toBeVisible();
-    await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
-    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
-    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
-    await expect(page.getByTestId('ws-attention-insights-list')).toBeVisible();
-    await page.getByTestId('ws-scenario-select').selectOption('many-watchlist');
-    await expect(page.getByTestId('ws-ideas-table')).toBeVisible();
-
-    expect(pageErrors, 'uncaught page errors').toEqual([]);
-    expect(consoleErrors, 'console.error output').toEqual([]);
-  });
-
-  test('screenshot evidence at 1440x900 for S04 setups and ideas', async ({
-    page,
-  }, testInfo) => {
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-grid')).toBeVisible();
-    await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
-    await expect(page.getByTestId('ws-setup-ranking-table')).toBeVisible();
-
-    const shot = await page.screenshot({ fullPage: false });
-    await testInfo.attach('s04-setups-ideas-1440x900.png', {
-      body: shot,
-      contentType: 'image/png',
-    });
-
-    // Also capture large-drawdown for negative-data evidence.
-    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
-    await expect(page.getByTestId('ws-insight-item-drawdown')).toBeVisible();
-    const drawdownShot = await page.screenshot({ fullPage: false });
-    await testInfo.attach('s04-large-drawdown-1440x900.png', {
-      body: drawdownShot,
-      contentType: 'image/png',
-    });
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// S05: EquityChart and PerformanceSummary
+// S05: PerformancePanel — Tier 2 metric catalogue with Tier 3 gating
 // ═══════════════════════════════════════════════════════════════════════════
 
-test.describe('S05 EquityChart — ECharts dual-Y-axis equity/drawdown chart', () => {
-  test('renders ECharts canvas inside equity panel at ws-equity-chart', async ({
-    page,
-  }) => {
+test.describe('S05 PerformancePanel — Tier 2 catalogue and Tier 3 gating', () => {
+  test('renders period-performance KPI rows with populated values', async ({ page }) => {
     await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-grid')).toBeVisible();
+    const panel = page.getByTestId('ws-panel-performance');
+    await expect(panel).toBeVisible();
 
-    const chartContainer = page.getByTestId('ws-equity-chart');
-    await expect(chartContainer).toBeVisible();
-
-    // ECharts renders a <canvas> inside the container.
-    const canvas = chartContainer.locator('canvas');
-    await expect(canvas).toBeVisible();
-    expect(await canvas.count()).toBe(1);
-
-    // Inside the equity panel (not floating elsewhere).
-    const equityPanel = page.getByTestId('ws-panel-equity');
-    await expect(equityPanel.getByTestId('ws-equity-chart')).toBeVisible();
-
-    // Empty state must not render when equityCurve has data (all scenarios have data).
-    await expect(page.getByTestId('ws-equity-chart-empty')).toHaveCount(0);
-  });
-
-  test('chart re-renders after scenario switch without console errors', async ({
-    page,
-  }) => {
-    const { consoleErrors, pageErrors } = watchForErrors(page);
-    await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
-    await expect(page.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
-
-    // Switch to large-drawdown: chart and canvas re-render.
-    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
-    await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
-    await expect(page.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
-
-    expect(pageErrors, 'uncaught page errors after scenario switch').toEqual([]);
-    expect(consoleErrors, 'console.error after scenario switch').toEqual([]);
-  });
-
-  test('renders across all 4 fixture scenarios', async ({ page }) => {
-    for (const scenario of [
-      'default',
-      'zero-positions',
-      'large-drawdown',
-      'many-watchlist',
-    ]) {
-      await page.goto(`/dev/workstation?scenario=${scenario}`);
-      await expect(page.getByTestId('ws-grid')).toBeVisible();
-      await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
-      await expect(
-        page.getByTestId('ws-equity-chart').locator('canvas'),
-      ).toBeVisible();
-      // Empty state must not render when data is present.
-      await expect(page.getByTestId('ws-equity-chart-empty')).toHaveCount(0);
+    const kpis = panel.getByTestId('ws-performance-kpis');
+    for (const label of ['Net P&L', 'Win Rate', 'Profit Factor', 'Avg R', 'Avg Win', 'Avg Loss', 'Total Trades', 'Open Trades']) {
+      await expect(kpis.getByText(label, { exact: true })).toBeVisible();
     }
+    // Default fixture: 87 total trades, 3 open.
+    await expect(kpis.getByTestId('ws-perf-total-trades')).toContainText('87');
+    await expect(kpis.getByTestId('ws-perf-open-trades')).toContainText('3');
+    // Values render (not placeholder dashes).
+    await expect(kpis.getByTestId('ws-perf-net-pnl').locator('.ws-num')).not.toHaveText('—');
   });
-});
 
-test.describe('S05 PerformanceSummary — monthly table and drawdown block', () => {
-  test('monthly performance table renders with 4 columns and populated rows', async ({
-    page,
-  }) => {
+  test('monthly performance table renders with 4 columns and 3 populated rows', async ({ page }) => {
     await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
+    const section = page.getByTestId('ws-performance-monthly');
+    await expect(section).toBeVisible();
 
-    const table = page.getByTestId('ws-perf-monthly-table');
-    const headers = table.locator('thead th');
+    const headers = section.locator('thead th');
     await expect(headers).toHaveCount(4);
     await expect(headers.nth(0)).toHaveText('Month');
     await expect(headers.nth(1)).toHaveText('P&L');
-    await expect(headers.nth(2)).toHaveText('Win %');
+    await expect(headers.nth(2)).toHaveText('Win%');
     await expect(headers.nth(3)).toHaveText('Trades');
 
     // Default scenario has 3 months (Apr–Jun 2026).
-    const rows = table.locator('tbody tr');
+    const rows = section.locator('tbody tr');
     await expect(rows).toHaveCount(3);
 
-    // First row has populated numeric columns.
     const firstRow = rows.first();
     await expect(firstRow.locator('td').nth(0)).toHaveText(/Apr|May|Jun/);
     await expect(firstRow.locator('td').nth(1)).toContainText('$');
@@ -1053,86 +706,309 @@ test.describe('S05 PerformanceSummary — monthly table and drawdown block', () 
     await expect(firstRow.locator('td').nth(3)).toHaveText(/^\d+$/);
   });
 
-  test('monthly table shows negative P&L with ws-neg class in large-drawdown', async ({
-    page,
-  }) => {
+  test('monthly table shows negative P&L with ws-neg class in large-drawdown', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=large-drawdown');
-    await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
+    const section = page.getByTestId('ws-performance-monthly');
+    await expect(section).toBeVisible();
 
-    const table = page.getByTestId('ws-perf-monthly-table');
-    expect(await table.locator('tbody tr').count()).toBe(3);
+    expect(await section.locator('tbody tr').count()).toBe(3);
 
     // All months in large-drawdown have negative P&L.
-    const negCells = table.locator('tbody td.ws-num.ws-neg').first();
+    const negCells = section.locator('tbody td.ws-num.ws-neg').first();
     await expect(negCells).toBeVisible();
     await expect(negCells).toContainText('-');
     await expect(negCells).toContainText('$');
   });
 
-  test('drawdown summary shows max DD, max DD %, current DD, current DD %', async ({
-    page,
-  }) => {
+  test('R distribution renders all 8 bins with counts', async ({ page }) => {
     await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
+    const section = page.getByTestId('ws-performance-r-dist');
+    await expect(section).toBeVisible();
 
-    const drawdown = page.getByTestId('ws-perf-drawdown-summary');
-
-    // Section header.
-    await expect(drawdown.locator('.ws-risk-section-header')).toHaveText(
-      'Drawdown',
-    );
-
-    // All four stat rows present (exact to avoid 'Max DD' matching 'Max DD %').
-    await expect(drawdown.getByText('Max DD', { exact: true })).toBeVisible();
-    await expect(drawdown.getByText('Max DD %')).toBeVisible();
-    await expect(drawdown.getByText('Current DD', { exact: true })).toBeVisible();
-    await expect(drawdown.getByText('Current DD %')).toBeVisible();
-
-    // 4 stat rows.
-    const statRows = drawdown.locator('.ws-stat-row');
-    await expect(statRows).toHaveCount(4);
-
-    // Max DD values use ws-neg (drawdown is always negative).
-    await expect(drawdown.locator('.ws-num.ws-neg').first()).toBeVisible();
+    for (const label of ['< -3', '-3 to -2', '-2 to -1', '-1 to 0', '0 to 1', '1 to 2', '2 to 3', '> 3']) {
+      await expect(section.getByTestId(`ws-r-bin-${label}`)).toBeVisible();
+    }
+    // Default fixture: '-1 to 0' bin has 21 trades.
+    await expect(section.getByTestId('ws-r-bin--1 to 0')).toContainText('21');
   });
 
-  test('performance summary renders across all 4 scenarios without console errors', async ({
-    page,
-  }) => {
+  test('setup ranking renders top 3 setups with populated columns', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const section = page.getByTestId('ws-performance-setups');
+    await expect(section).toBeVisible();
+
+    const headers = section.locator('thead th');
+    await expect(headers).toHaveCount(3);
+    await expect(headers.nth(0)).toHaveText('Setup');
+    await expect(headers.nth(1)).toHaveText('N');
+    await expect(headers.nth(2)).toHaveText('Avg R');
+
+    // Top 3 by count in default: breakout, pullback, reversal.
+    const rows = section.locator('tbody tr');
+    await expect(rows).toHaveCount(3);
+    await expect(section.getByTestId('ws-setup-setup-breakout')).toContainText('Opening Range Breakout');
+    await expect(section.getByTestId('ws-setup-setup-breakout')).toContainText('34');
+    await expect(section.getByTestId('ws-setup-setup-pullback')).toContainText('Trend Pullback');
+    await expect(section.getByTestId('ws-setup-setup-reversal')).toContainText('Exhaustion Reversal');
+  });
+
+  test('large-drawdown reorders setup ranking', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=large-drawdown');
+    const section = page.getByTestId('ws-performance-setups');
+    await expect(section).toBeVisible();
+
+    // Exhaustion Reversal leads in large-drawdown (count 31), not breakout.
+    const firstRow = section.locator('tbody tr').first();
+    await expect(firstRow).toContainText('Exhaustion Reversal');
+    await expect(section.getByTestId('ws-setup-setup-reversal')).toContainText('31');
+  });
+
+  test('Tier 3 metrics are gated to Unavailable with prerequisite titles', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const section = page.getByTestId('ws-performance-tier3');
+    await expect(section).toBeVisible();
+
+    for (const [testId, prerequisite] of [
+      ['ws-tier3-mae-mfe', 'intratrade price history'],
+      ['ws-tier3-sharpe-sortino', 'documented return series'],
+      ['ws-tier3-risk-of-ruin', 'approved statistical model'],
+      ['ws-tier3-pips-points', 'asset-specific unit definitions'],
+    ] as const) {
+      const row = section.getByTestId(testId);
+      await expect(row).toContainText('Unavailable');
+      const title = await row.locator('.ws-num').getAttribute('title');
+      expect(title).toContain(prerequisite);
+    }
+  });
+
+  test('renders across all 4 scenarios without console errors', async ({ page }) => {
     const { consoleErrors, pageErrors } = watchForErrors(page);
 
-    for (const scenario of [
-      'default',
-      'zero-positions',
-      'large-drawdown',
-      'many-watchlist',
-    ]) {
+    for (const scenario of ['default', 'zero-positions', 'large-drawdown', 'many-watchlist']) {
       await page.goto(`/dev/workstation?scenario=${scenario}`);
-      await expect(page.getByTestId('ws-grid')).toBeVisible();
-      await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
-      await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
+      await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+      await expect(page.getByTestId('ws-performance-tier3')).toBeVisible();
     }
 
     expect(pageErrors, 'uncaught page errors').toEqual([]);
     expect(consoleErrors, 'console.error output').toEqual([]);
   });
+});
 
-  test('performance summary fits inside viewport at 1440x900 without page scroll', async ({
-    page,
-  }) => {
+// ═══════════════════════════════════════════════════════════════════════════
+// S05: ProcessReviewPanel — discipline metrics and attention items
+// ═══════════════════════════════════════════════════════════════════════════
+
+test.describe('S05 ProcessReviewPanel — discipline metrics and attention items', () => {
+  test('renders process score distribution with all 5 grade bins', async ({ page }) => {
     await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-process-review');
+    await expect(panel).toBeVisible();
+
+    const scoreDist = panel.getByTestId('ws-process-score-dist');
+    await expect(scoreDist.locator('[data-testid="ws-process-score-row"]')).toHaveCount(5);
+    // Default fixture: B (48-53) bin has the highest count (31).
+    await expect(scoreDist.getByText('B (48-53)')).toBeVisible();
+  });
+
+  test('renders directional performance with long and short blocks', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-process-review');
+
+    const longBlock = panel.getByTestId('ws-dir-perf-long');
+    await expect(longBlock.getByText('Long', { exact: true })).toBeVisible();
+    await expect(longBlock.getByText('71', { exact: true })).toBeVisible(); // default long trade count
+
+    const shortBlock = panel.getByTestId('ws-dir-perf-short');
+    await expect(shortBlock.getByText('Short', { exact: true })).toBeVisible();
+    await expect(shortBlock.getByText('13', { exact: true })).toBeVisible(); // default short trade count
+  });
+
+  test('attention items render with severity badges', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-process-review');
+    const items = panel.getByTestId('ws-attention-items');
+
+    // Default fixture: best_day (info) + oversizing (warning).
+    await expect(items.locator('.ws-attention-item').first()).toBeVisible();
+    await expect(items.getByTestId('ws-severity-info').first()).toHaveText('INFO');
+    await expect(items.getByTestId('ws-severity-warning').first()).toHaveText('WARN');
+    await expect(items.getByTestId('ws-attention-item-0')).toBeVisible();
+  });
+
+  test('large-drawdown scenario shows critical severity insight', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=large-drawdown');
+    const items = page.getByTestId('ws-attention-items');
+    await expect(items).toBeVisible();
+
+    const critBadge = items.getByTestId('ws-severity-critical').first();
+    await expect(critBadge).toBeVisible();
+    await expect(critBadge).toHaveText('CRIT');
+    await expect(items.getByTestId('ws-severity-warning').first()).toHaveText('WARN');
+  });
+
+  test('zero-positions scenario keeps historical discipline and insights', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=zero-positions');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
-    // Both S05 elements exist in the DOM.
-    await expect(page.getByTestId('ws-equity-chart')).toBeVisible();
-    await expect(page.getByTestId('ws-perf-monthly-table')).toBeVisible();
-    await expect(page.getByTestId('ws-perf-drawdown-summary')).toBeVisible();
+    // Historical catalogue persists — not position-dependent.
+    await expect(page.getByTestId('ws-performance-setups')).toBeVisible();
+    await expect(page.getByTestId('ws-process-score-dist')).toBeVisible();
+    await expect(page.getByTestId('ws-attention-items')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
+  });
 
-    // Workstation surface itself never scrolls.
+  test('right-rail panels fit inside viewport at 1440x900 without page scroll', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    for (const testId of ['ws-panel-account-state', 'ws-panel-performance', 'ws-panel-process-review']) {
+      const panel = page.getByTestId(testId);
+      await expect(panel).toBeVisible();
+      const box = await panel.boundingBox();
+      expect(box, `${testId} has layout box`).not.toBeNull();
+      expect(box!.x, `${testId} inside left edge`).toBeGreaterThanOrEqual(0);
+      expect(box!.y, `${testId} inside top edge`).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, `${testId} inside right edge`).toBeLessThanOrEqual(1440);
+      expect(box!.y + box!.height, `${testId} inside bottom edge`).toBeLessThanOrEqual(900);
+    }
+
     const scroll = await page.evaluate(() => ({
       scrollHeight: document.documentElement.scrollHeight,
       clientHeight: document.documentElement.clientHeight,
     }));
     expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+  });
+
+  test('no console errors or page errors across all 4 scenarios', async ({ page }) => {
+    const { consoleErrors, pageErrors } = watchForErrors(page);
+
+    await page.goto('/dev/workstation');
+    await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
+    await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
+    await expect(page.getByTestId('ws-performance-setups')).toBeVisible();
+    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
+    await expect(page.getByTestId('ws-attention-items')).toBeVisible();
+    await page.getByTestId('ws-scenario-select').selectOption('many-watchlist');
+    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+
+    expect(pageErrors, 'uncaught page errors').toEqual([]);
+    expect(consoleErrors, 'console.error output').toEqual([]);
+  });
+
+  test('screenshot evidence at 1440x900 for S05 panels', async ({ page }, testInfo) => {
+    await page.goto('/dev/workstation');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+    await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
+
+    const shot = await page.screenshot({ fullPage: false });
+    await testInfo.attach('s05-panels-1440x900.png', {
+      body: shot,
+      contentType: 'image/png',
+    });
+
+    // Also capture large-drawdown for negative-data evidence.
+    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
+    await expect(page.getByTestId('ws-severity-critical').first()).toBeVisible();
+    const drawdownShot = await page.screenshot({ fullPage: false });
+    await testInfo.attach('s05-large-drawdown-1440x900.png', {
+      body: drawdownShot,
+      contentType: 'image/png',
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// S05: AccountStatePanel — §6.7 unambiguous labels
+// ═══════════════════════════════════════════════════════════════════════════
+
+test.describe('S05 AccountStatePanel — §6.7 unambiguous labels', () => {
+  test('renders Cash with effective time from provenance asOf', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-account-state');
+    await expect(panel).toBeVisible();
+
+    const cash = panel.getByTestId('ws-account-state-cash');
+    await expect(cash.getByText('Cash', { exact: true })).toBeVisible();
+    await expect(cash.locator('.ws-num')).toContainText('$');
+    // Effective-time sub-line renders a date/time (not a placeholder).
+    await expect(cash.locator('.ws-mono')).not.toHaveText('—');
+  });
+
+  test('NAV and marked positions inherit valuation completeness qualification', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-account-state');
+
+    // Default scenario is 'partial' → NAV 'Partial', marked 'Partial valuation'.
+    await expect(panel.getByTestId('ws-account-state-nav')).toContainText('Partial');
+    await expect(panel.getByTestId('ws-account-state-marked')).toContainText('Partial valuation');
+
+    // Header meta declares the raw valuation state.
+    await expect(panel.locator('.ws-panel-header')).toContainText('partial');
+  });
+
+  test('scoped Realized / Unrealized / Total P&L rows render', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-account-state');
+
+    for (const testId of ['ws-account-state-realized', 'ws-account-state-unrealized', 'ws-account-state-total']) {
+      const row = panel.getByTestId(testId);
+      await expect(row).toBeVisible();
+      await expect(row.locator('.ws-num')).toContainText('$');
+    }
+    // Realized is scoped to closed positions.
+    await expect(panel.getByTestId('ws-account-state-realized')).toContainText('Closed positions');
+  });
+
+  test('drawdown is always negative-coloured and never positive', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-account-state');
+
+    const dd = panel.getByTestId('ws-account-state-drawdown');
+    await expect(dd.locator('.ws-num.ws-neg')).toBeVisible();
+    await expect(dd.locator('.ws-num.ws-neg')).toContainText('-');
+
+    // Compact 'Current drawdown' row is also negative-coloured.
+    const summary = panel.getByTestId('ws-account-state-dd-summary');
+    await expect(summary.locator('.ws-num.ws-neg')).toBeVisible();
+  });
+
+  test('equity chart renders ECharts canvas inside account state panel', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-account-state');
+
+    const chartContainer = panel.getByTestId('ws-equity-chart');
+    await expect(chartContainer).toBeVisible();
+    await expect(chartContainer.locator('canvas')).toBeVisible();
+
+    // Empty state must not render when equityCurve has data (all scenarios have data).
+    await expect(page.getByTestId('ws-equity-chart-empty')).toHaveCount(0);
+  });
+
+  test('chart re-renders after scenario switch without console errors', async ({ page }) => {
+    const { consoleErrors, pageErrors } = watchForErrors(page);
+    await page.goto('/dev/workstation');
+    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-equity-chart')).toBeVisible();
+
+    // Switch to large-drawdown: chart and canvas re-render.
+    await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
+    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
+
+    expect(pageErrors, 'uncaught page errors after scenario switch').toEqual([]);
+    expect(consoleErrors, 'console.error after scenario switch').toEqual([]);
+  });
+
+  test('renders across all 4 fixture scenarios', async ({ page }) => {
+    for (const scenario of ['default', 'zero-positions', 'large-drawdown', 'many-watchlist']) {
+      await page.goto(`/dev/workstation?scenario=${scenario}`);
+      await expect(page.getByTestId('ws-grid')).toBeVisible();
+      const panel = page.getByTestId('ws-panel-account-state');
+      await expect(panel).toBeVisible();
+      await expect(panel.getByTestId('ws-equity-chart')).toBeVisible();
+      await expect(panel.getByTestId('ws-account-state-drawdown')).toBeVisible();
+    }
   });
 });

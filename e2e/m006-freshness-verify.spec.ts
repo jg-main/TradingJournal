@@ -253,9 +253,9 @@ test.describe('M006 Data Freshness Pipeline', () => {
     await expect(kpis).toBeVisible();
     await expect(kpis.getByText('Net P&L')).toBeVisible();
 
-    // Verify equity panel renders
-    const equity = page.getByTestId('ws-panel-equity');
-    await expect(equity).toBeVisible();
+    // Verify account state panel renders
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(accountState).toBeVisible();
 
     // Risk panel renders
     const risk = page.getByTestId('ws-panel-risk');
@@ -289,17 +289,17 @@ test.describe('M006 Data Freshness Pipeline', () => {
       await expect(positions.getByText(t.symbol)).toBeVisible({ timeout: 5000 });
     }
 
-    // Equity panel renders
-    const equity = page.getByTestId('ws-panel-equity');
-    await expect(equity).toBeVisible();
+    // Account State panel renders
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(accountState).toBeVisible();
 
     // Risk panel renders with content
     const risk = page.getByTestId('ws-panel-risk');
     await expect(risk).toBeVisible();
 
-    // Insights panel renders
-    const insights = page.getByTestId('ws-panel-insights');
-    await expect(insights).toBeVisible();
+    // Process Review panel renders
+    const processReview = page.getByTestId('ws-panel-process-review');
+    await expect(processReview).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
