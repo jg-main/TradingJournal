@@ -190,6 +190,7 @@ function insertRiskSnapshot(
   sqlite: Database.Database,
   tradeId: string,
   initialRiskAmount: number,
+  initialStopPrice = 245,
 ): void {
   const now = new Date().toISOString();
   sqlite
@@ -198,9 +199,9 @@ function insertRiskSnapshot(
        (id, trade_id, account_equity_at_open, initial_entry_price, initial_stop_price,
         initial_quantity, risk_per_share, initial_risk_amount, account_risk_pct,
         planned_reward_risk, created_at)
-       VALUES (?, ?, 10000, 250, 245, 5, 5, ?, 0.75, 3, ?)`,
+       VALUES (?, ?, 10000, 250, ?, 5, 5, ?, 0.75, 3, ?)`,
     )
-    .run(randomUUID(), tradeId, initialRiskAmount, now);
+    .run(randomUUID(), tradeId, initialStopPrice, initialRiskAmount, now);
 }
 
 /**
@@ -362,7 +363,7 @@ function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
   insertMark(sqlite, riskWithSnapshot, riskInstr, '260.00', 260_000_000, 'user', now);
   insertPosition(sqlite, riskWithSnapshot, riskInstr, 'long', '5.00', '250.00');
   const riskTradeId = insertOpenTrade(sqlite, riskWithSnapshot, 'RISK1', 'long', 245, now);
-  insertRiskSnapshot(sqlite, riskTradeId, 75);
+  insertRiskSnapshot(sqlite, riskTradeId, 75, 245);
   insertPerformance(sqlite, riskWithSnapshot, '10000.00', '1300.00', '50.00');
 
   // ── Risk: open trade without stop / risk snapshot ────────────────────
@@ -386,8 +387,8 @@ function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
   insertPosition(sqlite, riskMultiTrade, riskMultiInstr, 'long', '5.00', '250.00');
   const olderTradeId = insertOpenTrade(sqlite, riskMultiTrade, 'RISK4', 'long', 250, fiveDaysAgo);
   const newerTradeId = insertOpenTrade(sqlite, riskMultiTrade, 'RISK4', 'long', 240, now);
-  insertRiskSnapshot(sqlite, olderTradeId, 50);
-  insertRiskSnapshot(sqlite, newerTradeId, 60);
+  insertRiskSnapshot(sqlite, olderTradeId, 50, 250);
+  insertRiskSnapshot(sqlite, newerTradeId, 60, 240);
 
   // ── Risk: short position, (stop − mark) × qty ────────────────────────
   // Short 5 @ 250, mark 240, stop 260 → risk-to-stop (260−240)×5 = 100.00
@@ -396,7 +397,7 @@ function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
   insertMark(sqlite, riskShort, riskShortInstr, '240.00', 240_000_000, 'user', now);
   insertPosition(sqlite, riskShort, riskShortInstr, 'short', '5.00', '250.00');
   const shortTradeId = insertOpenTrade(sqlite, riskShort, 'SHORT1', 'short', 260, now);
-  insertRiskSnapshot(sqlite, shortTradeId, 100);
+  insertRiskSnapshot(sqlite, shortTradeId, 100, 260);
 
   return {
     full,
@@ -824,8 +825,8 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     const pos = result.valuation.positions[0];
     expect(pos.risk.hasValidStop).toBe(true);
     expect(pos.risk.stopPrice).toBe(245);
-    // (mark 260 − stop 245) × qty 5 = 75.00
-    expect(pos.risk.currentRiskToStop).toBe('75.00');
+    // R032: max(0, avgCost − stop) × qty = (250 − 245) × 5 = 25.00
+    expect(pos.risk.currentRiskToStop).toBe('25.00');
     expect(pos.risk.openTrades).toBe(1);
 
     expect(result.riskSummary.missingStops).toBe(0);
@@ -837,8 +838,9 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
       state: 'complete',
       presentationLabel: null,
     });
+    // openRisk is the risk-snapshot aggregate (75.00), a separate S01 metric.
     expect(result.riskSummary.openRisk).toBe('75.00');
-    expect(result.riskSummary.openRiskToStop).toBe('75.00');
+    expect(result.riskSummary.openRiskToStop).toBe('25.00');
     expect(result.riskSummary.openPnl).toBe('50.00');
   });
 
@@ -847,9 +849,10 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     const pos = result.valuation.positions[0];
     expect(pos.risk.hasValidStop).toBe(true);
     expect(pos.risk.stopPrice).toBe(260);
-    // (stop 260 − mark 240) × qty 5 = 100.00
-    expect(pos.risk.currentRiskToStop).toBe('100.00');
-    expect(result.riskSummary.openRiskToStop).toBe('100.00');
+    // R032 short: max(0, stop − avgCost) × qty = (260 − 250) × 5 = 50.00
+    expect(pos.risk.currentRiskToStop).toBe('50.00');
+    expect(result.riskSummary.openRiskToStop).toBe('50.00');
+    // openRisk is the risk-snapshot aggregate (100.00), a separate S01 metric.
     expect(result.riskSummary.openRisk).toBe('100.00');
   });
 
@@ -891,8 +894,8 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     expect(pos.risk.hasValidStop).toBe(true);
     // Older trade stop 250, newer trade stop 240 → the newer valid stop wins.
     expect(pos.risk.stopPrice).toBe(240);
-    // (mark 260 − stop 240) × aggregate qty 5 = 100.00
-    expect(pos.risk.currentRiskToStop).toBe('100.00');
+    // R032: max(0, avgCost − stop) × qty = (250 − 240) × 5 = 50.00
+    expect(pos.risk.currentRiskToStop).toBe('50.00');
 
     // Both open trades carry a valid stop → coverage is complete.
     expect(result.riskSummary.stopCoverage).toEqual({
@@ -904,13 +907,13 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     });
     // Both trades have snapshots → openRisk is the full sum, not partial.
     expect(result.riskSummary.openRisk).toBe('110.00');
-    // openRiskToStop aggregates per-position risk (one position, 100.00).
-    expect(result.riskSummary.openRiskToStop).toBe('100.00');
+    // openRiskToStop aggregates per-position risk (one position, 50.00).
+    expect(result.riskSummary.openRiskToStop).toBe('50.00');
   });
 
   it('computes portfolioHeat from openRisk over NAV when both are known', () => {
     const result = computeDashboardV2(sqlite, accounts.riskWithSnapshot)!;
-    // openRisk 75.00 / nav 10000.00 × 100 = 0.75
+    // openRisk (risk-snapshot aggregate) 75.00 / nav 10000.00 × 100 = 0.75
     expect(result.riskSummary.portfolioHeat).toBe('0.75');
   });
 });

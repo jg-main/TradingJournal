@@ -103,7 +103,7 @@ const open = sqlite
      WHERE ap.quantity != '0.00'
      ORDER BY i.symbol`,
   )
-  .all();
+  .all() as Array<{ symbol: string; quantity: string; average_cost: string }>;
 console.log('\nOpen positions after backfill:');
 for (const p of open) console.log(`  ${p.symbol.padEnd(6)} qty=${p.quantity} avg=${p.average_cost}`);
 

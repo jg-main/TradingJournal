@@ -539,25 +539,34 @@ function resolvePositionSymbols(
 }
 
 /**
- * Dollar risk from a mark price to a planned stop for a position:
- * (mark - stop) × qty for longs, (stop - mark) × qty for shorts.
- * Returns null when either price is unavailable.
+ * Current risk to stop for a position (R032 §6): for remaining quantity,
+ * the loss between the OPEN COST BASIS and the effective active stop —
+ * long max(0, averageCost − stop) × quantity, short max(0, stop −
+ * averageCost) × quantity. A stop beyond breakeven yields zero risk
+ * (clamped, never negative). Returns null when the average cost or stop
+ * is unavailable. This mirrors the Trades kernel's openRisk so the
+ * dashboard value reconciles exactly with GET /api/trades (same
+ * definition, same inputs at the same snapshot).
  */
 function computeRiskToStop(
   direction: string | null,
   quantity: string,
-  markPrice: string | null,
+  averageCost: string | null,
   stopPrice: number | null,
 ): string | null {
-  if (markPrice === null || stopPrice === null) return null;
+  if (averageCost === null || stopPrice === null) return null;
   try {
-    const priceMicros = toMicros(markPrice);
+    // averageCost may carry non-canonical fraction digits (legacy rows)
+    // — normalize to canonical cents before toMicros.
+    const costMicros = toMicros(normalizeDecimal(averageCost));
     const stopMicros = toMicros(normalizeDecimal(stopPrice));
     const qtyMicros = toMicros(quantity);
     const diffMicros =
-      direction === 'short' ? stopMicros - priceMicros : priceMicros - stopMicros;
+      direction === 'short' ? stopMicros - costMicros : costMicros - stopMicros;
+    // Clamp to zero — a stop beyond breakeven has no risk (R032).
+    const clampedMicros = Math.max(0, diffMicros);
     const riskMicros = Number(
-      (BigInt(diffMicros) * BigInt(qtyMicros)) / BigInt(1_000_000),
+      (BigInt(clampedMicros) * BigInt(qtyMicros)) / BigInt(1_000_000),
     );
     return fromMicros(riskMicros);
   } catch {
@@ -1057,6 +1066,53 @@ export function computeDashboardV2(
     openTradesBySymbol.set(key, list);
   }
 
+  // ── Stop adjustments + risk snapshots for ALL open trades ──────────
+  // The per-position risk state resolves the effective active stop exactly
+  // like the Trades kernel (latest adjustment → initial stop from snapshot →
+  // planned stop). Account positions can outlive journal linkage (legacy
+  // data, deleted/recreated trades), so load adjustments and snapshots for
+  // every open trade in the account, not only journal-linked ones.
+  const allOpenTradeIds = openTradeRows.map((t) => t.id);
+  if (allOpenTradeIds.length > 0) {
+    const placeholders = allOpenTradeIds.map(() => '?').join(',');
+    const adjRows = sqlite
+      .prepare(
+        `SELECT id, trade_id, new_stop, adjusted_at, created_at
+         FROM trade_stop_adjustments WHERE trade_id IN (${placeholders})`,
+      )
+      .all(...allOpenTradeIds) as Array<{
+      id: string;
+      trade_id: string;
+      new_stop: number | null;
+      adjusted_at: string | null;
+      created_at: string | null;
+    }>;
+    for (const a of adjRows) {
+      const list = journalStopByTrade.get(a.trade_id) ?? [];
+      list.push({ id: a.id, new_stop: a.new_stop, adjusted_at: a.adjusted_at, created_at: a.created_at });
+      journalStopByTrade.set(a.trade_id, list);
+    }
+    const snapRows = sqlite
+      .prepare(
+        `SELECT trade_id, initial_stop_price
+         FROM trade_risk_snapshots WHERE trade_id IN (${placeholders})`,
+      )
+      .all(...allOpenTradeIds) as Array<{
+      trade_id: string;
+      initial_stop_price: number | null;
+    }>;
+    for (const r of snapRows) {
+      if (!journalRiskByTrade.has(r.trade_id)) {
+        journalRiskByTrade.set(r.trade_id, {
+          initial_risk_amount: null,
+          account_equity_at_open: null,
+          initial_stop_price: r.initial_stop_price,
+          initial_entry_price: null,
+        });
+      }
+    }
+  }
+
   // Compute the current time for mark age calculations
   const now = new Date();
   const computedDate = now;
@@ -1147,19 +1203,49 @@ export function computeDashboardV2(
     // ── Per-position risk state ───────────────────────────────────────
     const symbol = symbolCache.get(pos.instrument_id) ?? 'UNKNOWN';
     const symbolTrades = openTradesBySymbol.get(symbol.toUpperCase()) ?? [];
-    // Trades are ordered by created_at ASC — the last valid stop is the
-    // most recent open trade that actually carries a stop.
+    // Trades are ordered by created_at ASC. Resolve the effective active
+    // stop exactly like the Trades kernel (computeTradeMetrics §6): latest
+    // stop adjustment → initial stop from the risk snapshot → planned stop.
+    // This keeps the dashboard's stopPrice/currentRiskToStop reconciled
+    // with GET /api/trades' activeStop/openRisk for the same position.
     const validStops = symbolTrades.filter(
       (t) => t.planned_stop !== null && t.planned_stop > 0,
     );
     const hasValidStop = validStops.length > 0;
-    const stopPrice = hasValidStop
+    // Trades are ordered by created_at ASC, so the last is the most recent.
+    let stopPrice: number | null = hasValidStop
       ? (validStops[validStops.length - 1].planned_stop as number)
       : null;
+    if (hasValidStop) {
+      // Resolve the effective active stop exactly like the Trades kernel
+      // (computeTradeMetrics §6): latest stop adjustment → initial stop from
+      // the risk snapshot → planned stop. Prefer the most recent open trade's
+      // stop, then fall back to earlier trades in reverse-chronological order.
+      for (let i = validStops.length - 1; i >= 0; i--) {
+        const trade = validStops[i];
+        const adjustments = journalStopByTrade.get(trade.id) ?? [];
+        const sorted = [...adjustments]
+          .filter((s) => s.new_stop != null)
+          .sort((a, b) => {
+            const at = Date.parse(a.adjusted_at ?? a.created_at ?? '') || 0;
+            const bt = Date.parse(b.adjusted_at ?? b.created_at ?? '') || 0;
+            return at - bt;
+          });
+        if (sorted.length > 0) {
+          stopPrice = sorted[sorted.length - 1].new_stop as number;
+          break;
+        }
+        const riskSnapshot = journalRiskByTrade.get(trade.id);
+        if (riskSnapshot?.initial_stop_price != null) {
+          stopPrice = riskSnapshot.initial_stop_price;
+          break;
+        }
+      }
+    }
     const currentRiskToStop = computeRiskToStop(
       pos.direction,
       pos.quantity,
-      markPrice,
+      pos.average_cost,
       stopPrice,
     );
 

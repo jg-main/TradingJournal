@@ -16,6 +16,7 @@ import { trades, positionPriceSnapshots, valuationMarks, instruments, accountPos
 import { eq, and } from 'drizzle-orm';
 import { resolveQuoteProvider } from '@/lib/market-data-resolver';
 import { fetchYahooProfiles } from '@/lib/profile-enricher';
+import { normalizeDecimal } from '@/lib/accounting/decimal';
 import { isRateLimited, markRefreshSucceeded } from './rate-limit-state';
 
 // ── POST handler ──────────────────────────────────────────────────────
@@ -244,13 +245,18 @@ export async function POST(_request: NextRequest) {
 
           const priceDecimal = String(quote.price);
           const micros = Math.round(quote.price * 1_000_000);
+          // Canonicalize the stored price string: market-data quotes can
+          // carry 3+ fraction digits (e.g. "11.645") which break strict
+          // canonical-decimal consumers (toMicros). priceMicros keeps full
+          // precision; price is the display/contract canonical form.
+          const canonicalPrice = normalizeDecimal(priceDecimal);
 
           db.insert(valuationMarks)
             .values({
               id: randomUUID(),
               accountId: trade.accountId,
               instrumentId: instrument.id,
-              price: priceDecimal,
+              price: canonicalPrice,
               priceMicros: micros,
               source: 'market_data',
               markTimestamp: nowISO,

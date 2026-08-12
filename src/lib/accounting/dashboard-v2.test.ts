@@ -1109,7 +1109,10 @@ describe('computeDashboardV2', () => {
       )
       .run(instrId, 'RISK1', 'Risk Instrument', 'stock', now, now);
 
-    // Long position: 5 @ 250, mark 260, stop 245 → risk-to-stop = (260-245)*5 = 75
+    // Long position: 5 @ 250 (avg cost), mark 260, stop 245 → R032 risk-to-stop
+    // = max(0, avgCost − stop) × qty = (250−245)×5 = 25.00. The mark price is
+    // NOT part of the definition (the Trades kernel's openRisk uses the open
+    // cost basis, so the dashboard reconciles with it).
     ctx.sqlite
       .prepare(
         `INSERT INTO account_positions
@@ -1153,7 +1156,7 @@ describe('computeDashboardV2', () => {
     const pos = result!.valuation.positions[0];
     expect(pos.risk.hasValidStop).toBe(true);
     expect(pos.risk.stopPrice).toBe(245);
-    expect(pos.risk.currentRiskToStop).toBe('75.00');
+    expect(pos.risk.currentRiskToStop).toBe('25.00');
     expect(pos.risk.openTrades).toBe(1);
 
     expect(result!.riskSummary.missingStops).toBe(0);
@@ -1165,8 +1168,10 @@ describe('computeDashboardV2', () => {
       state: 'complete',
       presentationLabel: null,
     });
+    // openRisk is the risk-snapshot aggregate (initial risk 75.00 from the
+    // seeded trade_risk_snapshots row), a separate S01 metric.
     expect(result!.riskSummary.openRisk).toBe('75.00');
-    expect(result!.riskSummary.openRiskToStop).toBe('75.00');
+    expect(result!.riskSummary.openRiskToStop).toBe('25.00');
   });
 
   it('computes risk-to-stop for short positions as (stop - mark) × qty', () => {
@@ -1188,7 +1193,8 @@ describe('computeDashboardV2', () => {
       )
       .run(instrId, 'SHORT1', 'Short Instrument', 'stock', now, now);
 
-    // Short position: 5 @ 250, mark 240, stop 260 → risk-to-stop = (260-240)*5 = 100
+    // Short position: 5 @ 250 (avg cost), mark 240, stop 260 → R032 risk-to-stop
+    // = max(0, stop − avgCost) × qty = (260−250)×5 = 50.00.
     ctx.sqlite
       .prepare(
         `INSERT INTO account_positions
@@ -1217,7 +1223,130 @@ describe('computeDashboardV2', () => {
 
     const result = computeDashboardV2(ctx.sqlite, accountId);
     expect(result).toBeDefined();
-    expect(result!.valuation.positions[0].risk.currentRiskToStop).toBe('100.00');
+    expect(result!.valuation.positions[0].risk.currentRiskToStop).toBe('50.00');
+  });
+
+  it('resolves the effective stop from the latest stop adjustment (D069)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Stop Adjustment Account', 'Test', 'USD', now, now);
+
+    const instrId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(instrId, 'ADJ1', 'Adjusted Instrument', 'stock', now, now);
+
+    // Long position 1 @ 102.60; planned stop 98 (initial), adjusted to 99.3.
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO account_positions
+         (id, account_id, instrument_id, direction, quantity, average_cost,
+          total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+          last_updated, created_at, updated_at)
+         VALUES (?, ?, ?, 'long', '1.00', '102.60', '102.60', '0.00', '0.00', '0.00', ?, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now, now, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO valuation_marks
+         (id, account_id, instrument_id, price, price_micros, source, mark_timestamp)
+         VALUES (?, ?, ?, '115.78', 115780000, 'user', ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now);
+
+    const tradeId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trades
+         (id, trade_code, account_id, symbol, direction, status, planned_stop, current_price, created_at, updated_at)
+         VALUES (?, ?, ?, 'ADJ1', 'long', 'open', 98, 115.78, ?, ?)`,
+      )
+      .run(tradeId, `T-${randomUUID().slice(0, 8)}`, accountId, now, now);
+
+    // Stop adjustment: 98 → 99.3 (the Trades 'active stop' must be used).
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trade_stop_adjustments
+         (id, trade_id, previous_stop, new_stop, adjusted_at, created_at)
+         VALUES (?, ?, 98, 99.3, ?, ?)`,
+      )
+      .run(randomUUID(), tradeId, now, now);
+
+    const result = computeDashboardV2(ctx.sqlite, accountId);
+    expect(result).toBeDefined();
+
+    const pos = result!.valuation.positions[0];
+    // Effective stop = latest adjustment (99.3), NOT planned_stop (98).
+    expect(pos.risk.stopPrice).toBe(99.3);
+    // R032 risk = max(0, avgCost − stop) × qty = (102.60 − 99.3) × 1 = 3.30,
+    // matching the Trades kernel's openRisk for the same position.
+    expect(pos.risk.currentRiskToStop).toBe('3.30');
+  });
+
+  it('survives non-canonical 3-decimal mark prices (D069 regression)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Three Decimal Mark Account', 'Test', 'USD', now, now);
+
+    const instrId = randomUUID();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(instrId, 'MARK3', 'Three Decimal Instrument', 'stock', now, now);
+
+    // Long position 10 @ 11.30; planned stop 11.
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO account_positions
+         (id, account_id, instrument_id, direction, quantity, average_cost,
+          total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+          last_updated, created_at, updated_at)
+         VALUES (?, ?, ?, 'long', '10.00', '11.30', '113.00', '0.00', '0.00', '0.00', ?, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now, now, now);
+
+    // Non-canonical 3-fraction mark price (live MTM writes these).
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO valuation_marks
+         (id, account_id, instrument_id, price, price_micros, source, mark_timestamp)
+         VALUES (?, ?, ?, '11.645', 11645000, 'market_data', ?)`,
+      )
+      .run(randomUUID(), accountId, instrId, now);
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO trades
+         (id, trade_code, account_id, symbol, direction, status, planned_stop, current_price, created_at, updated_at)
+         VALUES (?, ?, ?, 'MARK3', 'long', 'open', 11, 11.645, ?, ?)`,
+      )
+      .run(randomUUID(), `T-${randomUUID().slice(0, 8)}`, accountId, now, now);
+
+    const result = computeDashboardV2(ctx.sqlite, accountId);
+    expect(result).toBeDefined();
+
+    const pos = result!.valuation.positions[0];
+    // Risk must compute (not null → 'Incomplete') despite the 3-decimal
+    // mark: max(0, avgCost − stop) × qty = (11.30 − 11) × 10 = 3.00.
+    expect(pos.risk.currentRiskToStop).toBe('3.00');
   });
 
   it('reports missing stops as partial stop coverage with null aggregate risk', () => {
