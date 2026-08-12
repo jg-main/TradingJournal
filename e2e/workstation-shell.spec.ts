@@ -78,13 +78,15 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(accountSelect.locator('option')).toHaveCount(1);
     await expect(accountSelect.locator('option').first()).toHaveText('Primary Margin');
 
-    // Scenario selector exposes all four fixture scenarios.
+    // Scenario selector exposes all six fixture scenarios.
     const scenarioSelect = page.getByTestId('ws-scenario-select');
     await expect(scenarioSelect.locator('option')).toHaveText([
       'default',
       'zero-positions',
       'large-drawdown',
       'many-watchlist',
+      'dash-ac-01-healthy',
+      'dash-ac-02-partial',
     ]);
 
     // Slice verification contract: FIXTURE badge visible in fixture mode.
@@ -191,6 +193,20 @@ test.describe('workstation shell at 1440x900', () => {
   }) => {
     await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
+
+    // The grid is SSR-visible before hydration; wait for the FIXTURE MODE
+    // client-effect signal so selectOption reaches the React onChange handler
+    // (same pattern as the 'fixture mode emits console.warn' test below).
+    const warnings: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning') warnings.push(msg.text());
+    });
+    await expect
+      .poll(
+        () => warnings.some((w) => w.includes('[workstation] FIXTURE MODE')),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
 
     // zero-positions: positions panel shows its empty state.
     await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
@@ -547,6 +563,21 @@ test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', 
 
   test('panel header shows the open position count (R034 title)', async ({ page }) => {
     await page.goto('/dev/workstation');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+
+    // Wait for hydration (FIXTURE MODE client effect) before driving the
+    // scenario select so the onChange handler is attached.
+    const warnings: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning') warnings.push(msg.text());
+    });
+    await expect
+      .poll(
+        () => warnings.some((w) => w.includes('[workstation] FIXTURE MODE')),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
     await expect(
       page.getByTestId('ws-panel-positions').getByText('Open account positions: 3'),
     ).toBeVisible();

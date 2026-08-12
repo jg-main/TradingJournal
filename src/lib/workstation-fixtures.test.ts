@@ -156,12 +156,14 @@ function expectValidDashboardV2(v2: DashboardV2Response): void {
 // ── Scenario registry ────────────────────────────────────────────────────
 
 describe('scenario registry', () => {
-  it('exposes exactly the four planned scenarios', () => {
+  it('exposes exactly the six planned scenarios', () => {
     expect(WORKSTATION_SCENARIO_IDS).toEqual([
       'default',
       'zero-positions',
       'large-drawdown',
       'many-watchlist',
+      'dash-ac-01-healthy',
+      'dash-ac-02-partial',
     ]);
   });
 

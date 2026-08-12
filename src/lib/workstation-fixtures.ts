@@ -16,6 +16,14 @@
  *   zero-positions  — flat account, no open trades, all valuation counts 0
  *   large-drawdown  — ~18% drawdown, critical integrity, stressed KPIs
  *   many-watchlist  — 28 watchlist items across all statuses (density test)
+ *   dash-ac-01-healthy — DASH-AC-01: every open position fresh-marked with a
+ *                     valid stop — the 'healthy' baseline (valuation complete,
+ *                     stop coverage 3/3, integrity healthy)
+ *   dash-ac-02-partial — DASH-AC-02: one of three positions has no mark; the
+ *                     two marked rows total exactly +$10.94 (the +$10.94-style
+ *                     partial-total defect scenario). The primary Open P&L is
+ *                     the qualified label '— Partial — 1 unpriced', never a
+ *                     bare signed total; the marked subset is subordinate.
  *
  * Determinism: all generated series use a seeded PRNG (mulberry32) so test
  * assertions and browser screenshots are reproducible.
@@ -222,6 +230,8 @@ export const WORKSTATION_SCENARIO_IDS = [
   'zero-positions',
   'large-drawdown',
   'many-watchlist',
+  'dash-ac-01-healthy',
+  'dash-ac-02-partial',
 ] as const;
 
 export type WorkstationScenarioId = (typeof WORKSTATION_SCENARIO_IDS)[number];
@@ -471,6 +481,8 @@ function buildMarketIndices(scenario: WorkstationScenarioId): MarketIndexSnapsho
     'zero-positions': 200,
     'large-drawdown': 300,
     'many-watchlist': 400,
+    'dash-ac-01-healthy': 500,
+    'dash-ac-02-partial': 510,
   };
   const rand = mulberry32(SEEDS[scenario]);
 
@@ -488,6 +500,8 @@ function buildMarketIndices(scenario: WorkstationScenarioId): MarketIndexSnapsho
     'zero-positions': 0.0,
     'large-drawdown': -0.8,
     'many-watchlist': 0.25,
+    'dash-ac-01-healthy': 0.3,
+    'dash-ac-02-partial': 0.1,
   };
   const driftMul = driftMultipliers[scenario];
 
@@ -521,6 +535,8 @@ function buildSymbolPrices(
     'zero-positions': 600,
     'large-drawdown': 700,
     'many-watchlist': 800,
+    'dash-ac-01-healthy': 900,
+    'dash-ac-02-partial': 910,
   };
   const rand = mulberry32(SEEDS[scenario]);
 
@@ -957,7 +973,7 @@ function buildDashboardV2(opts: {
       provenance: fixtureProvenance('accounting_executions', FIXTURE_COMPUTED_AT, 'complete'),
     },
     journalLinked: {
-      tradeCount: 3,
+      tradeCount: 2,
       positionCount: 2,
       remainingQty: '200.00',
       openAvgCost: '121.88',
@@ -1596,6 +1612,389 @@ function buildManyWatchlistScenario(): WorkstationFixtures {
   };
 }
 
+/**
+ * DASH-AC-01 — the 'healthy' baseline: every open account position has a
+ * fresh valuation mark and a valid effective stop. Valuation is complete
+ * (coverage 100%), stop coverage is 3/3, and integrity is healthy, so the
+ * risk band presents a normal signed Open P&L total with source/as-of
+ * metadata and no data-quality alerts.
+ */
+function buildDashAc01HealthyScenario(): WorkstationFixtures {
+  const base = buildDefaultScenario();
+
+  // All three positions are fresh-marked and carry a valid stop (TSLA is
+  // upgraded from the default's stale/no-stop state).
+  const positions: DashboardV2Response['valuation']['positions'] = [
+    {
+      instrumentId: 'inst-nvda',
+      symbol: 'NVDA',
+      direction: 'long',
+      quantity: '120',
+      averageCost: '128.40',
+      markStatus: 'fresh',
+      markPrice: '131.85',
+      markedValue: '15822.00',
+      unrealizedPnl: '414.00',
+      markTimestamp: FIXTURE_MARK_AS_OF,
+      markAgeMinutes: 17,
+      attribution: { kind: 'journal', executionCount: 2, journalTradeCount: 1 },
+      markProvenance: {
+        source: 'market_data',
+        asOf: FIXTURE_MARK_AS_OF,
+        computedAt: FIXTURE_COMPUTED_AT,
+        status: 'fresh',
+      },
+      risk: { hasValidStop: true, stopPrice: 127.9, currentRiskToStop: '474.00', openTrades: 1 },
+      journalLinkedMetrics: {
+        remainingQty: 120,
+        openAvgCost: 128.4,
+        grossRealizedPnl: 1210.5,
+        netRealizedPnl: 1190.2,
+        netUnrealizedPnl: 409.7,
+        openFees: 4.3,
+      },
+    },
+    {
+      instrumentId: 'inst-amd',
+      symbol: 'AMD',
+      direction: 'long',
+      quantity: '80',
+      averageCost: '112.10',
+      markStatus: 'fresh',
+      markPrice: '118.42',
+      markedValue: '9473.60',
+      unrealizedPnl: '505.60',
+      markTimestamp: FIXTURE_MARK_AS_OF,
+      markAgeMinutes: 17,
+      attribution: { kind: 'mixed', executionCount: 3, journalTradeCount: 2 },
+      markProvenance: {
+        source: 'market_data',
+        asOf: FIXTURE_MARK_AS_OF,
+        computedAt: FIXTURE_COMPUTED_AT,
+        status: 'fresh',
+      },
+      risk: { hasValidStop: true, stopPrice: 115.2, currentRiskToStop: '257.60', openTrades: 1 },
+      journalLinkedMetrics: {
+        remainingQty: 80,
+        openAvgCost: 112.1,
+        grossRealizedPnl: 320.75,
+        netRealizedPnl: 311.45,
+        netUnrealizedPnl: 503.1,
+        openFees: 2.5,
+      },
+    },
+    {
+      instrumentId: 'inst-tsla',
+      symbol: 'TSLA',
+      direction: 'short',
+      quantity: '25',
+      averageCost: '246.80',
+      markStatus: 'fresh',
+      markPrice: '249.93',
+      markedValue: '6248.25',
+      unrealizedPnl: '-78.25',
+      markTimestamp: FIXTURE_MARK_AS_OF,
+      markAgeMinutes: 17,
+      attribution: { kind: 'account_only', executionCount: 3, journalTradeCount: 0 },
+      markProvenance: {
+        source: 'market_data',
+        asOf: FIXTURE_MARK_AS_OF,
+        computedAt: FIXTURE_COMPUTED_AT,
+        status: 'fresh',
+      },
+      risk: { hasValidStop: true, stopPrice: 252.0, currentRiskToStop: '51.75', openTrades: 1 },
+      journalLinkedMetrics: null,
+    },
+  ];
+
+  const dashboardV2 = buildDashboardV2({
+    cash: '24150.75',
+    nav: String((base.dashboard.kpis.accountValue ?? 50000).toFixed(2)),
+    markedPositions: '31543.85',
+    realizedPnl: '11596.40',
+    unrealizedPnl: '841.35',
+    totalPnl: '12437.75',
+    drawdown: base.dashboardV2.metrics.drawdown,
+    drawdownPct: base.dashboardV2.metrics.drawdownPct,
+    positions,
+    riskSummary: fixtureRiskSummary({
+      openPnl: '841.35',
+      openRisk: '1450.00',
+      portfolioHeat: '2.80',
+      missingStops: 0,
+      positionsWithStop: 3,
+      openRiskToStop: '783.35',
+      provenanceStatus: 'complete',
+    }),
+    integrity: { status: 'healthy', warnings: [] },
+  });
+
+  const workstationPositions: WorkstationPosition[] = [
+    {
+      instrumentId: 'inst-nvda',
+      symbol: 'NVDA',
+      direction: 'long',
+      quantity: '120',
+      averageCost: '128.40',
+      markStatus: 'fresh',
+      markPrice: '131.85',
+      markedValue: '15822.00',
+      unrealizedPnl: '414.00',
+      markTimestamp: '2026-07-17T19:58:00.000Z',
+      markAgeMinutes: 17,
+      initialRiskAmount: '300.00',
+      rMultiple: computeRMultiple('414.00', '300.00'),
+    },
+    {
+      instrumentId: 'inst-amd',
+      symbol: 'AMD',
+      direction: 'long',
+      quantity: '80',
+      averageCost: '112.10',
+      markStatus: 'fresh',
+      markPrice: '118.42',
+      markedValue: '9473.60',
+      unrealizedPnl: '505.60',
+      markTimestamp: '2026-07-17T19:58:00.000Z',
+      markAgeMinutes: 17,
+      initialRiskAmount: '250.00',
+      rMultiple: computeRMultiple('505.60', '250.00'),
+    },
+    {
+      instrumentId: 'inst-tsla',
+      symbol: 'TSLA',
+      direction: 'short',
+      quantity: '25',
+      averageCost: '246.80',
+      markStatus: 'fresh',
+      markPrice: '249.93',
+      markedValue: '6248.25',
+      unrealizedPnl: '-78.25',
+      markTimestamp: '2026-07-17T19:58:00.000Z',
+      markAgeMinutes: 17,
+      initialRiskAmount: '200.00',
+      rMultiple: computeRMultiple('-78.25', '200.00'),
+    },
+  ];
+
+  return {
+    ...base,
+    scenario: 'dash-ac-01-healthy',
+    dashboardV2,
+    marketIndices: buildMarketIndices('dash-ac-01-healthy'),
+    positions: workstationPositions,
+    risk: {
+      ptd: base.risk.ptd,
+      current: {
+        openPnl: '841.35',
+        openRisk: '1450.00',
+        portfolioHeat: '2.80',
+        missingStops: 0,
+        positionsWithStop: 3,
+        exposure: '31543.85',
+      },
+    },
+  };
+}
+
+/**
+ * DASH-AC-02 — the +$10.94-style partial-total defect scenario: three open
+ * account positions, one of which has no valuation mark. The two marked rows
+ * total exactly +$10.94 (VCTR +$10.74, AMRX +$0.20 — the classic incident
+ * numbers), so the primary Open P&L must be the qualified label
+ * '— Partial — 1 unpriced', never a bare signed total; the known marked
+ * subset is subordinate ('Marked subset $10.94').
+ */
+function buildDashAc02PartialScenario(): WorkstationFixtures {
+  const base = buildDefaultScenario();
+
+  const positions: DashboardV2Response['valuation']['positions'] = [
+    {
+      instrumentId: 'inst-vctr',
+      symbol: 'VCTR',
+      direction: 'long',
+      quantity: '6',
+      averageCost: '12.35',
+      markStatus: 'fresh',
+      markPrice: '14.14',
+      markedValue: '84.84',
+      unrealizedPnl: '10.74',
+      markTimestamp: FIXTURE_MARK_AS_OF,
+      markAgeMinutes: 12,
+      attribution: { kind: 'journal', executionCount: 2, journalTradeCount: 1 },
+      markProvenance: {
+        source: 'market_data',
+        asOf: FIXTURE_MARK_AS_OF,
+        computedAt: FIXTURE_COMPUTED_AT,
+        status: 'fresh',
+      },
+      risk: { hasValidStop: true, stopPrice: 12.1, currentRiskToStop: '12.24', openTrades: 1 },
+      journalLinkedMetrics: {
+        remainingQty: 6,
+        openAvgCost: 12.35,
+        grossRealizedPnl: 0,
+        netRealizedPnl: 0,
+        netUnrealizedPnl: 10.74,
+        openFees: 0.3,
+      },
+    },
+    {
+      instrumentId: 'inst-amrx',
+      symbol: 'AMRX',
+      direction: 'long',
+      quantity: '10',
+      averageCost: '5.03',
+      markStatus: 'fresh',
+      markPrice: '5.05',
+      markedValue: '50.50',
+      unrealizedPnl: '0.20',
+      markTimestamp: FIXTURE_MARK_AS_OF,
+      markAgeMinutes: 12,
+      attribution: { kind: 'journal', executionCount: 1, journalTradeCount: 1 },
+      markProvenance: {
+        source: 'market_data',
+        asOf: FIXTURE_MARK_AS_OF,
+        computedAt: FIXTURE_COMPUTED_AT,
+        status: 'fresh',
+      },
+      risk: { hasValidStop: true, stopPrice: 4.98, currentRiskToStop: '0.70', openTrades: 1 },
+      journalLinkedMetrics: {
+        remainingQty: 10,
+        openAvgCost: 5.03,
+        grossRealizedPnl: 0,
+        netRealizedPnl: 0,
+        netUnrealizedPnl: 0.2,
+        openFees: 0.1,
+      },
+    },
+    {
+      instrumentId: 'inst-cake',
+      symbol: 'CAKE',
+      direction: 'short',
+      quantity: '20',
+      averageCost: '42.00',
+      markStatus: 'missing',
+      markPrice: null,
+      markedValue: null,
+      unrealizedPnl: null,
+      markTimestamp: null,
+      markAgeMinutes: null,
+      attribution: { kind: 'account_only', executionCount: 1, journalTradeCount: 0 },
+      markProvenance: {
+        source: null,
+        asOf: null,
+        computedAt: FIXTURE_COMPUTED_AT,
+        status: 'missing',
+      },
+      risk: { hasValidStop: true, stopPrice: 43.5, currentRiskToStop: null, openTrades: 1 },
+      journalLinkedMetrics: null,
+    },
+  ];
+
+  const dashboardV2 = buildDashboardV2({
+    cash: '24150.75',
+    nav: '24286.09',
+    markedPositions: '135.34',
+    realizedPnl: '11596.40',
+    unrealizedPnl: '10.94',
+    totalPnl: '11607.34',
+    drawdown: base.dashboardV2.metrics.drawdown,
+    drawdownPct: base.dashboardV2.metrics.drawdownPct,
+    positions,
+    riskSummary: fixtureRiskSummary({
+      openPnl: null,
+      openRisk: '42.94',
+      portfolioHeat: '0.18',
+      missingStops: 0,
+      positionsWithStop: 3,
+      openRiskToStop: null,
+      provenanceStatus: 'partial',
+      provenancePresentationLabel: '— Partial — 1 unpriced',
+    }),
+    integrity: {
+      status: 'warning',
+      warnings: ['1 position has no valuation mark — unrealized P&L is partial.'],
+    },
+  });
+
+  const workstationPositions: WorkstationPosition[] = [
+    {
+      instrumentId: 'inst-vctr',
+      symbol: 'VCTR',
+      direction: 'long',
+      quantity: '6',
+      averageCost: '12.35',
+      markStatus: 'fresh',
+      markPrice: '14.14',
+      markedValue: '84.84',
+      unrealizedPnl: '10.74',
+      markTimestamp: '2026-07-17T19:58:00.000Z',
+      markAgeMinutes: 12,
+      initialRiskAmount: '12.24',
+      rMultiple: computeRMultiple('10.74', '12.24'),
+    },
+    {
+      instrumentId: 'inst-amrx',
+      symbol: 'AMRX',
+      direction: 'long',
+      quantity: '10',
+      averageCost: '5.03',
+      markStatus: 'fresh',
+      markPrice: '5.05',
+      markedValue: '50.50',
+      unrealizedPnl: '0.20',
+      markTimestamp: '2026-07-17T19:58:00.000Z',
+      markAgeMinutes: 12,
+      initialRiskAmount: '0.70',
+      rMultiple: computeRMultiple('0.20', '0.70'),
+    },
+    {
+      instrumentId: 'inst-cake',
+      symbol: 'CAKE',
+      direction: 'short',
+      quantity: '20',
+      averageCost: '42.00',
+      markStatus: 'missing',
+      markPrice: null,
+      markedValue: null,
+      unrealizedPnl: null,
+      markTimestamp: null,
+      markAgeMinutes: null,
+      initialRiskAmount: '30.00',
+      rMultiple: computeRMultiple(null, '30.00'),
+    },
+  ];
+
+  return {
+    ...base,
+    scenario: 'dash-ac-02-partial',
+    // Legacy v1 MTM mirrors the marked subset — never a complete total.
+    dashboard: {
+      ...base.dashboard,
+      mtm: {
+        netUnrealizedPnl: 10.94,
+        openTradeCount: 3,
+        tradesWithPrices: 2,
+        tradesAwaitingData: 1,
+      },
+    },
+    dashboardV2,
+    marketIndices: buildMarketIndices('dash-ac-02-partial'),
+    positions: workstationPositions,
+    risk: {
+      ptd: base.risk.ptd,
+      current: {
+        openPnl: '10.94',
+        openRisk: '42.94',
+        portfolioHeat: '0.18',
+        missingStops: 0,
+        positionsWithStop: 3,
+        exposure: '135.34',
+      },
+    },
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1605,6 +2004,8 @@ const SCENARIO_BUILDERS: Record<WorkstationScenarioId, () => WorkstationFixtures
   'zero-positions': buildZeroPositionsScenario,
   'large-drawdown': buildLargeDrawdownScenario,
   'many-watchlist': buildManyWatchlistScenario,
+  'dash-ac-01-healthy': buildDashAc01HealthyScenario,
+  'dash-ac-02-partial': buildDashAc02PartialScenario,
 };
 
 /**
