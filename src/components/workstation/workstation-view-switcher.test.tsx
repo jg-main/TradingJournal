@@ -94,6 +94,11 @@ function renderSwitcher({
   activeViewId = WORKSTATION_SYSTEM_VIEW_IDS.RISK_POSITIONS,
   onSelectView = vi.fn(),
   onCreateView = vi.fn(),
+  onRenameView = vi.fn(),
+  onDuplicateView = vi.fn(),
+  onDeleteView = vi.fn(),
+  onResetView = vi.fn(),
+  onSetStartupView = vi.fn(),
   writeFailed = false,
 }: Partial<Parameters<typeof WorkstationViewSwitcher>[0]> = {}) {
   return render(
@@ -102,6 +107,11 @@ function renderSwitcher({
       activeViewId={activeViewId}
       onSelectView={onSelectView}
       onCreateView={onCreateView}
+      onRenameView={onRenameView}
+      onDuplicateView={onDuplicateView}
+      onDeleteView={onDeleteView}
+      onResetView={onResetView}
+      onSetStartupView={onSetStartupView}
       writeFailed={writeFailed}
     />,
   );
@@ -287,6 +297,144 @@ describe('WorkstationViewSwitcher', () => {
     await user.click(screen.getByTestId('ws-view-create-new'));
 
     expect(onCreateView).not.toHaveBeenCalled();
+  });
+
+  // ── View Actions (S06-T04) ────────────────────────────────────────
+
+  it('shows the View Actions section with rename/duplicate/startup/reset/delete', async () => {
+    renderSwitcher({ activeViewId: 'ws-user-1' });
+    await openDropdown();
+
+    expect(screen.getByText('View Actions')).toBeTruthy();
+    expect(screen.getByTestId('ws-view-rename')).toBeTruthy();
+    expect(screen.getByTestId('ws-view-duplicate')).toBeTruthy();
+    expect(screen.getByTestId('ws-view-set-startup')).toBeTruthy();
+    expect(screen.getByTestId('ws-view-reset-template')).toBeTruthy();
+    expect(screen.getByTestId('ws-view-delete')).toBeTruthy();
+  });
+
+  it('shows a startup badge on the startup view row', async () => {
+    renderSwitcher();
+    await openDropdown();
+
+    const startupItem = screen.getByTestId(
+      `ws-view-item-${WORKSTATION_SYSTEM_VIEW_IDS.RISK_POSITIONS}`,
+    );
+    expect(startupItem.querySelector('[data-testid="ws-view-startup-badge"]')).toBeTruthy();
+    // Non-startup views carry no badge.
+    const perfItem = screen.getByTestId(`ws-view-item-${WORKSTATION_SYSTEM_VIEW_IDS.PERFORMANCE}`);
+    expect(perfItem.querySelector('[data-testid="ws-view-startup-badge"]')).toBeNull();
+  });
+
+  it('calls onRenameView with the id and prompted name when accepted', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('Renamed View');
+    const onRenameView = vi.fn();
+    renderSwitcher({ activeViewId: 'ws-user-1', onRenameView });
+    await openDropdown();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ws-view-rename'));
+
+    expect(onRenameView).toHaveBeenCalledTimes(1);
+    expect(onRenameView).toHaveBeenCalledWith('ws-user-1', 'Renamed View');
+  });
+
+  it('does not call onRenameView when the prompt is dismissed or whitespace', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue(null);
+    const onRenameView = vi.fn();
+    renderSwitcher({ activeViewId: 'ws-user-1', onRenameView });
+
+    // Dismissed prompt.
+    await openDropdown();
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ws-view-rename'));
+    expect(onRenameView).not.toHaveBeenCalled();
+
+    // Whitespace input — re-open the dropdown (item select closes it).
+    vi.spyOn(window, 'prompt').mockReturnValue('   ');
+    await openDropdown();
+    await user.click(screen.getByTestId('ws-view-rename'));
+    expect(onRenameView).not.toHaveBeenCalled();
+  });
+
+  it('disables rename / reset / delete while a system preset is active', async () => {
+    renderSwitcher({ activeViewId: WORKSTATION_SYSTEM_VIEW_IDS.PERFORMANCE });
+    await openDropdown();
+
+    expect(screen.getByTestId('ws-view-rename').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('ws-view-reset-template').getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByTestId('ws-view-delete').getAttribute('aria-disabled')).toBe('true');
+    // Duplicate and set-startup remain available for presets (Radix omits
+    // aria-disabled for enabled items — assert the absence of the flag).
+    expect(screen.getByTestId('ws-view-duplicate').getAttribute('aria-disabled')).not.toBe('true');
+    expect(screen.getByTestId('ws-view-set-startup').getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('calls onDuplicateView with the active view id', async () => {
+    const onDuplicateView = vi.fn();
+    renderSwitcher({ activeViewId: 'ws-user-2', onDuplicateView });
+    await openDropdown();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ws-view-duplicate'));
+
+    expect(onDuplicateView).toHaveBeenCalledTimes(1);
+    expect(onDuplicateView).toHaveBeenCalledWith('ws-user-2');
+  });
+
+  it('calls onSetStartupView with the active view id and is disabled when already startup', async () => {
+    const onSetStartupView = vi.fn();
+    renderSwitcher({ activeViewId: 'ws-user-1', onSetStartupView });
+    await openDropdown();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ws-view-set-startup'));
+    expect(onSetStartupView).toHaveBeenCalledTimes(1);
+    expect(onSetStartupView).toHaveBeenCalledWith('ws-user-1');
+  });
+
+  it('disables Set as Startup when the active view is already the startup view', async () => {
+    renderSwitcher({ activeViewId: WORKSTATION_SYSTEM_VIEW_IDS.RISK_POSITIONS });
+    await openDropdown();
+
+    expect(screen.getByTestId('ws-view-set-startup').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('calls onResetView with the active user view id', async () => {
+    const onResetView = vi.fn();
+    renderSwitcher({ activeViewId: 'ws-user-1', onResetView });
+    await openDropdown();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ws-view-reset-template'));
+
+    expect(onResetView).toHaveBeenCalledTimes(1);
+    expect(onResetView).toHaveBeenCalledWith('ws-user-1');
+  });
+
+  it('calls onDeleteView when the user confirms', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onDeleteView = vi.fn();
+    renderSwitcher({ activeViewId: 'ws-user-1', onDeleteView });
+    await openDropdown();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ws-view-delete'));
+
+    expect(onDeleteView).toHaveBeenCalledTimes(1);
+    expect(onDeleteView).toHaveBeenCalledWith('ws-user-1');
+  });
+
+  it('does not call onDeleteView when the user cancels the confirm', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onDeleteView = vi.fn();
+    renderSwitcher({ activeViewId: 'ws-user-1', onDeleteView });
+    await openDropdown();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('ws-view-delete'));
+
+    expect(onDeleteView).not.toHaveBeenCalled();
   });
 
   // ── Write Failure ─────────────────────────────────────────────────

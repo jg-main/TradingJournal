@@ -6,12 +6,21 @@
 import type { WorkstationScenarioId } from '@/lib/workstation-fixtures';
 import { useWorkstation } from './workstation-context';
 import { useWorkstationViewsContext } from './workstation-views-context';
+import { useWorkstationCustomizeContext } from './workstation-customize-context';
 import { WorkstationViewSwitcher } from './workstation-view-switcher';
+import { SlidersHorizontal } from 'lucide-react';
 
 export function WorkstationFixtureToolbar() {
   // Saved workstation views (S06): the provider owns the view store; the
   // fixture harness exercises the same switcher + dynamic grid as production.
   const viewsState = useWorkstationViewsContext();
+
+  // Customize session (S06-T04): the fixture harness carries the same entry
+  // button so T05 can verify customize mode deterministically against
+  // fixtures. Disabled for read-only system presets and mid-session.
+  const customize = useWorkstationCustomizeContext();
+  const activeView = viewsState.views.find((v) => v.id === viewsState.activeViewId);
+  const customizeDisabled = customize.isCustomizing || !activeView || activeView.isSystem;
 
   const {
     accounts,
@@ -35,8 +44,36 @@ export function WorkstationFixtureToolbar() {
         activeViewId={viewsState.activeViewId}
         onSelectView={viewsState.setActiveView}
         onCreateView={(name) => viewsState.createView(name)}
+        onRenameView={(id, name) => viewsState.renameView(id, name)}
+        onDuplicateView={(id) => viewsState.duplicateView(id)}
+        onDeleteView={(id) => viewsState.deleteView(id)}
+        onResetView={(id) => viewsState.resetView(id)}
+        onSetStartupView={(id) => viewsState.setStartupView(id)}
         writeFailed={viewsState.writeFailed}
       />
+
+      {/* Customize entry — same entry as production for deterministic E2E. */}
+      <button
+        type="button"
+        className="ws-customize-trigger"
+        data-testid="ws-customize-trigger"
+        onClick={() => {
+          if (activeView && !customize.isCustomizing) {
+            customize.enterCustomize(activeView.config);
+          }
+        }}
+        disabled={customizeDisabled}
+        title={
+          customize.isCustomizing
+            ? 'Customize session in progress'
+            : activeView?.isSystem
+              ? 'System templates are read-only — create or duplicate a view to customize'
+              : 'Customize this view'
+        }
+      >
+        <SlidersHorizontal className="ws-customize-trigger-icon" aria-hidden="true" />
+        Customize
+      </button>
 
       <label className="ws-toolbar-field">
         <span className="ws-toolbar-label">Account</span>

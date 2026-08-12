@@ -11,6 +11,7 @@ import { WorkstationKeyboardShortcuts } from '@/components/workstation/workstati
 import { WorkstationProvider } from '@/components/workstation/workstation-context';
 import { WorkstationShell } from '@/components/workstation/workstation-shell';
 import { WorkstationViewsProvider } from '@/components/workstation/workstation-views-context';
+import { WorkstationCustomizeProvider } from '@/components/workstation/workstation-customize-context';
 
 export default async function WorkstationFixturePage({
   searchParams,
@@ -25,14 +26,17 @@ export default async function WorkstationFixturePage({
         <WorkstationProvider initialScenario={scenario} liveMode={false}>
           {/* Saved workstation views (S06): the provider owns the view store
               so the fixture harness exercises the same switcher + dynamic
-              grid as production, deterministically. */}
+              grid as production, deterministically. Customize session
+              (S06-T04) rides the same harness for E2E. */}
           <WorkstationViewsProvider>
-            <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
-              Skip to main content
-            </a>
-            <WorkstationKeyboardShortcuts />
-            <WorkstationFixtureToolbar />
-            <WorkstationShell />
+            <WorkstationCustomizeProvider>
+              <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
+                Skip to main content
+              </a>
+              <WorkstationKeyboardShortcuts />
+              <WorkstationFixtureToolbar />
+              <WorkstationShell />
+            </WorkstationCustomizeProvider>
           </WorkstationViewsProvider>
         </WorkstationProvider>
       </div>

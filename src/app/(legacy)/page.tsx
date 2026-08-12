@@ -14,6 +14,7 @@ import { WorkstationToolbar } from '@/components/workstation/workstation-toolbar
 import { WorkstationShell } from '@/components/workstation/workstation-shell';
 import { WorkstationKeyboardShortcuts } from '@/components/workstation/workstation-keyboard-shortcuts';
 import { WorkstationViewsProvider } from '@/components/workstation/workstation-views-context';
+import { WorkstationCustomizeProvider } from '@/components/workstation/workstation-customize-context';
 import { useAccount } from '@/lib/account-context';
 
 export default function DashboardPage() {
@@ -32,14 +33,17 @@ export default function DashboardPage() {
       >
         {/* Saved workstation views (S06): the provider owns the view store so
             the toolbar switcher and the shell's dynamic grid share one
-            source of truth. */}
+            source of truth. Customize session (S06-T04): the toolbar entry
+            button and the shell's editing chrome share one session. */}
         <WorkstationViewsProvider>
-          <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
-            Skip to main content
-          </a>
-          <WorkstationKeyboardShortcuts />
-          <WorkstationToolbar />
-          <WorkstationShell />
+          <WorkstationCustomizeProvider>
+            <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
+              Skip to main content
+            </a>
+            <WorkstationKeyboardShortcuts />
+            <WorkstationToolbar />
+            <WorkstationShell />
+          </WorkstationCustomizeProvider>
         </WorkstationViewsProvider>
       </WorkstationProvider>
     </div>

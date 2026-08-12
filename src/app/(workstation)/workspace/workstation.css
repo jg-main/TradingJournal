@@ -1192,3 +1192,253 @@
   border: 1px solid var(--border);
   border-radius: 2px;
 }
+
+/* ── Customize Mode (S06-T04) ─────────────────────────────────────────── */
+/*
+ * Explicit editing chrome (R035): the customize bar, the toolbar entry
+ * trigger, and per-panel hide overlays. Normal mode has no drag/resize or
+ * editing handles — these controls exist only while a customize session is
+ * open. The data-quality alert strip and the fixed panels (risk, positions,
+ * kpis) are never inside the editable layout.
+ */
+
+/* Toolbar entry trigger — matches the view-switcher trigger rhythm. */
+.ws-customize-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-3);
+  height: var(--ws-row-sm);
+  padding: 0 var(--ws-space-4);
+  font-size: var(--ws-text-md);
+  font-weight: 600;
+  background: var(--background);
+  color: var(--foreground);
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.ws-customize-trigger:hover:not(:disabled) {
+  border-color: var(--ring);
+  color: var(--primary);
+}
+
+.ws-customize-trigger:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ws-customize-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-customize-trigger-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* Editing bar — sits between the data-quality alert strip and the grid,
+   a sibling of the editable layout, never inside it. */
+.ws-customize-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--ws-space-4);
+  min-height: var(--ws-row-md);
+  padding: var(--ws-space-2) var(--ws-space-5);
+  border-bottom: var(--ws-border);
+  background: var(--card);
+}
+
+.ws-customize-title {
+  font-size: var(--ws-text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.ws-customize-dirty {
+  font-size: var(--ws-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--chart-4, var(--muted-foreground));
+  white-space: nowrap;
+}
+
+.ws-customize-panels {
+  display: flex;
+  align-items: center;
+  gap: var(--ws-space-2);
+  flex-wrap: wrap;
+}
+
+.ws-customize-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-2);
+  height: var(--ws-row-xs);
+  padding: 0 var(--ws-space-3);
+  font-size: var(--ws-text-xs);
+  font-weight: 600;
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  background: var(--background);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ws-customize-chip:hover {
+  border-color: var(--ring);
+  color: var(--foreground);
+}
+
+.ws-customize-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ws-customize-chip-icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.ws-customize-all-visible {
+  font-size: var(--ws-text-xs);
+  color: var(--muted-foreground);
+}
+
+.ws-customize-fixed-note {
+  font-size: var(--ws-text-xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.ws-customize-spacer {
+  flex: 1;
+}
+
+.ws-customize-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-2);
+  height: var(--ws-row-sm);
+  padding: 0 var(--ws-space-4);
+  font-size: var(--ws-text-sm);
+  font-weight: 600;
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ws-customize-btn:hover:not(:disabled) {
+  border-color: var(--ring);
+}
+
+.ws-customize-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ws-customize-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-customize-btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.ws-customize-btn-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--primary) 90%, black);
+}
+
+.ws-customize-btn-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* Editable optional panel cells — dashed ring while customizing, with a
+   slim action bar carrying the Hide control. Fixed panels (risk, positions,
+   kpis) render unchanged and never get a cell wrapper. */
+.ws-customize-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px dashed var(--ring);
+  border-radius: var(--ws-radius);
+}
+
+.ws-customize-cell-bar {
+  flex: none;
+  height: var(--ws-row-xs);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-3);
+  padding: 0 var(--ws-space-3);
+  border-bottom: 1px dashed var(--ring);
+}
+
+.ws-customize-cell-title {
+  font-size: var(--ws-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ring);
+}
+
+.ws-customize-hide-overlay {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-2);
+  height: 22px;
+  padding: 0 var(--ws-space-3);
+  font-size: var(--ws-text-xs);
+  font-weight: 600;
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  background: var(--card);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ws-customize-hide-overlay:hover {
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+
+.ws-customize-hide-overlay:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ws-customize-overlay-icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+/* The panel inside a customize cell fills the cell; the dashed ring
+   replaces the panel's own solid border to avoid double chrome. */
+.ws-customize-cell > .ws-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}

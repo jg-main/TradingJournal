@@ -8,7 +8,9 @@
 
 import { useWorkstation, type MtmPollingState } from './workstation-context';
 import { useWorkstationViewsContext } from './workstation-views-context';
+import { useWorkstationCustomizeContext } from './workstation-customize-context';
 import { WorkstationViewSwitcher } from './workstation-view-switcher';
+import { SlidersHorizontal } from 'lucide-react';
 
 /** Compact label + semantic description for the MTM polling indicator. */
 function mtmLabel(state: MtmPollingState): string {
@@ -38,6 +40,15 @@ export function WorkstationToolbar() {
   // toolbar renders the switcher and dispatches changes through it.
   const viewsState = useWorkstationViewsContext();
 
+  // Customize session (S06-T04): the toolbar hosts the entry button. It is
+  // disabled while a session is open (Save/Cancel/Undo/Reset live in the
+  // customize bar) and for read-only system presets — the curated templates
+  // cannot be overwritten (R035); users customize their own views or
+  // duplicate a preset into an editable copy first.
+  const customize = useWorkstationCustomizeContext();
+  const activeView = viewsState.views.find((v) => v.id === viewsState.activeViewId);
+  const customizeDisabled = customize.isCustomizing || !activeView || activeView.isSystem;
+
   const {
     accounts,
     activeAccountId,
@@ -65,8 +76,37 @@ export function WorkstationToolbar() {
         activeViewId={viewsState.activeViewId}
         onSelectView={viewsState.setActiveView}
         onCreateView={(name) => viewsState.createView(name)}
+        onRenameView={(id, name) => viewsState.renameView(id, name)}
+        onDuplicateView={(id) => viewsState.duplicateView(id)}
+        onDeleteView={(id) => viewsState.deleteView(id)}
+        onResetView={(id) => viewsState.resetView(id)}
+        onSetStartupView={(id) => viewsState.setStartupView(id)}
         writeFailed={viewsState.writeFailed}
       />
+
+      {/* Customize entry — explicit editing mode (R035). Disabled for system
+          presets (read-only) and while a session is already open. */}
+      <button
+        type="button"
+        className="ws-customize-trigger"
+        data-testid="ws-customize-trigger"
+        onClick={() => {
+          if (activeView && !customize.isCustomizing) {
+            customize.enterCustomize(activeView.config);
+          }
+        }}
+        disabled={customizeDisabled}
+        title={
+          customize.isCustomizing
+            ? 'Customize session in progress'
+            : activeView?.isSystem
+              ? 'System templates are read-only — create or duplicate a view to customize'
+              : 'Customize this view'
+        }
+      >
+        <SlidersHorizontal className="ws-customize-trigger-icon" aria-hidden="true" />
+        Customize
+      </button>
 
       {accountSelectionExternal ? (
         // Account selection lives in the sidebar (global AccountProvider).

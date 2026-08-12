@@ -17,9 +17,12 @@
 // saved layout. Panels scroll internally and the surface itself never
 // scrolls (see .ws and .ws-grid in workstation.css).
 
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { EyeOff } from 'lucide-react';
 import { useWorkstation } from './workstation-context';
 import { useWorkstationViewsContext } from './workstation-views-context';
+import { useWorkstationCustomizeContext } from './workstation-customize-context';
+import { CustomizeBar } from './customize-bar';
 import { DataQualityAlertStrip } from './data-quality-alert-strip';
 import { RiskPositionsTable } from './risk-positions-table';
 import { RiskPanel } from './risk-panel';
@@ -28,6 +31,7 @@ import { AccountStatePanel } from './account-state-panel';
 import { PerformancePanel } from './performance-panel';
 import { ProcessReviewPanel } from './process-review-panel';
 import {
+  WORKSTATION_PANEL_CATALOGUE,
   WORKSTATION_PANEL_IDS,
   WORKSTATION_TEMPLATE_IDS,
   computeGridTemplateAreas,
@@ -156,10 +160,32 @@ export function WorkstationShell() {
   // shell renders the active view's layout config as the dynamic grid.
   const viewsState = useWorkstationViewsContext();
 
+  // Customize session (S06-T04): while customizing, the shell renders the
+  // session draft as a live preview (hidden panels disappear immediately and
+  // are re-shown from the bar), shows per-panel Hide overlays on optional
+  // panels, and mounts the customize bar between the alert strip and the
+  // grid — outside the editable layout.
+  const customize = useWorkstationCustomizeContext();
+  const {
+    isCustomizing,
+    draft,
+    isDirty,
+    canUndo,
+    hiddenOptionalPanels,
+    togglePanelVisibility,
+    undo,
+    resetDraft,
+    cancel,
+    save,
+  } = customize;
+
   // The active view's layout config is the rendered truth: hidden panels
   // have no cells in the grid. Fall back to the Risk & Positions template
-  // while no active view exists (defensive).
-  const config = viewsState.activeView?.config ?? DEFAULT_VIEW_CONFIG;
+  // while no active view exists (defensive). During customization the draft
+  // replaces the persisted config so edits preview live.
+  const config = isCustomizing && draft
+    ? draft
+    : (viewsState.activeView?.config ?? DEFAULT_VIEW_CONFIG);
 
   const gridStyle = {
     gridTemplateAreas: computeGridTemplateAreas(config),
@@ -169,14 +195,62 @@ export function WorkstationShell() {
 
   const visiblePanels = computeVisiblePanels(config);
 
+  // Cancel the session when the active view changes mid-edit — the draft
+  // belongs to the view that was active when Customize was entered, and a
+  // switch discards it rather than silently saving to the wrong view.
+  const sessionViewIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isCustomizing) {
+      sessionViewIdRef.current = null;
+      return;
+    }
+    if (sessionViewIdRef.current === null) {
+      sessionViewIdRef.current = viewsState.activeViewId;
+      return;
+    }
+    if (sessionViewIdRef.current !== viewsState.activeViewId) {
+      cancel();
+    }
+  }, [isCustomizing, cancel, viewsState.activeViewId]);
+
+  // Save: persist the draft to the active (user) view. System presets are
+  // read-only in the view store and never reach this path — the toolbar
+  // disables Customize for them.
+  const handleSave = useCallback(() => {
+    const active = viewsState.activeView;
+    if (!active || active.isSystem) return;
+    const configToSave = save();
+    if (configToSave) {
+      viewsState.updateViewConfig(active.id, configToSave);
+    }
+  }, [save, viewsState]);
+
   return (
     <>
       {/* Data-quality alert strip — fixed above the grid, outside any
           editable layout (§5.1 area 2). It is rendered before the grid in
-          every view and cannot be hidden by a saved layout. Pure consumer
-          of API provenance state; renders nothing when every section is
-          healthy. */}
+          every view and cannot be hidden by a saved layout or by customize
+          mode. Pure consumer of API provenance state; renders nothing when
+          every section is healthy. */}
       <DataQualityAlertStrip dashboardV2={dashboardV2} />
+
+      {/* Customize bar — explicit editing chrome (R035). Mounted only while
+          a customize session is open, between the alert strip and the grid:
+          sibling of the editable layout, never inside it. The alert strip
+          stays outside the editable layout in all modes. */}
+      {isCustomizing && (
+        <CustomizeBar
+          viewName={viewsState.activeView?.name ?? 'View'}
+          hiddenOptionalPanels={hiddenOptionalPanels}
+          canUndo={canUndo}
+          isDirty={isDirty}
+          onTogglePanel={togglePanelVisibility}
+          onUndo={undo}
+          onReset={resetDraft}
+          onCancel={cancel}
+          onSave={handleSave}
+        />
+      )}
 
       <main
         className="ws-grid"
@@ -185,9 +259,39 @@ export function WorkstationShell() {
         id="ws-main-content"
         tabIndex={-1}
       >
-        {visiblePanels.map((id) => (
-          <Fragment key={id}>{renderPanelById(id, valuation.positions)}</Fragment>
-        ))}
+        {visiblePanels.map((id) => {
+          const panel = renderPanelById(id, valuation.positions);
+          // Only optional panels are editable: fixed safety/data-quality
+          // panels (risk, positions, kpis) render unchanged in every mode.
+          if (!isCustomizing || !WORKSTATION_PANEL_CATALOGUE[id].canHide) {
+            return <Fragment key={id}>{panel}</Fragment>;
+          }
+          return (
+            <div
+              key={id}
+              className="ws-customize-cell"
+              style={{ gridArea: id }}
+              data-testid={`ws-customize-cell-${id}`}
+            >
+              <div className="ws-customize-cell-bar">
+                <span className="ws-customize-cell-title">
+                  {WORKSTATION_PANEL_CATALOGUE[id].title}
+                </span>
+                <button
+                  type="button"
+                  className="ws-customize-hide-overlay"
+                  data-testid={`ws-customize-hide-${id}`}
+                  onClick={() => togglePanelVisibility(id)}
+                  title={`Hide ${WORKSTATION_PANEL_CATALOGUE[id].title}`}
+                >
+                  <EyeOff className="ws-customize-overlay-icon" aria-hidden="true" />
+                  Hide
+                </button>
+              </div>
+              {panel}
+            </div>
+          );
+        })}
       </main>
     </>
   );
