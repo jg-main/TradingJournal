@@ -1,23 +1,37 @@
 'use client';
 
-// RiskPanel — PTD/current-state visual separation.
+// RiskPanel — current exposure and risk summary band (S04 T02).
 //
-// Renders the workstation.fixtures.risk payload as a panel with two visually
-// separated metric sections:
-//   1. PTD (Period-to-Date) — realized P&L, realized fees, drawdown
-//   2. Current State — open P&L, open risk, portfolio heat, missing stops, exposure
+// Full-width horizontal band occupying the top row of the risk-first grid
+// (requirements §5.1 area 3). Consumes ONLY the DashboardV2Response from
+// the workstation context (fixtures.dashboardV2) — the same reconciled
+// snapshot the alert strip and positions table consume. Classification is
+// never re-implemented here: every cell renders an API-declared value or
+// the API's qualified presentationLabel (valuation.presentationLabel,
+// stopCoverage.presentationLabel) when completeness is partial/unavailable
+// (§6.4 / §6.6) — a bare signed total is never presented for a partial sum.
 //
-// Section headers are distinct uppercase sub-headers with a bottom border,
-// visually lighter than the panel header so the hierarchy reads: panel → section → row.
+// Cells (left → right):
+//   Open positions — account-position count, plus the open journal trade
+//     count as a sub-line when it differs (§5.1 area 3, §6.1).
+//   Open P&L — signed total when valuation is complete, else the qualified
+//     presentationLabel ('— Partial — N unpriced'); marked-subset P&L as a
+//     subordinate sub-line when the API provides it.
+//   Open risk — stopCoverage.presentationLabel when coverage is partial
+//     ('Incomplete — N without a valid stop'), else riskSummary.openRisk.
+//   Portfolio heat — same stop-coverage gating (§6.6), else heat %.
+//   Stop coverage — withStop/openTrades, or the qualified label when partial.
+//   Gross / Net exposure — metrics.grossExposure / netExposure.
 //
-// Consumes only WorkstationContext. Renders its own Panel chrome (header + body)
-// so T04 can drop <RiskPanel /> directly into the grid.
+// Largest concentration is intentionally omitted: the DashboardV2Response
+// contract declares no concentration field, and the panel must not derive
+// a financial aggregate the API does not provide.
 //
 // Data-testid attributes per slice verification contract:
-//   ws-panel-risk, ws-risk-ptd-section, ws-risk-current-section
+//   ws-panel-risk, ws-risk-cell-{positions,open-pnl,open-risk,heat,coverage,gross,net}
 
 import { useWorkstation } from './workstation-context';
-import type { WorkstationRisk } from '@/lib/workstation-fixtures';
+import type { DashboardV2Response } from '@/lib/accounting/dashboard-v2';
 
 // ── Formatters ──────────────────────────────────────────────────────────
 
@@ -32,6 +46,7 @@ function fmtCurrency(value: string | null | undefined): string {
   })}`;
 }
 
+/** Canonical-decimal percentage (e.g. '2.80' → '2.80%') — no ×100. */
 function fmtPct(value: string | null | undefined): string {
   if (value === null || value === undefined) return '—';
   const n = Number(value);
@@ -48,33 +63,30 @@ function pnlClass(value: string | null | undefined): string {
   return '';
 }
 
-function fmtInt(value: number | undefined): string {
-  if (value === undefined) return '—';
-  return String(value);
-}
-
-function fmtStopCoverage(current: WorkstationRisk['current']): string {
-  const { positionsWithStop, missingStops } = current;
-  const total = positionsWithStop + missingStops;
-  if (total === 0) return '—';
-  return `${positionsWithStop}/${total}`;
-}
-
 // ── Render helpers ──────────────────────────────────────────────────────
 
-function StatRow({
+function RiskCell({
   label,
   value,
-  className,
+  sub,
+  valueClassName,
+  testId,
 }: {
   label: string;
   value: string;
-  className?: string;
+  sub?: string;
+  valueClassName?: string;
+  testId: string;
 }) {
   return (
-    <div className="ws-stat-row">
-      <span>{label}</span>
-      <span className={`ws-num ${className ?? ''}`}>{value}</span>
+    <div className="ws-risk-cell" data-testid={testId}>
+      <div className={`ws-risk-value ws-num ${valueClassName ?? ''}`}>
+        {value}
+      </div>
+      <div className="ws-risk-label">{label}</div>
+      {sub !== undefined && sub !== null && (
+        <div className="ws-risk-sub ws-num">{sub}</div>
+      )}
     </div>
   );
 }
@@ -83,77 +95,92 @@ function StatRow({
 
 export function RiskPanel() {
   const { fixtures } = useWorkstation();
-  const { risk } = fixtures;
+  const { dashboardV2 } = fixtures;
+  const { riskSummary, valuation, metrics, journalLinked } = dashboardV2;
+  const { stopCoverage } = riskSummary;
+
+  const positionsTotal = valuation.positionsTotal;
+  const journalTrades = journalLinked.tradeCount;
+  const coveragePartial = stopCoverage.state === 'partial';
+
+  // ── Qualified values (never a bare signed total for a partial sum) ────
+  const openPnl =
+    valuation.state === 'complete'
+      ? fmtCurrency(riskSummary.openPnl)
+      : (valuation.presentationLabel ?? '—');
+  const openPnlClass = valuation.state === 'complete' ? pnlClass(riskSummary.openPnl) : '';
+
+  const openRisk = coveragePartial
+    ? (stopCoverage.presentationLabel ?? 'Incomplete')
+    : fmtCurrency(riskSummary.openRisk);
+  const heat = coveragePartial
+    ? (stopCoverage.presentationLabel ?? 'Incomplete')
+    : fmtPct(riskSummary.portfolioHeat);
+  const coverage = coveragePartial
+    ? (stopCoverage.presentationLabel ?? 'Incomplete')
+    : `${stopCoverage.withStop}/${stopCoverage.openTrades}`;
+
+  const markedSubset =
+    valuation.state !== 'complete' && valuation.markedSubsetPnl !== null
+      ? `Marked subset ${fmtCurrency(valuation.markedSubsetPnl)}`
+      : undefined;
 
   return (
     <section
-      className="ws-panel"
+      className="ws-panel ws-risk-band"
       style={{ gridArea: 'risk' }}
       data-testid="ws-panel-risk"
     >
       <div className="ws-panel-header">
         <span>Risk</span>
+        <span className="ws-panel-meta ws-mono">
+          {valuation.state === 'complete' ? 'current' : valuation.state} ·{' '}
+          {stopCoverage.state} coverage
+        </span>
       </div>
       <div className="ws-panel-body">
-        {/* ── PTD section ─────────────────────────────────────────────── */}
-        <div
-          className="ws-risk-section"
-          data-testid="ws-risk-ptd-section"
-        >
-          <div className="ws-risk-section-header">PTD</div>
-          <StatRow
-            label="Realized P&L"
-            value={fmtCurrency(risk.ptd.realizedPnl)}
-            className={pnlClass(risk.ptd.realizedPnl)}
-          />
-          <StatRow
-            label="Realized Fees"
-            value={fmtCurrency(risk.ptd.realizedFees)}
-          />
-          <StatRow
-            label="Drawdown"
-            value={
-              risk.ptd.drawdownPct !== null && Number(risk.ptd.drawdownPct) !== 0
-                ? `${fmtCurrency(risk.ptd.drawdown)} (${fmtPct(risk.ptd.drawdownPct)})`
-                : fmtCurrency(risk.ptd.drawdown)
-            }
-            className={pnlClass(risk.ptd.drawdown)}
-          />
-        </div>
-
-        {/* ── Current State section ───────────────────────────────────── */}
-        <div
-          className="ws-risk-section"
-          data-testid="ws-risk-current-section"
-        >
-          <div className="ws-risk-section-header">Current</div>
-          <StatRow
-            label="Open P&L"
-            value={fmtCurrency(risk.current.openPnl)}
-            className={pnlClass(risk.current.openPnl)}
-          />
-          <StatRow
-            label="Open Risk"
-            value={fmtCurrency(risk.current.openRisk)}
-          />
-          <StatRow
-            label="Portfolio Heat"
-            value={fmtPct(risk.current.portfolioHeat)}
-          />
-          <StatRow
-            label="Missing Stops"
-            value={fmtInt(risk.current.missingStops)}
-            className={risk.current.missingStops > 0 ? 'ws-severity-critical' : ''}
-          />
-          <StatRow
-            label="Stop Coverage"
-            value={fmtStopCoverage(risk.current)}
-          />
-          <StatRow
-            label="Exposure"
-            value={fmtCurrency(risk.current.exposure)}
-          />
-        </div>
+        <RiskCell
+          label="Open positions"
+          value={String(positionsTotal)}
+          sub={
+            journalTrades !== positionsTotal
+              ? `${journalTrades} journal trades`
+              : undefined
+          }
+          testId="ws-risk-cell-positions"
+        />
+        <RiskCell
+          label="Open P&L"
+          value={openPnl}
+          sub={markedSubset}
+          valueClassName={openPnlClass}
+          testId="ws-risk-cell-open-pnl"
+        />
+        <RiskCell
+          label="Open risk"
+          value={openRisk}
+          testId="ws-risk-cell-open-risk"
+        />
+        <RiskCell
+          label="Portfolio heat"
+          value={heat}
+          testId="ws-risk-cell-heat"
+        />
+        <RiskCell
+          label="Stop coverage"
+          value={coverage}
+          testId="ws-risk-cell-coverage"
+        />
+        <RiskCell
+          label="Gross exposure"
+          value={fmtCurrency(metrics.grossExposure)}
+          testId="ws-risk-cell-gross"
+        />
+        <RiskCell
+          label="Net exposure"
+          value={fmtCurrency(metrics.netExposure)}
+          testId="ws-risk-cell-net"
+        />
       </div>
     </section>
   );

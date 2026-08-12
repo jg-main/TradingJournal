@@ -508,123 +508,96 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
   });
 });
 
-test.describe('S03 RiskPanel — PTD/current-state visual separation', () => {
-  test('renders PTD and Current section headers with sub-header hierarchy', async ({
-    page,
-  }) => {
+test.describe('S03 RiskPanel — current exposure and risk summary band (S04 T02)', () => {
+  test('renders the risk band with all seven current-state cells', async ({ page }) => {
     await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
-    // PTD section.
-    const ptdSection = page.getByTestId('ws-risk-ptd-section');
-    await expect(ptdSection).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-positions')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-open-pnl')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-open-risk')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-heat')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-coverage')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-gross')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-net')).toBeVisible();
+  });
+
+  test('default scenario: partial valuation renders the qualified presentation label', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const openPnl = page.getByTestId('ws-risk-cell-open-pnl');
+    // DASH-AC-02: a partial sum is never presented as a signed total.
+    await expect(openPnl.locator('.ws-risk-value')).toHaveText('— Partial — 1 unpriced');
+    // Marked-subset sub-line renders the known fresh-marked amount.
+    await expect(openPnl.locator('.ws-risk-sub')).toContainText('Marked subset');
+  });
+
+  test('default scenario: partial stop coverage qualifies open risk, heat, and coverage', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    // DASH-AC-06: no deceptively complete numeric total when a stop is missing.
+    for (const id of ['open-risk', 'heat', 'coverage']) {
+      await expect(
+        page.getByTestId(`ws-risk-cell-${id}`).locator('.ws-risk-value'),
+      ).toHaveText('Incomplete — 1 without a valid stop');
+    }
+  });
+
+  test('default scenario: positions count and gross/net exposure render', async ({ page }) => {
+    await page.goto('/dev/workstation');
     await expect(
-      ptdSection.locator('.ws-risk-section-header'),
-    ).toHaveText('PTD');
-
-    // Current State section.
-    const currentSection = page.getByTestId('ws-risk-current-section');
-    await expect(currentSection).toBeVisible();
+      page.getByTestId('ws-risk-cell-positions').locator('.ws-risk-value'),
+    ).toHaveText('3');
     await expect(
-      currentSection.locator('.ws-risk-section-header'),
-    ).toHaveText('Current');
-
-    // PTD section renders before Current State (DOM order).
-    const sectionOrder = await page.evaluate(() => {
-      const ptd = document.querySelector('[data-testid="ws-risk-ptd-section"]');
-      const current = document.querySelector('[data-testid="ws-risk-current-section"]');
-      if (!ptd || !current) return null;
-      return ptd.compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING
-        ? 'ptd-first'
-        : 'current-first';
-    });
-    expect(sectionOrder).toBe('ptd-first');
+      page.getByTestId('ws-risk-cell-gross').locator('.ws-risk-value'),
+    ).toContainText('$');
+    await expect(
+      page.getByTestId('ws-risk-cell-net').locator('.ws-risk-value'),
+    ).toContainText('$');
   });
 
-  test('PTD section shows Realized P&L, Realized Fees, and Drawdown', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    const ptdSection = page.getByTestId('ws-risk-ptd-section');
-    await expect(ptdSection).toBeVisible();
-
-    await expect(ptdSection.getByText('Realized P&L')).toBeVisible();
-    await expect(ptdSection.getByText('Realized Fees')).toBeVisible();
-    await expect(ptdSection.getByText('Drawdown')).toBeVisible();
-
-    // Realized P&L is positive → ws-pos.
-    const realizedPnlRow = ptdSection.locator('.ws-stat-row').filter({
-      hasText: 'Realized P&L',
-    });
-    const valueEl = realizedPnlRow.locator('.ws-num');
-    const valueClass = await valueEl.evaluate((el) => el.className);
-    expect(valueClass).toMatch(/ws-pos/);
-  });
-
-  test('Current State section shows Open P&L, Open Risk, Portfolio Heat, Missing Stops, Stop Coverage, Exposure', async ({
-    page,
-  }) => {
-    await page.goto('/dev/workstation');
-    const currentSection = page.getByTestId('ws-risk-current-section');
-    await expect(currentSection).toBeVisible();
-
-    await expect(currentSection.getByText('Open P&L')).toBeVisible();
-    await expect(currentSection.getByText('Open Risk')).toBeVisible();
-    await expect(currentSection.getByText('Portfolio Heat')).toBeVisible();
-    await expect(currentSection.getByText('Missing Stops')).toBeVisible();
-    await expect(currentSection.getByText('Stop Coverage')).toBeVisible();
-    await expect(currentSection.getByText('Exposure')).toBeVisible();
-  });
-
-  test('Portfolio Heat renders as percentage in Current section', async ({ page }) => {
-    await page.goto('/dev/workstation');
-    const heatRow = page
-      .getByTestId('ws-risk-current-section')
-      .locator('.ws-stat-row')
-      .filter({ hasText: 'Portfolio Heat' });
-    const heatValue = heatRow.locator('.ws-num');
-    await expect(heatValue).toContainText('%');
-  });
-
-  test('Missing Stops = 2 in large-drawdown renders with critical-risk severity', async ({ page }) => {
-    await page.goto('/dev/workstation?scenario=large-drawdown');
-    const stopsRow = page
-      .getByTestId('ws-risk-current-section')
-      .locator('.ws-stat-row')
-      .filter({ hasText: 'Missing Stops' });
-    const stopsValue = stopsRow.locator('.ws-num');
-    await expect(stopsValue).toHaveText('2');
-    const stopsClass = await stopsValue.evaluate((el) => el.className);
-    expect(stopsClass).toMatch(/ws-severity-critical/);
-  });
-
-  test('zero-positions scenario shows zeroed risk metrics', async ({ page }) => {
+  test('zero-positions scenario shows zeroed complete risk metrics', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=zero-positions');
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
-    // Open P&L is $0.00.
-    const openPnlRow = page
-      .getByTestId('ws-risk-current-section')
-      .locator('.ws-stat-row')
-      .filter({ hasText: 'Open P&L' });
-    await expect(openPnlRow.locator('.ws-num')).toContainText('0');
-
-    // Missing Stops is 0 (no critical-risk severity).
-    const stopsRow = page
-      .getByTestId('ws-risk-current-section')
-      .locator('.ws-stat-row')
-      .filter({ hasText: 'Missing Stops' });
-    await expect(stopsRow.locator('.ws-num')).toHaveText('0');
-    const stopsClass = await stopsRow.locator('.ws-num').evaluate((el) => el.className);
-    expect(stopsClass).not.toMatch(/ws-severity-critical/);
+    // Open P&L is $0.00 (complete state → signed value).
+    await expect(
+      page.getByTestId('ws-risk-cell-open-pnl').locator('.ws-risk-value'),
+    ).toHaveText('$0.00');
+    await expect(
+      page.getByTestId('ws-risk-cell-open-risk').locator('.ws-risk-value'),
+    ).toHaveText('$0.00');
+    await expect(
+      page.getByTestId('ws-risk-cell-heat').locator('.ws-risk-value'),
+    ).toHaveText('0.00%');
+    await expect(
+      page.getByTestId('ws-risk-cell-coverage').locator('.ws-risk-value'),
+    ).toHaveText('0/0');
+    // Journal trade count differs from account positions → sub-line appears.
+    await expect(
+      page.getByTestId('ws-risk-cell-positions').locator('.ws-risk-sub'),
+    ).toContainText('journal');
   });
 
-  test('Many-watchlist scenario: positions and risk panels render without viewport overflow', async ({
-    page,
-  }) => {
+  test('large-drawdown: unavailable valuation and partial coverage render qualified labels', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=large-drawdown');
+    await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
+
+    await expect(
+      page.getByTestId('ws-risk-cell-open-pnl').locator('.ws-risk-value'),
+    ).toHaveText('— Unavailable — 2 unpriced');
+    for (const id of ['open-risk', 'heat', 'coverage']) {
+      await expect(
+        page.getByTestId(`ws-risk-cell-${id}`).locator('.ws-risk-value'),
+      ).toHaveText('Incomplete — 2 without a valid stop');
+    }
+  });
+
+  test('Many-watchlist scenario: positions and risk panels render without viewport overflow', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=many-watchlist');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
+    await expect(
+      page.getByTestId('ws-panel-risk').getByTestId('ws-risk-cell-open-pnl'),
+    ).toBeVisible();
 
     // 3 positions (same as default).
     await expect(

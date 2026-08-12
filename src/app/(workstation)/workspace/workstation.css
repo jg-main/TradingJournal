@@ -8,12 +8,13 @@
  */
 
 .ws {
-  /* Density scale */
-  --ws-row-xs: 18px; /* dense table row */
-  --ws-row-sm: 22px; /* standard table row */
-  --ws-row-md: 28px; /* comfortable row / list item */
-  --ws-toolbar-h: 40px; /* top toolbar height */
-  --ws-panel-header-h: 26px; /* panel title bar */
+  /* Density scale — rows meet the §8.1 readability contract (36–40px).
+     Micro controls (kbd chips) stay tighter at --ws-row-xs. */
+  --ws-row-xs: 28px; /* micro controls / kbd chips */
+  --ws-row-sm: 36px; /* dense table row (floor of the 36–40px contract) */
+  --ws-row-md: 40px; /* standard table row / list item */
+  --ws-toolbar-h: 48px; /* top toolbar height (command/state bar) */
+  --ws-panel-header-h: 32px; /* panel title bar */
 
   /* Spacing scale (half of the legacy default) */
   --ws-space-1: 2px;
@@ -23,11 +24,15 @@
   --ws-space-5: 12px;
   --ws-space-6: 16px;
 
-  /* Type scale (compact, terminal-like) */
-  --ws-text-xs: 10px;
-  --ws-text-sm: 11px;
-  --ws-text-md: 12px;
-  --ws-text-lg: 14px;
+  /* Type scale — meets the §8.1 readability contract:
+     decision labels/table headers ≥12px (xs), data cells ≥13px (sm/md),
+     primary financial values 16–20px (lg/xl). Maps onto the global
+     --font-size-* family (12/13/14/16/20px). */
+  --ws-text-xs: 12px;
+  --ws-text-sm: 13px;
+  --ws-text-md: 14px;
+  --ws-text-lg: 16px;
+  --ws-text-xl: 20px;
 
   /* Fine borders for panel chrome */
   --ws-border: 1px solid var(--border);
@@ -332,9 +337,15 @@
 
 /* ── CSS Grid shell ──────────────────────────────────────────────────────── */
 /*
- * Fixed terminal layout at 1440x900: KPI strip across the top, equity curve
- * dominant on the left, positions/watchlist stacked in the middle, risk and
- * insights on the right rail. Panels never move; content scrolls inside them.
+ * Risk-first fixed layout (S04 T02, requirements §5.1): the risk summary
+ * band spans the full width on top, the open-positions table is the tall
+ * dominant left column, and account state / watchlist / insights stack on
+ * the right rail. The period-performance KPI band sits at the bottom — a
+ * compact summary below the risk area, never a competing first-row KPI
+ * wall (§5.1 area 7, §8.1). The first four areas (command/state bar,
+ * alert strip, risk summary, positions) stay above the fold at 2560×1440
+ * and effective 1536×960 without zoom. Panels never move; content scrolls
+ * inside them.
  */
 .ws-grid {
   flex: 1;
@@ -342,12 +353,14 @@
   display: grid;
   gap: var(--ws-space-3);
   padding: var(--ws-space-3);
-  grid-template-columns: 3fr 2fr 2fr 1.5fr;
-  grid-template-rows: auto 1fr 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
   grid-template-areas:
-    "kpis     kpis      kpis      kpis"
-    "equity   positions watchlist risk"
-    "equity   positions watchlist insights";
+    "risk      risk"
+    "positions equity"
+    "positions watchlist"
+    "positions insights"
+    "kpis      kpis";
 }
 
 .ws-panel-meta {
@@ -357,7 +370,8 @@
   letter-spacing: 0;
 }
 
-/* KPI strip */
+/* KPI strip — compact period-performance band at the bottom of the grid,
+   below the risk area (§5.1 area 7). Never a competing first-row wall. */
 .ws-kpi-strip {
   flex-direction: row;
   align-items: stretch;
@@ -673,10 +687,61 @@
   flex: none;
 }
 
-/* ── Risk Panel ──────────────────────────────────────────────────────────── */
+/* ── Risk Panel (current exposure and risk summary band) ────────────────── */
 
-/* Section group — separates PTD and Current State metric blocks with a gap.
-   Each section carries a sub-header followed by ws-stat-row children. */
+/* Full-width horizontal band: one stat cell per current-state metric.
+   Values use the 20px headline size (within the 16–20px primary-value
+   contract); labels are uppercase 12px decision labels. The section keeps
+   the normal column layout (header above body); the body is the horizontal
+   row of cells. */
+.ws-risk-band > .ws-panel-body {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
+  padding: 0;
+}
+
+.ws-risk-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--ws-space-1);
+  padding: var(--ws-space-3) var(--ws-space-4);
+}
+
+.ws-risk-cell + .ws-risk-cell {
+  border-left: var(--ws-border);
+}
+
+.ws-risk-value {
+  font-size: var(--ws-text-xl);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-risk-label {
+  font-size: var(--ws-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.ws-risk-sub {
+  font-size: var(--ws-text-sm);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Section group — shared by PerformanceSummary (monthly performance +
+   drawdown blocks). Kept separate from the risk band cells. */
 .ws-risk-section {
   margin-bottom: var(--ws-space-4);
 }
@@ -829,10 +894,17 @@
 }
 
 /* Flex-based container that fills the equity panel body so the ECharts
-   canvas sizes correctly via ResizeObserver (useChartResize). */
+   canvas sizes correctly via ResizeObserver (useChartResize).
+
+   S04 T02: the equity panel is now a secondary right-rail surface behind
+   the risk band and positions table, so at shorter viewports the body may
+   be smaller than chart + performance summary. A guaranteed min-height
+   keeps the chart from collapsing to 0 (ECharts refuses to init on a
+   0×0 container); the panel body scrolls internally, and the first-screen
+   areas (risk, positions) are unaffected. */
 .ws-chart-container {
   flex: 1;
-  min-height: 0;
+  min-height: 160px;
   width: 100%;
 }
 

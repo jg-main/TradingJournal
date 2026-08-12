@@ -319,10 +319,10 @@ test.describe('Live Mode E2E', () => {
 
     // Risk panel has metric content.
     const risk = page.getByTestId('ws-panel-risk');
-    await expect(risk.getByText('Portfolio Heat')).toBeVisible({ timeout: 10000 });
-    const riskRows = risk.locator('.ws-stat-row');
-    const riskRowCount = await riskRows.count();
-    expect(riskRowCount).toBeGreaterThan(0);
+    await expect(risk.getByText('Portfolio heat')).toBeVisible({ timeout: 10000 });
+    const riskCells = risk.locator('.ws-risk-cell');
+    const riskCellCount = await riskCells.count();
+    expect(riskCellCount).toBeGreaterThan(0);
 
     // Setups panel renders (may be empty for live mode since tradeIdeas is empty).
     await expect(page.getByTestId('ws-panel-insights')).toBeVisible();

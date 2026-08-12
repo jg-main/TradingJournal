@@ -326,8 +326,11 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
     await expect(page.getByTestId('ws-external-account')).toContainText('Dashboard V2 E2E');
     await expect(page.getByTestId('ws-panel-kpis').getByText('NAV (V2)')).toBeVisible();
     await expect(page.getByTestId('ws-panel-kpis').getByText('Net P&L')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-risk').getByText('Realized P&L')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-risk').getByText('Portfolio Heat')).toBeVisible();
+    // Risk band: Open P&L cell renders the qualified presentation label or a
+    // signed value; Portfolio heat cell always renders (S04 T02).
+    await expect(page.getByTestId('ws-risk-cell-open-pnl')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-heat')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk').getByText('Portfolio heat')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
