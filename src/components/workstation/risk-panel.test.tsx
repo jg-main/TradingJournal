@@ -125,16 +125,18 @@ function riskSummary(opts: {
   } = opts;
   const missingStops = coverage === 'partial' ? 1 : 0;
   const openTrades = 3;
+  const positionsTotal = 2;
   return {
     openPnl: '841.35',
     openRisk,
     portfolioHeat,
     missingStops,
-    positionsWithStop: openTrades - missingStops,
+    positionsWithStop: positionsTotal - missingStops,
     openRiskToStop,
     stopCoverage: {
       openTrades,
-      withStop: openTrades - missingStops,
+      positionsTotal,
+      withStop: positionsTotal - missingStops,
       withoutStop: missingStops,
       state: coverage,
       presentationLabel:
@@ -380,11 +382,10 @@ describe('R032 gating', () => {
     expect(cellValue('ws-risk-cell-initial-risk')).toBe('$1,450.00');
   });
 
-  it('null openRiskToStop under complete coverage renders Incomplete, never a total', () => {
+  it('null openRiskToStop under complete coverage renders Incomplete for risk and heat', () => {
     renderRiskSurface(baseDashboardV2({ risk: riskSummary({ openRiskToStop: null }) }));
     expect(cellValue('ws-risk-cell-open-risk')).toBe('Incomplete');
-    // Heat follows openRiskToStop availability through the same gate.
-    expect(cellValue('ws-risk-cell-heat')).toBe('2.80%');
+    expect(cellValue('ws-risk-cell-heat')).toBe('Incomplete');
   });
 
   it('null openRisk renders the API qualified provenance label for Initial risk', () => {
@@ -417,8 +418,8 @@ describe('RiskPanel band structure', () => {
   it('keeps the existing qualified Open P&L and coverage behavior intact', () => {
     renderRiskSurface(baseDashboardV2());
     expect(cellValue('ws-risk-cell-open-pnl')).toBe('$841.35');
-    // Complete coverage: 3 open journal trades, 3 with a valid stop.
-    expect(cellValue('ws-risk-cell-coverage')).toBe('3/3');
+    // The denominator is account positions, not the journal-trade context.
+    expect(cellValue('ws-risk-cell-coverage')).toBe('2/2');
   });
 
   it('partial coverage still qualifies the coverage cell', () => {
@@ -428,5 +429,17 @@ describe('RiskPanel band structure', () => {
     expect(cellValue('ws-risk-cell-coverage')).toBe(
       'Incomplete — 1 without a valid stop',
     );
+  });
+
+  it('renders a fully priced stale aggregate as Stale Open P&L, not unpriced', () => {
+    renderRiskSurface(
+      baseDashboardV2({
+        valuationState: 'stale',
+        valuationLabel: null,
+      }),
+    );
+    const cell = screen.getByTestId('ws-risk-cell-open-pnl');
+    expect(cell.querySelector('.ws-risk-label')?.textContent).toBe('Stale Open P&L');
+    expect(cellValue('ws-risk-cell-open-pnl')).toBe('$841.35');
   });
 });

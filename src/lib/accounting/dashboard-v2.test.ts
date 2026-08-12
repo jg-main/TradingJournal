@@ -1163,6 +1163,7 @@ describe('computeDashboardV2', () => {
     expect(result!.riskSummary.positionsWithStop).toBe(1);
     expect(result!.riskSummary.stopCoverage).toEqual({
       openTrades: 1,
+      positionsTotal: 1,
       withStop: 1,
       withoutStop: 0,
       state: 'complete',
@@ -1407,6 +1408,7 @@ describe('computeDashboardV2', () => {
     expect(result!.riskSummary.positionsWithStop).toBe(0);
     expect(result!.riskSummary.stopCoverage).toEqual({
       openTrades: 1,
+      positionsTotal: 1,
       withStop: 0,
       withoutStop: 1,
       state: 'partial',

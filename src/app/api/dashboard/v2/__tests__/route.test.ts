@@ -399,13 +399,23 @@ describe('GET /api/dashboard/v2', () => {
     expect(Array.isArray(integrity.warnings)).toBe(true);
     expect(integrity.warnings.length).toBe(0);
 
-    // Risk summary (no journal trades exist, so all zeros)
+    // Risk summary: the account has two marked positions but no valid stops,
+    // so current risk-to-stop and heat must remain unavailable rather than
+    // presenting an incorrect zero-risk state.
     const riskSummary = body.riskSummary as Record<string, unknown>;
     expect(riskSummary.openPnl).toBe('120.00');
     expect(riskSummary.openRisk).toBe('0.00');
-    expect(riskSummary.portfolioHeat).toBe('0.00');
-    expect(riskSummary.missingStops).toBe(0);
+    expect(riskSummary.openRiskToStop).toBeNull();
+    expect(riskSummary.portfolioHeat).toBeNull();
+    expect(riskSummary.missingStops).toBe(2);
     expect(riskSummary.positionsWithStop).toBe(0);
+    expect(riskSummary.stopCoverage).toMatchObject({
+      openTrades: 0,
+      positionsTotal: 2,
+      withStop: 0,
+      withoutStop: 2,
+      state: 'partial',
+    });
 
     // Timestamp
     expect(typeof body.computedAt).toBe('string');

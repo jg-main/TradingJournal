@@ -120,7 +120,7 @@ export function computeMarkAgeMinutes(
 /**
  * Get the absolute quantity for a position.
  *
- * PositionState.quantity is positive for long, negative for short.
+ * ValuationPosition.quantity is positive for long and negative for short.
  * Returns the absolute (non-negative) size.
  */
 export function absoluteQuantity(quantity: CanonicalDecimal): CanonicalDecimal {

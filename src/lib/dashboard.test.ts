@@ -1053,6 +1053,44 @@ test('computeKpiMetrics — profitFactor null when no losses', () => {
   assertNull(r.avgLoss, 'avgLoss = null (no losses)');
 });
 
+test('computeKpiMetrics — exposes every supported period-performance metric from closed trades', () => {
+  const winner = makeTrade(
+    'supported-winner',
+    'long',
+    'closed',
+    [
+      { action: 'buy', quantity: 1, price: 100, fees: 1, executedAt: '2026-01-01T00:00:00.000Z' },
+      { action: 'sell', quantity: 1, price: 120, fees: 1, executedAt: '2026-01-03T00:00:00.000Z' },
+    ],
+    null,
+    { initialRiskAmount: 10 },
+    '2026-01-03T00:00:00.000Z',
+  );
+  const loser = makeTrade(
+    'supported-loser',
+    'long',
+    'closed',
+    [
+      { action: 'buy', quantity: 1, price: 100, fees: 1, executedAt: '2026-01-10T00:00:00.000Z' },
+      { action: 'sell', quantity: 1, price: 90, fees: 1, executedAt: '2026-01-11T00:00:00.000Z' },
+    ],
+    null,
+    { initialRiskAmount: 10 },
+    '2026-01-11T00:00:00.000Z',
+  );
+  const r = computeKpiMetrics([winner, loser], [winner, loser], null, 1000);
+
+  assertEqual(r.realizedPnl, 6, 'realizedPnl = net period P&L');
+  assertEqual(r.totalFees, 4, 'totalFees = entry + exit fees across closed period trades');
+  assertEqual(r.payoffRatio, 1.5, 'payoffRatio = avgWin / avgLoss');
+  assertEqual(r.expectancy, 3, 'expectancy = average net P&L per closed decision');
+  assertApprox(r.expectancyR!, 0.3, 'expectancyR = average valid R-multiple');
+  assertEqual(r.bestTrade, 18, 'bestTrade = highest net closed P&L');
+  assertEqual(r.worstTrade, -12, 'worstTrade = lowest net closed P&L');
+  assertEqual(r.averageHoldingDays, 1.5, 'averageHoldingDays = mean completed holding period');
+  assertEqual(r.closedTrades, 2, 'closedTrades = period decision count');
+});
+
 // ────────────────────────────────────────────────────────────────────────
 // Summary
 // ────────────────────────────────────────────────────────────────────────

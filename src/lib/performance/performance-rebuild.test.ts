@@ -163,7 +163,10 @@ function seedPosition(
   realizedFees: string = '0.00',
 ): void {
   const normalizedQty = normalizeDecimalTestValue(quantity);
-  const qty = direction === 'short' ? `-${normalizedQty.replace(/^-/, '')}` : normalizedQty;
+  // account_positions stores an unsigned remaining quantity for both long
+  // and short lots; direction carries the exposure sign. This mirrors the
+  // FIFO projection written by the production execution pipeline.
+  const qty = normalizedQty.replace(/^-/, '');
   const absQty = Number(quantity);
   const costBasis = (absQty * Number(averageCost)).toFixed(2);
   const netPnl = (Number(realizedGrossPnl) - Number(realizedFees)).toFixed(2);
@@ -408,9 +411,9 @@ describe('rebuildAccountPerformance', () => {
     expect(result.positionCount).toBe(1);
     expect(result.markCount).toBe(1);
 
-    // NAV = $100,000 cash + (-50 × $380.00) = $100,000 + (-$19,000) = $81,000
-    // Wait — for shorts, quantity is "-50.00", so marked value = -50 × 380.00 = -19,000
-    // NAV = 100,000 + (-19,000) = 81,000
+    // The persisted account quantity is +50, but the valuation boundary
+    // applies the short direction before valuing it: $100,000 +
+    // (-50 × $380.00) = $81,000.
     expect(result.nav).toBe('81000.00');
 
     // Unrealized P&L = (averageCost - markPrice) × |quantity| = (400 - 380) × 50 = 1000

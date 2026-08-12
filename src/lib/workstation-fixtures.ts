@@ -836,7 +836,8 @@ function fixtureRiskSummary(opts: {
   /** Mirrors valuation.provenance.presentationLabel for the same snapshot. */
   provenancePresentationLabel?: string | null;
 }): DashboardV2Response['riskSummary'] {
-  const openTrades = opts.missingStops + opts.positionsWithStop;
+  const positionsTotal = opts.missingStops + opts.positionsWithStop;
+  const openTrades = positionsTotal;
   return {
     openPnl: opts.openPnl,
     openRisk: opts.openRisk,
@@ -846,6 +847,7 @@ function fixtureRiskSummary(opts: {
     openRiskToStop: opts.openRiskToStop,
     stopCoverage: {
       openTrades,
+      positionsTotal,
       withStop: opts.positionsWithStop,
       withoutStop: opts.missingStops,
       state: openTrades === 0 || opts.missingStops === 0 ? 'complete' : 'partial',
@@ -887,14 +889,14 @@ function buildDashboardV2(opts: {
         ? 'unavailable'
         : fresh === total
           ? 'complete'
-          : stale === total
+          : missing === 0 && stale > 0
             ? 'stale'
             : 'partial';
   const coveragePct = total === 0 ? null : ((fresh / total) * 100).toFixed(2);
 
   // Qualified display hints mirroring the real contract: the valuation label
   // for partial/unavailable aggregates and the known marked-subset amount.
-  const unpriced = total - fresh;
+  const unpriced = missing;
   const valuationLabel =
     state === 'partial'
       ? `— Partial — ${unpriced} unpriced`
@@ -1165,7 +1167,16 @@ function buildDefaultScenario(): WorkstationFixtures {
       accountValue: lastPoint.equity,
       profitFactor: 1.62,
       avgWin: 486.2,
-      avgLoss: -299.75,
+      avgLoss: 299.75,
+      closedTrades: 84,
+      realizedPnl: lastPoint.cumulativePnl,
+      totalFees: 512.3,
+      payoffRatio: 1.62,
+      expectancy: lastPoint.cumulativePnl / 84,
+      expectancyR: 0.42,
+      bestTrade: 1842.6,
+      worstTrade: -992.4,
+      averageHoldingDays: 3.8,
     },
     mtm: {
       netUnrealizedPnl: 841.35,
@@ -1224,8 +1235,7 @@ function buildDefaultScenario(): WorkstationFixtures {
       missingStops: 1,
       positionsWithStop: 2,
       openRiskToStop: '731.60',
-      provenanceStatus: 'partial',
-      provenancePresentationLabel: '— Partial — 1 unpriced',
+      provenanceStatus: 'stale',
     }),
     integrity: {
       status: 'warning',
@@ -1421,7 +1431,16 @@ function buildLargeDrawdownScenario(): WorkstationFixtures {
       accountValue: lastPoint.equity,
       profitFactor: 0.84,
       avgWin: 398.1,
-      avgLoss: -412.6,
+      avgLoss: 412.6,
+      closedTrades: 90,
+      realizedPnl: lastPoint.cumulativePnl,
+      totalFees: 684.5,
+      payoffRatio: 0.84,
+      expectancy: lastPoint.cumulativePnl / 90,
+      expectancyR: -0.18,
+      bestTrade: 1116.2,
+      worstTrade: -1620.8,
+      averageHoldingDays: 5.1,
     },
     mtm: {
       netUnrealizedPnl: -1234.8,

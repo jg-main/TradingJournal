@@ -14,9 +14,9 @@
 // Cells (left → right):
 //   Open positions — account-position count, plus the open journal trade
 //     count as a sub-line when it differs (§5.1 area 3, §6.1).
-//   Open P&L — signed total when valuation is complete, else the qualified
-//     presentationLabel ('— Partial — N unpriced'); marked-subset P&L as a
-//     subordinate sub-line when the API provides it.
+//   Open P&L — signed total when valuation is complete or stale, else the
+//     qualified presentationLabel ('— Partial — N unpriced'); marked-subset
+//     P&L as a subordinate sub-line when the API provides it.
 //   Initial risk — riskSummary.openRisk (sum of initialRiskAmount from open
 //     journal trade risk snapshots; R032: recorded at trade open, historical).
 //     Available whenever the API computed it — stop coverage does not gate
@@ -26,7 +26,8 @@
 //     partial ('Incomplete — N without a valid stop'), else the aggregate
 //     — never a total when any included position lacks a valid stop.
 //   Portfolio heat — same stop-coverage gating (§6.6), else heat %.
-//   Stop coverage — withStop/openTrades, or the qualified label when partial.
+//   Stop coverage — withStop/account positions, or the qualified label when
+//     partial.
 //   Gross / Net exposure — metrics.grossExposure / netExposure.
 //
 // Largest concentration is intentionally omitted: the DashboardV2Response
@@ -109,11 +110,15 @@ export function RiskPanel() {
   const coveragePartial = stopCoverage.state === 'partial';
 
   // ── Qualified values (never a bare signed total for a partial sum) ────
+  const valuationIsPriced =
+    valuation.state === 'complete' || valuation.state === 'stale';
   const openPnl =
-    valuation.state === 'complete'
+    valuationIsPriced
       ? fmtCurrency(riskSummary.openPnl)
       : (valuation.presentationLabel ?? '—');
-  const openPnlClass = valuation.state === 'complete' ? pnlClass(riskSummary.openPnl) : '';
+  const openPnlClass = valuationIsPriced ? pnlClass(riskSummary.openPnl) : '';
+  const openPnlLabel =
+    valuation.state === 'stale' ? 'Stale Open P&L' : 'Open P&L';
 
   // Initial risk — sum of initialRiskAmount from open journal trade risk
   // snapshots (R032: recorded at trade open, historical and immutable). The
@@ -133,15 +138,15 @@ export function RiskPanel() {
     : riskSummary.openRiskToStop !== null
       ? fmtCurrency(riskSummary.openRiskToStop)
       : 'Incomplete';
-  const heat = coveragePartial
+  const heat = coveragePartial || riskSummary.openRiskToStop === null
     ? (stopCoverage.presentationLabel ?? 'Incomplete')
     : fmtPct(riskSummary.portfolioHeat);
   const coverage = coveragePartial
     ? (stopCoverage.presentationLabel ?? 'Incomplete')
-    : `${stopCoverage.withStop}/${stopCoverage.openTrades}`;
+    : `${stopCoverage.withStop}/${stopCoverage.positionsTotal ?? stopCoverage.openTrades}`;
 
   const markedSubset =
-    valuation.state !== 'complete' && valuation.markedSubsetPnl !== null
+    !valuationIsPriced && valuation.markedSubsetPnl !== null
       ? `Marked subset ${fmtCurrency(valuation.markedSubsetPnl)}`
       : undefined;
 
@@ -170,7 +175,7 @@ export function RiskPanel() {
           testId="ws-risk-cell-positions"
         />
         <RiskCell
-          label="Open P&L"
+          label={openPnlLabel}
           value={openPnl}
           sub={markedSubset}
           valueClassName={openPnlClass}

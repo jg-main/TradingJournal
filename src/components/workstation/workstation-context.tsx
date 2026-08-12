@@ -390,6 +390,10 @@ export function WorkstationProvider({
           { skipAccounts: isAccountControlled },
         );
 
+        // Effect cleanup and a superseding poll intentionally abort this
+        // request. They are lifecycle events, not user-visible poll errors.
+        if (controller.signal.aborted) return;
+
         if (!result.success) {
           console.error(
             '[workstation] MTM poll failed:',

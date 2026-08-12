@@ -59,6 +59,16 @@ export interface KpiMetrics {
   profitFactor: number | null;
   avgWin: number | null;
   avgLoss: number | null;
+  /** Additional selected-period performance metrics (absent only for legacy API payloads). */
+  closedTrades?: number;
+  realizedPnl?: number;
+  totalFees?: number;
+  payoffRatio?: number | null;
+  expectancy?: number | null;
+  expectancyR?: number | null;
+  bestTrade?: number | null;
+  worstTrade?: number | null;
+  averageHoldingDays?: number | null;
 }
 
 /** Shape of the MTM data returned by /api/dashboard */

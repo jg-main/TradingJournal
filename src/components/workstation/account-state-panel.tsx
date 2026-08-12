@@ -74,7 +74,8 @@ type ValuationState = DashboardV2Response['valuation']['state'];
 function markedPositionsQualifier(state: ValuationState): string {
   if (state === 'partial') return 'Partial valuation';
   if (state === 'unavailable') return 'Unavailable';
-  // 'complete' or 'stale' — no qualifier needed
+  if (state === 'stale') return 'Stale valuation';
+  // 'complete'
   return '';
 }
 
@@ -83,8 +84,7 @@ function navQualification(state: ValuationState): string {
   if (state === 'complete') return 'Full';
   if (state === 'partial') return 'Partial';
   if (state === 'unavailable') return 'Ledger only';
-  // 'stale' — treat like partial
-  return 'Partial';
+  return 'Stale valuation';
 }
 
 // ── Stat cell ───────────────────────────────────────────────────────────
@@ -123,28 +123,51 @@ export function AccountStatePanel() {
   const { metrics, valuation } = dashboardV2;
 
   const vState = valuation.state;
+  const valuationIsComplete = vState === 'complete';
+  const valuationIsStale = vState === 'stale';
+  const valuationIsPriced = valuationIsComplete || valuationIsStale;
+  const qualifiedValuation =
+    valuation.presentationLabel ??
+    (vState === 'unavailable' ? '— Unavailable' : '— Partial valuation');
 
   // ── Derived cell values ─────────────────────────────────────────────
   const cashSub = fmtDate(metrics.provenance.asOf);
 
   const markedSub = markedPositionsQualifier(vState);
+  const markedValue = valuationIsPriced
+    ? fmtCurrency(metrics.markedPositions)
+    : qualifiedValuation;
+  const markedLabel = valuationIsStale ? 'Stale marked positions' : 'Marked positions';
 
-  const navValue = fmtCurrency(metrics.nav);
+  const navValue = valuationIsPriced ? fmtCurrency(metrics.nav) : qualifiedValuation;
   const navSub = navQualification(vState);
+  const navLabel = valuationIsStale ? 'Stale NAV' : 'NAV';
 
   const realizedClass = pnlClass(metrics.realizedPnl);
 
-  const unrealizedClass = pnlClass(metrics.unrealizedPnl);
+  const unrealizedValue = valuationIsPriced
+    ? fmtCurrency(metrics.unrealizedPnl)
+    : qualifiedValuation;
+  const unrealizedClass = valuationIsPriced ? pnlClass(metrics.unrealizedPnl) : '';
   const unrealizedSub =
-    vState === 'complete'
+    valuationIsComplete
       ? 'Open positions'
-      : (valuation.presentationLabel ?? '');
+      : valuationIsStale
+        ? 'Last marked value'
+        : qualifiedValuation;
+  const unrealizedLabel = valuationIsStale ? 'Stale Unrealized P&L' : 'Unrealized P&L';
 
-  const totalClass = pnlClass(metrics.totalPnl);
+  const totalValue = valuationIsPriced
+    ? fmtCurrency(metrics.totalPnl)
+    : qualifiedValuation;
+  const totalClass = valuationIsPriced ? pnlClass(metrics.totalPnl) : '';
   const totalSub =
-    vState === 'complete'
+    valuationIsComplete
       ? 'Realized + Unrealized'
-      : (valuation.presentationLabel ?? '');
+      : valuationIsStale
+        ? 'Includes stale valuation'
+        : qualifiedValuation;
+  const totalLabel = valuationIsStale ? 'Stale Total P&L' : 'Total P&L';
 
   // Drawdown is ALWAYS negative class — it represents a loss from peak.
   const drawdownValue = fmtCurrency(metrics.drawdown);
@@ -186,13 +209,13 @@ export function AccountStatePanel() {
             testId="ws-account-state-cash"
           />
           <StatCell
-            label="Marked positions"
-            value={fmtCurrency(metrics.markedPositions)}
+            label={markedLabel}
+            value={markedValue}
             sub={markedSub}
             testId="ws-account-state-marked"
           />
           <StatCell
-            label="NAV"
+            label={navLabel}
             value={navValue}
             sub={navSub}
             testId="ws-account-state-nav"
@@ -205,15 +228,15 @@ export function AccountStatePanel() {
             testId="ws-account-state-realized"
           />
           <StatCell
-            label="Unrealized P&L"
-            value={fmtCurrency(metrics.unrealizedPnl)}
+            label={unrealizedLabel}
+            value={unrealizedValue}
             sub={unrealizedSub}
             valueClassName={unrealizedClass}
             testId="ws-account-state-unrealized"
           />
           <StatCell
-            label="Total P&L"
-            value={fmtCurrency(metrics.totalPnl)}
+            label={totalLabel}
+            value={totalValue}
             sub={totalSub}
             valueClassName={totalClass}
             testId="ws-account-state-total"

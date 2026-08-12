@@ -50,6 +50,21 @@ function fmtDecimal(value: number | null, decimals: number): string {
   return value.toFixed(decimals);
 }
 
+function fmtLossCurrency(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  const magnitude = Math.abs(value);
+  if (magnitude === 0) return '$0.00';
+  return `-$${magnitude.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function fmtDays(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  return `${value.toFixed(1)}d`;
+}
+
 function profitFactorClass(value: number | null): string {
   if (value === null) return '';
   if (value > 1.5) return 'ws-pos';
@@ -141,6 +156,7 @@ export function PerformancePanel() {
 
   const top4Months = monthlyPerformance.slice(0, 4);
   const top3Setups = setupRanking.slice(0, 3);
+  const closedTrades = kpis.closedTrades ?? null;
 
   return (
     <section
@@ -151,7 +167,7 @@ export function PerformancePanel() {
       <div className="ws-panel-header">
         <span>Performance</span>
         <span className="ws-panel-meta ws-mono">
-          {kpis.totalTrades} trades
+          {closedTrades ?? kpis.totalTrades} closed
         </span>
       </div>
       <div className="ws-panel-body">
@@ -188,19 +204,63 @@ export function PerformancePanel() {
           />
           <StatRow
             label="Avg Loss"
-            value={fmtCurrency(kpis.avgLoss)}
-            className={pnlClass(kpis.avgLoss)}
+            value={fmtLossCurrency(kpis.avgLoss)}
+            className={kpis.avgLoss != null && Math.abs(kpis.avgLoss) > 0 ? 'ws-neg' : ''}
             testId="ws-perf-avg-loss"
           />
           <StatRow
-            label="Total Trades"
+            label="All Trades"
             value={String(kpis.totalTrades)}
             testId="ws-perf-total-trades"
+          />
+          <StatRow
+            label="Closed Decisions"
+            value={closedTrades !== null ? String(closedTrades) : '—'}
+            testId="ws-perf-closed-trades"
           />
           <StatRow
             label="Open Trades"
             value={String(kpis.openTrades)}
             testId="ws-perf-open-trades"
+          />
+          <StatRow
+            label="Fees"
+            value={fmtCurrency(kpis.totalFees ?? null)}
+            testId="ws-perf-fees"
+          />
+          <StatRow
+            label="Payoff Ratio"
+            value={fmtDecimal(kpis.payoffRatio ?? null, 2)}
+            testId="ws-perf-payoff"
+          />
+          <StatRow
+            label="Expectancy"
+            value={fmtCurrency(kpis.expectancy ?? null)}
+            className={pnlClass(kpis.expectancy ?? null)}
+            testId="ws-perf-expectancy"
+          />
+          <StatRow
+            label="Expectancy R"
+            value={fmtDecimal(kpis.expectancyR ?? null, 2)}
+            className={pnlClass(kpis.expectancyR ?? null)}
+            testId="ws-perf-expectancy-r"
+          />
+          <StatRow
+            label="Best Trade"
+            value={fmtCurrency(kpis.bestTrade ?? null)}
+            className={pnlClass(kpis.bestTrade ?? null)}
+            testId="ws-perf-best-trade"
+          />
+          <StatRow
+            label="Worst Trade"
+            value={fmtCurrency(kpis.worstTrade ?? null)}
+            className={pnlClass(kpis.worstTrade ?? null)}
+            testId="ws-perf-worst-trade"
+          />
+          <StatRow
+            label="Avg Holding"
+            value={fmtDays(kpis.averageHoldingDays)}
+            testId="ws-perf-holding-days"
           />
         </div>
 

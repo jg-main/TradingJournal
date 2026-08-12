@@ -1072,6 +1072,20 @@ describe('load profile (Q6)', () => {
       expect(result.error).toBe('Request was aborted');
     }
   });
+
+  it('preserves an abort when response-body parsing is interrupted', async () => {
+    const ctrl = new AbortController();
+    const response = makeFakeResponse(200, makeDashboardResponse());
+    response.text = async () => {
+      ctrl.abort();
+      throw makeAbortError();
+    };
+    mockFetch.mockResolvedValueOnce(response);
+
+    const result = await fetchDashboardLive('acct-1', ctrl.signal);
+
+    expect(result).toEqual({ success: false, error: 'Request was aborted' });
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

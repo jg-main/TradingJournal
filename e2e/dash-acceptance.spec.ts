@@ -231,7 +231,7 @@ test('DASH-AC-04: journal-linked positions render values matching the Trades ker
 
 // ── DASH-AC-05: stale price fails freshness policy ──────────────────────
 
-test('DASH-AC-05: stale mark renders explicit Stale state with source/as-of and a qualified aggregate', async ({
+test('DASH-AC-05: stale mark renders explicit Stale state with source/as-of and a stale aggregate', async ({
   page,
 }) => {
   await page.goto('/dev/workstation'); // default scenario
@@ -248,11 +248,15 @@ test('DASH-AC-05: stale mark renders explicit Stale state with source/as-of and 
     page.getByTestId('ws-position-row-TSLA').getByTestId('ws-mark-stale-indicator'),
   ).toBeVisible();
 
-  // No fully current aggregate presentation remains: Open P&L is qualified.
+  // No fully current aggregate presentation remains: every position remains
+  // priced, so the amount is explicitly Stale Open P&L rather than unpriced.
   await expect(
     page.getByTestId('ws-risk-cell-open-pnl').locator('.ws-risk-value'),
-  ).toHaveText('— Partial — 1 unpriced');
-  await expect(page.getByTestId('ws-account-state-nav')).toContainText('Partial');
+  ).toHaveText('$841.35');
+  await expect(
+    page.getByTestId('ws-risk-cell-open-pnl').locator('.ws-risk-label'),
+  ).toHaveText('Stale Open P&L');
+  await expect(page.getByTestId('ws-account-state-nav')).toContainText('Stale NAV');
 });
 
 // ── DASH-AC-06: one open position without a valid stop ──────────────────
@@ -423,6 +427,13 @@ test('DASH-AC-10: first screen usable at 2560×1440 with populated data', async 
   );
   expect(overflow).toBe(false);
 
+  // Critical risk values must be readable, not visually ellipsized.
+  const riskValueOverflows = await page
+    .getByTestId('ws-panel-risk')
+    .locator('.ws-risk-value')
+    .evaluateAll((values) => values.map((value) => value.scrollWidth > value.clientWidth + 1));
+  expect(riskValueOverflows).toEqual(Array(8).fill(false));
+
   await testInfo.attach('dash-ac-10-2560x1440.png', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -457,6 +468,12 @@ test('DASH-AC-10: first screen usable at effective 1536×960 with populated data
     () => document.documentElement.scrollWidth > window.innerWidth + 1,
   );
   expect(overflow).toBe(false);
+
+  const riskValueOverflows = await page
+    .getByTestId('ws-panel-risk')
+    .locator('.ws-risk-value')
+    .evaluateAll((values) => values.map((value) => value.scrollWidth > value.clientWidth + 1));
+  expect(riskValueOverflows).toEqual(Array(8).fill(false));
 
   await testInfo.attach('dash-ac-10-1536x960.png', {
     body: await page.screenshot(),

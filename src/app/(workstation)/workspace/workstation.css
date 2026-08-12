@@ -770,21 +770,18 @@
 
 /* ── Risk Panel (current exposure and risk summary band) ────────────────── */
 
-/* Full-width horizontal band: one stat cell per current-state metric.
-   Values use the 20px headline size (within the 16–20px primary-value
-   contract); labels are uppercase 12px decision labels. The section keeps
-   the normal column layout (header above body); the body is the horizontal
-   row of cells. */
+/* Full-width risk band. Critical values are never ellipsized: a usable
+   workstation can grow the band to two rows at laptop-effective widths,
+   whereas hiding an incomplete-risk or stale-valuation label would make the
+   state unsafe to act on. */
 .ws-risk-band > .ws-panel-body {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   align-items: stretch;
-  overflow: hidden;
   padding: 0;
 }
 
 .ws-risk-cell {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -800,9 +797,7 @@
 .ws-risk-value {
   font-size: var(--ws-text-xl);
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .ws-risk-label {
@@ -816,9 +811,38 @@
 .ws-risk-sub {
   font-size: var(--ws-text-sm);
   color: var(--muted-foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+/* 1920px at 125% browser zoom is effectively ~1536px wide. Four stable
+   columns retain the dense workstation feel while giving qualified values
+   enough readable width; custom saved views continue to use the same panel. */
+@media (max-width: 1800px) {
+  .ws-risk-band > .ws-panel-body {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ws-risk-cell:nth-child(4n + 1) {
+    border-left: 0;
+  }
+
+  .ws-risk-cell:nth-child(n + 5) {
+    border-top: var(--ws-border);
+  }
+}
+
+@media (max-width: 980px) {
+  .ws-risk-band > .ws-panel-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ws-risk-cell:nth-child(2n + 1) {
+    border-left: 0;
+  }
+
+  .ws-risk-cell:nth-child(n + 3) {
+    border-top: var(--ws-border);
+  }
 }
 
 /* Section group — shared by PerformanceSummary (monthly performance +

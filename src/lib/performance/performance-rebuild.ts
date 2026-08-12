@@ -24,8 +24,7 @@ import {
 } from '../../db/accounting-repository';
 import { rebuildOpeningCash, rebuildAccountActivity } from '../accounting/rebuild';
 import { computeAccountActivity, computeRebuildCashFlow } from '../accounting/activity';
-import { fromMicros } from '../accounting/decimal';
-import { normalizeDecimal } from '../accounting/decimal';
+import { fromMicros, normalizeDecimal } from '../accounting/decimal';
 import type { CanonicalDecimal } from '../accounting/types';
 import { deriveValuationPosition, computeAccountValuation } from './valuation';
 import { computePerformance } from './performance';
@@ -157,6 +156,20 @@ function buildValuationPositions(
 
   const valuationPositions: ValuationPosition[] = [];
 
+  // The FIFO account-position projection stores remaining lot quantity as a
+  // positive magnitude for both directions. The valuation kernel, correctly,
+  // represents short exposure with a negative signed quantity so NAV and net
+  // exposure subtract the short market value. Normalize only at this
+  // accounting-boundary handoff; keep storage conventions unchanged.
+  const signedQuantityForValuation = (
+    quantity: string,
+    direction: 'long' | 'short' | null,
+  ): CanonicalDecimal => {
+    const normalized = normalizeDecimal(quantity);
+    if (direction !== 'short' || normalized.startsWith('-')) return normalized;
+    return `-${normalized}` as CanonicalDecimal;
+  };
+
   for (const pos of positions) {
     // Realized P&L is retained on closed position projection rows, but closed
     // rows have no market value and must not request/display valuation marks.
@@ -176,7 +189,10 @@ function buildValuationPositions(
       {
         instrumentId: pos.instrument_id,
         direction: pos.direction as 'long' | 'short' | null,
-        quantity: pos.quantity as CanonicalDecimal,
+        quantity: signedQuantityForValuation(
+          pos.quantity,
+          pos.direction as 'long' | 'short' | null,
+        ),
         averageCost: pos.average_cost as CanonicalDecimal,
         totalCostBasis: pos.total_cost_basis as CanonicalDecimal,
         realizedPnl: pos.realized_gross_pnl as CanonicalDecimal,

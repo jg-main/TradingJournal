@@ -29,8 +29,8 @@ export type MarkStatus = 'fresh' | 'stale' | 'missing';
 /**
  * Completeness of a price-derived aggregate:
  * - 'complete': every open position has a fresh mark (or there are no positions)
- * - 'partial': some positions lack a fresh mark (missing and/or stale)
- * - 'stale': every position has a mark, but none are fresh
+ * - 'partial': one or more positions have no usable mark
+ * - 'stale': every position has a mark and one or more marks are outdated
  * - 'unavailable': no mark exists for any open position
  */
 export type SnapshotCompletenessState =
@@ -265,8 +265,9 @@ export function classifyMarkStatus(
  * - total === 0            → 'complete' (nothing to mark; zero values are exact)
  * - missing === total      → 'unavailable' (no mark exists for any position)
  * - fresh === total        → 'complete'
- * - stale === total        → 'stale' (all marks present but outdated)
- * - otherwise              → 'partial' (mixed freshness or partial coverage)
+ * - missing === 0 && stale > 0 → 'stale' (all positions are priced, but one
+ *                                  or more marks are outdated)
+ * - otherwise              → 'partial' (some positions are unpriced)
  */
 export function classifyCompleteness(
   total: number,
@@ -277,7 +278,7 @@ export function classifyCompleteness(
   if (total === 0) return 'complete';
   if (missing === total) return 'unavailable';
   if (fresh === total) return 'complete';
-  if (stale === total) return 'stale';
+  if (missing === 0 && stale > 0) return 'stale';
   return 'partial';
 }
 

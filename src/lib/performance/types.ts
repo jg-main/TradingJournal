@@ -50,9 +50,9 @@ export interface ValuationMark {
 /**
  * A single (account, instrument) position with its valuation state.
  *
- * Carries both the FIFO position state (direction, quantity, cost basis,
- * realized P&L) and the current valuation state (mark price, marked value,
- * unrealized P&L, mark freshness).
+ * Carries a valuation-normalized projection of FIFO position state (direction,
+ * signed quantity, cost basis, realized P&L) and the current valuation state
+ * (mark price, marked value, unrealized P&L, mark freshness).
  *
  * Null fields indicate missing or non-computable values rather than zero.
  */
@@ -61,7 +61,7 @@ export interface ValuationPosition {
   instrumentId: string;
   /** Current position direction (null = flat/closed). */
   direction: PositionDirection | null;
-  /** Total quantity held (positive long, negative short, "0.00" flat). */
+  /** Signed valuation quantity (positive long, negative short, "0.00" flat). */
   quantity: CanonicalDecimal;
   /** Average cost basis per unit (canonical decimal). */
   averageCost: CanonicalDecimal;

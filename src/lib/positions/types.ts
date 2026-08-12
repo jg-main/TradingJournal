@@ -152,7 +152,10 @@ export interface PositionState {
   instrumentId: string;
   /** Current position direction (null = flat/closed). */
   direction: PositionDirection | null;
-  /** Total quantity held (positive for long, negative for short, "0.00" = flat). */
+  /**
+   * Remaining quantity magnitude (non-negative for both long and short;
+   * direction carries exposure sign, "0.00" = flat).
+   */
   quantity: CanonicalDecimal;
   /** Average cost basis per unit (canonical decimal). */
   averageCost: CanonicalDecimal;

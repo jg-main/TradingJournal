@@ -424,6 +424,7 @@ describe('AccountStatePanel', () => {
       );
       const cell = screen.getByTestId('ws-account-state-total');
       expect(cell.textContent).toContain('— Partial — 1 unpriced');
+      expect(cell.textContent).not.toContain('$8,300.00');
       expect(cell.textContent).not.toContain('Realized + Unrealized');
     });
 
@@ -495,6 +496,28 @@ describe('AccountStatePanel', () => {
       );
       const cell = screen.getByTestId('ws-account-state-unrealized');
       expect(cell.textContent).toContain('— Partial — 1 unpriced');
+      expect(cell.textContent).not.toContain('$3,100.00');
+    });
+  });
+
+  describe('price-derived aggregate honesty', () => {
+    it('does not render normal marked-position or NAV totals for partial valuation', () => {
+      renderPanel(
+        baseDashboardV2({
+          valuationState: 'partial',
+          presentationLabel: '— Partial — 1 unpriced',
+        }),
+      );
+      expect(screen.getByTestId('ws-account-state-marked').textContent).not.toContain('$75,000.00');
+      expect(screen.getByTestId('ws-account-state-nav').textContent).not.toContain('$150,000.00');
+    });
+
+    it('labels all stale price-derived amounts as stale rather than current', () => {
+      renderPanel(baseDashboardV2({ valuationState: 'stale' }));
+      expect(screen.getByTestId('ws-account-state-marked').textContent).toContain('Stale marked positions');
+      expect(screen.getByTestId('ws-account-state-nav').textContent).toContain('Stale NAV');
+      expect(screen.getByTestId('ws-account-state-unrealized').textContent).toContain('Stale Unrealized P&L');
+      expect(screen.getByTestId('ws-account-state-total').textContent).toContain('Stale Total P&L');
     });
   });
 

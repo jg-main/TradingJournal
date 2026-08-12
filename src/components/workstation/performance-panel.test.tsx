@@ -47,7 +47,16 @@ function baseKpis() {
     accountValue: 50000,
     profitFactor: 2.15,
     avgWin: 350.0,
-    avgLoss: -163.5,
+    avgLoss: 163.5,
+    closedTrades: 39,
+    realizedPnl: 4523.5,
+    totalFees: 421.25,
+    payoffRatio: 2.14,
+    expectancy: 116.0,
+    expectancyR: 0.43,
+    bestTrade: 1240.0,
+    worstTrade: -480.0,
+    averageHoldingDays: 3.5,
   };
 }
 
@@ -170,6 +179,15 @@ describe('PerformancePanel — KPI stat rows', () => {
 
     // Open Trades
     expect(screen.getByTestId('ws-perf-open-trades').textContent).toContain('3');
+
+    // Supported period-performance metrics
+    expect(screen.getByTestId('ws-perf-fees').textContent).toContain('$421.25');
+    expect(screen.getByTestId('ws-perf-payoff').textContent).toContain('2.14');
+    expect(screen.getByTestId('ws-perf-expectancy').textContent).toContain('$116.00');
+    expect(screen.getByTestId('ws-perf-expectancy-r').textContent).toContain('0.43');
+    expect(screen.getByTestId('ws-perf-best-trade').textContent).toContain('$1,240.00');
+    expect(screen.getByTestId('ws-perf-worst-trade').textContent).toContain('-$480.00');
+    expect(screen.getByTestId('ws-perf-holding-days').textContent).toContain('3.5d');
   });
 
   it('renders null values as dashes', () => {
@@ -191,6 +209,17 @@ describe('PerformancePanel — KPI stat rows', () => {
     expect(screen.getByTestId('ws-perf-profit-factor').textContent).toContain('—');
     expect(screen.getByTestId('ws-perf-avg-win').textContent).toContain('—');
     expect(screen.getByTestId('ws-perf-avg-loss').textContent).toContain('—');
+  });
+
+  it('renders an all-scratch average loss as neutral zero', () => {
+    renderWithDashboard(
+      baseDashboard({ kpis: { ...baseKpis(), avgLoss: 0 } }),
+    );
+
+    const avgLoss = screen.getByTestId('ws-perf-avg-loss');
+    expect(avgLoss.textContent).toContain('$0.00');
+    expect(avgLoss.textContent).not.toContain('-$0.00');
+    expect(avgLoss.querySelector('.ws-num')?.className).not.toContain('ws-neg');
   });
 });
 

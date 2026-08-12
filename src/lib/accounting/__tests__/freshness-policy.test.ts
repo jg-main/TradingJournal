@@ -225,10 +225,16 @@ describe('classifyCompleteness', () => {
     expect(classifyCompleteness(2, 0, 2, 0)).toBe('stale');
   });
 
-  it('classifies mixed coverage as partial', () => {
+  it('classifies missing coverage as partial', () => {
     expect(classifyCompleteness(3, 1, 0, 2)).toBe('partial');
     expect(classifyCompleteness(3, 1, 1, 1)).toBe('partial');
     expect(classifyCompleteness(2, 0, 1, 1)).toBe('partial');
+  });
+
+  it('classifies any all-priced stale coverage as stale', () => {
+    // A stale mark is known, not unpriced. With no missing marks the
+    // aggregate must be labelled Stale rather than Partial/Unpriced.
+    expect(classifyCompleteness(2, 1, 1, 0)).toBe('stale');
   });
 });
 

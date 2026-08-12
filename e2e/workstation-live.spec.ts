@@ -214,10 +214,22 @@ test.describe('Live Mode E2E', () => {
     // Mark AAPL at $180.00 so there is unrealized P&L.
     await postValuationMark(request, liveAccountId, 'AAPL', '180.00');
 
+    // Account positions retain unsigned quantities for both sides. Seed a
+    // profitable short through the live API so the browser journey proves
+    // the dashboard's direction-aware valuation rather than a fixture-only
+    // arithmetic path.
+    await postAccountingExecution(request, liveAccountId, {
+      symbol: 'SHRT',
+      action: 'sell_short',
+      quantity: '5.00',
+      price: '100.00',
+    });
+    await postValuationMark(request, liveAccountId, 'SHRT', '90.00');
+
     // Rebuild performance projection so dashboard V2 has positions.
     const rebuildResult = await rebuildPerformance(request, liveAccountId);
     expect(rebuildResult.success).toBe(true);
-    expect(rebuildResult.positionCount).toBe(1);
+    expect(rebuildResult.positionCount).toBe(2);
   });
 
   // ── Test 1: Live mode renders LIVE badge, not FIXTURE badge ─────────
@@ -336,6 +348,18 @@ test.describe('Live Mode E2E', () => {
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
+  });
+
+  test('live dashboard values a positive-quantity short position directionally', async ({
+    page,
+  }) => {
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await selectApplicationAccount(page, liveAccountId, liveAccountName);
+
+    const shortRow = page.getByTestId('ws-position-row-SHRT');
+    await expect(shortRow).toBeVisible({ timeout: 10000 });
+    await expect(shortRow.getByTestId('ws-position-cell-side')).toContainText('S 5.00');
+    await expect(shortRow.getByTestId('ws-position-cell-pnl')).toHaveText('$50.00');
   });
 
   // ── Test 4: Watchlist panel renders from /api/watchlist ─────────────

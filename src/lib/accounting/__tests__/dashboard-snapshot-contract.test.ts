@@ -185,12 +185,30 @@ function insertOpenTrade(
   return tradeId;
 }
 
+/** Insert a journal execution used by the canonical trade-metrics kernel. */
+function insertTradeExecution(
+  sqlite: Database.Database,
+  tradeId: string,
+  action: 'buy' | 'sell' | 'sell_short' | 'buy_to_cover' | 'add' | 'reduce',
+  quantity: number,
+  price: number,
+  executedAt: string,
+): void {
+  sqlite
+    .prepare(
+      `INSERT INTO trade_executions
+       (id, trade_id, executed_at, action, quantity, price, fees, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+    )
+    .run(randomUUID(), tradeId, executedAt, action, quantity, price, executedAt);
+}
+
 /** Insert a risk snapshot for an open trade. */
 function insertRiskSnapshot(
   sqlite: Database.Database,
   tradeId: string,
   initialRiskAmount: number,
-  initialStopPrice = 245,
+  initialStopPrice: number | null = 245,
 ): void {
   const now = new Date().toISOString();
   sqlite
@@ -278,6 +296,8 @@ interface ScenarioAccounts {
   riskMultiTrade: string;
   /** Short position — risk-to-stop is (stop − mark) × qty. */
   riskShort: string;
+  /** Active stop derived from legacy initial risk when exact price is absent. */
+  riskDerivedStop: string;
 }
 
 function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
@@ -399,6 +419,18 @@ function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
   const shortTradeId = insertOpenTrade(sqlite, riskShort, 'SHORT1', 'short', 260, now);
   insertRiskSnapshot(sqlite, shortTradeId, 100, 260);
 
+  // ── Risk: derive the legacy active stop through the canonical kernel ──
+  // Long 5 @ 250 with initial risk 50 and no stored stop has a derived stop
+  // at 240. planned_stop is intentionally null, so a dashboard-only planned
+  // stop fallback cannot make this pass.
+  const riskDerivedStop = createAccount(sqlite, 'Contract Risk Derived-Stop Account');
+  const derivedInstr = insertInstrument(sqlite, 'RISK5');
+  insertMark(sqlite, riskDerivedStop, derivedInstr, '260.00', 260_000_000, 'user', now);
+  insertPosition(sqlite, riskDerivedStop, derivedInstr, 'long', '5.00', '250.00');
+  const derivedTradeId = insertOpenTrade(sqlite, riskDerivedStop, 'RISK5', 'long', null, now);
+  insertTradeExecution(sqlite, derivedTradeId, 'buy', 5, 250, now);
+  insertRiskSnapshot(sqlite, derivedTradeId, 50, null);
+
   return {
     full,
     empty,
@@ -413,6 +445,7 @@ function seedScenarioDatabase(sqlite: Database.Database): ScenarioAccounts {
     riskZeroStop,
     riskMultiTrade,
     riskShort,
+    riskDerivedStop,
   };
 }
 
@@ -833,6 +866,7 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     expect(result.riskSummary.positionsWithStop).toBe(1);
     expect(result.riskSummary.stopCoverage).toEqual({
       openTrades: 1,
+      positionsTotal: 1,
       withStop: 1,
       withoutStop: 0,
       state: 'complete',
@@ -844,9 +878,13 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     expect(result.riskSummary.openPnl).toBe('50.00');
   });
 
-  it('computes risk-to-stop for short positions as (stop − mark) × qty', () => {
+  it('computes risk-to-stop for short positions as (stop − average cost) × qty', () => {
     const result = computeDashboardV2(sqlite, accounts.riskShort)!;
     const pos = result.valuation.positions[0];
+    // A short sold at 250 and marked at 240 is profitable by 10 × 5.
+    // This pins the account-position valuation to the canonical short P&L
+    // direction used by the shared valuation kernel.
+    expect(pos.unrealizedPnl).toBe('50.00');
     expect(pos.risk.hasValidStop).toBe(true);
     expect(pos.risk.stopPrice).toBe(260);
     // R032 short: max(0, stop − avgCost) × qty = (260 − 250) × 5 = 50.00
@@ -854,6 +892,15 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     expect(result.riskSummary.openRiskToStop).toBe('50.00');
     // openRisk is the risk-snapshot aggregate (100.00), a separate S01 metric.
     expect(result.riskSummary.openRisk).toBe('100.00');
+  });
+
+  it('derives a valid active stop from legacy initial risk via the canonical trade kernel', () => {
+    const result = computeDashboardV2(sqlite, accounts.riskDerivedStop)!;
+    const pos = result.valuation.positions[0];
+    expect(pos.risk.hasValidStop).toBe(true);
+    expect(pos.risk.stopPrice).toBe(240);
+    expect(pos.risk.currentRiskToStop).toBe('50.00');
+    expect(result.riskSummary.openRiskToStop).toBe('50.00');
   });
 
   it('flags a missing stop with null risk-to-stop and partial stop coverage', () => {
@@ -867,6 +914,7 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     expect(result.riskSummary.positionsWithStop).toBe(0);
     expect(result.riskSummary.stopCoverage).toEqual({
       openTrades: 1,
+      positionsTotal: 1,
       withStop: 0,
       withoutStop: 1,
       state: 'partial',
@@ -874,6 +922,21 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     });
     // Open trade has no risk snapshot → partial → null, never a partial sum.
     expect(result.riskSummary.openRisk).toBeNull();
+    expect(result.riskSummary.openRiskToStop).toBeNull();
+  });
+
+  it('includes account-only positions in stop coverage instead of reporting a misleading 0/0', () => {
+    const result = computeDashboardV2(sqlite, accounts.zeroExecutions)!;
+    const pos = result.valuation.positions[0];
+    expect(pos.attribution.kind).toBe('account_only');
+    expect(pos.risk.hasValidStop).toBe(false);
+    expect(result.riskSummary.stopCoverage).toMatchObject({
+      positionsTotal: 1,
+      withStop: 0,
+      withoutStop: 1,
+      state: 'partial',
+      presentationLabel: 'Incomplete — 1 without a valid stop',
+    });
     expect(result.riskSummary.openRiskToStop).toBeNull();
   });
 
@@ -897,10 +960,12 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     // R032: max(0, avgCost − stop) × qty = (250 − 240) × 5 = 50.00
     expect(pos.risk.currentRiskToStop).toBe('50.00');
 
-    // Both open trades carry a valid stop → coverage is complete.
+    // One account position has an effective valid stop → coverage is
+    // complete. The two journal trades are context, not the denominator.
     expect(result.riskSummary.stopCoverage).toEqual({
       openTrades: 2,
-      withStop: 2,
+      positionsTotal: 1,
+      withStop: 1,
       withoutStop: 0,
       state: 'complete',
       presentationLabel: null,
@@ -911,10 +976,11 @@ describe('dashboard snapshot contract — risk state and stop coverage', () => {
     expect(result.riskSummary.openRiskToStop).toBe('50.00');
   });
 
-  it('computes portfolioHeat from openRisk over NAV when both are known', () => {
+  it('computes portfolioHeat from current risk-to-stop over NAV when both are known', () => {
     const result = computeDashboardV2(sqlite, accounts.riskWithSnapshot)!;
-    // openRisk (risk-snapshot aggregate) 75.00 / nav 10000.00 × 100 = 0.75
-    expect(result.riskSummary.portfolioHeat).toBe('0.75');
+    // Current risk-to-stop 25.00 / nav 10000.00 × 100 = 0.25. The 75.00
+    // initial risk is historical and must never drive live portfolio heat.
+    expect(result.riskSummary.portfolioHeat).toBe('0.25');
   });
 });
 
@@ -1014,11 +1080,25 @@ describe('dashboard snapshot contract — qualified display hints (presentationL
     expect(strict.valuation.coveragePct).toBe('0.00');
     expect(strict.valuation.markedSubsetPnl).toBeNull();
 
-    // ...but fresh under a 7-day policy injected through the public surface.
+    // ...but fresh under an account-scoped 7-day policy injected through the
+    // public surface. This guards against resolving the policy once without
+    // a position scope and silently ignoring every override.
     const lenient = computeDashboardV2(sqlite, accounts.stale, {
-      freshnessPolicy: { defaultThresholdMinutes: 7 * 24 * 60 },
+      freshnessPolicy: {
+        defaultThresholdMinutes: 60,
+        overrides: [
+          {
+            scope: { account: accounts.stale },
+            thresholdMinutes: 7 * 24 * 60,
+          },
+        ],
+      },
     })!;
     expect(lenient.valuation.positions[0].markStatus).toBe('fresh');
+    expect(lenient.valuation.positions[0].markProvenance).toMatchObject({
+      freshnessThresholdMinutes: 7 * 24 * 60,
+      freshnessResolvedFrom: `override:account=${accounts.stale} (10080 minutes)`,
+    });
     expect(lenient.valuation.state).toBe('complete');
     expect(lenient.valuation.coveragePct).toBe('100.00');
     expect(lenient.valuation.markedSubsetPnl).toBe('50.00');

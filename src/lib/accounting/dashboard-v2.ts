@@ -23,6 +23,7 @@ import { fromMicros, toMicros, normalizeDecimal, sumDecimals, addDecimal, subtra
 import type { CanonicalDecimal } from './types';
 import { computeTradeMetrics } from '../trade-metrics';
 import type { TradeMetricsInput, TradeMetricsResult } from '../trade-metrics';
+import { computeUnrealizedPnl } from '../performance/valuation';
 import {
   DEFAULT_FRESHNESS_POLICY_CONFIG,
   createFreshnessPolicy,
@@ -73,6 +74,10 @@ export interface MarkProvenance {
   computedAt: string;
   /** Freshness classification of the mark. */
   status: MarkStatus;
+  /** Effective maximum age used to classify this mark, in minutes. */
+  freshnessThresholdMinutes?: number;
+  /** Policy rule that supplied the effective freshness threshold. */
+  freshnessResolvedFrom?: string;
 }
 
 /**
@@ -111,14 +116,14 @@ export interface PositionAttribution {
 
 /** Per-position risk state derived from open journal trades. */
 export interface PositionRiskState {
-  /** True when at least one open trade has a valid planned stop (> 0). */
+  /** True when an active stop can be resolved for an open trade (> 0). */
   hasValidStop: boolean;
-  /** Planned stop of the most recent open trade, or null when none is valid. */
+  /** Active stop of the most recent relevant open trade, or null when none is valid. */
   stopPrice: number | null;
   /**
-   * Dollar risk from the current mark to the stop ((mark - stop) × qty for
-   * longs, (stop - mark) × qty for shorts), or null when no mark, no valid
-   * stop, or no open trade exists.
+   * Remaining open risk from cost basis to the active stop (R032):
+   * max(0, average cost - stop) x qty for longs, or max(0, stop - average
+   * cost) x qty for shorts. Null when no valid stop or open trade exists.
    */
   currentRiskToStop: string | null;
   /** Number of open journal trades for this instrument. */
@@ -353,26 +358,28 @@ export interface RiskSummary {
    * snapshot. Null when some open trades have no snapshot (partial data).
    */
   openRisk: string | null;
-  /** openRisk / NAV * 100 as a percentage (canonical decimal), or null when NAV is zero. */
+  /** Current open risk-to-stop / NAV * 100, or null when either is unknown. */
   portfolioHeat: string | null;
-  /** Number of open trades without a valid planned stop. */
+  /** Number of open account positions without a valid active stop. */
   missingStops: number;
-  /** Number of open trades with a valid planned stop. */
+  /** Number of open account positions with a valid active stop. */
   positionsWithStop: number;
   /**
    * Sum of per-position risk-to-stop. Null when any open position cannot be
    * evaluated (missing mark or missing valid stop).
    */
   openRiskToStop: string | null;
-  /** Stop coverage completeness across open journal trades. */
+  /** Stop coverage completeness across the account-position universe. */
   stopCoverage: {
-    /** Number of open trades. */
+    /** Number of open journal trades (context only; not the denominator). */
     openTrades: number;
-    /** Number of open trades with a valid planned stop. */
+    /** Number of open account positions in the coverage denominator. */
+    positionsTotal?: number;
+    /** Number of account positions with a valid active stop. */
     withStop: number;
-    /** Number of open trades without a valid planned stop. */
+    /** Number of account positions without a valid active stop. */
     withoutStop: number;
-    /** 'complete' when every open trade has a stop (or none exist), else 'partial'. */
+    /** 'complete' when every account position has a stop (or none exist), else 'partial'. */
     state: SnapshotCompletenessState;
     /**
      * Qualified display hint: 'Incomplete — N without a valid stop' when
@@ -525,15 +532,18 @@ function deriveIntegrityStatus(
  * Resolve instrument symbols for dashboard positions.
  * Uses an in-memory cache to avoid redundant lookups.
  */
-function resolvePositionSymbols(
+function resolvePositionInstruments(
   sqlite: Database.Database,
   positions: Array<{ instrument_id: string }>,
-): Map<string, string> {
-  const cache = new Map<string, string>();
+): Map<string, { symbol: string; assetClass: string | null }> {
+  const cache = new Map<string, { symbol: string; assetClass: string | null }>();
   for (const pos of positions) {
     if (cache.has(pos.instrument_id)) continue;
     const instr = findInstrumentById(sqlite, pos.instrument_id);
-    cache.set(pos.instrument_id, instr?.symbol ?? 'UNKNOWN');
+    cache.set(pos.instrument_id, {
+      symbol: instr?.symbol ?? 'UNKNOWN',
+      assetClass: instr?.type ?? null,
+    });
   }
   return cache;
 }
@@ -1066,15 +1076,63 @@ export function computeDashboardV2(
     openTradesBySymbol.set(key, list);
   }
 
-  // ── Stop adjustments + risk snapshots for ALL open trades ──────────
-  // The per-position risk state resolves the effective active stop exactly
-  // like the Trades kernel (latest adjustment → initial stop from snapshot →
-  // planned stop). Account positions can outlive journal linkage (legacy
-  // data, deleted/recreated trades), so load adjustments and snapshots for
-  // every open trade in the account, not only journal-linked ones.
+  // ── Canonical active-stop inputs for ALL open trades ───────────────
+  // Account positions can outlive journal linkage (legacy data,
+  // deleted/recreated trades), so the risk section needs the full Trade
+  // Metrics input for every open trade, not merely journal-linked ones.
+  // Keep these maps independent from the journal-linked reconciliation maps
+  // above: a linked trade must not receive duplicate adjustment rows.
+  const openTradeExecByTrade = new Map<
+    string,
+    Array<{
+      id: string;
+      action: string;
+      quantity: number;
+      price: number;
+      fees: number | null;
+      executed_at: string | null;
+    }>
+  >();
+  const openTradeRiskByTrade = new Map<
+    string,
+    {
+      initial_risk_amount: number | null;
+      account_equity_at_open: number | null;
+      initial_stop_price: number | null;
+      initial_entry_price: number | null;
+    }
+  >();
+  const openTradeStopByTrade = new Map<
+    string,
+    Array<{
+      id: string;
+      new_stop: number | null;
+      adjusted_at: string | null;
+      created_at: string | null;
+    }>
+  >();
   const allOpenTradeIds = openTradeRows.map((t) => t.id);
   if (allOpenTradeIds.length > 0) {
     const placeholders = allOpenTradeIds.map(() => '?').join(',');
+    const executionRows = sqlite
+      .prepare(
+        `SELECT id, trade_id, action, quantity, price, fees, executed_at
+         FROM trade_executions WHERE trade_id IN (${placeholders})`,
+      )
+      .all(...allOpenTradeIds) as Array<{
+      id: string;
+      trade_id: string;
+      action: string;
+      quantity: number;
+      price: number;
+      fees: number | null;
+      executed_at: string | null;
+    }>;
+    for (const execution of executionRows) {
+      const list = openTradeExecByTrade.get(execution.trade_id) ?? [];
+      list.push(execution);
+      openTradeExecByTrade.set(execution.trade_id, list);
+    }
     const adjRows = sqlite
       .prepare(
         `SELECT id, trade_id, new_stop, adjusted_at, created_at
@@ -1088,28 +1146,25 @@ export function computeDashboardV2(
       created_at: string | null;
     }>;
     for (const a of adjRows) {
-      const list = journalStopByTrade.get(a.trade_id) ?? [];
-      list.push({ id: a.id, new_stop: a.new_stop, adjusted_at: a.adjusted_at, created_at: a.created_at });
-      journalStopByTrade.set(a.trade_id, list);
+      const list = openTradeStopByTrade.get(a.trade_id) ?? [];
+      list.push(a);
+      openTradeStopByTrade.set(a.trade_id, list);
     }
     const snapRows = sqlite
       .prepare(
-        `SELECT trade_id, initial_stop_price
+        `SELECT trade_id, initial_risk_amount, account_equity_at_open,
+                initial_stop_price, initial_entry_price
          FROM trade_risk_snapshots WHERE trade_id IN (${placeholders})`,
       )
       .all(...allOpenTradeIds) as Array<{
       trade_id: string;
+      initial_risk_amount: number | null;
+      account_equity_at_open: number | null;
       initial_stop_price: number | null;
+      initial_entry_price: number | null;
     }>;
     for (const r of snapRows) {
-      if (!journalRiskByTrade.has(r.trade_id)) {
-        journalRiskByTrade.set(r.trade_id, {
-          initial_risk_amount: null,
-          account_equity_at_open: null,
-          initial_stop_price: r.initial_stop_price,
-          initial_entry_price: null,
-        });
-      }
+      openTradeRiskByTrade.set(r.trade_id, r);
     }
   }
 
@@ -1121,7 +1176,14 @@ export function computeDashboardV2(
   // derivation and classification are deterministic per snapshot. The
   // threshold comes from the centrally configured policy — never a
   // hard-coded value in this module.
-  const freshnessPolicy = createFreshnessPolicy(policyConfig, undefined, () => computedDate);
+  // Aggregate completeness has no threshold of its own. Per-position policy
+  // resolution below supplies the relevant account/provider/asset-class
+  // threshold before each status is counted.
+  const aggregateFreshnessPolicy = createFreshnessPolicy(
+    policyConfig,
+    undefined,
+    () => computedDate,
+  );
 
   // Count mark statuses
   let freshCount = 0;
@@ -1130,10 +1192,23 @@ export function computeDashboardV2(
   let latestMarkTimestamp: string | null = null;
 
   const dashboardPositions: DashboardPositionSummary[] = [];
-  const symbolCache = resolvePositionSymbols(sqlite, openPositions);
+  const instrumentCache = resolvePositionInstruments(sqlite, openPositions);
 
   for (const pos of positionsWithQuantity) {
     const mark = markByInstrument.get(pos.instrument_id);
+    const instrument = instrumentCache.get(pos.instrument_id) ?? {
+      symbol: 'UNKNOWN',
+      assetClass: null,
+    };
+    const freshnessPolicy = createFreshnessPolicy(
+      policyConfig,
+      {
+        account: accountId,
+        provider: mark?.source ?? undefined,
+        assetClass: instrument.assetClass ?? undefined,
+      },
+      () => computedDate,
+    );
 
     let markStatus: MarkStatus;
     let markPrice: string | null = null;
@@ -1168,15 +1243,18 @@ export function computeDashboardV2(
         markedValue = null;
       }
 
-      // Compute unrealized P&L = (markPrice - averageCost) × quantity
+      // Use the canonical valuation kernel so short positions use the
+      // account projection's positive-quantity convention correctly.
+      // (A short profit is average cost − mark, times absolute quantity.)
       try {
-        const avgCostMicros = toMicros(pos.average_cost);
-        const qtyMicros = toMicros(pos.quantity);
-        const priceDiffMicros = priceMicros - avgCostMicros;
-        const upnlMicros = Number(
-          (BigInt(priceDiffMicros) * BigInt(qtyMicros)) / BigInt(1_000_000),
+        unrealizedPnl = computeUnrealizedPnl(
+          normalizeDecimal(pos.average_cost),
+          normalizeDecimal(mark.price),
+          normalizeDecimal(pos.quantity),
+          pos.direction === 'long' || pos.direction === 'short'
+            ? pos.direction
+            : null,
         );
-        unrealizedPnl = fromMicros(upnlMicros);
       } catch {
         unrealizedPnl = null;
       }
@@ -1201,47 +1279,58 @@ export function computeDashboardV2(
           : 'account_only';
 
     // ── Per-position risk state ───────────────────────────────────────
-    const symbol = symbolCache.get(pos.instrument_id) ?? 'UNKNOWN';
+    const symbol = instrument.symbol;
     const symbolTrades = openTradesBySymbol.get(symbol.toUpperCase()) ?? [];
-    // Trades are ordered by created_at ASC. Resolve the effective active
-    // stop exactly like the Trades kernel (computeTradeMetrics §6): latest
-    // stop adjustment → initial stop from the risk snapshot → planned stop.
-    // This keeps the dashboard's stopPrice/currentRiskToStop reconciled
-    // with GET /api/trades' activeStop/openRisk for the same position.
-    const validStops = symbolTrades.filter(
-      (t) => t.planned_stop !== null && t.planned_stop > 0,
-    );
-    const hasValidStop = validStops.length > 0;
-    // Trades are ordered by created_at ASC, so the last is the most recent.
-    let stopPrice: number | null = hasValidStop
-      ? (validStops[validStops.length - 1].planned_stop as number)
-      : null;
-    if (hasValidStop) {
-      // Resolve the effective active stop exactly like the Trades kernel
-      // (computeTradeMetrics §6): latest stop adjustment → initial stop from
-      // the risk snapshot → planned stop. Prefer the most recent open trade's
-      // stop, then fall back to earlier trades in reverse-chronological order.
-      for (let i = validStops.length - 1; i >= 0; i--) {
-        const trade = validStops[i];
-        const adjustments = journalStopByTrade.get(trade.id) ?? [];
-        const sorted = [...adjustments]
-          .filter((s) => s.new_stop != null)
-          .sort((a, b) => {
-            const at = Date.parse(a.adjusted_at ?? a.created_at ?? '') || 0;
-            const bt = Date.parse(b.adjusted_at ?? b.created_at ?? '') || 0;
-            return at - bt;
-          });
-        if (sorted.length > 0) {
-          stopPrice = sorted[sorted.length - 1].new_stop as number;
-          break;
-        }
-        const riskSnapshot = journalRiskByTrade.get(trade.id);
-        if (riskSnapshot?.initial_stop_price != null) {
-          stopPrice = riskSnapshot.initial_stop_price;
-          break;
-        }
-      }
+    // Resolve the effective active stop through the canonical trade-metrics
+    // kernel. This includes the legacy initial-risk fallback when an older
+    // snapshot lacks initial_stop_price, rather than re-implementing that
+    // derivation in the dashboard. Trades are ordered oldest to newest, so
+    // the first usable stop found in reverse order belongs to the latest
+    // relevant trade. planned_stop is only a compatibility fallback for an
+    // open trade with no execution-backed active stop yet.
+    let stopPrice: number | null = null;
+    for (let i = symbolTrades.length - 1; i >= 0; i--) {
+      const trade = symbolTrades[i];
+      if (trade.direction !== 'long' && trade.direction !== 'short') continue;
+      const riskSnapshot = openTradeRiskByTrade.get(trade.id);
+      const activeStop = computeTradeMetrics({
+        executions: (openTradeExecByTrade.get(trade.id) ?? []).map((execution) => ({
+          id: execution.id,
+          action: execution.action,
+          quantity: execution.quantity,
+          price: execution.price,
+          fees: execution.fees,
+          executedAt: execution.executed_at ?? '',
+        })),
+        direction: trade.direction,
+        riskSnapshot: riskSnapshot
+          ? {
+              initialRiskAmount: riskSnapshot.initial_risk_amount,
+              accountEquityAtOpen: riskSnapshot.account_equity_at_open,
+              initialStopPrice: riskSnapshot.initial_stop_price,
+              initialEntryPrice: riskSnapshot.initial_entry_price,
+            }
+          : null,
+        stopAdjustments: (openTradeStopByTrade.get(trade.id) ?? [])
+          .filter((adjustment) => adjustment.new_stop != null)
+          .map((adjustment) => ({
+            id: adjustment.id,
+            stopPrice: adjustment.new_stop as number,
+            adjustedAt: adjustment.adjusted_at ?? '',
+            createdAt: adjustment.created_at ?? '',
+          })),
+        currentMark: null,
+        currentAccountEquity: null,
+      }).risk.activeStop;
+      const compatiblePlannedStop =
+        trade.planned_stop !== null && trade.planned_stop > 0
+          ? trade.planned_stop
+          : null;
+      stopPrice = activeStop ?? compatiblePlannedStop;
+      if (stopPrice !== null && stopPrice > 0) break;
+      stopPrice = null;
     }
+    const hasValidStop = stopPrice !== null;
     const currentRiskToStop = computeRiskToStop(
       pos.direction,
       pos.quantity,
@@ -1331,6 +1420,8 @@ export function computeDashboardV2(
         asOf: mark?.mark_timestamp ?? null,
         computedAt,
         status: markStatus,
+        freshnessThresholdMinutes: freshnessPolicy.thresholdMinutes,
+        freshnessResolvedFrom: freshnessPolicy.resolvedFrom,
       },
       risk: {
         hasValidStop,
@@ -1342,7 +1433,7 @@ export function computeDashboardV2(
     });
   }
 
-  const valuationState = freshnessPolicy.classifyCompleteness(
+  const valuationState = aggregateFreshnessPolicy.classifyCompleteness(
     positionsWithQuantity.length,
     freshCount,
     staleCount,
@@ -1355,7 +1446,7 @@ export function computeDashboardV2(
     stale: staleCount,
     missing: missingCount,
     state: valuationState,
-    coveragePct: freshnessPolicy.computeCoveragePct(
+    coveragePct: aggregateFreshnessPolicy.computeCoveragePct(
       positionsWithQuantity.length,
       freshCount,
     ),
@@ -1499,8 +1590,6 @@ export function computeDashboardV2(
     | undefined;
 
   const openTrades = riskRow?.open_trades ?? 0;
-  const missingStops = riskRow?.missing_stops ?? 0;
-  const positionsWithStop = riskRow?.with_stop ?? 0;
 
   // openRisk is null when some open trades have no risk snapshot (partial).
   const riskSnapshotsCovered =
@@ -1508,19 +1597,6 @@ export function computeDashboardV2(
   const openRisk: string | null = riskSnapshotsCovered
     ? normalizeDecimal(riskRow?.total_risk ?? 0)
     : null;
-
-  // Portfolio heat = openRisk / NAV * 100
-  const nav = performance?.nav;
-  let portfolioHeat: string | null = null;
-  if (openRisk !== null) {
-    if (nav && nav !== '0.00' && openRisk !== '0.00') {
-      const navMicros = toMicros(nav);
-      const riskMicros = toMicros(openRisk);
-      portfolioHeat = normalizeDecimal((riskMicros / navMicros) * 100);
-    } else if (openRisk === '0.00') {
-      portfolioHeat = '0.00';
-    }
-  }
 
   // Aggregate risk-to-stop: null unless every open position can be evaluated.
   const riskToStopValues = dashboardPositions.map((p) => p.risk.currentRiskToStop);
@@ -1531,6 +1607,31 @@ export function computeDashboardV2(
         ? sumDecimals(riskToStopValues as string[])
         : null;
 
+  // Stop coverage must use the same account-position universe as Open risk.
+  // A broker/account-only position has real exposure even when no journal
+  // trade exists, so 0 journal trades is never permission to claim 0/0 full
+  // coverage.
+  const positionsTotal = dashboardPositions.length;
+  const positionsWithStop = dashboardPositions.filter(
+    (position) => position.risk.hasValidStop && position.risk.currentRiskToStop !== null,
+  ).length;
+  const missingStops = positionsTotal - positionsWithStop;
+
+  // Portfolio heat is live remaining risk, not the historical initial-risk
+  // snapshot. It is therefore only known when every account position has a
+  // current risk-to-stop and NAV is known.
+  const nav = performance?.nav;
+  let portfolioHeat: string | null = null;
+  if (openRiskToStop !== null) {
+    if (nav && nav !== '0.00' && openRiskToStop !== '0.00') {
+      const navMicros = toMicros(nav);
+      const riskMicros = toMicros(openRiskToStop);
+      portfolioHeat = normalizeDecimal((riskMicros / navMicros) * 100);
+    } else if (openRiskToStop === '0.00') {
+      portfolioHeat = '0.00';
+    }
+  }
+
   const riskSummary: RiskSummary = {
     openPnl,
     openRisk,
@@ -1540,10 +1641,11 @@ export function computeDashboardV2(
     openRiskToStop,
     stopCoverage: {
       openTrades,
+      positionsTotal,
       withStop: positionsWithStop,
       withoutStop: missingStops,
       state:
-        openTrades === 0 || missingStops === 0 ? 'complete' : 'partial',
+        positionsTotal === 0 || missingStops === 0 ? 'complete' : 'partial',
       presentationLabel: buildStopCoveragePresentationLabel(missingStops),
     },
     provenance: {

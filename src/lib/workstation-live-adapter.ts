@@ -119,6 +119,12 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<LiveFetc
     }
     body = JSON.parse(text) as unknown;
   } catch (err) {
+    if (
+      signal?.aborted ||
+      (err instanceof DOMException && err.name === 'AbortError')
+    ) {
+      return { success: false, error: 'Request was aborted' };
+    }
     return {
       success: false,
       error: err instanceof SyntaxError ? `Malformed JSON response: ${err.message}` : 'Failed to parse response',

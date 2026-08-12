@@ -74,6 +74,24 @@ export interface KpiMetrics {
   profitFactor: number | null;
   avgWin: number | null;
   avgLoss: number | null;
+  /** Closed decisions in the selected performance period. */
+  closedTrades: number;
+  /** Net realized P&L for the selected performance period (alias of netPnl). */
+  realizedPnl: number;
+  /** Entry and exit fees across selected-period closed trades. */
+  totalFees: number;
+  /** Average win divided by average loss magnitude. */
+  payoffRatio: number | null;
+  /** Mean net realized P&L per closed decision. */
+  expectancy: number | null;
+  /** Mean R-multiple across decisions with valid initial risk. */
+  expectancyR: number | null;
+  /** Highest net realized P&L among selected-period closed trades. */
+  bestTrade: number | null;
+  /** Lowest net realized P&L among selected-period closed trades. */
+  worstTrade: number | null;
+  /** Mean completed holding duration in days. */
+  averageHoldingDays: number | null;
 }
 
 /**
@@ -480,6 +498,8 @@ export function computeKpiMetrics(
   const gradeScores: number[] = [];
   const winPnLs: number[] = [];
   const lossPnLs: number[] = [];
+  const holdingPeriods: number[] = [];
+  let totalFees = 0;
 
   for (const trade of closedTrades) {
     // P&L from computeTradeMetrics
@@ -496,6 +516,11 @@ export function computeKpiMetrics(
     const totalRealizedPnL = metrics.realizedPnl.netRealizedPnl;
     netPnl += totalRealizedPnL;
     pnls.push(totalRealizedPnL);
+    totalFees += metrics.fees.totalFees;
+
+    if (metrics.position.holdingPeriodDays !== null) {
+      holdingPeriods.push(metrics.position.holdingPeriodDays);
+    }
 
     // Win rate: >0 = win, <=0 = loss (D013: $0 counted as loss)
     const decision = classifyPnlDecision(totalRealizedPnL, 'includeZeroAsLoss');
@@ -532,6 +557,18 @@ export function computeKpiMetrics(
   const profitFactor = computeProfitFactor(closedTrades);
   const avgWin = computeAvgWin(closedTrades);
   const avgLoss = computeAvgLoss(closedTrades);
+  const closedTradeCount = closedTrades.length;
+  const payoffRatio =
+    avgWin !== null && avgLoss !== null && avgLoss > 0
+      ? avgWin / avgLoss
+      : null;
+  const expectancy = closedTradeCount > 0 ? netPnl / closedTradeCount : null;
+  const bestTrade = pnls.length > 0 ? Math.max(...pnls) : null;
+  const worstTrade = pnls.length > 0 ? Math.min(...pnls) : null;
+  const averageHoldingDays =
+    holdingPeriods.length > 0
+      ? holdingPeriods.reduce((sum, days) => sum + days, 0) / holdingPeriods.length
+      : null;
 
   return {
     totalTrades,
@@ -546,5 +583,14 @@ export function computeKpiMetrics(
     profitFactor,
     avgWin,
     avgLoss,
+    closedTrades: closedTradeCount,
+    realizedPnl: netPnl,
+    totalFees,
+    payoffRatio,
+    expectancy,
+    expectancyR: avgR,
+    bestTrade,
+    worstTrade,
+    averageHoldingDays,
   };
 }
