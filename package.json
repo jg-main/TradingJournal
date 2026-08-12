@@ -9,6 +9,7 @@
     "lint": "eslint",
     "clean": "npm run clean:artifacts",
     "clean:artifacts": "rm -rf playwright-report test-results .gsd-backups .test*db .test*-shm .test*-wal .next/dev/logs .trading-journal/snapshots .trading-journal/playwright-*.db .trading-journal/playwright-*.db-wal .trading-journal/playwright-*.db-shm",
+    "journal": "node scripts/journal.mjs",
     "migrate": "drizzle-kit migrate",
     "accounting:migrate": "npx tsx scripts/accounting-migrate.ts migrate",
     "accounting:rebuild": "npx tsx scripts/accounting-migrate.ts rebuild",

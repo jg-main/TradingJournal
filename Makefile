@@ -5,6 +5,7 @@
 .PHONY: help dev dev-alt build start lint typecheck test test-all test-watch playwright playwright-chromium \
         playwright-firefox playwright-webkit playwright-targeted playwright-ui \
         db-generate db-migrate db-studio seed seed-settings setup reset-db clean \
+        journal \
         docker-build docker-up docker-upgrade docker-down docker-restart docker-logs
 
 # ─── Configuration ──────────────────────────────────────────────────────────
@@ -114,6 +115,11 @@ db-reset: ## Drop and recreate the database, run migrations and seed
 	$(NPX) drizzle-kit migrate
 	$(NPX) tsx src/db/seed.ts
 	@echo "Database reset complete."
+
+# ─── Journal ───────────────────────────────────────────────────────────────
+
+journal: ## Show recent GSD event journal entries (LIMIT=5 -> last 5)
+	$(NPM) run journal -- --limit $(or $(LIMIT),20)
 
 # ─── Setup & Cleanup ────────────────────────────────────────────────────────
 

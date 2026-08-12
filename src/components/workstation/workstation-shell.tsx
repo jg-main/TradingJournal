@@ -20,9 +20,9 @@ import { DataQualityAlertStrip } from './data-quality-alert-strip';
 import { RiskPositionsTable } from './risk-positions-table';
 import { RiskPanel } from './risk-panel';
 import { WatchlistPanel } from './watchlist-panel';
-import { SetupsPanel } from './setups-panel';
-import { EquityChart } from './equity-chart';
-import { PerformanceSummary } from './performance-summary';
+import { AccountStatePanel } from './account-state-panel';
+import { PerformancePanel } from './performance-panel';
+import { ProcessReviewPanel } from './process-review-panel';
 
 function fmtCurrency(value: number | string | null | undefined): string {
   if (value === null || value === undefined) return '—';
@@ -61,36 +61,11 @@ function KpiCell({ label, value, className }: { label: string; value: string; cl
   );
 }
 
-function Panel({
-  area,
-  title,
-  meta,
-  children,
-}: {
-  area: string;
-  title: string;
-  meta?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="ws-panel" style={{ gridArea: area }} data-testid={`ws-panel-${area}`}>
-      <div className="ws-panel-header">
-        <span>{title}</span>
-        {meta && <span className="ws-panel-meta ws-mono">{meta}</span>}
-      </div>
-      <div className="ws-panel-body">{children}</div>
-    </section>
-  );
-}
-
 export function WorkstationShell() {
   const { fixtures } = useWorkstation();
   const { dashboard, dashboardV2 } = fixtures;
   const { kpis } = dashboard;
-  const { metrics, valuation } = dashboardV2;
-
-  const firstEquity = dashboard.equityCurve[0];
-  const lastEquity = dashboard.equityCurve[dashboard.equityCurve.length - 1];
+  const { valuation } = dashboardV2;
 
   return (
     <>
@@ -108,34 +83,17 @@ export function WorkstationShell() {
             same reconciled snapshot the alert strip and risk band consume. */}
         <RiskPositionsTable positions={valuation.positions} />
 
-        {/* Account state and drawdown — equity chart + monthly summary */}
-        <Panel
-          area="equity"
-          title="Equity"
-          meta={
-            firstEquity && lastEquity
-              ? `${firstEquity.date} → ${lastEquity.date}`
-              : undefined
-          }
-        >
-          <EquityChart
-            equityCurve={dashboard.equityCurve}
-            drawdown={dashboard.drawdown}
-            tradeMarkers={dashboard.tradeMarkers ?? []}
-          />
-          <PerformanceSummary
-            monthlyPerformance={dashboard.monthlyPerformance}
-            drawdown={dashboard.drawdown}
-            currentDrawdown={kpis.currentDrawdown}
-            currentDrawdownPct={kpis.currentDrawdownPct}
-          />
-        </Panel>
+        {/* Account state — §6.7 unambiguous labels (Cash, Marked, NAV, P&L, Drawdown) */}
+        <AccountStatePanel />
+
+        {/* Performance — Tier 2 metric catalogue with Tier 3 gating */}
+        <PerformancePanel />
+
+        {/* Process Review — discipline metrics and attention items */}
+        <ProcessReviewPanel />
 
         {/* Watchlist — secondary attention surface on the right rail */}
         <WatchlistPanel />
-
-        {/* Setups & Ideas — setup ranking, attention insights, trade ideas */}
-        <SetupsPanel />
 
         {/* Period-performance KPI band — compact bottom band below the risk
             area (§5.1 area 7): never a competing first-row KPI wall. */}
@@ -150,13 +108,13 @@ export function WorkstationShell() {
           <KpiCell label="Avg R" value={fmtFixed(kpis.avgR, 2)} />
           <KpiCell label="Trades" value={String(kpis.totalTrades)} />
           <KpiCell label="Open" value={String(kpis.openTrades)} />
+          {/* Drawdown, Account Value, NAV now in AccountStatePanel — kept here
+              as compact references for the bottom band */}
           <KpiCell
             label="Drawdown"
             value={fmtCurrency(kpis.currentDrawdown)}
             className={pnlClass(kpis.currentDrawdown)}
           />
-          <KpiCell label="Account Value" value={fmtCurrency(kpis.accountValue)} />
-          <KpiCell label="NAV (V2)" value={fmtCurrency(metrics.nav)} />
         </section>
       </main>
     </>
