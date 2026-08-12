@@ -13,6 +13,7 @@ export default defineConfig({
       'src/lib/account-context.test.tsx',
       'src/lib/workstation-fixtures.test.ts',
       'src/components/workstation/workstation-context.test.tsx',
+      'src/components/workstation/data-quality-alert-strip.test.tsx',
       'src/lib/workstation-live-adapter.test.ts',
       'src/lib/account-defaults.test.ts',
       'src/lib/readiness.test.ts',
