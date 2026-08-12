@@ -28,6 +28,7 @@ import {
   WORKSTATION_TEMPLATE_IDS,
   WORKSTATION_TEMPLATES,
   WORKSTATION_LAYOUT_VERSION,
+  WORKSTATION_DEFAULT_TEMPLATE_VERSION,
   FIXED_PANEL_IDS,
   OPTIONAL_PANEL_IDS,
   GRID_EMPTY_CELL,
@@ -248,14 +249,13 @@ describe('system templates', () => {
     for (const id of TEMPLATE_IDS) assertTemplateInternallyConsistent(id);
   });
 
-  it('uses a balanced overview row in Risk & Positions and preserves rails in secondary views', () => {
+  it('uses the dense 3-column document flow in every template', () => {
     const riskPositions = WORKSTATION_TEMPLATES[WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS];
-    expect(riskPositions.columns).toEqual([1, 1]);
+    expect(riskPositions.columns).toEqual([1, 1, 1]);
     expect(riskPositions.areas).toEqual([
-      ['risk', 'risk'],
-      ['perf', 'account'],
-      ['trades', 'trades'],
-      ['review', 'review'],
+      ['risk', 'risk', 'risk'],
+      ['account', 'perf', 'review'],
+      ['trades', 'trades', 'trades'],
     ]);
     expect(riskPositions.defaultHidden).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
 
@@ -263,9 +263,20 @@ describe('system templates', () => {
       WORKSTATION_TEMPLATE_IDS.PERFORMANCE,
       WORKSTATION_TEMPLATE_IDS.PROCESS_REVIEW,
     ]) {
-      expect(WORKSTATION_TEMPLATES[id].columns).toEqual([2, 1]);
-      expect(WORKSTATION_TEMPLATES[id].areas[0].length).toBe(2);
+      expect(WORKSTATION_TEMPLATES[id].columns).toEqual([1, 1, 1]);
+      expect(WORKSTATION_TEMPLATES[id].areas[0].length).toBe(3);
     }
+  });
+
+  it('records the dense default-template version alongside the layout schema version', () => {
+    // v2 is the dense composition: both the layout schema and the default
+    // template were bumped from v1 so migration can replace unmodified
+    // former-default copies while preserving user-modified views.
+    expect(WORKSTATION_LAYOUT_VERSION).toBe(2);
+    expect(WORKSTATION_DEFAULT_TEMPLATE_VERSION).toBe(2);
+    expect(createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS).version).toBe(
+      WORKSTATION_LAYOUT_VERSION,
+    );
   });
 
   it('makes the Performance template hide watchlist and process review', () => {
@@ -281,7 +292,7 @@ describe('system templates', () => {
     }
     // The rendered grid of the derived view matches the template base.
     expect(computeGridTemplateAreas(createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE))).toBe(
-      '"risk risk" "trades account" "perf perf" "perf perf"',
+      '"risk risk risk" "account account ." "trades trades trades" "perf perf perf" "perf perf perf"',
     );
   });
 });
@@ -316,7 +327,7 @@ describe('resetViewToTemplate', () => {
   it('restores a customized view to its template base and keeps the template reference', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
     // Customize: hide the account panel (watchlist + review are already hidden).
-    config.areas[1][1] = GRID_EMPTY_CELL;
+    config.areas[1] = [GRID_EMPTY_CELL, GRID_EMPTY_CELL, GRID_EMPTY_CELL];
     config.hiddenPanels = [
       WORKSTATION_PANEL_IDS.WATCHLIST,
       WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
@@ -341,9 +352,9 @@ describe('cloneWorkstationViewConfig', () => {
   it('deep-copies rows and the hidden set', () => {
     const source = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     const copy = cloneWorkstationViewConfig(source);
-    copy.areas[1][1] = GRID_EMPTY_CELL;
+    copy.areas[1][0] = GRID_EMPTY_CELL;
     copy.hiddenPanels = [WORKSTATION_PANEL_IDS.ACCOUNT];
-    expect(source.areas[1][1]).toBe(WORKSTATION_PANEL_IDS.ACCOUNT);
+    expect(source.areas[1][0]).toBe(WORKSTATION_PANEL_IDS.ACCOUNT);
     expect(source.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
     expect(copy.templateId).toBe(source.templateId);
     expect(copy.version).toBe(source.version);
@@ -356,60 +367,64 @@ describe('computeGridTemplateAreas', () => {
   it('serializes the Risk & Positions grid exactly', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     expect(computeGridTemplateAreas(config)).toBe(
-      '"risk risk" "perf account" "trades trades" "review review"',
+      '"risk risk risk" "account perf review" "trades trades trades"',
     );
   });
 
   it('serializes the Performance template with its full-width panel band', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
     expect(computeGridTemplateAreas(config)).toBe(
-      '"risk risk" "trades account" "perf perf" "perf perf"',
+      '"risk risk risk" "account account ." "trades trades trades" "perf perf perf" "perf perf perf"',
     );
   });
 
   it('reflects customization changes (hiding the account panel)', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
-    config.areas[1][1] = GRID_EMPTY_CELL;
-    config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.ACCOUNT];
+    config.areas[1] = [GRID_EMPTY_CELL, GRID_EMPTY_CELL, WORKSTATION_PANEL_IDS.PROCESS_REVIEW];
+    config.hiddenPanels = [
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+      WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.PERFORMANCE,
+    ];
     expect(computeGridTemplateAreas(config)).toBe(
-      '"risk risk" "perf ." "trades trades" "review review"',
+      '"risk risk risk" ". . review" "trades trades trades"',
     );
   });
 });
 
 describe('computeGridTemplateColumns', () => {
-  it('uses equal columns for the balanced Risk & Positions overview row', () => {
+  it('uses equal columns for the dense Risk & Positions document flow', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
-    expect(computeGridTemplateColumns(config)).toBe('minmax(0, 1fr) minmax(0, 1fr)');
+    expect(computeGridTemplateColumns(config)).toBe(
+      'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)',
+    );
   });
 
   it('falls back to equal tracks when the template width set does not match', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     config.areas = [
-      ['risk', 'risk', 'risk'],
-      ['trades', 'account', 'watchlist'],
-      ['review', 'review', 'review'],
+      ['risk', 'risk'],
+      ['account', 'perf'],
+      ['trades', 'trades'],
     ];
-    expect(computeGridTemplateColumns(config)).toBe('minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)');
+    expect(computeGridTemplateColumns(config)).toBe('minmax(0, 1fr) minmax(0, 1fr)');
   });
 });
 
 describe('computeGridTemplateRows', () => {
   it('sizes content bands auto and fill rows 1fr for Risk & Positions', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
-    expect(computeGridTemplateRows(config)).toBe(
-      'auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)',
-    );
+    expect(computeGridTemplateRows(config)).toBe('auto minmax(0, 1fr) minmax(0, 1fr)');
   });
 
   it('collapses an all-empty row to auto (zero height)', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     // Trades (a fixed panel) stays visible as a full-width row; the
-    // middle row is fully empty because every optional panel is hidden.
+    // summary row is fully empty because every optional panel is hidden.
     config.areas = [
-      ['risk', 'risk'],
-      [GRID_EMPTY_CELL, GRID_EMPTY_CELL],
-      ['trades', 'trades'],
+      ['risk', 'risk', 'risk'],
+      [GRID_EMPTY_CELL, GRID_EMPTY_CELL, GRID_EMPTY_CELL],
+      ['trades', 'trades', 'trades'],
     ];
     config.hiddenPanels = [
       WORKSTATION_PANEL_IDS.ACCOUNT,
@@ -423,23 +438,23 @@ describe('computeGridTemplateRows', () => {
 
   it('keeps fill rows stretched for the Performance template', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
-    expect(computeGridTemplateRows(config)).toBe('auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)');
+    expect(computeGridTemplateRows(config)).toBe(
+      'auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)',
+    );
   });
 
-  it('keeps rows with any fill panel stretched even when a rail cell is empty', () => {
+  it('keeps rows with any fill panel stretched even when a summary cell is empty', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     config.areas[1][1] = GRID_EMPTY_CELL;
     config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.ACCOUNT];
-    expect(computeGridTemplateRows(config)).toBe(
-      'auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)',
-    );
+    expect(computeGridTemplateRows(config)).toBe('auto minmax(0, 1fr) minmax(0, 1fr)');
   });
 });
 
 describe('computeDocumentFlowGridTemplateRows', () => {
   it('content-sizes every Risk & Positions band so document flow does not create blank 1fr panels', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
-    expect(computeDocumentFlowGridTemplateRows(config)).toBe('auto auto auto auto');
+    expect(computeDocumentFlowGridTemplateRows(config)).toBe('auto auto auto');
   });
 });
 
@@ -488,7 +503,11 @@ describe('validateWorkstationViewConfig — positives', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     // Watchlist is hidden in the curated default but remains available to
     // a saved view through explicit customization.
-    config.areas.push([WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.WATCHLIST]);
+    config.areas.push([
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
     config.hiddenPanels = [];
     expect(validateWorkstationViewConfig(config)).toEqual([]);
   });
@@ -510,7 +529,7 @@ describe('validateWorkstationViewConfig — positives', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
     // Unhide Process Review by adding a new full-width row and dropping it
     // from the hidden set; watchlist stays hidden.
-    config.areas.push(['review', 'review']);
+    config.areas.push(['review', 'review', 'review']);
     config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST];
     expect(validateWorkstationViewConfig(config)).toEqual([]);
     expect(computeVisiblePanels(config)).toContain(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
@@ -566,12 +585,10 @@ describe('validateWorkstationViewConfig — negatives', () => {
 
   it('rejects a panel split into two disconnected regions', () => {
     const config = base();
-    // Watchlist appears in two disconnected cells after replacing account
-    // and a full-width row cell. It remains hidden in the template
-    // declaration, so this also exercises that no second location can be
-    // introduced casually.
-    config.areas[1][1] = WORKSTATION_PANEL_IDS.WATCHLIST;
-    config.areas[3][1] = WORKSTATION_PANEL_IDS.WATCHLIST;
+    // Watchlist appears in two disconnected summary-row cells after
+    // replacing account and review; its bounding box spans three cells.
+    config.areas[1][0] = WORKSTATION_PANEL_IDS.WATCHLIST;
+    config.areas[1][2] = WORKSTATION_PANEL_IDS.WATCHLIST;
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('single contiguous rectangle'))).toBe(true);
     expect(issues).not.toHaveLength(0);
@@ -579,8 +596,8 @@ describe('validateWorkstationViewConfig — negatives', () => {
 
   it('rejects an L-shaped (non-rectangular) region', () => {
     const config = base();
-    // Performance normally occupies [1][0]. Extend it into the following
-    // full-width Trades row to create a non-rectangular L-shape.
+    // Performance normally occupies the summary-row middle cell. Extend it
+    // into the following full-width Trades row to create an L-shape.
     config.areas[2][0] = WORKSTATION_PANEL_IDS.PERFORMANCE;
     config.areas[2][1] = WORKSTATION_PANEL_IDS.PERFORMANCE;
     // Trades disappeared from areas → consistency error as well; check region error exists.
@@ -597,7 +614,7 @@ describe('validateWorkstationViewConfig — negatives', () => {
 
   it('rejects a required panel missing from the grid', () => {
     const config = base();
-    config.areas[2] = [GRID_EMPTY_CELL, GRID_EMPTY_CELL];
+    config.areas[2] = [GRID_EMPTY_CELL, GRID_EMPTY_CELL, GRID_EMPTY_CELL];
     config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.TRADES];
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('cannot be hidden'))).toBe(true);

@@ -61,6 +61,7 @@ describe('togglePanelVisibilityInConfig', () => {
     expect(next!.areas[next!.areas.length - 1]).toEqual([
       WORKSTATION_PANEL_IDS.WATCHLIST,
       WORKSTATION_PANEL_IDS.WATCHLIST,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
     expect(next!.hiddenPanels).toEqual([]);
     // The result stays catalogue-valid at every step.
@@ -93,7 +94,11 @@ describe('togglePanelVisibilityInConfig', () => {
     expect(next!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.PROCESS_REVIEW]);
     // The new rail row sits at the end of the grid (the dense catalogue
     // removed the v1 fixed KPI band that previously anchored these rows).
-    expect(next!.areas[next!.areas.length - 1]).toEqual(['.', WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(next!.areas[next!.areas.length - 1]).toEqual([
+      '.',
+      '.',
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
     expect(validateWorkstationViewConfig(next)).toEqual([]);
   });
 
@@ -214,13 +219,13 @@ describe('useCustomizeMode', () => {
 
     // Mutating the caller's source config must not affect the draft.
     act(() => {
-      RISK_POSITIONS.areas[3][1] = '.';
+      RISK_POSITIONS.areas[1][2] = '.';
       RISK_POSITIONS.hiddenPanels.push(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
     });
-    expect(result.current.draft!.areas[3][1]).toBe(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
+    expect(result.current.draft!.areas[1][2]).toBe(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
     expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
     // Restore fixture for later tests.
-    RISK_POSITIONS.areas[3][1] = WORKSTATION_PANEL_IDS.PROCESS_REVIEW;
+    RISK_POSITIONS.areas[1][2] = WORKSTATION_PANEL_IDS.PROCESS_REVIEW;
     RISK_POSITIONS.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST];
   });
 
@@ -235,7 +240,7 @@ describe('useCustomizeMode', () => {
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
-    expect(result.current.draft!.areas[1][1]).toBe('.');
+    expect(result.current.draft!.areas[1][0]).toBe('.');
     expect(validateWorkstationViewConfig(result.current.draft!)).toEqual([]);
   });
 
@@ -262,7 +267,7 @@ describe('useCustomizeMode', () => {
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
-    expect(result.current.draft!.areas[1][0]).toBe(WORKSTATION_PANEL_IDS.PERFORMANCE);
+    expect(result.current.draft!.areas[1][1]).toBe(WORKSTATION_PANEL_IDS.PERFORMANCE);
 
     act(() => result.current.undo());
     expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
@@ -333,10 +338,10 @@ describe('useCustomizeMode', () => {
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
-    expect(saved!.areas[1][1]).toBe('.');
+    expect(saved!.areas[1][0]).toBe('.');
     // The returned config is a clone — mutating it cannot affect the hook.
     act(() => {
-      saved!.areas[1][1] = WORKSTATION_PANEL_IDS.ACCOUNT;
+      saved!.areas[1][0] = WORKSTATION_PANEL_IDS.ACCOUNT;
     });
     expect(result.current.isCustomizing).toBe(false);
     expect(result.current.draft).toBeNull();

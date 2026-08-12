@@ -262,7 +262,11 @@ export interface WorkstationTemplate {
   /** Human-readable template name shown in the view switcher. */
   readonly name: string;
   readonly description: string;
-  /** Relative column widths, e.g. [2, 1] = dominant column + right rail. */
+  /**
+   * Relative column widths for the grid tracks. Every template in the dense
+   * model uses three equal columns, e.g. [1, 1, 1]; the pre-dense [2, 1]
+   * dominant-column + right-rail split is gone.
+   */
   readonly columns: readonly number[];
   /** Base grid; every cell is a registered panel id or `.`. */
   readonly areas: readonly (readonly string[])[];
@@ -273,33 +277,33 @@ export interface WorkstationTemplate {
 }
 
 /**
- * The three curated system templates (R035):
+ * The three curated system templates (R035), restructured to the dense
+ * 3-column model (docs/requirements/DASHBOARD_DENSE_LAYOUT_REQUIREMENTS.md):
  *
- * - **risk-positions** — the immutable default and startup view. Current
- *   risk spans the top, Performance and Account State share a balanced
- *   overview row, and full-width Trades and Review Metrics follow in
- *   document flow. Watchlist is deliberately excluded from this curated
+ * - **risk-positions** — the immutable default and startup view. The dense
+ *   document flow: full-width Main Risk Metrics, a compact equal-width
+ *   Account State | Performance | Review Metrics row, then the full-width
+ *   Trades workspace. Watchlist is deliberately excluded from this curated
  *   starting layout, while remaining available to saved custom views and its
  *   dedicated navigation surface.
- * - **performance** — trades and account state remain visible; a
- *   prominent full-width Performance panel dominates the lower grid; the
- *   watchlist and review-metrics panels are hidden by default.
- * - **process-review** — trades and account state remain visible; a
- *   prominent full-width Review Metrics panel dominates the lower grid; the
- *   performance and watchlist panels are hidden by default.
+ * - **performance** — the same dense flow with a prominent full-width
+ *   Performance panel below the trades workspace; the watchlist and
+ *   review-metrics panels are hidden by default.
+ * - **process-review** — the same dense flow with a prominent full-width
+ *   Review Metrics panel below the trades workspace; the performance and
+ *   watchlist panels are hidden by default.
  */
 export const WORKSTATION_TEMPLATES = {
   [WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS]: {
     id: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
     name: 'Risk & Positions',
     description:
-      'The curated default: risk summary, paired Performance and Account State, then full-width Trades and Review Metrics in document flow. Watchlist remains available through saved custom views and its dedicated page. Immutable system default and startup view.',
-    columns: [1, 1],
+      'The curated dense default: full-width Main Risk Metrics, a compact equal-width Account State | Performance | Review Metrics row, then the full-width Trades workspace in document flow. Watchlist remains available through saved custom views and its dedicated page. Immutable system default and startup view.',
+    columns: [1, 1, 1],
     areas: [
-      ['risk', 'risk'],
-      ['perf', 'account'],
-      ['trades', 'trades'],
-      ['review', 'review'],
+      ['risk', 'risk', 'risk'],
+      ['account', 'perf', 'review'],
+      ['trades', 'trades', 'trades'],
     ],
     defaultHidden: [WORKSTATION_PANEL_IDS.WATCHLIST],
     isSystemDefault: true,
@@ -309,13 +313,14 @@ export const WORKSTATION_TEMPLATES = {
     id: WORKSTATION_TEMPLATE_IDS.PERFORMANCE,
     name: 'Performance',
     description:
-      'Period performance, equity/drawdown, calendar, and breakdowns: a prominent full-width Performance panel below the always-visible trades and account-state row.',
-    columns: [2, 1],
+      'Period performance, equity/drawdown, calendar, and breakdowns: dense flow with full-width risk and trades and a prominent full-width Performance panel below. Watchlist and Review Metrics are hidden by default.',
+    columns: [1, 1, 1],
     areas: [
-      ['risk', 'risk'],
-      ['trades', 'account'],
-      ['perf', 'perf'],
-      ['perf', 'perf'],
+      ['risk', 'risk', 'risk'],
+      ['account', 'account', '.'],
+      ['trades', 'trades', 'trades'],
+      ['perf', 'perf', 'perf'],
+      ['perf', 'perf', 'perf'],
     ],
     defaultHidden: [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.PROCESS_REVIEW],
     isSystemDefault: false,
@@ -325,13 +330,14 @@ export const WORKSTATION_TEMPLATES = {
     id: WORKSTATION_TEMPLATE_IDS.PROCESS_REVIEW,
     name: 'Process Review',
     description:
-      'Setup, direction, execution quality, checklist, and review metrics: a prominent full-width Review Metrics panel below the always-visible trades and account-state row.',
-    columns: [2, 1],
+      'Setup, direction, execution quality, checklist, and review metrics: dense flow with full-width risk and trades and a prominent full-width Review Metrics panel below. Watchlist and Performance are hidden by default.',
+    columns: [1, 1, 1],
     areas: [
-      ['risk', 'risk'],
-      ['trades', 'account'],
-      ['review', 'review'],
-      ['review', 'review'],
+      ['risk', 'risk', 'risk'],
+      ['account', 'account', '.'],
+      ['trades', 'trades', 'trades'],
+      ['review', 'review', 'review'],
+      ['review', 'review', 'review'],
     ],
     defaultHidden: [WORKSTATION_PANEL_IDS.PERFORMANCE, WORKSTATION_PANEL_IDS.WATCHLIST],
     isSystemDefault: false,
@@ -344,8 +350,27 @@ export function isWorkstationTemplateId(value: unknown): value is WorkstationTem
 
 // ── Saved view configuration ────────────────────────────────────────────
 
-/** Current version of the saved-layout schema (R035: layouts are versioned). */
-export const WORKSTATION_LAYOUT_VERSION = 1;
+/**
+ * Current version of the saved-layout schema (R035: layouts are versioned).
+ *
+ * v1: the pre-dense two-column schema — no RGL `layout` field; templates
+ * used dominant-column + right-rail arrangements. v2: the dense 3-column
+ * model — templates are dense document flows and saved configs carry an RGL
+ * layout (introduced alongside, see `WorkstationLayoutItem`). v1 configs
+ * remain readable through migration-on-read (`migrateWorkstationViewConfig`).
+ */
+export const WORKSTATION_LAYOUT_VERSION = 2;
+
+/**
+ * Version of the Risk & Positions default-template composition.
+ *
+ * v1: the former two-column overview/side-rail arrangement. v2: the dense
+ * 3-column document flow (full-width risk, compact summary row, full-width
+ * trades). Migration uses this to replace unmodified copies of the former
+ * system default with the dense default while preserving user-modified views
+ * (dense requirements: persistence and migration contract).
+ */
+export const WORKSTATION_DEFAULT_TEMPLATE_VERSION = 2;
 
 /**
  * A saved workstation view: template reference, rendered grid, and hidden
@@ -582,9 +607,9 @@ export function computeGridTemplateAreas(config: WorkstationViewConfig): string 
 /**
  * Compute the CSS `grid-template-columns` value for a view: one
  * `minmax(0, Nfr)` track per grid column using the template's declared
- * column widths (e.g. `minmax(0, 2fr) minmax(0, 1fr)` for the dominant
- * column + right rail). Falls back to equal `1fr` tracks when the template
- * does not declare a matching width set.
+ * column widths (e.g. `minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)` for
+ * the dense three equal columns). Falls back to equal `1fr` tracks when the
+ * template does not declare a matching width set.
  */
 export function computeGridTemplateColumns(config: WorkstationViewConfig): string {
   const colCount = config.areas[0]?.length ?? 1;
