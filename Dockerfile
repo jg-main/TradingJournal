@@ -62,10 +62,13 @@ WORKDIR /app
 RUN mkdir -p /data && chown nextjs:nextjs /data
 
 # Copy production node_modules from deps stage, then prune dev deps
-# and remove non-essential cruft (test fixtures, type defs, etc.)
+# and remove non-essential cruft (test fixtures, type defs, etc.). `npm prune`
+# creates a platform-reduced lockfile that Next attempts to patch at startup;
+# the compiled runner does not need it, so remove it before switching users.
 RUN --mount=type=bind,from=deps,source=/app,target=/deps \
     cp -R /deps/node_modules ./node_modules && \
     npm prune --omit=dev && \
+    rm -f package-lock.json && \
     rm -rf node_modules/.cache node_modules/.package-lock.json && \
     # Remove TypeScript type definitions bundles (recreated at build time)
     rm -rf node_modules/@types/react node_modules/@types/react-dom && \
