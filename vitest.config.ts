@@ -19,6 +19,7 @@ export default defineConfig({
       'src/components/workstation/account-state-panel.test.tsx',
       'src/components/workstation/performance-panel.test.tsx',
       'src/components/workstation/process-review-panel.test.tsx',
+      'src/components/workstation/workstation-view-switcher.test.tsx',
       'src/lib/workstation-live-adapter.test.ts',
       'src/lib/account-defaults.test.ts',
       'src/lib/readiness.test.ts',

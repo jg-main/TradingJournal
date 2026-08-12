@@ -2,11 +2,13 @@
 
 // WorkstationToolbar — compact top chrome for the workstation.
 //
-// Production toolbar: account selector, loading/error indicators,
-// MTM polling status, and LIVE badge. No fixture controls — the
+// Production toolbar: view switcher (S06), account selector, loading/error
+// indicators, MTM polling status, and LIVE badge. No fixture controls — the
 // workstation is always live against the real database.
 
 import { useWorkstation, type MtmPollingState } from './workstation-context';
+import { useWorkstationViewsContext } from './workstation-views-context';
+import { WorkstationViewSwitcher } from './workstation-view-switcher';
 
 /** Compact label + semantic description for the MTM polling indicator. */
 function mtmLabel(state: MtmPollingState): string {
@@ -32,6 +34,10 @@ function mtmTitle(state: MtmPollingState): string {
 }
 
 export function WorkstationToolbar() {
+  // Saved workstation views (S06): the provider owns the view store; the
+  // toolbar renders the switcher and dispatches changes through it.
+  const viewsState = useWorkstationViewsContext();
+
   const {
     accounts,
     activeAccountId,
@@ -51,6 +57,16 @@ export function WorkstationToolbar() {
       data-testid="ws-toolbar"
     >
       <span className="ws-toolbar-brand">Workstation</span>
+
+      {/* Curated saved views + user views (S06): switching the active view
+          re-lays-out the grid below via the shell's dynamic grid-template-*.*/}
+      <WorkstationViewSwitcher
+        views={viewsState.views}
+        activeViewId={viewsState.activeViewId}
+        onSelectView={viewsState.setActiveView}
+        onCreateView={(name) => viewsState.createView(name)}
+        writeFailed={viewsState.writeFailed}
+      />
 
       {accountSelectionExternal ? (
         // Account selection lives in the sidebar (global AccountProvider).

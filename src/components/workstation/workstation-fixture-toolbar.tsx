@@ -5,8 +5,14 @@
 
 import type { WorkstationScenarioId } from '@/lib/workstation-fixtures';
 import { useWorkstation } from './workstation-context';
+import { useWorkstationViewsContext } from './workstation-views-context';
+import { WorkstationViewSwitcher } from './workstation-view-switcher';
 
 export function WorkstationFixtureToolbar() {
+  // Saved workstation views (S06): the provider owns the view store; the
+  // fixture harness exercises the same switcher + dynamic grid as production.
+  const viewsState = useWorkstationViewsContext();
+
   const {
     accounts,
     activeAccountId,
@@ -21,6 +27,16 @@ export function WorkstationFixtureToolbar() {
   return (
     <header className="ws-toolbar" role="banner" data-testid="ws-toolbar">
       <span className="ws-toolbar-brand">Workstation</span>
+
+      {/* Curated saved views + user views (S06): switching re-lays-out the
+          grid below via the shell's dynamic grid-template-*.*/}
+      <WorkstationViewSwitcher
+        views={viewsState.views}
+        activeViewId={viewsState.activeViewId}
+        onSelectView={viewsState.setActiveView}
+        onCreateView={(name) => viewsState.createView(name)}
+        writeFailed={viewsState.writeFailed}
+      />
 
       <label className="ws-toolbar-field">
         <span className="ws-toolbar-label">Account</span>

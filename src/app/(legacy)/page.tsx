@@ -13,6 +13,7 @@ import { WorkstationProvider } from '@/components/workstation/workstation-contex
 import { WorkstationToolbar } from '@/components/workstation/workstation-toolbar';
 import { WorkstationShell } from '@/components/workstation/workstation-shell';
 import { WorkstationKeyboardShortcuts } from '@/components/workstation/workstation-keyboard-shortcuts';
+import { WorkstationViewsProvider } from '@/components/workstation/workstation-views-context';
 import { useAccount } from '@/lib/account-context';
 
 export default function DashboardPage() {
@@ -29,12 +30,17 @@ export default function DashboardPage() {
         accountId={accountId}
         onAccountIdChange={setAccountId}
       >
-        <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
-          Skip to main content
-        </a>
-        <WorkstationKeyboardShortcuts />
-        <WorkstationToolbar />
-        <WorkstationShell />
+        {/* Saved workstation views (S06): the provider owns the view store so
+            the toolbar switcher and the shell's dynamic grid share one
+            source of truth. */}
+        <WorkstationViewsProvider>
+          <a href="#ws-main-content" className="ws-skip-link" data-testid="ws-skip-link">
+            Skip to main content
+          </a>
+          <WorkstationKeyboardShortcuts />
+          <WorkstationToolbar />
+          <WorkstationShell />
+        </WorkstationViewsProvider>
       </WorkstationProvider>
     </div>
   );

@@ -304,20 +304,18 @@ interface InitParams {
 }
 
 function createInitialState(params: InitParams): ViewsState {
-  const saved = readViews(params.storageKey);
-  if (saved) {
-    return {
-      views: saved.views.map(cloneViewEnvelope),
-      activeViewId: saved.activeViewId,
-      isLoaded: false, // set true by the HYDRATE effect
-      writeFailed: false,
-    };
-  }
+  // SSR-safe hydration: the first render always uses the default views so
+  // the server HTML and the client's first paint agree (localStorage is not
+  // available during server rendering, so reading it here would cause a
+  // hydration mismatch whenever the saved active view differs from the
+  // startup default). Saved localStorage data is applied by the HYDRATE
+  // effect on mount, which re-reads the same key — observable behavior
+  // after mount is unchanged.
   const views = params.defaultViews.map(cloneViewEnvelope);
   return {
     views,
     activeViewId: resolveStartupViewId(views),
-    isLoaded: false,
+    isLoaded: false, // set true by the HYDRATE effect
     writeFailed: false,
   };
 }
@@ -523,7 +521,9 @@ export interface UseWorkstationViewsResult {
  * `/api/dashboard/views` route, and localStorage fallback persistence.
  *
  * On mount:
- * 1. Synchronously hydrates from localStorage (fast, offline-capable)
+ * 1. Hydrates from localStorage in an effect (SSR-safe: the first render
+ *    always uses the defaults so server HTML and the client's first paint
+ *    agree, then saved views are applied immediately after mount)
  * 2. Asynchronously fetches from the API; workstation-shaped rows override
  *    the localStorage data
  * 3. If the API returns no workstation views and localStorage has data,
@@ -557,7 +557,8 @@ export function useWorkstationViews(
   // Ref for cancellation of async API hydration
   const apiHydrationCancelledRef = useRef(false);
 
-  // 1. Synchronous localStorage hydration
+  // 1. localStorage hydration — applies saved views immediately after
+  // mount (SSR-safe: the first render already matched the server defaults).
   useEffect(() => {
     const saved = readViews(key);
     if (saved) {
@@ -613,8 +614,8 @@ export function useWorkstationViews(
         }
       })
       .catch((error: unknown) => {
-        // API unavailable — localStorage data is already loaded via the
-        // synchronous path, so the user's views remain intact.
+        // API unavailable — localStorage data was already applied by the
+        // hydration effect, so the user's views remain intact.
         console.warn(
           '[useWorkstationViews] API hydration failed; using localStorage views. ' +
             (error instanceof Error ? error.message : String(error)),

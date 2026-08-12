@@ -220,6 +220,44 @@
   flex: 1;
 }
 
+/* ── View Switcher (S06) ────────────────────────────────────────────────── */
+/*
+ * Toolbar trigger for the curated saved views dropdown. Matches the
+ * toolbar's select control rhythm (36px control height, same border/radius
+ * family) so the switcher sits naturally beside the account selector.
+ */
+.ws-view-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ws-space-3);
+  height: var(--ws-row-sm);
+  padding: 0 var(--ws-space-4) 0 var(--ws-space-3);
+  font-size: var(--ws-text-md);
+  font-weight: 600;
+  background: var(--background);
+  color: var(--foreground);
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.ws-view-trigger:hover {
+  border-color: var(--ring);
+}
+
+.ws-view-trigger:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.ws-view-trigger-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+
 .ws-toolbar-meta {
   font-size: var(--ws-text-sm);
   color: var(--muted-foreground);
@@ -337,15 +375,21 @@
 
 /* ── CSS Grid shell ──────────────────────────────────────────────────────── */
 /*
- * Risk-first fixed layout (S04 T02, requirements §5.1): the risk summary
- * band spans the full width on top, the open-positions table is the tall
- * dominant left column, and account state / watchlist / insights stack on
- * the right rail. The period-performance KPI band sits at the bottom — a
+ * Risk-first workstation grid (S04 T02, requirements §5.1): the risk
+ * summary band spans the full width on top, the open-positions table is the
+ * tall dominant left column, and account state / watchlist / insights stack
+ * on the right rail. The period-performance KPI band sits at the bottom — a
  * compact summary below the risk area, never a competing first-row KPI
  * wall (§5.1 area 7, §8.1). The first four areas (command/state bar,
  * alert strip, risk summary, positions) stay above the fold at 2560×1440
  * and effective 1536×960 without zoom. Panels never move; content scrolls
  * inside them.
+ *
+ * S06 (R035): the grid-template-columns / -rows / -areas are computed from
+ * the active saved view's layout config and applied inline by
+ * WorkstationShell (see src/lib/workstation-view-types.ts). The CSS below
+ * only owns the grid's container behavior (grow, gap, padding); without an
+ * inline template the grid falls back to implicit single-column placement.
  */
 .ws-grid {
   flex: 1;
@@ -353,15 +397,6 @@
   display: grid;
   gap: var(--ws-space-3);
   padding: var(--ws-space-3);
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
-  grid-template-areas:
-    "risk      risk"
-    "positions account"
-    "positions perf"
-    "positions review"
-    "positions watchlist"
-    "kpis      kpis";
 }
 
 .ws-panel-meta {
