@@ -401,7 +401,7 @@ test.describe('workstation shell at 1440x900', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', () => {
-  test('renders 9 column headers (Symbol, Attribution, Side/qty, Avg cost, Mark, Unrealized P&L, Active stop, Current risk, Exposure)', async ({
+  test('renders 9 column headers (Symbol, Attribution, Side/qty, Avg cost, Mark, Unrealized P&L, Active stop, Current risk to stop, Exposure)', async ({
     page,
   }) => {
     await page.goto('/dev/workstation');
@@ -411,7 +411,7 @@ test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', 
     await expect(headers).toHaveCount(9);
     const headerTexts = [
       'Symbol', 'Attribution', 'Side/qty', 'Avg cost', 'Mark',
-      'Unrealized P&L', 'Active stop', 'Current risk', 'Exposure',
+      'Unrealized P&L', 'Active stop', 'Current risk to stop', 'Exposure',
     ];
     for (let i = 0; i < 9; i++) {
       await expect(headers.nth(i)).toHaveText(headerTexts[i]);
@@ -590,12 +590,13 @@ test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', 
 });
 
 test.describe('S03 RiskPanel — current exposure and risk summary band (S04 T02)', () => {
-  test('renders the risk band with all seven current-state cells', async ({ page }) => {
+  test('renders the risk band with all eight current-state cells', async ({ page }) => {
     await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
 
     await expect(page.getByTestId('ws-risk-cell-positions')).toBeVisible();
     await expect(page.getByTestId('ws-risk-cell-open-pnl')).toBeVisible();
+    await expect(page.getByTestId('ws-risk-cell-initial-risk')).toBeVisible();
     await expect(page.getByTestId('ws-risk-cell-open-risk')).toBeVisible();
     await expect(page.getByTestId('ws-risk-cell-heat')).toBeVisible();
     await expect(page.getByTestId('ws-risk-cell-coverage')).toBeVisible();

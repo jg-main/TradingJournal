@@ -17,6 +17,7 @@ export default defineConfig({
       'src/components/workstation/workstation-context.test.tsx',
       'src/components/workstation/data-quality-alert-strip.test.tsx',
       'src/components/workstation/risk-positions-table.test.tsx',
+      'src/components/workstation/risk-panel.test.tsx',
       'src/components/workstation/account-state-panel.test.tsx',
       'src/components/workstation/performance-panel.test.tsx',
       'src/components/workstation/process-review-panel.test.tsx',

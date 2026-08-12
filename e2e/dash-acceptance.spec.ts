@@ -79,6 +79,29 @@ test('DASH-AC-01: all positions fresh with valid stops — complete current valu
     page.getByTestId('ws-panel-risk').locator('.ws-panel-meta'),
   ).toHaveText('current · complete coverage');
 
+  // R032: four distinct risk labels with distinct aggregates — Initial risk
+  // (sum of initialRiskAmount, riskSummary.openRisk) is never conflated with
+  // Open risk (sum of current risk to stop, riskSummary.openRiskToStop).
+  await expect(
+    page.getByTestId('ws-risk-cell-initial-risk').locator('.ws-risk-label'),
+  ).toHaveText('Initial risk');
+  await expect(
+    page.getByTestId('ws-risk-cell-initial-risk').locator('.ws-risk-value'),
+  ).toHaveText('$1,450.00');
+  await expect(
+    page.getByTestId('ws-risk-cell-open-risk').locator('.ws-risk-label'),
+  ).toHaveText('Open risk');
+  await expect(
+    page.getByTestId('ws-risk-cell-open-risk').locator('.ws-risk-value'),
+  ).toHaveText('$783.35');
+  await expect(
+    page.getByTestId('ws-risk-cell-heat').locator('.ws-risk-value'),
+  ).toHaveText('2.80%');
+  // Per-position label 'Current risk to stop' renders in the table header.
+  await expect(
+    page.getByTestId('ws-positions-table').getByText('Current risk to stop'),
+  ).toBeVisible();
+
   // Positions table: three rows, all fresh, no stale/missing indicators.
   const rows = page.getByTestId('ws-positions-table').locator('tbody tr');
   await expect(rows).toHaveCount(3);
@@ -252,6 +275,12 @@ test('DASH-AC-06: no valid stop renders Incomplete coverage, never a deceptive t
       page.getByTestId(`ws-risk-cell-${id}`).locator('.ws-risk-value'),
     ).toHaveText('Incomplete — 1 without a valid stop');
   }
+
+  // R032 distinct meanings: Initial risk is snapshot-derived and historical,
+  // so it stays visible while the current-risk aggregates are qualified.
+  await expect(
+    page.getByTestId('ws-risk-cell-initial-risk').locator('.ws-risk-value'),
+  ).toHaveText('$1,450.00');
 });
 
 // ── DASH-AC-07: no non-flat account positions ───────────────────────────

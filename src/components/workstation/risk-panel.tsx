@@ -17,8 +17,14 @@
 //   Open P&L — signed total when valuation is complete, else the qualified
 //     presentationLabel ('— Partial — N unpriced'); marked-subset P&L as a
 //     subordinate sub-line when the API provides it.
-//   Open risk — stopCoverage.presentationLabel when coverage is partial
-//     ('Incomplete — N without a valid stop'), else riskSummary.openRisk.
+//   Initial risk — riskSummary.openRisk (sum of initialRiskAmount from open
+//     journal trade risk snapshots; R032: recorded at trade open, historical).
+//     Available whenever the API computed it — stop coverage does not gate
+//     it (distinct meaning from Open risk).
+//   Open risk — riskSummary.openRiskToStop (sum of per-position current
+//     risk to stop; R032). stopCoverage.presentationLabel when coverage is
+//     partial ('Incomplete — N without a valid stop'), else the aggregate
+//     — never a total when any included position lacks a valid stop.
 //   Portfolio heat — same stop-coverage gating (§6.6), else heat %.
 //   Stop coverage — withStop/openTrades, or the qualified label when partial.
 //   Gross / Net exposure — metrics.grossExposure / netExposure.
@@ -28,10 +34,9 @@
 // a financial aggregate the API does not provide.
 //
 // Data-testid attributes per slice verification contract:
-//   ws-panel-risk, ws-risk-cell-{positions,open-pnl,open-risk,heat,coverage,gross,net}
+//   ws-panel-risk, ws-risk-cell-{positions,open-pnl,initial-risk,open-risk,heat,coverage,gross,net}
 
 import { useWorkstation } from './workstation-context';
-import type { DashboardV2Response } from '@/lib/accounting/dashboard-v2';
 
 // ── Formatters ──────────────────────────────────────────────────────────
 
@@ -110,9 +115,24 @@ export function RiskPanel() {
       : (valuation.presentationLabel ?? '—');
   const openPnlClass = valuation.state === 'complete' ? pnlClass(riskSummary.openPnl) : '';
 
+  // Initial risk — sum of initialRiskAmount from open journal trade risk
+  // snapshots (R032: recorded at trade open, historical and immutable). The
+  // API computed it whenever snapshots are complete; stop coverage does not
+  // gate it, so it stays visible even when Open risk is qualified.
+  const initialRisk =
+    riskSummary.openRisk !== null
+      ? fmtCurrency(riskSummary.openRisk)
+      : (riskSummary.provenance.presentationLabel ?? 'Incomplete');
+
+  // Open risk — sum of per-position current risk to stop (R032). Complete
+  // only when every included position has a valid active stop and
+  // calculable risk; a partial coverage renders the qualified label, and a
+  // null aggregate under complete coverage renders 'Incomplete'.
   const openRisk = coveragePartial
     ? (stopCoverage.presentationLabel ?? 'Incomplete')
-    : fmtCurrency(riskSummary.openRisk);
+    : riskSummary.openRiskToStop !== null
+      ? fmtCurrency(riskSummary.openRiskToStop)
+      : 'Incomplete';
   const heat = coveragePartial
     ? (stopCoverage.presentationLabel ?? 'Incomplete')
     : fmtPct(riskSummary.portfolioHeat);
@@ -155,6 +175,11 @@ export function RiskPanel() {
           sub={markedSubset}
           valueClassName={openPnlClass}
           testId="ws-risk-cell-open-pnl"
+        />
+        <RiskCell
+          label="Initial risk"
+          value={initialRisk}
+          testId="ws-risk-cell-initial-risk"
         />
         <RiskCell
           label="Open risk"

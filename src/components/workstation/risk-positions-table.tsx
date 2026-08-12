@@ -20,7 +20,8 @@
 //   Unrealized P&L— value, or — when incalculable (a partial sum is never
 //                   presented as a complete value)
 //   Active stop   — effective stop price or 'No valid stop'
-//   Current risk  — remaining risk-to-stop or 'Incomplete'
+//   Current risk to stop — remaining risk-to-stop or 'Incomplete' (R032
+//                   label; distinct per-position current risk to stop)
 //   Exposure      — marked value with mark-completeness state
 //
 // Default sort (R034): missing/invalid stop first, then missing/stale mark,
@@ -252,7 +253,7 @@ export function RiskPositionsTable({
               <th className="ws-num">Mark</th>
               <th className="ws-num">Unrealized P&L</th>
               <th className="ws-num">Active stop</th>
-              <th className="ws-num">Current risk</th>
+              <th className="ws-num">Current risk to stop</th>
               <th className="ws-num">Exposure</th>
             </tr>
           </thead>

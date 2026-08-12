@@ -241,7 +241,7 @@ describe('RiskPositionsTable', () => {
       'Mark',
       'Unrealized P&L',
       'Active stop',
-      'Current risk',
+      'Current risk to stop',
       'Exposure',
     ]);
   });
