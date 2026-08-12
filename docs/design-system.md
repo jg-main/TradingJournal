@@ -476,6 +476,12 @@ them with local formatting.
    zero and missing values use `text-muted-foreground`.
 6. **Consistency.** Currency, price, percentage, quantity, and R-multiple
    formatting stays consistent with the accepted formatters.
+7. **Aligned metric matrices.** In compact metric groups, labels sit on the
+   start edge and financial values, percentages, ratios, quantities, and
+   counts share an end-aligned numeric edge. Put source, scope, and as-of text
+   below or immediately beside its related label/value; do not distribute a
+   scalar row across three distant columns. A wide panel gains density or a
+   comparison table — it does not add blank space around numbers.
 
 ---
 
@@ -521,6 +527,22 @@ P&L/data completeness, account state, and material warnings appear before
 retrospective analytics. Saved views may rearrange the workstation for a
 specific workflow; drag/resize affordances appear only in explicit
 customization mode.
+
+The Risk & Positions default has one layout hierarchy: a full-width Main Risk
+Metrics band; one equal-width three-panel summary row for Account State,
+Performance, and Review Metrics; then a full-width trades workspace with
+open/current and closed/historical tabs. Analysis charts are a separate,
+full-width tabbed workspace below trades when implemented. Do not put charts
+inside the compact summary row and do not reserve a tall blank panel before a
+chart has useful data.
+
+**Metric-group layout.** Summary panels use compact label/value rows or
+matrices. The label and qualifying scope are start-aligned; comparable values
+are end-aligned with tabular numerals. Monetary values, percentages, ratios,
+quantities, and counts never centre-align or receive equal-width KPI tiles
+merely to fill their container. Do not use `justify-content: space-between`
+across a label, value, and unrelated metadata item; metadata belongs in the
+label/value stack instead.
 
 **Readability contract.** Review the dashboard at `2560 × 1440` with normal
 browser zoom and at a `1920 × 1200` laptop using 125% display scaling
@@ -790,6 +812,8 @@ to arbitrary colors, theme-blind rendering, or ambiguous meaning.
 | Pill shapes on standard buttons/inputs | Violates the restrained radius family | `rounded-md`/`rounded-lg` family |
 | Large decorative shadows on ordinary panels | Borders must carry separation; shadows are for overlays | `border-border`; `shadow-md`/`lg` only on floating surfaces |
 | Multiple competing accent colors per surface | "Quiet until attention is required" | One Steel Blue accent; neutral everywhere else |
+| A broad KPI tile or three-way metric row for scalar data | Wastes desktop space and prevents numeric comparison | Compact label/value metric matrix with a common right numeric edge |
+| A chart inside a summary panel or a tall empty future-chart placeholder | Displaces current risk and positions without adding a decision | Full-width analysis tabs below the trades workspace, once chart data is available |
 
 **Acceptance rule:** a repo-wide scan for arbitrary color literals in migrated
 surfaces returns zero hits. Every color on screen traces back to a token in

@@ -39,13 +39,22 @@ Core first-screen domains:
 - Comparative or process analysis.
 - Critical warnings.
 
-Default 12-column concept:
+Default dense composition:
 
 ```text
-Current Risk | Open Positions & Data State
-Account State | Equity & Drawdown | Material Warnings
-Period Performance | Comparative Analysis | Process Review
+Main Risk Metrics (full width)
+Account State | Performance (data points, no charts) | Review Metrics
+Trades workspace — Open/current and Closed/historical tabs (full width)
+Analysis charts — full-width tabs below trades, once supported by real data
 ```
+
+The three summary panels use equal-width tracks at the target desktop
+viewports. Wide space belongs to the risk band, the trades table, and later
+comparative charts — never to a single scalar metric or an empty placeholder.
+Use compact label/value metric matrices: labels and qualifying scope start
+aligned; money, percentages, ratios, quantities, and counts share an
+end-aligned tabular-numeric edge. Keep source/as-of metadata subordinate to
+the related label or value; do not create a third widely distributed column.
 
 Recommended density:
 
@@ -70,8 +79,16 @@ Table rows: 36–40 px
 - Ship a stable default view. Saved views may rearrange or hide widgets for a
   specific workflow, but drag/resize controls belong only to explicit
   customization mode.
+- The installed `react-grid-layout` is the standard implementation for
+  draggable/resizable saved views. Use one validated, versioned layout model;
+  preserve user-owned saved views when default layout versions change.
+- The alert strip, main risk band, and trades workflow remain reliable anchors
+  in the curated default. Customization changes panel placement only in an
+  explicit arrangement session with visible handles, Save, Cancel, Undo, and
+  Reset; normal mode has no drag or resize affordances.
 
 Do not use one card per KPI, full-width low-information widgets, fixed chart
 heights in resizable containers, multiple dashboard grids, permanent drag
-handles, open positions below the fold, or live polling that refreshes all
-historical analytics.
+handles, open positions below the fold, wide scalar KPI tiles, three-way
+distributed metric rows, tall blank chart placeholders, or live polling that
+refreshes all historical analytics.

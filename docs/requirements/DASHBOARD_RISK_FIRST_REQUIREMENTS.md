@@ -1,5 +1,11 @@
 # Risk-First Dashboard Requirements
 
+> **Follow-on display requirement (2026-08-12):**
+> [Dense Dashboard Layout and Data Display Requirements](DASHBOARD_DENSE_LAYOUT_REQUIREMENTS.md)
+> supersedes this document's default-widget distribution and summary-panel
+> presentation. The current-state, metric, provenance, and reconciliation
+> contracts in this document remain authoritative.
+
 **Status:** Ready for development planning  
 **Owner:** Trading Journal product  
 **Date:** 2026-08-12  

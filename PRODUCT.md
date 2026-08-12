@@ -30,6 +30,28 @@ saved views to arrange the information for a specific workflow, but layout
 editing is an explicit mode rather than the default experience. The dashboard
 must not become a blank canvas or a collection of miniature widgets.
 
+### Default data layout
+
+The default Risk & Positions view uses wide space according to the shape of
+the decision, not simply the number of widgets. Main Risk Metrics form a
+full-width band. Account State, Performance, and Review Metrics then share a
+compact three-column overview row. The full-width trades workspace follows,
+with clearly labelled current/open and historical/closed tabs. Chart analysis
+is a later, full-width tabbed workspace below trades; it never inflates an
+overview panel or appears as a large empty chart placeholder.
+
+Each overview panel presents a compact label-and-value matrix. Labels and
+their qualifying scope stay at the start edge; comparable money, percentages,
+ratios, quantities, and counts share a right-aligned numeric edge. A broad
+screen gives the trader more useful rows and clearer comparison — not larger
+gaps around a scalar number.
+
+Saved views are a deliberate exception to this stable starting point. In an
+explicit arrangement mode, a trader may drag and resize eligible panels and
+save the result as a personal view. The risk strip, trade workflow, and
+material data-quality warnings remain reliable anchors; normal dashboard use
+contains no permanent drag chrome or competing internal scrollbars.
+
 Price-derived values earn trust by making their scope and data state legible.
 The interface must distinguish a current, complete value from a stale, partial,
 or unavailable one; it must not silently make incomplete market data look like

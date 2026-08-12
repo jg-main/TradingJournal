@@ -117,6 +117,31 @@ normal mode; use redesign modes only when a task explicitly changes workflow
 structure or information architecture. Any future parallel replacement needs
 an explicit coexistence and cutover decision.
 
+### Dashboard layout and data-display policy
+
+The risk-first dashboard is a dense operational workstation, not a set of
+independently expanding cards. Its curated default dedicates full width to the
+main risk summary and the trade table; Account State, Performance, and Review
+Metrics share one compact equal-width summary row between them. Analytical
+charts belong below the trade workflow, not inside a summary widget or in a
+large empty placeholder.
+
+Within a metric group, labels occupy the start edge and all financial,
+percentage, ratio, quantity, and count values occupy a common end-aligned
+numeric edge with tabular numerals. Supporting scope, source, and timestamp
+text is subordinate to its label or value; it must not create a third
+widely-spaced data column. Wide space is reserved for comparison tables and
+charts, never for a scalar value.
+
+Saved views may support drag and resize only in an explicit arrangement mode.
+Keep the alert strip, main risk metrics, and trade workflow protected in the
+curated default; expose a visible drag handle and constrained resize control
+only while arranging a user-owned view. Reuse the installed
+`react-grid-layout` package for this interaction unless an implementation
+review documents a concrete gap. Persist only validated, versioned layout
+data, preserve user-owned views during a layout migration, and never make
+ordinary reading depend on nested panel scrollbars.
+
 ## Commands
 
 - Install/bootstrap: `make setup`
