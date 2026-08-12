@@ -5,7 +5,8 @@
  * grid computation.
  *
  * Coverage:
- * - Catalogue integrity (ids, titles, hide/fill/resize declarations)
+ * - Catalogue integrity (ids, titles, hide/fill/resize declarations,
+ *   per-panel arrangement constraints)
  * - Template integrity (three curated templates, rectangular catalogue-only
  *   grids, consistency between areas and defaultHidden)
  * - Factories (createViewFromTemplate, resetViewToTemplate, clone)
@@ -118,9 +119,9 @@ describe('panel catalogue', () => {
     }
   });
 
-  it('marks exactly risk/positions/kpis as fixed and the rest optional', () => {
+  it('marks exactly risk/trades as fixed and the rest optional', () => {
     expect([...FIXED_PANEL_IDS].sort()).toEqual(
-      [WORKSTATION_PANEL_IDS.RISK, WORKSTATION_PANEL_IDS.POSITIONS, WORKSTATION_PANEL_IDS.KPIS].sort(),
+      [WORKSTATION_PANEL_IDS.RISK, WORKSTATION_PANEL_IDS.TRADES].sort(),
     );
     expect([...OPTIONAL_PANEL_IDS].sort()).toEqual(
       [
@@ -138,21 +139,82 @@ describe('panel catalogue', () => {
     for (const title of titles) expect(title.length).toBeGreaterThan(0);
   });
 
-  it('declares content-sized bands for risk and kpis, fill panels elsewhere', () => {
+  it('declares content-sized risk band and fill panels elsewhere', () => {
     expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.RISK].fill).toBe(false);
-    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.KPIS].fill).toBe(false);
     for (const id of OPTIONAL_PANEL_IDS) {
       expect(WORKSTATION_PANEL_CATALOGUE[id].fill, `optional panel ${id} fills`).toBe(true);
     }
-    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.POSITIONS].fill).toBe(true);
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.TRADES].fill).toBe(true);
   });
 
-  it('declares risk and kpis as non-resizable, everything else resizable', () => {
+  it('declares risk and trades non-draggable/non-resizable, everything else movable', () => {
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.RISK].canDrag).toBe(false);
     expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.RISK].canResize).toBe(false);
-    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.KPIS].canResize).toBe(false);
-    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.POSITIONS].canResize).toBe(true);
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.TRADES].canDrag).toBe(false);
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.TRADES].canResize).toBe(false);
     for (const id of OPTIONAL_PANEL_IDS) {
+      expect(WORKSTATION_PANEL_CATALOGUE[id].canDrag, `optional panel ${id} draggable`).toBe(true);
       expect(WORKSTATION_PANEL_CATALOGUE[id].canResize, `optional panel ${id} resizable`).toBe(true);
+    }
+  });
+});
+
+// ── Per-panel arrangement constraints ────────────────────────────────────
+
+describe('panel constraints', () => {
+  it('declares sane positive integer bounds for every panel (min ≤ max)', () => {
+    for (const id of PANEL_IDS) {
+      const def = WORKSTATION_PANEL_CATALOGUE[id];
+      for (const bound of [def.minW, def.maxW, def.minH, def.maxH]) {
+        expect(Number.isInteger(bound) && bound > 0, `${id} ${bound} positive integer`).toBe(true);
+      }
+      expect(def.minW, `${id} minW ≤ maxW`).toBeLessThanOrEqual(def.maxW);
+      expect(def.minH, `${id} minH ≤ maxH`).toBeLessThanOrEqual(def.maxH);
+    }
+  });
+
+  it('locks fixed panels full-width with non-draggable/non-resizable arrangement', () => {
+    for (const id of FIXED_PANEL_IDS) {
+      const def = WORKSTATION_PANEL_CATALOGUE[id];
+      expect(def.canDrag, `${id} non-draggable`).toBe(false);
+      expect(def.canResize, `${id} non-resizable`).toBe(false);
+      // Full-width lock: the width bounds are pinned so neither the risk
+      // anchor nor the trades workspace can be compressed into a rail.
+      expect(def.minW, `${id} minW === maxW`).toBe(def.maxW);
+      expect(def.minW, `${id} full-width`).toBe(3);
+    }
+  });
+
+  it('keeps the risk anchor full-width at one row', () => {
+    const risk = WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.RISK];
+    expect(risk.minW).toBe(3);
+    expect(risk.maxW).toBe(3);
+    expect(risk.minH).toBe(1);
+    expect(risk.maxH).toBe(1);
+  });
+
+  it('keeps the trades workspace full-width so it can never become a narrow rail', () => {
+    const trades = WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.TRADES];
+    expect(trades.minW).toBe(3);
+    expect(trades.maxW).toBe(3);
+    // Meaningful minimum height: the workspace must never collapse into a
+    // single-row sliver.
+    expect(trades.minH).toBeGreaterThan(1);
+  });
+
+  it('allows summary panels to resize within the 3-column dense grid bounds', () => {
+    for (const id of [
+      WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.PERFORMANCE,
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]) {
+      const def = WORKSTATION_PANEL_CATALOGUE[id];
+      // At least one readable grid column, never wider than the full grid.
+      expect(def.minW, `${id} minW readable`).toBeGreaterThanOrEqual(1);
+      expect(def.maxW, `${id} maxW within grid`).toBeLessThanOrEqual(3);
+      // Compact by design: content-sized summaries must not grow into walls.
+      expect(def.maxH, `${id} maxH compact`).toBeLessThanOrEqual(3);
     }
   });
 });
@@ -192,9 +254,8 @@ describe('system templates', () => {
     expect(riskPositions.areas).toEqual([
       ['risk', 'risk'],
       ['perf', 'account'],
-      ['positions', 'positions'],
+      ['trades', 'trades'],
       ['review', 'review'],
-      ['kpis', 'kpis'],
     ]);
     expect(riskPositions.defaultHidden).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
 
@@ -220,7 +281,7 @@ describe('system templates', () => {
     }
     // The rendered grid of the derived view matches the template base.
     expect(computeGridTemplateAreas(createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE))).toBe(
-      '"risk risk" "positions account" "perf perf" "perf perf" "kpis kpis"',
+      '"risk risk" "trades account" "perf perf" "perf perf"',
     );
   });
 });
@@ -295,14 +356,14 @@ describe('computeGridTemplateAreas', () => {
   it('serializes the Risk & Positions grid exactly', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     expect(computeGridTemplateAreas(config)).toBe(
-      '"risk risk" "perf account" "positions positions" "review review" "kpis kpis"',
+      '"risk risk" "perf account" "trades trades" "review review"',
     );
   });
 
   it('serializes the Performance template with its full-width panel band', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
     expect(computeGridTemplateAreas(config)).toBe(
-      '"risk risk" "positions account" "perf perf" "perf perf" "kpis kpis"',
+      '"risk risk" "trades account" "perf perf" "perf perf"',
     );
   });
 
@@ -311,7 +372,7 @@ describe('computeGridTemplateAreas', () => {
     config.areas[1][1] = GRID_EMPTY_CELL;
     config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.ACCOUNT];
     expect(computeGridTemplateAreas(config)).toBe(
-      '"risk risk" "perf ." "positions positions" "review review" "kpis kpis"',
+      '"risk risk" "perf ." "trades trades" "review review"',
     );
   });
 });
@@ -326,8 +387,8 @@ describe('computeGridTemplateColumns', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     config.areas = [
       ['risk', 'risk', 'risk'],
-      ['positions', 'account', 'watchlist'],
-      ['kpis', 'kpis', 'kpis'],
+      ['trades', 'account', 'watchlist'],
+      ['review', 'review', 'review'],
     ];
     expect(computeGridTemplateColumns(config)).toBe('minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)');
   });
@@ -337,19 +398,18 @@ describe('computeGridTemplateRows', () => {
   it('sizes content bands auto and fill rows 1fr for Risk & Positions', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     expect(computeGridTemplateRows(config)).toBe(
-      'auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto',
+      'auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)',
     );
   });
 
   it('collapses an all-empty row to auto (zero height)', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
-    // Positions (a fixed panel) stays visible as a full-width row; the
+    // Trades (a fixed panel) stays visible as a full-width row; the
     // middle row is fully empty because every optional panel is hidden.
     config.areas = [
       ['risk', 'risk'],
       [GRID_EMPTY_CELL, GRID_EMPTY_CELL],
-      ['positions', 'positions'],
-      ['kpis', 'kpis'],
+      ['trades', 'trades'],
     ];
     config.hiddenPanels = [
       WORKSTATION_PANEL_IDS.ACCOUNT,
@@ -358,12 +418,12 @@ describe('computeGridTemplateRows', () => {
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ];
     expect(validateWorkstationViewConfig(config)).toEqual([]);
-    expect(computeGridTemplateRows(config)).toBe('auto auto minmax(0, 1fr) auto');
+    expect(computeGridTemplateRows(config)).toBe('auto auto minmax(0, 1fr)');
   });
 
   it('keeps fill rows stretched for the Performance template', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
-    expect(computeGridTemplateRows(config)).toBe('auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto');
+    expect(computeGridTemplateRows(config)).toBe('auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)');
   });
 
   it('keeps rows with any fill panel stretched even when a rail cell is empty', () => {
@@ -371,7 +431,7 @@ describe('computeGridTemplateRows', () => {
     config.areas[1][1] = GRID_EMPTY_CELL;
     config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.ACCOUNT];
     expect(computeGridTemplateRows(config)).toBe(
-      'auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto',
+      'auto minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)',
     );
   });
 });
@@ -379,7 +439,7 @@ describe('computeGridTemplateRows', () => {
 describe('computeDocumentFlowGridTemplateRows', () => {
   it('content-sizes every Risk & Positions band so document flow does not create blank 1fr panels', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
-    expect(computeDocumentFlowGridTemplateRows(config)).toBe('auto auto auto auto auto');
+    expect(computeDocumentFlowGridTemplateRows(config)).toBe('auto auto auto auto');
   });
 });
 
@@ -388,11 +448,10 @@ describe('computeVisiblePanels', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     expect(computeVisiblePanels(config)).toEqual([
       WORKSTATION_PANEL_IDS.RISK,
-      WORKSTATION_PANEL_IDS.POSITIONS,
+      WORKSTATION_PANEL_IDS.TRADES,
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
       WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
-      WORKSTATION_PANEL_IDS.KPIS,
     ]);
   });
 
@@ -400,10 +459,9 @@ describe('computeVisiblePanels', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
     expect(computeVisiblePanels(config)).toEqual([
       WORKSTATION_PANEL_IDS.RISK,
-      WORKSTATION_PANEL_IDS.POSITIONS,
+      WORKSTATION_PANEL_IDS.TRADES,
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
-      WORKSTATION_PANEL_IDS.KPIS,
     ]);
   });
 
@@ -462,8 +520,7 @@ describe('validateWorkstationViewConfig — positives', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     config.areas = [
       ['risk'],
-      ['positions'],
-      ['kpis'],
+      ['trades'],
     ];
     config.hiddenPanels = [
       WORKSTATION_PANEL_IDS.ACCOUNT,
@@ -502,7 +559,7 @@ describe('validateWorkstationViewConfig — negatives', () => {
 
   it('rejects ragged (non-rectangular) grids', () => {
     const config = base();
-    config.areas[2] = ['positions'];
+    config.areas[2] = ['trades'];
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('rectangular'))).toBe(true);
   });
@@ -510,10 +567,11 @@ describe('validateWorkstationViewConfig — negatives', () => {
   it('rejects a panel split into two disconnected regions', () => {
     const config = base();
     // Watchlist appears in two disconnected cells after replacing account
-    // and the KPI cell. It remains hidden in the template declaration, so
-    // this also exercises that no second location can be introduced casually.
+    // and a full-width row cell. It remains hidden in the template
+    // declaration, so this also exercises that no second location can be
+    // introduced casually.
     config.areas[1][1] = WORKSTATION_PANEL_IDS.WATCHLIST;
-    config.areas[4][1] = WORKSTATION_PANEL_IDS.WATCHLIST;
+    config.areas[3][1] = WORKSTATION_PANEL_IDS.WATCHLIST;
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('single contiguous rectangle'))).toBe(true);
     expect(issues).not.toHaveLength(0);
@@ -522,10 +580,10 @@ describe('validateWorkstationViewConfig — negatives', () => {
   it('rejects an L-shaped (non-rectangular) region', () => {
     const config = base();
     // Performance normally occupies [1][0]. Extend it into the following
-    // full-width Open Positions row to create a non-rectangular L-shape.
+    // full-width Trades row to create a non-rectangular L-shape.
     config.areas[2][0] = WORKSTATION_PANEL_IDS.PERFORMANCE;
     config.areas[2][1] = WORKSTATION_PANEL_IDS.PERFORMANCE;
-    // Positions disappeared from areas → consistency error as well; check region error exists.
+    // Trades disappeared from areas → consistency error as well; check region error exists.
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('single contiguous rectangle'))).toBe(true);
   });
@@ -539,8 +597,8 @@ describe('validateWorkstationViewConfig — negatives', () => {
 
   it('rejects a required panel missing from the grid', () => {
     const config = base();
-    config.areas[4] = [GRID_EMPTY_CELL, GRID_EMPTY_CELL];
-    config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.KPIS];
+    config.areas[2] = [GRID_EMPTY_CELL, GRID_EMPTY_CELL];
+    config.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.TRADES];
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('cannot be hidden'))).toBe(true);
   });
@@ -632,7 +690,7 @@ describe('validateWorkstationViewConfig — negatives', () => {
 
   it('rejects a row that is not an array', () => {
     const config = base() as unknown as { areas: unknown[] };
-    config.areas[1] = 'positions account';
+    config.areas[1] = 'trades account';
     expect(validateWorkstationViewConfig(config).some((i) => i.includes('row 1 is not an array'))).toBe(
       true,
     );

@@ -46,19 +46,18 @@
  * Immutable map of workstation panel identifiers.
  *
  * Each id doubles as the CSS grid-area name consumed by the workstation
- * panels (e.g. `style={{ gridArea: 'positions' }}`), so panel ids must stay
+ * panels (e.g. `style={{ gridArea: 'trades' }}`), so panel ids must stay
  * in sync with the `gridArea` values in `src/components/workstation/*`.
  *
  * Convention: kebab-free lowercase single words matching the grid area.
  */
 export const WORKSTATION_PANEL_IDS = {
   RISK: 'risk',
-  POSITIONS: 'positions',
+  TRADES: 'trades',
   ACCOUNT: 'account',
   PERFORMANCE: 'perf',
   PROCESS_REVIEW: 'review',
   WATCHLIST: 'watchlist',
-  KPIS: 'kpis',
 } as const;
 
 /** Union type of all registered workstation panel id string values. */
@@ -67,12 +66,11 @@ export type WorkstationPanelId = (typeof WORKSTATION_PANEL_IDS)[keyof typeof WOR
 /** Ordered panel list (stable iteration order for UI and derivation helpers). */
 export const WORKSTATION_PANEL_ID_LIST: readonly WorkstationPanelId[] = [
   WORKSTATION_PANEL_IDS.RISK,
-  WORKSTATION_PANEL_IDS.POSITIONS,
+  WORKSTATION_PANEL_IDS.TRADES,
   WORKSTATION_PANEL_IDS.ACCOUNT,
   WORKSTATION_PANEL_IDS.PERFORMANCE,
   WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
   WORKSTATION_PANEL_IDS.WATCHLIST,
-  WORKSTATION_PANEL_IDS.KPIS,
 ];
 
 /** Empty-grid cell marker used inside `areas` grids. */
@@ -82,13 +80,17 @@ export const GRID_EMPTY_CELL = '.';
  * Metadata for one workstation panel in the approved catalogue.
  *
  * `canHide: false` marks the fixed safety/data-quality areas that stay
- * visible in every view (Risk & Positions contract: the alert strip is
- * outside the grid entirely, while `risk`, `positions`, and `kpis` are the
- * always-visible grid panels). `canResize` declares which panels may take a
- * different declared size in a customized view (R035: "resize
- * declared-resizable panels"). `fill` drives row sizing in
- * `computeGridTemplateRows`: content-sized bands (`risk`, `kpis`) use `auto`,
- * all other panels stretch with `minmax(0, 1fr)`.
+ * visible in every view (dense-model contract: the alert strip is outside
+ * the grid entirely, while `risk` and `trades` are the always-visible grid
+ * panels). `canDrag`/`canResize` declare which panels may be moved or
+ * resized in saved-view arrangement mode (dense requirements: Main Risk
+ * Metrics and the Trades workspace are protected anchors; summary panels
+ * are resizable within readable bounds). `minW`/`maxW`/`minH`/`maxH` are
+ * the declared size constraints in arrangement-grid units (the dense
+ * template grid has 3 columns; rows are arrangement rows) — a fixed panel
+ * declares `minW === maxW` and `minH === maxH`. `fill` drives row sizing in
+ * `computeGridTemplateRows`: the content-sized risk band uses `auto`, all
+ * other panels stretch with `minmax(0, 1fr)`.
  */
 export interface WorkstationPanelDefinition {
   /** Unique panel identifier (matches the CSS grid-area name). */
@@ -99,8 +101,18 @@ export interface WorkstationPanelDefinition {
   readonly description: string;
   /** Whether the panel can be hidden by the user (false = always visible). */
   readonly canHide: boolean;
-  /** Whether the panel is declared resizable in customized views. */
+  /** Whether the panel can be dragged in arrangement mode (false = fixed position). */
+  readonly canDrag: boolean;
+  /** Whether the panel can be resized in arrangement mode (false = fixed size). */
   readonly canResize: boolean;
+  /** Minimum grid-column span in arrangement-grid columns. */
+  readonly minW: number;
+  /** Maximum grid-column span in arrangement-grid columns. */
+  readonly maxW: number;
+  /** Minimum grid-row span in arrangement rows. */
+  readonly minH: number;
+  /** Maximum grid-row span in arrangement rows. */
+  readonly maxH: number;
   /** Whether the panel's row stretches to fill available height. */
   readonly fill: boolean;
 }
@@ -113,65 +125,92 @@ export interface WorkstationPanelDefinition {
 export const WORKSTATION_PANEL_CATALOGUE = {
   [WORKSTATION_PANEL_IDS.RISK]: {
     id: WORKSTATION_PANEL_IDS.RISK,
-    title: 'Risk',
-    description: 'Current exposure and risk summary band (R034 area 3).',
+    title: 'Main Risk Metrics',
+    description:
+      'Current exposure and risk summary band — full-width protected anchor (dense requirements: complete grid width below the data-quality alert).',
     canHide: false,
+    canDrag: false,
     canResize: false,
+    minW: 3,
+    maxW: 3,
+    minH: 1,
+    maxH: 1,
     fill: false,
   } satisfies WorkstationPanelDefinition,
 
-  [WORKSTATION_PANEL_IDS.POSITIONS]: {
-    id: WORKSTATION_PANEL_IDS.POSITIONS,
-    title: 'Open Positions',
-    description: 'Open account positions table — the primary full-width operational table in Risk & Positions.',
+  [WORKSTATION_PANEL_IDS.TRADES]: {
+    id: WORKSTATION_PANEL_IDS.TRADES,
+    title: 'Trades Workspace',
+    description:
+      'Full-width open/current and closed/historical trade workflow — the primary operational workspace, never compressed into a side panel.',
     canHide: false,
-    canResize: true,
+    canDrag: false,
+    canResize: false,
+    minW: 3,
+    maxW: 3,
+    minH: 3,
+    maxH: 12,
     fill: true,
   } satisfies WorkstationPanelDefinition,
 
   [WORKSTATION_PANEL_IDS.ACCOUNT]: {
     id: WORKSTATION_PANEL_IDS.ACCOUNT,
     title: 'Account State',
-    description: 'Account state and drawdown: NAV, cash, marked value, drawdown (R034 area 5).',
+    description:
+      'Compact summary: account balances, valuation state, current Open P&L, realized/total P&L with stated scope, and drawdown (dense summary row).',
     canHide: true,
+    canDrag: true,
     canResize: true,
+    minW: 1,
+    maxW: 3,
+    minH: 1,
+    maxH: 3,
     fill: true,
   } satisfies WorkstationPanelDefinition,
 
   [WORKSTATION_PANEL_IDS.PERFORMANCE]: {
     id: WORKSTATION_PANEL_IDS.PERFORMANCE,
     title: 'Performance',
-    description: 'Period performance, equity/drawdown, calendar, and breakdowns (R034 area 7, Performance view).',
+    description:
+      'Compact period metrics only: net P&L, return, closed-decision count, win rate, profit factor, average R, and related data points (dense summary row, no charts).',
     canHide: true,
+    canDrag: true,
     canResize: true,
+    minW: 1,
+    maxW: 3,
+    minH: 1,
+    maxH: 3,
     fill: true,
   } satisfies WorkstationPanelDefinition,
 
   [WORKSTATION_PANEL_IDS.PROCESS_REVIEW]: {
     id: WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
-    title: 'Process Review',
-    description: 'Setup, direction, execution quality, checklist, and review metrics (Process Review view).',
+    title: 'Review Metrics',
+    description:
+      'Compact, action-oriented summary of process score, checklist/mistake coverage, directional or setup insights, and highest-attention items (dense summary row).',
     canHide: true,
+    canDrag: true,
     canResize: true,
+    minW: 1,
+    maxW: 3,
+    minH: 1,
+    maxH: 3,
     fill: true,
   } satisfies WorkstationPanelDefinition,
 
   [WORKSTATION_PANEL_IDS.WATCHLIST]: {
     id: WORKSTATION_PANEL_IDS.WATCHLIST,
     title: 'Watchlist',
-    description: 'Optional saved-view attention surface; available separately from the curated Risk & Positions flow.',
+    description:
+      'Optional saved-view attention surface; available separately from the curated Risk & Positions flow.',
     canHide: true,
+    canDrag: true,
     canResize: true,
+    minW: 1,
+    maxW: 3,
+    minH: 1,
+    maxH: 3,
     fill: true,
-  } satisfies WorkstationPanelDefinition,
-
-  [WORKSTATION_PANEL_IDS.KPIS]: {
-    id: WORKSTATION_PANEL_IDS.KPIS,
-    title: 'Period KPIs',
-    description: 'Compact period-performance KPI band at the bottom (R034 area 7, never a competing first-row wall).',
-    canHide: false,
-    canResize: false,
-    fill: false,
   } satisfies WorkstationPanelDefinition,
 } as const satisfies Record<WorkstationPanelId, WorkstationPanelDefinition>;
 
@@ -216,7 +255,7 @@ export type WorkstationTemplateId =
  * panel id or `.`. Hidden-by-default optional panels are declared in
  * `defaultHidden` and have no cells in the base grid (customization may
  * introduce `.` cells when it hides a panel). The fixed panels
- * (`risk`, `positions`, `kpis`) are present in every template grid.
+ * (`risk`, `trades`) are present in every template grid.
  */
 export interface WorkstationTemplate {
   readonly id: WorkstationTemplateId;
@@ -238,15 +277,15 @@ export interface WorkstationTemplate {
  *
  * - **risk-positions** — the immutable default and startup view. Current
  *   risk spans the top, Performance and Account State share a balanced
- *   overview row, and full-width Open Positions and Process Review follow
- *   in document flow. Watchlist is deliberately excluded from this curated
+ *   overview row, and full-width Trades and Review Metrics follow in
+ *   document flow. Watchlist is deliberately excluded from this curated
  *   starting layout, while remaining available to saved custom views and its
  *   dedicated navigation surface.
- * - **performance** — positions and account state remain visible; a
+ * - **performance** — trades and account state remain visible; a
  *   prominent full-width Performance panel dominates the lower grid; the
- *   watchlist and process-review panels are hidden by default.
- * - **process-review** — positions and account state remain visible; a
- *   prominent full-width Process Review panel dominates the lower grid; the
+ *   watchlist and review-metrics panels are hidden by default.
+ * - **process-review** — trades and account state remain visible; a
+ *   prominent full-width Review Metrics panel dominates the lower grid; the
  *   performance and watchlist panels are hidden by default.
  */
 export const WORKSTATION_TEMPLATES = {
@@ -254,14 +293,13 @@ export const WORKSTATION_TEMPLATES = {
     id: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
     name: 'Risk & Positions',
     description:
-      'The curated default: risk summary, paired Performance and Account State, then full-width Open Positions and Process Review in document flow. Watchlist remains available through saved custom views and its dedicated page. Immutable system default and startup view.',
+      'The curated default: risk summary, paired Performance and Account State, then full-width Trades and Review Metrics in document flow. Watchlist remains available through saved custom views and its dedicated page. Immutable system default and startup view.',
     columns: [1, 1],
     areas: [
       ['risk', 'risk'],
       ['perf', 'account'],
-      ['positions', 'positions'],
+      ['trades', 'trades'],
       ['review', 'review'],
-      ['kpis', 'kpis'],
     ],
     defaultHidden: [WORKSTATION_PANEL_IDS.WATCHLIST],
     isSystemDefault: true,
@@ -271,14 +309,13 @@ export const WORKSTATION_TEMPLATES = {
     id: WORKSTATION_TEMPLATE_IDS.PERFORMANCE,
     name: 'Performance',
     description:
-      'Period performance, equity/drawdown, calendar, and breakdowns: a prominent full-width Performance panel below the always-visible positions and account-state row.',
+      'Period performance, equity/drawdown, calendar, and breakdowns: a prominent full-width Performance panel below the always-visible trades and account-state row.',
     columns: [2, 1],
     areas: [
       ['risk', 'risk'],
-      ['positions', 'account'],
+      ['trades', 'account'],
       ['perf', 'perf'],
       ['perf', 'perf'],
-      ['kpis', 'kpis'],
     ],
     defaultHidden: [WORKSTATION_PANEL_IDS.WATCHLIST, WORKSTATION_PANEL_IDS.PROCESS_REVIEW],
     isSystemDefault: false,
@@ -288,14 +325,13 @@ export const WORKSTATION_TEMPLATES = {
     id: WORKSTATION_TEMPLATE_IDS.PROCESS_REVIEW,
     name: 'Process Review',
     description:
-      'Setup, direction, execution quality, checklist, and review metrics: a prominent full-width Process Review panel below the always-visible positions and account-state row.',
+      'Setup, direction, execution quality, checklist, and review metrics: a prominent full-width Review Metrics panel below the always-visible trades and account-state row.',
     columns: [2, 1],
     areas: [
       ['risk', 'risk'],
-      ['positions', 'account'],
+      ['trades', 'account'],
       ['review', 'review'],
       ['review', 'review'],
-      ['kpis', 'kpis'],
     ],
     defaultHidden: [WORKSTATION_PANEL_IDS.PERFORMANCE, WORKSTATION_PANEL_IDS.WATCHLIST],
     isSystemDefault: false,
@@ -532,7 +568,7 @@ export function isValidWorkstationViewConfig(value: unknown): value is Workstati
 
 /**
  * Serialize a view's areas grid into the CSS `grid-template-areas` value,
- * e.g. `"risk risk" "positions account" "kpis kpis"`.
+ * e.g. `"risk risk" "trades account" "trades trades"`.
  *
  * The areas grid is already the rendered truth (hidden panels have no cells;
  * a hidden panel's former cells appear as `.`), so this is a pure
@@ -562,8 +598,8 @@ export function computeGridTemplateColumns(config: WorkstationViewConfig): strin
 
 /**
  * Compute the CSS `grid-template-rows` value for a view: rows containing a
- * fill panel stretch with `minmax(0, 1fr)`; content-sized bands (`risk`,
- * `kpis`) and empty rows use `auto` (an empty row collapses to zero height).
+ * fill panel stretch with `minmax(0, 1fr)`; content-sized bands (`risk`)
+ * and empty rows use `auto` (an empty row collapses to zero height).
  */
 export function computeGridTemplateRows(config: WorkstationViewConfig): string {
   return config.areas

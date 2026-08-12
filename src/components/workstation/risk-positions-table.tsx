@@ -214,7 +214,7 @@ export function RiskPositionsTable({
     return (
       <section
         className="ws-panel"
-        style={{ gridArea: 'positions' }}
+        style={{ gridArea: 'trades' }}
         data-testid="ws-panel-positions"
         role="region"
         aria-label="Open account positions"
@@ -234,7 +234,7 @@ export function RiskPositionsTable({
   return (
     <section
       className="ws-panel"
-      style={{ gridArea: 'positions' }}
+      style={{ gridArea: 'trades' }}
       data-testid="ws-panel-positions"
       role="region"
       aria-label="Open account positions"

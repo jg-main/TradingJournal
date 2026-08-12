@@ -46,75 +46,6 @@ import {
   type WorkstationViewConfig,
 } from '@/lib/workstation-view-types';
 
-function fmtCurrency(value: number | string | null | undefined): string {
-  if (value === null || value === undefined) return '—';
-  const n = typeof value === 'string' ? Number(value) : value;
-  if (Number.isNaN(n)) return '—';
-  const sign = n < 0 ? '-' : '';
-  return `${sign}$${Math.abs(n).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function fmtPct(fraction: number | null | undefined): string {
-  if (fraction === null || fraction === undefined) return '—';
-  return `${(fraction * 100).toFixed(1)}%`;
-}
-
-function pnlClass(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '';
-  if (n > 0) return 'ws-pos';
-  if (n < 0) return 'ws-neg';
-  return '';
-}
-
-function fmtFixed(value: number | null | undefined, digits: number): string {
-  if (value === null || value === undefined) return '—';
-  return value.toFixed(digits);
-}
-
-function KpiCell({ label, value, className }: { label: string; value: string; className?: string }) {
-  return (
-    <div className="ws-kpi">
-      <div className={`ws-kpi-value ws-num ${className ?? ''}`}>{value}</div>
-      <div className="ws-kpi-label">{label}</div>
-    </div>
-  );
-}
-
-// ── KPI strip ──────────────────────────────────────────────────────────
-// Compact period-performance band at the bottom of the grid, below the risk
-// area (§5.1 area 7). Never a competing first-row wall. Consumes the same
-// fixtures as every other panel (single data owner per AGENTS.md).
-
-function KpiStrip() {
-  const { fixtures } = useWorkstation();
-  const { kpis } = fixtures.dashboard;
-
-  return (
-    <section
-      className="ws-panel ws-kpi-strip"
-      style={{ gridArea: WORKSTATION_PANEL_IDS.KPIS }}
-      data-testid="ws-panel-kpis"
-    >
-      <KpiCell label="Net P&L" value={fmtCurrency(kpis.netPnl)} className={pnlClass(kpis.netPnl)} />
-      <KpiCell label="Win Rate" value={fmtPct(kpis.winRate)} />
-      <KpiCell label="Profit Factor" value={fmtFixed(kpis.profitFactor, 2)} />
-      <KpiCell label="Avg R" value={fmtFixed(kpis.avgR, 2)} />
-      <KpiCell label="Trades" value={String(kpis.totalTrades)} />
-      <KpiCell label="Open" value={String(kpis.openTrades)} />
-      {/* Drawdown, Account Value, NAV now in AccountStatePanel — kept here
-          as compact references for the bottom band */}
-      <KpiCell
-        label="Drawdown"
-        value={fmtCurrency(kpis.currentDrawdown)}
-        className={pnlClass(kpis.currentDrawdown)}
-      />
-    </section>
-  );
-}
-
 // ── View grid ──────────────────────────────────────────────────────────
 
 /**
@@ -139,7 +70,7 @@ function renderPanelById(
   switch (id) {
     case WORKSTATION_PANEL_IDS.RISK:
       return <RiskPanel />;
-    case WORKSTATION_PANEL_IDS.POSITIONS:
+    case WORKSTATION_PANEL_IDS.TRADES:
       return <RiskPositionsTable positions={positions} />;
     case WORKSTATION_PANEL_IDS.ACCOUNT:
       return <AccountStatePanel />;
@@ -149,8 +80,6 @@ function renderPanelById(
       return <ProcessReviewPanel />;
     case WORKSTATION_PANEL_IDS.WATCHLIST:
       return <WatchlistPanel />;
-    case WORKSTATION_PANEL_IDS.KPIS:
-      return <KpiStrip />;
   }
 }
 
@@ -277,7 +206,7 @@ export function WorkstationShell() {
         {visiblePanels.map((id) => {
           const panel = renderPanelById(id, valuation.positions);
           // Only optional panels are editable: fixed safety/data-quality
-          // panels (risk, positions, kpis) render unchanged in every mode.
+          // panels (risk, trades) render unchanged in every mode.
           if (!isCustomizing || !WORKSTATION_PANEL_CATALOGUE[id].canHide) {
             return <Fragment key={id}>{panel}</Fragment>;
           }

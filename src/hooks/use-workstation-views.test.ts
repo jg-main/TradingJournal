@@ -56,11 +56,10 @@ function customizedRiskPositionsConfig(): WorkstationViewConfig {
     templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
     areas: [
       ['risk', 'risk'],
-      ['positions', 'account'],
-      ['positions', 'perf'],
-      ['positions', 'review'],
+      ['trades', 'account'],
+      ['trades', 'perf'],
+      ['trades', 'review'],
       ['.', '.'],
-      ['kpis', 'kpis'],
     ],
     hiddenPanels: ['watchlist'],
     version: WORKSTATION_LAYOUT_VERSION,
@@ -73,24 +72,22 @@ function configWithUnknownPanel(): WorkstationViewConfig {
     templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
     areas: [
       ['risk', 'risk'],
-      ['positions', 'account'],
+      ['trades', 'account'],
       ['hacker', 'perf'],
-      ['kpis', 'kpis'],
     ],
     hiddenPanels: ['review', 'watchlist'],
     version: WORKSTATION_LAYOUT_VERSION,
   };
 }
 
-/** A config where the positions panel occupies a split (non-rectangular) region. */
+/** A config where the trades panel occupies a split (non-rectangular) region. */
 function configWithSplitRegion(): WorkstationViewConfig {
   return {
     templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
     areas: [
       ['risk', 'risk'],
-      ['positions', 'account'],
-      ['perf', 'positions'],
-      ['kpis', 'kpis'],
+      ['trades', 'account'],
+      ['perf', 'trades'],
     ],
     hiddenPanels: ['review', 'watchlist'],
     version: WORKSTATION_LAYOUT_VERSION,

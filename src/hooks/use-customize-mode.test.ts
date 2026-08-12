@@ -38,7 +38,7 @@ const PERFORMANCE = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE)
 function undersizedConfig(): WorkstationViewConfig {
   return {
     templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
-    areas: [['risk'], ['positions'], ['positions'], ['positions'], ['positions'], ['kpis']],
+    areas: [['risk'], ['trades'], ['trades'], ['trades'], ['trades']],
     hiddenPanels: ['account', 'perf', 'review', 'watchlist'],
     version: WORKSTATION_LAYOUT_VERSION,
   };
@@ -56,8 +56,9 @@ describe('togglePanelVisibilityInConfig', () => {
   it('shows default-hidden Watchlist as a full-width saved-view row', () => {
     const next = togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.WATCHLIST);
     expect(next).not.toBeNull();
-    const kpisIdx = next!.areas.findIndex((row) => row.includes(WORKSTATION_PANEL_IDS.KPIS));
-    expect(next!.areas[kpisIdx - 1]).toEqual([
+    // The fallback row is appended at the end of the grid (the dense
+    // catalogue removed the v1 KPI-band anchor).
+    expect(next!.areas[next!.areas.length - 1]).toEqual([
       WORKSTATION_PANEL_IDS.WATCHLIST,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
@@ -82,7 +83,7 @@ describe('togglePanelVisibilityInConfig', () => {
     expect(validateWorkstationViewConfig(config)).toEqual([]);
   });
 
-  it('shows a default-hidden panel by appending a right-rail row above the KPI band', () => {
+  it('shows a default-hidden panel by appending a right-rail row at the grid end', () => {
     // Performance template hides watchlist + process-review by default and
     // has no watchlist cells in its base grid — so showing it appends a
     // rail row rather than restoring in place.
@@ -90,9 +91,9 @@ describe('togglePanelVisibilityInConfig', () => {
     const next = togglePanelVisibilityInConfig(PERFORMANCE, WORKSTATION_PANEL_IDS.WATCHLIST);
     expect(next).not.toBeNull();
     expect(next!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.PROCESS_REVIEW]);
-    // The new rail row sits immediately above the fixed KPI band.
-    const kpisIdx = next!.areas.findIndex((row) => row.includes(WORKSTATION_PANEL_IDS.KPIS));
-    expect(next!.areas[kpisIdx - 1]).toEqual(['.', WORKSTATION_PANEL_IDS.WATCHLIST]);
+    // The new rail row sits at the end of the grid (the dense catalogue
+    // removed the v1 fixed KPI band that previously anchored these rows).
+    expect(next!.areas[next!.areas.length - 1]).toEqual(['.', WORKSTATION_PANEL_IDS.WATCHLIST]);
     expect(validateWorkstationViewConfig(next)).toEqual([]);
   });
 
@@ -138,15 +139,12 @@ describe('togglePanelVisibilityInConfig', () => {
     expect(validateWorkstationViewConfig(config)).toEqual([]);
   });
 
-  it('returns null for fixed panels (risk, positions, kpis)', () => {
+  it('returns null for fixed panels (risk, trades)', () => {
     expect(
       togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.RISK),
     ).toBeNull();
     expect(
-      togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.POSITIONS),
-    ).toBeNull();
-    expect(
-      togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.KPIS),
+      togglePanelVisibilityInConfig(RISK_POSITIONS, WORKSTATION_PANEL_IDS.TRADES),
     ).toBeNull();
   });
 
@@ -157,15 +155,14 @@ describe('togglePanelVisibilityInConfig', () => {
 
   it('falls back to a rail row when the template region is out of bounds', () => {
     // A 1-column grid cannot host the watchlist at its risk-positions region
-    // ([4][1] does not exist), so the show falls back to a rail row above
-    // the KPI band — the grid stays rectangular and valid.
+    // ([4][1] does not exist), so the show falls back to a rail row at the
+    // end of the grid — the grid stays rectangular and valid.
     const next = togglePanelVisibilityInConfig(
       undersizedConfig(),
       WORKSTATION_PANEL_IDS.WATCHLIST,
     );
     expect(next).not.toBeNull();
-    const kpisIdx = next!.areas.findIndex((row) => row.includes(WORKSTATION_PANEL_IDS.KPIS));
-    expect(next!.areas[kpisIdx - 1]).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(next!.areas[next!.areas.length - 1]).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
     expect(next!.hiddenPanels).not.toContain(WORKSTATION_PANEL_IDS.WATCHLIST);
     expect(validateWorkstationViewConfig(next)).toEqual([]);
   });
