@@ -17,7 +17,7 @@
 
 import { useWorkstation } from './workstation-context';
 import { DataQualityAlertStrip } from './data-quality-alert-strip';
-import { PositionsPanel } from './positions-panel';
+import { RiskPositionsTable } from './risk-positions-table';
 import { RiskPanel } from './risk-panel';
 import { WatchlistPanel } from './watchlist-panel';
 import { SetupsPanel } from './setups-panel';
@@ -87,7 +87,7 @@ export function WorkstationShell() {
   const { fixtures } = useWorkstation();
   const { dashboard, dashboardV2 } = fixtures;
   const { kpis } = dashboard;
-  const { metrics } = dashboardV2;
+  const { metrics, valuation } = dashboardV2;
 
   const firstEquity = dashboard.equityCurve[0];
   const lastEquity = dashboard.equityCurve[dashboard.equityCurve.length - 1];
@@ -103,8 +103,10 @@ export function WorkstationShell() {
         {/* Current exposure and risk summary band — full width, top row (§5.1 area 3) */}
         <RiskPanel />
 
-        {/* Open positions — tall dominant left column (§5.1 area 4) */}
-        <PositionsPanel />
+        {/* Open positions — tall dominant left column (§5.1 area 4). The
+            primary first-screen object: 9-column risk-first table over the
+            same reconciled snapshot the alert strip and risk band consume. */}
+        <RiskPositionsTable positions={valuation.positions} />
 
         {/* Account state and drawdown — equity chart + monthly summary */}
         <Panel

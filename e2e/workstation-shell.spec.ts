@@ -173,7 +173,7 @@ test.describe('workstation shell at 1440x900', () => {
 
     // zero-positions: positions panel shows its empty state.
     await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
-    await expect(page.getByTestId('ws-panel-positions').getByText('No open positions')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-positions').getByText('No open account positions')).toBeVisible();
     await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
 
     // large-drawdown: negative drawdown KPI renders with the negative class.
@@ -360,27 +360,28 @@ test.describe('workstation shell at 1440x900', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// S03: PositionsPanel and RiskPanel
+// S04: RiskPositionsTable and RiskPanel
 // ═══════════════════════════════════════════════════════════════════════════
 
-test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
-  test('renders 7 column headers (Symbol, Side, Size, Entry, Mark, uP&L, R)', async ({
+test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', () => {
+  test('renders 9 column headers (Symbol, Attribution, Side/qty, Avg cost, Mark, Unrealized P&L, Active stop, Current risk, Exposure)', async ({
     page,
   }) => {
     await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
 
     const headers = page.getByTestId('ws-positions-table').locator('thead th');
-    await expect(headers).toHaveCount(7);
+    await expect(headers).toHaveCount(9);
     const headerTexts = [
-      'Symbol', 'Side', 'Size', 'Entry', 'Mark', 'uP&L', 'R',
+      'Symbol', 'Attribution', 'Side/qty', 'Avg cost', 'Mark',
+      'Unrealized P&L', 'Active stop', 'Current risk', 'Exposure',
     ];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 9; i++) {
       await expect(headers.nth(i)).toHaveText(headerTexts[i]);
     }
   });
 
-  test('populates position rows with per-symbol data-testid and all columns', async ({
+  test('renders rows in risk-first sort order (missing stops first)', async ({
     page,
   }) => {
     await page.goto('/dev/workstation');
@@ -390,67 +391,92 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
     const rows = page.getByTestId('ws-positions-table').locator('tbody tr');
     await expect(rows).toHaveCount(3);
 
-    // Per-symbol data-testid rows.
+    // Risk-first order: TSLA (no valid stop, stale mark) first, then NVDA
+    // and AMD by largest current risk (474.00 > 257.60).
+    await expect(rows.nth(0).locator('td').nth(0)).toHaveText('TSLA');
+    await expect(rows.nth(1).locator('td').nth(0)).toHaveText('NVDA');
+    await expect(rows.nth(2).locator('td').nth(0)).toHaveText('AMD');
+
+    // Per-symbol data-testid rows (stable for the keynav suite).
+    await expect(page.getByTestId('ws-position-row-TSLA')).toBeVisible();
     await expect(page.getByTestId('ws-position-row-NVDA')).toBeVisible();
     await expect(page.getByTestId('ws-position-row-AMD')).toBeVisible();
-    await expect(page.getByTestId('ws-position-row-TSLA')).toBeVisible();
+  });
 
-    // NVDA: all columns populate (no — fallback for fresh data).
-    const nvdaRow = page.getByTestId('ws-position-row-NVDA');
-    await expect(nvdaRow.locator('td').nth(0)).toHaveText('NVDA');
+  test('renders attribution, side/qty, and avg cost columns', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const tslaRow = page.getByTestId('ws-position-row-TSLA');
 
-    // Side column shows L/S with color class.
-    const sideCell = nvdaRow.locator('td').nth(1);
-    await expect(sideCell).toHaveText(/^[LS]$/);
+    // Attribution: Account only (no linked count sub-line).
+    await expect(tslaRow.locator('td').nth(1)).toHaveText('Account only');
+    // NVDA is Journal with the linked-journal-trade count.
+    const nvdaAttribution = page.getByTestId('ws-position-row-NVDA').locator('td').nth(1);
+    await expect(nvdaAttribution).toContainText('Journal');
+    await expect(nvdaAttribution).toContainText('linked');
+    // AMD is Mixed with the linked count.
+    await expect(page.getByTestId('ws-position-row-AMD').locator('td').nth(1)).toContainText('Mixed');
+
+    // Side/qty: L/S with direction color class.
+    const sideCell = page.getByTestId('ws-position-row-NVDA').getByTestId('ws-position-cell-side');
+    await expect(sideCell).toHaveText(/^L \d+$/);
     const sideClass = await sideCell.evaluate((el) => el.className);
     expect(sideClass).toMatch(/ws-dir-(long|short)/);
 
-    // Size is numeric, not —.
-    await expect(nvdaRow.locator('td').nth(2)).not.toHaveText('—');
-    // Entry is dollar-denominated.
-    await expect(nvdaRow.locator('td').nth(3)).toContainText('$');
+    // Avg cost is dollar-denominated.
+    await expect(page.getByTestId('ws-position-row-NVDA').locator('td').nth(3)).toContainText('$');
   });
 
-  test('R-multiple column renders with data-testid and sign prefix', async ({
+  test('renders active stop and current risk (or No valid stop / Incomplete)', async ({
     page,
   }) => {
     await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
 
-    // Every position row has the R cell.
-    const rCells = page.getByTestId('ws-position-cell-r');
-    await expect(rCells).toHaveCount(3);
+    // Every position row has the risk cell.
+    const riskCells = page.getByTestId('ws-position-cell-risk');
+    await expect(riskCells).toHaveCount(3);
 
-    // Spot-check: NVDA R-multiple has a + sign (positive P&L).
-    const nvdaRCell = page
-      .getByTestId('ws-position-row-NVDA')
-      .getByTestId('ws-position-cell-r');
-    await expect(nvdaRCell).toContainText('R');
-    await expect(nvdaRCell).toContainText('+');
+    // NVDA: remaining risk-to-stop + effective stop.
+    await expect(
+      page.getByTestId('ws-position-row-NVDA').getByTestId('ws-position-cell-risk'),
+    ).toHaveText('$474.00');
+    await expect(page.getByTestId('ws-position-row-NVDA')).toContainText('$127.90');
 
-    // TSLA R-multiple has a - sign (negative P&L).
-    const tslaRCell = page
-      .getByTestId('ws-position-row-TSLA')
-      .getByTestId('ws-position-cell-r');
-    await expect(tslaRCell).toContainText('-');
+    // AMD: remaining risk-to-stop.
+    await expect(
+      page.getByTestId('ws-position-row-AMD').getByTestId('ws-position-cell-risk'),
+    ).toHaveText('$257.60');
+
+    // TSLA: no valid stop → Incomplete risk + 'No valid stop'.
+    await expect(
+      page.getByTestId('ws-position-row-TSLA').getByTestId('ws-position-cell-risk'),
+    ).toHaveText('Incomplete');
+    await expect(page.getByTestId('ws-position-row-TSLA')).toContainText('No valid stop');
   });
 
-  test('stale mark indicator renders for positions with stale/missing markStatus', async ({
+  test('stale mark renders visible state text with source and as-of (not dot-only)', async ({
     page,
   }) => {
     await page.goto('/dev/workstation');
 
-    // Default: TSLA is stale — indicator visible.
+    // Default: TSLA is stale — visible 'Stale · source · as-of' text plus the
+    // amber dot as an accent (state is never conveyed by the dot alone).
+    const tslaMarkState = page
+      .getByTestId('ws-position-row-TSLA')
+      .getByTestId('ws-position-cell-mark-state');
+    await expect(tslaMarkState).toContainText('Stale');
+    await expect(tslaMarkState).toContainText('user');
+    await expect(tslaMarkState).toContainText('UTC');
     await expect(
       page.getByTestId('ws-position-row-TSLA').getByTestId('ws-mark-stale-indicator'),
     ).toBeVisible();
 
-    // Default: NVDA is fresh — no indicator.
+    // Default: NVDA is fresh — no indicator, price rendered.
     await expect(
       page.getByTestId('ws-position-row-NVDA').locator('[data-testid="ws-mark-stale-indicator"]'),
     ).toHaveCount(0);
 
-    // large-drawdown: all positions are missing — indicators visible.
+    // large-drawdown: all marks missing — indicators visible.
     await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
     await expect(
       page.getByTestId('ws-position-row-NVDA').getByTestId('ws-mark-stale-indicator'),
@@ -458,52 +484,55 @@ test.describe('S03 PositionsPanel — 7-column terminal-dense table', () => {
     await expect(
       page.getByTestId('ws-position-row-AMD').getByTestId('ws-mark-stale-indicator'),
     ).toBeVisible();
-
-    // Missing marks render — not numeric price.
-    const nvdaMark = page
-      .getByTestId('ws-position-row-NVDA')
-      .locator('td')
-      .nth(4);
-    await expect(nvdaMark).toContainText('—');
   });
 
-  test('empty state renders when positions array is empty', async ({ page }) => {
-    await page.goto('/dev/workstation?scenario=zero-positions');
-    await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
-    await expect(page.getByTestId('ws-positions-empty')).toBeVisible();
-    await expect(page.getByTestId('ws-positions-empty')).toHaveText(
-      'No open positions',
-    );
-    await expect(page.getByTestId('ws-positions-table')).toHaveCount(0);
-  });
-
-  test('R-multiple renders — when data is unavailable (large-drawdown)', async ({
+  test('missing marks render Unpriced with no numeric price (large-drawdown)', async ({
     page,
   }) => {
     await page.goto('/dev/workstation?scenario=large-drawdown');
     await expect(page.getByTestId('ws-positions-table')).toBeVisible();
 
-    // Missing marks mean no unrealized P&L, so R = —.
-    const rCells = page.getByTestId('ws-position-cell-r');
-    await expect(rCells).toHaveCount(2);
-    for (const cell of await rCells.all()) {
+    // Mark cell: 'Unpriced' with the 'Missing mark' state sub-line — never a
+    // bare em dash and never a numeric price.
+    const nvdaMark = page
+      .getByTestId('ws-position-row-NVDA')
+      .locator('td')
+      .nth(4);
+    await expect(nvdaMark).toContainText('Unpriced');
+    await expect(nvdaMark).toContainText('Missing mark');
+    await expect(nvdaMark).not.toContainText('$');
+
+    // Unrealized P&L is — when incalculable (never zero).
+    const pnlCells = page.getByTestId('ws-position-cell-pnl');
+    await expect(pnlCells).toHaveCount(2);
+    for (const cell of await pnlCells.all()) {
       await expect(cell).toHaveText('—');
+    }
+    // Current risk is Incomplete without a mark.
+    for (const cell of await page.getByTestId('ws-position-cell-risk').all()) {
+      await expect(cell).toHaveText('Incomplete');
     }
   });
 
-  test('panel header shows open position count', async ({ page }) => {
+  test('empty state renders with the R034 text and no table', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=zero-positions');
+    await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
+    await expect(page.getByTestId('ws-positions-empty')).toBeVisible();
+    await expect(page.getByTestId('ws-positions-empty')).toHaveText(
+      'No open account positions',
+    );
+    await expect(page.getByTestId('ws-positions-table')).toHaveCount(0);
+  });
+
+  test('panel header shows the open position count (R034 title)', async ({ page }) => {
     await page.goto('/dev/workstation');
     await expect(
-      page
-        .getByTestId('ws-panel-positions')
-        .getByText('3 open'),
+      page.getByTestId('ws-panel-positions').getByText('Open account positions: 3'),
     ).toBeVisible();
 
     await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
     await expect(
-      page
-        .getByTestId('ws-panel-positions')
-        .getByText('2 open'),
+      page.getByTestId('ws-panel-positions').getByText('Open account positions: 2'),
     ).toBeVisible();
   });
 });

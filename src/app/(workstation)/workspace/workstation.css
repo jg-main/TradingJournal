@@ -674,7 +674,9 @@
 /* ── Positions Panel ─────────────────────────────────────────────────────── */
 
 /* Stale / missing mark indicator — small amber dot rendered inline before
-   the mark price when markStatus is 'stale' or 'missing'. */
+   the mark price when markStatus is 'stale' or 'missing'. Accent only: the
+   data state is always conveyed by visible text (Stale / Missing mark +
+   source + as-of) per §8.1, never by the dot alone. */
 .ws-mark-stale-indicator {
   display: inline-block;
   width: 6px;
@@ -685,6 +687,49 @@
   margin-right: 3px;
   vertical-align: middle;
   flex: none;
+}
+
+/* ── Risk Positions Table (S04 T03) ─────────────────────────────────────── */
+
+/* 9-column primary table: rows use the 40px standard tier so two-line cells
+   (attribution linked count, mark provenance, exposure state) fit within
+   the §8.1 36–40px contract without internal scrolling at the target
+   viewport. */
+.ws-positions-table td {
+  height: var(--ws-row-md);
+}
+
+/* Primary values — mark price, unrealized P&L, current risk, and exposure
+   render at the 16px tier of the §8.1 16–20px primary-value contract;
+   supporting sub-lines stay at the 12px decision-label tier. */
+.ws-cell-primary {
+  font-size: var(--ws-text-lg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ws-cell-sub {
+  font-size: var(--ws-text-xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+/* Sticky symbol column (R034: Symbol sticky) — keeps the symbol visible
+   when the table scrolls horizontally in a narrow fallback. */
+.ws-pos-symbol {
+  position: sticky;
+  left: 0;
+  background: var(--card);
+  z-index: 1;
+  font-weight: 600;
+}
+
+/* Attention-state text — 'No valid stop' / 'Incomplete' use the warning
+   color so a data-quality state is never conveyed by position alone. */
+.ws-warn-text {
+  color: var(--warning);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* ── Risk Panel (current exposure and risk summary band) ────────────────── */
