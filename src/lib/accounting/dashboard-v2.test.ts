@@ -1345,6 +1345,12 @@ describe('computeDashboardV2', () => {
     expect(result).toBeDefined();
 
     const pos = result!.valuation.positions[0];
+    // The P&L keeps the source quote's micro precision until the final
+    // currency result is rounded: (11.645 - 11.30) × 10 = 3.45. This must
+    // match the Trades mark-to-market calculation, rather than first
+    // rounding the quote to 11.65 and reporting 3.50.
+    expect(pos.unrealizedPnl).toBe('3.45');
+    expect(result!.riskSummary.openPnl).toBe('3.45');
     // Risk must compute (not null → 'Incomplete') despite the 3-decimal
     // mark: max(0, avgCost − stop) × qty = (11.30 − 11) × 10 = 3.00.
     expect(pos.risk.currentRiskToStop).toBe('3.00');

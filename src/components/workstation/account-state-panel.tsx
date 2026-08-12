@@ -17,8 +17,12 @@
 //   Marked positions  — metrics.markedPositions + valuation qualifier
 //   NAV               — metrics.nav + valuation qualification
 //   Realized P&L      — metrics.realizedPnl (PnL coloured)
-//   Unrealized P&L    — metrics.unrealizedPnl (PnL coloured) + qualifier
-//   Total P&L         — metrics.totalPnl (PnL coloured) + qualifier
+//   Open P&L          — riskSummary.openPnl (PnL coloured) + qualifier.
+//                        This is the current account-position valuation used
+//                        by the risk strip; never substitute the persisted
+//                        period-performance projection here.
+//   Total P&L         — metrics.totalPnl (PnL coloured), explicitly scoped
+//                        to the period-performance projection.
 //   Drawdown          — metrics.drawdown + drawdownPct (ALWAYS ws-neg)
 
 import { useWorkstation } from './workstation-context';
@@ -120,7 +124,7 @@ function StatCell({
 export function AccountStatePanel() {
   const { fixtures } = useWorkstation();
   const { dashboardV2, dashboard } = fixtures;
-  const { metrics, valuation } = dashboardV2;
+  const { metrics, valuation, riskSummary } = dashboardV2;
 
   const vState = valuation.state;
   const valuationIsComplete = vState === 'complete';
@@ -145,28 +149,29 @@ export function AccountStatePanel() {
 
   const realizedClass = pnlClass(metrics.realizedPnl);
 
-  const unrealizedValue = valuationIsPriced
-    ? fmtCurrency(metrics.unrealizedPnl)
+  // Current open P&L has one owner in the dashboard snapshot:
+  // riskSummary.openPnl. The period-performance projection's
+  // metrics.unrealizedPnl can have an earlier as-of timestamp, so using it
+  // here would display a stale number beside the current risk strip.
+  const openPnlValue = valuationIsPriced
+    ? fmtCurrency(riskSummary.openPnl)
     : qualifiedValuation;
-  const unrealizedClass = valuationIsPriced ? pnlClass(metrics.unrealizedPnl) : '';
-  const unrealizedSub =
+  const openPnlClass = valuationIsPriced ? pnlClass(riskSummary.openPnl) : '';
+  const openPnlSub =
     valuationIsComplete
       ? 'Open positions'
       : valuationIsStale
         ? 'Last marked value'
         : qualifiedValuation;
-  const unrealizedLabel = valuationIsStale ? 'Stale Unrealized P&L' : 'Unrealized P&L';
+  const openPnlLabel = valuationIsStale ? 'Stale Open P&L' : 'Open P&L';
 
   const totalValue = valuationIsPriced
     ? fmtCurrency(metrics.totalPnl)
     : qualifiedValuation;
   const totalClass = valuationIsPriced ? pnlClass(metrics.totalPnl) : '';
-  const totalSub =
-    valuationIsComplete
-      ? 'Realized + Unrealized'
-      : valuationIsStale
-        ? 'Includes stale valuation'
-        : qualifiedValuation;
+  const totalSub = valuationIsPriced
+    ? `Period performance · ${fmtDate(metrics.provenance.asOf)}`
+    : qualifiedValuation;
   const totalLabel = valuationIsStale ? 'Stale Total P&L' : 'Total P&L';
 
   // Drawdown is ALWAYS negative class — it represents a loss from peak.
@@ -228,11 +233,11 @@ export function AccountStatePanel() {
             testId="ws-account-state-realized"
           />
           <StatCell
-            label={unrealizedLabel}
-            value={unrealizedValue}
-            sub={unrealizedSub}
-            valueClassName={unrealizedClass}
-            testId="ws-account-state-unrealized"
+            label={openPnlLabel}
+            value={openPnlValue}
+            sub={openPnlSub}
+            valueClassName={openPnlClass}
+            testId="ws-account-state-open-pnl"
           />
           <StatCell
             label={totalLabel}

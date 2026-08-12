@@ -10,7 +10,7 @@
  *   - NAV shows correct qualification (Full / Partial / Ledger only)
  *   - Drawdown ALWAYS uses ws-neg class (never ws-pos)
  *   - Total P&L renders presentationLabel when valuation.state ≠ 'complete'
- *   - Realized/Unrealized P&L use PnL colouring (ws-pos / ws-neg)
+ *   - Realized/Open P&L use PnL colouring (ws-pos / ws-neg)
  *   - Panel renders without crashing
  *
  * Run: npx vitest run src/components/workstation/account-state-panel.test.tsx
@@ -64,12 +64,14 @@ const AS_OF = '2026-07-17T19:58:00.000Z';
 function baseDashboardV2(
   overrides: {
     metrics?: Partial<DashboardV2Response['metrics']>;
+    riskSummary?: Partial<RiskSummary>;
     valuationState?: DashboardV2Response['valuation']['state'];
     presentationLabel?: string | null;
   } = {},
 ): DashboardV2Response {
   const {
     metrics: metricOverrides = {},
+    riskSummary: riskSummaryOverrides = {},
     valuationState = 'complete',
     presentationLabel = null,
   } = overrides;
@@ -213,7 +215,10 @@ function baseDashboardV2(
     journalAttribution,
     journalLinked,
     reconciliation,
-    riskSummary,
+    riskSummary: {
+      ...riskSummary,
+      ...riskSummaryOverrides,
+    },
     integrity: {
       status: 'healthy',
       warnings: [],
@@ -301,7 +306,7 @@ describe('AccountStatePanel', () => {
     expect(screen.getByTestId('ws-account-state-marked')).toBeTruthy();
     expect(screen.getByTestId('ws-account-state-nav')).toBeTruthy();
     expect(screen.getByTestId('ws-account-state-realized')).toBeTruthy();
-    expect(screen.getByTestId('ws-account-state-unrealized')).toBeTruthy();
+    expect(screen.getByTestId('ws-account-state-open-pnl')).toBeTruthy();
     expect(screen.getByTestId('ws-account-state-total')).toBeTruthy();
     expect(screen.getByTestId('ws-account-state-drawdown')).toBeTruthy();
   });
@@ -408,11 +413,11 @@ describe('AccountStatePanel', () => {
   // ── Total P&L ─────────────────────────────────────────────────────────
 
   describe('Total P&L', () => {
-    it('renders "Realized + Unrealized" sub-line when valuation is complete', () => {
+    it('declares the period-performance scope when valuation is complete', () => {
       renderPanel(baseDashboardV2({ valuationState: 'complete' }));
       const cell = screen.getByTestId('ws-account-state-total');
       expect(cell.textContent).toContain('$8,300.00');
-      expect(cell.textContent).toContain('Realized + Unrealized');
+      expect(cell.textContent).toContain('Period performance');
     });
 
     it('renders presentationLabel when valuation state is partial', () => {
@@ -425,7 +430,7 @@ describe('AccountStatePanel', () => {
       const cell = screen.getByTestId('ws-account-state-total');
       expect(cell.textContent).toContain('— Partial — 1 unpriced');
       expect(cell.textContent).not.toContain('$8,300.00');
-      expect(cell.textContent).not.toContain('Realized + Unrealized');
+      expect(cell.textContent).not.toContain('Period performance');
     });
 
     it('renders presentationLabel when valuation state is unavailable', () => {
@@ -464,26 +469,40 @@ describe('AccountStatePanel', () => {
     });
   });
 
-  // ── Unrealized P&L ────────────────────────────────────────────────────
+  // ── Open P&L ──────────────────────────────────────────────────────────
 
-  describe('Unrealized P&L', () => {
-    it('uses ws-pos class for positive unrealized P&L', () => {
-      renderPanel(baseDashboardV2({ metrics: { unrealizedPnl: '3100.00' } }));
-      const cell = screen.getByTestId('ws-account-state-unrealized');
+  describe('Open P&L', () => {
+    it('uses the current risk-summary Open P&L instead of the persisted period projection', () => {
+      renderPanel(
+        baseDashboardV2({
+          metrics: { unrealizedPnl: '19.20' },
+          riskSummary: { openPnl: '45.38' },
+        }),
+      );
+
+      const cell = screen.getByTestId('ws-account-state-open-pnl');
+      expect(cell.textContent).toContain('$45.38');
+      expect(cell.textContent).not.toContain('$19.20');
+      expect(cell.textContent).toContain('Open P&L');
+    });
+
+    it('uses ws-pos class for positive Open P&L', () => {
+      renderPanel(baseDashboardV2({ riskSummary: { openPnl: '3100.00' } }));
+      const cell = screen.getByTestId('ws-account-state-open-pnl');
       const valueSpan = cell.querySelector('.ws-num');
       expect(valueSpan!.className).toContain('ws-pos');
     });
 
-    it('uses ws-neg class for negative unrealized P&L', () => {
-      renderPanel(baseDashboardV2({ metrics: { unrealizedPnl: '-800.00' } }));
-      const cell = screen.getByTestId('ws-account-state-unrealized');
+    it('uses ws-neg class for negative Open P&L', () => {
+      renderPanel(baseDashboardV2({ riskSummary: { openPnl: '-800.00' } }));
+      const cell = screen.getByTestId('ws-account-state-open-pnl');
       const valueSpan = cell.querySelector('.ws-num');
       expect(valueSpan!.className).toContain('ws-neg');
     });
 
     it('shows "Open positions" sub-line when valuation is complete', () => {
       renderPanel(baseDashboardV2({ valuationState: 'complete' }));
-      const cell = screen.getByTestId('ws-account-state-unrealized');
+      const cell = screen.getByTestId('ws-account-state-open-pnl');
       expect(cell.textContent).toContain('Open positions');
     });
 
@@ -494,7 +513,7 @@ describe('AccountStatePanel', () => {
           presentationLabel: '— Partial — 1 unpriced',
         }),
       );
-      const cell = screen.getByTestId('ws-account-state-unrealized');
+      const cell = screen.getByTestId('ws-account-state-open-pnl');
       expect(cell.textContent).toContain('— Partial — 1 unpriced');
       expect(cell.textContent).not.toContain('$3,100.00');
     });
@@ -516,7 +535,7 @@ describe('AccountStatePanel', () => {
       renderPanel(baseDashboardV2({ valuationState: 'stale' }));
       expect(screen.getByTestId('ws-account-state-marked').textContent).toContain('Stale marked positions');
       expect(screen.getByTestId('ws-account-state-nav').textContent).toContain('Stale NAV');
-      expect(screen.getByTestId('ws-account-state-unrealized').textContent).toContain('Stale Unrealized P&L');
+      expect(screen.getByTestId('ws-account-state-open-pnl').textContent).toContain('Stale Open P&L');
       expect(screen.getByTestId('ws-account-state-total').textContent).toContain('Stale Total P&L');
     });
   });

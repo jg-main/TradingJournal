@@ -870,11 +870,11 @@ test.describe('S05 AccountStatePanel — §6.7 unambiguous labels', () => {
     await expect(panel.locator('.ws-panel-header')).toContainText('partial');
   });
 
-  test('scoped Realized / Unrealized / Total P&L rows render', async ({ page }) => {
+  test('scoped Realized / Open / Total P&L rows render', async ({ page }) => {
     await page.goto('/dev/workstation');
     const panel = page.getByTestId('ws-panel-account-state');
 
-    for (const testId of ['ws-account-state-realized', 'ws-account-state-unrealized', 'ws-account-state-total']) {
+    for (const testId of ['ws-account-state-realized', 'ws-account-state-open-pnl', 'ws-account-state-total']) {
       const row = panel.getByTestId(testId);
       await expect(row).toBeVisible();
       await expect(row.locator('.ws-num')).toContainText('$');

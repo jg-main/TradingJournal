@@ -28,6 +28,7 @@ import {
   absoluteQuantity,
   computeMarkedValue,
   computeUnrealizedPnl,
+  computeUnrealizedPnlFromMarkMicros,
   deriveValuationPosition,
   computeNav,
   computeNavBreakdown,
@@ -257,6 +258,29 @@ describe('computeUnrealizedPnl', () => {
         expect(computeUnrealizedPnl(c.avgCost, c.markPrice, c.quantity, c.direction)).toBe(c.expected);
       });
     }
+  });
+});
+
+// ── computeUnrealizedPnlFromMarkMicros ──────────────────────────────────
+
+describe('computeUnrealizedPnlFromMarkMicros', () => {
+  it('preserves a sub-cent market quote until the P&L result is rounded', () => {
+    // (11.615 - 11.30) × 10 = 3.15. Rounding the mark to 11.62 first would
+    // incorrectly report 3.20 and diverge from the Trades mark-to-market.
+    expect(
+      computeUnrealizedPnlFromMarkMicros(
+        CD('11.30'),
+        11_615_000,
+        CD('10.00'),
+        'long',
+      ),
+    ).toBe(CD('3.15'));
+  });
+
+  it('returns null for an absent mark', () => {
+    expect(
+      computeUnrealizedPnlFromMarkMicros(CD('11.30'), null, CD('10.00'), 'long'),
+    ).toBeNull();
   });
 });
 

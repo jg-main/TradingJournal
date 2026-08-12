@@ -23,7 +23,7 @@ import { fromMicros, toMicros, normalizeDecimal, sumDecimals, addDecimal, subtra
 import type { CanonicalDecimal } from './types';
 import { computeTradeMetrics } from '../trade-metrics';
 import type { TradeMetricsInput, TradeMetricsResult } from '../trade-metrics';
-import { computeUnrealizedPnl } from '../performance/valuation';
+import { computeUnrealizedPnlFromMarkMicros } from '../performance/valuation';
 import {
   DEFAULT_FRESHNESS_POLICY_CONFIG,
   createFreshnessPolicy,
@@ -1243,13 +1243,13 @@ export function computeDashboardV2(
         markedValue = null;
       }
 
-      // Use the canonical valuation kernel so short positions use the
-      // account projection's positive-quantity convention correctly.
-      // (A short profit is average cost − mark, times absolute quantity.)
+      // Use the canonical valuation kernel with the source quote's micro
+      // precision so the Dashboard and Trades agree before display rounding.
+      // A short profit is average cost − mark, times absolute quantity.
       try {
-        unrealizedPnl = computeUnrealizedPnl(
+        unrealizedPnl = computeUnrealizedPnlFromMarkMicros(
           normalizeDecimal(pos.average_cost),
-          normalizeDecimal(mark.price),
+          mark.price_micros,
           normalizeDecimal(pos.quantity),
           pos.direction === 'long' || pos.direction === 'short'
             ? pos.direction

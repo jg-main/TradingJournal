@@ -10,6 +10,8 @@
  * - deriveValuationPosition — build a ValuationPosition from position state + mark
  * - computeMarkedValue — exact-decimal position value from quantity × price
  * - computeUnrealizedPnl — unrealized P&L given direction and cost vs mark
+ * - computeUnrealizedPnlFromMarkMicros — same calculation while preserving
+ *   the source quote's micro precision until the currency result is rounded
  * - computeNav — Net Asset Value = cash + marked positions
  * - computeRealizedPnl — aggregate realized P&L from positions
  * - computeTotalFees — aggregate fees (execution fees counted once)
@@ -175,6 +177,45 @@ export function computeUnrealizedPnl(
   const priceDiff = subtractDecimal(averageCost, markPrice);
   const absQty = absoluteDecimal(quantity);
   return multiplyDecimal(priceDiff, absQty);
+}
+
+/**
+ * Compute unrealized P&L from a market quote stored as integer micros.
+ *
+ * Account valuation marks preserve the provider quote in `price_micros`,
+ * which can carry more precision than the canonical two-decimal display
+ * price. Retain that precision through the calculation and round only the
+ * final currency result, so account-position valuation agrees with the
+ * Trades mark-to-market calculation at the same quote.
+ */
+export function computeUnrealizedPnlFromMarkMicros(
+  averageCost: CanonicalDecimal,
+  markPriceMicros: number | null,
+  quantity: CanonicalDecimal,
+  direction: PositionDirection | null,
+): CanonicalDecimal | null {
+  if (
+    markPriceMicros === null ||
+    !Number.isSafeInteger(markPriceMicros) ||
+    compareDecimal(quantity, '0.00') === 0 ||
+    direction === null
+  ) {
+    return null;
+  }
+
+  const costMicros = toMicros(averageCost);
+  const quantityMicros = toMicros(quantity);
+  const priceDifferenceMicros =
+    direction === 'long'
+      ? markPriceMicros - costMicros
+      : costMicros - markPriceMicros;
+  const absoluteQuantityMicros = Math.abs(quantityMicros);
+  const pnlMicros = Number(
+    (BigInt(priceDifferenceMicros) * BigInt(absoluteQuantityMicros)) /
+      BigInt(MICROS_PER_UNIT),
+  );
+
+  return fromMicros(pnlMicros);
 }
 
 // ── Derive ValuationPosition ────────────────────────────────────────────
