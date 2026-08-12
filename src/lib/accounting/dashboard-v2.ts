@@ -1227,8 +1227,8 @@ export function computeDashboardV2(
       instrumentId: pos.instrument_id,
       symbol,
       direction: pos.direction,
-      quantity: pos.quantity,
-      averageCost: pos.average_cost,
+      quantity: normalizeDecimal(pos.quantity),
+      averageCost: normalizeDecimal(pos.average_cost),
       markStatus,
       markPrice,
       markedValue,
@@ -1572,22 +1572,28 @@ export function computeDashboardV2(
     // the displayed gross minus open entry fees (fifo_lots); open fees sum
     // fifo_lots.allocated_fees.
     const dRemainingQty = sumDecimals(
-      reconciledPositions.map((p) => p.quantity),
+      reconciledPositions.map((p) => normalizeDecimal(p.quantity)),
     );
     const dOpenAvgCost = computeWeightedAverageDecimal(
       reconciledPositions.map((p) => ({
-        value: p.averageCost,
-        weight: p.quantity,
+        value: normalizeDecimal(p.averageCost),
+        weight: normalizeDecimal(p.quantity),
       })),
     );
     const dGrossRealizedPnl = sumDecimals(
       reconciledPositions.map(
-        (p) => rawPosByInstrument.get(p.instrumentId)?.realized_gross_pnl ?? '0.00',
+        (p) =>
+          normalizeDecimal(
+            rawPosByInstrument.get(p.instrumentId)?.realized_gross_pnl ?? '0.00',
+          ),
       ),
     );
     const dNetRealizedPnl = sumDecimals(
       reconciledPositions.map(
-        (p) => rawPosByInstrument.get(p.instrumentId)?.realized_net_pnl ?? '0.00',
+        (p) =>
+          normalizeDecimal(
+            rawPosByInstrument.get(p.instrumentId)?.realized_net_pnl ?? '0.00',
+          ),
       ),
     );
     const dOpenFees = sumDecimals(

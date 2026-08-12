@@ -55,6 +55,7 @@ interface TestContext {
   sqlite: Database.Database;
   healthyAccountId: string;
   noMarksAccountId: string;
+  nonCanonicalAccountId: string;
   unknownAccountId: string;
 }
 
@@ -74,6 +75,7 @@ function createTestDatabase(): TestContext {
   const now = new Date().toISOString();
   const healthyAccountId = randomUUID();
   const noMarksAccountId = randomUUID();
+  const nonCanonicalAccountId = randomUUID();
   const unknownAccountId = '00000000-0000-0000-0000-000000009999';
 
   const insertAccount = sqlite.prepare(
@@ -83,8 +85,9 @@ function createTestDatabase(): TestContext {
 
   insertAccount.run(healthyAccountId, 'Healthy Account', 'Test Broker', 'USD', now, now);
   insertAccount.run(noMarksAccountId, 'No Marks Account', 'Test Broker', 'USD', now, now);
+  insertAccount.run(nonCanonicalAccountId, 'Non Canonical Account', 'Test Broker', 'USD', now, now);
 
-  return { sqlite, healthyAccountId, noMarksAccountId, unknownAccountId };
+  return { sqlite, healthyAccountId, noMarksAccountId, nonCanonicalAccountId, unknownAccountId };
 }
 
 function destroyTestDatabase(sqlite: Database.Database): void {
@@ -341,11 +344,103 @@ function seedHealthyAccount(
 /**
  * Seed an account with no valuation marks (missing marks).
  */
-function seedNoMarksAccount(
+/**
+ * Seed an account whose account_positions row carries a NON-canonical
+ * quantity (integer string like "2" instead of "2.00") and a
+ * non-canonical average_cost ("88.6"). This mirrors legacy pre-M016 data
+ * observed in the HomeLab deployment: dashboard-v2 must not crash on
+ * these values — every aggregate path normalizes them (D066 regression
+ * guard).
+ */
+function seedNonCanonicalPositionAccount(
   sqlite: Database.Database,
   accountId: string,
 ): void {
   const now = new Date().toISOString();
+
+  postOpeningBalance(sqlite, {
+    accountId,
+    amount: '5000.00',
+    idempotencyKey: randomUUID(),
+    description: 'Initial funding',
+  });
+
+  // One instrument with a non-canonical position.
+  const instrumentId = randomUUID();
+  sqlite
+    .prepare(
+      `INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'USD', 1, ?, ?)`,
+    )
+    .run(instrumentId, 'CAKE', 'Cheesecake Factory I', 'stock', now, now);
+
+  // Non-canonical quantity "2" and average_cost "88.6" (no .00 suffix).
+  const positionId = randomUUID();
+  sqlite
+    .prepare(
+      `INSERT INTO account_positions
+       (id, account_id, instrument_id, direction, quantity, average_cost,
+        total_cost_basis, realized_gross_pnl, realized_fees, realized_net_pnl,
+        last_updated, created_at, updated_at)
+       VALUES (?, ?, ?, 'long', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      positionId,
+      accountId,
+      instrumentId,
+      '2',
+      '88.6',
+      '177.2',
+      '0.00',
+      '0.00',
+      '0.00',
+      now,
+      now,
+      now,
+    );
+
+  // A matching open journal trade with an execution (so reconciliation runs).
+  const tradeId = randomUUID();
+  sqlite
+    .prepare(
+      `INSERT INTO trades
+       (id, trade_code, account_id, symbol, direction, status, opened_at, created_at, updated_at)
+       VALUES (?, ?, ?, 'CAKE', 'long', 'open', ?, ?, ?)`,
+    )
+    .run(tradeId, `T-${tradeId.slice(0, 4)}`, accountId, now, now, now);
+  sqlite
+    .prepare(
+      `INSERT INTO trade_executions
+       (id, trade_id, executed_at, action, quantity, price, fees, created_at)
+       VALUES (?, ?, ?, 'buy', ?, ?, ?, ?)`,
+    )
+    .run(randomUUID(), tradeId, now, 2, 88.6, 0, now);
+
+  // Link the accounting execution so attribution sees a journal trade.
+  sqlite
+    .prepare(
+      `INSERT INTO accounting_executions
+       (id, account_id, instrument_id, action, quantity, price, fees, idempotency_key, journal_trade_id, description, posted_at)
+       VALUES (?, ?, ?, 'buy', ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      randomUUID(),
+      accountId,
+      instrumentId,
+      '2',
+      '88.6',
+      '0.00',
+      randomUUID(),
+      tradeId,
+      'Mirrored from trade_execution',
+      now,
+    );
+}
+
+function seedNoMarksAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): void {  const now = new Date().toISOString();
 
   // 1. Post opening balance
   postOpeningBalance(sqlite, {
@@ -477,6 +572,7 @@ describe('computeDashboardV2', () => {
     ctx = createTestDatabase();
     seedHealthyAccount(ctx.sqlite, ctx.healthyAccountId);
     seedNoMarksAccount(ctx.sqlite, ctx.noMarksAccountId);
+    seedNonCanonicalPositionAccount(ctx.sqlite, ctx.nonCanonicalAccountId);
   });
 
   afterAll(() => {
@@ -515,6 +611,26 @@ describe('computeDashboardV2', () => {
     // Timestamp
     expect(result!.computedAt).toBeDefined();
     expect(typeof result!.computedAt).toBe('string');
+  });
+
+  it('survives non-canonical position values (D066 regression: legacy "2" quantity)', () => {
+    // Legacy HomeLab data can carry integer-string quantities ("2") and
+    // single-fraction average costs ("88.6") in account_positions. The
+    // snapshot must compute without crashing and normalize the output.
+    const result = computeDashboardV2(ctx.sqlite, ctx.nonCanonicalAccountId);
+    expect(result).toBeDefined();
+
+    const cake = result!.valuation.positions.find((p) => p.symbol === 'CAKE');
+    expect(cake).toBeDefined();
+    expect(cake!.quantity).toBe('2.00');
+    expect(cake!.averageCost).toBe('88.60');
+
+    // Aggregates must be computed (not crash) and carry canonical decimals
+    // when present (null when no performance projection exists).
+    if (result!.metrics.nav !== null) {
+      expect(result!.metrics.nav).toMatch(/^-?\d+\.\d{2}$/);
+    }
+    expect(result!.journalLinked.provenance.status).toBeDefined();
   });
 
   it('reports valuation completeness with fresh/stale/missing counts', () => {
