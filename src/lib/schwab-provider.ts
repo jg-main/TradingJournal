@@ -180,9 +180,18 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
     // Ensure tokens are fresh before making the API call.
     // The in-memory token cache can become stale when the server stays
     // running across browser sessions.
-    await ensureTokenFreshness();
-
     const now = new Date().toISOString();
+    const tokenIsFresh = await ensureTokenFreshness();
+    if (!tokenIsFresh) {
+      return symbols.map((symbol) => ({
+        symbol: symbol.toUpperCase(),
+        price: null,
+        marketState: 'UNKNOWN',
+        fetchedAt: now,
+        source: 'schwab',
+        error: 'Schwab token is unavailable or cannot be refreshed. Reconnect Schwab.',
+      }));
+    }
 
     try {
       const response = (await this.apiClient.marketData.quotes.getQuotes({

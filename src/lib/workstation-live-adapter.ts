@@ -31,6 +31,7 @@ import type {
 import { MARKET_INDEX_SYMBOLS } from '@/lib/workstation-fixtures';
 import type { DashboardV2Response, DashboardPositionSummary } from '@/lib/accounting/dashboard-v2';
 import type { QuoteResult } from '@/lib/market-quote';
+import { resolveMtmRefreshIntervalSeconds } from '@/lib/market-data-refresh-interval';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Result types
@@ -82,10 +83,14 @@ export interface WorkstationAccount {
  *  - Malformed JSON (SyntaxError from response.json())
  *  - Empty bodies (null response — treated as an error)
  */
-async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<LiveFetchResult<T>> {
+async function fetchJson<T>(
+  url: string,
+  signal?: AbortSignal,
+  init?: RequestInit,
+): Promise<LiveFetchResult<T>> {
   let response: Response;
   try {
-    response = await fetch(url, { signal });
+    response = await fetch(url, { ...init, signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return { success: false, error: 'Request was aborted' };
@@ -190,6 +195,47 @@ export async function fetchAccountsLive(
   const result = await fetchJson<RawAccountRow[]>('/api/accounts', signal);
   if (!result.success) return result;
   return { success: true, data: adaptAccounts(result.data) };
+}
+
+/** Result returned after refreshing persisted open-position marks. */
+export interface MtmRefreshResult {
+  updated: number;
+  failed: string[];
+  timestamp: string;
+}
+
+/**
+ * Ask the server to fetch fresh quotes and persist open-position marks.
+ * Call this before reloading dashboard valuation data so the workstation
+ * never represents an ordinary GET as a successful market-data refresh.
+ */
+export async function refreshMtmPricesLive(
+  signal?: AbortSignal,
+): Promise<LiveFetchResult<MtmRefreshResult>> {
+  return fetchJson<MtmRefreshResult>(
+    '/api/trades/mtm/refresh',
+    signal,
+    { method: 'POST' },
+  );
+}
+
+/**
+ * Read the configured mark-refresh cadence. Rows created before this setting
+ * existed intentionally receive the same default as newly created rows.
+ */
+export async function fetchMtmRefreshIntervalLive(
+  signal?: AbortSignal,
+): Promise<LiveFetchResult<number>> {
+  const result = await fetchJson<{ refreshIntervalSeconds?: unknown }>(
+    '/api/market-data/settings',
+    signal,
+  );
+  if (!result.success) return result;
+
+  return {
+    success: true,
+    data: resolveMtmRefreshIntervalSeconds(result.data.refreshIntervalSeconds),
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

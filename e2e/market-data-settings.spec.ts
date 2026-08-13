@@ -101,6 +101,26 @@ test.describe('Market Data Settings — UI', () => {
 test.describe('Market Data Settings — Save and Persist', () => {
   test.describe.configure({ mode: 'serial' });
 
+  test('saves the mark refresh interval and restores it after reload', async ({ page }) => {
+    wipeMarketDataSettings();
+
+    await page.goto('/settings/market-data');
+    await page.waitForLoadState('networkidle');
+
+    const interval = page.locator('#mtmRefreshIntervalSeconds');
+    await expect(interval).toHaveValue('30');
+    await interval.fill('45');
+    await page.getByRole('button', { name: 'Save market data settings' }).click();
+    await expect(page.getByText('Market data settings saved.')).toBeVisible();
+
+    const response = await page.request.get('/api/market-data/settings');
+    expect(response.ok()).toBeTruthy();
+    expect((await response.json()).refreshIntervalSeconds).toBe(45);
+
+    await page.reload();
+    await expect(interval).toHaveValue('45');
+  });
+
   test('fills form, submits, shows success feedback, and persists data', async ({ page }) => {
     wipeMarketDataSettings();
 

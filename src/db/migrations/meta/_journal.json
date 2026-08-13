@@ -232,6 +232,13 @@
       "when": 1790000000001,
       "tag": "0032_drop_dead_pnl_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1790000000002,
+      "tag": "0033_light_rhino",
+      "breakpoints": true
     }
   ]
 }

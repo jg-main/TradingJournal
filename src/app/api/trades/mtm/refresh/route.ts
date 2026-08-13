@@ -394,6 +394,25 @@ export async function POST(_request: NextRequest) {
       markRefreshSucceeded();
     }
 
+    if (updated === 0 && failed.length > 0) {
+      console.error(
+        JSON.stringify({
+          event: 'mtm-refresh.all-quotes-failed',
+          failed,
+          timestamp: nowISO,
+        }),
+      );
+      return NextResponse.json(
+        {
+          error: 'No market prices refreshed',
+          updated,
+          failed,
+          timestamp: nowISO,
+        },
+        { status: 502 },
+      );
+    }
+
     return NextResponse.json({
       updated,
       failed,

@@ -40,7 +40,9 @@ import {
 import {
   fetchAllLiveDashboardData,
   fetchAccountsLive,
+  fetchMtmRefreshIntervalLive,
   fetchWatchlistPricesLive,
+  refreshMtmPricesLive,
   adaptV2Account,
   adaptMarketIndices,
   adaptSymbolPrices,
@@ -48,6 +50,7 @@ import {
   type LiveDashboardData,
   type WorkstationAccount,
 } from '@/lib/workstation-live-adapter';
+import { DEFAULT_MTM_REFRESH_INTERVAL_SECONDS } from '@/lib/market-data-refresh-interval';
 
 /** Re-export the account shape so the toolbar and other consumers
  *  can rely on a single source of truth. */
@@ -123,6 +126,8 @@ export interface WorkstationContextValue {
   /** MTM polling state: active (polling with open positions), paused
    *  (tab hidden or no open positions), or error (last poll failed). */
   mtmPollingState: MtmPollingState;
+  /** Configured cadence shown beside the live market-data indicator. */
+  mtmRefreshIntervalSeconds: number;
 }
 
 const WorkstationContext = createContext<WorkstationContextValue | null>(null);
@@ -162,9 +167,13 @@ export function WorkstationProvider({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mtmPollingState, setMtmPollingState] = useState<MtmPollingState>('paused');
+  const [mtmRefreshIntervalSeconds, setMtmRefreshIntervalSeconds] = useState(
+    DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
+  );
   const fetchAbortRef = useRef<AbortController | null>(null);
   const mtmIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mtmAbortRef = useRef<AbortController | null>(null);
+  const mtmRefreshInFlightRef = useRef(false);
 
   // ── Fixture-mode data ──────────────────────────────────────────────
   const fixtureData = useMemo(
@@ -241,6 +250,32 @@ export function WorkstationProvider({
     bootAccounts();
     return () => { cancelled = true; };
   }, [liveMode, isAccountControlled]);
+
+  // ── Mark refresh configuration (live mode only) ───────────────────
+  // The persisted setting is read once per mounted workstation. A malformed
+  // or older row is normalized in the adapter to the 30-second default.
+  useEffect(() => {
+    if (!liveMode) return;
+
+    let cancelled = false;
+    const loadInterval = async () => {
+      const result = await fetchMtmRefreshIntervalLive();
+      if (cancelled) return;
+
+      if (!result.success) {
+        console.warn(
+          '[workstation] unable to load MTM refresh interval; using default:',
+          result.error,
+        );
+        return;
+      }
+
+      setMtmRefreshIntervalSeconds(result.data);
+    };
+
+    void loadInterval();
+    return () => { cancelled = true; };
+  }, [liveMode]);
 
   // ── Fetch dashboard data (live mode, on account resolved) ──────────
   useEffect(() => {
@@ -352,7 +387,9 @@ export function WorkstationProvider({
   }, [liveMode, liveData]);
 
   // ── MTM polling (live mode only) ─────────────────────────────────
-  // Polls at 30s when live mode is active, tab is visible, and positions > 0.
+  // Refreshes at the configured cadence when live mode is active, the tab is
+  // visible, and positions > 0. Every tick persists fresh quotes first, then
+  // reloads current dashboard state. Historical analytics are never refreshed.
   // Pauses when tab is hidden or positions reach zero.  Sets mtmPollingState
   // so the toolbar can render the active/paused/error indicator.
   //
@@ -374,46 +411,79 @@ export function WorkstationProvider({
       if (mtmIntervalRef.current) return; // already polling
 
       setMtmPollingState('active');
-      console.info('[workstation] MTM polling started (30s)');
+      console.info(
+        `[workstation] MTM polling started (${mtmRefreshIntervalSeconds}s)`,
+      );
 
       const tick = async () => {
-        if (mtmAbortRef.current) {
-          mtmAbortRef.current.abort();
-        }
-        const controller = new AbortController();
-        mtmAbortRef.current = controller;
-
-        console.info('[workstation] MTM poll fired');
-        const result = await fetchAllLiveDashboardData(
-          activeAccountId,
-          controller.signal,
-          { skipAccounts: isAccountControlled },
-        );
-
-        // Effect cleanup and a superseding poll intentionally abort this
-        // request. They are lifecycle events, not user-visible poll errors.
-        if (controller.signal.aborted) return;
-
-        if (!result.success) {
-          console.error(
-            '[workstation] MTM poll failed:',
-            result.error,
-          );
-          setMtmPollingState('error');
+        if (mtmRefreshInFlightRef.current) {
+          console.info('[workstation] MTM poll skipped; a refresh is still in flight');
           return;
         }
 
-        console.info(
-          `[workstation] MTM poll OK: ${result.data.positions.length} position(s)`,
-        );
-        setLiveData(result.data);
-        if (!isAccountControlled) setLiveAccounts(result.data.accounts);
-        setMtmPollingState('active');
+        const controller = new AbortController();
+        mtmAbortRef.current = controller;
+        mtmRefreshInFlightRef.current = true;
+
+        try {
+          console.info('[workstation] MTM refresh fired');
+          const refreshResult = await refreshMtmPricesLive(controller.signal);
+
+          // Effect cleanup intentionally aborts the request. It is a
+          // lifecycle event, not a user-visible refresh failure.
+          if (controller.signal.aborted) return;
+
+          if (!refreshResult.success) {
+            const message = `Mark refresh failed: ${refreshResult.error}`;
+            console.error('[workstation] MTM refresh failed:', refreshResult.error);
+            setError(message);
+            setMtmPollingState('error');
+            return;
+          }
+
+          const result = await fetchAllLiveDashboardData(
+            activeAccountId,
+            controller.signal,
+            { skipAccounts: isAccountControlled },
+          );
+
+          if (controller.signal.aborted) return;
+
+          if (!result.success) {
+            const message = `Dashboard reload failed: ${result.error}`;
+            console.error('[workstation] MTM dashboard reload failed:', result.error);
+            setError(message);
+            setMtmPollingState('error');
+            return;
+          }
+
+          const partialFailure = refreshResult.data.failed.length > 0;
+          const message = partialFailure
+            ? `Mark refresh incomplete for ${refreshResult.data.failed.join(', ')}`
+            : null;
+
+          console.info(
+            `[workstation] MTM refresh OK: ${refreshResult.data.updated} mark(s), ` +
+              `${result.data.positions.length} position(s)`,
+          );
+          setLiveData(result.data);
+          if (!isAccountControlled) setLiveAccounts(result.data.accounts);
+          setError(message);
+          setMtmPollingState(partialFailure ? 'error' : 'active');
+        } finally {
+          mtmRefreshInFlightRef.current = false;
+          if (mtmAbortRef.current === controller) {
+            mtmAbortRef.current = null;
+          }
+        }
       };
 
-      // Fire one poll immediately, then every 30s.
-      tick();
-      mtmIntervalRef.current = setInterval(tick, 30_000);
+      // Fire one refresh immediately, then at the configured cadence.
+      void tick();
+      mtmIntervalRef.current = setInterval(
+        () => { void tick(); },
+        mtmRefreshIntervalSeconds * 1_000,
+      );
     };
 
     const stopPolling = () => {
@@ -423,7 +493,6 @@ export function WorkstationProvider({
       }
       if (mtmAbortRef.current) {
         mtmAbortRef.current.abort();
-        mtmAbortRef.current = null;
       }
       setMtmPollingState('paused');
       console.info('[workstation] MTM polling paused');
@@ -450,7 +519,13 @@ export function WorkstationProvider({
       // Resolve any pending interval — use a shallow check to avoid
       // stale-closure issues with hasPositions.
     };
-  }, [liveMode, activeAccountId, liveData?.positions.length, isAccountControlled]);
+  }, [
+    liveMode,
+    activeAccountId,
+    liveData?.positions.length,
+    isAccountControlled,
+    mtmRefreshIntervalSeconds,
+  ]);
 
   // ── Fixture-mode signal ───────────────────────────────────────────
   useEffect(() => {
@@ -478,6 +553,7 @@ export function WorkstationProvider({
       isLoading,
       error,
       mtmPollingState,
+      mtmRefreshIntervalSeconds,
     }),
     [
       liveMode,
@@ -491,6 +567,7 @@ export function WorkstationProvider({
       isLoading,
       error,
       mtmPollingState,
+      mtmRefreshIntervalSeconds,
     ],
   );
 

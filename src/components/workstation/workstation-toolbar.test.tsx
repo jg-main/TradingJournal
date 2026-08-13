@@ -38,6 +38,7 @@ function renderToolbar(overrides: Partial<WorkstationContextValue> = {}) {
     isLoading: false,
     error: null,
     mtmPollingState: 'active',
+    mtmRefreshIntervalSeconds: 45,
     ...overrides,
   } as WorkstationContextValue;
 
@@ -54,6 +55,7 @@ describe('WorkstationToolbar live data status', () => {
     expect(badge.textContent).toBe('LIVE');
     expect(badge.classList.contains('ws-live-badge-active')).toBe(true);
     expect(badge.getAttribute('title')).toContain('Live data is flowing');
+    expect(badge.getAttribute('title')).toContain('45 seconds');
   });
 
   it('shows a red issue badge when a live data refresh fails', () => {

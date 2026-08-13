@@ -32,6 +32,8 @@ import {
   fetchAccountsLive,
   fetchAllLiveDashboardData,
   fetchWatchlistPricesLive,
+  refreshMtmPricesLive,
+  fetchMtmRefreshIntervalLive,
   adaptAccounts,
   adaptPositions,
   adaptRisk,
@@ -1521,5 +1523,42 @@ describe('fetchWatchlistPricesLive', () => {
     // Verify the URL was constructed correctly via the mock
     const url = mockFetch.mock.calls.at(-1)?.[0] as string;
     expect(url).toContain('/api/watchlist/prices?symbols=SPX%2CAAPL');
+  });
+});
+
+describe('refreshMtmPricesLive', () => {
+  it('posts a price refresh before the workstation reloads valuation data', async () => {
+    mockFetchResponse(200, {
+      updated: 3,
+      failed: [],
+      timestamp: '2026-08-13T15:00:00.000Z',
+    });
+
+    const result = await refreshMtmPricesLive();
+
+    expect(result).toEqual({
+      success: true,
+      data: {
+        updated: 3,
+        failed: [],
+        timestamp: '2026-08-13T15:00:00.000Z',
+      },
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/trades/mtm/refresh',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+});
+
+describe('fetchMtmRefreshIntervalLive', () => {
+  it('uses the persisted interval and preserves the default for older settings rows', async () => {
+    mockFetchResponse(200, { refreshIntervalSeconds: 45 });
+    const persisted = await fetchMtmRefreshIntervalLive();
+    expect(persisted).toEqual({ success: true, data: 45 });
+
+    mockFetchResponse(200, { message: 'No market data settings configured yet.' });
+    const fallback = await fetchMtmRefreshIntervalLive();
+    expect(fallback).toEqual({ success: true, data: 30 });
   });
 });

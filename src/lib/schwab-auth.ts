@@ -57,7 +57,7 @@ export type ExchangeResult = ExchangeSuccess | ExchangeError;
 export interface TokenStatus {
   connected: boolean;
   expiresAt: string | null;
-  errorType?: 'not_configured' | 'token_expired';
+  errorType?: 'not_configured' | 'token_expired' | 'refresh_token_missing';
 }
 
 // ── Configuration ───────────────────────────────────────────────────────
@@ -321,6 +321,16 @@ export async function getTokenStatus(): Promise<TokenStatus> {
       return { connected: false, expiresAt: null };
     }
 
+    if (!tokenData.refreshToken) {
+      return {
+        connected: false,
+        expiresAt: tokenData.expiresAt
+          ? new Date(tokenData.expiresAt).toISOString()
+          : null,
+        errorType: 'refresh_token_missing',
+      };
+    }
+
     // Check if token is expired
     if (tokenData.expiresAt && tokenData.expiresAt < Date.now()) {
       return {
@@ -395,7 +405,7 @@ export async function ensureTokenFreshness(): Promise<boolean> {
       .where(eq(schwabTokens.status, 'active'))
       .get();
 
-    if (!row || !row.expiresAt) return false;
+    if (!row || !row.expiresAt || !row.encryptedRefreshToken) return false;
 
     const expiresAt = new Date(row.expiresAt).getTime();
     const now = Date.now();

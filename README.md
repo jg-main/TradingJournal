@@ -11,6 +11,7 @@ risk, reviews, account activity, watchlists, and performance dashboards.
 - [Setup](#setup)
 - [Common Commands](#common-commands)
 - [In-App Help](#in-app-help)
+- [Market-data refresh](#market-data-refresh)
 - [Database](#database)
 - [Accounting maintenance](#accounting-maintenance)
 - [Project Layout](#project-layout)
@@ -108,6 +109,19 @@ icon) or by navigating directly to `http://localhost:3000/help`. It covers:
 
 Contextual help tooltips are available on the Plan Trade form and AI Settings
 form — hover the info icon next to any field label for inline guidance.
+
+## Market-data refresh
+
+Choose the open-position mark refresh cadence under **Settings > Market Data**.
+The supported range is 10–300 seconds; 30 seconds is the default. The selected
+cadence is saved with the market-data settings and applies to the dashboard and
+open trade details while their tabs are visible.
+
+The workstation refreshes current marks before it reloads current account state.
+`LIVE` means that refresh is succeeding at the displayed cadence. `ISSUE` means
+the last refresh failed or was incomplete; the last known marks remain visible
+but should be treated as stale. If Schwab reports **Reconnect Required**, use
+the connection control on the same settings page before relying on live marks.
 
 ## Database
 

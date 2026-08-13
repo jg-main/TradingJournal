@@ -17,6 +17,8 @@ import React from 'react';
 
 const fetchAccountsLive = vi.fn();
 const fetchAllLiveDashboardData = vi.fn();
+const refreshMtmPricesLive = vi.fn();
+const fetchMtmRefreshIntervalLive = vi.fn();
 
 vi.mock('@/lib/workstation-live-adapter', async (importOriginal) => {
   const original =
@@ -26,6 +28,10 @@ vi.mock('@/lib/workstation-live-adapter', async (importOriginal) => {
     fetchAccountsLive: (...args: unknown[]) => fetchAccountsLive(...args),
     fetchAllLiveDashboardData: (...args: unknown[]) =>
       fetchAllLiveDashboardData(...args),
+    refreshMtmPricesLive: (...args: unknown[]) =>
+      refreshMtmPricesLive(...args),
+    fetchMtmRefreshIntervalLive: (...args: unknown[]) =>
+      fetchMtmRefreshIntervalLive(...args),
     fetchWatchlistPricesLive: vi.fn().mockResolvedValue({ success: true, data: {} }),
   };
 });
@@ -78,6 +84,11 @@ describe('WorkstationProvider account control', () => {
         risk: {},
       },
     });
+    refreshMtmPricesLive.mockResolvedValue({
+      success: true,
+      data: { updated: 1, failed: [], timestamp: '2026-08-13T15:00:00.000Z' },
+    });
+    fetchMtmRefreshIntervalLive.mockResolvedValue({ success: true, data: 45 });
   });
 
   afterEach(() => {
@@ -162,5 +173,38 @@ describe('WorkstationProvider account control', () => {
     // back to the fixture account id — but crucially no crash and no
     // external callback involvement.
     expect(screen.getByTestId('external').textContent).toBe('false');
+  });
+
+  it('refreshes marks before reloading live dashboard data for open positions', async () => {
+    fetchAllLiveDashboardData.mockResolvedValue({
+      success: true,
+      data: {
+        accounts: controlledAccounts,
+        positions: [{}],
+        watchlist: [],
+        dashboard: { setupRanking: [] },
+        dashboardV2: { account: {} },
+        risk: {},
+      },
+    });
+
+    render(
+      <WorkstationProvider
+        liveMode
+        accounts={controlledAccounts}
+        accountId="acc-1"
+        onAccountIdChange={vi.fn()}
+      >
+        <Probe />
+      </WorkstationProvider>,
+    );
+    await flush();
+    await flush();
+
+    expect(refreshMtmPricesLive).toHaveBeenCalled();
+    expect(fetchAllLiveDashboardData).toHaveBeenCalledTimes(2);
+    expect(refreshMtmPricesLive.mock.invocationCallOrder[0]).toBeLessThan(
+      fetchAllLiveDashboardData.mock.invocationCallOrder[1],
+    );
   });
 });

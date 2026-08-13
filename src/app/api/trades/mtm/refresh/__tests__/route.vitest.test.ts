@@ -497,9 +497,10 @@ describe('POST /api/trades/mtm/refresh', () => {
 
     // First call: all fail, updated=0, timer NOT reset
     const r1 = await callPost();
-    expect(r1.status).toBe(200);
+    expect(r1.status).toBe(502);
     expect(r1.data.updated).toBe(0);
     expect((r1.data.failed as string[]).length).toBe(2);
+    expect(r1.data.error).toBe('No market prices refreshed');
 
     // Since timer was not reset, a second call should NOT be rate-limited
     // But we need the rate limit to have passed, so add quotes now

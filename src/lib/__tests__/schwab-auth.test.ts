@@ -286,6 +286,23 @@ describe('getTokenStatus', () => {
     expect(status.connected).toBe(false);
     expect(status.expiresAt).toBeNull();
   });
+
+  it('requires reconnection when an access token has no refresh token', async () => {
+    const futureExpiry = Date.now() + 3600000;
+    mockFns.mockGetTokenData.mockResolvedValue({
+      accessToken: 'test-access-token',
+      expiresAt: futureExpiry,
+    });
+
+    const { getTokenStatus, resetAuthClient } = await freshAuth();
+    resetAuthClient();
+
+    await expect(getTokenStatus()).resolves.toEqual({
+      connected: false,
+      expiresAt: new Date(futureExpiry).toISOString(),
+      errorType: 'refresh_token_missing',
+    });
+  });
 });
 
 describe('resetAuthClient', () => {

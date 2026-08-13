@@ -28,6 +28,7 @@ const mockAuthFns = vi.hoisted(() => ({
   mockGetTokenData: vi.fn(),
   mockGetAuthClient: vi.fn(),
   mockSchwabIsConfigured: vi.fn(),
+  mockEnsureTokenFreshness: vi.fn(),
 }));
 
 // ── Mock server-only ───────────────────────────────────────────────
@@ -89,7 +90,7 @@ vi.mock('../schwab-auth', () => ({
   getAuthClient: mockAuthFns.mockGetAuthClient,
   schwabIsConfigured: mockAuthFns.mockSchwabIsConfigured,
   resetAuthClient: vi.fn(),
-  ensureTokenFreshness: vi.fn().mockResolvedValue(true),
+  ensureTokenFreshness: mockAuthFns.mockEnsureTokenFreshness,
 }));
 
 // ── Import after mocks ─────────────────────────────────────────────
@@ -181,6 +182,7 @@ function createMockQuoteEntry(
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(FIXED_NOW));
+  mockAuthFns.mockEnsureTokenFreshness.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -231,6 +233,23 @@ describe('getQuote', () => {
     const provider = createProvider();
     const results = await provider.getQuote([]);
     expect(results).toEqual([]);
+  });
+
+  it('does not call Schwab quote APIs when the token cannot be refreshed', async () => {
+    mockAuthFns.mockEnsureTokenFreshness.mockResolvedValue(false);
+    const provider = createProvider();
+
+    const results = await provider.getQuote(['AAPL']);
+
+    expect(mockFns.mockGetQuotes).not.toHaveBeenCalled();
+    expect(results).toMatchObject([
+      {
+        symbol: 'AAPL',
+        price: null,
+        source: 'schwab',
+        error: expect.stringContaining('Reconnect Schwab'),
+      },
+    ]);
   });
 
   it('returns mapped quotes for valid symbols with dayHigh/dayLow', async () => {

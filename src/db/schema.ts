@@ -384,6 +384,7 @@ export const marketDataSettings = sqliteTable('market_data_settings', {
   id: text('id').primaryKey().notNull(),
   activeProvider: text('active_provider').default('clickhouse').notNull(),
   providers: text('providers').default('{}').notNull(),
+  refreshIntervalSeconds: integer('refresh_interval_seconds').default(30).notNull(),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
   updatedAt: text('updated_at').default(sql`(current_timestamp)`),
 });

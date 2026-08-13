@@ -169,6 +169,27 @@ test.describe('Schwab Connection UI', () => {
     await expect(connectButton).toBeEnabled();
   });
 
+  test('shows a reconnect-required state when Schwab cannot renew access', async ({ page }) => {
+    await page.route('**/api/schwab/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          connected: false,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          errorType: 'refresh_token_missing',
+        }),
+      });
+    });
+
+    await page.goto('/settings/market-data');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByText('Reconnect Required')).toBeVisible();
+    await expect(page.getByText(/cannot refresh market-data access/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /connect schwab/i })).toBeEnabled();
+  });
+
   test('creates Schwab section after ClickHouse section', async ({ page }) => {
     await page.goto('/settings/market-data');
     await page.waitForLoadState('networkidle');

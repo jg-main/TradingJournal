@@ -26,6 +26,7 @@ import { SchwabProvider } from './schwab-provider';
 import { YahooFinanceProvider } from './market-quote';
 import type { MarketQuoteProvider } from './market-quote';
 import type { MarketOhlcProvider } from './market-ohlc-provider';
+import { resolveMtmRefreshIntervalSeconds } from './market-data-refresh-interval';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -35,6 +36,8 @@ import type { MarketOhlcProvider } from './market-ohlc-provider';
 export interface MarketDataSettings {
   /** Global active provider for quote fetching ('clickhouse' | 'schwab') */
   activeProvider: string;
+  /** Configured cadence for refreshing open-position marks. */
+  refreshIntervalSeconds: number;
 }
 
 // ── DB Access ───────────────────────────────────────────────────────────
@@ -71,7 +74,12 @@ export function readActiveMarketDataSettings(): MarketDataSettings | null {
       }),
     );
 
-    return { activeProvider: row.activeProvider };
+    return {
+      activeProvider: row.activeProvider,
+      refreshIntervalSeconds: resolveMtmRefreshIntervalSeconds(
+        row.refreshIntervalSeconds,
+      ),
+    };
   } catch (err) {
     console.error(
       JSON.stringify({

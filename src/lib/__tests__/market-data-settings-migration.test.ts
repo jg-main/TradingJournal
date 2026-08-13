@@ -8,6 +8,15 @@
 
 import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { join } from 'node:path';
+import {
+  DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
+  MAX_MTM_REFRESH_INTERVAL_SECONDS,
+  MIN_MTM_REFRESH_INTERVAL_SECONDS,
+  resolveMtmRefreshIntervalSeconds,
+} from '../market-data-refresh-interval';
 
 // ── In-memory test DB ──────────────────────────────────────────────────
 
@@ -69,6 +78,7 @@ beforeEach(() => {
       id TEXT PRIMARY KEY NOT NULL,
       active_provider TEXT DEFAULT 'clickhouse' NOT NULL,
       providers TEXT DEFAULT '{}' NOT NULL,
+      refresh_interval_seconds INTEGER DEFAULT 30 NOT NULL,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)
     );
@@ -100,6 +110,22 @@ afterEach(() => {
 });
 
 describe('market_data_settings migration', () => {
+  it('accepts only provider-safe whole-second quote refresh intervals', () => {
+    expect(resolveMtmRefreshIntervalSeconds(45)).toBe(45);
+    expect(resolveMtmRefreshIntervalSeconds(undefined)).toBe(
+      DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
+    );
+    expect(resolveMtmRefreshIntervalSeconds(MIN_MTM_REFRESH_INTERVAL_SECONDS - 1)).toBe(
+      DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
+    );
+    expect(resolveMtmRefreshIntervalSeconds(MAX_MTM_REFRESH_INTERVAL_SECONDS + 1)).toBe(
+      DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
+    );
+    expect(resolveMtmRefreshIntervalSeconds(30.5)).toBe(
+      DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
+    );
+  });
+
   it('creates market_data_settings table with correct schema', () => {
     const columns = sqlite.prepare('PRAGMA table_info(market_data_settings)').all() as Array<{
       cid: number;
@@ -109,7 +135,7 @@ describe('market_data_settings migration', () => {
       dflt_value: string | null;
     }>;
 
-    expect(columns.length).toBe(5);
+    expect(columns.length).toBe(6);
 
     const idCol = columns.find(c => c.name === 'id');
     expect(idCol).toBeDefined();
@@ -127,6 +153,53 @@ describe('market_data_settings migration', () => {
     expect(providersCol!.type).toBe('TEXT');
     expect(providersCol!.notnull).toBe(1);
     expect(providersCol!.dflt_value).toMatch(/\{.*\}/);
+
+    const refreshIntervalCol = columns.find(c => c.name === 'refresh_interval_seconds');
+    expect(refreshIntervalCol).toBeDefined();
+    expect(refreshIntervalCol!.type).toBe('INTEGER');
+    expect(refreshIntervalCol!.notnull).toBe(1);
+    expect(refreshIntervalCol!.dflt_value).toBe('30');
+  });
+
+  it('upgrades databases already migrated through 0032', () => {
+    const legacySqlite = new Database(':memory:');
+    try {
+      legacySqlite.exec(`
+        CREATE TABLE market_data_settings (
+          id TEXT PRIMARY KEY NOT NULL,
+          active_provider TEXT DEFAULT 'clickhouse' NOT NULL,
+          providers TEXT DEFAULT '{}' NOT NULL,
+          created_at TEXT DEFAULT (current_timestamp),
+          updated_at TEXT DEFAULT (current_timestamp)
+        );
+        CREATE TABLE __drizzle_migrations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          hash TEXT NOT NULL,
+          created_at numeric
+        );
+      `);
+      legacySqlite
+        .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)')
+        .run('0032_drop_dead_pnl_columns', 1790000000001);
+
+      migrate(drizzle(legacySqlite), {
+        migrationsFolder: join(process.cwd(), 'src/db/migrations'),
+      });
+
+      const columns = legacySqlite.prepare('PRAGMA table_info(market_data_settings)').all() as Array<{
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+      }>;
+      expect(columns.find(column => column.name === 'refresh_interval_seconds')).toMatchObject({
+        type: 'INTEGER',
+        notnull: 1,
+        dflt_value: '30',
+      });
+    } finally {
+      legacySqlite.close();
+    }
   });
 
   it('migrates ClickHouse config from ai_settings to market_data_settings', () => {

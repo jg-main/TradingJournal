@@ -16,6 +16,12 @@ import { db } from '@/db';
 import { marketDataSettings } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import {
+  DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
+  MAX_MTM_REFRESH_INTERVAL_SECONDS,
+  MIN_MTM_REFRESH_INTERVAL_SECONDS,
+  resolveMtmRefreshIntervalSeconds,
+} from '@/lib/market-data-refresh-interval';
 
 // ── Zod Schemas ─────────────────────────────────────────────────────────
 
@@ -38,6 +44,12 @@ const clickhouseProviderSchema = z.object({
 const marketDataSettingsSchema = z.object({
   activeProvider: z.string().min(1, 'activeProvider must be a non-empty string').optional(),
   providers: z.record(z.string(), z.object({}).catchall(z.any())).optional(),
+  refreshIntervalSeconds: z
+    .number()
+    .int()
+    .min(MIN_MTM_REFRESH_INTERVAL_SECONDS)
+    .max(MAX_MTM_REFRESH_INTERVAL_SECONDS)
+    .optional(),
 });
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -112,6 +124,7 @@ export async function GET() {
       id: row.id,
       activeProvider: row.activeProvider,
       providers: safeProviders,
+      refreshIntervalSeconds: resolveMtmRefreshIntervalSeconds(row.refreshIntervalSeconds),
     });
   } catch (error) {
     return NextResponse.json(
@@ -154,6 +167,9 @@ export async function PUT(request: NextRequest) {
           id,
           activeProvider: parsed.data.activeProvider ?? 'clickhouse',
           providers,
+          refreshIntervalSeconds:
+            parsed.data.refreshIntervalSeconds ??
+            DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
         })
         .run();
 
@@ -171,6 +187,7 @@ export async function PUT(request: NextRequest) {
           id: row.id,
           activeProvider: row.activeProvider,
           providers: stripProviderSecrets(rowProviders),
+          refreshIntervalSeconds: resolveMtmRefreshIntervalSeconds(row.refreshIntervalSeconds),
         },
         { status: 201 },
       );
@@ -191,6 +208,10 @@ export async function PUT(request: NextRequest) {
         ...parsed.data.providers,
       } as Record<string, unknown>;
       updateData.providers = JSON.stringify(mergedProviders);
+    }
+
+    if (parsed.data.refreshIntervalSeconds !== undefined) {
+      updateData.refreshIntervalSeconds = parsed.data.refreshIntervalSeconds;
     }
 
     if (Object.keys(updateData).length > 0) {
@@ -214,6 +235,7 @@ export async function PUT(request: NextRequest) {
       id: row.id,
       activeProvider: row.activeProvider,
       providers: stripProviderSecrets(rowProviders),
+      refreshIntervalSeconds: resolveMtmRefreshIntervalSeconds(row.refreshIntervalSeconds),
     });
   } catch (error) {
     return NextResponse.json(

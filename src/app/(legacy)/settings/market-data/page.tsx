@@ -11,6 +11,7 @@ interface MarketDataSettings {
   id: string;
   activeProvider: string;
   providers: Record<string, ProviderConfig | unknown>;
+  refreshIntervalSeconds: number;
 }
 
 interface ProviderConfig {
@@ -25,7 +26,7 @@ interface ProviderConfig {
 interface SchwabTokenStatus {
   connected: boolean;
   expiresAt: string | null;
-  errorType?: 'not_configured' | 'token_expired';
+  errorType?: 'not_configured' | 'token_expired' | 'refresh_token_missing';
 }
 
 type SchwabDotStatus = 'connected' | 'expiring' | 'disconnected' | 'unknown';
@@ -107,6 +108,7 @@ export default function MarketDataSettingsPage() {
   // ── Form State ──────────────────────────────────────────────────────
 
   const [activeProvider, setActiveProvider] = useState('clickhouse');
+  const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState('30');
   const [chHost, setChHost] = useState('');
   const [chPort, setChPort] = useState('');
   const [chUser, setChUser] = useState('');
@@ -145,6 +147,7 @@ export default function MarketDataSettingsPage() {
 
       if (data && data.id) {
         setActiveProvider(data.activeProvider || 'clickhouse');
+        setRefreshIntervalSeconds(String(data.refreshIntervalSeconds ?? 30));
 
         const ch = data.providers?.clickhouse as ProviderConfig | undefined;
         setChHost(ch?.host ?? '');
@@ -237,6 +240,20 @@ export default function MarketDataSettingsPage() {
     setSaving(true);
     setMessage(null);
 
+    const parsedRefreshIntervalSeconds = Number(refreshIntervalSeconds);
+    if (
+      !Number.isInteger(parsedRefreshIntervalSeconds) ||
+      parsedRefreshIntervalSeconds < 10 ||
+      parsedRefreshIntervalSeconds > 300
+    ) {
+      setMessage({
+        type: 'error',
+        text: 'Mark refresh interval must be a whole number from 10 to 300 seconds.',
+      });
+      setSaving(false);
+      return;
+    }
+
     const providers: Record<string, unknown> = {};
     if (activeProvider === 'schwab' && schwabStatus?.connected) {
       providers.schwab = { configured: true };
@@ -246,7 +263,11 @@ export default function MarketDataSettingsPage() {
       const res = await fetch('/api/market-data/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activeProvider, providers }),
+        body: JSON.stringify({
+          activeProvider,
+          providers,
+          refreshIntervalSeconds: parsedRefreshIntervalSeconds,
+        }),
       });
 
       if (!res.ok) {
@@ -257,7 +278,8 @@ export default function MarketDataSettingsPage() {
 
       const data = (await res.json()) as MarketDataSettings;
       setSettings(data);
-      setMessage({ type: 'success', text: `Active provider set to ${activeProvider === 'clickhouse' ? 'ClickHouse' : 'Schwab'}.` });
+      setRefreshIntervalSeconds(String(data.refreshIntervalSeconds));
+      setMessage({ type: 'success', text: 'Market data settings saved.' });
     } catch {
       setMessage({ type: 'error', text: 'Failed to save provider selection.' });
     } finally {
@@ -485,7 +507,36 @@ export default function MarketDataSettingsPage() {
               </div>
             </div>
 
-            {/* Save provider selection */}
+            <div className="flex items-center justify-between border-t border-border pt-3">
+              <div>
+                <label
+                  htmlFor="mtmRefreshIntervalSeconds"
+                  className="block text-sm text-muted-foreground"
+                >
+                  Open-position mark refresh
+                </label>
+                <p id="mtmRefreshIntervalHelp" className="mt-0.5 text-xs text-muted-foreground">
+                  Runs while the dashboard or an open trade is visible. Whole seconds from 10 to 300.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="mtmRefreshIntervalSeconds"
+                  type="number"
+                  min="10"
+                  max="300"
+                  step="1"
+                  inputMode="numeric"
+                  aria-describedby="mtmRefreshIntervalHelp"
+                  value={refreshIntervalSeconds}
+                  onChange={(event) => setRefreshIntervalSeconds(event.target.value)}
+                  className="w-20 rounded-md border border-input bg-card px-2 py-1.5 text-right text-sm tabular-nums text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <span className="text-sm text-muted-foreground">sec</span>
+              </div>
+            </div>
+
+            {/* Save provider and refresh settings */}
             <div className="flex items-center gap-3 border-t border-border pt-4">
               <button
                 type="button"
@@ -493,7 +544,7 @@ export default function MarketDataSettingsPage() {
                 disabled={saving}
                 className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? 'Saving...' : 'Save market data settings'}
               </button>
             </div>
           </div>
@@ -672,6 +723,8 @@ export default function MarketDataSettingsPage() {
                           ? 'Not Configured'
                           : schwabStatus.errorType === 'token_expired'
                             ? 'Token Expired'
+                            : schwabStatus.errorType === 'refresh_token_missing'
+                              ? 'Reconnect Required'
                             : schwabStatus.connected
                               ? 'Connected'
                               : 'Not Connected'}
@@ -702,6 +755,12 @@ export default function MarketDataSettingsPage() {
                 <code className="rounded bg-muted px-1 py-0.5 text-xs">SCHWAB_CLIENT_SECRET</code>, and{' '}
                 <code className="rounded bg-muted px-1 py-0.5 text-xs">SCHWAB_REDIRECT_URI</code>{' '}
                 environment variables to enable Schwab market data.
+              </div>
+            )}
+
+            {schwabStatus?.errorType === 'refresh_token_missing' && (
+              <div className="border-t border-border pt-3 text-xs text-destructive">
+                This connection cannot refresh market-data access. Reconnect Schwab before relying on live marks.
               </div>
             )}
 

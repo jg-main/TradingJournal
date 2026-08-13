@@ -28,6 +28,7 @@ const mockSqlite = vi.hoisted(() => {
       id TEXT PRIMARY KEY NOT NULL,
       active_provider TEXT NOT NULL DEFAULT 'clickhouse',
       providers TEXT NOT NULL DEFAULT '{}',
+      refresh_interval_seconds INTEGER NOT NULL DEFAULT 30,
       created_at TEXT DEFAULT (current_timestamp),
       updated_at TEXT DEFAULT (current_timestamp)
     );

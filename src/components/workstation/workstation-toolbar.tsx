@@ -24,10 +24,10 @@ function mtmLabel(state: MtmPollingState): string {
   }
 }
 
-function mtmTitle(state: MtmPollingState): string {
+function mtmTitle(state: MtmPollingState, intervalSeconds: number): string {
   switch (state) {
     case 'active':
-      return 'Mark-to-market polling active (30s)';
+      return `Mark-to-market refresh active (every ${intervalSeconds} seconds)`;
     case 'paused':
       return 'MTM polling paused — no open positions or tab hidden';
     case 'error':
@@ -47,10 +47,10 @@ function liveBadgeLabel(state: MtmPollingState): string {
   }
 }
 
-function liveBadgeTitle(state: MtmPollingState): string {
+function liveBadgeTitle(state: MtmPollingState, intervalSeconds: number): string {
   switch (state) {
     case 'active':
-      return 'Live data is flowing; mark-to-market refreshes every 30 seconds';
+      return `Live data is flowing; mark-to-market refreshes every ${intervalSeconds} seconds`;
     case 'paused':
       return 'Live data is loaded; mark-to-market polling is idle';
     case 'error':
@@ -80,6 +80,7 @@ export function WorkstationToolbar() {
     isLoading,
     error,
     mtmPollingState,
+    mtmRefreshIntervalSeconds,
   } = useWorkstation();
 
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
@@ -190,7 +191,7 @@ export function WorkstationToolbar() {
         data-testid={`ws-mtm-${mtmPollingState}`}
         role="status"
         aria-label={mtmLabel(mtmPollingState)}
-        title={mtmTitle(mtmPollingState)}
+        title={mtmTitle(mtmPollingState, mtmRefreshIntervalSeconds)}
       >
         <span className="ws-mtm-dot" aria-hidden="true" />
         {mtmLabel(mtmPollingState)}
@@ -206,8 +207,8 @@ export function WorkstationToolbar() {
         className={`ws-live-badge ws-live-badge-${liveBadgeState}`}
         data-testid="ws-live-badge"
         role={liveBadgeState === 'error' ? 'alert' : 'status'}
-        aria-label={liveBadgeTitle(liveBadgeState)}
-        title={liveBadgeTitle(liveBadgeState)}
+        aria-label={liveBadgeTitle(liveBadgeState, mtmRefreshIntervalSeconds)}
+        title={liveBadgeTitle(liveBadgeState, mtmRefreshIntervalSeconds)}
       >
         {liveBadgeLabel(liveBadgeState)}
       </span>

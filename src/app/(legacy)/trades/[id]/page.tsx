@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import type { TradeMetricsResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
+import { useMtmRefreshInterval } from '@/hooks/use-mtm-refresh-interval';
 import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
 
 import PlannedPhaseView from '@/components/trade-detail/planned-phase-view';
@@ -256,6 +257,7 @@ export default function TradeDetailPage() {
   const [executeOpen, setExecuteOpen] = useState(false);
   const [executeData, setExecuteData] = useState<ExecuteTradeData | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const mtmRefreshIntervalMs = useMtmRefreshInterval();
   // Trade awaiting scratch confirmation (M015/S02/T02). The page owns the
   // ConfirmDialog and the DELETE /api/trades/[id] call; PlannedPhaseView only
   // triggers the request via its onScratch callback.
@@ -330,14 +332,14 @@ export default function TradeDetailPage() {
       .catch(() => {});
   }, [trade?.status, id]);
 
-  // Continuous 15s visibility-aware polling via shared hook
+  // Continuous visibility-aware polling at the configured mark-refresh cadence.
   useVisibilityPolling(
     () => {
       fetch('/api/trades/mtm/refresh', { method: 'POST' })
         .then(() => fetchMtmData(id, setMtmData))
         .catch(() => {});
     },
-    15000,
+    mtmRefreshIntervalMs,
     trade?.status === 'open',
   );
 

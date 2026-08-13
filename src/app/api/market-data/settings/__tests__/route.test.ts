@@ -30,6 +30,7 @@ sqlite.exec(`
     id TEXT PRIMARY KEY NOT NULL,
     active_provider TEXT NOT NULL DEFAULT 'clickhouse',
     providers TEXT NOT NULL DEFAULT '{}',
+    refresh_interval_seconds INTEGER NOT NULL DEFAULT 30,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -88,6 +89,7 @@ function doGetMarketDataSettings(): { status: number; data: unknown } {
         id: row.id,
         activeProvider: row.activeProvider,
         providers: safeProviders,
+        refreshIntervalSeconds: row.refreshIntervalSeconds,
       },
     };
   } catch (error) {
@@ -111,6 +113,15 @@ function doPutMarketDataSettings(body: Record<string, unknown>): { status: numbe
       }
     }
 
+    if (
+      body.refreshIntervalSeconds !== undefined &&
+      (!Number.isInteger(body.refreshIntervalSeconds) ||
+        (body.refreshIntervalSeconds as number) < 10 ||
+        (body.refreshIntervalSeconds as number) > 300)
+    ) {
+      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { refreshIntervalSeconds: ['Number must be greater than or equal to 10'] } } } };
+    }
+
     const existing = db.select().from(schema.marketDataSettings).limit(1).get();
 
     if (!existing) {
@@ -118,12 +129,17 @@ function doPutMarketDataSettings(body: Record<string, unknown>): { status: numbe
       const id = randomUUID();
       const providers = body.providers ? JSON.stringify(body.providers) : '{}';
       const activeProvider = (typeof body.activeProvider === 'string' ? body.activeProvider : 'clickhouse');
+      const refreshIntervalSeconds =
+        typeof body.refreshIntervalSeconds === 'number'
+          ? body.refreshIntervalSeconds
+          : 30;
 
        
       db.insert(schema.marketDataSettings).values({
         id,
         activeProvider,
         providers,
+        refreshIntervalSeconds,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any).run();
 
@@ -133,7 +149,7 @@ function doPutMarketDataSettings(body: Record<string, unknown>): { status: numbe
       }
 
       const rowProviders = parseProviders(row.providers);
-      return { status: 201, data: { id: row.id, activeProvider: row.activeProvider, providers: stripProviderSecrets(rowProviders) } };
+      return { status: 201, data: { id: row.id, activeProvider: row.activeProvider, providers: stripProviderSecrets(rowProviders), refreshIntervalSeconds: row.refreshIntervalSeconds } };
     }
 
     // ── Update existing row ──
@@ -152,6 +168,10 @@ function doPutMarketDataSettings(body: Record<string, unknown>): { status: numbe
       updateData.providers = JSON.stringify(mergedProviders);
     }
 
+    if (body.refreshIntervalSeconds !== undefined) {
+      updateData.refreshIntervalSeconds = body.refreshIntervalSeconds;
+    }
+
     if (Object.keys(updateData).length > 0) {
       updateData.updated_at = new Date().toISOString();
 
@@ -167,7 +187,7 @@ function doPutMarketDataSettings(body: Record<string, unknown>): { status: numbe
     }
 
     const rowProviders = parseProviders(row.providers);
-    return { status: 200, data: { id: row.id, activeProvider: row.activeProvider, providers: stripProviderSecrets(rowProviders) } };
+    return { status: 200, data: { id: row.id, activeProvider: row.activeProvider, providers: stripProviderSecrets(rowProviders), refreshIntervalSeconds: row.refreshIntervalSeconds } };
   } catch (error) {
     return { status: 500, data: { error: 'Failed to update market data settings', details: String(error) } };
   }
@@ -219,6 +239,7 @@ test('2. GET returns settings with activeProvider and parsed providers', () => {
   const data = result.data as Record<string, unknown>;
   expect(data).toHaveProperty('id');
   expect(data.activeProvider).toBe('clickhouse');
+  expect(data.refreshIntervalSeconds).toBe(30);
 
   const providers = data.providers as Record<string, unknown>;
   expect(providers).toHaveProperty('clickhouse');
@@ -292,6 +313,16 @@ test('6. PUT creates with only activeProvider', () => {
   expect(result.status).toBe(201);
   const data = result.data as Record<string, unknown>;
   expect(data.activeProvider).toBe('schwab');
+});
+
+test('6a. PUT stores and returns a configured quote refresh interval', () => {
+  const created = doPutMarketDataSettings({ refreshIntervalSeconds: 45 });
+  expect(created.status).toBe(201);
+  expect((created.data as Record<string, unknown>).refreshIntervalSeconds).toBe(45);
+
+  const updated = doPutMarketDataSettings({ refreshIntervalSeconds: 60 });
+  expect(updated.status).toBe(200);
+  expect((updated.data as Record<string, unknown>).refreshIntervalSeconds).toBe(60);
 });
 
 // ── PUT Update Tests ────────────────────────────────────────────────
@@ -440,6 +471,12 @@ test('13. PUT rejects non-object providers', () => {
 test('14. PUT rejects array providers', () => {
   const result = doPutMarketDataSettings({ providers: [] });
   expect(result.status).toBe(400);
+});
+
+test('14a. PUT rejects refresh intervals outside the provider-safe range', () => {
+  expect(doPutMarketDataSettings({ refreshIntervalSeconds: 9 }).status).toBe(400);
+  expect(doPutMarketDataSettings({ refreshIntervalSeconds: 301 }).status).toBe(400);
+  expect(doPutMarketDataSettings({ refreshIntervalSeconds: 30.5 }).status).toBe(400);
 });
 
 test('15. PUT with empty body creates defaults', () => {
