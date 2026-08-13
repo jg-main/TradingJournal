@@ -7,10 +7,9 @@
  *
  *   - All KPI stat rows render with correct formatted values
  *   - Profit factor threshold colouring (>1.5 ws-pos, ≥1.0 '', <1.0 ws-neg)
- *   - Monthly performance summary renders top 4 months
- *   - R distribution renders bins
- *   - Setup ranking shows top 3
- *   - Tier 3 metrics show 'Unavailable' with prerequisite text
+ *   - Dense S02 contract: stat rows only — no monthly table, no R
+ *     distribution, no setup ranking, and no Tier 3 gated analytics in the
+ *     compact summary row (DASHBOARD_DENSE_LAYOUT_REQUIREMENTS)
  *   - Empty data shows compact empty state
  *
  * Run: npx vitest run src/components/workstation/performance-panel.test.tsx
@@ -251,134 +250,52 @@ describe('PerformancePanel — Profit Factor threshold colouring', () => {
   });
 });
 
-describe('PerformancePanel — Monthly Performance', () => {
-  it('renders top 4 months with correct data', () => {
+describe('PerformancePanel — dense summary contract (S02)', () => {
+  it('renders stat rows only — no monthly table in the summary row', () => {
     renderWithDashboard(baseDashboard());
 
-    const section = screen.getByTestId('ws-performance-monthly');
-    expect(section).toBeTruthy();
+    // Data points render…
+    expect(screen.getByTestId('ws-performance-kpis')).toBeTruthy();
+    expect(screen.getByTestId('ws-perf-net-pnl')).toBeTruthy();
 
-    // Should show 4 rows (top 4 of 5 months)
-    const rows = section.querySelectorAll('tbody tr');
-    expect(rows).toHaveLength(4);
-
-    // First month
-    expect(rows[0]?.textContent).toContain('Jan');
-    expect(rows[0]?.textContent).toContain('$1,200.00');
-    expect(rows[0]?.textContent).toContain('70.0%');
-    expect(rows[0]?.textContent).toContain('10');
-
-    // Second month (negative P&L)
-    expect(rows[1]?.textContent).toContain('Feb');
-    expect(rows[1]?.textContent).toContain('-$300.00');
-  });
-
-  it('does not render monthly section when data is empty', () => {
-    renderWithDashboard(baseDashboard({ monthlyPerformance: [] }));
+    // …while the monthly breakdown table is excluded (data exists in the
+    // snapshot but must not share the compact summary row).
     expect(screen.queryByTestId('ws-performance-monthly')).toBeNull();
+    expect(screen.queryByText('Monthly Performance')).toBeNull();
   });
-});
 
-describe('PerformancePanel — R Distribution', () => {
-  it('renders all bins with label and count', () => {
+  it('renders no R distribution section', () => {
     renderWithDashboard(baseDashboard());
 
-    const section = screen.getByTestId('ws-performance-r-dist');
-    expect(section).toBeTruthy();
-
-    const binNeg2 = screen.getByTestId('ws-r-bin-< -2');
-    expect(binNeg2.textContent).toContain('< -2');
-    expect(binNeg2.textContent).toContain('3');
-
-    const binPos2 = screen.getByTestId('ws-r-bin-> 2');
-    expect(binPos2.textContent).toContain('> 2');
-    expect(binPos2.textContent).toContain('8');
-  });
-
-  it('does not render R distribution section when data is empty', () => {
-    renderWithDashboard(baseDashboard({ rDistribution: [] }));
     expect(screen.queryByTestId('ws-performance-r-dist')).toBeNull();
-  });
-});
-
-describe('PerformancePanel — Setup Ranking', () => {
-  it('shows top 3 setups with name, count, and avgR', () => {
-    renderWithDashboard(baseDashboard());
-
-    const section = screen.getByTestId('ws-performance-setups');
-    const rows = section.querySelectorAll('tbody tr');
-    expect(rows).toHaveLength(3);
-
-    // First setup
-    expect(rows[0]?.textContent).toContain('Breakout');
-    expect(rows[0]?.textContent).toContain('15');
-    expect(rows[0]?.textContent).toContain('1.50');
-
-    // Second setup
-    expect(rows[1]?.textContent).toContain('Pullback');
-
-    // Third setup
-    expect(rows[2]?.textContent).toContain('Reversal');
+    // No bin rows even though the fixture carries populated bins.
+    expect(screen.queryByTestId('ws-r-bin-< -2')).toBeNull();
+    expect(screen.queryByTestId('ws-r-bin-> 2')).toBeNull();
   });
 
-  it('does not render 4th setup even when data has more', () => {
+  it('renders no setup ranking table', () => {
     renderWithDashboard(baseDashboard());
+
+    expect(screen.queryByTestId('ws-performance-setups')).toBeNull();
+    expect(screen.queryByTestId('ws-setup-s1')).toBeNull();
     expect(screen.queryByTestId('ws-setup-s4')).toBeNull();
   });
 
-  it('does not render setup section when data is empty', () => {
-    renderWithDashboard(baseDashboard({ setupRanking: [] }));
-    expect(screen.queryByTestId('ws-performance-setups')).toBeNull();
-  });
-});
-
-describe('PerformancePanel — Tier 3 gated metrics', () => {
-  it('renders all four Tier 3 metrics as Unavailable', () => {
+  it('renders no Tier 3 gated analytics section', () => {
     renderWithDashboard(baseDashboard());
 
-    const tier3 = screen.getByTestId('ws-performance-tier3');
-    expect(tier3).toBeTruthy();
-
-    const maeMfe = screen.getByTestId('ws-tier3-mae-mfe');
-    expect(maeMfe.textContent).toContain('MAE/MFE');
-    expect(maeMfe.textContent).toContain('Unavailable');
-
-    const sharpe = screen.getByTestId('ws-tier3-sharpe-sortino');
-    expect(sharpe.textContent).toContain('Sharpe/Sortino');
-    expect(sharpe.textContent).toContain('Unavailable');
-
-    const riskOfRuin = screen.getByTestId('ws-tier3-risk-of-ruin');
-    expect(riskOfRuin.textContent).toContain('Risk of Ruin');
-    expect(riskOfRuin.textContent).toContain('Unavailable');
-
-    const pips = screen.getByTestId('ws-tier3-pips-points');
-    expect(pips.textContent).toContain('Pips/Points');
-    expect(pips.textContent).toContain('Unavailable');
+    expect(screen.queryByTestId('ws-performance-tier3')).toBeNull();
+    expect(screen.queryByTestId('ws-tier3-mae-mfe')).toBeNull();
+    expect(screen.queryByTestId('ws-tier3-sharpe-sortino')).toBeNull();
+    expect(screen.queryByTestId('ws-tier3-risk-of-ruin')).toBeNull();
+    expect(screen.queryByTestId('ws-tier3-pips-points')).toBeNull();
   });
 
-  it('includes prerequisite text in title attributes', () => {
+  it('keeps the panel header meta showing the closed-decision count', () => {
     renderWithDashboard(baseDashboard());
 
-    const maeMfe = screen.getByTestId('ws-tier3-mae-mfe');
-    const unavailableSpan = maeMfe.querySelector('.ws-tier3-unavailable');
-    expect(unavailableSpan?.getAttribute('title')).toBe(
-      'Requires intratrade price history',
-    );
-
-    const sharpe = screen.getByTestId('ws-tier3-sharpe-sortino');
-    expect(
-      sharpe.querySelector('.ws-tier3-unavailable')?.getAttribute('title'),
-    ).toBe('Requires documented return series');
-
-    const riskOfRuin = screen.getByTestId('ws-tier3-risk-of-ruin');
-    expect(
-      riskOfRuin.querySelector('.ws-tier3-unavailable')?.getAttribute('title'),
-    ).toBe('Requires approved statistical model');
-
-    const pips = screen.getByTestId('ws-tier3-pips-points');
-    expect(
-      pips.querySelector('.ws-tier3-unavailable')?.getAttribute('title'),
-    ).toBe('Requires asset-specific unit definitions');
+    const panel = screen.getByTestId('ws-panel-performance');
+    expect(panel.textContent).toContain('39 closed');
   });
 });
 

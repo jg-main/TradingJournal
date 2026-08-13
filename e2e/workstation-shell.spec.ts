@@ -28,9 +28,9 @@
  * 14. S03: All 4 scenarios render positions and risk panels without viewport overflow
  * 15. S03: Empty/unavailable states across zero-positions and large-drawdown
  * 16. S05: AccountStatePanel renders §6.7 labels (Cash+as-of, Marked, NAV qualifier,
- *    scoped P&L, negative-only Drawdown) and the equity chart
- * 17. S05: PerformancePanel renders Tier 2 KPIs, monthly table, R distribution,
- *    setup ranking, and Tier 3 metrics gated to Unavailable
+ *    scoped P&L, negative-only Drawdown); the equity chart leaves the summary row (S02)
+ * 17. S02: PerformancePanel renders dense period-KPI stat rows only — no monthly
+ *    table, R distribution, setup ranking, or Tier 3 gated analytics in the summary row
  * 18. S05: ProcessReviewPanel renders process score distribution, directional
  *    performance, and attention items with severity badges
  * 19. S05: All 4 scenarios render the S05 panels without console/page errors
@@ -153,10 +153,14 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(accountState.getByTestId('ws-account-state-nav')).toBeVisible();
     await expect(accountState.getByTestId('ws-account-state-drawdown')).toBeVisible();
 
-    // Performance panel shows Tier 2 catalogue sections.
+    // Performance panel shows the dense period-KPI stat rows only (M017/S02):
+    // the monthly table, R distribution, setup ranking, and Tier 3 analytics
+    // no longer share the compact summary row.
     await expect(performance.getByTestId('ws-performance-kpis')).toBeVisible();
-    await expect(performance.getByTestId('ws-performance-monthly')).toBeVisible();
-    await expect(performance.getByTestId('ws-performance-tier3')).toBeVisible();
+    await expect(performance.getByTestId('ws-performance-monthly')).toHaveCount(0);
+    await expect(performance.getByTestId('ws-performance-r-dist')).toHaveCount(0);
+    await expect(performance.getByTestId('ws-performance-setups')).toHaveCount(0);
+    await expect(performance.getByTestId('ws-performance-tier3')).toHaveCount(0);
 
     // Process Review panel shows discipline and attention sections.
     const processReview = page.getByTestId('ws-panel-process-review');
@@ -586,10 +590,10 @@ test.describe('S03 RiskPanel — current exposure and risk summary band (S04 T02
   });
 });
 // ═══════════════════════════════════════════════════════════════════════════
-// S05: PerformancePanel — Tier 2 metric catalogue with Tier 3 gating
+// S02: PerformancePanel — dense period-KPI stat rows only
 // ═══════════════════════════════════════════════════════════════════════════
 
-test.describe('S05 PerformancePanel — Tier 2 catalogue and Tier 3 gating', () => {
+test.describe('S02 PerformancePanel — dense period-KPI stat rows only', () => {
   test('renders period-performance KPI rows with populated values', async ({ page }) => {
     await page.goto('/dev/workstation');
     const panel = page.getByTestId('ws-panel-performance');
@@ -606,102 +610,37 @@ test.describe('S05 PerformancePanel — Tier 2 catalogue and Tier 3 gating', () 
     await expect(kpis.getByTestId('ws-perf-net-pnl').locator('.ws-num')).not.toHaveText('—');
   });
 
-  test('monthly performance table renders with 4 columns and 3 populated rows', async ({ page }) => {
+  test('summary row carries no monthly table, distribution, ranking, or Tier 3 section (M017/S02)', async ({ page }) => {
     await page.goto('/dev/workstation');
-    const section = page.getByTestId('ws-performance-monthly');
-    await expect(section).toBeVisible();
+    const panel = page.getByTestId('ws-panel-performance');
+    await expect(panel).toBeVisible();
 
-    const headers = section.locator('thead th');
-    await expect(headers).toHaveCount(4);
-    await expect(headers.nth(0)).toHaveText('Month');
-    await expect(headers.nth(1)).toHaveText('P&L');
-    await expect(headers.nth(2)).toHaveText('Win%');
-    await expect(headers.nth(3)).toHaveText('Trades');
-
-    // Default scenario has 3 months (Apr–Jun 2026).
-    const rows = section.locator('tbody tr');
-    await expect(rows).toHaveCount(3);
-
-    const firstRow = rows.first();
-    await expect(firstRow.locator('td').nth(0)).toHaveText(/Apr|May|Jun/);
-    await expect(firstRow.locator('td').nth(1)).toContainText('$');
-    await expect(firstRow.locator('td').nth(2)).toContainText('%');
-    await expect(firstRow.locator('td').nth(3)).toHaveText(/^\d+$/);
+    // The dense contract: data points only. Charts, distribution tables,
+    // ranking tables, and Tier 3 gated analytics never share the compact
+    // summary row — they return in the future analysis workspace.
+    await expect(panel.getByTestId('ws-performance-kpis')).toBeVisible();
+    await expect(panel.getByTestId('ws-performance-monthly')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-performance-r-dist')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-performance-setups')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-performance-tier3')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-r-bin--1 to 0')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-setup-setup-breakout')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-tier3-mae-mfe')).toHaveCount(0);
   });
 
-  test('monthly table shows negative P&L with ws-neg class in large-drawdown', async ({ page }) => {
+  test('large-drawdown keeps the stat-row summary and drops the ranking surfaces', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=large-drawdown');
-    const section = page.getByTestId('ws-performance-monthly');
-    await expect(section).toBeVisible();
+    const panel = page.getByTestId('ws-panel-performance');
+    await expect(panel).toBeVisible();
 
-    expect(await section.locator('tbody tr').count()).toBe(3);
-
-    // All months in large-drawdown have negative P&L.
-    const negCells = section.locator('tbody td.ws-num.ws-neg').first();
-    await expect(negCells).toBeVisible();
-    await expect(negCells).toContainText('-');
-    await expect(negCells).toContainText('$');
-  });
-
-  test('R distribution renders all 8 bins with counts', async ({ page }) => {
-    await page.goto('/dev/workstation');
-    const section = page.getByTestId('ws-performance-r-dist');
-    await expect(section).toBeVisible();
-
-    for (const label of ['< -3', '-3 to -2', '-2 to -1', '-1 to 0', '0 to 1', '1 to 2', '2 to 3', '> 3']) {
-      await expect(section.getByTestId(`ws-r-bin-${label}`)).toBeVisible();
-    }
-    // Default fixture: '-1 to 0' bin has 21 trades.
-    await expect(section.getByTestId('ws-r-bin--1 to 0')).toContainText('21');
-  });
-
-  test('setup ranking renders top 3 setups with populated columns', async ({ page }) => {
-    await page.goto('/dev/workstation');
-    const section = page.getByTestId('ws-performance-setups');
-    await expect(section).toBeVisible();
-
-    const headers = section.locator('thead th');
-    await expect(headers).toHaveCount(3);
-    await expect(headers.nth(0)).toHaveText('Setup');
-    await expect(headers.nth(1)).toHaveText('N');
-    await expect(headers.nth(2)).toHaveText('Avg R');
-
-    // Top 3 by count in default: breakout, pullback, reversal.
-    const rows = section.locator('tbody tr');
-    await expect(rows).toHaveCount(3);
-    await expect(section.getByTestId('ws-setup-setup-breakout')).toContainText('Opening Range Breakout');
-    await expect(section.getByTestId('ws-setup-setup-breakout')).toContainText('34');
-    await expect(section.getByTestId('ws-setup-setup-pullback')).toContainText('Trend Pullback');
-    await expect(section.getByTestId('ws-setup-setup-reversal')).toContainText('Exhaustion Reversal');
-  });
-
-  test('large-drawdown reorders setup ranking', async ({ page }) => {
-    await page.goto('/dev/workstation?scenario=large-drawdown');
-    const section = page.getByTestId('ws-performance-setups');
-    await expect(section).toBeVisible();
-
-    // Exhaustion Reversal leads in large-drawdown (count 31), not breakout.
-    const firstRow = section.locator('tbody tr').first();
-    await expect(firstRow).toContainText('Exhaustion Reversal');
-    await expect(section.getByTestId('ws-setup-setup-reversal')).toContainText('31');
-  });
-
-  test('Tier 3 metrics are gated to Unavailable with prerequisite titles', async ({ page }) => {
-    await page.goto('/dev/workstation');
-    const section = page.getByTestId('ws-performance-tier3');
-    await expect(section).toBeVisible();
-
-    for (const [testId, prerequisite] of [
-      ['ws-tier3-mae-mfe', 'intratrade price history'],
-      ['ws-tier3-sharpe-sortino', 'documented return series'],
-      ['ws-tier3-risk-of-ruin', 'approved statistical model'],
-      ['ws-tier3-pips-points', 'asset-specific unit definitions'],
-    ] as const) {
-      const row = section.getByTestId(testId);
-      await expect(row).toContainText('Unavailable');
-      const title = await row.locator('.ws-num').getAttribute('title');
-      expect(title).toContain(prerequisite);
-    }
+    // Stat rows survive the stressed scenario; the removed catalogue
+    // sections stay absent even when their fixture data is populated.
+    await expect(panel.getByTestId('ws-performance-kpis')).toBeVisible();
+    await expect(panel.getByTestId('ws-perf-net-pnl').locator('.ws-num')).not.toHaveText('—');
+    await expect(panel.getByTestId('ws-performance-monthly')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-performance-r-dist')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-performance-setups')).toHaveCount(0);
+    await expect(panel.getByTestId('ws-performance-tier3')).toHaveCount(0);
   });
 
   test('renders across all 4 scenarios without console errors', async ({ page }) => {
@@ -710,7 +649,8 @@ test.describe('S05 PerformancePanel — Tier 2 catalogue and Tier 3 gating', () 
     for (const scenario of ['default', 'zero-positions', 'large-drawdown', 'many-watchlist']) {
       await page.goto(`/dev/workstation?scenario=${scenario}`);
       await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
-      await expect(page.getByTestId('ws-performance-tier3')).toBeVisible();
+      await expect(page.getByTestId('ws-performance-kpis')).toBeVisible();
+      await expect(page.getByTestId('ws-performance-tier3')).toHaveCount(0);
     }
 
     expect(pageErrors, 'uncaught page errors').toEqual([]);
@@ -774,8 +714,9 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
     await page.goto('/dev/workstation?scenario=zero-positions');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
-    // Historical catalogue persists — not position-dependent.
-    await expect(page.getByTestId('ws-performance-setups')).toBeVisible();
+    // Historical catalogue persists — not position-dependent. The setup
+    // ranking no longer lives in the Performance summary row (M017/S02).
+    await expect(page.getByTestId('ws-performance-setups')).toHaveCount(0);
     await expect(page.getByTestId('ws-process-score-dist')).toBeVisible();
     await expect(page.getByTestId('ws-attention-items')).toBeVisible();
     await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
@@ -806,7 +747,7 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
     await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
     await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
-    await expect(page.getByTestId('ws-performance-setups')).toBeVisible();
+    await expect(page.getByTestId('ws-performance-setups')).toHaveCount(0);
     await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
     await expect(page.getByTestId('ws-attention-items')).toBeVisible();
     await page.getByTestId('ws-scenario-select').selectOption('many-watchlist');
