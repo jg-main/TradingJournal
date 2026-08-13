@@ -30,7 +30,9 @@
  * A saved view is a `WorkstationViewConfig`: the id of the system template it
  * was derived from (`templateId`), an explicit rectangular `areas` grid (each
  * cell is a registered panel id or `.` for empty space), the set of hidden
- * optional panels (`hiddenPanels`), and a layout `version`.
+ * optional panels (`hiddenPanels`), a layout `version`, and — in the v2
+ * schema — an optional RGL `layout` (see `WorkstationLayoutItem`) that is
+ * derived from the areas grid by `deriveLayoutFromAreas`.
  *
  * The `areas` grid is the rendered truth — hidden panels have no cells in
  * the grid (customization turns a hidden panel's former cells into `.`).
@@ -38,6 +40,11 @@
  * toggles) and by reset. Validation enforces that the two never diverge:
  * every catalogue panel is either present in `areas` or listed in
  * `hiddenPanels`, never both and never neither.
+ *
+ * The RGL `layout` field is optional so v1 configs (which predate the field)
+ * remain readable: validation accepts a config without `layout` at any
+ * version, and migration-on-read (`migrateWorkstationViewConfig`)
+ * upgrades v1 configs to v2 with a layout derived from their areas.
  */
 
 // ── Panel identifiers and approved catalogue ────────────────────────────
@@ -358,6 +365,8 @@ export function isWorkstationTemplateId(value: unknown): value is WorkstationTem
  * model — templates are dense document flows and saved configs carry an RGL
  * layout (introduced alongside, see `WorkstationLayoutItem`). v1 configs
  * remain readable through migration-on-read (`migrateWorkstationViewConfig`).
+ * `createViewFromTemplate` always emits a v2 config with a layout derived
+ * from the template's areas.
  */
 export const WORKSTATION_LAYOUT_VERSION = 2;
 
@@ -373,13 +382,17 @@ export const WORKSTATION_LAYOUT_VERSION = 2;
 export const WORKSTATION_DEFAULT_TEMPLATE_VERSION = 2;
 
 /**
- * A saved workstation view: template reference, rendered grid, and hidden
- * optional panels.
+ * A saved workstation view: template reference, rendered grid, hidden
+ * optional panels, and (v2) RGL arrangement layout.
  *
  * `areas` is the rendered truth (hidden panels have no cells in the grid;
  * customization turns a hidden panel's former cells into `.`);
  * `hiddenPanels` is the declared counterpart used by UI toggles and reset.
- * `version` records the schema version this config conforms to.
+ * `version` records the schema version this config conforms to. `layout` is
+ * the v2 RGL arrangement grid (see `WorkstationLayoutItem`); it is optional
+ * so v1 configs stay readable, and is validated whenever present — unknown
+ * panel ids, out-of-bounds coordinates, duplicates, overlaps, and size
+ * constraint violations are rejected.
  */
 export interface WorkstationViewConfig {
   /** The system template this view was derived from. */
@@ -390,6 +403,155 @@ export interface WorkstationViewConfig {
   hiddenPanels: WorkstationPanelId[];
   /** Layout schema version (must be ≥ 1 and ≤ WORKSTATION_LAYOUT_VERSION). */
   version: number;
+  /**
+   * RGL arrangement layout (v2 schema): one item per visible panel with its
+   * position, span, and declared size constraints. Optional so v1 configs
+   * (no layout field) remain valid; v2 configs produced by this module
+   * always carry a layout derived from `areas`.
+   */
+  layout?: WorkstationLayoutItem[];
+}
+
+// ── RGL layout (v2) ────────────────────────────────────────────────────
+
+/**
+ * One react-grid-layout grid item for the workstation arrangement grid.
+ *
+ * `i` is the catalogue panel id placed by this item (the single placement
+ * owner for the dense model — an item may only reference the approved
+ * panel catalogue). `x`/`y` are the item's top-left position in
+ * arrangement-grid units and `w`/`h` its column/row span. The optional
+ * `minW`/`maxW`/`minH`/`maxH` mirror react-grid-layout's per-item size
+ * constraints; `deriveLayoutFromAreas` populates them from the panel
+ * catalogue so persisted v2 configs are self-describing, while the
+ * catalogue remains the source of truth for the accepted bounds.
+ */
+export interface WorkstationLayoutItem {
+  /** Catalogue panel id placed by this item. */
+  readonly i: WorkstationPanelId;
+  /** Left column in arrangement-grid columns. */
+  readonly x: number;
+  /** Top row in arrangement rows. */
+  readonly y: number;
+  /** Column span in arrangement-grid columns. */
+  readonly w: number;
+  /** Row span in arrangement rows. */
+  readonly h: number;
+  /** Declared minimum column span (from the panel catalogue). */
+  readonly minW?: number;
+  /** Declared maximum column span (from the panel catalogue). */
+  readonly maxW?: number;
+  /** Declared minimum row span (from the panel catalogue). */
+  readonly minH?: number;
+  /** Declared maximum row span (from the panel catalogue). */
+  readonly maxH?: number;
+}
+
+// ── RGL layout derivation ──────────────────────────────────────────────
+
+/**
+ * Derive RGL layout items from an areas grid: one item per visible panel
+ * whose bounds are the panel's contiguous rectangle (x = leftmost column,
+ * y = topmost row, w = column span, h = row span), with the per-panel size
+ * constraints from the approved catalogue attached so the persisted layout
+ * is self-describing. Items are emitted in catalogue order for
+ * determinism; the inverse transform is `deriveAreasFromLayout`.
+ *
+ * The areas grid is the rendered truth in normal (document-flow) mode and
+ * the layout is the arrangement-grid truth consumed by react-grid-layout;
+ * the transform is a faithful bounding-box projection, so fixed panels
+ * keep their grid span exactly (their height is content-driven in normal
+ * mode — the catalogue height bounds on fixed panels are arrangement-mode
+ * constraints enforced by react-grid-layout in S04, not by this transform).
+ */
+export function deriveLayoutFromAreas(areas: readonly (readonly string[])[]): WorkstationLayoutItem[] {
+  const cellsByPanel = new Map<WorkstationPanelId, Array<[number, number]>>();
+  areas.forEach((row, r) => {
+    row.forEach((cell, c) => {
+      if (cell === GRID_EMPTY_CELL) return;
+      if (!isWorkstationPanelId(cell)) return;
+      const positions = cellsByPanel.get(cell) ?? [];
+      positions.push([r, c]);
+      cellsByPanel.set(cell, positions);
+    });
+  });
+
+  const items: WorkstationLayoutItem[] = [];
+  for (const id of WORKSTATION_PANEL_ID_LIST) {
+    const positions = cellsByPanel.get(id);
+    if (!positions) continue;
+    const rows = positions.map(([r]) => r);
+    const cols = positions.map(([, c]) => c);
+    const minRow = Math.min(...rows);
+    const maxRow = Math.max(...rows);
+    const minCol = Math.min(...cols);
+    const maxCol = Math.max(...cols);
+    const def = WORKSTATION_PANEL_CATALOGUE[id];
+    items.push({
+      i: id,
+      x: minCol,
+      y: minRow,
+      w: maxCol - minCol + 1,
+      h: maxRow - minRow + 1,
+      minW: def.minW,
+      maxW: def.maxW,
+      minH: def.minH,
+      maxH: def.maxH,
+    });
+  }
+  return items;
+}
+
+/**
+ * Rebuild an areas grid from RGL layout items: a rectangular grid with
+ * `columns` columns and `max(y + h)` rows (an empty array when no items are
+ * given), where every cell inside an item's rectangle carries that item's
+ * panel id and every other cell carries `.`. This is the inverse of
+ * `deriveLayoutFromAreas` for arrangement data; items with malformed
+ * coordinates (negative or non-integer x/y, zero or negative w/h) are
+ * skipped defensively — callers should validate untrusted layouts with
+ * `validateWorkstationViewConfig` first.
+ *
+ * Note the two row models differ: one areas row is a document-flow row,
+ * while one layout row is an arrangement row, so the transforms are not
+ * losslessly invertible in general (for the curated dense templates they
+ * round-trip exactly, because every visible panel's span is preserved).
+ */
+export function deriveAreasFromLayout(
+  layout: readonly WorkstationLayoutItem[],
+  columns: number,
+): string[][] {
+  const cols = Math.max(1, Math.floor(columns));
+  if (layout.length === 0) return [];
+  // Malformed items are skipped entirely — they must not influence the grid
+  // dimensions either (a hostile y=10⁶ item must not allocate a giant grid).
+  const valid = layout.filter(
+    (item) =>
+      isWorkstationPanelId(item.i) &&
+      Number.isInteger(item.x) &&
+      Number.isInteger(item.y) &&
+      Number.isInteger(item.w) &&
+      Number.isInteger(item.h) &&
+      item.x >= 0 &&
+      item.y >= 0 &&
+      item.w >= 1 &&
+      item.h >= 1,
+  );
+  if (valid.length === 0) return [];
+  const rows = Math.max(0, ...valid.map((item) => item.y + item.h));
+  const grid: string[][] = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => GRID_EMPTY_CELL),
+  );
+  for (const item of valid) {
+    const endRow = Math.min(item.y + item.h, rows);
+    const endCol = Math.min(item.x + item.w, cols);
+    for (let r = item.y; r < endRow; r++) {
+      for (let c = item.x; c < endCol; c++) {
+        grid[r][c] = item.i;
+      }
+    }
+  }
+  return grid;
 }
 
 // ── Factories ───────────────────────────────────────────────────────────
@@ -405,6 +567,7 @@ export function createViewFromTemplate(templateId: WorkstationTemplateId): Works
     areas: template.areas.map((row) => [...row]),
     hiddenPanels: [...template.defaultHidden],
     version: WORKSTATION_LAYOUT_VERSION,
+    layout: deriveLayoutFromAreas(template.areas),
   };
 }
 
@@ -417,13 +580,14 @@ export function resetViewToTemplate(config: WorkstationViewConfig): WorkstationV
   return createViewFromTemplate(config.templateId);
 }
 
-/** Deep-copy a view configuration (grid rows and hidden set are copied). */
+/** Deep-copy a view configuration (grid rows, hidden set, and layout items are copied). */
 export function cloneWorkstationViewConfig(config: WorkstationViewConfig): WorkstationViewConfig {
   return {
     templateId: config.templateId,
     areas: config.areas.map((row) => [...row]),
     hiddenPanels: [...config.hiddenPanels],
     version: config.version,
+    layout: config.layout?.map((item) => ({ ...item })),
   };
 }
 
@@ -449,6 +613,21 @@ export function cloneWorkstationViewConfig(config: WorkstationViewConfig): Works
  *   must be present in `areas` or listed in `hiddenPanels`, never both and
  *   never neither);
  * - grids with no visible panel at all.
+ *
+ * When an RGL `layout` is present (v2 configs), validation additionally
+ * rejects:
+ *
+ * - layout items referencing unknown panel ids;
+ * - out-of-bounds coordinates (negative or non-integer x/y, zero or negative
+ *   w/h, or an item extending past the grid's column edge);
+ * - duplicate panel ids and overlapping items;
+ * - size constraint violations (width outside the catalogue bounds for any
+ *   panel — fixed panels stay locked full-width; height outside the bounds
+ *   for resizable panels);
+ * - malformed or catalogue-incompatible declared item constraints.
+ *
+ * The `layout` field itself is optional: v1 configs (no layout field) remain
+ * valid and are upgraded to v2 through migration-on-read.
  *
  * Safe to call on untrusted persisted/API data (the parameter is `unknown`).
  */
@@ -575,6 +754,167 @@ export function validateWorkstationViewConfig(value: unknown): string[] {
     }
     if (present.size === 0) {
       issues.push('at least one panel must be visible in the grid');
+    }
+  }
+
+  // 6. RGL layout (v2) — item-level placement validation. The field is
+  //    optional so v1 configs (no layout) remain valid — migration-on-read
+  //    (`migrateWorkstationViewConfig`) upgrades them. When present, every
+  //    item must reference the approved catalogue, stay inside the grid's
+  //    column bounds, occupy its own space (no duplicates, no overlaps),
+  //    and respect the declared per-panel size constraints.
+  const layout = config.layout;
+  if (layout !== undefined) {
+    if (!Array.isArray(layout)) {
+      issues.push('layout must be an array of grid items');
+    } else if (layout.length > WORKSTATION_PANEL_ID_LIST.length) {
+      // The catalogue caps visible panels (one item per panel); an oversized
+      // array is malformed and would otherwise make the pairwise overlap
+      // check quadratic in attacker-controlled input.
+      issues.push(
+        `layout has ${layout.length} items but the catalogue only defines ${WORKSTATION_PANEL_ID_LIST.length} panels`,
+      );
+    } else {
+      const gridCols = isWorkstationTemplateId(config.templateId)
+        ? WORKSTATION_TEMPLATES[config.templateId].columns.length
+        : Array.isArray(areas) && areas.length > 0 && Array.isArray(areas[0])
+          ? areas[0].length
+          : 0;
+      const seen = new Set<WorkstationPanelId>();
+      const placed: Array<{ id: WorkstationPanelId; x: number; y: number; w: number; h: number }> =
+        [];
+      layout.forEach((rawItem: unknown, idx: number) => {
+        if (typeof rawItem !== 'object' || rawItem === null || Array.isArray(rawItem)) {
+          issues.push(`layout item ${idx} is not an object`);
+          return;
+        }
+        const item = rawItem as Record<string, unknown>;
+        const id = item.i;
+        if (!isWorkstationPanelId(id)) {
+          issues.push(`layout item ${idx} references unknown panel "${String(id)}"`);
+          return;
+        }
+        const panelId = id;
+        if (seen.has(panelId)) {
+          issues.push(`layout lists panel "${panelId}" more than once`);
+        }
+        seen.add(panelId);
+
+        // Shape: non-negative integer coordinates with positive spans.
+        let shapeOk = true;
+        const fields: ReadonlyArray<[string, unknown, number]> = [
+          ['x', item.x, 0],
+          ['y', item.y, 0],
+          ['w', item.w, 1],
+          ['h', item.h, 1],
+        ];
+        for (const [name, value, min] of fields) {
+          if (typeof value !== 'number' || !Number.isInteger(value) || value < min) {
+            issues.push(
+              `layout item "${panelId}" has an invalid ${name} coordinate (expected an integer ≥ ${min}, got ${String(value)})`,
+            );
+            shapeOk = false;
+          }
+        }
+        if (!shapeOk) return;
+        const x = item.x as number;
+        const y = item.y as number;
+        const w = item.w as number;
+        const h = item.h as number;
+
+        // Right-edge bound — an item may not extend past the grid's columns.
+        if (gridCols > 0 && x + w > gridCols) {
+          issues.push(
+            `layout item "${panelId}" extends past the right grid edge (x + w = ${x + w} exceeds ${gridCols} columns)`,
+          );
+        }
+
+        // Declared per-panel constraints (RGL minW/maxW/minH/maxH) must be
+        // positive integers, min ≤ max, and within the catalogue envelope so
+        // persisted data can never loosen the approved bounds.
+        const declaredMinW = typeof item.minW === 'number' ? item.minW : undefined;
+        const declaredMaxW = typeof item.maxW === 'number' ? item.maxW : undefined;
+        const declaredMinH = typeof item.minH === 'number' ? item.minH : undefined;
+        const declaredMaxH = typeof item.maxH === 'number' ? item.maxH : undefined;
+        let boundsOk = true;
+        for (const [name, value] of [
+          ['minW', declaredMinW],
+          ['maxW', declaredMaxW],
+          ['minH', declaredMinH],
+          ['maxH', declaredMaxH],
+        ] as const) {
+          if (value !== undefined && (value < 1 || !Number.isInteger(value))) {
+            issues.push(`layout item "${panelId}" declares an invalid ${name} (got ${String(value)})`);
+            boundsOk = false;
+          }
+        }
+        if (boundsOk) {
+          if (
+            declaredMinW !== undefined &&
+            declaredMaxW !== undefined &&
+            declaredMinW > declaredMaxW
+          ) {
+            issues.push(
+              `layout item "${panelId}" declares minW > maxW (${declaredMinW} > ${declaredMaxW})`,
+            );
+          }
+          if (
+            declaredMinH !== undefined &&
+            declaredMaxH !== undefined &&
+            declaredMinH > declaredMaxH
+          ) {
+            issues.push(
+              `layout item "${panelId}" declares minH > maxH (${declaredMinH} > ${declaredMaxH})`,
+            );
+          }
+          const def = WORKSTATION_PANEL_CATALOGUE[panelId];
+          const envelope: ReadonlyArray<[string, number | undefined, number, number]> = [
+            ['minW', declaredMinW, def.minW, def.maxW],
+            ['maxW', declaredMaxW, def.minW, def.maxW],
+            ['minH', declaredMinH, def.minH, def.maxH],
+            ['maxH', declaredMaxH, def.minH, def.maxH],
+          ];
+          for (const [name, value, lo, hi] of envelope) {
+            if (value !== undefined && (value < lo || value > hi)) {
+              issues.push(
+                `layout item "${panelId}" declares ${name} = ${value} outside the catalogue bounds [${lo}, ${hi}]`,
+              );
+            }
+          }
+        }
+
+        // Catalogue constraint check: width bounds apply to every panel (the
+        // fixed anchors are locked full-width and must never become a rail);
+        // height bounds apply to resizable panels only — fixed panels' height
+        // is content-driven in the normal document flow.
+        const def = WORKSTATION_PANEL_CATALOGUE[panelId];
+        if (w < def.minW || w > def.maxW) {
+          issues.push(
+            `layout item "${panelId}" has width ${w} outside the declared bounds [${def.minW}, ${def.maxW}]`,
+          );
+        }
+        if (def.canResize && (h < def.minH || h > def.maxH)) {
+          issues.push(
+            `layout item "${panelId}" has height ${h} outside the declared bounds [${def.minH}, ${def.maxH}]`,
+          );
+        }
+
+        placed.push({ id: panelId, x, y, w, h });
+      });
+
+      // Overlap check — pairwise rectangle intersection between the
+      // shape-valid items that were placed.
+      for (let a = 0; a < placed.length; a++) {
+        for (let b = a + 1; b < placed.length; b++) {
+          const A = placed[a];
+          const B = placed[b];
+          const overlap =
+            A.x < B.x + B.w && B.x < A.x + A.w && A.y < B.y + B.h && B.y < A.y + A.h;
+          if (overlap) {
+            issues.push(`layout items "${A.id}" and "${B.id}" overlap`);
+          }
+        }
+      }
     }
   }
 

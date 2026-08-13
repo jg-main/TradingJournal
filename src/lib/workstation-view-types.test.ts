@@ -35,6 +35,8 @@ import {
   createViewFromTemplate,
   resetViewToTemplate,
   cloneWorkstationViewConfig,
+  deriveLayoutFromAreas,
+  deriveAreasFromLayout,
   validateWorkstationViewConfig,
   isValidWorkstationViewConfig,
   computeGridTemplateAreas,
@@ -45,6 +47,7 @@ import {
   type WorkstationPanelId,
   type WorkstationTemplateId,
   type WorkstationViewConfig,
+  type WorkstationLayoutItem,
 } from './workstation-view-types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -358,6 +361,251 @@ describe('cloneWorkstationViewConfig', () => {
     expect(source.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
     expect(copy.templateId).toBe(source.templateId);
     expect(copy.version).toBe(source.version);
+  });
+
+  it('deep-copies the RGL layout items so callers cannot mutate the source', () => {
+    const source = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+    const copy = cloneWorkstationViewConfig(source);
+    // Layout items are readonly by contract; mutating the copy's array and
+    // items must never leak into the source.
+    copy.layout = [{ ...copy.layout![0], x: 99, minW: 42 }, ...copy.layout!.slice(1)];
+    expect(source.layout![0].x).toBe(0);
+    expect(source.layout![0].minW).toBe(3);
+    expect(copy.layout).toHaveLength(source.layout!.length);
+  });
+});
+
+// ── RGL layout (v2): derivation ─────────────────────────────────────────
+
+describe('deriveLayoutFromAreas', () => {
+  it('derives one catalogue-ordered item per visible panel for the dense default', () => {
+    const areas = WORKSTATION_TEMPLATES[WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS].areas;
+    expect(deriveLayoutFromAreas(areas)).toEqual([
+      { i: WORKSTATION_PANEL_IDS.RISK, x: 0, y: 0, w: 3, h: 1, minW: 3, maxW: 3, minH: 1, maxH: 1 },
+      { i: WORKSTATION_PANEL_IDS.TRADES, x: 0, y: 2, w: 3, h: 1, minW: 3, maxW: 3, minH: 3, maxH: 12 },
+      { i: WORKSTATION_PANEL_IDS.ACCOUNT, x: 0, y: 1, w: 1, h: 1, minW: 1, maxW: 3, minH: 1, maxH: 3 },
+      { i: WORKSTATION_PANEL_IDS.PERFORMANCE, x: 1, y: 1, w: 1, h: 1, minW: 1, maxW: 3, minH: 1, maxH: 3 },
+      { i: WORKSTATION_PANEL_IDS.PROCESS_REVIEW, x: 2, y: 1, w: 1, h: 1, minW: 1, maxW: 3, minH: 1, maxH: 3 },
+    ]);
+  });
+
+  it('captures wide/band panels of the Performance template and omits hidden panels', () => {
+    const areas = WORKSTATION_TEMPLATES[WORKSTATION_TEMPLATE_IDS.PERFORMANCE].areas;
+    const items = deriveLayoutFromAreas(areas);
+    const byId = Object.fromEntries(items.map((it) => [it.i, it]));
+    expect(byId[WORKSTATION_PANEL_IDS.ACCOUNT]).toMatchObject({ x: 0, y: 1, w: 2, h: 1 });
+    expect(byId[WORKSTATION_PANEL_IDS.TRADES]).toMatchObject({ x: 0, y: 2, w: 3, h: 1 });
+    expect(byId[WORKSTATION_PANEL_IDS.PERFORMANCE]).toMatchObject({ x: 0, y: 3, w: 3, h: 2 });
+    // Hidden-by-default panels have no cells in the base grid → no items.
+    expect(byId[WORKSTATION_PANEL_IDS.WATCHLIST]).toBeUndefined();
+    expect(byId[WORKSTATION_PANEL_IDS.PROCESS_REVIEW]).toBeUndefined();
+  });
+});
+
+describe('deriveAreasFromLayout', () => {
+  it('round-trips every template grid exactly (areas → layout → areas)', () => {
+    for (const id of TEMPLATE_IDS) {
+      const areas = WORKSTATION_TEMPLATES[id].areas.map((row) => [...row]);
+      const layout = deriveLayoutFromAreas(areas);
+      expect(
+        deriveAreasFromLayout(layout, WORKSTATION_TEMPLATES[id].columns.length),
+      ).toEqual(areas);
+    }
+  });
+
+  it('rebuilds a rectangular grid of max(y + h) rows and the requested columns', () => {
+    const layout: WorkstationLayoutItem[] = [
+      { i: WORKSTATION_PANEL_IDS.RISK, x: 0, y: 0, w: 3, h: 1 },
+      { i: WORKSTATION_PANEL_IDS.TRADES, x: 0, y: 1, w: 3, h: 1 },
+    ];
+    expect(deriveAreasFromLayout(layout, 3)).toEqual([
+      ['risk', 'risk', 'risk'],
+      ['trades', 'trades', 'trades'],
+    ]);
+  });
+
+  it('skips malformed items defensively and honors the column count', () => {
+    const layout: WorkstationLayoutItem[] = [
+      { i: WORKSTATION_PANEL_IDS.RISK, x: 0, y: 0, w: 3, h: 1 },
+      { i: WORKSTATION_PANEL_IDS.TRADES, x: 0, y: 1, w: 3, h: 1 },
+      { i: 'hacker-panel' as WorkstationPanelId, x: 0, y: 2, w: 3, h: 1 },
+      { i: WORKSTATION_PANEL_IDS.ACCOUNT, x: -1, y: 3, w: 1, h: 1 },
+    ];
+    // Unknown and negative-coordinate items are skipped entirely — they do
+    // not create extra grid rows or cells.
+    expect(deriveAreasFromLayout(layout, 1)).toEqual([['risk'], ['trades']]);
+    expect(deriveAreasFromLayout(layout, 3)).toEqual([
+      ['risk', 'risk', 'risk'],
+      ['trades', 'trades', 'trades'],
+    ]);
+    expect(deriveAreasFromLayout([], 3)).toEqual([]);
+  });
+});
+
+// ── RGL layout (v2): factory + validation integration ───────────────────
+
+describe('v2 RGL layout in factories and validation', () => {
+  /** Fresh dense-default config for negative layout validation cases. */
+  const base = (): WorkstationViewConfig =>
+    createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+
+  it('emits a v2 layout for every template config that validates and round-trips', () => {
+    for (const id of TEMPLATE_IDS) {
+      const config = createViewFromTemplate(id);
+      expect(config.layout).toBeDefined();
+      expect(config.version).toBe(WORKSTATION_LAYOUT_VERSION);
+      expect(validateWorkstationViewConfig(config)).toEqual([]);
+      expect(
+        deriveAreasFromLayout(config.layout!, WORKSTATION_TEMPLATES[id].columns.length),
+      ).toEqual(config.areas);
+    }
+  });
+
+  it('keeps v1 configs (no layout field) valid — migration-on-read upgrades them', () => {
+    const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+    const v1Config: WorkstationViewConfig = {
+      templateId: config.templateId,
+      areas: config.areas,
+      hiddenPanels: config.hiddenPanels,
+      version: 1,
+    };
+    expect(validateWorkstationViewConfig(v1Config)).toEqual([]);
+  });
+
+  it('also accepts a v2 config without a layout (pre-layout persisted data stays readable)', () => {
+    const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+    delete config.layout;
+    expect(validateWorkstationViewConfig(config)).toEqual([]);
+  });
+
+  it('accepts hand-authored layout items without declared constraints when sizes are in bounds', () => {
+    const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+    config.layout = [
+      { i: WORKSTATION_PANEL_IDS.RISK, x: 0, y: 0, w: 3, h: 1 },
+      { i: WORKSTATION_PANEL_IDS.ACCOUNT, x: 0, y: 1, w: 1, h: 1 },
+      { i: WORKSTATION_PANEL_IDS.PERFORMANCE, x: 1, y: 1, w: 1, h: 1 },
+      { i: WORKSTATION_PANEL_IDS.PROCESS_REVIEW, x: 2, y: 1, w: 1, h: 1 },
+      { i: WORKSTATION_PANEL_IDS.TRADES, x: 0, y: 2, w: 3, h: 1 },
+    ];
+    expect(validateWorkstationViewConfig(config)).toEqual([]);
+  });
+
+  it('rejects layout items referencing unknown panels', () => {
+    const config = base();
+    config.layout = [
+      { ...config.layout![0], i: 'hacker-panel' as WorkstationPanelId },
+      ...config.layout!.slice(1),
+    ];
+    const issues = validateWorkstationViewConfig(config);
+    expect(issues.some((i) => i.includes('references unknown panel'))).toBe(true);
+  });
+
+  it('rejects out-of-bounds layout coordinates', () => {
+    const patches: Array<Partial<WorkstationLayoutItem>> = [
+      { x: -1 },
+      { y: -1 },
+      { w: 0 },
+      { h: 0 },
+      { x: 1.5 },
+      { x: 2, w: 2 }, // x + w = 4 exceeds the 3-column grid
+    ];
+    for (const patch of patches) {
+      const config = base();
+      config.layout![0] = { ...config.layout![0], ...patch };
+      expect(validateWorkstationViewConfig(config).length, JSON.stringify(patch)).toBeGreaterThan(0);
+    }
+  });
+
+  it('rejects overlapping layout items', () => {
+    const config = base();
+    // Move Account State into the Main Risk Metrics band's rectangle.
+    config.layout![2] = { ...config.layout![2], x: 1, y: 0 };
+    const issues = validateWorkstationViewConfig(config);
+    expect(issues.some((i) => i.includes('overlap'))).toBe(true);
+  });
+
+  it('rejects duplicate panel ids in the layout', () => {
+    const config = base();
+    config.layout![4] = { ...config.layout![4], i: WORKSTATION_PANEL_IDS.ACCOUNT, x: 1, y: 1 };
+    const issues = validateWorkstationViewConfig(config);
+    expect(issues.some((i) => i.includes('more than once'))).toBe(true);
+  });
+
+  it('rejects size constraint violations against the declared catalogue bounds', () => {
+    // Summary panel wider than the readable maximum.
+    const wide = base();
+    wide.layout![2] = { ...wide.layout![2], w: 4 };
+    expect(validateWorkstationViewConfig(wide).some((i) => i.includes('width 4'))).toBe(true);
+
+    // Summary panel taller than its compact maximum.
+    const tall = base();
+    tall.layout![2] = { ...tall.layout![2], h: 4 };
+    expect(validateWorkstationViewConfig(tall).some((i) => i.includes('height 4'))).toBe(true);
+
+    // Trades compressed into a narrow rail (fixed full-width lock).
+    const rail = base();
+    rail.layout![1] = { ...rail.layout![1], w: 2 };
+    expect(validateWorkstationViewConfig(rail).some((i) => i.includes('width 2'))).toBe(true);
+
+    // Main Risk Metrics moved off its full-width anchor.
+    const risk = base();
+    risk.layout![0] = { ...risk.layout![0], w: 2 };
+    expect(validateWorkstationViewConfig(risk).some((i) => i.includes('width 2'))).toBe(true);
+  });
+
+  it('rejects malformed or catalogue-incompatible declared item constraints', () => {
+    const badMinMax = base();
+    badMinMax.layout![2] = { ...badMinMax.layout![2], minW: 3, maxW: 2 };
+    expect(validateWorkstationViewConfig(badMinMax).some((i) => i.includes('minW > maxW'))).toBe(
+      true,
+    );
+
+    const outsideEnvelope = base();
+    outsideEnvelope.layout![2] = { ...outsideEnvelope.layout![2], minH: 5 };
+    expect(
+      validateWorkstationViewConfig(outsideEnvelope).some((i) =>
+        i.includes('outside the catalogue bounds'),
+      ),
+    ).toBe(true);
+
+    const nonPositive = base();
+    nonPositive.layout![2] = { ...nonPositive.layout![2], minW: 0 };
+    expect(validateWorkstationViewConfig(nonPositive).some((i) => i.includes('invalid minW'))).toBe(
+      true,
+    );
+  });
+
+  it('rejects a non-array layout and non-object layout items', () => {
+    const notArray = base() as unknown as { layout: unknown };
+    notArray.layout = 'risk';
+    expect(validateWorkstationViewConfig(notArray).some((i) => i.includes('layout must be an array'))).toBe(
+      true,
+    );
+
+    const badItem = base() as unknown as { layout: unknown[] };
+    badItem.layout = [null];
+    expect(
+      validateWorkstationViewConfig(badItem).some((i) => i.includes('layout item 0 is not an object')),
+    ).toBe(true);
+  });
+
+  it('rejects oversized layouts with more items than the catalogue defines panels', () => {
+    // One item per catalogue panel is the maximum a valid layout can hold;
+    // anything larger is malformed and would make the overlap check
+    // quadratic in attacker-controlled input.
+    const config = base();
+    const filler: WorkstationLayoutItem = {
+      i: WORKSTATION_PANEL_IDS.ACCOUNT,
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+    };
+    config.layout = Array.from({ length: WORKSTATION_PANEL_ID_LIST.length + 1 }, () => ({
+      ...filler,
+    }));
+    const issues = validateWorkstationViewConfig(config);
+    expect(issues.some((i) => i.includes('but the catalogue only defines'))).toBe(true);
   });
 });
 
