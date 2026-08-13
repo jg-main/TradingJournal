@@ -25,6 +25,32 @@ test.describe('Dashboard KPI enrichment and equity markers', () => {
     await expect(accountState.getByTestId('ws-account-state-metrics')).toBeVisible();
   });
 
+  test('Performance P&L scope selector persists across a dashboard reload', async ({ page }) => {
+    await page.goto('/dev/workstation?scenario=default');
+
+    const performance = page.getByTestId('ws-panel-performance');
+    await expect(performance).toBeVisible();
+    await expect(performance).toContainText('Live P&L');
+    await expect(performance).toContainText('Closed-trade risk');
+    await expect(performance).toContainText('Closed-trade edge');
+    await expect(performance).toContainText('Trade activity');
+
+    const realized = performance.getByTestId('ws-perf-scope-realized');
+    const total = performance.getByTestId('ws-perf-scope-total');
+
+    await expect(total).toHaveAttribute('aria-pressed', 'true');
+    await realized.click();
+    await expect(realized).toHaveAttribute('aria-pressed', 'true');
+    await expect(performance.getByTestId('ws-perf-net-pnl')).toContainText('Realized P&L');
+
+    await page.reload();
+
+    await expect(performance.getByTestId('ws-perf-scope-realized')).toHaveAttribute('aria-pressed', 'true');
+    await expect(performance.getByTestId('ws-perf-scope-open')).toHaveAttribute('aria-pressed', 'false');
+    await expect(performance.getByTestId('ws-perf-scope-total')).toHaveAttribute('aria-pressed', 'false');
+    await expect(performance.getByTestId('ws-perf-net-pnl')).toContainText('Realized P&L');
+  });
+
   test('API response retains enriched KPIs and trade markers', async ({ request }) => {
     const res = await request.get('/api/dashboard');
     expect(res.ok()).toBeTruthy();

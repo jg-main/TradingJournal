@@ -10,6 +10,8 @@ export default defineConfig({
   test: {
     include: [
       'src/lib/account-lifecycle.test.ts',
+      'src/lib/performance-pnl-scope.test.ts',
+      'src/hooks/use-performance-pnl-scope.test.ts',
       'src/lib/workstation-view-types.test.ts',
       'src/lib/account-context.test.tsx',
       'src/lib/workstation-fixtures.test.ts',

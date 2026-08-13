@@ -17,9 +17,12 @@
 
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 
 import type { DashboardResponse } from '@/lib/workstation-fixtures';
+import type { SnapshotCompletenessState } from '@/lib/accounting/dashboard-v2';
+import { PERFORMANCE_PNL_SCOPE_STORAGE_KEY } from '@/hooks/use-performance-pnl-scope';
 
 // ── Mock workstation context ────────────────────────────────────────────
 
@@ -127,9 +130,22 @@ function baseDashboard(
   };
 }
 
-function renderWithDashboard(dashboard: DashboardResponse) {
+type PerformancePnlFixture = {
+  metrics: { realizedPnl: string | null; realizedFees: string | null };
+  riskSummary: { openPnl: string | null };
+  valuation: { state: SnapshotCompletenessState };
+};
+
+function renderWithDashboard(
+  dashboard: DashboardResponse,
+  dashboardV2: PerformancePnlFixture = {
+    metrics: { realizedPnl: '4523.50', realizedFees: '421.25' },
+    riskSummary: { openPnl: '0.00' },
+    valuation: { state: 'complete' },
+  },
+) {
   mockUseWorkstation.mockReturnValue({
-    fixtures: { dashboard },
+    fixtures: { dashboard, dashboardV2 },
   });
   return render(<PerformancePanel />);
 }
@@ -138,11 +154,72 @@ function renderWithDashboard(dashboard: DashboardResponse) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.removeItem(PERFORMANCE_PNL_SCOPE_STORAGE_KEY);
 });
 
 afterEach(cleanup);
 
 describe('PerformancePanel — KPI stat rows', () => {
+  it('switches live P&L between realized, open, and their total', async () => {
+    const user = userEvent.setup();
+    renderWithDashboard(baseDashboard(), {
+      metrics: { realizedPnl: '17.70', realizedFees: '0.30' },
+      riskSummary: { openPnl: '2.00' },
+      valuation: { state: 'complete' },
+    });
+
+    const pnl = screen.getByTestId('ws-perf-net-pnl');
+    expect(pnl.textContent).toContain('Total P&L');
+    expect(pnl.textContent).toContain('$19.70');
+    expect(screen.getByTestId('ws-perf-scope-total').getAttribute('aria-pressed')).toBe('true');
+
+    await user.click(screen.getByTestId('ws-perf-scope-realized'));
+    expect(pnl.textContent).toContain('Realized P&L');
+    expect(pnl.textContent).toContain('$17.70');
+
+    await user.click(screen.getByTestId('ws-perf-scope-open'));
+    expect(pnl.textContent).toContain('Open P&L');
+    expect(pnl.textContent).toContain('$2.00');
+  });
+
+  it('qualifies live scopes instead of presenting a partial valuation as a total', async () => {
+    const user = userEvent.setup();
+    renderWithDashboard(baseDashboard(), {
+      metrics: { realizedPnl: '17.70', realizedFees: '0.30' },
+      riskSummary: { openPnl: null },
+      valuation: { state: 'partial' },
+    });
+
+    const pnl = screen.getByTestId('ws-perf-net-pnl');
+    expect(pnl.textContent).toContain('Total P&L');
+    expect(pnl.textContent).toContain('Partial valuation');
+    expect(pnl.textContent).toContain('—');
+
+    await user.click(screen.getByTestId('ws-perf-scope-realized'));
+    expect(pnl.textContent).toContain('Realized P&L');
+    expect(pnl.textContent).toContain('$17.70');
+    expect(pnl.textContent).toContain('All exits, including partials');
+  });
+
+  it('keeps decision-quality metrics on completed decisions when P&L scope changes', async () => {
+    const user = userEvent.setup();
+    renderWithDashboard(baseDashboard(), {
+      metrics: { realizedPnl: '17.70', realizedFees: '0.30' },
+      riskSummary: { openPnl: '2.00' },
+      valuation: { state: 'complete' },
+    });
+
+    const closedDecisions = screen.getByTestId('ws-perf-closed-trades');
+    const winRate = screen.getByTestId('ws-perf-win-rate');
+    expect(closedDecisions.textContent).toContain('39');
+    expect(winRate.textContent).toContain('61.9%');
+
+    await user.click(screen.getByTestId('ws-perf-scope-open'));
+
+    expect(closedDecisions.textContent).toContain('39');
+    expect(winRate.textContent).toContain('61.9%');
+  });
+
   it('renders all metrics with correct formatted values', () => {
     renderWithDashboard(baseDashboard());
 
@@ -291,11 +368,19 @@ describe('PerformancePanel — dense summary contract (S02)', () => {
     expect(screen.queryByTestId('ws-tier3-pips-points')).toBeNull();
   });
 
-  it('keeps the panel header meta showing the closed-decision count', () => {
+  it('makes the live P&L and closed-decision split explicit', () => {
     renderWithDashboard(baseDashboard());
 
     const panel = screen.getByTestId('ws-panel-performance');
-    expect(panel.textContent).toContain('39 closed');
+    expect(panel.textContent).toContain('Live P&L · 39 closed decisions');
+
+    const headerOf = (groupId: string) =>
+      screen.getByTestId(groupId).querySelector('.ws-perf-group-header')?.textContent;
+
+    expect(headerOf('ws-perf-group-pnl')).toContain('Live P&L');
+    expect(headerOf('ws-perf-group-risk')).toBe('Closed-trade risk');
+    expect(headerOf('ws-perf-group-win-edge')).toBe('Closed-trade edge');
+    expect(headerOf('ws-perf-group-activity')).toBe('Trade activity');
   });
 });
 
@@ -306,10 +391,10 @@ describe('PerformancePanel — two-column KPI groups (M018/S01)', () => {
     const headerOf = (groupId: string) =>
       screen.getByTestId(groupId).querySelector('.ws-perf-group-header')?.textContent;
 
-    expect(headerOf('ws-perf-group-pnl')).toBe('P&L');
-    expect(headerOf('ws-perf-group-risk')).toBe('Risk');
-    expect(headerOf('ws-perf-group-win-edge')).toBe('Win Edge');
-    expect(headerOf('ws-perf-group-activity')).toBe('Activity');
+    expect(headerOf('ws-perf-group-pnl')).toContain('Live P&L');
+    expect(headerOf('ws-perf-group-risk')).toBe('Closed-trade risk');
+    expect(headerOf('ws-perf-group-win-edge')).toBe('Closed-trade edge');
+    expect(headerOf('ws-perf-group-activity')).toBe('Trade activity');
   });
 
   it('places every stat row in its logical group', () => {

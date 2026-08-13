@@ -557,6 +557,20 @@
   color: var(--muted-foreground);
 }
 
+.ws-stat-label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.ws-stat-sub {
+  margin-top: 1px;
+  font-size: var(--ws-text-xs);
+  color: var(--muted-foreground);
+}
+
 /* Account State keeps its values on one numeric edge. Context is subordinate
  * to the label instead of competing with the number as a third column. */
 .ws-account-stat-row {
@@ -1169,6 +1183,63 @@
   padding: var(--ws-space-2) 0 var(--ws-space-1);
   border-bottom: 1px solid color-mix(in srgb, var(--muted-foreground) 18%, transparent);
   margin-bottom: var(--ws-space-1);
+}
+
+.ws-perf-pnl-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-2);
+}
+
+/* Three explicit P&L scopes share a small segmented control. The active
+   choice uses the interaction token, not financial green, because it changes
+   what the panel is measuring rather than indicating a profitable result. */
+.ws-perf-scope {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+}
+
+.ws-perf-scope-option {
+  min-height: 22px;
+  padding: 0 var(--ws-space-2);
+  font-family: inherit;
+  font-size: var(--ws-text-xs);
+  line-height: 1;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: 0;
+  border-right: var(--ws-border);
+  cursor: pointer;
+}
+
+.ws-perf-scope-option:last-child {
+  border-right: 0;
+}
+
+.ws-perf-scope-option:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+.ws-perf-scope-option-active {
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.ws-perf-scope-option-active:hover {
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.ws-perf-scope-option:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }
 
 /* Saved/custom views can place Performance at one grid column; collapse to

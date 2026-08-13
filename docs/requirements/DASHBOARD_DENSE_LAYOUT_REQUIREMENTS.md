@@ -82,10 +82,20 @@ Analysis charts: tabbed workspace when implemented     full width
   P&L, realized/total P&L only with their stated scope, and drawdown. The
   equity/drawdown chart moves to the future analysis workspace; it does not
   share the summary panel.
-- **Performance** contains period metrics only: for example net P&L, return
-  where supported, closed-decision count, win rate, profit factor, average R,
-  expectancy, payoff, average win/loss, fees, and best/worst trade. It shows
-  data points, not charts, distributions, or ranking tables.
+- **Performance** has one compact P&L scope control plus completed-decision
+  metrics. Its P&L control offers **Realized**, **Open**, and **Total**:
+  Realized includes every closed quantity, including partial exits; Open is
+  the current marked P&L of remaining quantity; Total is their sum. Open and
+  Total retain the current valuation's complete, stale, partial, or
+  unavailable qualification and never present a partial sum as complete. The
+  selected scope persists as a browser preference and defaults to Total.
+  The panel labels this control **Live P&L** and labels its outcome metrics as
+  closed-trade metrics, so a scope change is not mistaken for a recalculation
+  of win rate, expectancy, or R-based measures.
+  Closed-decision count, win rate, profit factor, average R, expectancy,
+  payoff, average win/loss, fees, and best/worst trade remain completed-
+  decision metrics, so scaling out cannot create extra decisions. Performance
+  shows data points, not charts, distributions, or ranking tables.
 - **Review Metrics** is the compact, action-oriented summary of supported
   process score, checklist/mistake coverage, directional or setup insights,
   and highest-attention items. It replaces the broad Process Review surface in
@@ -228,13 +238,16 @@ explicit drag handles, and resize handles.
 7. The same current Open P&L shown in Main Risk Metrics and Account State
    comes from the existing shared dashboard snapshot and retains its
    completeness/freshness qualification.
-8. Entering arrangement mode on a user view supports constrained drag, resize,
+8. Performance's Open and Total P&L scopes use the same qualified current Open
+   P&L source as Main Risk Metrics; Realized includes partial exits. Changing
+   this reading preference never changes the completed-decision metrics.
+9. Entering arrangement mode on a user view supports constrained drag, resize,
    keyboard equivalents, Undo, Cancel, Reset, and Save. Normal mode supports
    none of the pointer drag/resize behavior.
-9. A refreshed page restores a saved arranged view. An old user-customized
+10. A refreshed page restores a saved arranged view. An old user-customized
    view remains intact after the new default-template migration; Reset produces
    the new dense template.
-10. System presets, malformed saved data, screen resize, and a failed
+11. System presets, malformed saved data, screen resize, and a failed
     persistence write all leave a safe, usable workstation and expose the
     correct recovery state.
 
