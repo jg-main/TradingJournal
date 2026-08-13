@@ -1081,6 +1081,52 @@
   margin-bottom: var(--ws-space-1);
 }
 
+/* ── Performance two-column KPI groups (M018/S01) ─────────────────────── */
+/* The dense default shows Performance at roughly Account State height:
+   its 16 period metrics render as two columns of logical groups (P&L +
+   Risk on the left, Win Edge + Activity on the right) with compact group
+   headers instead of a single 16-row list. Rows keep the shared 36px
+   dense-row contract so both columns read as stat lists, and every
+   ws-perf-* testId stays in the same ws-performance-kpis subtree. */
+.ws-panel[data-testid='ws-panel-performance'] .ws-perf-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--ws-space-5);
+  align-items: start;
+}
+
+.ws-perf-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-4);
+}
+
+.ws-perf-group {
+  min-width: 0;
+}
+
+/* Compact group header — denser than the shared ws-risk-section-header so
+   the hierarchy reads panel → group → row without consuming a full row. */
+.ws-perf-group-header {
+  font-size: var(--ws-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  padding: var(--ws-space-2) 0 var(--ws-space-1);
+  border-bottom: 1px solid color-mix(in srgb, var(--muted-foreground) 18%, transparent);
+  margin-bottom: var(--ws-space-1);
+}
+
+/* Saved/custom views can place Performance at one grid column; collapse to
+   a single stat column at narrow viewports so rows never cramp. */
+@media (max-width: 980px) {
+  .ws-panel[data-testid='ws-panel-performance'] .ws-perf-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Setups & Ideas Panel ────────────────────────────────────────────────── */
 
 /* Sub-section header — compact separator with count badge, stacked in the

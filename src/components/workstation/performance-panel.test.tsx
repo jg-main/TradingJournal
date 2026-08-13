@@ -299,6 +299,115 @@ describe('PerformancePanel — dense summary contract (S02)', () => {
   });
 });
 
+describe('PerformancePanel — two-column KPI groups (M018/S01)', () => {
+  it('renders four logical groups with compact group headers', () => {
+    renderWithDashboard(baseDashboard());
+
+    const headerOf = (groupId: string) =>
+      screen.getByTestId(groupId).querySelector('.ws-perf-group-header')?.textContent;
+
+    expect(headerOf('ws-perf-group-pnl')).toBe('P&L');
+    expect(headerOf('ws-perf-group-risk')).toBe('Risk');
+    expect(headerOf('ws-perf-group-win-edge')).toBe('Win Edge');
+    expect(headerOf('ws-perf-group-activity')).toBe('Activity');
+  });
+
+  it('places every stat row in its logical group', () => {
+    renderWithDashboard(baseDashboard());
+
+    const pnl = screen.getByTestId('ws-perf-group-pnl');
+    for (const id of ['ws-perf-net-pnl', 'ws-perf-fees', 'ws-perf-expectancy', 'ws-perf-best-trade', 'ws-perf-worst-trade']) {
+      expect(pnl.querySelector(`[data-testid="${id}"]`)).toBeTruthy();
+    }
+
+    const risk = screen.getByTestId('ws-perf-group-risk');
+    expect(risk.querySelector('[data-testid="ws-perf-avg-r"]')).toBeTruthy();
+    expect(risk.querySelector('[data-testid="ws-perf-expectancy-r"]')).toBeTruthy();
+
+    const winEdge = screen.getByTestId('ws-perf-group-win-edge');
+    for (const id of ['ws-perf-win-rate', 'ws-perf-profit-factor', 'ws-perf-payoff', 'ws-perf-avg-win', 'ws-perf-avg-loss']) {
+      expect(winEdge.querySelector(`[data-testid="${id}"]`)).toBeTruthy();
+    }
+
+    const activity = screen.getByTestId('ws-perf-group-activity');
+    for (const id of ['ws-perf-total-trades', 'ws-perf-closed-trades', 'ws-perf-open-trades', 'ws-perf-holding-days']) {
+      expect(activity.querySelector(`[data-testid="${id}"]`)).toBeTruthy();
+    }
+  });
+
+  it('splits the KPI section into two grid columns (P&L+Risk | Win Edge+Activity)', () => {
+    renderWithDashboard(baseDashboard());
+
+    const kpis = screen.getByTestId('ws-performance-kpis');
+    expect(kpis.className).toContain('ws-perf-grid');
+
+    const columns = Array.from(kpis.children).filter((el) =>
+      el.classList.contains('ws-perf-column'),
+    );
+    expect(columns.length).toBe(2);
+
+    expect(columns[0].querySelector('[data-testid="ws-perf-group-pnl"]')).toBeTruthy();
+    expect(columns[0].querySelector('[data-testid="ws-perf-group-risk"]')).toBeTruthy();
+    expect(columns[1].querySelector('[data-testid="ws-perf-group-win-edge"]')).toBeTruthy();
+    expect(columns[1].querySelector('[data-testid="ws-perf-group-activity"]')).toBeTruthy();
+  });
+
+  it('keeps all 16 stat row testIds inside the ws-performance-kpis subtree', () => {
+    renderWithDashboard(baseDashboard());
+
+    const kpis = screen.getByTestId('ws-performance-kpis');
+    const ids = [
+      'ws-perf-net-pnl',
+      'ws-perf-win-rate',
+      'ws-perf-profit-factor',
+      'ws-perf-avg-r',
+      'ws-perf-avg-win',
+      'ws-perf-avg-loss',
+      'ws-perf-total-trades',
+      'ws-perf-closed-trades',
+      'ws-perf-open-trades',
+      'ws-perf-fees',
+      'ws-perf-payoff',
+      'ws-perf-expectancy',
+      'ws-perf-expectancy-r',
+      'ws-perf-best-trade',
+      'ws-perf-worst-trade',
+      'ws-perf-holding-days',
+    ];
+    for (const id of ids) {
+      expect(kpis.querySelector(`[data-testid="${id}"]`)).toBeTruthy();
+    }
+  });
+
+  it('renders no KPI groups or headers in the empty state', () => {
+    renderWithDashboard(
+      baseDashboard({
+        kpis: {
+          totalTrades: 0,
+          openTrades: 0,
+          winRate: null,
+          netPnl: 0,
+          avgR: null,
+          avgGrade: null,
+          currentDrawdown: null,
+          currentDrawdownPct: null,
+          accountValue: null,
+          profitFactor: null,
+          avgWin: null,
+          avgLoss: null,
+        },
+        monthlyPerformance: [],
+        rDistribution: [],
+        setupRanking: [],
+      }),
+    );
+
+    for (const id of ['ws-perf-group-pnl', 'ws-perf-group-risk', 'ws-perf-group-win-edge', 'ws-perf-group-activity']) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
+  });
+});
+
 describe('PerformancePanel — Empty state', () => {
   it('shows compact empty state when no data', () => {
     renderWithDashboard(
