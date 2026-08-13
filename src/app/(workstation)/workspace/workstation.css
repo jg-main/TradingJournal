@@ -120,6 +120,32 @@
   flex: none;
 }
 
+/* Dense summary row contract — Account State | Performance | Review Metrics
+   share one content-sized row: panels are content-sized (never stretched to
+   fill the row), content stays top-aligned, and no panel shows an internal
+   scrollbar in normal use. The general document-flow overrides above relax
+   the contained-grid defaults; these explicit rules pin the summary-row
+   contract (DASHBOARD_DENSE_LAYOUT_REQUIREMENTS §compact summary row) so
+   future panel content growth cannot re-introduce viewport-fill heights or
+   nested scrolling. Scoped to document mode so the contained Performance /
+   Process Review workstations keep their shared-viewport grid behavior. */
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel[data-testid='ws-panel-account-state'],
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel[data-testid='ws-panel-performance'],
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel[data-testid='ws-panel-process-review'] {
+  height: auto;
+  align-self: start;
+  justify-content: flex-start;
+  overflow: visible;
+}
+
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel[data-testid='ws-panel-account-state'] > .ws-panel-body,
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel[data-testid='ws-panel-performance'] > .ws-panel-body,
+.ws:has(.ws-grid[data-scroll-mode='document']) .ws-panel[data-testid='ws-panel-process-review'] > .ws-panel-body {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+}
+
 .ws-num {
   font-variant-numeric: tabular-nums;
   text-align: right;
