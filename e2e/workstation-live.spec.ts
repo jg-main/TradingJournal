@@ -276,7 +276,6 @@ test.describe('Live Mode E2E', () => {
     await expect(grid).toBeVisible();
 
     const GRID_AREAS = [
-      'kpis',
       'account-state',
       'positions',
       'risk',
@@ -305,8 +304,8 @@ test.describe('Live Mode E2E', () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  // ── Test 3: Live data populates KPI strip, positions, and account state ──
-  test('live data populates KPI strip, positions table, and equity chart', async ({
+  // ── Test 3: Live data populates data panels and account state ─────────
+  test('live data populates data panels and account state', async ({
     page,
   }) => {
     const consoleErrors = captureConsoleErrors(page);
@@ -315,13 +314,12 @@ test.describe('Live Mode E2E', () => {
     await page.goto('/', { waitUntil: 'networkidle' });
     await selectApplicationAccount(page, liveAccountId, liveAccountName);
 
-    // KPI strip has real labels and values.
-    const kpis = page.getByTestId('ws-panel-kpis');
-    await expect(kpis.getByText('Net P&L')).toBeVisible();
-    await expect(kpis.getByText('Win Rate')).toBeVisible();
-    await expect(kpis.getByText('Profit Factor')).toBeVisible();
-    // At least one KPI value is not a placeholder dash.
-    await expect(kpis.locator('.ws-kpi-value').first()).not.toHaveText('—');
+    // Dense S02: the KPI band was removed from the workstation catalogue —
+    // period KPIs now live in the Performance panel stat rows.
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
+    const performance = page.getByTestId('ws-panel-performance');
+    await expect(performance.getByTestId('ws-performance-empty')).toHaveCount(0);
+    await expect(performance.getByTestId('ws-perf-net-pnl')).toBeVisible();
 
     // Positions panel shows real rows from the accounting position.
     const positions = page.getByTestId('ws-panel-positions');
@@ -329,12 +327,14 @@ test.describe('Live Mode E2E', () => {
     // AAPL should show in the positions table.
     await expect(positions.getByText('AAPL')).toBeVisible();
 
-    // Account State panel: the equity chart or its empty state renders (new
-    // accounts may have no equity history; both states are valid live-mode).
+    // Account State panel: stat cells render live values; the equity chart
+    // is removed from the summary row (M017/S02 dense contract — it moves to
+    // the future analysis workspace).
     const accountState = page.getByTestId('ws-panel-account-state');
-    const chartVisible = await accountState.getByTestId('ws-equity-chart').isVisible().catch(() => false);
-    const emptyVisible = await accountState.getByTestId('ws-equity-chart-empty').isVisible().catch(() => false);
-    expect(chartVisible || emptyVisible).toBe(true);
+    await expect(accountState.getByTestId('ws-account-state-nav')).toBeVisible();
+    await expect(accountState.getByTestId('ws-account-state-nav').locator('.ws-num')).toContainText('$');
+    await expect(accountState.getByTestId('ws-equity-chart')).toHaveCount(0);
+    await expect(accountState.getByTestId('ws-equity-chart-empty')).toHaveCount(0);
 
     // Risk panel has metric content.
     const risk = page.getByTestId('ws-panel-risk');
@@ -392,12 +392,10 @@ test.describe('Live Mode E2E', () => {
       liveAccountName,
     );
 
-    // Capture initial KPI value before switching.
-    const initialKpiValue = await page
-      .getByTestId('ws-panel-kpis')
-      .locator('.ws-kpi-value')
-      .first()
-      .textContent();
+    // Capture initial positions before switching (AAPL + SHRT live).
+    const positions = page.getByTestId('ws-panel-positions');
+    await expect(positions.getByText('AAPL')).toBeVisible({ timeout: 10000 });
+    await expect(positions.getByText('SHRT')).toBeVisible();
 
     // Switch to the second account.
     const switchedResponse = page.waitForResponse(
@@ -418,15 +416,10 @@ test.describe('Live Mode E2E', () => {
     // Wait for data to reload.
     await page.waitForTimeout(2000);
 
-    // After switching, data should be refreshed.
-    const switchedKpiValue = await page
-      .getByTestId('ws-panel-kpis')
-      .locator('.ws-kpi-value')
-      .first()
-      .textContent();
-
-    expect(initialKpiValue).toBeTruthy();
-    expect(switchedKpiValue).toBeTruthy();
+    // After switching, data should be refreshed: MSFT replaces AAPL/SHRT.
+    await expect(positions.getByText('MSFT')).toBeVisible({ timeout: 10000 });
+    await expect(positions.getByText('AAPL')).toHaveCount(0);
+    await expect(positions.getByText('SHRT')).toHaveCount(0);
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -515,7 +508,7 @@ test.describe('Live Mode E2E', () => {
       toolbar.locator('[data-testid^="ws-mtm-"]'),
     ).not.toBeVisible();
 
-    for (const area of ['kpis', 'account-state', 'positions', 'risk', 'process-review', 'performance']) {
+    for (const area of ['account-state', 'positions', 'risk', 'process-review', 'performance']) {
       await expect(page.getByTestId(`ws-panel-${area}`)).toBeVisible();
     }
 
@@ -541,12 +534,14 @@ test.describe('Live Mode E2E', () => {
     const zeroRows = await zeroPositions.locator('tbody tr').count();
     expect(zeroRows).toBe(0);
 
-    // Large-drawdown scenario.
+    // Large-drawdown scenario: dense default has no KPI band — drawdown
+    // renders in the Account State stat grid.
     await scenarioSelect.selectOption('large-drawdown');
     await page.waitForTimeout(300);
-    const drawdownKpis = page.getByTestId('ws-panel-kpis');
-    await expect(drawdownKpis).toBeVisible();
-    await expect(drawdownKpis.getByText('Net P&L')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
+    await expect(
+      page.getByTestId('ws-panel-account-state').getByTestId('ws-account-state-drawdown'),
+    ).toBeVisible();
 
     // Many-watchlist remains valid fixture data, but Watchlist is intentionally
     // absent from the curated default.

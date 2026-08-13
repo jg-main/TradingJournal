@@ -1,9 +1,10 @@
 /**
- * Tests for the workstation AccountStatePanel (S07).
+ * Tests for the workstation AccountStatePanel (S07, dense S02).
  *
  * The panel is a context-driven consumer of fixtures.dashboardV2 (metrics +
- * valuation) and fixtures.dashboard (equityCurve, drawdown, kpis). These
- * tests pin:
+ * valuation). Since M017/S02 removed the equity/drawdown chart and the
+ * compact drawdown summary row (the chart moves to the future analysis
+ * workspace), the panel no longer reads fixtures.dashboard. These tests pin:
  *
  *   - Cash renders with effective time sub-line from provenance.asOf
  *   - Marked positions shows completeness qualifier for partial/unavailable
@@ -12,6 +13,7 @@
  *   - Total P&L renders presentationLabel when valuation.state ≠ 'complete'
  *   - Realized/Open P&L use PnL colouring (ws-pos / ws-neg)
  *   - Panel renders without crashing
+ *   - Panel renders no equity chart and no drawdown summary row (dense S02)
  *
  * Run: npx vitest run src/components/workstation/account-state-panel.test.tsx
  */
@@ -27,8 +29,6 @@ import type {
   DashboardReconciliationSummary,
   RiskSummary,
 } from '@/lib/accounting/dashboard-v2';
-import type { DashboardResponse } from '@/lib/workstation-fixtures';
-import type { KpiMetrics, MtmData } from '@/components/dashboard/kpi-widgets';
 
 // ── Mock workstation context ────────────────────────────────────────────
 
@@ -37,7 +37,6 @@ import { AccountStatePanel } from './account-state-panel';
 type MockContextValue = {
   fixtures: {
     dashboardV2: DashboardV2Response;
-    dashboard: DashboardResponse;
   };
 };
 
@@ -45,15 +44,6 @@ let mockCtx: MockContextValue;
 
 vi.mock('./workstation-context', () => ({
   useWorkstation: () => mockCtx,
-}));
-
-// Mock EquityChart — echarts-for-react doesn't render in jsdom.
-vi.mock('./equity-chart', () => ({
-  EquityChart: ({ equityCurve }: { equityCurve: unknown[] }) => (
-    <div data-testid="ws-equity-chart-mock">
-      {equityCurve.length > 0 ? 'chart' : 'empty'}
-    </div>
-  ),
 }));
 
 // ── Fixture factories ───────────────────────────────────────────────────
@@ -227,64 +217,10 @@ function baseDashboardV2(
   };
 }
 
-function baseKpis(): KpiMetrics {
-  return {
-    totalTrades: 45,
-    openTrades: 3,
-    winRate: 0.62,
-    netPnl: 8300,
-    avgR: 0.5,
-    avgGrade: null,
-    currentDrawdown: -2500,
-    currentDrawdownPct: -0.0164,
-    accountValue: 150000,
-    profitFactor: 1.8,
-    avgWin: 450,
-    avgLoss: -250,
-  };
-}
-
-function baseMtm(): MtmData {
-  return {
-    netUnrealizedPnl: 3100,
-    openTradeCount: 3,
-    tradesWithPrices: 3,
-    tradesAwaitingData: 0,
-  };
-}
-
-function baseDashboard(): DashboardResponse {
-  return {
-    kpis: baseKpis(),
-    mtm: baseMtm(),
-    equityCurve: [
-      { date: '2026-07-01', equity: 140000, cumulativePnl: -1000, highWaterMark: 141000 },
-      { date: '2026-07-10', equity: 145000, cumulativePnl: 4000, highWaterMark: 145000 },
-      { date: '2026-07-17', equity: 150000, cumulativePnl: 8300, highWaterMark: 150000 },
-    ],
-    drawdown: [
-      { date: '2026-07-01', drawdownAmount: -1000, drawdownPct: -0.007 },
-      { date: '2026-07-05', drawdownAmount: -500, drawdownPct: -0.003 },
-      { date: '2026-07-17', drawdownAmount: 0, drawdownPct: 0 },
-    ],
-    monthlyPerformance: [
-      { month: '2026-07', netPnl: 8300, winRate: 0.62, tradeCount: 45 },
-    ],
-    rDistribution: [],
-    calendarHeatmap: [],
-    periodMatrix: {},
-    setupRanking: [],
-    attentionInsights: { insights: [], tradeCount: 0 },
-  };
-}
-
 // ── Render helper ───────────────────────────────────────────────────────
 
-function renderPanel(
-  dashboardV2: DashboardV2Response = baseDashboardV2(),
-  dashboard: DashboardResponse = baseDashboard(),
-) {
-  mockCtx = { fixtures: { dashboardV2, dashboard } };
+function renderPanel(dashboardV2: DashboardV2Response = baseDashboardV2()) {
+  mockCtx = { fixtures: { dashboardV2 } };
   return render(<AccountStatePanel />);
 }
 
@@ -540,24 +476,31 @@ describe('AccountStatePanel', () => {
     });
   });
 
-  // ── Equity chart integration ──────────────────────────────────────────
+  // ── Dense S02: chart and drawdown summary removed ──────────────────────
 
-  describe('Equity chart', () => {
-    it('renders the equity chart component', () => {
+  describe('dense summary contract (S02)', () => {
+    it('renders no equity chart inside the panel', () => {
       renderPanel();
-      expect(screen.getByTestId('ws-equity-chart-mock')).toBeTruthy();
+      expect(screen.queryByTestId('ws-equity-chart')).toBeNull();
+      expect(screen.queryByTestId('ws-equity-chart-empty')).toBeNull();
     });
-  });
 
-  // ── Drawdown summary ──────────────────────────────────────────────────
-
-  describe('Drawdown summary', () => {
-    it('renders current drawdown from kpis with ws-neg class', () => {
+    it('renders no compact drawdown summary row', () => {
       renderPanel();
-      const summary = screen.getByTestId('ws-account-state-dd-summary');
-      expect(summary.textContent).toContain('Current drawdown');
-      const negSpan = summary.querySelector('.ws-neg');
-      expect(negSpan).toBeTruthy();
+      expect(screen.queryByTestId('ws-account-state-dd-summary')).toBeNull();
+      expect(screen.queryByText('Current drawdown')).toBeNull();
+    });
+
+    it('still renders the full metrics grid (all seven stat cells)', () => {
+      renderPanel();
+      expect(screen.getByTestId('ws-account-state-metrics')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-cash')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-marked')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-nav')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-realized')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-open-pnl')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-total')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-drawdown')).toBeTruthy();
     });
   });
 });

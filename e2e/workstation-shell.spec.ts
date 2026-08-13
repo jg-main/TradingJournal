@@ -41,7 +41,6 @@ import { test, expect, type Page } from '@playwright/test';
 test.use({ viewport: { width: 1440, height: 900 } });
 
 const GRID_AREAS = [
-  'kpis',
   'account-state',
   'positions',
   'risk',
@@ -126,15 +125,17 @@ test.describe('workstation shell at 1440x900', () => {
     expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
   });
 
-  test('fixture data populates KPI strip and data panels', async ({ page }) => {
+  test('fixture data populates data panels; dense default has no KPI strip', async ({ page }) => {
     await page.goto('/dev/workstation');
 
-    const kpis = page.getByTestId('ws-panel-kpis');
-    await expect(kpis.getByText('Net P&L')).toBeVisible();
-    await expect(kpis.getByText('Win Rate')).toBeVisible();
-    await expect(kpis.getByText('Profit Factor')).toBeVisible();
+    // Dense S02: the KPI band was removed from the workstation catalogue —
+    // period KPIs now live in the Performance panel stat rows.
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
+    const performance = page.getByTestId('ws-panel-performance');
+    await expect(performance.getByTestId('ws-performance-empty')).toHaveCount(0);
+    await expect(performance.getByTestId('ws-perf-net-pnl')).toBeVisible();
     // KPI values are rendered (not all placeholder dashes).
-    await expect(kpis.locator('.ws-kpi-value').first()).not.toHaveText('—');
+    await expect(performance.getByTestId('ws-perf-net-pnl').locator('.ws-num')).not.toHaveText('—');
 
     // Default scenario: positions table has real rows; Watchlist is not part
     // of the curated Risk & Positions setup.
@@ -144,15 +145,15 @@ test.describe('workstation shell at 1440x900', () => {
 
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
 
-    // Account State panel shows §6.7 cells and the equity chart.
+    // Account State panel shows §6.7 cells; the equity chart is removed
+    // from the summary row (M017/S02 dense contract).
     const accountState = page.getByTestId('ws-panel-account-state');
-    await expect(accountState.getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(accountState.getByTestId('ws-equity-chart')).toHaveCount(0);
     await expect(accountState.getByTestId('ws-account-state-cash')).toBeVisible();
     await expect(accountState.getByTestId('ws-account-state-nav')).toBeVisible();
     await expect(accountState.getByTestId('ws-account-state-drawdown')).toBeVisible();
 
     // Performance panel shows Tier 2 catalogue sections.
-    const performance = page.getByTestId('ws-panel-performance');
     await expect(performance.getByTestId('ws-performance-kpis')).toBeVisible();
     await expect(performance.getByTestId('ws-performance-monthly')).toBeVisible();
     await expect(performance.getByTestId('ws-performance-tier3')).toBeVisible();
@@ -210,13 +211,14 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(page.getByTestId('ws-panel-positions').getByText('No open account positions')).toBeVisible();
     await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
 
-    // large-drawdown: negative drawdown KPI renders with the negative class.
+    // large-drawdown: the KPI band is gone (dense S02); drawdown renders in
+    // the Account State stat grid, negative-only.
     await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
-    const drawdownKpi = page
-      .getByTestId('ws-panel-kpis')
-      .locator('.ws-kpi', { hasText: 'Drawdown' })
-      .locator('.ws-kpi-value');
-    await expect(drawdownKpi).toHaveClass(/ws-neg/);
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(
+      accountState.getByTestId('ws-account-state-drawdown').locator('.ws-num.ws-neg'),
+    ).toBeVisible();
 
     // many-watchlist keeps the fixture route healthy even though Watchlist is
     // intentionally absent from the curated default.
@@ -891,32 +893,34 @@ test.describe('S05 AccountStatePanel — §6.7 unambiguous labels', () => {
     await expect(dd.locator('.ws-num.ws-neg')).toBeVisible();
     await expect(dd.locator('.ws-num.ws-neg')).toContainText('-');
 
-    // Compact 'Current drawdown' row is also negative-coloured.
-    const summary = panel.getByTestId('ws-account-state-dd-summary');
-    await expect(summary.locator('.ws-num.ws-neg')).toBeVisible();
+    // Dense S02: the compact 'Current drawdown' row under the (removed) chart
+    // must not render — the panel is stat cells only.
+    await expect(panel.getByTestId('ws-account-state-dd-summary')).toHaveCount(0);
   });
 
-  test('equity chart renders ECharts canvas inside account state panel', async ({ page }) => {
+  test('account state panel renders no equity chart (moved to analysis workspace)', async ({ page }) => {
     await page.goto('/dev/workstation');
     const panel = page.getByTestId('ws-panel-account-state');
 
-    const chartContainer = panel.getByTestId('ws-equity-chart');
-    await expect(chartContainer).toBeVisible();
-    await expect(chartContainer.locator('canvas')).toBeVisible();
-
-    // Empty state must not render when equityCurve has data (all scenarios have data).
+    // Dense S02: the chart leaves the summary row entirely — neither the
+    // chart container nor its empty state may render inside the panel.
+    await expect(panel.getByTestId('ws-equity-chart')).toHaveCount(0);
     await expect(page.getByTestId('ws-equity-chart-empty')).toHaveCount(0);
+
+    // The stat-only grid still renders.
+    await expect(panel.getByTestId('ws-account-state-metrics')).toBeVisible();
+    await expect(panel.getByTestId('ws-account-state-total')).toBeVisible();
   });
 
-  test('chart re-renders after scenario switch without console errors', async ({ page }) => {
+  test('account state panel survives scenario switch without console errors', async ({ page }) => {
     const { consoleErrors, pageErrors } = watchForErrors(page);
     await page.goto('/dev/workstation');
-    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-equity-chart')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-account-state-metrics')).toBeVisible();
 
-    // Switch to large-drawdown: chart and canvas re-render.
+    // Switch to large-drawdown: the stat grid re-renders with new values.
     await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
-    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-equity-chart')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-account-state-metrics')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state').getByTestId('ws-account-state-drawdown')).toBeVisible();
 
     expect(pageErrors, 'uncaught page errors after scenario switch').toEqual([]);
     expect(consoleErrors, 'console.error after scenario switch').toEqual([]);
@@ -928,7 +932,7 @@ test.describe('S05 AccountStatePanel — §6.7 unambiguous labels', () => {
       await expect(page.getByTestId('ws-grid')).toBeVisible();
       const panel = page.getByTestId('ws-panel-account-state');
       await expect(panel).toBeVisible();
-      await expect(panel.getByTestId('ws-equity-chart')).toBeVisible();
+      await expect(panel.getByTestId('ws-equity-chart')).toHaveCount(0);
       await expect(panel.getByTestId('ws-account-state-drawdown')).toBeVisible();
     }
   });

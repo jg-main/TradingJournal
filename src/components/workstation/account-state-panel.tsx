@@ -1,11 +1,14 @@
 'use client';
 
-// AccountStatePanel — account-level financial state summary (S07).
+// AccountStatePanel — account-level financial state summary (S07, dense S02).
 //
 // Renders a compact metrics grid sourced exclusively from the workstation
-// context (fixtures.dashboardV2.metrics + fixtures.dashboardV2.valuation),
-// followed by the EquityChart and a drawdown summary from
-// fixtures.dashboard.
+// context (fixtures.dashboardV2.metrics + fixtures.dashboardV2.valuation).
+// The equity/drawdown chart and its compact drawdown summary row were
+// removed in M017/S02: the chart moves to the future analysis workspace
+// (DASHBOARD_DENSE_LAYOUT_REQUIREMENTS), so this summary panel carries only
+// stat cells — account balances, valuation state, current Open P&L,
+// realized/total P&L with stated scope, and drawdown.
 //
 // Every cell renders an API-declared value; classification is never
 // re-implemented. Valuation qualifiers (valuation.state, presentationLabel)
@@ -26,7 +29,6 @@
 //   Drawdown          — metrics.drawdown + drawdownPct (ALWAYS ws-neg)
 
 import { useWorkstation } from './workstation-context';
-import { EquityChart } from './equity-chart';
 import type { DashboardV2Response } from '@/lib/accounting/dashboard-v2';
 
 // ── Formatters ──────────────────────────────────────────────────────────
@@ -123,7 +125,7 @@ function StatCell({
 
 export function AccountStatePanel() {
   const { fixtures } = useWorkstation();
-  const { dashboardV2, dashboard } = fixtures;
+  const { dashboardV2 } = fixtures;
   const { metrics, valuation, riskSummary } = dashboardV2;
 
   const vState = valuation.state;
@@ -181,16 +183,6 @@ export function AccountStatePanel() {
     drawdownValue !== '—'
       ? `${drawdownValue} (${drawdownPct})`
       : drawdownValue;
-
-  // ── Equity chart data ───────────────────────────────────────────────
-  const equityCurve = dashboard.equityCurve;
-  const drawdownData = dashboard.drawdown;
-  const tradeMarkers = dashboard.tradeMarkers ?? [];
-
-  // ── Drawdown summary from kpis ──────────────────────────────────────
-  const kpis = dashboard.kpis;
-  const currentDd = kpis.currentDrawdown;
-  const currentDdPct = kpis.currentDrawdownPct;
 
   return (
     <section
@@ -253,30 +245,6 @@ export function AccountStatePanel() {
             valueClassName="ws-neg"
             testId="ws-account-state-drawdown"
           />
-        </div>
-
-        {/* Equity chart */}
-        <div style={{ marginTop: '8px', minHeight: '180px' }}>
-          <EquityChart
-            equityCurve={equityCurve}
-            drawdown={drawdownData}
-            tradeMarkers={tradeMarkers}
-          />
-        </div>
-
-        {/* Compact drawdown summary */}
-        <div
-          className="ws-stat-row"
-          data-testid="ws-account-state-dd-summary"
-          style={{ marginTop: '4px' }}
-        >
-          <span>Current drawdown</span>
-          <span className="ws-num ws-neg">
-            {currentDd !== null
-              ? fmtCurrency(String(currentDd))
-              : '—'}
-            {currentDdPct !== null ? ` (${fmtPct(String(currentDdPct))})` : ''}
-          </span>
         </div>
       </div>
     </section>

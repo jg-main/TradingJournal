@@ -1,26 +1,28 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Dashboard KPI enrichment and equity markers', () => {
-  test('production KPI strip exposes enriched metrics', async ({ page }) => {
+  test('production dense default exposes account state stats without a KPI strip', async ({ page }) => {
     await page.goto('/');
-    const kpis = page.getByTestId('ws-panel-kpis');
 
-    await expect(kpis.getByText('Profit Factor', { exact: true })).toBeVisible();
-    await expect(kpis.getByText('Net P&L', { exact: true })).toBeVisible();
-    await expect(kpis.getByText('Avg R', { exact: true })).toBeVisible();
-    await expect(kpis.getByText('Drawdown', { exact: true })).toBeVisible();
+    // Dense S02: the KPI band is removed from the workstation catalogue —
+    // period KPIs now live in the Performance panel stat rows.
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
 
     // Account Value moved to the Account State panel as NAV (with qualification).
     const accountState = page.getByTestId('ws-panel-account-state');
     await expect(accountState.getByTestId('ws-account-state-nav')).toContainText('NAV');
+    await expect(accountState.getByTestId('ws-account-state-drawdown')).toBeVisible();
   });
 
-  test('deterministic equity chart renders with marker-capable fixture data', async ({ page }) => {
+  test('account state panel is stat-only; the equity chart leaves the summary row (M017/S02)', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=default');
 
     const accountState = page.getByTestId('ws-panel-account-state');
     await expect(accountState).toBeVisible();
-    await expect(accountState.getByTestId('ws-equity-chart').locator('canvas')).toBeVisible();
+    // Dense S02: no chart inside the Account State summary panel — the
+    // equity/drawdown chart moves to the future analysis workspace.
+    await expect(accountState.getByTestId('ws-equity-chart')).toHaveCount(0);
+    await expect(accountState.getByTestId('ws-account-state-metrics')).toBeVisible();
   });
 
   test('API response retains enriched KPIs and trade markers', async ({ request }) => {
