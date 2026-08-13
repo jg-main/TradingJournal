@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 /**
- * M017 S05 T02 — capture the release-gate dense-layout workstation screenshots
- * at the three approved viewports into a git-tracked evidence directory
- * (docs/uat/m017-s05/).
+ * Capture the dense-layout workstation screenshots at the three approved
+ * viewports into a git-tracked evidence directory (docs/uat/m017-s05/).
+ * Originally M017 S05 T02; re-captured under M018 S02 T04 for the new
+ * default composition (no Review Metrics in the curated default).
  *
  *   - 2560×1440           (desktop, populated default scenario)
  *   - 1536×960            (effective laptop, populated default scenario)
  *   - 1440×900            (structural fallback)
  *
- * Per-viewport structural assertions confirm the M017 dense layout contract:
+ * Per-viewport structural assertions confirm the M018 dense layout contract:
  *   - full-width Main Risk Metrics band (grid row "risk risk risk"),
- *   - the compact equal-width Account State | Performance | Review Metrics
- *     summary row (grid row "account perf review"),
+ *   - the compact Account State | Performance summary row (grid row
+ *     "account perf perf"; Performance spans two of the three columns),
  *   - the full-width Trades workspace band (grid row "trades trades trades"),
- *   - no Watchlist panel in the curated default,
+ *   - no Watchlist and no Review Metrics panels in the curated default
+ *     (Process Review has its dedicated saved view),
  *   - no arrangement chrome (no drag/resize handles, no customize bar, no
  *     arrange grid) in normal mode.
  *
@@ -24,10 +26,30 @@
  * Output: docs/uat/m017-s05/*.png
  */
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
-const PORT = 31_500 + (process.pid % 1_000);
+/**
+ * Pick the first free port starting at `start` (default 31500 + pid % 1000,
+ * as before). Ports in this range can be occupied by unrelated long-lived
+ * dev servers, so probe with a real bind instead of trusting the pid hash.
+ */
+async function findFreePort(start = 31_500 + (process.pid % 1_000)) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const port = start + attempt;
+    const probe = createServer();
+    const free = await new Promise((resolve) => {
+      probe.once('error', () => resolve(false));
+      probe.once('listening', () => probe.close(() => resolve(true)));
+      probe.listen(port, '127.0.0.1');
+    });
+    if (free) return port;
+  }
+  throw new Error(`No free port found near ${start}`);
+}
+
+const PORT = await findFreePort();
 const ARTIFACT_ROOT = `/tmp/trading-journal-shots-m017-${process.pid}`;
 process.env.DB_FILE_NAME ??= `${ARTIFACT_ROOT}/journal.db`;
 process.env.PLAYWRIGHT_PORT = String(PORT);
@@ -40,7 +62,9 @@ async function waitForServer(url, timeoutMs = 90_000) {
   while (Date.now() < deadline) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(2_000) });
-      if (res.status < 500) return;
+      // A 200 + HTML shell identifies this app's dev server; a foreign server
+      // squatting on a nearby port (401/404) must not pass the gate.
+      if (res.status === 200 && (await res.text()).includes('<html')) return;
     } catch {
       /* not up yet */
     }
@@ -55,7 +79,7 @@ async function main() {
   const server = spawn(
     'npm',
     ['run', 'dev', '--', '--webpack', '-p', String(PORT)],
-    { stdio: 'ignore', detached: false },
+    { stdio: 'ignore', detached: true },
   );
   const base = `http://localhost:${PORT}`;
   try {
@@ -78,19 +102,20 @@ async function main() {
     for (const t of targets) {
       await page.setViewportSize({ width: t.width, height: t.height });
       await page.goto(`${base}/dev/workstation`); // default populated scenario
-      await page.getByTestId('ws-grid').waitFor({ state: 'visible', timeout: 15_000 });
+      await page.getByTestId('ws-grid').waitFor({ state: 'visible', timeout: 30_000 });
       // Allow the fixture client effect + layout to settle.
       await page.waitForTimeout(600);
 
       // ── Dense layout structural assertions ──
       // 1. Serialized grid template rows for the curated Risk & Positions
-      //    default: full-width risk, equal-width summary row, full-width
-      //    trades. The browser serializes grid-template-areas either as
-      //    longhands or collapsed into the grid-template shorthand — the
-      //    quoted area rows appear in both forms.
+      //    default: full-width risk, the compact Account State | Performance
+      //    summary row (Performance spans two of the three columns), then
+      //    full-width trades. The browser serializes grid-template-areas
+      //    either as longhands or collapsed into the grid-template shorthand
+      //    — the quoted area rows appear in both forms.
       const style = (await page.getByTestId('ws-grid').getAttribute('style')) ?? '';
       const riskRow = style.includes('"risk risk risk"');
-      const summaryRow = style.includes('"account perf review"');
+      const summaryRow = style.includes('"account perf perf"');
       const tradesRow = style.includes('"trades trades trades"');
       if (!riskRow || !summaryRow || !tradesRow) {
         throw new Error(
@@ -120,32 +145,31 @@ async function main() {
         );
       }
 
-      // 3. Equal-width summary row: Account State | Performance | Review
-      //    Metrics share one y and one equal width.
+      // 3. Compact summary row: Account State (one column) | Performance
+      //    (two grouped KPI columns) share one y; Performance is clearly
+      //    wider than Account State but still fits inside the full-width row.
       const accountBox = await page.getByTestId('ws-panel-account-state').boundingBox();
       const perfBox = await page.getByTestId('ws-panel-performance').boundingBox();
-      const reviewBox = await page.getByTestId('ws-panel-process-review').boundingBox();
       const sameRow =
         accountBox !== null &&
         perfBox !== null &&
-        reviewBox !== null &&
-        Math.abs(accountBox.y - perfBox.y) <= 1 &&
-        Math.abs(reviewBox.y - accountBox.y) <= 1;
-      const equalWidth =
+        Math.abs(accountBox.y - perfBox.y) <= 1;
+      const perfWider =
         accountBox !== null &&
         perfBox !== null &&
-        reviewBox !== null &&
-        Math.abs(accountBox.width - perfBox.width) <= 1 &&
-        Math.abs(reviewBox.width - accountBox.width) <= 1;
-      if (!sameRow || !equalWidth) {
+        perfBox.width > accountBox.width &&
+        perfBox.width < 3 * accountBox.width;
+      if (!sameRow || !perfWider) {
         throw new Error(
-          `${t.name}: summary row geometry failed (sameRow=${sameRow}, equalWidth=${equalWidth}; account=${JSON.stringify(accountBox)}, perf=${JSON.stringify(perfBox)}, review=${JSON.stringify(reviewBox)})`,
+          `${t.name}: summary row geometry failed (sameRow=${sameRow}, perfWider=${perfWider}; account=${JSON.stringify(accountBox)}, perf=${JSON.stringify(perfBox)})`,
         );
       }
 
-      // 4. No Watchlist in the curated default; no arrangement chrome in
-      //    normal mode (no drag handles, no customize bar, no arrange grid).
+      // 4. No Watchlist and no Review Metrics in the curated default; no
+      //    arrangement chrome in normal mode (no drag handles, no customize
+      //    bar, no arrange grid).
       const watchlistCount = await page.getByTestId('ws-panel-watchlist').count();
+      const processReviewCount = await page.getByTestId('ws-panel-process-review').count();
       const arrangeGridCount = await page.getByTestId('ws-arrange-grid').count();
       const arrangeModeCount = await page.getByTestId('ws-arrange-mode').count();
       const customizeBarCount = await page.getByTestId('ws-customize-bar').count();
@@ -153,6 +177,7 @@ async function main() {
       const resizeHandles = await page.locator('[data-testid^="ws-arrange-resize-"]').count();
       if (
         watchlistCount !== 0 ||
+        processReviewCount !== 0 ||
         arrangeGridCount !== 0 ||
         arrangeModeCount !== 0 ||
         customizeBarCount !== 0 ||
@@ -160,7 +185,7 @@ async function main() {
         resizeHandles !== 0
       ) {
         throw new Error(
-          `${t.name}: dense absence contract failed (watchlist=${watchlistCount}, arrangeGrid=${arrangeGridCount}, arrangeMode=${arrangeModeCount}, customizeBar=${customizeBarCount}, arrangeHandles=${arrangeHandles}, resizeHandles=${resizeHandles})`,
+          `${t.name}: dense absence contract failed (watchlist=${watchlistCount}, processReview=${processReviewCount}, arrangeGrid=${arrangeGridCount}, arrangeMode=${arrangeModeCount}, customizeBar=${customizeBarCount}, arrangeHandles=${arrangeHandles}, resizeHandles=${resizeHandles})`,
         );
       }
 
@@ -175,7 +200,7 @@ async function main() {
       const out = `${OUT_DIR}${t.name}`;
       await page.screenshot({ path: out, fullPage: t.fullPage });
       console.log(
-        `${t.name} captured (${t.width}×${t.height}, fullPage=${t.fullPage}, overflow=${overflow}, riskFullWidth=${riskFullWidth}, summaryEqualWidth=${equalWidth}, tradesFullWidth=${tradesFullWidth}, watchlist=${watchlistCount}, arrangeChrome=${arrangeGridCount + arrangeModeCount + customizeBarCount + arrangeHandles + resizeHandles})`,
+        `${t.name} captured (${t.width}×${t.height}, fullPage=${t.fullPage}, overflow=${overflow}, riskFullWidth=${riskFullWidth}, summaryRow=${sameRow && perfWider}, tradesFullWidth=${tradesFullWidth}, watchlist=${watchlistCount}, processReview=${processReviewCount}, arrangeChrome=${arrangeGridCount + arrangeModeCount + customizeBarCount + arrangeHandles + resizeHandles})`,
       );
     }
 
@@ -188,7 +213,13 @@ async function main() {
 
     await browser.close();
   } finally {
-    server.kill('SIGTERM');
+    // Kill the whole process group (npm + its next-server child) so a run can
+    // never leave a dev server squatting on the port range.
+    try {
+      process.kill(-server.pid, 'SIGTERM');
+    } catch {
+      server.kill('SIGTERM');
+    }
   }
 }
 
