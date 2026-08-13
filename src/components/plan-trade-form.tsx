@@ -17,6 +17,10 @@ import {
 import { calculatePlanRiskRewardPreview } from '@/lib/position-sizing';
 import { computePlannedRiskAmount } from '@/lib/planned-risk';
 
+// Narrative fields (Thesis, Invalidation Condition, Pre-Trade Plan) allow up to
+// two small paragraphs each; enforced by character count, not sentence count.
+const NARRATIVE_MAX_CHARS = 600;
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface Account {
@@ -121,17 +125,11 @@ export default function PlanTradeForm({
     if (error) setError(null);
   };
 
-  /** Count sentences by splitting on sentence-ending punctuation followed by space/end */
-  const countSentences = (text: string): number => {
-    if (!text.trim()) return 0;
-    return text.trim().split(/[.!?]+\s*/).filter(Boolean).length;
-  };
-
-  /** Validate sentence limit for narrative fields */
-  const validateSentenceLimit = (field: string, text: string): string | null => {
-    const count = countSentences(text);
-    if (count > 2) {
-      return `${field} must be max 2 sentences (${count} written)`;
+  /** Validate character limit for narrative fields */
+  const validateCharLimit = (field: string, text: string): string | null => {
+    const length = text.trim().length;
+    if (length > NARRATIVE_MAX_CHARS) {
+      return `${field} must be max ${NARRATIVE_MAX_CHARS} characters (${length} written)`;
     }
     return null;
   };
@@ -153,10 +151,10 @@ export default function PlanTradeForm({
       return;
     }
 
-    // Validate sentence limits for narrative fields
-    const thesisErr = form.thesis.trim() ? validateSentenceLimit('Thesis', form.thesis) : null;
-    const invalidationErr = form.invalidationCondition.trim() ? validateSentenceLimit('Invalidation Condition', form.invalidationCondition) : null;
-    const planErr = form.preTradePlan.trim() ? validateSentenceLimit('Pre-Trade Plan', form.preTradePlan) : null;
+    // Validate character limits for narrative fields
+    const thesisErr = form.thesis.trim() ? validateCharLimit('Thesis', form.thesis) : null;
+    const invalidationErr = form.invalidationCondition.trim() ? validateCharLimit('Invalidation Condition', form.invalidationCondition) : null;
+    const planErr = form.preTradePlan.trim() ? validateCharLimit('Pre-Trade Plan', form.preTradePlan) : null;
     if (thesisErr || invalidationErr || planErr) {
       setError([thesisErr, invalidationErr, planErr].filter(Boolean).join('. '));
       return;
@@ -489,13 +487,14 @@ export default function PlanTradeForm({
               <label htmlFor="plan-thesis" className="text-xs font-medium text-muted-foreground">
                 Thesis
               </label>
-              <HelpTooltip content="Your reasoning and analysis supporting this trade idea. Max 2 sentences." />
+              <HelpTooltip content="Your reasoning and analysis supporting this trade idea. Up to 600 characters (about 2 small paragraphs)." />
             </div>
             <textarea
               id="plan-thesis"
               rows={3}
               placeholder="Why are you taking this trade?"
               value={form.thesis}
+              maxLength={NARRATIVE_MAX_CHARS}
               onChange={(e) => updateField('thesis', e.target.value)}
               disabled={submitting}
               className="min-h-[4.5rem] w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
@@ -508,13 +507,14 @@ export default function PlanTradeForm({
               <label htmlFor="plan-invalidation" className="text-xs font-medium text-muted-foreground">
                 Invalidation Condition
               </label>
-              <HelpTooltip content="What market conditions or price levels would invalidate this trade idea. Max 2 sentences." />
+              <HelpTooltip content="What market conditions or price levels would invalidate this trade idea. Up to 600 characters (about 2 small paragraphs)." />
             </div>
             <textarea
               id="plan-invalidation"
               rows={3}
               placeholder="What would prove this trade idea wrong?"
               value={form.invalidationCondition}
+              maxLength={NARRATIVE_MAX_CHARS}
               onChange={(e) => updateField('invalidationCondition', e.target.value)}
               disabled={submitting}
               className="min-h-[4.5rem] w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
@@ -527,13 +527,14 @@ export default function PlanTradeForm({
               <label htmlFor="plan-preTradePlan" className="text-xs font-medium text-muted-foreground">
                 Pre-Trade Plan
               </label>
-              <HelpTooltip content="Your step-by-step plan: entry criteria, position sizing, risk management approach, and trade management rules. Max 2 sentences." />
+              <HelpTooltip content="Your step-by-step plan: entry criteria, position sizing, risk management approach, and trade management rules. Up to 600 characters (about 2 small paragraphs)." />
             </div>
             <textarea
               id="plan-preTradePlan"
               rows={4}
               placeholder="What is your execution plan for this trade?"
               value={form.preTradePlan}
+              maxLength={NARRATIVE_MAX_CHARS}
               onChange={(e) => updateField('preTradePlan', e.target.value)}
               disabled={submitting}
               className="min-h-[6rem] w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"

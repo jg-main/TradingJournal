@@ -275,3 +275,37 @@ describe('PlanTradeForm — R025 wrong-side planned stop blocking', () => {
     expect(body).toMatchObject({ plannedEntry: 100, plannedStop: 95 });
   });
 });
+
+describe('PlanTradeForm — narrative field character limit', () => {
+  it('blocks submission when Thesis exceeds 600 characters', async () => {
+    renderForm();
+    setField('Symbol', 'AAPL');
+    setField('Thesis', 'x'.repeat(601));
+    submitForm();
+    await expect(screen.findByText(/Thesis must be max 600 characters/)).resolves.toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks submission when Invalidation Condition exceeds 600 characters', async () => {
+    renderForm();
+    setField('Symbol', 'AAPL');
+    setField('Invalidation Condition', 'y'.repeat(601));
+    submitForm();
+    await expect(
+      screen.findByText(/Invalidation Condition must be max 600 characters/),
+    ).resolves.toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('allows a two-small-paragraph Thesis under 600 characters and submits it', async () => {
+    renderForm();
+    setField('Symbol', 'AAPL');
+    const thesis =
+      'First small paragraph: the setup aligns with the trend and volume supports the move. ' +
+      'Second small paragraph: the target zone offers a favorable risk-to-reward ratio.';
+    setField('Thesis', thesis);
+    submitForm();
+    const body = await getPostedBody();
+    expect(body.thesis).toBe(thesis);
+  });
+});
