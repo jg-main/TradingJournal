@@ -5,8 +5,10 @@
 //
 // Handles high-frequency workstation operations without modifier keys:
 //   [ / ]  — cycle through accounts (previous / next)
-//   1–5     — focus the curated Risk & Positions panels (Risk, Account
-//             State, Positions, Performance, Process Review)
+//   1–5     — focus the Risk & Positions panels (Risk, Account State,
+//             Positions, Performance, Process Review); the curated
+//             default renders the first four, Process Review appears
+//             only in its dedicated saved view
 //   ↑ / ↓   — navigate table rows within the focused Positions panel
 //   Enter   — highlight/unhighlight the active row
 //   ?       — toggle keyboard shortcut overlay
@@ -33,11 +35,14 @@ import { useWorkstation } from './workstation-context';
  * Grid-area label for each panel-number shortcut.
  *
  * Dense layout (M017): the period KPI band (ws-panel-kpis) was removed from
- * the catalogue, so the shortcuts cover the five panels visible in the
- * curated Risk & Positions default. '1' is the full-width Main Risk Metrics
- * band (the first panel in the dense document flow); the compact summary
- * row follows (Account State, Performance, Process Review); '3' keeps the
- * Trades workspace. Watchlist stays optional in saved views and has no
+ * the catalogue, and the curated Risk & Positions default (M018) now
+ * renders four panels: '1' the full-width Main Risk Metrics band (the
+ * first panel in the dense document flow), '2' Account State and '4'
+ * Performance in the compact summary row (Performance widened to two
+ * columns), and '3' the full-width Trades workspace. '5' targets Process
+ * Review, which left the default — it appears only in the dedicated
+ * Process Review saved view, and focusPanel no-ops while the panel is not
+ * rendered. Watchlist stays optional in saved views and has no
  * default-layout shortcut.
  */
 const PANEL_MAP: Record<string, { area: string; label: string }> = {
