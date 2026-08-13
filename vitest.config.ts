@@ -15,6 +15,7 @@ export default defineConfig({
       'src/lib/workstation-fixtures.test.ts',
       'src/lib/dash-ac-fixtures.test.ts',
       'src/components/workstation/workstation-context.test.tsx',
+      'src/components/workstation/workstation-toolbar.test.tsx',
       'src/components/workstation/data-quality-alert-strip.test.tsx',
       'src/components/workstation/risk-positions-table.test.tsx',
       'src/components/workstation/risk-panel.test.tsx',

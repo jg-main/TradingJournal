@@ -331,17 +331,31 @@
 
 /* ── Live Mode Toolbar Indicators ─────────────────────────────────────── */
 
-/* LIVE badge — green, inverted contrast to FIXTURE badge. */
+/* Live-data health badge. Its color is stateful: green when refreshes flow,
+   gray when polling is intentionally idle, and red when a refresh failed. */
 .ws-live-badge {
   font-size: var(--ws-text-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: var(--ws-space-1) var(--ws-space-3);
-  border: 1px solid var(--chart-2);
   border-radius: var(--ws-radius);
-  color: var(--chart-2);
   background: transparent;
+}
+
+.ws-live-badge-active {
+  border: 1px solid var(--positive);
+  color: var(--positive);
+}
+
+.ws-live-badge-paused {
+  border: 1px solid var(--muted-foreground);
+  color: var(--muted-foreground);
+}
+
+.ws-live-badge-error {
+  border: 1px solid var(--destructive);
+  color: var(--destructive);
 }
 
 /* Loading indicator — subtle pulsing label shown while a live fetch
@@ -399,12 +413,12 @@
 
 /* Active: green pulsing dot (data is flowing). */
 .ws-mtm-active .ws-mtm-dot {
-  background: var(--chart-2);
+  background: var(--positive);
   animation: ws-mtm-pulse 1.5s ease-in-out infinite;
 }
 
 .ws-mtm-active {
-  color: var(--chart-2);
+  color: var(--positive);
 }
 
 @keyframes ws-mtm-pulse {

@@ -278,6 +278,16 @@ test.describe('Live Mode E2E', () => {
     const toolbar = page.getByTestId('ws-toolbar');
     await expect(toolbar).toBeVisible();
 
+    // Account selector is populated with real accounts. Select the seeded
+    // account so the badge proves an actively refreshing, live position set.
+    const accountSelect = await selectApplicationAccount(
+      page,
+      liveAccountId,
+      liveAccountName,
+    );
+    await expect(accountSelect).toContainText(liveAccountName);
+    await expect(page.getByTestId('ws-mtm-active')).toBeVisible({ timeout: 15_000 });
+
     // LIVE badge visible, FIXTURE badge absent.
     await expect(page.getByTestId('ws-live-badge')).toBeVisible();
     await expect(page.getByTestId('ws-live-badge')).toHaveText('LIVE');
@@ -285,14 +295,6 @@ test.describe('Live Mode E2E', () => {
 
     // Scenario switcher hidden in live mode.
     await expect(page.getByTestId('ws-scenario-select')).not.toBeVisible();
-
-    // Account selector is populated with real accounts.
-    const accountSelect = await selectApplicationAccount(
-      page,
-      liveAccountId,
-      liveAccountName,
-    );
-    await expect(accountSelect).toContainText(liveAccountName);
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -542,6 +544,36 @@ test.describe('Live Mode E2E', () => {
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
+  });
+
+  test('active live notices use the positive color token', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await selectApplicationAccount(page, liveAccountId, liveAccountName);
+
+    const mtmIndicator = page.getByTestId('ws-mtm-active');
+    const liveBadge = page.getByTestId('ws-live-badge');
+    await expect(mtmIndicator).toBeVisible({ timeout: 15_000 });
+    await expect(liveBadge).toHaveText('LIVE');
+
+    const colors = await page.evaluate(() => {
+      const tokenColor = (token: string) => {
+        const probe = document.createElement('span');
+        probe.style.color = `var(${token})`;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      };
+
+      return {
+        positive: tokenColor('--positive'),
+        mtm: getComputedStyle(document.querySelector('[data-testid="ws-mtm-active"]')!).color,
+        badge: getComputedStyle(document.querySelector('[data-testid="ws-live-badge"]')!).color,
+      };
+    });
+
+    expect(colors.mtm).toBe(colors.positive);
+    expect(colors.badge).toBe(colors.positive);
   });
 
   // ── Test 7: Console.info lifecycle messages fire ────────────────────

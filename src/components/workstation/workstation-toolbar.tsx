@@ -31,7 +31,30 @@ function mtmTitle(state: MtmPollingState): string {
     case 'paused':
       return 'MTM polling paused — no open positions or tab hidden';
     case 'error':
-      return 'MTM polling failed — check console for details';
+      return 'Mark-to-market update failed — displayed marks may be stale';
+  }
+}
+
+/** The compact badge summarizes whether the live data path is usable. */
+function liveBadgeLabel(state: MtmPollingState): string {
+  switch (state) {
+    case 'active':
+      return 'LIVE';
+    case 'paused':
+      return 'IDLE';
+    case 'error':
+      return 'ISSUE';
+  }
+}
+
+function liveBadgeTitle(state: MtmPollingState): string {
+  switch (state) {
+    case 'active':
+      return 'Live data is flowing; mark-to-market refreshes every 30 seconds';
+    case 'paused':
+      return 'Live data is loaded; mark-to-market polling is idle';
+    case 'error':
+      return 'Live data issue — mark-to-market update failed and marks may be stale';
   }
 }
 
@@ -60,6 +83,7 @@ export function WorkstationToolbar() {
   } = useWorkstation();
 
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
+  const liveBadgeState: MtmPollingState = error ? 'error' : mtmPollingState;
 
   return (
     <header
@@ -179,11 +203,13 @@ export function WorkstationToolbar() {
       )}
 
       <span
-        className="ws-live-badge"
+        className={`ws-live-badge ws-live-badge-${liveBadgeState}`}
         data-testid="ws-live-badge"
-        role="status"
+        role={liveBadgeState === 'error' ? 'alert' : 'status'}
+        aria-label={liveBadgeTitle(liveBadgeState)}
+        title={liveBadgeTitle(liveBadgeState)}
       >
-        LIVE
+        {liveBadgeLabel(liveBadgeState)}
       </span>
     </header>
   );
