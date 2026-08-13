@@ -5,8 +5,8 @@
 //
 // Handles high-frequency workstation operations without modifier keys:
 //   [ / ]  — cycle through accounts (previous / next)
-//   1, 2, 3, 5, 6, 7 — focus the curated Risk & Positions panels (KPIs,
-//             Account State, Positions, Risk, Process Review, Performance)
+//   1–5     — focus the curated Risk & Positions panels (Risk, Account
+//             State, Positions, Performance, Process Review)
 //   ↑ / ↓   — navigate table rows within the focused Positions panel
 //   Enter   — highlight/unhighlight the active row
 //   ?       — toggle keyboard shortcut overlay
@@ -29,26 +29,34 @@ import { useWorkstation } from './workstation-context';
 
 // ── Panel mapping ─────────────────────────────────────────────────────────
 
-/** Grid-area label for each panel-number shortcut. */
+/**
+ * Grid-area label for each panel-number shortcut.
+ *
+ * Dense layout (M017): the period KPI band (ws-panel-kpis) was removed from
+ * the catalogue, so the shortcuts cover the five panels visible in the
+ * curated Risk & Positions default. '1' is the full-width Main Risk Metrics
+ * band (the first panel in the dense document flow); the compact summary
+ * row follows (Account State, Performance, Process Review); '3' keeps the
+ * Trades workspace. Watchlist stays optional in saved views and has no
+ * default-layout shortcut.
+ */
 const PANEL_MAP: Record<string, { area: string; label: string }> = {
-  '1': { area: 'kpis', label: 'KPIs' },
+  '1': { area: 'risk', label: 'Risk' },
   '2': { area: 'account-state', label: 'Account State' },
   '3': { area: 'positions', label: 'Positions' },
-  '5': { area: 'risk', label: 'Risk' },
-  '6': { area: 'process-review', label: 'Process Review' },
-  '7': { area: 'performance', label: 'Performance' },
+  '4': { area: 'performance', label: 'Performance' },
+  '5': { area: 'process-review', label: 'Process Review' },
 };
 
 /** Ordered entries rendered in the shortcut overlay. */
 const SHORTCUT_ENTRIES: { keys: string; label: string }[] = [
   { keys: '[', label: 'Previous Account' },
   { keys: ']', label: 'Next Account' },
-  { keys: '1', label: 'Focus KPIs' },
+  { keys: '1', label: 'Focus Risk' },
   { keys: '2', label: 'Focus Account State' },
   { keys: '3', label: 'Focus Positions' },
-  { keys: '5', label: 'Focus Risk' },
-  { keys: '6', label: 'Focus Process Review' },
-  { keys: '7', label: 'Focus Performance' },
+  { keys: '4', label: 'Focus Performance' },
+  { keys: '5', label: 'Focus Process Review' },
   { keys: '?', label: 'Toggle Shortcut Overlay' },
   { keys: 'Escape', label: 'Dismiss Overlay' },
 ];
@@ -256,7 +264,7 @@ export function WorkstationKeyboardShortcuts() {
         return;
       }
 
-      // 1-7: focus panel
+      // 1-5: focus panel
       const panel = PANEL_MAP[key];
       if (panel) {
         e.preventDefault();

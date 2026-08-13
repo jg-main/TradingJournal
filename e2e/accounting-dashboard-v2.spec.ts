@@ -324,8 +324,11 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
     await page.goto('/');
 
     await expect(page.getByTestId('ws-external-account')).toContainText('Dashboard V2 E2E');
-    await expect(page.getByTestId('ws-panel-kpis').getByText('NAV (V2)')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-kpis').getByText('Net P&L')).toBeVisible();
+    // Dense layout: the KPI band is gone — NAV and period P&L now render in
+    // the Account State panel (the Performance panel gates on dashboard
+    // trades, which this execution-only pipeline leaves empty).
+    await expect(page.getByTestId('ws-panel-account-state').getByText('NAV')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-account-state').getByText('Total P&L')).toBeVisible();
     // Risk band: Open P&L cell renders the qualified presentation label or a
     // signed value; Portfolio heat cell always renders (S04 T02).
     await expect(page.getByTestId('ws-risk-cell-open-pnl')).toBeVisible();

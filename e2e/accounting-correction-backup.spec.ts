@@ -558,7 +558,9 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
     await page.goto('/');
 
     await expect(page.getByTestId('ws-external-account')).toContainText('Correction E2E');
-    await expect(page.getByTestId('ws-panel-kpis').getByText('NAV (V2)')).toBeVisible();
+    // Dense layout: the KPI band is gone — NAV now renders in the Account
+    // State panel and period KPIs in the Performance panel.
+    await expect(page.getByTestId('ws-panel-account-state').getByText('NAV')).toBeVisible();
     await expect(page.getByTestId('ws-panel-risk').getByText('Portfolio Heat')).toBeVisible();
     await expect(page.getByTestId('ws-panel-positions').getByText('AAPL')).toBeVisible();
 

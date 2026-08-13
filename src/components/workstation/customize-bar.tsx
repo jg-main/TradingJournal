@@ -12,8 +12,8 @@
 // - "Show {panel}" chips for the optional panels currently hidden in the
 //   draft (hidden panels have no cells in the grid, so the bar is where the
 //   user brings them back);
-// - a fixed-panels note (risk / open positions / period KPIs are always
-//   visible and can never be hidden or rearranged);
+// - a fixed-panels note (risk / trades workspace are always visible and
+//   can never be hidden or rearranged);
 // - Undo (disabled without history), Reset to template, Cancel (discard),
 //   and Save (disabled until the draft differs from the session snapshot).
 //
@@ -95,7 +95,7 @@ export function CustomizeBar({
           </span>
         ) : (
           // Defensive: only catalogue-optional panels are toggleable — fixed
-          // safety/data-quality panels (risk, positions, kpis) never get a
+          // safety/data-quality panels (risk, trades) never get a
           // Show chip even if passed through the untrusted prop surface.
           hiddenOptionalPanels
             .filter((id) => WORKSTATION_PANEL_CATALOGUE[id]?.canHide)
@@ -121,7 +121,7 @@ export function CustomizeBar({
       <div className="ws-customize-spacer" />
 
       <span className="ws-customize-fixed-note" data-testid="ws-customize-fixed-note">
-        Risk · Open Positions · Period KPIs are always visible
+        Risk · Trades are always visible
       </span>
 
       {/* Arrange toggle — enters/exits the arrangement (drag/resize) sub-mode

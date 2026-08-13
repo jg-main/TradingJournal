@@ -281,7 +281,9 @@ test.describe('Workstation cutover contract', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByTestId('ws-panel-kpis')).toBeVisible();
+    // Dense layout: the period KPI band is gone; the surviving operational
+    // panels render and Watchlist stays out of the curated default.
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
     await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
     await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);

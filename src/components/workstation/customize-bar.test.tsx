@@ -3,7 +3,7 @@
  *
  * Covers: bar chrome (view name title, unsaved-changes indicator), Show
  * chips for hidden optional panels (and the all-visible note), the fixed
- * panels note (risk / positions / kpis are never listed as toggleable),
+ * panels note (risk / trades are never listed as toggleable),
  * Undo/Save disabled-state logic, and every action callback firing with the
  * right argument. Uses core Vitest matchers (no jest-dom) matching the
  * established workstation test convention.
@@ -118,10 +118,10 @@ describe('CustomizeBar', () => {
     expect(screen.getByTestId('ws-customize-show-watchlist')).toBeTruthy();
   });
 
-  it('renders the fixed-panels note naming risk / positions / kpis', () => {
+  it('renders the fixed-panels note naming the fixed risk / trades panels', () => {
     renderBar();
     expect(textOf('ws-customize-fixed-note')).toBe(
-      'Risk · Open Positions · Period KPIs are always visible',
+      'Risk · Trades are always visible',
     );
   });
 

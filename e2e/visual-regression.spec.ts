@@ -167,8 +167,9 @@ test.describe('Visual Regression Baselines', () => {
       await expect(page.getByTestId('ws-toolbar')).toBeVisible();
 
       // The curated Risk & Positions grid keeps Watchlist out of the default
-      // setup while retaining the operational review panels.
-      await expect(page.getByTestId('ws-panel-kpis')).toBeVisible();
+      // setup while retaining the operational review panels. The dense layout
+      // removed the period KPI band (M017).
+      await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
       await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
       await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
       await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);

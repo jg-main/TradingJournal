@@ -248,14 +248,12 @@ test.describe('M006 Data Freshness Pipeline', () => {
       await expect(positions.getByText(t.symbol)).toBeVisible({ timeout: 5000 });
     }
 
-    // Verify KPI strip shows data
-    const kpis = page.getByTestId('ws-panel-kpis');
-    await expect(kpis).toBeVisible();
-    await expect(kpis.getByText('Net P&L')).toBeVisible();
-
-    // Verify account state panel renders
+    // Verify the dense summary row reflects the seeded account. Period KPIs
+    // gate on the dashboard trades table, which the execution-only pipeline
+    // leaves empty — the Account State panel (NAV, P&L) carries the state.
     const accountState = page.getByTestId('ws-panel-account-state');
     await expect(accountState).toBeVisible();
+    await expect(accountState.getByText('NAV')).toBeVisible();
 
     // Risk panel renders
     const risk = page.getByTestId('ws-panel-risk');
@@ -277,10 +275,11 @@ test.describe('M006 Data Freshness Pipeline', () => {
     await page.goto('/');
     await selectApplicationAccount(page);
 
-    // KPI strip should render with live data
-    const kpis = page.getByTestId('ws-panel-kpis');
-    await expect(kpis).toBeVisible({ timeout: 10000 });
-    await expect(kpis.getByText('Net P&L')).toBeVisible();
+    // Dense summary row should reflect the seeded account (period KPIs gate
+    // on dashboard trades, so the Account State NAV carries the state).
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(accountState).toBeVisible({ timeout: 10000 });
+    await expect(accountState.getByText('NAV')).toBeVisible();
 
     // Positions panel should show our 3 symbols
     const positions = page.getByTestId('ws-panel-positions');
@@ -288,10 +287,6 @@ test.describe('M006 Data Freshness Pipeline', () => {
     for (const t of TRADES) {
       await expect(positions.getByText(t.symbol)).toBeVisible({ timeout: 5000 });
     }
-
-    // Account State panel renders
-    const accountState = page.getByTestId('ws-panel-account-state');
-    await expect(accountState).toBeVisible();
 
     // Risk panel renders with content
     const risk = page.getByTestId('ws-panel-risk');

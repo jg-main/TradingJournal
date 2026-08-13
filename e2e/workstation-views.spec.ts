@@ -7,8 +7,8 @@
  * 1. Three curated system templates render (Risk & Positions — immutable
  *    startup default, Performance, Process Review) and the dynamic CSS grid
  *    adapts per template: optional panels that a template hides by default
- *    have no cells in the grid, while fixed safety panels (risk, positions,
- *    period KPIs) render in every view.
+ *    have no cells in the grid, while fixed safety panels (risk, trades
+ *    workspace) render in every view.
  * 2. Browser evidence at 2560×1440 and effective 1536×960 confirms the grid
  *    renders without horizontal overflow at both sizes.
  * 3. Customize is an explicit editing mode (R035): the toolbar button is
@@ -56,14 +56,13 @@ const RISK_POSITIONS_PANELS = [
   'account-state',
   'performance',
   'process-review',
-  'kpis',
 ] as const;
 
 /** The panels each system template renders (fixed panels always render). */
 const TEMPLATE_PANELS: Record<string, readonly string[]> = {
   'Risk & Positions': RISK_POSITIONS_PANELS,
-  Performance: ['risk', 'positions', 'account-state', 'performance', 'kpis'],
-  'Process Review': ['risk', 'positions', 'account-state', 'process-review', 'kpis'],
+  Performance: ['risk', 'positions', 'account-state', 'performance'],
+  'Process Review': ['risk', 'positions', 'account-state', 'process-review'],
 };
 
 /** Collect console errors + page errors for the audit assertion. */
@@ -205,12 +204,15 @@ test.describe('workstation saved views', () => {
     ).toBe(false);
 
     // The dynamic grid carries an inline template (computed from the view).
-    // Chrome serializes the three grid-template-* props either as longhands
-    // (grid-template-areas:) or collapsed into the grid-template shorthand,
-    // depending on the row/column values — the quoted area rows appear in
-    // both forms, so assert on those.
-    expect(await readGridTemplate(page)).toContain('"risk risk"');
-    expect(await readGridTemplate(page)).toContain('"kpis kpis"');
+    // Dense v2 Risk & Positions: full-width Main Risk Metrics, the compact
+    // equal-width Account State | Performance | Review Metrics row, then the
+    // full-width Trades workspace. Chrome serializes the three grid-template-*
+    // props either as longhands (grid-template-areas:) or collapsed into the
+    // grid-template shorthand, depending on the row/column values — the
+    // quoted area rows appear in both forms, so assert on those.
+    expect(await readGridTemplate(page)).toContain('"risk risk risk"');
+    expect(await readGridTemplate(page)).toContain('"account perf review"');
+    expect(await readGridTemplate(page)).toContain('"trades trades trades"');
 
     // No horizontal overflow at 2560×1440.
     const overflow = await page.evaluate(
@@ -259,7 +261,7 @@ test.describe('workstation saved views', () => {
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
   });
 
-  test('Risk & Positions uses one document scroll path with paired overview panels (1536x960)', async ({
+  test('Risk & Positions uses one document scroll path with a compact equal-width summary row (1536x960)', async ({
     page,
     request,
   }, testInfo) => {
@@ -271,8 +273,9 @@ test.describe('workstation saved views', () => {
     await expect(grid).toHaveAttribute('data-scroll-mode', 'document');
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
 
-    // The first detailed row is Performance + Account State. Open Positions
-    // and Process Review then occupy their own full-width document bands.
+    // Dense summary row: Account State | Performance | Review Metrics share
+    // one equal-width row below the full-width Main Risk Metrics band. The
+    // Trades workspace then occupies its own full-width document band.
     const [performanceBox, accountBox, positionsBox, reviewBox] = await Promise.all([
       page.getByTestId('ws-panel-performance').boundingBox(),
       page.getByTestId('ws-panel-account-state').boundingBox(),
@@ -283,10 +286,15 @@ test.describe('workstation saved views', () => {
     expect(accountBox).not.toBeNull();
     expect(positionsBox).not.toBeNull();
     expect(reviewBox).not.toBeNull();
+    // The three summary-row panels share one y and one equal width.
     expect(Math.abs(performanceBox!.y - accountBox!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(reviewBox!.y - accountBox!.y)).toBeLessThanOrEqual(1);
     expect(Math.abs(performanceBox!.width - accountBox!.width)).toBeLessThanOrEqual(1);
-    expect(positionsBox!.y).toBeGreaterThanOrEqual(performanceBox!.y + performanceBox!.height);
-    expect(reviewBox!.y).toBeGreaterThanOrEqual(positionsBox!.y + positionsBox!.height);
+    expect(Math.abs(reviewBox!.width - accountBox!.width)).toBeLessThanOrEqual(1);
+    // The full-width Trades workspace starts below the summary row.
+    expect(positionsBox!.y).toBeGreaterThanOrEqual(
+      Math.max(performanceBox!.y, reviewBox!.y) + Math.max(performanceBox!.height, reviewBox!.height),
+    );
     // Document-flow rows size to their actual content. They must not inherit
     // the contained-workstation 1fr tracks and become large blank panels.
     expect(positionsBox!.height).toBeLessThan(500);
@@ -363,7 +371,7 @@ test.describe('workstation saved views', () => {
     await expect(page.getByTestId('ws-customize-all-visible')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-show-watchlist')).toBeVisible();
     await expect(page.getByTestId('ws-customize-fixed-note')).toHaveText(
-      'Risk · Open Positions · Period KPIs are always visible',
+      'Risk · Trades are always visible',
     );
     // Save/Undo start inert on a clean session.
     await expect(page.getByTestId('ws-customize-save')).toBeDisabled();
@@ -371,7 +379,6 @@ test.describe('workstation saved views', () => {
     // Fixed panels are not editable — no hide overlays on them.
     await expect(page.getByTestId('ws-customize-hide-risk')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-hide-positions')).toHaveCount(0);
-    await expect(page.getByTestId('ws-customize-hide-kpis')).toHaveCount(0);
 
     // Alert strip + customize bar both stay OUTSIDE the editable layout.
     const strip = page.getByTestId('ws-data-quality-alert-strip');

@@ -33,7 +33,7 @@ test.describe('Dashboard mark-to-market contract', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-kpis')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
     expect(errors.filter((error) => !error.includes('favicon'))).toEqual([]);
   });
 });

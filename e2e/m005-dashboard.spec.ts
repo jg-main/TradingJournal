@@ -11,31 +11,35 @@ test.describe('Dashboard API and production workstation', () => {
     await expect(page.locator('aside').first()).toBeVisible();
   });
 
-  test('KPI strip exposes the current operational metrics', async ({ page }) => {
+  test('dense summary row exposes the current operational metrics', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    const kpis = page.getByTestId('ws-panel-kpis');
-    for (const label of [
-      'Net P&L',
-      'Win Rate',
-      'Profit Factor',
-      'Avg R',
-      'Trades',
-      'Open',
-      'Drawdown',
-      'Account Value',
-      'NAV (V2)',
-    ]) {
-      await expect(kpis.getByText(label, { exact: true })).toBeVisible();
-    }
+    // The dense layout removed the period KPI band; NAV now renders in the
+    // Account State panel and period KPIs in the Performance panel (empty
+    // state until trades exist on a fresh database).
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
+
+    const accountState = page.getByTestId('ws-panel-account-state');
+    await expect(accountState).toBeVisible();
+    await expect(accountState.getByText('NAV')).toBeVisible();
+
+    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
   });
 
   test('production workstation renders all operational panels', async ({ page }) => {
     await page.goto('/');
 
-    for (const area of ['kpis', 'equity', 'positions', 'watchlist', 'risk', 'insights']) {
+    // Dense curated default: risk, trades workspace, and the compact
+    // summary row (account state / performance / process review).
+    for (const area of ['risk', 'positions', 'account-state', 'performance', 'process-review']) {
       await expect(page.getByTestId(`ws-panel-${area}`)).toBeVisible();
+    }
+    // Retired surfaces have no cells in the dense default: the period KPI
+    // band, the equity chart rail, and the insights panel. Watchlist stays
+    // out of the curated flow (available via saved views / its page).
+    for (const area of ['kpis', 'equity', 'insights', 'watchlist']) {
+      await expect(page.getByTestId(`ws-panel-${area}`)).toHaveCount(0);
     }
   });
 
