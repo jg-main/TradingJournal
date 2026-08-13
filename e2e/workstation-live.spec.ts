@@ -47,6 +47,19 @@ async function createLiveAccount(
   });
   expect(res.status()).toBe(201);
   const account = (await res.json()) as { id: string };
+
+  // Configure risk params and activate the account so the trade-creation API
+  // (used by the dense Performance seeding in beforeAll) accepts it — the
+  // route rejects accounts whose setup is incomplete.
+  const configResp = await request.put(`/api/accounts/${account.id}`, {
+    data: { maxRiskPerTradePct: 2, defaultCommission: 1 },
+  });
+  expect(configResp.status()).toBe(200);
+  const activateResp = await request.put(`/api/accounts/${account.id}`, {
+    data: { isActive: true },
+  });
+  expect(activateResp.status()).toBe(200);
+
   return { id: account.id, name };
 }
 
@@ -226,10 +239,31 @@ test.describe('Live Mode E2E', () => {
     });
     await postValuationMark(request, liveAccountId, 'SHRT', '90.00');
 
-    // Rebuild performance projection so dashboard V2 has positions.
+    // Dense S02: seed a closed trade so the Performance summary-row stat
+    // rows populate with live KPI data (hasData = kpis.totalTrades > 0).
+    // Without a closed trade the panel renders its compact empty state and
+    // the populated-row assertions below would fail by design.
+    const closedTradeRes = await request.post('/api/trades', {
+      data: { symbol: 'CLSD', direction: 'long', accountId: liveAccountId },
+    });
+    expect(closedTradeRes.ok()).toBeTruthy();
+    const closedTrade = (await closedTradeRes.json()) as { id: string };
+    const enterRes = await request.post(`/api/trades/${closedTrade.id}/execute`, {
+      data: { entryPrice: 100.0, entryQuantity: 10, stopPrice: 95.0, fees: 1.0 },
+    });
+    expect(enterRes.ok()).toBeTruthy();
+    const exitRes = await request.post(`/api/trades/${closedTrade.id}/executions`, {
+      data: { action: 'sell', quantity: 10, price: 110.0, fees: 1.0 },
+    });
+    expect(exitRes.status()).toBe(201);
+
+    // Rebuild performance projection so dashboard V2 has positions. The
+    // closed CLSD trade above also leaves a flat (quantity 0.00) accounting
+    // projection row that the rebuild counts, so assert the two open
+    // positions are covered rather than pinning an exact total.
     const rebuildResult = await rebuildPerformance(request, liveAccountId);
     expect(rebuildResult.success).toBe(true);
-    expect(rebuildResult.positionCount).toBe(2);
+    expect(rebuildResult.positionCount).toBeGreaterThanOrEqual(2);
   });
 
   // ── Test 1: Live mode renders LIVE badge, not FIXTURE badge ─────────

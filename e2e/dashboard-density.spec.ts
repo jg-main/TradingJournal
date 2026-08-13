@@ -9,7 +9,7 @@ test.describe('Risk & Positions document flow', () => {
   });
 
   test('keeps curated panels horizontally contained and excludes Watchlist from the default', async ({ page }) => {
-    for (const area of ['kpis', 'account-state', 'positions', 'risk', 'process-review', 'performance']) {
+    for (const area of ['account-state', 'positions', 'risk', 'process-review', 'performance']) {
       const panel = page.getByTestId(`ws-panel-${area}`);
       await expect(panel).toBeVisible();
       const box = await panel.boundingBox();
@@ -18,6 +18,10 @@ test.describe('Risk & Positions document flow', () => {
       expect(box!.y).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(1440);
     }
+    // Dense S02: the KPI band was removed from the workstation catalogue and
+    // is not part of the document flow; period KPIs live in the Performance
+    // panel stat rows. Watchlist is also excluded from the curated default.
+    await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
   });
 
