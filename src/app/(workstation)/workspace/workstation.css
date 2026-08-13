@@ -553,6 +553,168 @@
   font-size: var(--ws-text-md);
 }
 
+/* ── Trades Workspace tabs (M017/S03) ───────────────────────────────────── */
+/*
+ * Full-width Trades workspace switching between Open/current and
+ * Closed/historical tabs (DASHBOARD_DENSE_LAYOUT_REQUIREMENTS §Trades
+ * workspace). Tab labels state their real universe and carry only their
+ * own source's counts; the closed tab's totals come from the closed-trades
+ * API response only, so a current account total is never mixed with a
+ * period-filtered total. The wrapper keeps the ws-panel-positions testid.
+ *
+ * Selectors are scoped under .ws-panel so these rules beat the generic
+ * ui/tabs Tailwind utilities regardless of stylesheet order, and the
+ * document-flow panel-body override keeps the tab content on the page
+ * scroll path (no nested scrollbar).
+ */
+
+.ws-panel .ws-trades-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+}
+
+.ws-panel .ws-trades-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--ws-space-2);
+  height: var(--ws-row-sm);
+  padding: 0 var(--ws-space-4);
+  border-bottom: var(--ws-border);
+  background: transparent;
+  border-radius: 0;
+  flex: none;
+}
+
+.ws-panel .ws-trades-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ws-space-2);
+  height: calc(var(--ws-row-sm) - 10px);
+  padding: 0 var(--ws-space-3);
+  border-radius: var(--ws-radius);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--ws-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.ws-panel .ws-trades-tab:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.ws-panel .ws-trades-tab[data-state='active'] {
+  background: var(--accent);
+  border-color: var(--muted-foreground);
+  color: var(--foreground);
+}
+
+.ws-panel .ws-trades-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.ws-panel .ws-trades-tab-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  font-size: var(--ws-text-xs);
+  line-height: 1.5;
+  padding: 0 var(--ws-space-2);
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.ws-panel .ws-trades-tab[data-state='active'] .ws-trades-tab-count {
+  color: var(--foreground);
+}
+
+.ws-panel .ws-trades-content {
+  padding: var(--ws-space-3);
+  min-height: 0;
+}
+
+/* Loading / empty / error states keep the tab from collapsing to a sliver. */
+.ws-panel .ws-trades-content .ws-empty {
+  height: auto;
+  min-height: 120px;
+}
+
+/* Universe scope line above the closed table: states exactly what is shown. */
+.ws-trades-scope {
+  font-size: var(--ws-text-sm);
+  color: var(--muted-foreground);
+  padding: 0 0 var(--ws-space-2);
+}
+
+/* Scoped totals footer — two-edge metric row: scoped label at the start
+   edge, one comparable value at the end edge (data-display rules). */
+.ws-trades-totals {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-5);
+  margin-top: var(--ws-space-3);
+  padding: var(--ws-space-3) var(--ws-space-2) 0;
+  border-top: var(--ws-border);
+}
+
+.ws-trades-totals-label {
+  font-size: var(--ws-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+.ws-trades-totals-value {
+  font-size: var(--ws-text-lg);
+  font-weight: 600;
+}
+
+/* Closed-tab error banner with retry (failed fetch is surfaced, never
+   swallowed): message at the start edge, action at the end edge. */
+.ws-trades-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-4);
+  min-height: 120px;
+  padding: var(--ws-space-4);
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  color: var(--negative);
+  font-size: var(--ws-text-md);
+}
+
+.ws-trades-retry {
+  height: var(--ws-row-xs);
+  padding: 0 var(--ws-space-4);
+  border: var(--ws-border);
+  border-radius: var(--ws-radius);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: var(--ws-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ws-trades-retry:hover {
+  background: var(--accent);
+}
+
+.ws-trades-retry:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
 /* ── Data-Quality Alert Strip ───────────────────────────────────────────── */
 /*
  * Fixed alert strip shown above the main grid whenever a current-value

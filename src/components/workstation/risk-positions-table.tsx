@@ -197,12 +197,14 @@ function MarkCell({ position }: { position: DashboardPositionSummary }) {
 // ═════════════════════════════════════════════════════════════════════════
 
 /**
- * RiskPositionsTable — self-contained panel rendering the primary open
- * account positions table in risk-first sort order. Prop-driven pure
- * consumer of API state (the same pattern as DataQualityAlertStrip): no
- * provider machinery, no local classification.
+ * RiskPositionsTableContent — the open account positions table (or its
+ * empty state) without panel chrome. Shared by the standalone
+ * RiskPositionsTable panel and the Open tab of the Trades workspace panel
+ * (M017/S03), so the canonical live mark / risk / data-quality cells are
+ * rendered identically in both surfaces. Same risk-first sort and same
+ * data-testids; no provider machinery, no local classification.
  */
-export function RiskPositionsTable({
+export function RiskPositionsTableContent({
   positions,
 }: {
   positions: DashboardPositionSummary[];
@@ -212,24 +214,117 @@ export function RiskPositionsTable({
   // ── Empty state (R034 §8.1: 'No open account positions', compact space) ──
   if (sorted.length === 0) {
     return (
-      <section
-        className="ws-panel"
-        style={{ gridArea: 'trades' }}
-        data-testid="ws-panel-positions"
-        role="region"
-        aria-label="Open account positions"
-      >
-        <div className="ws-panel-header">
-          <span>Open account positions: 0</span>
-        </div>
-        <div className="ws-panel-body">
-          <div className="ws-empty" data-testid="ws-positions-empty">
-            No open account positions
-          </div>
-        </div>
-      </section>
+      <div className="ws-empty" data-testid="ws-positions-empty">
+        No open account positions
+      </div>
     );
   }
+
+  return (
+    <table className="ws-table ws-positions-table" data-testid="ws-positions-table">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Attribution</th>
+          <th>Side/qty</th>
+          <th className="ws-num">Avg cost</th>
+          <th className="ws-num">Mark</th>
+          <th className="ws-num">Unrealized P&L</th>
+          <th className="ws-num">Active stop</th>
+          <th className="ws-num">Current risk to stop</th>
+          <th className="ws-num">Exposure</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((pos) => {
+          const isFresh = pos.markStatus === 'fresh';
+          const isMissing = pos.markStatus === 'missing';
+          return (
+            <tr
+              key={pos.instrumentId}
+              data-testid={`ws-position-row-${pos.symbol}`}
+            >
+              <td className="ws-mono ws-pos-symbol">{pos.symbol}</td>
+
+              <td>
+                <div>{attributionLabel(pos.attribution.kind)}</div>
+                {pos.attribution.kind !== 'account_only' && (
+                  <div className="ws-cell-sub ws-mono">
+                    {pos.attribution.journalTradeCount} linked
+                  </div>
+                )}
+              </td>
+
+              <td
+                className={dirClass(pos.direction)}
+                data-testid="ws-position-cell-side"
+              >
+                {dirLabel(pos.direction)} {pos.quantity}
+              </td>
+
+              <td className="ws-num">{fmtCurrency(pos.averageCost)}</td>
+
+              <MarkCell position={pos} />
+
+              <td
+                className={`ws-num ws-cell-primary ${pnlClass(pos.unrealizedPnl)}`}
+                data-testid="ws-position-cell-pnl"
+              >
+                {pos.unrealizedPnl === null ? '—' : fmtCurrency(pos.unrealizedPnl)}
+              </td>
+
+              <td className="ws-num">
+                {pos.risk.hasValidStop && pos.risk.stopPrice !== null ? (
+                  fmtCurrency(pos.risk.stopPrice)
+                ) : (
+                  <span className="ws-warn-text">No valid stop</span>
+                )}
+              </td>
+
+              <td
+                className="ws-num ws-cell-primary"
+                data-testid="ws-position-cell-risk"
+              >
+                {pos.risk.currentRiskToStop !== null ? (
+                  fmtCurrency(pos.risk.currentRiskToStop)
+                ) : (
+                  <span className="ws-warn-text">Incomplete</span>
+                )}
+              </td>
+
+              <td className="ws-num">
+                <div className="ws-cell-primary">
+                  {fmtCurrency(pos.markedValue)}
+                </div>
+                {!isFresh && (
+                  <div className="ws-cell-sub ws-mono">
+                    {isMissing ? 'Unpriced' : 'Stale'}
+                  </div>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * RiskPositionsTable — self-contained panel rendering the primary open
+ * account positions table in risk-first sort order. Prop-driven pure
+ * consumer of API state (the same pattern as DataQualityAlertStrip): no
+ * provider machinery, no local classification. Rendered output is
+ * unchanged (single ws-panel-positions section, R034 header, table or
+ * empty state in the panel body); TradesWorkspacePanel reuses
+ * RiskPositionsTableContent directly.
+ */
+export function RiskPositionsTable({
+  positions,
+}: {
+  positions: DashboardPositionSummary[];
+}) {
+  const sorted = sortPositionsRiskFirst(positions);
 
   return (
     <section
@@ -243,92 +338,7 @@ export function RiskPositionsTable({
         <span>Open account positions: {sorted.length}</span>
       </div>
       <div className="ws-panel-body">
-        <table className="ws-table ws-positions-table" data-testid="ws-positions-table">
-          <thead>
-            <tr>
-              <th>Symbol</th>
-              <th>Attribution</th>
-              <th>Side/qty</th>
-              <th className="ws-num">Avg cost</th>
-              <th className="ws-num">Mark</th>
-              <th className="ws-num">Unrealized P&L</th>
-              <th className="ws-num">Active stop</th>
-              <th className="ws-num">Current risk to stop</th>
-              <th className="ws-num">Exposure</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((pos) => {
-              const isFresh = pos.markStatus === 'fresh';
-              const isMissing = pos.markStatus === 'missing';
-              return (
-                <tr
-                  key={pos.instrumentId}
-                  data-testid={`ws-position-row-${pos.symbol}`}
-                >
-                  <td className="ws-mono ws-pos-symbol">{pos.symbol}</td>
-
-                  <td>
-                    <div>{attributionLabel(pos.attribution.kind)}</div>
-                    {pos.attribution.kind !== 'account_only' && (
-                      <div className="ws-cell-sub ws-mono">
-                        {pos.attribution.journalTradeCount} linked
-                      </div>
-                    )}
-                  </td>
-
-                  <td
-                    className={dirClass(pos.direction)}
-                    data-testid="ws-position-cell-side"
-                  >
-                    {dirLabel(pos.direction)} {pos.quantity}
-                  </td>
-
-                  <td className="ws-num">{fmtCurrency(pos.averageCost)}</td>
-
-                  <MarkCell position={pos} />
-
-                  <td
-                    className={`ws-num ws-cell-primary ${pnlClass(pos.unrealizedPnl)}`}
-                    data-testid="ws-position-cell-pnl"
-                  >
-                    {pos.unrealizedPnl === null ? '—' : fmtCurrency(pos.unrealizedPnl)}
-                  </td>
-
-                  <td className="ws-num">
-                    {pos.risk.hasValidStop && pos.risk.stopPrice !== null ? (
-                      fmtCurrency(pos.risk.stopPrice)
-                    ) : (
-                      <span className="ws-warn-text">No valid stop</span>
-                    )}
-                  </td>
-
-                  <td
-                    className="ws-num ws-cell-primary"
-                    data-testid="ws-position-cell-risk"
-                  >
-                    {pos.risk.currentRiskToStop !== null ? (
-                      fmtCurrency(pos.risk.currentRiskToStop)
-                    ) : (
-                      <span className="ws-warn-text">Incomplete</span>
-                    )}
-                  </td>
-
-                  <td className="ws-num">
-                    <div className="ws-cell-primary">
-                      {fmtCurrency(pos.markedValue)}
-                    </div>
-                    {!isFresh && (
-                      <div className="ws-cell-sub ws-mono">
-                        {isMissing ? 'Unpriced' : 'Stale'}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <RiskPositionsTableContent positions={positions} />
       </div>
     </section>
   );

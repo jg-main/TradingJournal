@@ -26,7 +26,7 @@ import { useWorkstationViewsContext } from './workstation-views-context';
 import { useWorkstationCustomizeContext } from './workstation-customize-context';
 import { CustomizeBar } from './customize-bar';
 import { DataQualityAlertStrip } from './data-quality-alert-strip';
-import { RiskPositionsTable } from './risk-positions-table';
+import { TradesWorkspacePanel } from './trades-workspace-panel';
 import { RiskPanel } from './risk-panel';
 import { WatchlistPanel } from './watchlist-panel';
 import { AccountStatePanel } from './account-state-panel';
@@ -59,19 +59,20 @@ const DEFAULT_VIEW_CONFIG: WorkstationViewConfig = createViewFromTemplate(
 
 /**
  * Return the panel component for one catalogue panel id. Renderers receive
- * the values they need as arguments so the map stays pure; the positions
- * table consumes the same reconciled valuation snapshot the alert strip and
- * risk band consume.
+ * the values they need as arguments so the map stays pure; the trades
+ * workspace consumes the same reconciled valuation snapshot the alert
+ * strip and risk band consume (Open tab) and fetches its own closed-trades
+ * history scoped to the active account (Closed tab).
  */
 function renderPanelById(
   id: WorkstationPanelId,
-  positions: Parameters<typeof RiskPositionsTable>[0]['positions'],
+  positions: Parameters<typeof TradesWorkspacePanel>[0]['positions'],
 ): ReactNode {
   switch (id) {
     case WORKSTATION_PANEL_IDS.RISK:
       return <RiskPanel />;
     case WORKSTATION_PANEL_IDS.TRADES:
-      return <RiskPositionsTable positions={positions} />;
+      return <TradesWorkspacePanel positions={positions} />;
     case WORKSTATION_PANEL_IDS.ACCOUNT:
       return <AccountStatePanel />;
     case WORKSTATION_PANEL_IDS.PERFORMANCE:
