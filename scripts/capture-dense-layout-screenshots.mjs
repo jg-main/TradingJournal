@@ -102,12 +102,18 @@ async function main() {
       //    bounding boxes span the viewport width.
       const riskBox = await page.getByTestId('ws-panel-risk').boundingBox();
       const tradesBox = await page.getByTestId('ws-panel-positions').boundingBox();
+      // Full-width = the band spans the grid content area. The ws grid has a
+      // ~6px outer inset, so allow a small tolerance rather than requiring
+      // the panel to touch the literal viewport edge.
+      const FULL_WIDTH_TOLERANCE = 12;
       const riskFullWidth =
-        riskBox !== null && Math.abs(riskBox.x) <= 1 && Math.abs(riskBox.x + riskBox.width - t.width) <= 1;
+        riskBox !== null &&
+        Math.abs(riskBox.x) <= FULL_WIDTH_TOLERANCE &&
+        Math.abs(riskBox.x + riskBox.width - t.width) <= FULL_WIDTH_TOLERANCE;
       const tradesFullWidth =
         tradesBox !== null &&
-        Math.abs(tradesBox.x) <= 1 &&
-        Math.abs(tradesBox.x + tradesBox.width - t.width) <= 1;
+        Math.abs(tradesBox.x) <= FULL_WIDTH_TOLERANCE &&
+        Math.abs(tradesBox.x + tradesBox.width - t.width) <= FULL_WIDTH_TOLERANCE;
       if (!riskFullWidth || !tradesFullWidth) {
         throw new Error(
           `${t.name}: full-width bands failed (risk=${riskFullWidth}, trades=${tradesFullWidth}; risk=${JSON.stringify(riskBox)}, trades=${JSON.stringify(tradesBox)})`,
