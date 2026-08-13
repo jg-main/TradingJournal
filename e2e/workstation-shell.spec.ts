@@ -455,7 +455,14 @@ test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', 
     await expect(page.getByTestId('ws-positions-table')).toHaveCount(0);
   });
 
-  test('panel header shows the open position count (R034 title)', async ({ page }) => {
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M017/S03: TradesWorkspacePanel — tabbed Trades workspace
+// ═══════════════════════════════════════════════════════════════════════════
+
+test.describe('M017/S03 TradesWorkspacePanel — tabbed workspace with stated universes', () => {
+  test('tab labels pin the open/closed universes with the open count (R034 header)', async ({ page }) => {
     await page.goto('/dev/workstation');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
 
@@ -472,14 +479,53 @@ test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', 
       )
       .toBe(true);
 
-    await expect(
-      page.getByTestId('ws-panel-positions').getByText('Open account positions: 3'),
-    ).toBeVisible();
+    // The outer wrapper keeps ws-panel-positions; the header now reads
+    // 'Trades Workspace' and the counts live at tab level (M017/S03).
+    const panel = page.getByTestId('ws-panel-positions');
+    await expect(panel.getByText('Trades Workspace')).toBeVisible();
 
+    // Tab labels state their real universe and are pinned by testid.
+    const openTab = page.getByTestId('ws-trades-tab-open');
+    await expect(openTab).toBeVisible();
+    await expect(openTab).toContainText('Open positions');
+    // Open count is the live open-universe snapshot (default: 3).
+    await expect(page.getByTestId('ws-trades-open-count')).toHaveText('3');
+
+    const closedTab = page.getByTestId('ws-trades-tab-closed');
+    await expect(closedTab).toBeVisible();
+    await expect(closedTab).toContainText('Closed trades');
+
+    // Scenario switch swaps the open-universe count only (large-drawdown: 2).
     await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
-    await expect(
-      page.getByTestId('ws-panel-positions').getByText('Open account positions: 2'),
-    ).toBeVisible();
+    await expect(page.getByTestId('ws-trades-open-count')).toHaveText('2');
+  });
+
+  test('switching tabs swaps content without mixing the two universes', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    await expect(page.getByTestId('ws-grid')).toBeVisible();
+
+    // Open tab is the default active content with the canonical open table.
+    const openContent = page.getByTestId('ws-trades-open-content');
+    await expect(page.getByTestId('ws-positions-table')).toBeVisible();
+    await expect(openContent).toHaveAttribute('data-state', 'active');
+
+    // Switch to Closed: in fixture mode the API returns no rows for the
+    // fixture account, so the closed universe renders its own empty state;
+    // the open table leaves the active content (one universe at a time).
+    await page.getByTestId('ws-trades-tab-closed').click();
+    const closedContent = page.getByTestId('ws-trades-closed-content');
+    await expect(closedContent).toHaveAttribute('data-state', 'active');
+    await expect(page.getByTestId('ws-trades-closed-empty')).toBeVisible();
+    await expect(page.getByTestId('ws-trades-closed-empty')).toHaveText(
+      'No closed trades for this account',
+    );
+    await expect(openContent).toHaveAttribute('data-state', 'inactive');
+    await expect(page.getByTestId('ws-positions-table')).not.toBeVisible();
+
+    // Switch back to Open: the current open workflow is restored with rows.
+    await page.getByTestId('ws-trades-tab-open').click();
+    await expect(openContent).toHaveAttribute('data-state', 'active');
+    await expect(page.getByTestId('ws-positions-table')).toBeVisible();
   });
 });
 

@@ -55,4 +55,35 @@ test.describe('Risk & Positions document flow', () => {
     await expect(page.getByTestId('view-switcher-trigger')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /customize dashboard/i })).toHaveCount(0);
   });
+
+  test('tabbed trades workspace renders tabs without nested scroll (M017/S03)', async ({ page }) => {
+    // The full-width Trades workspace is a tabbed panel: Open positions /
+    // Closed trades. Both tab labels render inside the ws-panel-positions
+    // wrapper, and the tab content stays on the page scroll path — no
+    // nested scrollbar inside the panel body.
+    const trades = page.getByTestId('ws-panel-positions');
+    await expect(trades.getByText('Trades Workspace')).toBeVisible();
+    await expect(trades.getByTestId('ws-trades-tab-open')).toBeVisible();
+    await expect(trades.getByTestId('ws-trades-tab-closed')).toBeVisible();
+
+    // The panel body follows the document flow (overflow visible) with the
+    // open table active by default.
+    const body = trades.locator('.ws-panel-body').first();
+    expect(await body.evaluate((element) => getComputedStyle(element).overflowY)).toBe('visible');
+    await expect(trades.getByTestId('ws-positions-table')).toBeVisible();
+
+    // Switching to Closed (fixture mode → API returns the empty universe)
+    // keeps the same document-flow body: no nested scroll appears.
+    await trades.getByTestId('ws-trades-tab-closed').click();
+    await expect(page.getByTestId('ws-trades-closed-empty')).toBeVisible();
+    const closedContent = page.getByTestId('ws-trades-closed-content');
+    expect(await closedContent.evaluate((element) => getComputedStyle(element).overflowY)).toBe('visible');
+
+    // The document still scrolls as one page.
+    const dimensions = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  });
 });

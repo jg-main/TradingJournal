@@ -384,6 +384,70 @@ test.describe('Live Mode E2E', () => {
     expect(failedRequests).toEqual([]);
   });
 
+  // ── Test 4: Trades workspace tabs switch open/closed universes ────────
+  test('trades workspace tabs switch between open and closed universes', async ({
+    page,
+  }) => {
+    const consoleErrors = captureConsoleErrors(page);
+    const failedRequests = captureFailedRequests(page);
+
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await selectApplicationAccount(page, liveAccountId, liveAccountName);
+
+    // Tab labels pin their real universe (M017/S03).
+    const openTab = page.getByTestId('ws-trades-tab-open');
+    await expect(openTab).toBeVisible();
+    await expect(openTab).toContainText('Open positions');
+    const closedTab = page.getByTestId('ws-trades-tab-closed');
+    await expect(closedTab).toBeVisible();
+    await expect(closedTab).toContainText('Closed trades');
+
+    // Open tab is the default active content with the live open table.
+    await expect(page.getByTestId('ws-trades-open-content')).toHaveAttribute(
+      'data-state',
+      'active',
+    );
+    await expect(page.getByTestId('ws-positions-table')).toBeVisible();
+
+    // Switch to Closed: the seeded CLSD trade is the only closed trade for
+    // this account, and the footer total is the server-computed
+    // closed-universe total (never an open/current account figure).
+    await closedTab.click();
+    await expect(page.getByTestId('ws-trades-closed-content')).toHaveAttribute(
+      'data-state',
+      'active',
+    );
+    await expect(page.getByTestId('ws-trades-closed-table')).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByTestId('ws-trades-closed-row-CLSD')).toBeVisible();
+    // The universe line states what is shown; the footer label names the
+    // exact scope of the figure.
+    await expect(page.getByTestId('ws-trades-closed-scope')).toContainText(
+      'closed trades',
+    );
+    await expect(page.getByTestId('ws-trades-closed-totals')).toContainText(
+      'Net P&L · all closed trades',
+    );
+    await expect(page.getByTestId('ws-trades-closed-net-pnl')).toContainText('$');
+
+    // One universe at a time: the open table is not visible while Closed
+    // is the active content.
+    await expect(page.getByTestId('ws-positions-table')).not.toBeVisible();
+
+    // Switch back to Open: the current open workflow returns with its rows.
+    await openTab.click();
+    await expect(page.getByTestId('ws-trades-open-content')).toHaveAttribute(
+      'data-state',
+      'active',
+    );
+    await expect(page.getByTestId('ws-positions-table')).toBeVisible();
+    await expect(page.getByTestId('ws-position-row-AAPL')).toBeVisible();
+
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
   test('live dashboard values a positive-quantity short position directionally', async ({
     page,
   }) => {
