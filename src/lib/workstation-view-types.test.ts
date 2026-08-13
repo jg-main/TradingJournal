@@ -680,6 +680,33 @@ function v1Config(
   };
 }
 
+/**
+ * The exact former v2 risk-positions default grid (pre-M018): Review
+ * Metrics in the summary row and only the watchlist hidden. The current
+ * default (WORKSTATION_DEFAULT_TEMPLATE_VERSION 3) removes Review Metrics
+ * and widens Performance to two columns.
+ */
+const V2_RISK_POSITIONS_DEFAULT_AREAS: string[][] = [
+  ['risk', 'risk', 'risk'],
+  ['account', 'perf', 'review'],
+  ['trades', 'trades', 'trades'],
+];
+
+/** A raw v2 persisted config — the shape `createViewFromTemplate` emits (with a derived layout). */
+function v2Config(
+  templateId: WorkstationTemplateId,
+  areas: string[][],
+  hiddenPanels: string[],
+): WorkstationViewConfig {
+  return {
+    templateId,
+    areas: areas.map((row) => [...row]),
+    hiddenPanels: [...hiddenPanels] as WorkstationPanelId[],
+    version: WORKSTATION_LAYOUT_VERSION,
+    layout: deriveLayoutFromAreas(areas),
+  };
+}
+
 describe('isWorkstationViewConfigShape', () => {
   it('accepts config-shaped objects — v1 and v2 alike', () => {
     expect(
@@ -834,6 +861,73 @@ describe('migrateWorkstationViewConfig', () => {
     const bad = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     bad.areas[1][1] = 'hacker-panel';
     expect(migrateWorkstationViewConfig(bad)).toEqual(denseDefault());
+  });
+
+  it('replaces an unmodified copy of the former v2 risk-positions default with the current default', () => {
+    const former = v2Config(
+      WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+      V2_RISK_POSITIONS_DEFAULT_AREAS,
+      ['watchlist'],
+    );
+    const migrated = migrateWorkstationViewConfig(former);
+    expect(migrated).toEqual(denseDefault());
+    expect(migrated.version).toBe(WORKSTATION_LAYOUT_VERSION);
+    expect(migrated.layout).toBeDefined();
+    // The migrated default carries the M018 composition: review hidden and
+    // Performance widened to two grid columns beside Account State.
+    expect(migrated.areas).toEqual([
+      ['risk', 'risk', 'risk'],
+      ['account', 'perf', 'perf'],
+      ['trades', 'trades', 'trades'],
+    ]);
+    expect(migrated.hiddenPanels).toEqual(['review', 'watchlist']);
+    expect(validateWorkstationViewConfig(migrated)).toEqual([]);
+  });
+
+  it('preserves a user-modified v2 copy of the former default (account hidden)', () => {
+    const userModified = v2Config(
+      WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+      [
+        ['risk', 'risk', 'risk'],
+        ['.', 'perf', 'review'],
+        ['trades', 'trades', 'trades'],
+      ],
+      ['watchlist', 'account'],
+    );
+    const migrated = migrateWorkstationViewConfig(userModified);
+    expect(migrated).toEqual(userModified);
+    expect(migrated).not.toBe(userModified);
+    expect(migrated.areas[1]).toEqual(['.', 'perf', 'review']);
+    expect(migrated.hiddenPanels).toEqual(['watchlist', 'account']);
+    expect(validateWorkstationViewConfig(migrated)).toEqual([]);
+  });
+
+  it('preserves a user-modified v2 copy whose own hidden set includes review (no widening)', () => {
+    // The user hid Review Metrics themselves: the grid keeps account|perf|. —
+    // only the system default widens Performance, so this view is untouched.
+    const userHiddenReview = v2Config(
+      WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+      [
+        ['risk', 'risk', 'risk'],
+        ['account', 'perf', '.'],
+        ['trades', 'trades', 'trades'],
+      ],
+      ['watchlist', 'review'],
+    );
+    const migrated = migrateWorkstationViewConfig(userHiddenReview);
+    expect(migrated).toEqual(userHiddenReview);
+    expect(migrated.areas[1]).toEqual(['account', 'perf', '.']);
+    expect(migrated.hiddenPanels).toEqual(['watchlist', 'review']);
+    expect(validateWorkstationViewConfig(migrated)).toEqual([]);
+  });
+
+  it('passes the current default itself through unchanged', () => {
+    const current = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+    const migrated = migrateWorkstationViewConfig(current);
+    expect(migrated).toEqual(current);
+    expect(migrated).not.toBe(current);
+    expect(migrated.areas).toEqual(WORKSTATION_TEMPLATES[WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS].areas);
+    expect(migrated.hiddenPanels).toEqual(['review', 'watchlist']);
   });
 
   it('always returns a valid v2 config', () => {

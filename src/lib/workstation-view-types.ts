@@ -651,6 +651,30 @@ const FORMER_V1_TEMPLATES: readonly FormerV1Template[] = [
   },
 ];
 
+/**
+ * The former v2 Risk & Positions default composition (the M017-era default
+ * of the dense 3-column model, `WORKSTATION_DEFAULT_TEMPLATE_VERSION` 2):
+ * Review Metrics visible in the compact summary row and only the watchlist
+ * hidden. M018 (default-template version 3) moved Review Metrics out of the
+ * curated default — the dedicated Process Review saved view covers it — and
+ * widened Performance to two grid columns beside Account State. Unmodified
+ * copies of this former default composition are replaced with the current
+ * default on read; user-modified v2 views pass through untouched.
+ */
+const FORMER_V2_RISK_POSITIONS_DEFAULT: {
+  readonly templateId: WorkstationTemplateId;
+  readonly areas: readonly (readonly string[])[];
+  readonly hiddenPanels: readonly WorkstationPanelId[];
+} = {
+  templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+  areas: [
+    ['risk', 'risk', 'risk'],
+    ['account', 'perf', 'review'],
+    ['trades', 'trades', 'trades'],
+  ],
+  hiddenPanels: [WORKSTATION_PANEL_IDS.WATCHLIST],
+};
+
 /** The legacy v1 panel id for the trades workspace (renamed `trades` in v2). */
 const V1_PANEL_ID_POSITIONS = 'positions';
 /** The legacy v1 panel id for the period KPI band (removed in the dense model). */
@@ -710,7 +734,12 @@ export function isWorkstationViewConfigShape(value: unknown): boolean {
  * The function is total: it always returns a valid v2 config.
  *
  * - **v2 configs** pass through unchanged when they validate; malformed v2
- *   data falls back to the dense default.
+ *   data falls back to the dense default. The one exception is an unmodified
+ *   copy of the former v2 Risk & Positions default composition (pre-M018:
+ *   Review Metrics in the summary row, only the watchlist hidden) — because
+ *   the system default composition itself changed, an unmodified copy of the
+ *   old default is stale and is replaced with the current default, exactly
+ *   as unmodified v1 defaults are. User-modified v2 views are preserved.
  * - **Unmodified copies of the former v1 system templates** are replaced
  *   with the corresponding dense template (v1 risk-positions → dense
  *   default; v1 performance / process-review → their dense templates), per
@@ -744,11 +773,22 @@ export function migrateWorkstationViewConfig(value: unknown): WorkstationViewCon
   if (version > WORKSTATION_LAYOUT_VERSION) return denseDefaultView();
 
   // Current schema: pass valid configs through untouched (cloned so callers
-  // can never alias persisted data); malformed v2 data falls back.
+  // can never alias persisted data); malformed v2 data falls back. One
+  // exception: an unmodified copy of the former v2 Risk & Positions default
+  // composition (review in the summary row, watchlist hidden) is replaced
+  // with the current default (M018: review hidden, perf widened) — the
+  // composition itself changed, so even an untouched copy of the old default
+  // is stale. User-modified v2 views are preserved unchanged.
   if (version === WORKSTATION_LAYOUT_VERSION) {
-    return isValidWorkstationViewConfig(config)
-      ? cloneWorkstationViewConfig(config as WorkstationViewConfig)
-      : denseDefaultView();
+    if (!isValidWorkstationViewConfig(config)) return denseDefaultView();
+    if (
+      config.templateId === FORMER_V2_RISK_POSITIONS_DEFAULT.templateId &&
+      sameStringGrid(FORMER_V2_RISK_POSITIONS_DEFAULT.areas, areas) &&
+      sameStringList(FORMER_V2_RISK_POSITIONS_DEFAULT.hiddenPanels, hiddenPanels)
+    ) {
+      return createViewFromTemplate(FORMER_V2_RISK_POSITIONS_DEFAULT.templateId);
+    }
+    return cloneWorkstationViewConfig(config as WorkstationViewConfig);
   }
 
   // v1 schema: unmodified former-template copies become the dense template;
