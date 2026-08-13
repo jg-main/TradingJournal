@@ -543,6 +543,44 @@
   color: var(--muted-foreground);
 }
 
+/* Account State keeps its values on one numeric edge. Context is subordinate
+ * to the label instead of competing with the number as a third column. */
+.ws-account-stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: var(--ws-space-4);
+  align-items: center;
+  min-height: var(--ws-row-sm);
+  padding: var(--ws-space-1) var(--ws-space-2);
+  border-bottom: var(--ws-border);
+  font-size: var(--ws-text-md);
+}
+
+.ws-account-stat-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ws-space-1);
+  color: var(--muted-foreground);
+}
+
+.ws-account-stat-meta {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: var(--ws-text-xs);
+  line-height: 1.2;
+  opacity: 0.7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-account-stat-value {
+  justify-self: end;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 /* Empty states */
 .ws-empty {
   display: flex;

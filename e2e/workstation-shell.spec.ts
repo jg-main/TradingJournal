@@ -912,6 +912,26 @@ test.describe('S05 AccountStatePanel — §6.7 unambiguous labels', () => {
     await expect(cash.locator('.ws-mono')).not.toHaveText('—');
   });
 
+  test('uses a two-column metric matrix with one right-aligned value edge', async ({ page }) => {
+    await page.goto('/dev/workstation');
+    const panel = page.getByTestId('ws-panel-account-state');
+    const rows = panel.locator('.ws-account-stat-row');
+
+    await expect(rows).toHaveCount(7);
+
+    for (let index = 0; index < 7; index += 1) {
+      const row = rows.nth(index);
+      await expect(row.locator('.ws-account-stat-label')).toHaveCount(1);
+      await expect(row.locator('.ws-account-stat-value.ws-num')).toHaveCount(1);
+    }
+
+    const rightEdges = await rows.locator('.ws-account-stat-value').evaluateAll((elements) =>
+      elements.map((element) => Math.round(element.getBoundingClientRect().right)),
+    );
+
+    expect(Math.max(...rightEdges) - Math.min(...rightEdges)).toBeLessThanOrEqual(1);
+  });
+
   test('NAV and marked positions inherit valuation completeness qualification', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=dash-ac-02-partial');
     const panel = page.getByTestId('ws-panel-account-state');

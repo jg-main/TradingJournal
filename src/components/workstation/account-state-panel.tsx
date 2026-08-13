@@ -109,14 +109,14 @@ function StatCell({
   testId: string;
 }) {
   return (
-    <div className="ws-stat-row" data-testid={testId}>
-      <span>{label}</span>
-      <span className={`ws-num ${valueClassName ?? ''}`}>{value}</span>
-      {sub !== undefined && sub !== '' && (
-        <span className="ws-mono" style={{ fontSize: '11px', opacity: 0.7 }}>
-          {sub}
-        </span>
-      )}
+    <div className="ws-account-stat-row" data-testid={testId}>
+      <div className="ws-account-stat-label">
+        <span>{label}</span>
+        {sub !== undefined && sub !== '' && (
+          <span className="ws-account-stat-meta ws-mono">{sub}</span>
+        )}
+      </div>
+      <span className={`ws-account-stat-value ws-num ${valueClassName ?? ''}`}>{value}</span>
     </div>
   );
 }

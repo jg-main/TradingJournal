@@ -247,6 +247,26 @@ describe('AccountStatePanel', () => {
     expect(screen.getByTestId('ws-account-state-drawdown')).toBeTruthy();
   });
 
+  it('groups context with its label and exposes one right-aligned value per row', () => {
+    renderPanel();
+
+    const cells = [
+      'ws-account-state-cash',
+      'ws-account-state-marked',
+      'ws-account-state-nav',
+      'ws-account-state-realized',
+      'ws-account-state-open-pnl',
+      'ws-account-state-total',
+      'ws-account-state-drawdown',
+    ].map((testId) => screen.getByTestId(testId));
+
+    for (const cell of cells) {
+      expect(cell.classList.contains('ws-account-stat-row')).toBe(true);
+      expect(cell.querySelector('.ws-account-stat-label')).toBeTruthy();
+      expect(cell.querySelector('.ws-account-stat-value.ws-num')).toBeTruthy();
+    }
+  });
+
   // ── Cash ──────────────────────────────────────────────────────────────
 
   describe('Cash', () => {
