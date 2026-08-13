@@ -1677,3 +1677,140 @@
   border: none;
   border-radius: 0;
 }
+
+/* ── Arrange Mode (S04/T02) ──────────────────────────────────────────── */
+/*
+ * The arrangement grid (react-grid-layout) is the editing surface for a
+ * user-owned saved view's layout. Normal mode never mounts it — the CSS
+ * grid with grid-template-areas remains the rendered truth. RGL positions
+ * items absolutely and injects global `.react-grid-item` /
+ * `.react-resizable-handle` classes; every override below is scoped under
+ * `.ws-arrange` so the legacy dashboard grid is unaffected.
+ */
+
+/* Container: fills the shell area between the customize bar and the view
+   foot. RGL measures width from this element (useContainerWidth). */
+.ws-arrange {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--ws-space-2);
+}
+
+/* One arrangement item: the panel cell. Eligible panels get a dashed ring
+   (editable chrome, matching the customize-cell rhythm) plus the labelled
+   drag handle and RGL's southeast resize handle; protected fixed anchors
+   (risk, trades) render with a solid border and no handles. */
+.ws-arrange-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px dashed var(--ring);
+  border-radius: var(--ws-radius);
+  background: var(--card);
+}
+
+.ws-arrange-cell[data-ws-arrange-fixed='true'] {
+  border-style: solid;
+  border-color: var(--border);
+}
+
+/* The panel inside an arrangement cell fills the cell; the dashed ring
+   replaces the panel's own solid border to avoid double chrome (same
+   contract as the customize cell). */
+.ws-arrange-cell > .ws-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* Labelled drag handle — the only drag surface (RGL handle selector).
+   `touch-action: none` is required for react-draggable pointer handling. */
+.ws-arrange-handle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--ws-space-2);
+  height: var(--ws-row-xs);
+  padding: 0 var(--ws-space-3);
+  background: color-mix(in oklab, var(--ring) 8%, transparent);
+  border-bottom: 1px dashed var(--ring);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.ws-arrange-handle:active {
+  cursor: grabbing;
+}
+
+.ws-arrange-handle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+}
+
+.ws-arrange-grip {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.ws-arrange-handle-title {
+  font-size: var(--ws-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Southeast resize handle — visible, dense affordance sized for the
+   workstation (react-resizable default handle is 20px but positioned with
+   a bare 1px border line; the dense surface needs a clearer corner). */
+.ws-arrange .react-resizable-handle-se {
+  width: 18px;
+  height: 18px;
+  background-image: none;
+  border-right: 2px solid var(--ring);
+  border-bottom: 2px solid var(--ring);
+  opacity: 0.85;
+}
+
+.ws-arrange .react-resizable-handle-se:hover,
+.ws-arrange .react-resizable-handle-se:active {
+  opacity: 1;
+  border-color: var(--primary);
+}
+
+/* RGL placeholder shown while dragging — dashed, distinct from real items. */
+.ws-arrange .react-grid-placeholder {
+  background: color-mix(in oklab, var(--ring) 14%, transparent);
+  border: 1px dashed var(--ring);
+  border-radius: var(--ws-radius);
+  opacity: 1;
+}
+
+/* Item transitions: match the dense surface's fine borders; keep RGL's
+   default 200ms transform so drops settle smoothly. */
+.ws-arrange .react-grid-item.react-draggable-dragging {
+  z-index: 20;
+  box-shadow: var(--shadow-lg);
+}
+
+.ws-arrange .react-grid-item.cssTransforms {
+  transition: transform 200ms ease;
+}
+
+.ws-arrange .react-grid-item.resizing {
+  z-index: 21;
+}
