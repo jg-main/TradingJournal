@@ -390,6 +390,21 @@ test.describe('S04 RiskPositionsTable — 9-column risk-first table (S04 T03)', 
   }) => {
     await page.goto('/dev/workstation');
 
+    // Wait for client hydration before scenario switching: the grid is
+    // SSR-visible first, and selectOption only reaches the React onChange
+    // handler once hydration has attached it (same pattern as the
+    // 'scenario switching swaps fixture data' test).
+    const warnings: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning') warnings.push(msg.text());
+    });
+    await expect
+      .poll(
+        () => warnings.some((w) => w.includes('[workstation] FIXTURE MODE')),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+
     // Default: TSLA is stale — visible 'Stale · source · as-of' text plus the
     // amber dot as an accent (state is never conveyed by the dot alone).
     const tslaMarkState = page
