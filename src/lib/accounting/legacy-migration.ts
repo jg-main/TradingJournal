@@ -13,7 +13,7 @@
  * @module legacy-migration
  */
 
-import { normalizeDecimal, toMicros } from './decimal';
+import { normalizeDecimal } from './decimal';
 import type { CanonicalDecimal, EventType } from './types';
 import type { ExecutionAction } from '../positions/types';
 
@@ -569,8 +569,10 @@ export function mapPriceSnapshotToValuationMark(
     };
   }
 
+  // Keep the canonical cents display value while preserving the source quote
+  // in micros for valuation and reconciliation arithmetic.
   const price = normalizeDecimal(row.price);
-  const priceMicros = toMicros(price);
+  const priceMicros = Math.round(row.price * 1_000_000);
   const source = row.source || 'import';
 
   return {

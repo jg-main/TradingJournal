@@ -608,11 +608,10 @@ function queryLegacyPositionExposure(
       .get(symbol, accountId) as { price: number } | undefined;
 
     if (latestRow && latestRow.price > 0) {
-      // Accounting valuation marks are canonical cents. Normalize the legacy
-      // floating quote to that same precision before comparing exposure.
-      const canonicalPrice = Math.round(latestRow.price * 100) / 100;
+      // Both source snapshots and valuation marks preserve quote precision in
+      // micros. Compare the raw quote, not its rounded display cents.
       const netQtyMicros = Math.abs(pos.netQuantity) * 1_000_000;
-      const priceMicros = Math.round(canonicalPrice * 1_000_000);
+      const priceMicros = Math.round(latestRow.price * 1_000_000);
       totalMicros += Number(
         (BigInt(netQtyMicros) * BigInt(priceMicros)) / BigInt(1_000_000),
       );

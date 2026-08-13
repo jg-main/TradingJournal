@@ -474,6 +474,8 @@ export interface PositionRowInput {
   markTimestamp: string | null;
   /** Mark price, or null. */
   markPrice: string | null;
+  /** Source quote in micros, preserving precision beyond display cents. */
+  markPriceMicros?: number | null;
   /** Mark age in minutes, or null. */
   markAgeMinutes: number | null;
 }
@@ -499,7 +501,9 @@ export function mapPositionRow(input: PositionRowInput): PositionRow {
   if (input.markPrice !== null) {
     try {
       const qtyMicros = toMicros(input.quantity);
-      const priceMicros = toMicros(input.markPrice);
+      const priceMicros = validMarkMicros(input.markPriceMicros)
+        ? input.markPriceMicros
+        : toMicros(input.markPrice);
       const valueMicros = Number(
         (BigInt(qtyMicros) * BigInt(priceMicros)) / BigInt(1_000_000),
       );
@@ -509,14 +513,19 @@ export function mapPositionRow(input: PositionRowInput): PositionRow {
     }
   }
 
-  // Compute unrealized P&L = (markPrice - averageCost) × quantity
+  // Compute unrealized P&L using the same direction semantics as the
+  // account-performance valuation: long = mark − cost; short = cost − mark.
   let unrealizedPnl: string | null = null;
   if (input.markPrice !== null) {
     try {
       const avgCostMicros = toMicros(input.averageCost);
       const qtyMicros = toMicros(input.quantity);
-      const priceMicros = toMicros(input.markPrice);
-      const diffMicros = priceMicros - avgCostMicros;
+      const priceMicros = validMarkMicros(input.markPriceMicros)
+        ? input.markPriceMicros
+        : toMicros(input.markPrice);
+      const diffMicros = input.direction === 'short'
+        ? avgCostMicros - priceMicros
+        : priceMicros - avgCostMicros;
       const upnlMicros = Number(
         (BigInt(diffMicros) * BigInt(qtyMicros)) / BigInt(1_000_000),
       );
@@ -568,12 +577,17 @@ function toMicros(value: string): number {
   const cleaned = value.replace(/^-/, '');
   const parts = cleaned.split('.');
   const whole = parts[0]?.replace(/^0+/, '') || '0';
-  const fraction = parts[1] ?? '00';
-  // Pad or truncate fraction to exactly 2 digits
-  const paddedFraction = fraction.padEnd(2, '0').slice(0, 2);
+  const fraction = parts[1] ?? '';
+  // Preserve quote precision through six fractional digits and round only
+  // after quantity multiplication in the display mapping above.
+  const paddedFraction = fraction.padEnd(6, '0').slice(0, 6);
   const isNegative = value.startsWith('-');
-  const micros = Number(whole) * 1_000_000 + Number(paddedFraction) * 10_000;
+  const micros = Number(whole) * 1_000_000 + Number(paddedFraction);
   return isNegative ? -micros : micros;
+}
+
+function validMarkMicros(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isSafeInteger(value);
 }
 
 /**

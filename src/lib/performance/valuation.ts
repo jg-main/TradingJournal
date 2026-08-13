@@ -9,6 +9,7 @@
  * - computeMarkStatus — classify a mark as fresh, stale, or missing
  * - deriveValuationPosition — build a ValuationPosition from position state + mark
  * - computeMarkedValue — exact-decimal position value from quantity × price
+ * - computeMarkedValueFromMarkMicros — same valuation retaining quote precision
  * - computeUnrealizedPnl — unrealized P&L given direction and cost vs mark
  * - computeUnrealizedPnlFromMarkMicros — same calculation while preserving
  *   the source quote's micro precision until the currency result is rounded
@@ -148,6 +149,30 @@ export function computeMarkedValue(
   return multiplyDecimal(quantity, markPrice);
 }
 
+/**
+ * Compute a marked position value from the quote precision stored in
+ * valuation_marks.price_micros. Display price remains cents-rounded, while
+ * the monetary result is rounded only after quantity multiplication.
+ */
+export function computeMarkedValueFromMarkMicros(
+  quantity: CanonicalDecimal,
+  markPriceMicros: number | null,
+): CanonicalDecimal | null {
+  if (
+    markPriceMicros === null ||
+    !Number.isSafeInteger(markPriceMicros) ||
+    compareDecimal(quantity, '0.00') === 0
+  ) {
+    return null;
+  }
+
+  const valueMicros = Number(
+    (BigInt(toMicros(quantity)) * BigInt(markPriceMicros)) /
+      BigInt(MICROS_PER_UNIT),
+  );
+  return fromMicros(valueMicros);
+}
+
 // ── Unrealized P&L ─────────────────────────────────────────────────────
 
 /**
@@ -237,7 +262,13 @@ export function deriveValuationPosition(
     realizedFees: CanonicalDecimal;
     realizedNetPnl: CanonicalDecimal;
   },
-  mark: { price: CanonicalDecimal; timestamp: string; source: MarkSource } | null,
+  mark: {
+    price: CanonicalDecimal;
+    /** Provider quote precision; when present it is canonical for valuation. */
+    priceMicros?: number | null;
+    timestamp: string;
+    source: MarkSource;
+  } | null,
   nowTimestamp: string,
   freshnessThresholdMinutes?: number,
 ): ValuationPosition {
@@ -248,13 +279,22 @@ export function deriveValuationPosition(
   const marketPrice = mark?.price ?? null;
   const markAge = mark ? computeMarkAgeMinutes(mark.timestamp, nowTimestamp) : null;
 
-  const markedValue = computeMarkedValue(position.quantity, marketPrice);
-  const unrealizedPnl = computeUnrealizedPnl(
-    position.averageCost,
-    marketPrice,
-    position.quantity,
-    position.direction,
-  );
+  const markedValue = mark?.priceMicros !== undefined
+    ? computeMarkedValueFromMarkMicros(position.quantity, mark.priceMicros)
+    : computeMarkedValue(position.quantity, marketPrice);
+  const unrealizedPnl = mark?.priceMicros !== undefined
+    ? computeUnrealizedPnlFromMarkMicros(
+        position.averageCost,
+        mark.priceMicros,
+        position.quantity,
+        position.direction,
+      )
+    : computeUnrealizedPnl(
+        position.averageCost,
+        marketPrice,
+        position.quantity,
+        position.direction,
+      );
 
   return {
     instrumentId: position.instrumentId,

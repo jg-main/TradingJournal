@@ -14,7 +14,8 @@
     "accounting:migrate": "npx tsx scripts/accounting-migrate.ts migrate",
     "accounting:rebuild": "npx tsx scripts/accounting-migrate.ts rebuild",
     "accounting:reconcile": "npx tsx scripts/accounting-migrate.ts reconcile",
-    "accounting:cutover-check": "npx tsx scripts/accounting-migrate.ts cutover-check"
+    "accounting:cutover-check": "npx tsx scripts/accounting-migrate.ts cutover-check",
+    "accounting:repair-execution-cash": "npx tsx scripts/backfill-missing-execution-ledger-effects.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

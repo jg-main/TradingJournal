@@ -108,6 +108,7 @@ sqlite.exec(`
   DROP TABLE IF EXISTS trade_grades;
   DROP TABLE IF EXISTS trade_risk_snapshots;
   DROP TABLE IF EXISTS trade_executions;
+  DROP TABLE IF EXISTS account_performance;
   DROP TABLE IF EXISTS account_rollforward;
   DROP TABLE IF EXISTS trades;
   DROP TABLE IF EXISTS settings;
@@ -237,6 +238,13 @@ sqlite.exec(`
     notes TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp),
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+  );
+
+  CREATE TABLE account_performance (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL UNIQUE,
+    nav TEXT NOT NULL,
     FOREIGN KEY (account_id) REFERENCES accounts(id)
   );
 
@@ -562,8 +570,18 @@ function doGetDashboard(
     const setting = db.select().from(schema.settings).get();
     const startingAccountValue = setting?.startingAccountValue ?? null;
 
-    // 8. Compute KPIs
-    const kpis = computeKpiMetrics(allKpiInputs, closedKpiInputs, latestRollforward, startingAccountValue);
+    // 8. Compute period KPIs. The performance projection is authoritative for
+    // current NAV, while the rollforward remains the chart and drawdown source.
+    const computedKpis = computeKpiMetrics(allKpiInputs, closedKpiInputs, latestRollforward, startingAccountValue);
+    const performanceProjection = db
+      .select({ nav: schema.accountPerformance.nav })
+      .from(schema.accountPerformance)
+      .where(eq(schema.accountPerformance.accountId, accountId))
+      .get();
+    const projectedNav = performanceProjection ? Number(performanceProjection.nav) : null;
+    const kpis = projectedNav !== null && Number.isFinite(projectedNav)
+      ? { ...computedKpis, accountValue: projectedNav }
+      : computedKpis;
 
     // 9. Compute monthly performance, R distribution, and directional performance
     const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
@@ -795,6 +813,14 @@ function seedRollforward(
   return id;
 }
 
+function seedAccountPerformance(accountId: string, nav: number): string {
+  const id = randomUUID();
+  sqlite
+    .prepare('INSERT INTO account_performance (id, account_id, nav) VALUES (?, ?, ?)')
+    .run(id, accountId, String(nav));
+  return id;
+}
+
 function seedLookupValue(
   id: string,
   type: string,
@@ -811,6 +837,7 @@ function cleanup() {
     DELETE FROM trade_grades;
     DELETE FROM trade_risk_snapshots;
     DELETE FROM trade_executions;
+    DELETE FROM account_performance;
     DELETE FROM account_rollforward;
     DELETE FROM trades;
     DELETE FROM settings;
@@ -920,8 +947,10 @@ cleanup();
   const t3 = seedTrade(accountId, { symbol: 'GOOGL', direction: 'long', status: 'open' });
   seedExecution(t3, { action: 'buy', quantity: 10, price: 150 });
 
-  // Rollforward with drawdown
+  // Historical rollforward remains the drawdown and chart source.
   seedRollforward(accountId, { endingEquity: 51250, drawdownAmount: -520, drawdownPct: -0.034 });
+  // The current rebuildable projection is authoritative for present NAV.
+  seedAccountPerformance(accountId, 51666.83);
 
   const result = doGetDashboard(accountId);
 
@@ -943,8 +972,8 @@ cleanup();
   // avgGrade: (85 + 45) / 2 = 65
   assertClose(result.body.kpis?.avgGrade, 65, 'avgGrade is 65');
 
-  // accountValue: from rollforward
-  assertClose(result.body.kpis?.accountValue, 51250, 'accountValue from rollforward');
+  // accountValue: current projection overrides stale rollforward
+  assertClose(result.body.kpis?.accountValue, 51666.83, 'accountValue from current performance projection');
 
   // currentDrawdown
   assertClose(result.body.kpis?.currentDrawdown, -520, 'drawdownAmount is -520');

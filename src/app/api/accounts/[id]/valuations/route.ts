@@ -21,6 +21,7 @@ import {
   insertValidatedValuationMark,
   ValuationMarkError,
 } from '@/lib/performance/valuation-repository';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import {
   listAccountValuationMarks,
   countAccountValuationMarks,
@@ -107,6 +108,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       markTimestamp,
       idempotencyKey: idempotencyKey ?? null,
     });
+
+    // Account performance is a projection, not an independent valuation
+    // source. Refresh it after both newly accepted marks and idempotent
+    // retries so account, dashboard, and positions agree at this quote.
+    rebuildAccountPerformance(sqlite, accountId);
 
     if (!insertResult.inserted) {
       // Idempotency match — return 200 (idempotent success) rather than 201

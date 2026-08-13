@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSqliteHandle } from '@/db';
 import { postEventWithEffect } from '@/lib/accounting/event-posting';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import { postFinancialEventSchema } from '@/lib/accounting/api-contracts';
 import { listAccountEvents, countAccountEvents } from '@/db/accounting-repository';
 import {
@@ -86,6 +87,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // 3. Post the event through the event-posting service
     const result = postEventWithEffect(sqlite, accountId, eventRequest);
+
+    // Keep the persisted NAV projection read-your-writes consistent with the
+    // immutable event and its cash effect.
+    rebuildAccountPerformance(sqlite, accountId);
 
     // 4. Transform domain records to JSON response shape
     return NextResponse.json(

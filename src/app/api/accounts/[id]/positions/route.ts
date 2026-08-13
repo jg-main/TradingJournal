@@ -102,13 +102,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // 2a. Fetch latest valuation marks for mark enrichment
     const valuationMarks = listLatestValuationMarks(sqlite, accountId);
-    const markMap = new Map<string, { price: string; timestamp: string; markAgeMinutes: number | null }>();
+    const markMap = new Map<string, {
+      price: string;
+      priceMicros: number;
+      timestamp: string;
+      markAgeMinutes: number | null;
+    }>();
     for (const mark of valuationMarks) {
       const markAgeMinutes = Math.floor(
         (Date.now() - new Date(mark.mark_timestamp).getTime()) / 60000,
       );
       markMap.set(mark.instrument_id, {
         price: mark.price,
+        priceMicros: mark.price_micros,
         timestamp: mark.mark_timestamp,
         markAgeMinutes,
       });
@@ -171,6 +177,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           realizedNetPnl: row.realized_net_pnl,
           markTimestamp: markData?.timestamp ?? null,
           markPrice: markData?.price ?? null,
+          markPriceMicros: markData?.priceMicros ?? null,
           markAgeMinutes: markData?.markAgeMinutes ?? null,
         };
         const enriched = mapPositionRow(positionRowInput);

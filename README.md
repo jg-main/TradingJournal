@@ -12,6 +12,7 @@ risk, reviews, account activity, watchlists, and performance dashboards.
 - [Common Commands](#common-commands)
 - [In-App Help](#in-app-help)
 - [Database](#database)
+- [Accounting maintenance](#accounting-maintenance)
 - [Project Layout](#project-layout)
 - [Notes](#notes)
 
@@ -126,6 +127,22 @@ make db-studio    # open Drizzle Studio
 ```
 
 Schema lives in `src/db/schema.ts`; migrations live in `src/db/migrations/`.
+
+## Accounting maintenance
+
+If an installation was running during the July 2026 journal-sync gap, repair
+the omitted execution cash effects before rebuilding account performance. Stop
+the application or otherwise ensure it is the only database writer, then take
+a database backup and run the dry run first:
+
+```bash
+npm run accounting:repair-execution-cash -- /path/to/journal.db
+npm run accounting:repair-execution-cash -- /path/to/journal.db --apply
+```
+
+The repair only considers journal-synced executions that lack their linked
+financial event. It is safe to rerun: existing linked events are skipped, and
+each repaired account has its positions and NAV projection rebuilt.
 
 ## Project Layout
 

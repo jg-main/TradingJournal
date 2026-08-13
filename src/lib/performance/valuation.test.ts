@@ -318,6 +318,32 @@ describe('deriveValuationPosition', () => {
     expect(result.markAgeMinutes).toBe(0);
   });
 
+  it('retains a quote micro price for valuation while exposing its display price', () => {
+    const position = {
+      ...basePosition,
+      quantity: CD('10.00'),
+      averageCost: CD('11.30'),
+      totalCostBasis: CD('113.00'),
+    };
+
+    const result = deriveValuationPosition(
+      position,
+      {
+        price: CD('11.62'),
+        priceMicros: 11_615_000,
+        timestamp: nowTs,
+        source: 'market_data' as MarkSource,
+      },
+      nowTs,
+    );
+
+    // 10 × 11.615 = 116.15 and (11.615 - 11.30) × 10 = 3.15.
+    // Rounding before the calculation would incorrectly return 116.20 / 3.20.
+    expect(result.markPrice).toBe(CD('11.62'));
+    expect(result.markedValue).toBe(CD('116.15'));
+    expect(result.unrealizedPnl).toBe(CD('3.15'));
+  });
+
   it('produces missing status with null mark', () => {
     const result = deriveValuationPosition(basePosition, null, nowTs);
 

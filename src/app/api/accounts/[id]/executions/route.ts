@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getSqliteHandle } from '@/db';
 import { postExecutionFill } from '@/lib/accounting/execution-posting';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import { rebuildPositions } from '@/lib/positions/rebuild';
 import { allocateFifo } from '@/lib/positions/fifo';
 import {
@@ -218,7 +219,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // 6. Rebuild positions to persist the projection
     const rebuildResult = rebuildPositions(sqlite, accountId, instrument.id);
 
-    // 7. Read back updated position for the response
+    // 7. Refresh the account-wide projection so all NAV readers observe the
+    // newly posted cash effect and FIFO position on the same request.
+    rebuildAccountPerformance(sqlite, accountId);
+
+    // 8. Read back updated position for the response
     const updatedPositionRow = findAccountPosition(sqlite, accountId, instrument.id);
     const updatedLotRows = findFifoLotsByAccountInstrument(sqlite, accountId, instrument.id);
 

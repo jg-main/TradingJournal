@@ -25,10 +25,12 @@ import {
 } from './errors';
 import {
   accountExists,
+  findEventByIdempotencyKey,
   findOrCreateInstrument,
   findAccountingExecutionByIdempotencyKey,
   insertAccountingExecution,
 } from '../../db/accounting-repository';
+import type { AccountingExecutionRow } from '../../db/accounting-repository';
 
 // ── Input Types ──────────────────────────────────────────────────────────
 
@@ -82,6 +84,108 @@ export interface PostExecutionFillResult {
   };
   /** The balanced ledger event + entry + postings. */
   eventWithPostings: FinancialEventWithPostings;
+}
+
+/**
+ * The financial-event idempotency key for an immutable accounting execution.
+ *
+ * Keeping this link deterministic lets the ledger repair process safely
+ * identify executions that were synchronized before cash effects existed.
+ */
+export function executionFinancialEventIdempotencyKey(accountingExecutionId: string): string {
+  return `accounting-execution-${accountingExecutionId}`;
+}
+
+type ExecutionFinancialEventInput = Parameters<typeof postFinancialEvent>[1];
+
+/**
+ * Build the immutable cash effect for one accounting execution.
+ *
+ * The calculation is shared by direct accounting entries, legacy journal
+ * synchronization, and the one-time repair command so those paths cannot
+ * disagree about available cash or NAV.
+ */
+export function buildExecutionFinancialEventInput(input: {
+  accountingExecutionId: string;
+  accountId: string;
+  symbol: string;
+  action: string;
+  quantity: string;
+  price: string;
+  fees: string;
+  journalTradeId?: string | null;
+  description?: string | null;
+  postedAt: string;
+}): ExecutionFinancialEventInput {
+  const qMicros = toMicros(input.quantity);
+  const pMicros = toMicros(input.price);
+  const considerationMicros = Number(
+    (BigInt(qMicros) * BigInt(pMicros)) / BigInt(1_000_000),
+  );
+  const amount = fromMicros(considerationMicros);
+  const description = input.description ?? `Execution: ${input.action} ${input.quantity} ${input.symbol} @ ${input.price}`;
+
+  return {
+    accountId: input.accountId,
+    eventType: 'trade_execution',
+    amount,
+    idempotencyKey: executionFinancialEventIdempotencyKey(input.accountingExecutionId),
+    description,
+    payload: JSON.stringify({
+      accountingExecutionId: input.accountingExecutionId,
+      action: input.action,
+      symbol: input.symbol,
+      quantity: input.quantity,
+      price: input.price,
+      fees: input.fees,
+      ...(input.journalTradeId ? { journalTradeId: input.journalTradeId } : {}),
+      ...(input.description ? { description: input.description } : {}),
+    }),
+    effect: JSON.stringify({
+      kind: 'cash',
+      direction: ['sell', 'reduce', 'sell_short'].includes(input.action) ? 'increase' : 'decrease',
+      amount,
+      amountMicros: considerationMicros,
+    }),
+    postedAt: input.postedAt,
+  };
+}
+
+/**
+ * Ensure an immutable accounting execution has its corresponding cash event.
+ *
+ * Returning an existing event instead of throwing makes recovery safe after a
+ * prior partial legacy sync: replaying the same execution never changes cash
+ * twice.
+ */
+export function ensureExecutionFinancialEvent(
+  sqlite: Database.Database,
+  execution: AccountingExecutionRow,
+  symbol: string,
+): { inserted: boolean; eventWithPostings: FinancialEventWithPostings | null } {
+  const idempotencyKey = executionFinancialEventIdempotencyKey(execution.id);
+  if (findEventByIdempotencyKey(sqlite, idempotencyKey)) {
+    return { inserted: false, eventWithPostings: null };
+  }
+
+  return {
+    inserted: true,
+    eventWithPostings: postFinancialEvent(
+      sqlite,
+      buildExecutionFinancialEventInput({
+        accountingExecutionId: execution.id,
+        accountId: execution.account_id,
+        symbol,
+        action: execution.action,
+        quantity: execution.quantity,
+        price: execution.price,
+        fees: execution.fees,
+        journalTradeId: execution.journal_trade_id,
+        description: execution.description,
+        postedAt: execution.posted_at,
+      }),
+    ),
+  };
 }
 
 // ── Service ──────────────────────────────────────────────────────────────
@@ -161,46 +265,22 @@ export function postExecutionFill(
       postedAt,
     });
 
-    // ── 6. Post balanced ledger effects via posting kernel ─────────────
-    // The posting amount is the gross consideration (quantity × price).
-    // This represents the total cash movement for the fill.
-    // Use micros arithmetic for exact computation.
-    const qMicros = toMicros(quantity);
-    const pMicros = toMicros(price);
-    const prodBig = BigInt(qMicros) * BigInt(pMicros);
-    const considerationMicros = Number(prodBig / BigInt(1_000_000));
-    const finalConsideration = fromMicros(considerationMicros);
-
-    // Build the payload for the financial event
-    const payload = JSON.stringify({
-      action,
-      symbol,
-      quantity,
-      price,
-      fees,
-      ...(journalTradeId ? { journalTradeId } : {}),
-      ...(description ? { description } : {}),
-    });
-
-    // Build the available-cash effect. Long exits and short sales receive
-    // cash; long entries, adds, and covers spend it.
-    const effect = JSON.stringify({
-      kind: 'cash',
-      direction: ['sell', 'reduce', 'sell_short'].includes(action) ? 'increase' : 'decrease',
-      amount: finalConsideration,
-      amountMicros: Number(considerationMicros),
-    });
-
-    const eventWithPostings = postFinancialEvent(sqlite, {
-      accountId,
-      eventType: 'trade_execution',
-      amount: finalConsideration,
-      idempotencyKey: undefined, // Use accounting_executions idempotency, not financial_events
-      description: description ?? `Execution: ${action} ${quantity} ${symbol} @ ${price}`,
-      payload,
-      effect,
-      postedAt,
-    });
+    // ── 6. Post balanced ledger effects via the shared execution kernel ─
+    const eventWithPostings = postFinancialEvent(
+      sqlite,
+      buildExecutionFinancialEventInput({
+        accountingExecutionId: executionRow.id,
+        accountId,
+        symbol,
+        action,
+        quantity,
+        price,
+        fees,
+        journalTradeId,
+        description,
+        postedAt,
+      }),
+    );
 
     return {
       execution: {

@@ -40,6 +40,7 @@ import {
   findOrCreateInstrument,
   findAccountingExecutionById,
   findAccountPosition,
+  findEventByIdempotencyKey,
   listAccountingExecutions,
 } from '../../db/accounting-repository';
 
@@ -212,6 +213,14 @@ describe('correctExecution', () => {
     expect(replacement!.action).toBe('buy');
     expect(replacement!.quantity).toBe('100.00');
     expect(replacement!.price).toBe('155.00'); // Corrected price
+
+    // Each immutable correction execution has a deterministic ledger link.
+    expect(
+      findEventByIdempotencyKey(sqlite, `accounting-execution-${reversal!.id}`),
+    ).toBeDefined();
+    expect(
+      findEventByIdempotencyKey(sqlite, `accounting-execution-${replacement!.id}`),
+    ).toBeDefined();
 
     // Verify position reflects replacement values
     expect(result.position).toBeTruthy();

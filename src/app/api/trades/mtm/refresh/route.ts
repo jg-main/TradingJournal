@@ -11,12 +11,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { trades, positionPriceSnapshots, valuationMarks, instruments, accountPositions, tradeExecutions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { resolveQuoteProvider } from '@/lib/market-data-resolver';
 import { fetchYahooProfiles } from '@/lib/profile-enricher';
 import { normalizeDecimal } from '@/lib/accounting/decimal';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import { isRateLimited, markRefreshSucceeded } from './rate-limit-state';
 
 // ── POST handler ──────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ export async function POST(_request: NextRequest) {
     const failed: string[] = [];
     let updated = 0;
     const seenTrades = new Set<string>();
+    const accountsWithNewMarks = new Set<string>();
 
     for (const trade of openTrades) {
       // Avoid double-counting trades with the same symbol
@@ -265,6 +267,8 @@ export async function POST(_request: NextRequest) {
             })
             .run();
 
+          accountsWithNewMarks.add(trade.accountId);
+
           console.log(
             JSON.stringify({
               event: 'mtm-refresh.valuation-mark',
@@ -289,6 +293,34 @@ export async function POST(_request: NextRequest) {
         }
       } catch {
         failed.push(trade.symbol);
+      }
+    }
+
+    // Rebuild once per affected account after the batch. This preserves the
+    // quote's stored micro precision in account NAV without turning market
+    // refresh into one projection rebuild per instrument.
+    for (const accountId of accountsWithNewMarks) {
+      try {
+        const performance = rebuildAccountPerformance(getSqliteHandle(), accountId);
+        if (!performance.success) {
+          console.log(
+            JSON.stringify({
+              event: 'mtm-refresh.performance-rebuild.error',
+              accountId,
+              error: performance.error ?? 'Unknown performance rebuild error',
+              timestamp: nowISO,
+            }),
+          );
+        }
+      } catch (error) {
+        console.log(
+          JSON.stringify({
+            event: 'mtm-refresh.performance-rebuild.error',
+            accountId,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: nowISO,
+          }),
+        );
       }
     }
 

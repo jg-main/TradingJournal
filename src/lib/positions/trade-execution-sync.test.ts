@@ -19,9 +19,12 @@ import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { syncAndRebuildPositions } from './trade-execution-sync';
+import { postOpeningBalance } from '../accounting/posting';
 import {
   findOrCreateInstrument,
   findAccountingExecutionByIdempotencyKey,
+  findAccountPerformance,
+  findEventByIdempotencyKey,
   findAccountPosition,
   findFifoLotsByAccountInstrument,
   listAccountingExecutions,
@@ -146,6 +149,12 @@ describe('syncAndRebuildPositions integration round-trip', () => {
 
   beforeAll(() => {
     ctx = createTestDatabase();
+    postOpeningBalance(ctx.sqlite, {
+      accountId: ctx.accountId,
+      amount: '20000.00',
+      idempotencyKey: randomUUID(),
+      postedAt: '2026-07-14T10:00:00.000Z',
+    });
   });
 
   afterAll(() => {
@@ -192,6 +201,26 @@ describe('syncAndRebuildPositions integration round-trip', () => {
     const dbAe = findAccountingExecutionByIdempotencyKey(ctx.sqlite, idempotencyKey);
     expect(dbAe).toBeDefined();
     expect(dbAe!.id).toBe(ae.id);
+
+    // The mirrored execution must also have an immutable cash effect. This
+    // keeps the ledger cash, NAV projection, and FIFO position in lockstep.
+    const executionEvent = findEventByIdempotencyKey(
+      ctx.sqlite,
+      `accounting-execution-${ae.id}`,
+    );
+    expect(executionEvent).toBeDefined();
+    expect(executionEvent!.event_type).toBe('trade_execution');
+    expect(JSON.parse(executionEvent!.effect ?? '{}')).toMatchObject({
+      kind: 'cash',
+      direction: 'decrease',
+      amount: '15075.00',
+    });
+
+    // The persisted account-performance projection is rebuilt from the same
+    // ledger and position data in the synchronous write path.
+    const performance = findAccountPerformance(ctx.sqlite, ctx.accountId);
+    expect(performance).toBeDefined();
+    expect(performance!.net_cash).toBe('4925.00');
 
     // ── Verify position state ──────────────────────────────────────────
     const key = `${ctx.accountId}:${ctx.instrumentId}`;

@@ -24,7 +24,9 @@ import Database from 'better-sqlite3';
 import { toMicros, fromMicros } from './decimal';
 import type { CanonicalDecimal } from './types';
 import { postFinancialEvent } from './posting';
+import { executionFinancialEventIdempotencyKey } from './execution-posting';
 import { rebuildPositions } from '../positions/rebuild';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { reverseAction } from './correction-contracts';
 import {
   AccountNotFoundError,
@@ -376,11 +378,11 @@ export function correctExecution(
       accountId,
       eventType: 'trade_execution',
       amount: fromMicros(reversalConsiderationMicros),
-      idempotencyKey: undefined,
+      idempotencyKey: executionFinancialEventIdempotencyKey(reversalExecution.id),
       description: reversalDescription,
       payload: reversalPayload,
       effect: reversalEffect,
-      postedAt,
+      postedAt: reversalPostedAt,
     });
 
     // ── 7b. Create replacement execution ───────────────────────────────
@@ -424,11 +426,11 @@ export function correctExecution(
       accountId,
       eventType: 'trade_execution',
       amount: fromMicros(replacementConsiderationMicros),
-      idempotencyKey: undefined,
+      idempotencyKey: executionFinancialEventIdempotencyKey(replacementExecution.id),
       description: replacementDescription,
       payload: replacementPayload,
       effect: replacementEffect,
-      postedAt,
+      postedAt: replacementPostedAt,
     });
 
     // ── 7c. Create correction lineage record ───────────────────────────
@@ -459,6 +461,10 @@ export function correctExecution(
   if (replacementExecution.instrument_id !== originalExecution.instrument_id) {
     rebuildPositions(sqlite, accountId, replacementExecution.instrument_id);
   }
+
+  // Rebuild the aggregate cash/NAV projection only after both position
+  // projections reflect the reversal-and-replacement correction.
+  rebuildAccountPerformance(sqlite, accountId);
 
   // ── 9. Read back position state for the replacement instrument ───────
   const updatedPositionRow = findAccountPosition(sqlite, accountId, replacementExecution.instrument_id);

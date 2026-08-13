@@ -143,6 +143,9 @@ describe('postExecutionFill', () => {
     expect(result.eventWithPostings).toBeDefined();
     expect(result.eventWithPostings.event.eventType).toBe('trade_execution');
     expect(result.eventWithPostings.event.accountId).toBe(ctx.accountId);
+    expect(result.eventWithPostings.event.idempotencyKey).toBe(
+      `accounting-execution-${result.execution.id}`,
+    );
     expect(result.eventWithPostings.postings.debit).toBeDefined();
     expect(result.eventWithPostings.postings.credit).toBeDefined();
 
@@ -336,9 +339,7 @@ describe('postExecutionFill', () => {
     expect(balance.difference).toBe(0);
   });
 
-  it('does not create financial_event idempotency for accounting execution', () => {
-    // Accounting execution idempotency is handled separately from
-    // financial_events.idempotency_key. Verify no cross-contamination.
+  it('links financial-event idempotency to the immutable accounting execution', () => {
     const result = postExecutionFill(ctx.sqlite, {
       accountId: ctx.accountId,
       symbol: 'MSFT',
@@ -348,11 +349,14 @@ describe('postExecutionFill', () => {
       postedAt: '2026-07-15T16:00:00.000Z',
     });
 
-    // The financial event should NOT have an idempotency key
-    expect(result.eventWithPostings.event.idempotencyKey).toBeNull();
+    const eventKey = `accounting-execution-${result.execution.id}`;
+    expect(result.eventWithPostings.event.idempotencyKey).toBe(eventKey);
 
     // Verify in DB
     const hydrated = findEventWithPostings(ctx.sqlite, result.eventWithPostings.event.id);
-    expect(hydrated!.event.idempotency_key).toBeNull();
+    expect(hydrated!.event.idempotency_key).toBe(eventKey);
+    expect(JSON.parse(hydrated!.event.payload ?? '{}')).toMatchObject({
+      accountingExecutionId: result.execution.id,
+    });
   });
 });

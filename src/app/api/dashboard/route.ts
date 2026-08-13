@@ -13,7 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountRollforward, settings, accounts, lookupValues } from '@/db/schema';
+import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountPerformance, accountRollforward, settings, accounts, lookupValues } from '@/db/schema';
 import { eq, inArray, desc, and, ne } from 'drizzle-orm';
 import { type ExecutionData } from '@/lib/trade-metrics';
 import { computeMarkToMarketSummary } from '@/lib/mark-to-market';
@@ -291,13 +291,24 @@ export async function GET(request: NextRequest) {
     const setting = db.select().from(settings).get();
     const startingAccountValue = setting?.startingAccountValue ?? null;
 
-    // 8. Compute KPIs
-    const kpis = computeKpiMetrics(
+    // 8. Compute period KPIs. The rebuildable performance projection is the
+    // authoritative source for current NAV; rollforwards remain the historical
+    // source for equity and drawdown charts.
+    const computedKpis = computeKpiMetrics(
       allKpiInputs,
       closedKpiInputs,
       latestRollforward,
       startingAccountValue,
     );
+    const performanceProjection = db
+      .select({ nav: accountPerformance.nav })
+      .from(accountPerformance)
+      .where(eq(accountPerformance.accountId, accountId))
+      .get();
+    const projectedNav = performanceProjection ? Number(performanceProjection.nav) : null;
+    const kpis = projectedNav !== null && Number.isFinite(projectedNav)
+      ? { ...computedKpis, accountValue: projectedNav }
+      : computedKpis;
 
     // 9. Compute monthly performance, R distribution, directional performance, and process score distribution
     const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);

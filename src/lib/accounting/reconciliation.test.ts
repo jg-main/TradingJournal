@@ -304,6 +304,44 @@ describe('computeReconciliation', () => {
     expect(report!.recordStatusCounts.mappedCount).toBe(5);
   });
 
+  it('compares sub-cent legacy marks with the full precision stored in accounting', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Sub-cent Mark Account', 'Test', 'USD', now, now);
+
+    const tradeId = insertTrade(ctx.sqlite, accountId, 'PREC');
+    insertLegacyExecution(ctx.sqlite, tradeId, {
+      action: 'buy',
+      quantity: 10,
+      price: 11.3,
+    });
+    insertLegacyPriceSnapshot(ctx.sqlite, tradeId, { price: 11.615 });
+
+    const migrationResult = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(migrationResult.status).toBe('completed');
+
+    const report = computeReconciliation(ctx.sqlite, accountId);
+    const exposure = report!.comparisons.find((comparison) => comparison.key === 'position_exposure');
+    const nav = report!.comparisons.find((comparison) => comparison.key === 'net_asset_value');
+
+    expect(exposure).toMatchObject({
+      legacyValue: '116.15',
+      accountingValue: '116.15',
+      classification: 'match',
+    });
+    expect(nav).toMatchObject({
+      legacyValue: '3.15',
+      accountingValue: '3.15',
+      classification: 'match',
+    });
+  });
+
   // ── Cash difference — explained by rounding ───────────────────────────
 
   it('classifies small cash differences as explained (rounding tolerance)', () => {

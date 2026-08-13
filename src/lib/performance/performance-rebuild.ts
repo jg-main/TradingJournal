@@ -145,10 +145,16 @@ function buildValuationPositions(
   const warnings: string[] = [];
 
   // Build a map of mark by instrument_id
-  const markByInstrument = new Map<string, { price: string; timestamp: string; source: string }>();
+  const markByInstrument = new Map<string, {
+    price: string;
+    priceMicros: number;
+    timestamp: string;
+    source: string;
+  }>();
   for (const m of marks) {
     markByInstrument.set(m.instrument_id, {
       price: m.price,
+      priceMicros: m.price_micros,
       timestamp: m.mark_timestamp,
       source: m.source,
     });
@@ -180,6 +186,7 @@ function buildValuationPositions(
     const markInput = mark
       ? {
           price: mark.price as CanonicalDecimal,
+          priceMicros: mark.priceMicros,
           timestamp: mark.timestamp,
           source: mark.source as 'user' | 'market_data' | 'import' | 'system',
         }

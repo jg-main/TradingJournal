@@ -18,6 +18,8 @@
 
 import Database from 'better-sqlite3';
 import { normalizeDecimal } from '../accounting/decimal';
+import { ensureExecutionFinancialEvent } from '../accounting/execution-posting';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { rebuildPositions } from './rebuild';
 import type { RebuildResult } from './types';
 import type { AccountingExecutionRow } from '../../db/accounting-repository';
@@ -184,11 +186,23 @@ export function syncAndRebuildPositions(
       symbol,
     );
 
-    // 2. Resolve instrument ID for rebuild
+    // 2. Ensure the immutable execution has its matching cash event. Legacy
+    // syncs created FIFO rows without this effect, so this is intentionally
+    // idempotent and also repairs any retried partial sync.
+    ensureExecutionFinancialEvent(sqlite, accountingExecution, symbol);
+
+    // 3. Resolve instrument ID for rebuild
     const instrument = findOrCreateInstrument(sqlite, symbol);
 
-    // 3. Rebuild FIFO position projection for this (account, instrument) pair
+    // 4. Rebuild FIFO position projection for this (account, instrument) pair
     const rebuildResult = rebuildPositions(sqlite, accountId, instrument.id);
+
+    // 5. Rebuild the persisted performance projection from canonical cash,
+    // position, and mark data so account and dashboard readers are current.
+    const performanceResult = rebuildAccountPerformance(sqlite, accountId);
+    if (!performanceResult.success) {
+      throw new Error(performanceResult.error ?? 'Failed to rebuild account performance');
+    }
 
     // Emit position-rebuilt event from the computed position state
     const positionKey = `${accountId}:${instrument.id}`;

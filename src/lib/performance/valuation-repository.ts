@@ -24,7 +24,6 @@ import {
   findOrCreateInstrument,
 } from '../../db/accounting-repository';
 import {
-  toMicros,
   normalizeDecimal,
 } from '../accounting/decimal';
 import type { CanonicalDecimal } from '../accounting/types';
@@ -117,15 +116,22 @@ export function insertValidatedValuationMark(
 
   // 3. Validate and normalize price
   let price: CanonicalDecimal;
+  let priceMicros: number;
   try {
     price = normalizeDecimal(params.price);
+    const rawPrice = typeof params.price === 'number'
+      ? params.price
+      : Number(params.price);
+    priceMicros = Math.round(rawPrice * 1_000_000);
+    if (!Number.isSafeInteger(priceMicros)) {
+      throw new Error('Price exceeds micros precision bounds');
+    }
   } catch {
     throw new ValuationMarkError(
       `Invalid price: ${params.price}`,
       'invalid_price',
     );
   }
-  const priceMicros = toMicros(price);
 
   // 4. Validate source
   const validSources = ['user', 'market_data', 'import', 'system'];

@@ -162,6 +162,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           realizedNetPnl: p.realized_net_pnl,
           markTimestamp: mark?.mark_timestamp ?? null,
           markPrice: mark?.price ?? null,
+          markPriceMicros: mark?.price_micros ?? null,
           markAgeMinutes: mark
             ? Math.floor(
                 (Date.now() - new Date(mark.mark_timestamp).getTime()) / 60_000,

@@ -315,6 +315,34 @@ describe('rebuildAccountPerformance', () => {
     expect(proj!.rebuild_count).toBe(1);
   });
 
+  it('uses persisted quote micros so the performance projection matches live mark-to-market', () => {
+    const { accountId, instrumentId } = createAccountWithCash(ctx.sqlite, '1000.00');
+    seedPosition(ctx.sqlite, accountId, instrumentId, 'long', '10', '11.30');
+
+    const now = new Date().toISOString();
+    insertValidatedValuationMark(ctx.sqlite, {
+      accountId,
+      instrumentId,
+      price: '11.615',
+      source: 'market_data',
+      markTimestamp: now,
+      idempotencyKey: randomUUID(),
+    });
+
+    const storedMark = ctx.sqlite
+      .prepare('SELECT price, price_micros FROM valuation_marks WHERE account_id = ?')
+      .get(accountId) as { price: string; price_micros: number };
+    expect(storedMark).toEqual({ price: '11.62', price_micros: 11_615_000 });
+
+    const result = rebuildAccountPerformance(ctx.sqlite, accountId);
+    expect(result.success).toBe(true);
+    expect(result.nav).toBe('1116.15');
+
+    const projection = findAccountPerformance(ctx.sqlite, accountId);
+    expect(projection!.marked_positions).toBe('116.15');
+    expect(projection!.unrealized_pnl).toBe('3.15');
+  });
+
   // ── Deterministic Rebuild ─────────────────────────────────────────────
 
   it('produces identical output on repeated calls', () => {

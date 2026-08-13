@@ -706,12 +706,8 @@ describe('mapPositionRow', () => {
     expect(result.direction).toBe('short');
     expect(result.markStatus).toBe('stale');
     expect(result.markPrice).toBe('210.00');
-    // unrealizedPnl = (210.00 - 200.00) * 50.00 = 500.00
-    // Note: for short positions the business logic may invert this,
-    // but mapPositionRow computes (markPrice - averageCost) * quantity
-    // which yields a positive number when mark > avg. The direction
-    // interpretation is a presentation concern downstream.
-    expect(result.unrealizedPnl).toBe('500.00');
+    // Unrealized P&L for a short = (averageCost - markPrice) × quantity.
+    expect(result.unrealizedPnl).toBe('-500.00');
     expect(result.realizedGrossPnl).toBe('-250.00');
     expect(result.realizedNetPnl).toBe('-260.00');
   });
@@ -843,6 +839,26 @@ describe('mapPositionRow', () => {
     expect(result.markedValue).toBe('250.25');
     // unrealizedPnl = (455 - 450) * 0.55 = 2.75
     expect(result.unrealizedPnl).toBe('2.75');
+  });
+
+  it('uses quote micros for account-position values while retaining the display price', () => {
+    const result = mapPositionRow({
+      symbol: 'CLBK',
+      direction: 'long',
+      quantity: '10.00',
+      averageCost: '11.30',
+      totalCostBasis: '113.00',
+      realizedGrossPnl: '0.00',
+      realizedNetPnl: '0.00',
+      markTimestamp: '2026-07-15T10:00:00.000Z',
+      markPrice: '11.62',
+      markPriceMicros: 11_615_000,
+      markAgeMinutes: 30,
+    });
+
+    expect(result.markPrice).toBe('11.62');
+    expect(result.markedValue).toBe('116.15');
+    expect(result.unrealizedPnl).toBe('3.15');
   });
 });
 
