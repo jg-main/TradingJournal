@@ -91,11 +91,19 @@ export function arrangeGridLayoutForConfig(config: WorkstationViewConfig): Layou
   const base = config.layout ?? deriveLayoutFromAreas(config.areas);
   return base.map((item) => {
     const def = WORKSTATION_PANEL_CATALOGUE[item.i];
+    const fixed = !def.canDrag && !def.canResize;
     return {
       ...item,
       isDraggable: def.canDrag,
       isResizable: def.canResize,
-      static: !def.canDrag && !def.canResize,
+      static: fixed,
+      // RGL v2 renders a resize handle for every item unless the per-item
+      // `resizeHandles` overrides the grid-level handles (`l.resizeHandles
+      // || [...gridHandles]` — an empty array is truthy), so protected
+      // anchors declare `[]` and render no handle at all, matching the
+      // dense contract (handles on eligible panels only). Movable items
+      // leave it undefined to inherit the grid's ['se'] axis.
+      resizeHandles: fixed ? [] : undefined,
     };
   });
 }

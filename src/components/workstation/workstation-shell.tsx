@@ -19,13 +19,15 @@
 // other curated templates retain their contained workstation behavior (see
 // .ws and .ws-grid in workstation.css).
 
-import { Fragment, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { EyeOff } from 'lucide-react';
 import { useWorkstation } from './workstation-context';
 import { useWorkstationViewsContext } from './workstation-views-context';
 import { useWorkstationCustomizeContext } from './workstation-customize-context';
 import { CustomizeBar } from './customize-bar';
 import { DataQualityAlertStrip } from './data-quality-alert-strip';
+import { WorkstationArrangeGrid } from './workstation-arrange-grid';
+import { WorkstationKeyboardArrange } from './workstation-keyboard-arrange';
 import { TradesWorkspacePanel } from './trades-workspace-panel';
 import { RiskPanel } from './risk-panel';
 import { WatchlistPanel } from './watchlist-panel';
@@ -106,11 +108,37 @@ export function WorkstationShell() {
     canUndo,
     hiddenOptionalPanels,
     togglePanelVisibility,
+    applyLayout,
     undo,
     resetDraft,
     cancel,
     save,
   } = customize;
+
+  // Arrange sub-mode (M017/S04): while customizing, the user can switch
+  // between the hide/show CSS grid and the react-grid-layout arrangement
+  // grid (drag handles, southeast resize handles, keyboard moves). The flag
+  // is shell-local UI state — the session state machine (useCustomizeMode)
+  // stays untouched.
+  const [arrangeMode, setArrangeMode] = useState(false);
+
+  // A new customize session always opens in hide/show mode: arrangement
+  // mode is per-session editing chrome, so a fresh session must never
+  // inherit a stale arrange flag from a previously cancelled session (e.g.
+  // a mid-edit view switch). Reset on the session boundary with the
+  // React-recommended "adjust state during render" pattern — conditional
+  // setState during render, not an effect (react-hooks/set-state-in-effect).
+  const [wasCustomizing, setWasCustomizing] = useState(isCustomizing);
+  if (isCustomizing !== wasCustomizing) {
+    setWasCustomizing(isCustomizing);
+    if (isCustomizing) {
+      setArrangeMode(false);
+    }
+  }
+
+  const handleToggleArrangeMode = useCallback(() => {
+    setArrangeMode((v) => !v);
+  }, []);
 
   // The active view's layout config is the rendered truth: hidden panels
   // have no cells in the grid. Fall back to the Risk & Positions template
@@ -188,6 +216,8 @@ export function WorkstationShell() {
           hiddenOptionalPanels={hiddenOptionalPanels}
           canUndo={canUndo}
           isDirty={isDirty}
+          arrangeMode={arrangeMode}
+          onToggleArrangeMode={handleToggleArrangeMode}
           onTogglePanel={togglePanelVisibility}
           onUndo={undo}
           onReset={resetDraft}
@@ -196,48 +226,81 @@ export function WorkstationShell() {
         />
       )}
 
-      <main
-        className="ws-grid"
-        style={gridStyle}
-        data-testid="ws-grid"
-        data-scroll-mode={scrollMode}
-        id="ws-main-content"
-        tabIndex={-1}
-      >
-        {visiblePanels.map((id) => {
-          const panel = renderPanelById(id, valuation.positions);
-          // Only optional panels are editable: fixed safety/data-quality
-          // panels (risk, trades) render unchanged in every mode.
-          if (!isCustomizing || !WORKSTATION_PANEL_CATALOGUE[id].canHide) {
-            return <Fragment key={id}>{panel}</Fragment>;
-          }
-          return (
-            <div
-              key={id}
-              className="ws-customize-cell"
-              style={{ gridArea: id }}
-              data-testid={`ws-customize-cell-${id}`}
-            >
-              <div className="ws-customize-cell-bar">
-                <span className="ws-customize-cell-title">
-                  {WORKSTATION_PANEL_CATALOGUE[id].title}
-                </span>
-                <button
-                  type="button"
-                  className="ws-customize-hide-overlay"
-                  data-testid={`ws-customize-hide-${id}`}
-                  onClick={() => togglePanelVisibility(id)}
-                  title={`Hide ${WORKSTATION_PANEL_CATALOGUE[id].title}`}
-                >
-                  <EyeOff className="ws-customize-overlay-icon" aria-hidden="true" />
-                  Hide
-                </button>
+      {/* Arrangement-mode keyboard handler (M017/S04). Mounted only while
+          the arrange sub-mode is open: arrow keys move the focused panel,
+          Shift+Arrow grows/shrinks it, Escape exits back to hide/show. */}
+      {isCustomizing && arrangeMode && draft && (
+        <WorkstationKeyboardArrange
+          config={draft}
+          onApplyLayout={applyLayout}
+          onExitArrangeMode={() => setArrangeMode(false)}
+        />
+      )}
+
+      {isCustomizing && arrangeMode && draft ? (
+        /* Arrangement surface: the react-grid-layout grid replaces the CSS
+            grid while the arrange sub-mode is open. The draft is the
+            rendered truth; every RGL commit (onLayoutChange/onDragStop/
+            onResizeStop) and every keyboard move flows through
+            applyLayout — the single commit path — so the draft stays
+            catalogue-valid, undoable, and persistable only on Save. */
+        <main
+          className="ws-arrange-shell"
+          data-testid="ws-arrange-mode"
+          data-scroll-mode={scrollMode}
+          id="ws-main-content"
+          tabIndex={-1}
+        >
+          <WorkstationArrangeGrid
+            config={draft}
+            renderPanel={(id) => renderPanelById(id, valuation.positions)}
+            onLayoutChange={applyLayout}
+          />
+        </main>
+      ) : (
+        <main
+          className="ws-grid"
+          style={gridStyle}
+          data-testid="ws-grid"
+          data-scroll-mode={scrollMode}
+          id="ws-main-content"
+          tabIndex={-1}
+        >
+          {visiblePanels.map((id) => {
+            const panel = renderPanelById(id, valuation.positions);
+            // Only optional panels are editable: fixed safety/data-quality
+            // panels (risk, trades) render unchanged in every mode.
+            if (!isCustomizing || !WORKSTATION_PANEL_CATALOGUE[id].canHide) {
+              return <Fragment key={id}>{panel}</Fragment>;
+            }
+            return (
+              <div
+                key={id}
+                className="ws-customize-cell"
+                style={{ gridArea: id }}
+                data-testid={`ws-customize-cell-${id}`}
+              >
+                <div className="ws-customize-cell-bar">
+                  <span className="ws-customize-cell-title">
+                    {WORKSTATION_PANEL_CATALOGUE[id].title}
+                  </span>
+                  <button
+                    type="button"
+                    className="ws-customize-hide-overlay"
+                    data-testid={`ws-customize-hide-${id}`}
+                    onClick={() => togglePanelVisibility(id)}
+                    title={`Hide ${WORKSTATION_PANEL_CATALOGUE[id].title}`}
+                  >
+                    <EyeOff className="ws-customize-overlay-icon" aria-hidden="true" />
+                    Hide
+                  </button>
+                </div>
+                {panel}
               </div>
-              {panel}
-            </div>
-          );
-        })}
-      </main>
+            );
+          })}
+        </main>
+      )}
     </>
   );
 }

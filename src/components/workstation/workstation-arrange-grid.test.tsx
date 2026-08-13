@@ -229,17 +229,22 @@ describe('arrangeGridLayoutForConfig', () => {
     expect(account.maxW).toBe(3);
   });
 
-  it('locks fixed anchors: static, not draggable, not resizable', () => {
+  it('locks fixed anchors: static, not draggable, not resizable, no handles', () => {
     const layout = arrangeGridLayoutForConfig(RISK_POSITIONS);
     for (const id of [WORKSTATION_PANEL_IDS.RISK, WORKSTATION_PANEL_IDS.TRADES]) {
       const item = layout.find((l) => l.i === id)!;
       expect(item.isDraggable).toBe(false);
       expect(item.isResizable).toBe(false);
       expect(item.static).toBe(true);
+      // RGL v2 draws a resize handle for every item unless the per-item
+      // resizeHandles overrides the grid level — protected anchors declare
+      // an empty list so they render no handle at all (dense contract:
+      // southeast handles on eligible panels only).
+      expect(item.resizeHandles).toEqual([]);
     }
   });
 
-  it('marks eligible panels draggable and resizable', () => {
+  it('marks eligible panels draggable and resizable (grid-level handles)', () => {
     const layout = arrangeGridLayoutForConfig(RISK_POSITIONS);
     for (const id of [
       WORKSTATION_PANEL_IDS.ACCOUNT,
@@ -250,6 +255,9 @@ describe('arrangeGridLayoutForConfig', () => {
       expect(item.isDraggable).toBe(true);
       expect(item.isResizable).toBe(true);
       expect(item.static).toBe(false);
+      // Eligible panels inherit the grid-level ['se'] resize axis: no
+      // per-item override is declared.
+      expect(item.resizeHandles).toBeUndefined();
     }
   });
 

@@ -1599,6 +1599,22 @@
   background: color-mix(in oklab, var(--primary) 90%, black);
 }
 
+/* Arrange toggle pressed state — active while the arrangement
+   (drag/resize) sub-mode is open (S04/T03). */
+.ws-customize-btn-active {
+  background: var(--accent);
+  border-color: var(--ring);
+  color: var(--foreground);
+}
+
+/* Arrange-mode keyboard hint — one-line command summary shown while the
+   arrangement sub-mode is active (Arrow: move · Shift+Arrow: resize). */
+.ws-arrange-hint {
+  font-size: var(--ws-text-xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
 .ws-customize-btn-icon {
   width: 14px;
   height: 14px;
@@ -1813,4 +1829,17 @@
 
 .ws-arrange .react-grid-item.resizing {
   z-index: 21;
+}
+
+/* Arrange-mode shell (S04/T03) — the <main> that replaces the CSS grid
+   while the arrangement sub-mode is active. Bounded flex column: the RGL
+   container (.ws-arrange) measures its width from this element, and items
+   that extend past the fold scroll inside the shell so the protected
+   anchors stay reachable in every template. */
+.ws-arrange-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
 }

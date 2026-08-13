@@ -27,6 +27,8 @@ function renderBar(overrides: Partial<CustomizeBarProps> = {}) {
     hiddenOptionalPanels: [],
     canUndo: false,
     isDirty: false,
+    arrangeMode: false,
+    onToggleArrangeMode: vi.fn(),
     onTogglePanel: vi.fn(),
     onUndo: vi.fn(),
     onReset: vi.fn(),
@@ -74,6 +76,8 @@ describe('CustomizeBar', () => {
         hiddenOptionalPanels={[]}
         canUndo={false}
         isDirty={true}
+        arrangeMode={false}
+        onToggleArrangeMode={vi.fn()}
         onTogglePanel={vi.fn()}
         onUndo={vi.fn()}
         onReset={vi.fn()}
@@ -131,6 +135,8 @@ describe('CustomizeBar', () => {
         hiddenOptionalPanels={[]}
         canUndo={true}
         isDirty={true}
+        arrangeMode={false}
+        onToggleArrangeMode={vi.fn()}
         onTogglePanel={vi.fn()}
         onUndo={vi.fn()}
         onReset={vi.fn()}
@@ -151,6 +157,8 @@ describe('CustomizeBar', () => {
         hiddenOptionalPanels={[]}
         canUndo={false}
         isDirty={true}
+        arrangeMode={false}
+        onToggleArrangeMode={vi.fn()}
         onTogglePanel={vi.fn()}
         onUndo={vi.fn()}
         onReset={vi.fn()}
@@ -200,5 +208,47 @@ describe('CustomizeBar', () => {
     renderBar({ isDirty: false, onSave });
     await user.click(screen.getByTestId('ws-customize-save'));
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  // ── Arrange-mode toggle (M017/S04) ──────────────────────────────────
+
+  it('renders the Arrange toggle and fires onToggleArrangeMode on click', async () => {
+    const user = userEvent.setup();
+    const onToggleArrangeMode = vi.fn();
+    renderBar({ onToggleArrangeMode });
+
+    const toggle = screen.getByTestId('ws-customize-arrange-toggle');
+    expect(textOf('ws-customize-arrange-toggle')).toContain('Arrange');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+
+    await user.click(toggle);
+    expect(onToggleArrangeMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('reflects active arrange mode with aria-pressed and the keyboard hint', () => {
+    renderBar({ arrangeMode: true });
+    expect(screen.getByTestId('ws-customize-arrange-toggle').getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    // The hint names the keyboard equivalents (move / grow-shrink / exit).
+    expect(textOf('ws-arrange-hint')).toContain('Arrow');
+    expect(textOf('ws-arrange-hint')).toContain('Shift+Arrow');
+  });
+
+  it('hides the arrange keyboard hint when arrange mode is off', () => {
+    renderBar({ arrangeMode: false });
+    expect(screen.queryByTestId('ws-arrange-hint')).toBeNull();
+  });
+
+  it('keeps the editing actions (Undo/Reset/Cancel/Save) present in arrange mode', async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn();
+    const onSave = vi.fn();
+    renderBar({ arrangeMode: true, canUndo: true, isDirty: true, onUndo, onSave });
+
+    await user.click(screen.getByTestId('ws-customize-undo'));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('ws-customize-save')).toBeTruthy();
+    expect(screen.getByTestId('ws-customize-cancel')).toBeTruthy();
   });
 });

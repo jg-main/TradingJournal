@@ -21,7 +21,7 @@
 // WorkstationShell), so the two surfaces together cover hide/show without
 // ever touching the fixed safety/data-quality areas.
 
-import { Check, Eye, RotateCcw, Undo2, X } from 'lucide-react';
+import { Check, Eye, Move, RotateCcw, Undo2, X } from 'lucide-react';
 import { WORKSTATION_PANEL_CATALOGUE, type WorkstationPanelId } from '@/lib/workstation-view-types';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -35,6 +35,10 @@ export interface CustomizeBarProps {
   canUndo: boolean;
   /** True when the draft differs from the session-start snapshot. */
   isDirty: boolean;
+  /** True while the arrangement (drag/resize) sub-mode is active. */
+  arrangeMode: boolean;
+  /** Toggle the arrangement sub-mode (RGL grid with drag/resize handles vs the hide/show CSS grid). */
+  onToggleArrangeMode: () => void;
   /** Re-show a hidden optional panel in the draft. */
   onTogglePanel: (panelId: WorkstationPanelId) => void;
   /** Restore the previous draft state. */
@@ -59,6 +63,8 @@ export function CustomizeBar({
   hiddenOptionalPanels,
   canUndo,
   isDirty,
+  arrangeMode,
+  onToggleArrangeMode,
   onTogglePanel,
   onUndo,
   onReset,
@@ -117,6 +123,33 @@ export function CustomizeBar({
       <span className="ws-customize-fixed-note" data-testid="ws-customize-fixed-note">
         Risk · Open Positions · Period KPIs are always visible
       </span>
+
+      {/* Arrange toggle — enters/exits the arrangement (drag/resize) sub-mode
+          (M017/S04). While active the shell swaps the hide/show CSS grid for
+          the react-grid-layout arrangement grid with labelled drag handles
+          and southeast resize handles; Save/Cancel/Undo/Reset continue to
+          work against the same draft, persisting only on Save. */}
+      <button
+        type="button"
+        className={`ws-customize-btn${arrangeMode ? ' ws-customize-btn-active' : ''}`}
+        data-testid="ws-customize-arrange-toggle"
+        onClick={onToggleArrangeMode}
+        aria-pressed={arrangeMode}
+        title={
+          arrangeMode
+            ? 'Exit arrangement mode (back to hide/show editing)'
+            : 'Enter arrangement mode (drag and resize panels)'
+        }
+      >
+        <Move className="ws-customize-btn-icon" aria-hidden="true" />
+        Arrange
+      </button>
+
+      {arrangeMode && (
+        <span className="ws-arrange-hint" data-testid="ws-arrange-hint">
+          Drag handles move · SE handle resizes · Arrow: move · Shift+Arrow: resize · Esc: exit
+        </span>
+      )}
 
       <button
         type="button"
