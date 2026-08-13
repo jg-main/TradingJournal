@@ -31,6 +31,28 @@
  * `useCustomizationMode` dashboard pattern: state machine in the hook,
  * persistence decisions in the caller.
  *
+ * ## Arrangement actions (M017/S04)
+ *
+ * The same session also owns arrangement-mode edits. The draft's `layout`
+ * (RGL items) and `areas` are kept mutually consistent at every committed
+ * state:
+ *
+ * - `enterCustomize` / `togglePanelVisibility` normalize the draft's
+ *   `layout` to the areas-derived canonical form when that projection is a
+ *   valid layout (`canonicalLayoutForConfig`). Preserved legacy 2-column
+ *   views whose fixed panels cannot satisfy the dense full-width catalogue
+ *   bounds carry no layout until the user actually arranges them.
+ * - `applyLayout(layout)` commits a react-grid-layout update: raw items are
+ *   clamped to the catalogue constraints, the fixed anchors (`risk`,
+ *   `trades`) are locked full-width at the left edge, `areas` is
+ *   re-derived from the clamped items (`deriveAreasFromLayout`), and the
+ *   resulting config is validated before commit. Invalid placements
+ *   (collisions with the fixed workspace, hidden-panel items, unknown ids)
+ *   are ignored; no-op updates never push undo history. The arrange grid
+ *   (S04/T02) feeds RGL's onLayoutChange/onDragStop/onResizeStop into this
+ *   action, and the keyboard handler (S04/T03) commits its computed
+ *   placements through it — normal mode never touches the draft.
+ *
  * ## Why a bounded undo stack
  *
  * Undo history is capped (`MAX_UNDO_DEPTH`) so a long editing session cannot
@@ -47,7 +69,11 @@ import {
   WORKSTATION_TEMPLATE_IDS,
   WORKSTATION_TEMPLATES,
   cloneWorkstationViewConfig,
+  deriveAreasFromLayout,
+  deriveLayoutFromAreas,
+  isValidWorkstationViewConfig,
   resetViewToTemplate,
+  type WorkstationLayoutItem,
   type WorkstationPanelId,
   type WorkstationViewConfig,
 } from '@/lib/workstation-view-types';
@@ -56,6 +82,13 @@ import {
 
 /** Maximum number of draft states retained for Undo. */
 const MAX_UNDO_DEPTH = 20;
+
+/**
+ * Ceiling for arrangement-grid rows. A single layout update legitimately
+ * moves items within the grid; capping y here bounds the memory a hostile
+ * coordinate (e.g. y = 10⁹) could allocate through `deriveAreasFromLayout`.
+ */
+const ARRANGEMENT_MAX_GRID_ROWS = 500;
 
 // ── Pure helpers ───────────────────────────────────────────────────────
 
@@ -194,6 +227,139 @@ export function togglePanelVisibilityInConfig(
   return next;
 }
 
+// ── Arrangement helpers (M017/S04) ─────────────────────────────────────
+
+/** Round a finite number into [lo, hi]; non-finite input falls back to lo. */
+function clampInt(value: number, lo: number, hi: number): number {
+  if (!Number.isFinite(value)) return lo;
+  return Math.min(hi, Math.max(lo, Math.round(value)));
+}
+
+/**
+ * Deep-equality for canonical RGL layout arrays. Items are emitted in
+ * catalogue order by `deriveLayoutFromAreas`, so index-wise comparison of
+ * every placement and declared-constraint field is deterministic.
+ */
+export function workstationLayoutsEqual(
+  a: readonly WorkstationLayoutItem[],
+  b: readonly WorkstationLayoutItem[],
+): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((itemA, idx) => {
+    const itemB = b[idx];
+    return (
+      itemA.i === itemB.i &&
+      itemA.x === itemB.x &&
+      itemA.y === itemB.y &&
+      itemA.w === itemB.w &&
+      itemA.h === itemB.h &&
+      itemA.minW === itemB.minW &&
+      itemA.maxW === itemB.maxW &&
+      itemA.minH === itemB.minH &&
+      itemA.maxH === itemB.maxH
+    );
+  });
+}
+
+/**
+ * The canonical RGL layout for a config's areas grid: the bounding-box
+ * projection (`deriveLayoutFromAreas`) when the resulting config still
+ * validates — i.e. when the view's fixed panels already satisfy the dense
+ * full-width catalogue bounds. Preserved legacy 2-column views fail that
+ * projection and keep `undefined` until the user actually arranges them.
+ */
+export function canonicalLayoutForConfig(
+  config: WorkstationViewConfig,
+): WorkstationLayoutItem[] | undefined {
+  const layout = deriveLayoutFromAreas(config.areas);
+  const candidate: WorkstationViewConfig = { ...config, layout };
+  return isValidWorkstationViewConfig(candidate) ? layout : undefined;
+}
+
+/**
+ * Normalize a raw react-grid-layout update into a catalogue-valid view
+ * config, or null when the placement cannot be represented safely.
+ *
+ * Raw items are clamped to the approved catalogue constraints and the
+ * fixed anchors (`risk`, `trades`) are never moved or resized: they stay
+ * full-width at the left edge with the position/height of their current
+ * areas bounding box (raw input for them is ignored — the dense anchors
+ * are locked). Items for hidden panels and unknown ids are dropped; items
+ * missing from the raw input keep their current placement. The resulting
+ * items are re-projected onto an areas grid (`deriveAreasFromLayout`) and
+ * the whole config re-validated — a placement that collides with the fixed
+ * workspace or otherwise cannot be represented returns null and is
+ * rejected as a whole, so the draft never leaves the catalogue-valid space.
+ *
+ * The raw input is the react-grid-layout boundary: RGL items carry `i` as
+ * a plain string, so callers cast at the edge; unknown ids are dropped
+ * here rather than trusted.
+ */
+export function normalizeArrangementLayout(
+  config: WorkstationViewConfig,
+  rawLayout: readonly WorkstationLayoutItem[],
+): WorkstationViewConfig | null {
+  const cols = WORKSTATION_TEMPLATES[config.templateId]?.columns.length ?? 3;
+  const hidden = new Set(config.hiddenPanels);
+  // Current bounding boxes — the anchored placement of the fixed panels
+  // and the keep-current fallback for items missing from the raw input.
+  const current = new Map(
+    deriveLayoutFromAreas(config.areas).map((item) => [item.i, item]),
+  );
+  const raw = new Map(rawLayout.map((item) => [item.i, item]));
+
+  const items: WorkstationLayoutItem[] = [];
+  for (const id of WORKSTATION_PANEL_ID_LIST) {
+    if (hidden.has(id)) continue; // hidden panels are never placed
+    const def = WORKSTATION_PANEL_CATALOGUE[id];
+    const currentItem = current.get(id);
+    if (!currentItem) return null; // a visible panel must have a placement
+    if (!def.canDrag || !def.canResize) {
+      // Fixed anchor: locked full-width at the left edge, anchored at its
+      // current areas bounding box. Raw input cannot move or resize it.
+      items.push({
+        i: id,
+        x: 0,
+        y: currentItem.y,
+        w: def.maxW,
+        h: currentItem.h,
+        minW: def.minW,
+        maxW: def.maxW,
+        minH: def.minH,
+        maxH: def.maxH,
+      });
+      continue;
+    }
+    const source = raw.get(id) ?? currentItem;
+    const w = clampInt(source.w, def.minW, def.maxW);
+    const h = clampInt(source.h, def.minH, def.maxH);
+    const x = Math.min(clampInt(source.x, 0, cols - w), cols - w);
+    const y = clampInt(source.y, 0, ARRANGEMENT_MAX_GRID_ROWS);
+    items.push({
+      i: id,
+      x,
+      y,
+      w,
+      h,
+      minW: def.minW,
+      maxW: def.maxW,
+      minH: def.minH,
+      maxH: def.maxH,
+    });
+  }
+  if (items.length === 0) return null; // nothing visible to arrange
+
+  const areas = deriveAreasFromLayout(items, cols);
+  const next: WorkstationViewConfig = {
+    templateId: config.templateId,
+    areas,
+    hiddenPanels: [...config.hiddenPanels],
+    version: config.version,
+    layout: deriveLayoutFromAreas(areas),
+  };
+  return isValidWorkstationViewConfig(next) ? next : null;
+}
+
 // ── State ──────────────────────────────────────────────────────────────
 
 interface CustomizeState {
@@ -210,6 +376,7 @@ interface CustomizeState {
 type CustomizeAction =
   | { type: 'ENTER'; config: WorkstationViewConfig }
   | { type: 'TOGGLE'; panelId: WorkstationPanelId }
+  | { type: 'APPLY_LAYOUT'; layout: readonly WorkstationLayoutItem[] }
   | { type: 'UNDO' }
   | { type: 'RESET' }
   | { type: 'CANCEL' }
@@ -229,18 +396,37 @@ function customizeReducer(state: CustomizeState, action: CustomizeAction): Custo
     case 'ENTER':
       // Re-entering mid-session replaces the session (the shell prevents
       // this, but the hook stays safe). hiddenPanels is normalized to
-      // catalogue order so dirty checks are order-stable.
-      return {
-        isCustomizing: true,
-        base: withNormalizedHiddenOrder(action.config),
-        draft: withNormalizedHiddenOrder(action.config),
-        undoStack: [],
-      };
+      // catalogue order so dirty checks are order-stable, and the layout is
+      // normalized to the areas-derived canonical form (S04) so a stale
+      // persisted layout can never drive the arrangement grid.
+      {
+        const normalized = withNormalizedHiddenOrder(action.config);
+        const layout = canonicalLayoutForConfig(normalized);
+        const draft = layout !== undefined ? { ...normalized, layout } : normalized;
+        return { isCustomizing: true, base: draft, draft, undoStack: [] };
+      }
 
     case 'TOGGLE': {
       if (!state.isCustomizing || !state.draft) return state;
       const next = togglePanelVisibilityInConfig(state.draft, action.panelId);
       if (!next) return state; // fixed panel, unknown id, or no applicable change
+      // Re-derive the layout so `areas` and `layout` stay consistent (S04).
+      const layout = canonicalLayoutForConfig(next);
+      const committed = layout !== undefined ? { ...next, layout } : next;
+      return {
+        ...state,
+        draft: committed,
+        undoStack: pushUndo(state.undoStack, state.draft),
+      };
+    }
+
+    case 'APPLY_LAYOUT': {
+      if (!state.isCustomizing || !state.draft) return state;
+      const next = normalizeArrangementLayout(state.draft, action.layout);
+      if (!next) return state; // malformed or unrepresentable placement — ignore
+      // No-op when the update did not change the rendered truth (e.g. RGL
+      // echoing the current layout): no undo entry, no dirty state.
+      if (workstationConfigsEqual(state.draft, next)) return state;
       return {
         ...state,
         draft: next,
@@ -304,6 +490,14 @@ export interface UseCustomizeModeResult {
    * (`risk`, `trades`), unknown ids, and outside a session.
    */
   togglePanelVisibility: (panelId: WorkstationPanelId) => void;
+  /**
+   * Commit an RGL arrangement update to the draft (M017/S04). The raw
+   * layout (from onLayoutChange/onDragStop/onResizeStop or the keyboard
+   * handler) is clamped to catalogue constraints and re-projected onto the
+   * areas grid so the draft stays catalogue-valid at every step. No-op
+   * when the update would not change the rendered arrangement. Undoable.
+   */
+  applyLayout: (layout: readonly WorkstationLayoutItem[]) => void;
   /** Restore the previous draft state. No-op when the history is empty. */
   undo: () => void;
   /** Reset the draft to the view's template base grid (undoable). */
@@ -343,6 +537,10 @@ export function useCustomizeMode(): UseCustomizeModeResult {
 
   const togglePanelVisibility = useCallback((panelId: WorkstationPanelId) => {
     dispatch({ type: 'TOGGLE', panelId });
+  }, []);
+
+  const applyLayout = useCallback((layout: readonly WorkstationLayoutItem[]) => {
+    dispatch({ type: 'APPLY_LAYOUT', layout });
   }, []);
 
   const undo = useCallback(() => {
@@ -389,6 +587,7 @@ export function useCustomizeMode(): UseCustomizeModeResult {
     hiddenOptionalPanels,
     enterCustomize,
     togglePanelVisibility,
+    applyLayout,
     undo,
     resetDraft,
     cancel,
