@@ -46,12 +46,16 @@ function Probe() {
     activeAccountId,
     setActiveAccountId,
     accountSelectionExternal,
+    error,
+    mtmPollingState,
   } = useWorkstation();
   return (
     <div>
       <span data-testid="external">{String(accountSelectionExternal)}</span>
       <span data-testid="active">{activeAccountId}</span>
       <span data-testid="accounts">{accounts.map((a) => a.id).join(',')}</span>
+      <span data-testid="error">{error ?? ''}</span>
+      <span data-testid="mtm-state">{mtmPollingState}</span>
       <button data-testid="switch" onClick={() => setActiveAccountId('acc-2')} />
     </div>
   );
@@ -206,5 +210,41 @@ describe('WorkstationProvider account control', () => {
     expect(refreshMtmPricesLive.mock.invocationCallOrder[0]).toBeLessThan(
       fetchAllLiveDashboardData.mock.invocationCallOrder[1],
     );
+  });
+
+  it('keeps live state when another visible surface already refreshed marks', async () => {
+    fetchAllLiveDashboardData.mockResolvedValue({
+      success: true,
+      data: {
+        accounts: controlledAccounts,
+        positions: [{}],
+        watchlist: [],
+        dashboard: { setupRanking: [] },
+        dashboardV2: { account: {} },
+        risk: {},
+      },
+    });
+    refreshMtmPricesLive.mockResolvedValue({
+      success: false,
+      error: 'Rate limited',
+      status: 429,
+    });
+
+    render(
+      <WorkstationProvider
+        liveMode
+        accounts={controlledAccounts}
+        accountId="acc-1"
+        onAccountIdChange={vi.fn()}
+      >
+        <Probe />
+      </WorkstationProvider>,
+    );
+    await flush();
+    await flush();
+
+    expect(fetchAllLiveDashboardData).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('error').textContent).toBe('');
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
   });
 });

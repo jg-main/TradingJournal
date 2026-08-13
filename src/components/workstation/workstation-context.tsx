@@ -433,12 +433,26 @@ export function WorkstationProvider({
           // lifecycle event, not a user-visible refresh failure.
           if (controller.signal.aborted) return;
 
-          if (!refreshResult.success) {
+          // Refreshes are global: the endpoint refreshes every open symbol,
+          // not just this workstation. A 429 therefore means another visible
+          // dashboard or trade detail just completed a usable refresh during
+          // the shared cooldown. Reload its persisted marks rather than
+          // presenting the throttle as a market-data outage.
+          const sharedRefreshWithinCooldown =
+            !refreshResult.success && refreshResult.status === 429;
+
+          if (!refreshResult.success && !sharedRefreshWithinCooldown) {
             const message = `Mark refresh failed: ${refreshResult.error}`;
             console.error('[workstation] MTM refresh failed:', refreshResult.error);
             setError(message);
             setMtmPollingState('error');
             return;
+          }
+
+          if (sharedRefreshWithinCooldown) {
+            console.info(
+              '[workstation] MTM refresh shared by another visible surface; reloading persisted marks',
+            );
           }
 
           const result = await fetchAllLiveDashboardData(
@@ -457,13 +471,16 @@ export function WorkstationProvider({
             return;
           }
 
-          const partialFailure = refreshResult.data.failed.length > 0;
-          const message = partialFailure
+          const partialFailure = refreshResult.success && refreshResult.data.failed.length > 0;
+          const message = partialFailure && refreshResult.success
             ? `Mark refresh incomplete for ${refreshResult.data.failed.join(', ')}`
             : null;
+          const refreshSummary = sharedRefreshWithinCooldown
+            ? 'shared refresh within cooldown'
+            : `${refreshResult.success ? refreshResult.data.updated : 0} mark(s)`;
 
           console.info(
-            `[workstation] MTM refresh OK: ${refreshResult.data.updated} mark(s), ` +
+            `[workstation] MTM refresh OK: ${refreshSummary}, ` +
               `${result.data.positions.length} position(s)`,
           );
           setLiveData(result.data);
