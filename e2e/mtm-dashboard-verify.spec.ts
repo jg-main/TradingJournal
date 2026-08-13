@@ -1,7 +1,26 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
+
+/**
+ * Seed an active account so the no-accountId MTM contract test resolves an
+ * account deterministically. Playwright gives each invocation a fresh
+ * disposable DB (playwright.config.ts), so GET /api/dashboard without an
+ * accountId would otherwise 400 "No active account found".
+ */
+async function seedActiveAccount(request: APIRequestContext): Promise<void> {
+  const create = await request.post('/api/accounts', {
+    data: { name: 'MTM Contract Account', broker: 'E2E', currency: 'USD' },
+  });
+  expect(create.status()).toBe(201);
+  const account = (await create.json()) as { id: string };
+  const activate = await request.put(`/api/accounts/${account.id}`, {
+    data: { isActive: true },
+  });
+  expect(activate.ok()).toBeTruthy();
+}
 
 test.describe('Dashboard mark-to-market contract', () => {
   test('API returns the MTM summary shape', async ({ request }) => {
+    await seedActiveAccount(request);
     const response = await request.get('/api/dashboard');
     expect(response.ok()).toBeTruthy();
     const data = await response.json();

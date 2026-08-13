@@ -1,4 +1,22 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
+
+/**
+ * Seed an active account so the no-accountId API contract tests resolve an
+ * account deterministically. Playwright gives each invocation a fresh
+ * disposable DB (playwright.config.ts), so GET /api/dashboard without an
+ * accountId would otherwise 400 "No active account found".
+ */
+async function seedActiveAccount(request: APIRequestContext): Promise<void> {
+  const create = await request.post('/api/accounts', {
+    data: { name: 'Dashboard Contract Account', broker: 'E2E', currency: 'USD' },
+  });
+  expect(create.status()).toBe(201);
+  const account = (await create.json()) as { id: string };
+  const activate = await request.put(`/api/accounts/${account.id}`, {
+    data: { isActive: true },
+  });
+  expect(activate.ok()).toBeTruthy();
+}
 
 test.describe('Dashboard API and production workstation', () => {
   test('production root renders the live workstation and application shell', async ({ page }) => {
@@ -44,6 +62,7 @@ test.describe('Dashboard API and production workstation', () => {
   });
 
   test('API returns the canonical dashboard contract', async ({ request }) => {
+    await seedActiveAccount(request);
     const res = await request.get('/api/dashboard');
     expect(res.ok()).toBeTruthy();
 
@@ -76,6 +95,7 @@ test.describe('Dashboard API and production workstation', () => {
   });
 
   test('API accepts a valid date range', async ({ request }) => {
+    await seedActiveAccount(request);
     const res = await request.get(
       '/api/dashboard?dateFrom=2026-01-01&dateTo=2026-12-31',
     );
