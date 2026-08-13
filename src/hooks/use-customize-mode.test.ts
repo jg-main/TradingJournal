@@ -128,7 +128,8 @@ describe('togglePanelVisibilityInConfig', () => {
       WORKSTATION_PANEL_IDS.WATCHLIST,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
-    expect(next!.hiddenPanels).toEqual([]);
+    // Review Metrics stays hidden — it is default-hidden in the v3 template.
+    expect(next!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.PROCESS_REVIEW]);
     // The result stays catalogue-valid at every step.
     expect(validateWorkstationViewConfig(next)).toEqual([]);
   });
@@ -139,6 +140,9 @@ describe('togglePanelVisibilityInConfig', () => {
     config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.PERFORMANCE)!;
     config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.PROCESS_REVIEW)!;
     config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.WATCHLIST)!;
+    // Review Metrics was hidden by default, so the toggle above SHOWED it
+    // (full-width fallback row); toggle it again to complete the hide-all.
+    config = togglePanelVisibilityInConfig(config, WORKSTATION_PANEL_IDS.PROCESS_REVIEW)!;
     // Catalogue order: account, perf, review, watchlist.
     expect(config.hiddenPanels).toEqual([
       WORKSTATION_PANEL_IDS.ACCOUNT,
@@ -244,6 +248,7 @@ describe('togglePanelVisibilityInConfig', () => {
     expect(JSON.stringify(RISK_POSITIONS)).toBe(before);
     expect(next!.hiddenPanels).toEqual([
       WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
   });
@@ -282,16 +287,25 @@ describe('useCustomizeMode', () => {
     expect(result.current.isDirty).toBe(false);
     expect(result.current.canUndo).toBe(false);
 
-    // Mutating the caller's source config must not affect the draft.
+    // Mutating the caller's source config must not affect the draft. The
+    // summary row's third cell is the widened Performance span and the
+    // default already hides Review Metrics + Watchlist, so the hidden-set
+    // mutation pushes Performance — it must not leak into the draft.
     act(() => {
       RISK_POSITIONS.areas[1][2] = '.';
-      RISK_POSITIONS.hiddenPanels.push(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
+      RISK_POSITIONS.hiddenPanels.push(WORKSTATION_PANEL_IDS.PERFORMANCE);
     });
-    expect(result.current.draft!.areas[1][2]).toBe(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
-    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(result.current.draft!.areas[1][2]).toBe(WORKSTATION_PANEL_IDS.PERFORMANCE);
+    expect(result.current.draft!.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
     // Restore fixture for later tests.
-    RISK_POSITIONS.areas[1][2] = WORKSTATION_PANEL_IDS.PROCESS_REVIEW;
-    RISK_POSITIONS.hiddenPanels = [WORKSTATION_PANEL_IDS.WATCHLIST];
+    RISK_POSITIONS.areas[1][2] = WORKSTATION_PANEL_IDS.PERFORMANCE;
+    RISK_POSITIONS.hiddenPanels = [
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ];
   });
 
   it('toggle hides an optional panel, marks dirty, and enables undo', () => {
@@ -303,6 +317,7 @@ describe('useCustomizeMode', () => {
     expect(result.current.canUndo).toBe(true);
     expect(result.current.hiddenOptionalPanels).toEqual([
       WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
     expect(result.current.draft!.areas[1][0]).toBe('.');
@@ -316,7 +331,10 @@ describe('useCustomizeMode', () => {
 
     expect(result.current.isDirty).toBe(false);
     expect(result.current.canUndo).toBe(false);
-    expect(result.current.hiddenOptionalPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(result.current.hiddenOptionalPanels).toEqual([
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
   });
 
   it('undo restores the previous draft and is exhausted after one step', () => {
@@ -330,12 +348,16 @@ describe('useCustomizeMode', () => {
     act(() => result.current.undo());
     expect(result.current.draft!.hiddenPanels).toEqual([
       WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
     expect(result.current.draft!.areas[1][1]).toBe(WORKSTATION_PANEL_IDS.PERFORMANCE);
 
     act(() => result.current.undo());
-    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(result.current.draft!.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
     expect(result.current.isDirty).toBe(false);
     expect(result.current.canUndo).toBe(false);
   });
@@ -354,7 +376,10 @@ describe('useCustomizeMode', () => {
     act(() => result.current.togglePanelVisibility(WORKSTATION_PANEL_IDS.ACCOUNT));
 
     act(() => result.current.resetDraft());
-    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(result.current.draft!.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
     // The full grid is back to the template base.
     expect(workstationConfigsEqual(result.current.draft!, RISK_POSITIONS)).toBe(true);
     expect(result.current.isDirty).toBe(false);
@@ -364,6 +389,7 @@ describe('useCustomizeMode', () => {
     act(() => result.current.undo());
     expect(result.current.draft!.hiddenPanels).toEqual([
       WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
   });
@@ -401,6 +427,7 @@ describe('useCustomizeMode', () => {
     expect(saved).not.toBeNull();
     expect(saved!.hiddenPanels).toEqual([
       WORKSTATION_PANEL_IDS.ACCOUNT,
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
     expect(saved!.areas[1][0]).toBe('.');
@@ -458,8 +485,9 @@ describe('useCustomizeMode', () => {
     expect(result.current.canUndo).toBe(false);
     // 25 alternating toggles push 25 states; the cap keeps the last 20, so
     // 20 undos drain the stack and the draft settles on the state after the
-    // first 5 toggles (Watchlist shown after the odd number of toggles).
-    expect(result.current.draft!.hiddenPanels).toEqual([]);
+    // first 5 toggles (Watchlist shown after the odd number of toggles;
+    // Review Metrics stays hidden throughout).
+    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.PROCESS_REVIEW]);
     expect(validateWorkstationViewConfig(result.current.draft!)).toEqual([]);
   });
 });
@@ -518,10 +546,12 @@ describe('normalizeArrangementLayout', () => {
     ];
     const next = normalizeArrangementLayout(RISK_POSITIONS, raw);
     expect(next).not.toBeNull();
+    // Review Metrics is hidden by default in the v3 template, so its raw
+    // item is dropped and the freed third cell stays empty.
     expect(next!.areas[1]).toEqual([
       WORKSTATION_PANEL_IDS.PERFORMANCE,
       WORKSTATION_PANEL_IDS.ACCOUNT,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      '.',
     ]);
     expect(next!.hiddenPanels).toEqual(RISK_POSITIONS.hiddenPanels);
     expect(validateWorkstationViewConfig(next)).toEqual([]);
@@ -653,7 +683,7 @@ describe('normalizeArrangementLayout', () => {
 // ── Hook: arrangement actions (M017/S04-T01) ───────────────────────────
 
 describe('useCustomizeMode arrangement actions', () => {
-  /** account ↔ perf swap in the summary row — a valid non-overlapping layout. */
+  /** account ↔ perf swap in the summary row — a valid non-overlapping layout. Review's raw item is dropped (hidden by default in the v3 template), leaving the freed third cell empty. */
   const movedLayout = (): WorkstationLayoutItem[] => [
     rawItem(WORKSTATION_PANEL_IDS.RISK, 0, 0, 3, 1),
     rawItem(WORKSTATION_PANEL_IDS.TRADES, 0, 2, 3, 3),
@@ -672,7 +702,7 @@ describe('useCustomizeMode arrangement actions', () => {
     expect(result.current.draft!.areas[1]).toEqual([
       WORKSTATION_PANEL_IDS.PERFORMANCE,
       WORKSTATION_PANEL_IDS.ACCOUNT,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      '.',
     ]);
     expectConsistentDraft(result.current.draft!);
   });
@@ -743,7 +773,7 @@ describe('useCustomizeMode arrangement actions', () => {
         rawItem(WORKSTATION_PANEL_IDS.WATCHLIST, 0, 5, 3, 1),
       ]),
     );
-    expect(result.current.draft!.hiddenPanels).toEqual([]);
+    expect(result.current.draft!.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.PROCESS_REVIEW]);
     expectConsistentDraft(result.current.draft!);
   });
 
@@ -758,7 +788,7 @@ describe('useCustomizeMode arrangement actions', () => {
     expect(result.current.draft!.areas[1]).toEqual([
       WORKSTATION_PANEL_IDS.PERFORMANCE,
       WORKSTATION_PANEL_IDS.ACCOUNT,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      '.',
     ]);
     expectConsistentDraft(result.current.draft!);
   });
@@ -775,7 +805,7 @@ describe('useCustomizeMode arrangement actions', () => {
     expect(saved!.areas[1]).toEqual([
       WORKSTATION_PANEL_IDS.PERFORMANCE,
       WORKSTATION_PANEL_IDS.ACCOUNT,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      '.',
     ]);
     expect(validateWorkstationViewConfig(saved!)).toEqual([]);
 

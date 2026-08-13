@@ -192,14 +192,13 @@ afterEach(() => {
 describe('arrangeGridLayoutForConfig', () => {
   it('emits one item per visible panel in catalogue order', () => {
     const layout = arrangeGridLayoutForConfig(RISK_POSITIONS);
-    // Watchlist is hidden in the default view — risk, trades, account, perf,
-    // review remain, in catalogue order.
+    // Review Metrics and Watchlist are hidden in the default view — risk,
+    // trades, account, perf remain, in catalogue order.
     expect(layout.map((l) => l.i)).toEqual([
       WORKSTATION_PANEL_IDS.RISK,
       WORKSTATION_PANEL_IDS.TRADES,
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
     ]);
   });
 
@@ -249,7 +248,6 @@ describe('arrangeGridLayoutForConfig', () => {
     for (const id of [
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
     ]) {
       const item = layout.find((l) => l.i === id)!;
       expect(item.isDraggable).toBe(true);
@@ -306,18 +304,17 @@ describe('WorkstationArrangeGrid', () => {
       WORKSTATION_PANEL_IDS.TRADES,
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
     ]);
     for (const id of [
       WORKSTATION_PANEL_IDS.RISK,
       WORKSTATION_PANEL_IDS.TRADES,
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
     ]) {
       expect(screen.getByTestId(`ws-arrange-cell-${id}`)).toBeTruthy();
     }
     expect(screen.queryByTestId('ws-arrange-cell-watchlist')).toBeNull();
+    expect(screen.queryByTestId('ws-arrange-cell-process-review')).toBeNull();
   });
 
   it('renders a labelled drag handle only on eligible (canDrag) panels', () => {
@@ -362,10 +359,11 @@ describe('WorkstationArrangeGrid', () => {
 
   it('calls renderPanel once per visible panel with the panel id', () => {
     const { renderPanel } = renderGrid(RISK_POSITIONS);
-    expect(renderPanel).toHaveBeenCalledTimes(5);
+    expect(renderPanel).toHaveBeenCalledTimes(4);
     expect(renderPanel).toHaveBeenCalledWith(WORKSTATION_PANEL_IDS.RISK);
     expect(renderPanel).toHaveBeenCalledWith(WORKSTATION_PANEL_IDS.ACCOUNT);
     expect(renderPanel).not.toHaveBeenCalledWith(WORKSTATION_PANEL_IDS.WATCHLIST);
+    expect(renderPanel).not.toHaveBeenCalledWith(WORKSTATION_PANEL_IDS.PROCESS_REVIEW);
   });
 
   it('forwards committed RGL layouts verbatim to the session commit path', () => {

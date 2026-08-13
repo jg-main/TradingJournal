@@ -288,11 +288,12 @@ export interface WorkstationTemplate {
  * 3-column model (docs/requirements/DASHBOARD_DENSE_LAYOUT_REQUIREMENTS.md):
  *
  * - **risk-positions** — the immutable default and startup view. The dense
- *   document flow: full-width Main Risk Metrics, a compact equal-width
- *   Account State | Performance | Review Metrics row, then the full-width
- *   Trades workspace. Watchlist is deliberately excluded from this curated
- *   starting layout, while remaining available to saved custom views and its
- *   dedicated navigation surface.
+ *   document flow: full-width Main Risk Metrics, a compact summary row of
+ *   Account State | Performance (two grouped KPI columns), then the
+ *   full-width Trades workspace. Review Metrics and Watchlist are
+ *   deliberately excluded from this curated starting layout — Process
+ *   Review has its dedicated saved view and Watchlist its own surface —
+ *   while both remain available to saved custom views.
  * - **performance** — the same dense flow with a prominent full-width
  *   Performance panel below the trades workspace; the watchlist and
  *   review-metrics panels are hidden by default.
@@ -305,14 +306,14 @@ export const WORKSTATION_TEMPLATES = {
     id: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
     name: 'Risk & Positions',
     description:
-      'The curated dense default: full-width Main Risk Metrics, a compact equal-width Account State | Performance | Review Metrics row, then the full-width Trades workspace in document flow. Watchlist remains available through saved custom views and its dedicated page. Immutable system default and startup view.',
+      'The curated dense default: full-width Main Risk Metrics, a compact Account State | Performance summary row (Performance rendered as two grouped KPI columns at roughly Account State height), then the full-width Trades workspace in document flow. Review Metrics and Watchlist are excluded from the default — Process Review has its dedicated saved view and Watchlist its own surface — while both remain available to saved custom views. Immutable system default and startup view.',
     columns: [1, 1, 1],
     areas: [
       ['risk', 'risk', 'risk'],
-      ['account', 'perf', 'review'],
+      ['account', 'perf', 'perf'],
       ['trades', 'trades', 'trades'],
     ],
-    defaultHidden: [WORKSTATION_PANEL_IDS.WATCHLIST],
+    defaultHidden: [WORKSTATION_PANEL_IDS.PROCESS_REVIEW, WORKSTATION_PANEL_IDS.WATCHLIST],
     isSystemDefault: true,
   } satisfies WorkstationTemplate,
 
@@ -374,12 +375,15 @@ export const WORKSTATION_LAYOUT_VERSION = 2;
  * Version of the Risk & Positions default-template composition.
  *
  * v1: the former two-column overview/side-rail arrangement. v2: the dense
- * 3-column document flow (full-width risk, compact summary row, full-width
- * trades). Migration uses this to replace unmodified copies of the former
- * system default with the dense default while preserving user-modified views
- * (dense requirements: persistence and migration contract).
+ * 3-column document flow (full-width risk, compact Account State |
+ * Performance | Review Metrics summary row, full-width trades). v3 (M018):
+ * Review Metrics leaves the default (the dedicated Process Review saved
+ * view covers it) and Performance widens to two grid columns beside Account
+ * State. Migration replaces unmodified copies of former system-default
+ * compositions with the current default while preserving user-modified
+ * views (dense requirements: persistence and migration contract).
  */
-export const WORKSTATION_DEFAULT_TEMPLATE_VERSION = 2;
+export const WORKSTATION_DEFAULT_TEMPLATE_VERSION = 3;
 
 /**
  * A saved workstation view: template reference, rendered grid, hidden

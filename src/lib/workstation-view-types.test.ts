@@ -275,10 +275,13 @@ describe('system templates', () => {
     expect(riskPositions.columns).toEqual([1, 1, 1]);
     expect(riskPositions.areas).toEqual([
       ['risk', 'risk', 'risk'],
-      ['account', 'perf', 'review'],
+      ['account', 'perf', 'perf'],
       ['trades', 'trades', 'trades'],
     ]);
-    expect(riskPositions.defaultHidden).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(riskPositions.defaultHidden).toEqual([
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
 
     for (const id of [
       WORKSTATION_TEMPLATE_IDS.PERFORMANCE,
@@ -292,9 +295,11 @@ describe('system templates', () => {
   it('records the dense default-template version alongside the layout schema version', () => {
     // v2 is the dense composition: both the layout schema and the default
     // template were bumped from v1 so migration can replace unmodified
-    // former-default copies while preserving user-modified views.
+    // former-default copies while preserving user-modified views. v3 (M018)
+    // records the composition change: Review Metrics leaves the default and
+    // Performance widens to two grid columns beside Account State.
     expect(WORKSTATION_LAYOUT_VERSION).toBe(2);
-    expect(WORKSTATION_DEFAULT_TEMPLATE_VERSION).toBe(2);
+    expect(WORKSTATION_DEFAULT_TEMPLATE_VERSION).toBe(3);
     expect(createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS).version).toBe(
       WORKSTATION_LAYOUT_VERSION,
     );
@@ -340,7 +345,10 @@ describe('createViewFromTemplate', () => {
     config.hiddenPanels.push(WORKSTATION_PANEL_IDS.ACCOUNT);
     const fresh = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     expect(fresh.areas[0][0]).toBe('risk');
-    expect(fresh.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(fresh.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
   });
 });
 
@@ -376,7 +384,10 @@ describe('cloneWorkstationViewConfig', () => {
     copy.areas[1][0] = GRID_EMPTY_CELL;
     copy.hiddenPanels = [WORKSTATION_PANEL_IDS.ACCOUNT];
     expect(source.areas[1][0]).toBe(WORKSTATION_PANEL_IDS.ACCOUNT);
-    expect(source.hiddenPanels).toEqual([WORKSTATION_PANEL_IDS.WATCHLIST]);
+    expect(source.hiddenPanels).toEqual([
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
+      WORKSTATION_PANEL_IDS.WATCHLIST,
+    ]);
     expect(copy.templateId).toBe(source.templateId);
     expect(copy.version).toBe(source.version);
   });
@@ -402,8 +413,7 @@ describe('deriveLayoutFromAreas', () => {
       { i: WORKSTATION_PANEL_IDS.RISK, x: 0, y: 0, w: 3, h: 1, minW: 3, maxW: 3, minH: 1, maxH: 1 },
       { i: WORKSTATION_PANEL_IDS.TRADES, x: 0, y: 2, w: 3, h: 1, minW: 3, maxW: 3, minH: 3, maxH: 12 },
       { i: WORKSTATION_PANEL_IDS.ACCOUNT, x: 0, y: 1, w: 1, h: 1, minW: 1, maxW: 3, minH: 1, maxH: 3 },
-      { i: WORKSTATION_PANEL_IDS.PERFORMANCE, x: 1, y: 1, w: 1, h: 1, minW: 1, maxW: 3, minH: 1, maxH: 3 },
-      { i: WORKSTATION_PANEL_IDS.PROCESS_REVIEW, x: 2, y: 1, w: 1, h: 1, minW: 1, maxW: 3, minH: 1, maxH: 3 },
+      { i: WORKSTATION_PANEL_IDS.PERFORMANCE, x: 1, y: 1, w: 2, h: 1, minW: 1, maxW: 3, minH: 1, maxH: 3 },
     ]);
   });
 
@@ -849,7 +859,7 @@ describe('computeGridTemplateAreas', () => {
   it('serializes the Risk & Positions grid exactly', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     expect(computeGridTemplateAreas(config)).toBe(
-      '"risk risk risk" "account perf review" "trades trades trades"',
+      '"risk risk risk" "account perf perf" "trades trades trades"',
     );
   });
 
@@ -941,14 +951,13 @@ describe('computeDocumentFlowGridTemplateRows', () => {
 });
 
 describe('computeVisiblePanels', () => {
-  it('keeps Watchlist out of the Risk & Positions default while retaining every risk and review panel', () => {
+  it('keeps Watchlist and Review Metrics out of the Risk & Positions default', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     expect(computeVisiblePanels(config)).toEqual([
       WORKSTATION_PANEL_IDS.RISK,
       WORKSTATION_PANEL_IDS.TRADES,
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
-      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
     ]);
   });
 
@@ -984,22 +993,24 @@ describe('validateWorkstationViewConfig — positives', () => {
   it('accepts a valid customized reintroduction of Watchlist', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
     // Watchlist is hidden in the curated default but remains available to
-    // a saved view through explicit customization.
+    // a saved view through explicit customization. Review Metrics stays
+    // hidden in this view (its dedicated Process Review saved view covers
+    // the review surface).
     config.areas.push([
       WORKSTATION_PANEL_IDS.WATCHLIST,
       WORKSTATION_PANEL_IDS.WATCHLIST,
       WORKSTATION_PANEL_IDS.WATCHLIST,
     ]);
-    config.hiddenPanels = [];
+    config.hiddenPanels = [WORKSTATION_PANEL_IDS.PROCESS_REVIEW];
     expect(validateWorkstationViewConfig(config)).toEqual([]);
   });
 
   it('accepts hiding a set of optional panels when areas and hiddenPanels agree', () => {
     const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
-    config.areas[1][0] = GRID_EMPTY_CELL;
-    config.areas[1][1] = GRID_EMPTY_CELL;
+    config.areas[1] = [GRID_EMPTY_CELL, GRID_EMPTY_CELL, GRID_EMPTY_CELL];
     config.hiddenPanels = [
       WORKSTATION_PANEL_IDS.WATCHLIST,
+      WORKSTATION_PANEL_IDS.PROCESS_REVIEW,
       WORKSTATION_PANEL_IDS.ACCOUNT,
       WORKSTATION_PANEL_IDS.PERFORMANCE,
     ];
@@ -1113,8 +1124,9 @@ describe('validateWorkstationViewConfig — negatives', () => {
 
   it('rejects a panel neither present nor hidden', () => {
     const config = base();
-    config.areas[1][1] = GRID_EMPTY_CELL; // account removed from areas
-    // Watchlist remains hidden, but account is neither present nor hidden.
+    config.areas[1][0] = GRID_EMPTY_CELL; // account removed from areas
+    // Review Metrics and Watchlist remain hidden, but account is neither
+    // present nor hidden.
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('neither present in areas nor listed in hiddenPanels'))).toBe(
       true,

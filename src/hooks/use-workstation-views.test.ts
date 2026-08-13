@@ -465,7 +465,7 @@ describe('useWorkstationViews', () => {
     expect(applied).toBe(false);
     expect(
       result.current.views.find((x) => x.id === v.id)?.config.hiddenPanels,
-    ).toEqual(['watchlist']);
+    ).toEqual(['review', 'watchlist']);
   });
 
   it('updateViewConfig is blocked on system presets and unknown ids', () => {
@@ -483,7 +483,7 @@ describe('useWorkstationViews', () => {
       result.current.views.find(
         (v) => v.id === WORKSTATION_SYSTEM_VIEW_IDS.RISK_POSITIONS,
       )?.config.hiddenPanels,
-    ).toEqual(['watchlist']);
+    ).toEqual(['review', 'watchlist']);
 
     expect(result.current.updateViewConfig('ws-unknown', customizedRiskPositionsConfig())).toBe(
       false,
@@ -500,7 +500,7 @@ describe('useWorkstationViews', () => {
     );
     act(() => result.current.resetView(v.id));
     const reset = result.current.views.find((x) => x.id === v.id)!;
-    expect(reset.config.hiddenPanels).toEqual(['watchlist']);
+    expect(reset.config.hiddenPanels).toEqual(['review', 'watchlist']);
     expect(reset.config.areas).toEqual(
       WORKSTATION_TEMPLATES[WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS].areas,
     );
