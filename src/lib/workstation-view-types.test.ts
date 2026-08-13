@@ -145,6 +145,22 @@ describe('panel catalogue', () => {
     for (const title of titles) expect(title.length).toBeGreaterThan(0);
   });
 
+  it('uses the dense v2 titles and ids (positions renamed to trades, kpis band removed, risk/review retitled)', () => {
+    expect(WORKSTATION_PANEL_IDS.TRADES).toBe('trades');
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.RISK].title).toBe('Main Risk Metrics');
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.TRADES].title).toBe('Trades Workspace');
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.ACCOUNT].title).toBe('Account State');
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.PERFORMANCE].title).toBe('Performance');
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.PROCESS_REVIEW].title).toBe('Review Metrics');
+    expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.WATCHLIST].title).toBe('Watchlist');
+    // The v1 legacy band ids are gone from the catalogue and id map entirely;
+    // 'positions'/'kpis' survive only as migration fixtures (v1 → v2).
+    expect(WORKSTATION_PANEL_CATALOGUE).not.toHaveProperty('positions');
+    expect(WORKSTATION_PANEL_CATALOGUE).not.toHaveProperty('kpis');
+    expect(WORKSTATION_PANEL_IDS).not.toHaveProperty('POSITIONS');
+    expect(WORKSTATION_PANEL_IDS).not.toHaveProperty('KPIS');
+  });
+
   it('declares content-sized risk band and fill panels elsewhere', () => {
     expect(WORKSTATION_PANEL_CATALOGUE[WORKSTATION_PANEL_IDS.RISK].fill).toBe(false);
     for (const id of OPTIONAL_PANEL_IDS) {
