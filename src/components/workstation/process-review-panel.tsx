@@ -7,7 +7,11 @@
 // Three sub-sections:
 //   1. Process Score Distribution — grade distribution bars (A–F)
 //   2. Directional Performance — long vs short P&L and win rate
-//   3. Attention Items — top 5 insights with severity indicators
+//   3. Attention Items — top 3 highest-attention insights (severity-sorted)
+//      with severity indicators
+//
+// Panel header reads 'Review Metrics' per WORKSTATION_PANEL_CATALOGUE
+// (compact, action-oriented dense summary row).
 //
 // CSS classes: ws-panel, ws-panel-header, ws-panel-body, ws-num, ws-pos,
 // ws-neg, ws-stat-row, ws-mono, ws-empty.
@@ -83,7 +87,9 @@ export function ProcessReviewPanel() {
   const hasDirectional = directionalPerformance !== undefined;
   const insights = attentionInsights?.insights ?? [];
   const hasInsights = insights.length > 0;
-  const topInsights = hasInsights ? insights.slice(0, 5) : [];
+  // AttentionInsightsResult.insights is already ordered most-important
+  // first (critical → warning → info); take the top 3 for density.
+  const topInsights = hasInsights ? insights.slice(0, 3) : [];
 
   return (
     <section
@@ -92,7 +98,7 @@ export function ProcessReviewPanel() {
       data-testid="ws-panel-process-review"
     >
       <div className="ws-panel-header">
-        <span>Process Review</span>
+        <span>Review Metrics</span>
       </div>
       <div className="ws-panel-body">
 

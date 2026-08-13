@@ -8,7 +8,8 @@
  *   - process score distribution renders bins with counts
  *   - grade colour coding (A-B → ws-pos, C → '', D-F → ws-neg)
  *   - directional performance shows long/short with P&L colouring
- *   - attention items render with severity indicators
+ *   - attention items render with severity indicators, limited to top 3
+ *   - panel header reads 'Review Metrics' (WORKSTATION_PANEL_CATALOGUE title)
  *   - empty/undefined data shows compact empty states
  *   - panel renders without crashing
  *
@@ -69,6 +70,13 @@ describe('ProcessReviewPanel', () => {
   it('renders without crashing', () => {
     renderWithContext({});
     expect(screen.getByTestId('ws-panel-process-review')).toBeTruthy();
+  });
+
+  it('renders the dense catalogue title Review Metrics in the panel header', () => {
+    renderWithContext({});
+    const header = screen.getByTestId('ws-panel-process-review').querySelector('.ws-panel-header');
+    expect(header?.textContent).toBe('Review Metrics');
+    expect(header?.textContent).not.toContain('Process Review');
   });
 
   describe('Process Score Distribution', () => {
@@ -219,7 +227,9 @@ describe('ProcessReviewPanel', () => {
       expect(screen.getByTestId('ws-attention-item-1').textContent).toContain('3 consecutive losses');
     });
 
-    it('limits to top 5 insights', () => {
+    it('limits to top 3 highest-attention insights (severity-ordered input)', () => {
+      // insights are consumed in provider order; attention-insights.ts
+      // already sorts most-important first (critical → warning → info).
       const insights = Array.from({ length: 8 }, (_, i) => ({
         type: `type-${i}`,
         severity: 'info' as const,
@@ -231,11 +241,33 @@ describe('ProcessReviewPanel', () => {
         attentionInsights: { tradeCount: 100, insights },
       });
 
-      // Items 0–4 exist, 5–7 do not
-      for (let i = 0; i < 5; i++) {
+      // Items 0–2 exist, 3–7 do not.
+      for (let i = 0; i < 3; i++) {
         expect(screen.getByTestId(`ws-attention-item-${i}`)).toBeTruthy();
       }
-      expect(screen.queryByTestId('ws-attention-item-5')).toBeNull();
+      expect(screen.queryByTestId('ws-attention-item-3')).toBeNull();
+      expect(screen.queryByTestId('ws-attention-item-7')).toBeNull();
+    });
+
+    it('renders the leading 3 insights in provider order without re-sorting', () => {
+      // attention-insights.ts sorts most-important first (critical → warning
+      // → info); the panel is a pure consumer and takes the leading slice
+      // as-is rather than duplicating the severity computation.
+      const insights = [
+        { type: 'crit-item', severity: 'critical' as const, title: 'Crit', message: 'Critical message' },
+        { type: 'warn-item', severity: 'warning' as const, title: 'Warn', message: 'Warning message' },
+        { type: 'info-item', severity: 'info' as const, title: 'Info', message: 'Info message' },
+        { type: 'extra-item', severity: 'warning' as const, title: 'Extra', message: 'Extra message' },
+      ];
+
+      renderWithContext({
+        attentionInsights: { tradeCount: 50, insights },
+      });
+
+      expect(screen.getByTestId('ws-attention-item-0').textContent).toContain('Critical message');
+      expect(screen.getByTestId('ws-attention-item-1').textContent).toContain('Warning message');
+      expect(screen.getByTestId('ws-attention-item-2').textContent).toContain('Info message');
+      expect(screen.queryByTestId('ws-attention-item-3')).toBeNull();
     });
 
     it('applies ws-neg class to warning and critical severity badges', () => {
