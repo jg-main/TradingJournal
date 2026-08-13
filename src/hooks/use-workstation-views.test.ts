@@ -22,6 +22,7 @@ import {
   WORKSTATION_LAYOUT_VERSION,
   createViewFromTemplate,
   cloneWorkstationViewConfig,
+  validateWorkstationViewConfig,
   type WorkstationViewConfig,
 } from '@/lib/workstation-view-types';
 import type { WorkstationView } from './use-workstation-views';
@@ -106,6 +107,16 @@ function userView(overrides: Partial<WorkstationView>): WorkstationView {
     ...overrides,
   };
 }
+
+/** The exact v1 risk-positions default grid (legacy ids; M016/S06 shell). */
+const V1_RISK_POSITIONS_AREAS: string[][] = [
+  ['risk', 'risk'],
+  ['positions', 'account'],
+  ['positions', 'perf'],
+  ['positions', 'review'],
+  ['positions', 'watchlist'],
+  ['kpis', 'kpis'],
+];
 
 function storedPayload(views: WorkstationView[], activeViewId: string) {
   return JSON.stringify({ version: 1, views, activeViewId });
@@ -542,12 +553,20 @@ describe('useWorkstationViews', () => {
     expect(result.current.views).toHaveLength(3);
   });
 
-  it('recovers when a stored view config fails catalogue validation', () => {
+  it('recovers a stored view with a corrupt config by falling back to the dense default', () => {
     const bad = userView({ id: 'ws-bad', config: configWithUnknownPanel() });
     store.set(KEY, storedPayload([bad], 'ws-bad'));
     const { result } = renderHook(() => useWorkstationViews());
     flush();
-    expect(result.current.views).toHaveLength(3);
+    // Migration-on-read never lets malformed persisted data reach the
+    // renderer: the corrupt config is replaced by the current dense default
+    // and the view envelope stays usable.
+    expect(result.current.views).toHaveLength(1);
+    expect(result.current.views[0].id).toBe('ws-bad');
+    expect(result.current.views[0].config).toEqual(
+      createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS),
+    );
+    expect(result.current.activeViewId).toBe('ws-bad');
   });
 
   it('recovers when a stored view is missing required fields', () => {
@@ -558,6 +577,72 @@ describe('useWorkstationViews', () => {
     const { result } = renderHook(() => useWorkstationViews());
     flush();
     expect(result.current.views).toHaveLength(3);
+  });
+
+  it('migrates an unmodified copy of the former v1 default to the dense default on read', () => {
+    const v1Default = {
+      id: 'ws-v1-default',
+      name: 'V1 Default',
+      config: {
+        templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+        areas: V1_RISK_POSITIONS_AREAS.map((row) => [...row]),
+        hiddenPanels: [],
+        version: 1,
+      },
+      createdAt: NOW,
+      updatedAt: NOW,
+      isSystem: true,
+      isStartup: true,
+    };
+    store.set(
+      KEY,
+      JSON.stringify({ version: 1, views: [v1Default], activeViewId: 'ws-v1-default' }),
+    );
+    const { result } = renderHook(() => useWorkstationViews());
+    flush();
+    expect(result.current.views).toHaveLength(1);
+    expect(result.current.views[0].config).toEqual(
+      createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS),
+    );
+    expect(result.current.activeViewId).toBe('ws-v1-default');
+    expect(result.current.startupViewId).toBe('ws-v1-default');
+  });
+
+  it('preserves a user-modified v1 view through migration-on-read', () => {
+    const v1Custom = {
+      id: 'ws-v1-custom',
+      name: 'V1 Custom',
+      config: {
+        templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+        areas: [
+          ['risk', 'risk'],
+          ['positions', '.'],
+          ['positions', 'perf'],
+          ['positions', 'review'],
+          ['positions', 'watchlist'],
+          ['kpis', 'kpis'],
+        ],
+        hiddenPanels: ['account'],
+        version: 1,
+      },
+      createdAt: NOW,
+      updatedAt: NOW,
+      isSystem: false,
+      isStartup: true,
+    };
+    store.set(
+      KEY,
+      JSON.stringify({ version: 1, views: [v1Custom], activeViewId: 'ws-v1-custom' }),
+    );
+    const { result } = renderHook(() => useWorkstationViews());
+    flush();
+    expect(result.current.views).toHaveLength(1);
+    const config = result.current.views[0].config;
+    expect(config.version).toBe(WORKSTATION_LAYOUT_VERSION);
+    expect(config.hiddenPanels).toEqual(['account']);
+    expect(config.areas[1]).toEqual(['trades', '.']);
+    expect(config.areas[5]).toEqual(['.', '.']);
+    expect(validateWorkstationViewConfig(config)).toEqual([]);
   });
 
   it('marks writeFailed when localStorage writes fail, then clears on success', () => {
@@ -587,6 +672,35 @@ describe('useWorkstationViews', () => {
   describe('API hydration, migration, and sync', () => {
     afterEach(() => {
       restoreFetch();
+    });
+
+    it('migrates v1 API rows on read', async () => {
+      const v1ApiRow = {
+        id: 'ws-api-v1',
+        name: 'V1 API View',
+        layout: {
+          templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+          areas: V1_RISK_POSITIONS_AREAS.map((row) => [...row]),
+          hiddenPanels: [],
+          version: 1,
+        },
+        hiddenWidgetIds: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+        isSystem: false,
+        isDefault: true,
+      };
+      mockApiRoutes({ get: () => [v1ApiRow] });
+
+      const { result } = renderHook(() => useWorkstationViews());
+      await waitFor(() => {
+        expect(result.current.views).toHaveLength(1);
+      });
+      expect(result.current.views[0].name).toBe('V1 API View');
+      expect(result.current.views[0].config).toEqual(
+        createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS),
+      );
+      expect(result.current.activeViewId).toBe('ws-api-v1');
     });
 
     it('hydrates workstation-shaped rows from the API and filters dashboard rows', async () => {

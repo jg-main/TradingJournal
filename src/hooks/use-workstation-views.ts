@@ -14,9 +14,12 @@
  * Workstation views persist through the existing `/api/dashboard/views` route
  * with the workstation layout configuration JSON-serialized into the shared
  * `layout` field. The GET response is filtered to workstation-shaped rows via
- * `isValidWorkstationViewConfig`, so dashboard-shaped rows in the shared table
- * are ignored and never misinterpreted. localStorage uses a dedicated,
- * versioned key (`workstation:views:v1`).
+ * `isWorkstationViewConfigShape`, so dashboard-shaped rows in the shared table
+ * are ignored and never misinterpreted; every workstation row then runs
+ * migration-on-read (`migrateWorkstationViewConfig`), so v1 (pre-dense)
+ * persisted configs — from localStorage or the API — are upgraded to the v2
+ * dense schema on load. localStorage uses a dedicated, versioned key
+ * (`workstation:views:v1`).
  *
  * ## Ownership rules
  *
@@ -48,8 +51,9 @@ import {
   createViewFromTemplate,
   resetViewToTemplate,
   cloneWorkstationViewConfig,
-  isValidWorkstationViewConfig,
   validateWorkstationViewConfig,
+  isWorkstationViewConfigShape,
+  migrateWorkstationViewConfig,
   type WorkstationTemplateId,
   type WorkstationViewConfig,
 } from '@/lib/workstation-view-types';
@@ -328,26 +332,49 @@ interface StoredViews {
   activeViewId: string;
 }
 
-/** True when a stored/parsed view passes the full shape + layout validation. */
-function isValidStoredView(value: unknown): value is WorkstationView {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+/**
+ * Normalize one stored view envelope for loading: validate the envelope
+ * metadata shape, then run the layout migration on the config so v1
+ * (pre-dense) persisted views are upgraded to v2 on read — unmodified
+ * copies of the former system templates become the dense templates, and
+ * user-modified v1 views are translated onto the v2 catalogue. Migration
+ * is total (it always yields a valid v2 config), so a corrupt config can
+ * never reach the renderer; only envelopes missing required metadata are
+ * dropped as foreign rows. Returns null for malformed envelopes.
+ */
+function normalizeStoredView(value: unknown): WorkstationView | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const view = value as Record<string, unknown>;
-  return (
-    typeof view.id === 'string' &&
-    typeof view.name === 'string' &&
-    typeof view.createdAt === 'string' &&
-    typeof view.updatedAt === 'string' &&
-    typeof view.isSystem === 'boolean' &&
-    typeof view.isStartup === 'boolean' &&
-    isValidWorkstationViewConfig(view.config)
-  );
+  if (
+    typeof view.id !== 'string' ||
+    typeof view.name !== 'string' ||
+    typeof view.createdAt !== 'string' ||
+    typeof view.updatedAt !== 'string' ||
+    typeof view.isSystem !== 'boolean' ||
+    typeof view.isStartup !== 'boolean'
+  ) {
+    return null;
+  }
+  return {
+    id: view.id,
+    name: view.name,
+    config: migrateWorkstationViewConfig(view.config),
+    createdAt: view.createdAt,
+    updatedAt: view.updatedAt,
+    isSystem: view.isSystem,
+    isStartup: view.isStartup,
+  };
 }
 
 /**
  * Read and validate the persisted store from localStorage. Returns null when
- * the key is absent, the JSON is corrupt, any view fails validation (R035:
- * persisted layouts are re-validated), or activeViewId does not reference an
- * existing view — the caller then falls back to the defaults.
+ * the key is absent, the JSON is corrupt, every stored view envelope is
+ * malformed, or activeViewId does not reference an existing view — the
+ * caller then falls back to the defaults. Each view's config runs through
+ * migration-on-read (`migrateWorkstationViewConfig`), so v1 (pre-dense)
+ * persisted views are upgraded to v2 and malformed configs fall back to
+ * the dense default instead of being dropped (R035: persisted layouts are
+ * re-validated).
  */
 function readViews(key: string): StoredViews | null {
   if (typeof window === 'undefined') return null;
@@ -362,15 +389,21 @@ function readViews(key: string): StoredViews | null {
     if (!Array.isArray(stored.views) || typeof stored.activeViewId !== 'string') {
       return null;
     }
-    if (stored.views.length === 0 || !stored.views.every(isValidStoredView)) {
+    if (stored.views.length === 0) {
       return null;
     }
-    if (!stored.views.some((v) => v.id === stored.activeViewId)) {
+    const views: WorkstationView[] = [];
+    for (const rawView of stored.views) {
+      const view = normalizeStoredView(rawView);
+      if (view !== null) views.push(view);
+    }
+    if (views.length === 0) return null;
+    if (!views.some((v) => v.id === stored.activeViewId)) {
       return null;
     }
     return {
       version: typeof stored.version === 'number' ? stored.version : STORAGE_VERSION,
-      views: stored.views,
+      views,
       activeViewId: stored.activeViewId,
     };
   } catch {
@@ -416,14 +449,18 @@ function cloneViewEnvelope(v: WorkstationView): WorkstationView {
  * Map a row from the shared `/api/dashboard/views` route to a workstation
  * view. Returns null when the row is not a workstation-shaped view (e.g. a
  * dashboard view whose layout is an array of grid items), so callers filter
- * foreign rows out of the shared table.
+ * foreign rows out of the shared table. Workstation rows run their config
+ * through migration-on-read, so v1 (pre-dense) API rows upgrade to v2 and
+ * corrupt configs fall back to the dense default.
  */
 function toWorkstationView(row: DashboardView): WorkstationView | null {
-  if (!isValidWorkstationViewConfig(row.layout)) return null;
+  // Distinguish workstation rows (layout = a view-config object) from
+  // dashboard rows in the shared table (layout = an array of grid items).
+  if (!isWorkstationViewConfigShape(row.layout)) return null;
   return {
     id: row.id,
     name: row.name,
-    config: row.layout, // narrowed to WorkstationViewConfig by the predicate
+    config: migrateWorkstationViewConfig(row.layout),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     isSystem: row.isSystem,

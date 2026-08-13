@@ -591,6 +591,201 @@ export function cloneWorkstationViewConfig(config: WorkstationViewConfig): Works
   };
 }
 
+// ── v1 → v2 migration ──────────────────────────────────────────────────
+
+/**
+ * One former (pre-dense) v1 system template composition, recorded so the
+ * migration can recognize unmodified copies of the templates that v1 code
+ * persisted. v1 used the two-column dominant-column/right-rail arrangement
+ * with the legacy panel ids `positions` (renamed `trades` in the dense
+ * model) and `kpis` (removed — the period KPI band has no home in the dense
+ * document flow). The grid shapes mirror the M016/S06 shell evidence and
+ * docs/requirements/DASHBOARD_RISK_FIRST_REQUIREMENTS.md §5.1.
+ */
+interface FormerV1Template {
+  readonly templateId: WorkstationTemplateId;
+  /** The v1 template's base areas grid (legacy ids included). */
+  readonly areas: readonly (readonly string[])[];
+  /** The v1 template's declared hidden optional panels. */
+  readonly defaultHidden: readonly string[];
+}
+
+const FORMER_V1_TEMPLATES: readonly FormerV1Template[] = [
+  {
+    templateId: WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+    areas: [
+      ['risk', 'risk'],
+      ['positions', 'account'],
+      ['positions', 'perf'],
+      ['positions', 'review'],
+      ['positions', 'watchlist'],
+      ['kpis', 'kpis'],
+    ],
+    defaultHidden: [],
+  },
+  {
+    templateId: WORKSTATION_TEMPLATE_IDS.PERFORMANCE,
+    areas: [
+      ['risk', 'risk'],
+      ['positions', 'account'],
+      ['perf', 'perf'],
+      ['perf', 'perf'],
+      ['kpis', 'kpis'],
+    ],
+    defaultHidden: ['watchlist', 'review'],
+  },
+  {
+    templateId: WORKSTATION_TEMPLATE_IDS.PROCESS_REVIEW,
+    areas: [
+      ['risk', 'risk'],
+      ['positions', 'account'],
+      ['review', 'review'],
+      ['review', 'review'],
+      ['kpis', 'kpis'],
+    ],
+    defaultHidden: ['watchlist', 'perf'],
+  },
+];
+
+/** The legacy v1 panel id for the trades workspace (renamed `trades` in v2). */
+const V1_PANEL_ID_POSITIONS = 'positions';
+/** The legacy v1 panel id for the period KPI band (removed in the dense model). */
+const V1_PANEL_ID_KPIS = 'kpis';
+
+/** Deep-equality for a rectangular string grid (areas). */
+function sameStringGrid(a: readonly (readonly string[])[], b: unknown): boolean {
+  if (!Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((row, r) => {
+    const other = b[r];
+    return (
+      Array.isArray(other) &&
+      row.length === other.length &&
+      row.every((cell, c) => cell === other[c])
+    );
+  });
+}
+
+/** Order-sensitive string-list equality (hiddenPanels). */
+function sameStringList(a: readonly string[], b: unknown): boolean {
+  return Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** The current dense Risk & Positions default — the safe fallback target. */
+function denseDefaultView(): WorkstationViewConfig {
+  return createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+}
+
+/**
+ * True when `value` has the shape of a workstation view config (a plain
+ * object carrying `templateId`, `areas`, `hiddenPanels`, and a numeric
+ * `version`) — a much weaker test than `validateWorkstationViewConfig`,
+ * which additionally requires catalogue-consistent, rectangular data.
+ *
+ * This is the discriminator the shared-route reader uses to separate
+ * workstation rows (whose `layout` field holds a config object) from
+ * dashboard rows in the same table (whose `layout` is an array of
+ * react-grid-layout items): shape first, then migration upgrades v1 data,
+ * then validation guards the result.
+ */
+export function isWorkstationViewConfigShape(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const config = value as Record<string, unknown>;
+  return (
+    typeof config.templateId === 'string' &&
+    Array.isArray(config.areas) &&
+    Array.isArray(config.hiddenPanels) &&
+    typeof config.version === 'number'
+  );
+}
+
+/**
+ * Migrate a persisted workstation view configuration to the current (v2)
+ * schema — the migration-on-read entry point the view hook runs on every
+ * config loaded from localStorage or the shared API route.
+ *
+ * The function is total: it always returns a valid v2 config.
+ *
+ * - **v2 configs** pass through unchanged when they validate; malformed v2
+ *   data falls back to the dense default.
+ * - **Unmodified copies of the former v1 system templates** are replaced
+ *   with the corresponding dense template (v1 risk-positions → dense
+ *   default; v1 performance / process-review → their dense templates), per
+ *   the dense persistence contract: unmodified former-default copies
+ *   receive the new default, while user-modified views are preserved and
+ *   may be reset deliberately to the new template.
+ * - **User-modified v1 views** are preserved: the legacy `positions` id is
+ *   translated to `trades`, the removed `kpis` band's cells become empty
+ *   cells, the version is bumped to v2, and a layout is derived from the
+ *   translated areas when it satisfies the catalogue constraints. It
+ *   usually cannot — v1's fixed panels spanned only part of the grid, and
+ *   the dense anchors are locked full-width — so the view is kept as a
+ *   valid v2 config without a layout, preserving the user's arrangement
+ *   exactly in the rendered areas grid.
+ * - **Future versions and malformed input** (non-objects, missing fields,
+ *   unknown template ids, ragged grids, catalogue-foreign cells) fall back
+ *   to the current dense default, so corrupt or hostile persisted data can
+ *   never reach the renderer.
+ */
+export function migrateWorkstationViewConfig(value: unknown): WorkstationViewConfig {
+  if (!isWorkstationViewConfigShape(value)) return denseDefaultView();
+  const config = value as Record<string, unknown>;
+  const version = config.version as number;
+  const templateId = config.templateId as string;
+  const areas = config.areas;
+  const hiddenPanels = config.hiddenPanels;
+
+  // Version gate: reject unknown/future schemas with the safe fallback to
+  // the current system default (dense requirements: persistence contract).
+  if (!Number.isInteger(version) || version < 1) return denseDefaultView();
+  if (version > WORKSTATION_LAYOUT_VERSION) return denseDefaultView();
+
+  // Current schema: pass valid configs through untouched (cloned so callers
+  // can never alias persisted data); malformed v2 data falls back.
+  if (version === WORKSTATION_LAYOUT_VERSION) {
+    return isValidWorkstationViewConfig(config)
+      ? cloneWorkstationViewConfig(config as WorkstationViewConfig)
+      : denseDefaultView();
+  }
+
+  // v1 schema: unmodified former-template copies become the dense template;
+  // user-modified views are translated onto the v2 catalogue and upgraded.
+  if (!isWorkstationTemplateId(templateId)) return denseDefaultView();
+  const unmodified = FORMER_V1_TEMPLATES.find(
+    (former) =>
+      former.templateId === templateId &&
+      sameStringGrid(former.areas, areas) &&
+      sameStringList(former.defaultHidden, hiddenPanels),
+  );
+  if (unmodified !== undefined) return createViewFromTemplate(unmodified.templateId);
+
+  // User-modified v1 view: translate legacy ids, drop the removed KPI band.
+  const translatedAreas: string[][] = (areas as unknown[]).map((row: unknown) => {
+    if (!Array.isArray(row)) return [] as string[]; // malformed → validation fallback
+    return row.map((cell: unknown) => {
+      if (cell === V1_PANEL_ID_POSITIONS) return WORKSTATION_PANEL_IDS.TRADES;
+      if (cell === V1_PANEL_ID_KPIS) return GRID_EMPTY_CELL;
+      return cell as string;
+    });
+  });
+  const translated: WorkstationViewConfig = {
+    templateId,
+    areas: translatedAreas,
+    hiddenPanels: [...(hiddenPanels as unknown[])] as WorkstationPanelId[],
+    version: WORKSTATION_LAYOUT_VERSION,
+  };
+  // Prefer a self-describing v2 config with a derived layout; when the
+  // translated grid cannot satisfy the catalogue constraints (v1 fixed
+  // panels were not full-width), keep the layout off — a v2 config without
+  // a layout is still valid, and the user's arrangement is preserved.
+  const withLayout: WorkstationViewConfig = {
+    ...translated,
+    layout: deriveLayoutFromAreas(translatedAreas),
+  };
+  if (isValidWorkstationViewConfig(withLayout)) return withLayout;
+  if (isValidWorkstationViewConfig(translated)) return translated;
+  return denseDefaultView();
+}
+
 // ── Validation ──────────────────────────────────────────────────────────
 
 /**

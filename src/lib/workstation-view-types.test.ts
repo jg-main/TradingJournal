@@ -39,6 +39,8 @@ import {
   deriveAreasFromLayout,
   validateWorkstationViewConfig,
   isValidWorkstationViewConfig,
+  migrateWorkstationViewConfig,
+  isWorkstationViewConfigShape,
   computeGridTemplateAreas,
   computeGridTemplateColumns,
   computeGridTemplateRows,
@@ -606,6 +608,222 @@ describe('v2 RGL layout in factories and validation', () => {
     }));
     const issues = validateWorkstationViewConfig(config);
     expect(issues.some((i) => i.includes('but the catalogue only defines'))).toBe(true);
+  });
+});
+
+// ── v1 → v2 migration ─────────────────────────────────────────────────
+
+/** The exact v1 risk-positions default grid (legacy ids; M016/S06 shell). */
+const V1_RISK_POSITIONS_AREAS: string[][] = [
+  ['risk', 'risk'],
+  ['positions', 'account'],
+  ['positions', 'perf'],
+  ['positions', 'review'],
+  ['positions', 'watchlist'],
+  ['kpis', 'kpis'],
+];
+
+const V1_PERFORMANCE_AREAS: string[][] = [
+  ['risk', 'risk'],
+  ['positions', 'account'],
+  ['perf', 'perf'],
+  ['perf', 'perf'],
+  ['kpis', 'kpis'],
+];
+
+const V1_PROCESS_REVIEW_AREAS: string[][] = [
+  ['risk', 'risk'],
+  ['positions', 'account'],
+  ['review', 'review'],
+  ['review', 'review'],
+  ['kpis', 'kpis'],
+];
+
+/** A raw v1 persisted config (legacy ids included) — not a valid v2 config. */
+function v1Config(
+  templateId: WorkstationTemplateId,
+  areas: string[][],
+  hiddenPanels: string[],
+  version = 1,
+): unknown {
+  return {
+    templateId,
+    areas: areas.map((row) => [...row]),
+    hiddenPanels: [...hiddenPanels],
+    version,
+  };
+}
+
+describe('isWorkstationViewConfigShape', () => {
+  it('accepts config-shaped objects — v1 and v2 alike', () => {
+    expect(
+      isWorkstationViewConfigShape(
+        v1Config(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS, V1_RISK_POSITIONS_AREAS, []),
+      ),
+    ).toBe(true);
+    expect(
+      isWorkstationViewConfigShape(createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS)),
+    ).toBe(true);
+  });
+
+  it('rejects arrays and foreign shapes (dashboard rows carry a grid-item array)', () => {
+    expect(isWorkstationViewConfigShape([{ i: 'a', x: 0, y: 0, w: 12, h: 3 }])).toBe(false);
+    for (const bad of [
+      null,
+      undefined,
+      42,
+      'risk',
+      {},
+      { templateId: 'risk-positions' },
+      { templateId: 'risk-positions', areas: [], hiddenPanels: [] }, // no version
+    ]) {
+      expect(isWorkstationViewConfigShape(bad)).toBe(false);
+    }
+  });
+});
+
+describe('migrateWorkstationViewConfig', () => {
+  const denseDefault = (): WorkstationViewConfig =>
+    createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+
+  it('replaces an unmodified copy of the former risk-positions default with the dense default', () => {
+    const migrated = migrateWorkstationViewConfig(
+      v1Config(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS, V1_RISK_POSITIONS_AREAS, []),
+    );
+    expect(migrated).toEqual(denseDefault());
+    expect(migrated.version).toBe(WORKSTATION_LAYOUT_VERSION);
+    expect(migrated.layout).toBeDefined();
+    expect(validateWorkstationViewConfig(migrated)).toEqual([]);
+  });
+
+  it('replaces unmodified copies of the former performance and process-review templates with their dense forms', () => {
+    const perf = migrateWorkstationViewConfig(
+      v1Config(WORKSTATION_TEMPLATE_IDS.PERFORMANCE, V1_PERFORMANCE_AREAS, ['watchlist', 'review']),
+    );
+    expect(perf).toEqual(createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE));
+
+    const review = migrateWorkstationViewConfig(
+      v1Config(WORKSTATION_TEMPLATE_IDS.PROCESS_REVIEW, V1_PROCESS_REVIEW_AREAS, [
+        'watchlist',
+        'perf',
+      ]),
+    );
+    expect(review).toEqual(createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PROCESS_REVIEW));
+  });
+
+  it('preserves a user-modified v1 view by translating legacy ids and upgrading the version', () => {
+    const areas = [
+      ['risk', 'risk'],
+      ['positions', '.'],
+      ['positions', 'perf'],
+      ['positions', 'review'],
+      ['positions', 'watchlist'],
+      ['kpis', 'kpis'],
+    ];
+    const migrated = migrateWorkstationViewConfig(
+      v1Config(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS, areas, ['account']),
+    );
+    expect(migrated.templateId).toBe(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+    expect(migrated.version).toBe(WORKSTATION_LAYOUT_VERSION);
+    expect(migrated.areas).toEqual([
+      ['risk', 'risk'],
+      ['trades', '.'],
+      ['trades', 'perf'],
+      ['trades', 'review'],
+      ['trades', 'watchlist'],
+      ['.', '.'],
+    ]);
+    expect(migrated.hiddenPanels).toEqual(['account']);
+    // The translated two-column grid cannot satisfy the full-width catalogue
+    // constraints (v1 fixed panels were not full-width), so the view is
+    // preserved without a layout — and stays a valid v2 config.
+    expect(migrated.layout).toBeUndefined();
+    expect(validateWorkstationViewConfig(migrated)).toEqual([]);
+  });
+
+  it('upgrades a v1 config whose areas are already dense with a derived layout', () => {
+    const denseAreas = WORKSTATION_TEMPLATES[WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS].areas.map(
+      (row) => [...row],
+    );
+    const migrated = migrateWorkstationViewConfig(
+      v1Config(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS, denseAreas, ['watchlist']),
+    );
+    expect(migrated.version).toBe(WORKSTATION_LAYOUT_VERSION);
+    expect(migrated.layout).toBeDefined();
+    expect(deriveAreasFromLayout(migrated.layout!, 3)).toEqual(denseAreas);
+    expect(validateWorkstationViewConfig(migrated)).toEqual([]);
+  });
+
+  it('falls back to the dense default for future versions', () => {
+    const migrated = migrateWorkstationViewConfig(
+      v1Config(
+        WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS,
+        V1_RISK_POSITIONS_AREAS,
+        [],
+        WORKSTATION_LAYOUT_VERSION + 1,
+      ),
+    );
+    expect(migrated).toEqual(denseDefault());
+  });
+
+  it('falls back to the dense default for malformed input', () => {
+    for (const bad of [null, undefined, 42, 'risk', [], { templateId: 'risk-positions' }]) {
+      expect(migrateWorkstationViewConfig(bad)).toEqual(denseDefault());
+    }
+    // Ragged v1 grid.
+    expect(
+      migrateWorkstationViewConfig(
+        v1Config(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS, [['risk'], ['positions', 'account']], []),
+      ),
+    ).toEqual(denseDefault());
+    // Unknown v1 template id.
+    expect(
+      migrateWorkstationViewConfig({
+        templateId: 'custom-template',
+        areas: V1_RISK_POSITIONS_AREAS,
+        hiddenPanels: [],
+        version: 1,
+      }),
+    ).toEqual(denseDefault());
+    // Non-integer / non-positive versions.
+    for (const v of [0, -1, 1.5]) {
+      expect(
+        migrateWorkstationViewConfig(
+          v1Config(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS, V1_RISK_POSITIONS_AREAS, [], v),
+        ),
+      ).toEqual(denseDefault());
+    }
+  });
+
+  it('passes valid v2 configs through unchanged (cloned) and falls back for malformed v2 data', () => {
+    const config = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PERFORMANCE);
+    const migrated = migrateWorkstationViewConfig(config);
+    expect(migrated).toEqual(config);
+    expect(migrated).not.toBe(config);
+    // Mutating the result must never leak into the input.
+    migrated.layout![0] = { ...migrated.layout![0], x: 9 };
+    expect(config.layout![0].x).toBe(0);
+
+    // Malformed v2 (catalogue-foreign cell) → dense default.
+    const bad = createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS);
+    bad.areas[1][1] = 'hacker-panel';
+    expect(migrateWorkstationViewConfig(bad)).toEqual(denseDefault());
+  });
+
+  it('always returns a valid v2 config', () => {
+    const inputs: unknown[] = [
+      null,
+      42,
+      v1Config(WORKSTATION_TEMPLATE_IDS.RISK_POSITIONS, V1_RISK_POSITIONS_AREAS, []),
+      v1Config(WORKSTATION_TEMPLATE_IDS.PERFORMANCE, V1_PERFORMANCE_AREAS, ['watchlist', 'review']),
+      createViewFromTemplate(WORKSTATION_TEMPLATE_IDS.PROCESS_REVIEW),
+      migrateWorkstationViewConfig({ templateId: 'nope', areas: [], hiddenPanels: [], version: 9 }),
+    ];
+    for (const input of inputs) {
+      const migrated = migrateWorkstationViewConfig(input);
+      expect(migrated.version).toBe(WORKSTATION_LAYOUT_VERSION);
+      expect(validateWorkstationViewConfig(migrated)).toEqual([]);
+    }
   });
 });
 
