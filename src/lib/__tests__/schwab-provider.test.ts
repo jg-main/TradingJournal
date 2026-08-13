@@ -260,6 +260,7 @@ describe('getQuote', () => {
         shortName: 'Apple Inc.',
         quote: {
           lastPrice: 178.5,
+          mark: 177.95,
           securityStatus: 'Normal',
           highPrice: 182.0,
           lowPrice: 176.5,
@@ -277,7 +278,7 @@ describe('getQuote', () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].symbol).toBe('AAPL');
-    expect(results[0].price).toBe(178.5);
+    expect(results[0].price).toBe(177.95);
     expect(results[0].marketState).toBe('REGULAR');
     expect(results[0].source).toBe('schwab');
     expect(results[0].shortName).toBe('Apple Inc.');

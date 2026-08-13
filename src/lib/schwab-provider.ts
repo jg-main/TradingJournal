@@ -74,6 +74,7 @@ interface SchwabQuoteData {
   shortName?: string;
   quote?: {
     lastPrice?: number;
+    mark?: number;
     bidPrice?: number;
     askPrice?: number;
     securityStatus?: string;
@@ -241,8 +242,14 @@ export class SchwabProvider implements MarketOhlcProvider, MarketQuoteProvider {
     symbol: string,
     fetchedAt: string,
   ): QuoteResult {
+    // Schwab's platform valuation uses quote.mark. It can differ from
+    // lastPrice (for example, CAKE), so prefer it whenever it is available.
     const price =
-      data.quote?.lastPrice != null ? Number(data.quote.lastPrice) : null;
+      data.quote?.mark != null
+        ? Number(data.quote.mark)
+        : data.quote?.lastPrice != null
+          ? Number(data.quote.lastPrice)
+          : null;
 
     // Map Schwab securityStatus to our marketState convention
     const marketState = this.mapSecurityStatus(data.quote?.securityStatus);
