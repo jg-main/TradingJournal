@@ -8,8 +8,8 @@ test.describe('Risk & Positions document flow', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('keeps curated panels horizontally contained and excludes Watchlist from the default', async ({ page }) => {
-    for (const area of ['account-state', 'positions', 'risk', 'process-review', 'performance']) {
+  test('keeps curated panels horizontally contained and excludes Watchlist and Review Metrics from the default', async ({ page }) => {
+    for (const area of ['account-state', 'positions', 'risk', 'performance']) {
       const panel = page.getByTestId(`ws-panel-${area}`);
       await expect(panel).toBeVisible();
       const box = await panel.boundingBox();
@@ -20,9 +20,11 @@ test.describe('Risk & Positions document flow', () => {
     }
     // Dense S02: the KPI band was removed from the workstation catalogue and
     // is not part of the document flow; period KPIs live in the Performance
-    // panel stat rows. Watchlist is also excluded from the curated default.
+    // panel stat rows. Watchlist and Review Metrics (M018) are also excluded
+    // from the curated default — Process Review has its dedicated saved view.
     await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
   });
 
   test('uses the browser page rather than nested panel scrollbars', async ({ page }) => {
@@ -36,7 +38,7 @@ test.describe('Risk & Positions document flow', () => {
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width);
     expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.height);
 
-    for (const area of ['account-state', 'performance', 'positions', 'process-review']) {
+    for (const area of ['account-state', 'performance', 'positions']) {
       const body = page.getByTestId(`ws-panel-${area}`).locator('.ws-panel-body').first();
       await expect(body).toBeVisible();
       expect(await body.evaluate((element) => getComputedStyle(element).overflowY)).toBe('visible');

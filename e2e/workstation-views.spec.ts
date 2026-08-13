@@ -55,7 +55,6 @@ const RISK_POSITIONS_PANELS = [
   'positions',
   'account-state',
   'performance',
-  'process-review',
 ] as const;
 
 /** The panels each system template renders (fixed panels always render). */
@@ -188,12 +187,16 @@ test.describe('workstation saved views', () => {
     await resetViewStore(page, request);
     await page.goto('/dev/workstation');
 
-    // ── Default startup view: operational panels render, Watchlist does not ──
+    // ── Default startup view: operational panels render, Watchlist and
+    //    Review Metrics (M018) do not ──
     await expect(page.getByTestId('ws-toolbar')).toBeVisible();
     await expect(page.getByTestId('ws-view-switcher-current-name')).toHaveText(
       'Risk & Positions',
     );
-    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], ['watchlist']);
+    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], [
+      'watchlist',
+      'process-review',
+    ]);
 
     // The data-quality alert strip is visible (fixture valuation is
     // partial) and sits OUTSIDE the grid — a sibling, never a descendant.
@@ -204,14 +207,15 @@ test.describe('workstation saved views', () => {
     ).toBe(false);
 
     // The dynamic grid carries an inline template (computed from the view).
-    // Dense v2 Risk & Positions: full-width Main Risk Metrics, the compact
-    // equal-width Account State | Performance | Review Metrics row, then the
-    // full-width Trades workspace. Chrome serializes the three grid-template-*
-    // props either as longhands (grid-template-areas:) or collapsed into the
-    // grid-template shorthand, depending on the row/column values — the
-    // quoted area rows appear in both forms, so assert on those.
+    // Dense v3 Risk & Positions (M018): full-width Main Risk Metrics, the
+    // compact Account State | Performance summary row (Performance spans two
+    // of the three columns), then the full-width Trades workspace. Chrome
+    // serializes the three grid-template-* props either as longhands
+    // (grid-template-areas:) or collapsed into the grid-template shorthand,
+    // depending on the row/column values — the quoted area rows appear in
+    // both forms, so assert on those.
     expect(await readGridTemplate(page)).toContain('"risk risk risk"');
-    expect(await readGridTemplate(page)).toContain('"account perf review"');
+    expect(await readGridTemplate(page)).toContain('"account perf perf"');
     expect(await readGridTemplate(page)).toContain('"trades trades trades"');
 
     // No horizontal overflow at 2560×1440.
@@ -255,13 +259,16 @@ test.describe('workstation saved views', () => {
     await expect(page.getByTestId('ws-view-switcher-current-name')).toHaveText(
       'Risk & Positions',
     );
-    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], ['watchlist']);
+    await expectPanels(page, TEMPLATE_PANELS['Risk & Positions'], [
+      'watchlist',
+      'process-review',
+    ]);
 
     expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
   });
 
-  test('Risk & Positions uses one document scroll path with a compact equal-width summary row (1536x960)', async ({
+  test('Risk & Positions uses one document scroll path with a compact Account State | Performance summary row (1536x960)', async ({
     page,
     request,
   }, testInfo) => {
@@ -272,37 +279,40 @@ test.describe('workstation saved views', () => {
     const grid = page.getByTestId('ws-grid');
     await expect(grid).toHaveAttribute('data-scroll-mode', 'document');
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
+    // M018: Review Metrics leaves the curated default — its dedicated saved
+    // view renders the review panel (asserted in the first test).
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
 
-    // Dense summary row: Account State | Performance | Review Metrics share
-    // one equal-width row below the full-width Main Risk Metrics band. The
-    // Trades workspace then occupies its own full-width document band.
-    const [performanceBox, accountBox, positionsBox, reviewBox] = await Promise.all([
+    // Dense summary row: Account State (one column) | Performance (two
+    // grouped KPI columns) share one row below the full-width Main Risk
+    // Metrics band. The Trades workspace then occupies its own full-width
+    // document band.
+    const [performanceBox, accountBox, positionsBox] = await Promise.all([
       page.getByTestId('ws-panel-performance').boundingBox(),
       page.getByTestId('ws-panel-account-state').boundingBox(),
       page.getByTestId('ws-panel-positions').boundingBox(),
-      page.getByTestId('ws-panel-process-review').boundingBox(),
     ]);
     expect(performanceBox).not.toBeNull();
     expect(accountBox).not.toBeNull();
     expect(positionsBox).not.toBeNull();
-    expect(reviewBox).not.toBeNull();
-    // The three summary-row panels share one y and one equal width.
+    // The two summary-row panels share one y; Performance spans two of the
+    // three equal grid columns, so it is clearly wider than Account State
+    // but still fits inside the full-width row.
     expect(Math.abs(performanceBox!.y - accountBox!.y)).toBeLessThanOrEqual(1);
-    expect(Math.abs(reviewBox!.y - accountBox!.y)).toBeLessThanOrEqual(1);
-    expect(Math.abs(performanceBox!.width - accountBox!.width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(reviewBox!.width - accountBox!.width)).toBeLessThanOrEqual(1);
+    expect(performanceBox!.width).toBeGreaterThan(accountBox!.width);
+    expect(performanceBox!.width).toBeLessThan(3 * accountBox!.width);
     // The full-width Trades workspace starts below the summary row.
     expect(positionsBox!.y).toBeGreaterThanOrEqual(
-      Math.max(performanceBox!.y, reviewBox!.y) + Math.max(performanceBox!.height, reviewBox!.height),
+      Math.max(performanceBox!.y, accountBox!.y) + Math.max(performanceBox!.height, accountBox!.height),
     );
     // Document-flow rows size to their actual content. They must not inherit
     // the contained-workstation 1fr tracks and become large blank panels.
     expect(positionsBox!.height).toBeLessThan(500);
-    expect(reviewBox!.height).toBeLessThan(700);
+    expect(performanceBox!.height).toBeLessThan(700);
 
     // These panels must expand into the document. Their bodies must not have
     // separate scrollbars, and the browser document must be scrollable.
-    for (const id of ['account-state', 'performance', 'positions', 'process-review']) {
+    for (const id of ['account-state', 'performance', 'positions']) {
       const body = page.getByTestId(`ws-panel-${id}`).locator('.ws-panel-body').first();
       await expect(body).toBeVisible();
       expect(await body.evaluate((element) => getComputedStyle(element).overflowY)).toBe('visible');
@@ -314,7 +324,8 @@ test.describe('workstation saved views', () => {
     expect(pageScroll.height).toBeGreaterThan(pageScroll.viewport);
 
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await expect(page.getByTestId('ws-panel-process-review')).toBeInViewport();
+    // The Trades workspace is the last band of the default document flow.
+    await expect(page.getByTestId('ws-panel-positions')).toBeInViewport();
 
     const screenshotPath = testInfo.outputPath('risk-positions-document-flow-1536x960.png');
     await page.screenshot({ path: screenshotPath, fullPage: true });

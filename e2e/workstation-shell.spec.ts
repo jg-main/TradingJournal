@@ -12,8 +12,9 @@
  *
  * Coverage:
  * 1. Toolbar renders: brand, account selector, scenario selector, FIXTURE badge
- * 2. Curated grid panels render (risk, positions, account-state, performance,
- *    process-review, kpis); Watchlist stays outside the default setup
+ * 2. Curated grid panels render (risk, positions, account-state, performance);
+ *    Review Metrics and Watchlist stay outside the default setup (M018: the
+ *    Process Review saved view is the dedicated review surface)
  * 3. One page scroll at 1440x900; operational panels do not scroll internally
  * 4. Fixture data populates the curated panels
  * 5. console.warn fixture-mode signal fires on load
@@ -44,7 +45,6 @@ const GRID_AREAS = [
   'account-state',
   'positions',
   'risk',
-  'process-review',
   'performance',
 ] as const;
 
@@ -57,6 +57,25 @@ function watchForErrors(page: Page) {
   });
   page.on('pageerror', (err) => pageErrors.push(err.message));
   return { consoleErrors, pageErrors };
+}
+
+/**
+ * Select the Process Review system template via the view switcher. M018
+ * removed Review Metrics from the curated default; its dedicated saved view
+ * is where the review panel renders (pattern from workstation-views.spec.ts
+ * — the Radix dropdown is modal, so close an open menu via Escape first).
+ */
+async function selectProcessReviewView(page: Page) {
+  const trigger = page.getByTestId('ws-view-switcher-trigger');
+  const content = page.getByTestId('ws-view-switcher-content');
+  if (await content.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(content).toHaveCount(0);
+  }
+  await trigger.click();
+  await expect(content).toBeVisible({ timeout: 3_000 });
+  await page.getByTestId('ws-view-item-ws-system-process-review').click();
+  await expect(content).toHaveCount(0);
 }
 
 test.describe('workstation shell at 1440x900', () => {
@@ -162,11 +181,10 @@ test.describe('workstation shell at 1440x900', () => {
     await expect(performance.getByTestId('ws-performance-setups')).toHaveCount(0);
     await expect(performance.getByTestId('ws-performance-tier3')).toHaveCount(0);
 
-    // Process Review panel shows discipline and attention sections.
-    const processReview = page.getByTestId('ws-panel-process-review');
-    await expect(processReview.getByTestId('ws-process-score-dist')).toBeVisible();
-    await expect(processReview.getByTestId('ws-directional-performance')).toBeVisible();
-    await expect(processReview.getByTestId('ws-attention-items')).toBeVisible();
+    // M018: Review Metrics leaves the curated default — the Process Review
+    // saved view is the dedicated review surface. Its panel content is
+    // asserted in the S05 block below after switching views.
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
 
     // Risk panel shows its section headers and stat rows.
     await expect(page.getByTestId('ws-panel-risk').getByText('Portfolio Heat')).toBeVisible();
@@ -726,6 +744,8 @@ test.describe('S02 PerformancePanel — dense period-KPI stat rows only', () => 
 test.describe('S05 ProcessReviewPanel — discipline metrics and attention items', () => {
   test('renders process score distribution with all 5 grade bins', async ({ page }) => {
     await page.goto('/dev/workstation');
+    // M018: Review Metrics is not in the curated default — open its view.
+    await selectProcessReviewView(page);
     const panel = page.getByTestId('ws-panel-process-review');
     await expect(panel).toBeVisible();
 
@@ -737,6 +757,8 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
 
   test('renders directional performance with long and short blocks', async ({ page }) => {
     await page.goto('/dev/workstation');
+    // M018: Review Metrics is not in the curated default — open its view.
+    await selectProcessReviewView(page);
     const panel = page.getByTestId('ws-panel-process-review');
 
     const longBlock = panel.getByTestId('ws-dir-perf-long');
@@ -750,6 +772,8 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
 
   test('attention items render with severity badges', async ({ page }) => {
     await page.goto('/dev/workstation');
+    // M018: Review Metrics is not in the curated default — open its view.
+    await selectProcessReviewView(page);
     const panel = page.getByTestId('ws-panel-process-review');
     const items = panel.getByTestId('ws-attention-items');
 
@@ -762,6 +786,8 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
 
   test('large-drawdown scenario shows critical severity insight', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=large-drawdown');
+    // M018: Review Metrics is not in the curated default — open its view.
+    await selectProcessReviewView(page);
     const items = page.getByTestId('ws-attention-items');
     await expect(items).toBeVisible();
 
@@ -774,6 +800,8 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
   test('zero-positions scenario keeps historical discipline and insights', async ({ page }) => {
     await page.goto('/dev/workstation?scenario=zero-positions');
     await expect(page.getByTestId('ws-grid')).toBeVisible();
+    // M018: Review Metrics is not in the curated default — open its view.
+    await selectProcessReviewView(page);
 
     // Historical catalogue persists — not position-dependent. The setup
     // ranking no longer lives in the Performance summary row (M017/S02).
@@ -785,7 +813,10 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
 
   test('overview and review panels follow the document flow at 1440x900', async ({ page }) => {
     await page.goto('/dev/workstation');
-    for (const testId of ['ws-panel-account-state', 'ws-panel-performance', 'ws-panel-process-review']) {
+
+    // M018 default: Account State | Performance share the compact summary
+    // row; Review Metrics is not part of the curated default.
+    for (const testId of ['ws-panel-account-state', 'ws-panel-performance']) {
       const panel = page.getByTestId(testId);
       await expect(panel).toBeVisible();
       const box = await panel.boundingBox();
@@ -794,25 +825,41 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
       expect(box!.y, `${testId} inside top edge`).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width, `${testId} inside right edge`).toBeLessThanOrEqual(1440);
     }
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
 
+    // The default Risk & Positions view is a single document-scroll path.
     const scroll = await page.evaluate(() => ({
       scrollHeight: document.documentElement.scrollHeight,
       clientHeight: document.documentElement.clientHeight,
     }));
     expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+
+    // The Process Review saved view restores its review panel (contained
+    // grid — no page scroll) inside the 1440px viewport.
+    await selectProcessReviewView(page);
+    const review = page.getByTestId('ws-panel-process-review');
+    await expect(review).toBeVisible();
+    const reviewBox = await review.boundingBox();
+    expect(reviewBox).not.toBeNull();
+    expect(reviewBox!.x).toBeGreaterThanOrEqual(0);
+    expect(reviewBox!.y).toBeGreaterThanOrEqual(0);
+    expect(reviewBox!.x + reviewBox!.width).toBeLessThanOrEqual(1440);
   });
 
   test('no console errors or page errors across all 4 scenarios', async ({ page }) => {
     const { consoleErrors, pageErrors } = watchForErrors(page);
 
     await page.goto('/dev/workstation');
+    // M018: the review panel lives in its dedicated saved view — open it and
+    // exercise every fixture scenario there.
+    await selectProcessReviewView(page);
     await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
     await page.getByTestId('ws-scenario-select').selectOption('zero-positions');
-    await expect(page.getByTestId('ws-performance-setups')).toHaveCount(0);
+    await expect(page.getByTestId('ws-process-score-dist')).toBeVisible();
     await page.getByTestId('ws-scenario-select').selectOption('large-drawdown');
     await expect(page.getByTestId('ws-attention-items')).toBeVisible();
     await page.getByTestId('ws-scenario-select').selectOption('many-watchlist');
-    await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
 
     expect(pageErrors, 'uncaught page errors').toEqual([]);
     expect(consoleErrors, 'console.error output').toEqual([]);
@@ -824,6 +871,10 @@ test.describe('S05 ProcessReviewPanel — discipline metrics and attention items
     await expect(page.getByTestId('ws-fixture-badge')).toBeVisible();
     await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
     await expect(page.getByTestId('ws-panel-performance')).toBeVisible();
+
+    // M018: Review Metrics leaves the curated default — capture the panel in
+    // its dedicated Process Review saved view.
+    await selectProcessReviewView(page);
     await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
 
     const shot = await page.screenshot({ fullPage: false });

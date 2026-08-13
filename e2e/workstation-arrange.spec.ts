@@ -11,8 +11,9 @@
  *    intact.
  * 2. Drag-handle visibility: labelled drag handles (ws-arrange-handle-*,
  *    role=button, aria-label "Drag <Title> to move") appear on eligible
- *    panels only (account, perf, review) — never on the protected anchors
- *    (risk, trades) or hidden panels (watchlist).
+ *    panels only (account, perf — the M018 default hides review) — never on
+ *    the protected anchors (risk, trades) or hidden panels (watchlist,
+ *    process-review).
  * 3. Resize-handle visibility: exactly one southeast resize handle
  *    (.react-resizable-handle-se) per eligible panel and none on fixed
  *    anchors (data-ws-arrange-fixed="true" cells render no handle).
@@ -219,20 +220,22 @@ test.describe('workstation arrangement mode', () => {
     await expect(page.getByTestId('ws-arrange-hint')).toContainText('Shift+Arrow: resize');
 
     // ── Drag handles: labelled, role=button, on eligible panels only ──
-    for (const id of ['account', 'perf', 'review']) {
+    // M018: the curated default hides Review Metrics, so only account and
+    // perf carry handles in this view.
+    for (const id of ['account', 'perf']) {
       const handle = page.getByTestId(`ws-arrange-handle-${id}`);
       await expect(handle).toBeVisible();
       await expect(handle).toHaveAttribute('role', 'button');
       await expect(handle).toHaveAttribute('aria-label', /^Drag .* to move$/);
     }
-    // Protected anchors and the hidden watchlist render no drag handles.
-    for (const id of ['risk', 'trades', 'watchlist']) {
+    // Protected anchors and the hidden panels render no drag handles.
+    for (const id of ['risk', 'trades', 'watchlist', 'review']) {
       await expect(page.getByTestId(`ws-arrange-handle-${id}`)).toHaveCount(0);
     }
 
-    // ── Resize handles: exactly the three eligible panels, none on fixed anchors ──
+    // ── Resize handles: exactly the two eligible panels, none on fixed anchors ──
     const seHandles = page.locator('.ws-arrange .react-resizable-handle-se');
-    await expect(seHandles).toHaveCount(3);
+    await expect(seHandles).toHaveCount(2);
     await expect(seHandles.first()).toBeVisible();
     await expect(page.getByTestId('ws-arrange-cell-risk').locator('.react-resizable-handle')).toHaveCount(0);
     await expect(page.getByTestId('ws-arrange-cell-trades').locator('.react-resizable-handle')).toHaveCount(0);
@@ -281,47 +284,77 @@ test.describe('workstation arrangement mode', () => {
     await enterCustomize(page);
     await enterArrangeMode(page);
 
-    // Move the focused account handle one cell right → swaps with perf
-    // (window-manager semantics: the summary row is fully packed).
+    // ── Shrink perf to one cell. The M018 default packs account (1) |
+    //    perf (2), so a 1↔2 swap would overlap and be rejected; with a free
+    //    third cell the account ↔ perf swap becomes representable
+    //    (window-manager semantics: the row must have room to exchange
+    //    footprints). ──
+    await focusArrangeHandle(page, 'perf');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
+    await exitArrangeWithEscape(page);
+    expect(await readGridTemplate(page)).toContain('"account perf ."');
+
+    // ── Swap account right → perf: the commit lands and Undo is armed ──
+    await enterArrangeMode(page);
     await focusArrangeHandle(page, 'account');
     await page.keyboard.press('ArrowRight');
-
-    // The commit landed: the draft is dirty and Undo is armed.
     await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
     await expect(page.getByTestId('ws-customize-undo')).toBeEnabled();
-
-    // Escape exits arrangement mode but keeps the dirty draft: the hide/show
-    // CSS grid now renders the re-projected areas (account ↔ perf swapped).
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"perf account review"');
+    expect(await readGridTemplate(page)).toContain('"perf account ."');
 
     // ── Re-enter: the draft is still the swapped arrangement ──
     await enterArrangeMode(page);
     await focusArrangeHandle(page, 'account');
-    // ArrowLeft swaps back (perf ↔ account) → the template arrangement. The
-    // draft now equals the session-start snapshot, so the dirty indicator
-    // clears even though a commit happened — dirty tracks "differs from the
-    // session base", not "any change".
+    // ArrowLeft swaps back (perf ↔ account). The draft now differs from the
+    // session base (`account perf perf` — perf is still shrunk), so the
+    // dirty indicator stays set: dirty tracks "differs from the session
+    // base", not "any change".
     await page.keyboard.press('ArrowLeft');
-    await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
     await expect(page.getByTestId('ws-customize-undo')).toBeEnabled();
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"account perf review"');
+    expect(await readGridTemplate(page)).toContain('"account perf ."');
 
-    // ── Undo #1: reverts the ArrowLeft → back to the swapped arrangement ──
+    // ── Grow perf back to two cells: the draft equals the session base and
+    //    the dirty indicator clears ──
+    await enterArrangeMode(page);
+    await focusArrangeHandle(page, 'perf');
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
+    await expect(page.getByTestId('ws-customize-save')).toBeDisabled();
+    await exitArrangeWithEscape(page);
+    expect(await readGridTemplate(page)).toContain('"account perf perf"');
+
+    // ── Undo #1: reverts the grow → back to the swapped-back arrangement ──
     await enterArrangeMode(page);
     await page.getByTestId('ws-customize-undo').click();
     await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"perf account review"');
+    expect(await readGridTemplate(page)).toContain('"account perf ."');
 
-    // ── Undo #2: reverts the ArrowRight → back to the session base ──
+    // ── Undo #2: reverts the ArrowLeft → back to the swapped arrangement ──
+    await enterArrangeMode(page);
+    await page.getByTestId('ws-customize-undo').click();
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
+    await exitArrangeWithEscape(page);
+    expect(await readGridTemplate(page)).toContain('"perf account ."');
+
+    // ── Undo #3: reverts the ArrowRight → back to the shrunk arrangement ──
+    await enterArrangeMode(page);
+    await page.getByTestId('ws-customize-undo').click();
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
+    await exitArrangeWithEscape(page);
+    expect(await readGridTemplate(page)).toContain('"account perf ."');
+
+    // ── Undo #4: reverts the shrink → back to the session base ──
     await enterArrangeMode(page);
     await page.getByTestId('ws-customize-undo').click();
     await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-save')).toBeDisabled();
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"account perf review"');
+    expect(await readGridTemplate(page)).toContain('"account perf perf"');
 
     expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
@@ -450,12 +483,23 @@ test.describe('workstation arrangement mode', () => {
     await enterCustomize(page);
     await enterArrangeMode(page);
 
-    // Keyboard swap account ↔ perf, then exit arrange and Save.
+    // Shrink perf to one cell so the account ↔ perf swap is representable
+    // (the M018 default packs account (1) | perf (2); a 1↔2 swap would
+    // overlap). Exit and re-enter arrangement mode between the two keyboard
+    // commits: the RGL grid and keyboard handler remount cleanly per session
+    // (the pattern proven by the keyboard-move test above), so the swap
+    // cannot race an RGL echo of the shrink.
+    await focusArrangeHandle(page, 'perf');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
+    await exitArrangeWithEscape(page);
+    expect(await readGridTemplate(page)).toContain('"account perf ."');
+    await enterArrangeMode(page);
     await focusArrangeHandle(page, 'account');
     await page.keyboard.press('ArrowRight');
     await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"perf account review"');
+    expect(await readGridTemplate(page)).toContain('"perf account ."');
     await page.getByTestId('ws-customize-save').click();
     await expect(page.getByTestId('ws-customize-bar')).toHaveCount(0);
 
@@ -488,7 +532,7 @@ test.describe('workstation arrangement mode', () => {
         },
         { timeout: 10_000 },
       )
-      .toContain('"perf","account","review"');
+      .toContain('"perf","account","."');
 
     // ── Reload: the saved arrangement is restored as the startup view ──
     await page.reload();
@@ -496,7 +540,7 @@ test.describe('workstation arrangement mode', () => {
       'Saved Arrange',
     );
     await expect(page.getByTestId('ws-grid')).toBeVisible();
-    expect(await readGridTemplate(page)).toContain('"perf account review"');
+    expect(await readGridTemplate(page)).toContain('"perf account ."');
     await expect(page.locator('[data-testid^="ws-arrange-handle-"]')).toHaveCount(0);
     await expect(page.locator('.react-resizable-handle')).toHaveCount(0);
 
@@ -505,7 +549,7 @@ test.describe('workstation arrangement mode', () => {
     await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
     await enterArrangeMode(page);
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"perf account review"');
+    expect(await readGridTemplate(page)).toContain('"perf account ."');
 
     expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
@@ -522,7 +566,14 @@ test.describe('workstation arrangement mode', () => {
     await enterCustomize(page);
     await enterArrangeMode(page);
 
-    // Commit a swap, then Cancel while still in arrangement mode.
+    // Commit a shrink + swap, then Cancel while still in a customize
+    // session. (Exit/re-enter arrangement mode between the two keyboard
+    // commits — see the Save test for the race rationale.)
+    await focusArrangeHandle(page, 'perf');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
+    await exitArrangeWithEscape(page);
+    await enterArrangeMode(page);
     await focusArrangeHandle(page, 'account');
     await page.keyboard.press('ArrowRight');
     await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
@@ -530,14 +581,14 @@ test.describe('workstation arrangement mode', () => {
     await expect(page.getByTestId('ws-customize-bar')).toHaveCount(0);
 
     // Normal mode renders the persisted (template) arrangement.
-    expect(await readGridTemplate(page)).toContain('"account perf review"');
+    expect(await readGridTemplate(page)).toContain('"account perf perf"');
 
     // Re-entering customize starts clean from the persisted template layout.
     await enterCustomize(page);
     await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
     await enterArrangeMode(page);
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"account perf review"');
+    expect(await readGridTemplate(page)).toContain('"account perf perf"');
 
     // The API row never received the swap.
     let row: { name: string; layout: unknown } | null = null;
@@ -554,7 +605,7 @@ test.describe('workstation arrangement mode', () => {
       .not.toBeNull();
     expect(
       JSON.stringify((row!.layout as { areas: string[][] }).areas),
-    ).toContain('"account","perf","review"');
+    ).toContain('"account","perf","perf"');
 
     expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
@@ -571,7 +622,14 @@ test.describe('workstation arrangement mode', () => {
     await enterCustomize(page);
     await enterArrangeMode(page);
 
-    // Commit a swap, then Reset while still in arrangement mode.
+    // Commit a shrink + swap, then Reset while still in a customize session.
+    // (Exit/re-enter arrangement mode between the two keyboard commits —
+    // see the Save test for the race rationale.)
+    await focusArrangeHandle(page, 'perf');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
+    await exitArrangeWithEscape(page);
+    await enterArrangeMode(page);
     await focusArrangeHandle(page, 'account');
     await page.keyboard.press('ArrowRight');
     await expect(page.getByTestId('ws-customize-dirty')).toBeVisible();
@@ -581,7 +639,7 @@ test.describe('workstation arrangement mode', () => {
     await expect(page.getByTestId('ws-customize-dirty')).toHaveCount(0);
     await expect(page.getByTestId('ws-customize-save')).toBeDisabled();
     await exitArrangeWithEscape(page);
-    expect(await readGridTemplate(page)).toContain('"account perf review"');
+    expect(await readGridTemplate(page)).toContain('"account perf perf"');
 
     // Reset touched only the draft: Cancel leaves the persisted view intact.
     await page.getByTestId('ws-customize-cancel').click();
@@ -599,7 +657,7 @@ test.describe('workstation arrangement mode', () => {
       .not.toBeNull();
     expect(
       JSON.stringify((row!.layout as { areas: string[][] }).areas),
-    ).toContain('"account","perf","review"');
+    ).toContain('"account","perf","perf"');
 
     expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
     expect(pageErrors, pageErrors.join('\n')).toEqual([]);
