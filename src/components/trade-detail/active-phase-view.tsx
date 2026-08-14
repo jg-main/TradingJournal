@@ -49,6 +49,10 @@ interface ActivePhaseViewProps {
   onEdit?: () => void;
   /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
   onAddFill?: () => void;
+  /** M019/S04/T03: opens the page-owned CorrectionDialog for an execution
+   *  (threaded to TradeExecutionsCard; non-planned fills correct through the
+   *  accounting engine instead of the card's inline direct-PUT dialog). */
+  onCorrectExecution?: (exec: Execution) => void;
   /** Canonical unrealized values from API metrics (FIFO-aware, partial-exit accurate) */
   unrealizedPnl?: number | null;
   unrealizedReturnPct?: number | null;
@@ -76,6 +80,7 @@ export default function ActivePhaseView({
   onExecutionAdded,
   onEdit,
   onAddFill,
+  onCorrectExecution,
   unrealizedPnl,
   unrealizedReturnPct,
   unrealizedRMultiple,
@@ -202,6 +207,7 @@ export default function ActivePhaseView({
           executions={executions}
           tradeId={trade.id}
           onComplete={onExecutionAdded ?? (() => {})}
+          onCorrectExecution={onCorrectExecution}
         />
       </div>
 

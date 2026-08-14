@@ -55,12 +55,16 @@ function toCanonicalDecimal(value: number | null | undefined): string {
 // ── Idempotency Key ──────────────────────────────────────────────────────
 
 /**
- * Build a unique idempotency key for a trade execution sync.
+ * Build the accounting idempotency key for a legacy trade execution.
  *
  * The key namespaces the original trade execution ID so it cannot collide
  * with idempotency keys from other domains (e.g. financial events).
+ *
+ * Exported for the trade-scoped correction route (POST /api/trades/[id]/executions/[execId]/correct),
+ * which resolves the mirrored accounting execution by this same key — the key MUST stay in sync with
+ * the mirror writes in syncTradeExecution below.
  */
-function buildIdempotencyKey(tradeExecutionId: string): string {
+export function tradeExecutionIdempotencyKey(tradeExecutionId: string): string {
   return `trade-execution-${tradeExecutionId}`;
 }
 
@@ -92,7 +96,7 @@ export function syncTradeExecution(
   accountId: string,
   symbol: string,
 ): AccountingExecutionRow {
-  const idempotencyKey = buildIdempotencyKey(tradeExecution.id);
+  const idempotencyKey = tradeExecutionIdempotencyKey(tradeExecution.id);
 
   // ── Check idempotency ──────────────────────────────────────────────
   const existing = findAccountingExecutionByIdempotencyKey(sqlite, idempotencyKey);

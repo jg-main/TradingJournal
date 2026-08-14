@@ -59,6 +59,10 @@ interface ClosedPhaseViewProps {
   onEdit?: () => void;
   /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
   onAddFill?: () => void;
+  /** M019/S04/T03: opens the page-owned CorrectionDialog for an execution
+   *  (threaded to TradeExecutionsCard; non-planned fills correct through the
+   *  accounting engine instead of the card's inline direct-PUT dialog). */
+  onCorrectExecution?: (exec: Execution) => void;
 }
 
 
@@ -88,6 +92,7 @@ export default function ClosedPhaseView({
   onExecutionAdded,
   onEdit,
   onAddFill,
+  onCorrectExecution,
 }: ClosedPhaseViewProps) {
 
   const exitExecs = executions.filter((e) =>
@@ -284,6 +289,7 @@ export default function ClosedPhaseView({
           executions={executions}
           tradeId={trade.id}
           onComplete={onExecutionAdded ?? (() => {})}
+          onCorrectExecution={onCorrectExecution}
         />
       </div>
 

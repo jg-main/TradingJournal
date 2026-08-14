@@ -21,6 +21,7 @@ import ClosedPhaseView from '@/components/trade-detail/closed-phase-view';
 import DeletedPhaseView from '@/components/trade-detail/deleted-phase-view';
 import type { LevelHistoryEvent } from '@/components/trade-detail/trade-history-feed';
 import { AddFillDialog } from '@/components/trade-detail/add-fill-dialog';
+import { CorrectionDialog } from '@/components/trade-detail/correction-dialog';
 import { ExecuteDialog, type ExecuteTradeData } from '@/components/execute-dialog';
 import EditTradeDialog from '@/components/edit-trade-dialog';
 
@@ -283,6 +284,13 @@ export default function TradeDetailPage() {
   // handleExecutionAdded refetch path so executions + the unified history feed
   // (TradeHistoryFeed) stay current after a fill (must-have #6).
   const [addFillOpen, setAddFillOpen] = useState(false);
+  // M019/S04/T03: the page owns the CorrectionDialog open state + the
+  // execution being corrected; the pencil in TradeExecutionsCard opens it via
+  // the threaded onCorrectExecution callback, and onComplete reuses
+  // handleExecutionAdded so executions + the unified history feed stay
+  // current after a correction (must-have #6).
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctingExecution, setCorrectingExecution] = useState<Execution | null>(null);
   const mtmRefreshIntervalMs = useMtmRefreshInterval();
   // Trade awaiting scratch confirmation (M015/S02/T02). The page owns the
   // ConfirmDialog and the DELETE /api/trades/[id] call; PlannedPhaseView only
@@ -504,6 +512,18 @@ export default function TradeDetailPage() {
   /** Opens the page-owned AddFillDialog (TradeDetailsCard "Add Fill" button). */
   const openAddFill = useCallback(() => setAddFillOpen(true), []);
 
+  /** Opens the page-owned CorrectionDialog for the given execution. */
+  const openCorrectExecution = useCallback((exec: Execution) => {
+    setCorrectingExecution(exec);
+    setCorrectionOpen(true);
+  }, []);
+
+  /** Closes the correction dialog and clears the selected execution. */
+  const handleCorrectionOpenChange = useCallback((open: boolean) => {
+    if (!open) setCorrectingExecution(null);
+    setCorrectionOpen(open);
+  }, []);
+
   const handleRefreshPrice = useCallback(async () => {
     setMtmData((prev) => ({ ...prev, loading: true, error: null }));
     try {
@@ -575,8 +595,8 @@ export default function TradeDetailPage() {
       </div>
 
       {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} onEdit={() => setEditOpen(true)} onScratch={() => setScratchOpen(true)} />}
-      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} levelHistoryEvents={levelHistory} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} targetAdjustments={targetAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAdjustmentsChanged={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} unrealizedPnl={unrealizedPnl} unrealizedReturnPct={unrealizedReturnPct} unrealizedRMultiple={unrealizedRMultiple} onEdit={() => setEditOpen(true)} onAddFill={openAddFill} />}
-      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} levelHistoryEvents={levelHistory} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} targetAdjustments={targetAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAdjustmentsChanged={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} onEdit={() => setEditOpen(true)} onAddFill={openAddFill} />}
+      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} levelHistoryEvents={levelHistory} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} targetAdjustments={targetAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAdjustmentsChanged={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} unrealizedPnl={unrealizedPnl} unrealizedReturnPct={unrealizedReturnPct} unrealizedRMultiple={unrealizedRMultiple} onEdit={() => setEditOpen(true)} onAddFill={openAddFill} onCorrectExecution={openCorrectExecution} />}
+      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} levelHistoryEvents={levelHistory} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} targetAdjustments={targetAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAdjustmentsChanged={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} onEdit={() => setEditOpen(true)} onAddFill={openAddFill} onCorrectExecution={openCorrectExecution} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
 
       {executeData && (
@@ -600,6 +620,24 @@ export default function TradeDetailPage() {
         }}
         open={addFillOpen}
         onOpenChange={setAddFillOpen}
+        onComplete={handleExecutionAdded}
+      />
+
+      {/* M019/S04/T03: Correct (accounting-true for non-planned fills; planned
+          executions route through the direct PUT). onComplete reuses
+          handleExecutionAdded so executions + the unified history feed refetch
+          after a correction (must-have #6). */}
+      <CorrectionDialog
+        trade={{
+          id: trade.id,
+          symbol: trade.symbol,
+          direction: trade.direction,
+          accountId: trade.accountId,
+          status: trade.status,
+        }}
+        execution={correctingExecution}
+        open={correctionOpen}
+        onOpenChange={handleCorrectionOpenChange}
         onComplete={handleExecutionAdded}
       />
 

@@ -33,6 +33,10 @@ interface TradeExecutionsCardProps {
   tradeId: string;
   actions?: ReactNode;
   onComplete: () => void;
+  /** M019/S04/T03: opens the page-owned CorrectionDialog for an execution.
+   *  When provided, the pencil button routes through the accounting-true
+   *  correction flow instead of this card's inline direct-PUT dialog. */
+  onCorrectExecution?: (exec: Execution) => void;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -110,6 +114,7 @@ export default function TradeExecutionsCard({
   tradeId,
   actions,
   onComplete,
+  onCorrectExecution,
 }: TradeExecutionsCardProps) {
   const { timezone, nowDatetimeLocal, formatDateTime } = useAppTimezone();
   // ── Edit dialog state ──────────────────────────────────────────────
@@ -353,7 +358,11 @@ export default function TradeExecutionsCard({
                             variant="ghost"
                             size="icon"
                             className="size-7"
-                            onClick={() => handleEdit(exec)}
+                            onClick={() =>
+                              onCorrectExecution
+                                ? onCorrectExecution(exec)
+                                : handleEdit(exec)
+                            }
                             title="Edit execution"
                           >
                             <Pencil className="size-3.5" />
