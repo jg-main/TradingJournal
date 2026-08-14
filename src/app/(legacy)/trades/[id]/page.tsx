@@ -89,6 +89,20 @@ interface StopAdjustment {
   createdAt: string | null;
 }
 
+interface TargetAdjustment {
+  id: string;
+  tradeId: string;
+  /** Which planned target level this adjustment rewrites: 1 = target 1, 2 = target 2. */
+  targetIndex: 1 | 2;
+  adjustedAt: string | null;
+  previousTarget: number | null;
+  newTarget: number | null;
+  reason: string | null;
+  ruleBased: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+}
+
 interface TradeAsset {
   id: string;
   tradeId: string;
@@ -238,6 +252,7 @@ export default function TradeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stopAdjustments, setStopAdjustments] = useState<StopAdjustment[]>([]);
+  const [targetAdjustments, setTargetAdjustments] = useState<TargetAdjustment[]>([]);
   const [mtmData, setMtmData] = useState<MtmData>({
     price: null,
     marketState: null,
@@ -269,9 +284,10 @@ export default function TradeDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        const [tradeRes, executionsRes, riskRes, adjustmentsRes] = await Promise.all([
+        const [tradeRes, executionsRes, riskRes, adjustmentsRes, targetAdjustmentsRes] = await Promise.all([
           fetch(`/api/trades/${id}`), fetch(`/api/trades/${id}/executions`),
           fetch(`/api/trades/${id}/risk-snapshot`), fetch(`/api/trades/${id}/stop-adjustments`),
+          fetch(`/api/trades/${id}/target-adjustments`),
         ]);
 
         // Fetch MTM data in parallel (non-blocking for trade detail)
@@ -288,6 +304,7 @@ export default function TradeDetailPage() {
         if (executionsRes.ok) setExecutions(await executionsRes.json());
         if (riskRes.ok) setRiskSnapshot(await riskRes.json());
         if (adjustmentsRes.ok) setStopAdjustments(await adjustmentsRes.json());
+        if (targetAdjustmentsRes.ok) setTargetAdjustments(await targetAdjustmentsRes.json());
         const assetsRes = await fetch(`/api/trades/${id}/assets`);
         if (!cancelled && assetsRes.ok) setAssets(await assetsRes.json());
         if (tradeData.status === 'closed') {
@@ -423,7 +440,16 @@ export default function TradeDetailPage() {
     setGrade(await res.json());
   };
 
-  const handleAdjustmentAdded = async () => { const res = await fetch(`/api/trades/${id}/stop-adjustments`); if (res.ok) setStopAdjustments(await res.json()); };
+  // M019/S02: both adjustment chains are refetched together so the Trade Details
+  // card's derived Current values stay consistent after any edit (stop or target).
+  const handleAdjustmentAdded = async () => {
+    const [sRes, tRes] = await Promise.all([
+      fetch(`/api/trades/${id}/stop-adjustments`),
+      fetch(`/api/trades/${id}/target-adjustments`),
+    ]);
+    if (sRes.ok) setStopAdjustments(await sRes.json());
+    if (tRes.ok) setTargetAdjustments(await tRes.json());
+  };
   const handleAssetsChanged = async () => { const res = await fetch(`/api/trades/${id}/assets`); if (res.ok) setAssets(await res.json()); };
   const handleMistakesChanged = async () => { const [mR, tR] = await Promise.all([fetch(`/api/trades/${id}/mistakes`), fetch('/api/lookups?type=mistake_type')]); if (mR.ok) setMistakes(await mR.json()); if (tR.ok) setMistakeTypes(await tR.json()); };
 
@@ -529,8 +555,8 @@ export default function TradeDetailPage() {
       </div>
 
       {trade.status === 'planned' && <PlannedPhaseView trade={trade} assets={assets} onAssetsChanged={handleAssetsChanged} onExecute={handleExecute} onEdit={() => setEditOpen(true)} onScratch={() => setScratchOpen(true)} />}
-      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} unrealizedPnl={unrealizedPnl} unrealizedReturnPct={unrealizedReturnPct} unrealizedRMultiple={unrealizedRMultiple} onEdit={() => setEditOpen(true)} />}
-      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} onEdit={() => setEditOpen(true)} />}
+      {trade.status === 'open' && <ActivePhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} stopAdjustments={stopAdjustments} targetAdjustments={targetAdjustments} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAdjustmentsChanged={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} unrealizedPnl={unrealizedPnl} unrealizedReturnPct={unrealizedReturnPct} unrealizedRMultiple={unrealizedRMultiple} onEdit={() => setEditOpen(true)} />}
+      {trade.status === 'closed' && <ClosedPhaseView trade={trade} executions={executions} riskSnapshot={riskSnapshot} grade={grade} mistakes={mistakes} mistakeTypes={mistakeTypes} assets={assets} derivedStatus={derivedStatus} pnlResult={pnlResult} rMultiple={rMultiple} perfMetrics={perfMetrics} stopAdjustments={stopAdjustments} targetAdjustments={targetAdjustments} checkResults={checkResults} onAdjustmentAdded={handleAdjustmentAdded} onAdjustmentsChanged={handleAdjustmentAdded} onAssetsChanged={handleAssetsChanged} onMistakesChanged={handleMistakesChanged} onGradeSave={handleGradeSave} onExecutionAdded={handleExecutionAdded} mtmData={mtmData} onRefreshPrice={handleRefreshPrice} onEdit={() => setEditOpen(true)} />}
       {trade.status === 'deleted' && <DeletedPhaseView trade={trade} />}
 
       {executeData && (

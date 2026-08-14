@@ -20,7 +20,7 @@ import TradeCheckResultsCard from './trade-check-results-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import TradeAssetsCard from './trade-assets-card';
-import type { Trade, Execution, RiskSnapshot, StopAdjustment, TradeAsset, CheckResult, MtmData } from './types';
+import type { Trade, Execution, RiskSnapshot, StopAdjustment, TargetAdjustment, TradeAsset, CheckResult, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 
@@ -29,6 +29,7 @@ interface ActivePhaseViewProps {
   executions: Execution[];
   riskSnapshot: RiskSnapshot | null;
   stopAdjustments: StopAdjustment[];
+  targetAdjustments: TargetAdjustment[];
   assets: TradeAsset[];
   derivedStatus: DeriveStatusResult | null;
   pnlResult: { totalRealizedPnL: number; avgEntryPrice: number | null; totalEntryQty: number; totalExitQty: number } | null;
@@ -38,6 +39,8 @@ interface ActivePhaseViewProps {
   mtmData: MtmData;
   onRefreshPrice: () => void;
   onAdjustmentAdded: () => Promise<void>;
+  /** Called after a TradeDetailsCard level edit so the page refetches both chains. */
+  onAdjustmentsChanged: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onExecutionAdded?: () => void;
   onEdit?: () => void;
@@ -52,6 +55,7 @@ export default function ActivePhaseView({
   executions,
   riskSnapshot,
   stopAdjustments,
+  targetAdjustments,
   assets,
   derivedStatus,
   pnlResult,
@@ -61,6 +65,7 @@ export default function ActivePhaseView({
   mtmData,
   onRefreshPrice,
   onAdjustmentAdded,
+  onAdjustmentsChanged,
   onAssetsChanged,
   onExecutionAdded,
   onEdit,
@@ -156,6 +161,10 @@ export default function ActivePhaseView({
           thesis={trade.thesis}
           invalidationCondition={trade.invalidationCondition}
           preTradePlan={trade.preTradePlan}
+          stopAdjustments={stopAdjustments}
+          targetAdjustments={targetAdjustments}
+          tradeId={trade.id}
+          onAdjustmentsChanged={onAdjustmentsChanged}
         />
       </div>
 

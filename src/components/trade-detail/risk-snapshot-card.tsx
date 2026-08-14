@@ -17,6 +17,10 @@ interface RiskSnapshotCardProps {
   preTradePlan?: string | null;
   stopAdjustments?: StopAdjustment[];
   targetAdjustments?: TargetAdjustment[];
+  /** Open-trade inline editing (M019/S02/T02): forwarded to TradeDetailsCard. */
+  tradeId?: string;
+  /** Called after a successful level edit so the page refetches both chains. */
+  onAdjustmentsChanged?: () => Promise<void>;
 }
 
 export default function RiskSnapshotCard({
@@ -30,6 +34,8 @@ export default function RiskSnapshotCard({
   preTradePlan,
   stopAdjustments,
   targetAdjustments,
+  tradeId,
+  onAdjustmentsChanged,
 }: RiskSnapshotCardProps) {
   if (!riskSnapshot) {
     return (
@@ -121,6 +127,8 @@ export default function RiskSnapshotCard({
           targetAdjustments={targetAdjustments}
           mtmData={mtmData}
           tradeStatus={tradeStatus}
+          tradeId={tradeId}
+          onAdjustmentsChanged={onAdjustmentsChanged}
         />
 
         {/* Risk & Reward Card */}

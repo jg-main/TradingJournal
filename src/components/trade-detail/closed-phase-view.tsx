@@ -25,7 +25,7 @@ import TradeExitNotesCard from './trade-exit-notes-card';
 import AssessmentCard from './assessment-card';
 import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
-import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
+import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, TargetAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
 
@@ -44,8 +44,11 @@ interface ClosedPhaseViewProps {
   mtmData: MtmData;
   onRefreshPrice: () => void;
   stopAdjustments: StopAdjustment[];
+  targetAdjustments: TargetAdjustment[];
   checkResults: CheckResult[];
   onAdjustmentAdded: () => Promise<void>;
+  /** Called after a TradeDetailsCard level edit so the page refetches both chains. */
+  onAdjustmentsChanged: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onMistakesChanged: () => Promise<void>;
   onGradeSave: (payload: GradeFormPayload) => Promise<void>;
@@ -69,8 +72,10 @@ export default function ClosedPhaseView({
   mtmData,
   onRefreshPrice,
   stopAdjustments,
+  targetAdjustments,
   checkResults,
   onAdjustmentAdded,
+  onAdjustmentsChanged,
   onAssetsChanged,
   onMistakesChanged,
   onGradeSave,
@@ -238,6 +243,10 @@ export default function ClosedPhaseView({
           thesis={trade.thesis}
           invalidationCondition={trade.invalidationCondition}
           preTradePlan={trade.preTradePlan}
+          stopAdjustments={stopAdjustments}
+          targetAdjustments={targetAdjustments}
+          tradeId={trade.id}
+          onAdjustmentsChanged={onAdjustmentsChanged}
         />
       </div>
 

@@ -20,6 +20,9 @@ const compSourcePath = path.resolve(__dirname, '../risk-snapshot-card.tsx');
 const detailsSourcePath = path.resolve(__dirname, '../trade-details-card.tsx');
 const helpersSourcePath = path.resolve(__dirname, '../helpers.ts');
 const levelsSourcePath = path.resolve(__dirname, '../../../lib/trade-levels.ts');
+const activeViewPath = path.resolve(__dirname, '../active-phase-view.tsx');
+const closedViewPath = path.resolve(__dirname, '../closed-phase-view.tsx');
+const pagePath = path.resolve(__dirname, '../../../app/(legacy)/trades/[id]/page.tsx');
 
 let passed = 0;
 let failed = 0;
@@ -204,6 +207,78 @@ function assert(condition: boolean, msg: string) {
   assert(
     helpersSource.includes("v < 0) return `-$${formatted}`") || helpersSource.includes("if (v < 0) return `-$${formatted}`"),
     'helpers.formatCurrency only signs negative values (zero renders as $0.00)'
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// T02 edit affordances — open trades get inline stop/target editing that
+// POSTs to the S01 adjustment APIs; closed/planned/deleted stay read-only
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## T02 Edit affordances (TradeDetailsCard)');
+
+  const source = fs.readFileSync(detailsSourcePath, 'utf-8');
+
+  assert(source.includes('tradeId?: string'), 'TradeDetailsCard accepts optional tradeId prop');
+  assert(source.includes('onAdjustmentsChanged?: () => Promise<void>'), 'TradeDetailsCard accepts onAdjustmentsChanged refetch callback');
+  assert(
+    source.includes("const canEdit = tradeStatus === 'open' && !!tradeId;"),
+    'edit affordances gated on open trade + tradeId (must-have #3/#5)'
+  );
+  assert(
+    source.includes('/api/trades/${tradeId}/stop-adjustments') &&
+      source.includes('/api/trades/${tradeId}/target-adjustments'),
+    'edit form POSTs to the S01 stop-adjustments and target-adjustments endpoints'
+  );
+  assert(source.includes('newStop: value'), 'stop edits send newStop (previousStop server-derived, M019)');
+  assert(source.includes('targetIndex: editingLevel === \'target1\' ? 1 : 2'), 'target edits send targetIndex 1/2');
+  assert(source.includes('newTarget: value'), 'target edits send newTarget');
+  assert(source.includes('onAdjustmentsChanged?.()'), 'refetches via onAdjustmentsChanged after successful edit');
+  assert(
+    source.includes("setMessage({ type: 'error'")
+  , 'inline error message state (same pattern as TradeStopAdjustmentsCard)');
+  assert(source.includes('New level must be a positive number.'), 'client-side validation rejects non-positive levels before POST');
+  assert(source.includes('aria-label={`Adjust ${label}`}'), 'edit buttons carry accessible labels');
+  assert(source.includes('role="alert"'), 'inline form errors are announced via role=alert');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// T02 data wiring — chains flow page → phase views → RiskSnapshotCard →
+// TradeDetailsCard; page fetches target-adjustments in parallel
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## T02 Data wiring');
+
+  const snapshotSource = fs.readFileSync(compSourcePath, 'utf-8');
+  const activeSource = fs.readFileSync(activeViewPath, 'utf-8');
+  const closedSource = fs.readFileSync(closedViewPath, 'utf-8');
+  const pageSource = fs.readFileSync(pagePath, 'utf-8');
+
+  assert(snapshotSource.includes('tradeId?: string'), 'RiskSnapshotCard accepts optional tradeId prop');
+  assert(snapshotSource.includes('onAdjustmentsChanged?: () => Promise<void>'), 'RiskSnapshotCard accepts onAdjustmentsChanged callback');
+  assert(snapshotSource.includes('tradeId={tradeId}'), 'RiskSnapshotCard forwards tradeId to TradeDetailsCard');
+  assert(snapshotSource.includes('onAdjustmentsChanged={onAdjustmentsChanged}'), 'RiskSnapshotCard forwards onAdjustmentsChanged to TradeDetailsCard');
+
+  assert(activeSource.includes('targetAdjustments: TargetAdjustment[]'), 'ActivePhaseView accepts targetAdjustments');
+  assert(activeSource.includes('onAdjustmentsChanged: () => Promise<void>'), 'ActivePhaseView accepts onAdjustmentsChanged');
+  assert(activeSource.includes('targetAdjustments={targetAdjustments}'), 'ActivePhaseView passes targetAdjustments to RiskSnapshotCard');
+  assert(activeSource.includes('onAdjustmentsChanged={onAdjustmentsChanged}'), 'ActivePhaseView passes onAdjustmentsChanged to RiskSnapshotCard');
+  assert(activeSource.includes('tradeId={trade.id}'), 'ActivePhaseView passes trade.id for inline editing');
+
+  assert(closedSource.includes('targetAdjustments: TargetAdjustment[]'), 'ClosedPhaseView accepts targetAdjustments (read-only Current values)');
+  assert(closedSource.includes('targetAdjustments={targetAdjustments}'), 'ClosedPhaseView passes targetAdjustments to RiskSnapshotCard');
+  assert(closedSource.includes('tradeId={trade.id}'), 'ClosedPhaseView passes trade.id');
+
+  assert(pageSource.includes('target-adjustments'), 'page fetches /target-adjustments alongside stop-adjustments');
+  assert(pageSource.includes('targetAdjustments, setTargetAdjustments'), 'page holds targetAdjustments state');
+  assert(
+    pageSource.includes('onAdjustmentsChanged={handleAdjustmentAdded}'),
+    'page passes the same chain-refetch handler as onAdjustmentsChanged'
+  );
+  assert(
+    pageSource.includes('fetch(`/api/trades/${id}/target-adjustments`)') &&
+      pageSource.includes('if (tRes.ok) setTargetAdjustments(await tRes.json());'),
+    'page refetch refreshes BOTH stop and target chains after an edit'
   );
 }
 
