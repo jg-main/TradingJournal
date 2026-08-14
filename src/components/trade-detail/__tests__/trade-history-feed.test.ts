@@ -5,7 +5,9 @@
  * chronological history feed that renders stop adjustments, target
  * adjustments, and execution events in one most-recent-first card,
  * consumed from the S01 level-history API shape and the existing executions
- * fetch. The wiring section (page fetch + phase-view props) arrives in T02.
+ * fetch. T02 adds the wiring section: the page fetches the level-history API
+ * in parallel and passes events to both phase views, which render the feed
+ * between the lifecycle summary and the executions card.
  *
  * Run: npx tsx src/components/trade-detail/__tests__/trade-history-feed.test.ts
  */
@@ -17,6 +19,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const compSourcePath = path.resolve(__dirname, '../trade-history-feed.tsx');
+const pageSourcePath = path.resolve(__dirname, '../../../app/(legacy)/trades/[id]/page.tsx');
+const activeViewPath = path.resolve(__dirname, '../active-phase-view.tsx');
+const closedViewPath = path.resolve(__dirname, '../closed-phase-view.tsx');
+const runAllTestsPath = path.resolve(__dirname, '../../../../scripts/run-all-tests.ts');
 
 let passed = 0;
 let failed = 0;
@@ -292,6 +298,114 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
   assertEqual(executionBadgeClass('sell_short'), 'bg-negative/10 text-negative', 'executionBadgeClass: sell_short → negative');
   assertEqual(executionBadgeClass('buy_to_cover'), 'bg-info/10 text-info', 'executionBadgeClass: buy_to_cover → info');
   assertEqual(executionBadgeClass('unknown'), 'bg-info/10 text-info', 'executionBadgeClass: unknown action → info fallback');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// T02 wiring — page fetches the S01 level-history API in parallel and
+// passes events to both phase views; the feed renders between the lifecycle
+// summary and the executions card in each view
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## T02 wiring (page + phase views)');
+
+  const pageSource = fs.readFileSync(pageSourcePath, 'utf-8');
+  const activeSource = fs.readFileSync(activeViewPath, 'utf-8');
+  const closedSource = fs.readFileSync(closedViewPath, 'utf-8');
+  const runAllSource = fs.readFileSync(runAllTestsPath, 'utf-8');
+
+  // Page: fetches level-history in the same parallel batch as the other data
+  assert(
+    pageSource.includes('levelHistoryRes') &&
+      pageSource.includes('fetch(`/api/trades/${id}/level-history`)'),
+    'page fetches GET /api/trades/[id]/level-history as levelHistoryRes'
+  );
+  assert(
+    pageSource.includes('setLevelHistory(await levelHistoryRes.json())'),
+    'page stores a non-ok level-history response safely (ok-gated setState)'
+  );
+  assert(
+    pageSource.includes('if (levelHistoryRes.ok) setLevelHistory(await levelHistoryRes.json());'),
+    'page only sets levelHistory when the level-history response is ok (graceful degradation)'
+  );
+  assert(
+    pageSource.includes('const [levelHistory, setLevelHistory] = useState<LevelHistoryEvent[]>([]);'),
+    'page holds levelHistory state as LevelHistoryEvent[] (starts empty — no events is a valid state)'
+  );
+  assert(
+    pageSource.includes("import type { LevelHistoryEvent } from '@/components/trade-detail/trade-history-feed';"),
+    'page types LevelHistoryEvent via the client component export (not the server-only API route)'
+  );
+
+  // Page: passes events to both phase views
+  assert(
+    pageSource.includes('levelHistoryEvents={levelHistory}'),
+    'page passes levelHistoryEvents to the phase views'
+  );
+  const activePassCount = pageSource.split('levelHistoryEvents={levelHistory}').length - 1;
+  assertEqual(activePassCount, 2, 'levelHistoryEvents is passed to BOTH ActivePhaseView and ClosedPhaseView');
+
+  // Page: keeps the feed fresh after any adjustment edit (refetch joins the
+  // existing stop+target chain refetch)
+  assert(
+    pageSource.includes('fetch(`/api/trades/${id}/level-history`)') &&
+      pageSource.includes('if (lRes.ok) setLevelHistory(await lRes.json());'),
+    'handleAdjustmentAdded refetches level-history alongside both chains (feed stays current after edits)'
+  );
+
+  // ActivePhaseView: accepts the prop, imports the feed, renders it between
+  // the lifecycle summary and the executions card
+  assert(
+    activeSource.includes('levelHistoryEvents: LevelHistoryEvent[]'),
+    'ActivePhaseView accepts levelHistoryEvents: LevelHistoryEvent[]'
+  );
+  assert(
+    activeSource.includes("import TradeHistoryFeed, { type LevelHistoryEvent } from './trade-history-feed';"),
+    'ActivePhaseView imports TradeHistoryFeed (default) + LevelHistoryEvent type'
+  );
+  assert(
+    activeSource.includes('<TradeHistoryFeed') &&
+      activeSource.includes('levelHistoryEvents={levelHistoryEvents}') &&
+      activeSource.includes('executions={executions}'),
+    'ActivePhaseView renders TradeHistoryFeed with levelHistoryEvents + executions'
+  );
+  const activeLifecycle = activeSource.indexOf('<TradeLifecycleSummaryCard');
+  const activeFeed = activeSource.indexOf('<TradeHistoryFeed');
+  const activeExec = activeSource.indexOf('<TradeExecutionsCard');
+  assert(
+    activeLifecycle !== -1 && activeFeed !== -1 && activeExec !== -1 &&
+      activeLifecycle < activeFeed && activeFeed < activeExec,
+    'ActivePhaseView places the feed between the lifecycle summary and the executions card'
+  );
+
+  // ClosedPhaseView: same contract
+  assert(
+    closedSource.includes('levelHistoryEvents: LevelHistoryEvent[]'),
+    'ClosedPhaseView accepts levelHistoryEvents: LevelHistoryEvent[]'
+  );
+  assert(
+    closedSource.includes("import TradeHistoryFeed, { type LevelHistoryEvent } from './trade-history-feed';"),
+    'ClosedPhaseView imports TradeHistoryFeed (default) + LevelHistoryEvent type'
+  );
+  assert(
+    closedSource.includes('<TradeHistoryFeed') &&
+      closedSource.includes('levelHistoryEvents={levelHistoryEvents}') &&
+      closedSource.includes('executions={executions}'),
+    'ClosedPhaseView renders TradeHistoryFeed with levelHistoryEvents + executions'
+  );
+  const closedLifecycle = closedSource.indexOf('<TradeLifecycleSummaryCard');
+  const closedFeed = closedSource.indexOf('<TradeHistoryFeed');
+  const closedExec = closedSource.indexOf('<TradeExecutionsCard');
+  assert(
+    closedLifecycle !== -1 && closedFeed !== -1 && closedExec !== -1 &&
+      closedLifecycle < closedFeed && closedFeed < closedExec,
+    'ClosedPhaseView places the feed between the lifecycle summary and the executions card'
+  );
+
+  // Orchestration: the source-contract test is registered in run-all-tests.ts
+  assert(
+    runAllSource.includes("'src/components/trade-detail/__tests__/trade-history-feed.test.ts'"),
+    'run-all-tests.ts registers the trade-history-feed source-contract test'
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────

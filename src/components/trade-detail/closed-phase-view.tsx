@@ -12,6 +12,7 @@ import {
 import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import RiskSnapshotCard from './risk-snapshot-card';
+import TradeHistoryFeed, { type LevelHistoryEvent } from './trade-history-feed';
 import PriceWidget from './price-widget';
 import TradePnlCard from './trade-pnl-card';
 import TradeExecutionsCard from './trade-executions-card';
@@ -32,6 +33,8 @@ import type { PerfMetrics } from '@/lib/perf-metrics';
 interface ClosedPhaseViewProps {
   trade: Trade;
   executions: Execution[];
+  /** Stop/target adjustment events from the S01 level-history API, for the unified history feed. */
+  levelHistoryEvents: LevelHistoryEvent[];
   riskSnapshot: RiskSnapshot | null;
   grade: TradeGrade | null;
   mistakes: TradeMistake[];
@@ -60,6 +63,7 @@ interface ClosedPhaseViewProps {
 export default function ClosedPhaseView({
   trade,
   executions,
+  levelHistoryEvents,
   riskSnapshot,
   grade,
   mistakes,
@@ -261,6 +265,14 @@ export default function ClosedPhaseView({
           />
         </div>
       )}
+
+      {/* ── History Feed (unified stop/target/execution timeline) ── */}
+      <div className="mb-8">
+        <TradeHistoryFeed
+          levelHistoryEvents={levelHistoryEvents}
+          executions={executions}
+        />
+      </div>
 
       {/* ── Executions ── */}
       <div className="mb-8">
