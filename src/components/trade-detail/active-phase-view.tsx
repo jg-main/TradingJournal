@@ -18,6 +18,7 @@ import TradePnlCard from './trade-pnl-card';
 import TradeCheckResultsCard from './trade-check-results-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
+import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
 import TradeAssetsCard from './trade-assets-card';
 import type { Trade, Execution, RiskSnapshot, StopAdjustment, TargetAdjustment, TradeAsset, CheckResult, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-metrics';
@@ -83,43 +84,106 @@ export default function ActivePhaseView({
 
   return (
     <>
-      {/* ── Compact header ── */}
-      <TradeDetailHeader
-        symbol={trade.symbol}
-        status={trade.status}
-        direction={trade.direction}
-        tradeCode={trade.tradeCode}
-        openedAt={trade.openedAt}
-        setupName={trade.setupName}
-        rightContent={
-          <div className="flex items-center gap-1">
-            <Button variant="default" size="sm" onClick={() => setExitDialogOpen(true)}>
-              <PlusCircle className="mr-1.5 size-3.5" />
-              Add Exit
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="size-8" aria-label="More actions">
-                  <MoreHorizontal className="size-4" />
+      {/* ── Monitoring grid (M020/S01): cockpit | risk | history | review ── */}
+      <TradeDetailGrid>
+        {/* Cockpit: identity + price + actions + compact lifecycle summary */}
+        <TradeDetailPanel area="cockpit" title="Cockpit">
+          <TradeDetailHeader
+            symbol={trade.symbol}
+            status={trade.status}
+            direction={trade.direction}
+            tradeCode={trade.tradeCode}
+            openedAt={trade.openedAt}
+            setupName={trade.setupName}
+            rightContent={
+              <div className="flex items-center gap-1">
+                <Button variant="default" size="sm" onClick={() => setExitDialogOpen(true)}>
+                  <PlusCircle className="mr-1.5 size-3.5" />
+                  Add Exit
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit?.()}>
-                  <Pencil className="size-4" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onRefreshPrice} disabled={mtmData?.loading}>
-                  <RefreshCw className={`size-4 ${mtmData?.loading ? 'animate-spin' : ''}`} />
-                  {mtmData?.loading ? 'Refreshing...' : 'Refresh'}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        }
-      />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="size-8" aria-label="More actions">
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onEdit?.()}>
+                      <Pencil className="size-4" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onRefreshPrice} disabled={mtmData?.loading}>
+                      <RefreshCw className={`size-4 ${mtmData?.loading ? 'animate-spin' : ''}`} />
+                      {mtmData?.loading ? 'Refreshing...' : 'Refresh'}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            }
+          />
+          <PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} />
+          {derivedStatus && (
+            <TradeLifecycleSummaryCard
+              status={trade.status}
+              openedAt={derivedStatus.openedAt}
+              closedAt={derivedStatus.closedAt}
+              openQuantity={derivedStatus.openQuantity}
+            />
+          )}
+        </TradeDetailPanel>
 
-      {/* ── Lifecycle Stepper (useful during active trade) ── */}
-      <div className="mb-8">
+        {/* Risk: P&L / R + plan vs actual + levels + inline editing */}
+        <TradeDetailPanel area="risk" title="Risk">
+          <TradePnlCard
+            realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
+            rMultiple={rMultiple?.rMultiple ?? null}
+            avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
+            totalEntryQty={pnlResult?.totalEntryQty ?? 0}
+            totalExitQty={pnlResult?.totalExitQty ?? 0}
+            duration={perfMetrics?.duration ?? null}
+            returnPercent={perfMetrics?.returnPercent ?? null}
+            totalFees={perfMetrics?.totalFees ?? 0}
+            unrealizedPnl={unrealizedPnl}
+            unrealizedReturnPct={unrealizedReturnPct}
+            unrealizedRMultiple={unrealizedRMultiple}
+            setupName={trade.setupName}
+          />
+          <RiskSnapshotCard
+            riskSnapshot={riskSnapshot}
+            plannedValues={trade}
+            actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice: null }}
+            currentQuantity={derivedStatus?.openQuantity ?? null}
+            mtmData={mtmData}
+            onRefreshPrice={onRefreshPrice}
+            tradeStatus={trade.status}
+            thesis={trade.thesis}
+            invalidationCondition={trade.invalidationCondition}
+            preTradePlan={trade.preTradePlan}
+            stopAdjustments={stopAdjustments}
+            targetAdjustments={targetAdjustments}
+            tradeId={trade.id}
+            onAdjustmentsChanged={onAdjustmentsChanged}
+            onAddFill={onAddFill}
+          />
+        </TradeDetailPanel>
+
+        {/* History: unified stop/target/execution timeline (own title) */}
+        <TradeDetailPanel area="history">
+          <TradeHistoryFeed
+            levelHistoryEvents={levelHistoryEvents}
+            executions={executions}
+            onCorrectExecution={onCorrectExecution}
+          />
+        </TradeDetailPanel>
+
+        {/* Review: pre-execution checklist */}
+        <TradeDetailPanel area="review" title="Review">
+          <TradeCheckResultsCard checkResults={checkResults} />
+        </TradeDetailPanel>
+      </TradeDetailGrid>
+
+      {/* ── Below the grid (document flow) ── */}
+      <div className="mt-8">
         <LifecycleStepper
           status={trade.status}
           direction={trade.direction}
@@ -129,68 +193,12 @@ export default function ActivePhaseView({
         />
       </div>
 
-      {/* ── Price Widget ── */}
-      <div className="mb-8">
-        <PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} />
-      </div>
-
-      {/* ── P&L-R Metrics first (the most important outcome) ── */}
-      <div className="mb-8">
-        <TradePnlCard
-          realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
-          rMultiple={rMultiple?.rMultiple ?? null}
-          avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
-          totalEntryQty={pnlResult?.totalEntryQty ?? 0}
-          totalExitQty={pnlResult?.totalExitQty ?? 0}
-          duration={perfMetrics?.duration ?? null}
-          returnPercent={perfMetrics?.returnPercent ?? null}
-          totalFees={perfMetrics?.totalFees ?? 0}
-          unrealizedPnl={unrealizedPnl}
-          unrealizedReturnPct={unrealizedReturnPct}
-          unrealizedRMultiple={unrealizedRMultiple}
-          setupName={trade.setupName}
-        />
-      </div>
-
-      {/* ── Unified Plan vs Actual (single card) ── */}
-      <div className="mb-8">
-        <RiskSnapshotCard
-          riskSnapshot={riskSnapshot}
-          plannedValues={trade}
-          actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice: null }}
-          currentQuantity={derivedStatus?.openQuantity ?? null}
-          mtmData={mtmData}
-          onRefreshPrice={onRefreshPrice}
-          tradeStatus={trade.status}
-          thesis={trade.thesis}
-          invalidationCondition={trade.invalidationCondition}
-          preTradePlan={trade.preTradePlan}
-          stopAdjustments={stopAdjustments}
-          targetAdjustments={targetAdjustments}
+      <div className="mt-8">
+        <TradeAssetsCard
+          assets={assets}
           tradeId={trade.id}
-          onAdjustmentsChanged={onAdjustmentsChanged}
-          onAddFill={onAddFill}
-        />
-      </div>
-
-      {/* ── Lifecycle Summary ── */}
-      {derivedStatus && (
-        <div className="mb-8">
-          <TradeLifecycleSummaryCard
-            status={trade.status}
-            openedAt={derivedStatus.openedAt}
-            closedAt={derivedStatus.closedAt}
-            openQuantity={derivedStatus.openQuantity}
-          />
-        </div>
-      )}
-
-      {/* ── History Feed (unified stop/target/execution timeline) ── */}
-      <div className="mb-8">
-        <TradeHistoryFeed
-          levelHistoryEvents={levelHistoryEvents}
-          executions={executions}
-          onCorrectExecution={onCorrectExecution}
+          onAssetsChanged={onAssetsChanged}
+          defaultPhase="entry"
         />
       </div>
 
@@ -208,21 +216,6 @@ export default function ActivePhaseView({
           setExitDialogOpen(false);
         }}
       />
-
-      {/* ── Checklist ── */}
-      <div className="mb-8">
-        <TradeCheckResultsCard checkResults={checkResults} />
-      </div>
-
-      {/* ── Assets ── */}
-      <div className="mb-8">
-        <TradeAssetsCard
-          assets={assets}
-          tradeId={trade.id}
-          onAssetsChanged={onAssetsChanged}
-          defaultPhase="entry"
-        />
-      </div>
     </>
   );
 }
