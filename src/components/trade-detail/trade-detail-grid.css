@@ -1,0 +1,246 @@
+/*
+ * Trade detail dense grid (M020/S01).
+ *
+ * Scoped under `.td` (trade detail) so nothing leaks into the legacy
+ * dashboard or the workstation. Mirrors the `.ws` workstation pattern:
+ * the same density scale, panel chrome, and document-flow behavior, but
+ * without viewport containment — the trade detail page scrolls at the
+ * document level (the legacy shell's <main> owns the scrollbar), so no
+ * panel ever creates a competing inner scrollbar.
+ *
+ * Named grid areas: cockpit | risk | history | review. The grid is the
+ * monitoring-first first screen: identity + price + actions (cockpit),
+ * P&L + plan-vs-actual + levels (risk), the unified lifecycle feed
+ * (history), and the pre-execution checklist (review).
+ */
+
+.td {
+  /* Density scale — same contract as the workstation (36–40px rows). */
+  --td-row-sm: 36px;
+  --td-panel-header-h: 32px; /* panel title bar */
+
+  /* Spacing scale (half of the legacy default) */
+  --td-space-1: 2px;
+  --td-space-2: 4px;
+  --td-space-3: 6px;
+  --td-space-4: 8px;
+  --td-space-5: 12px;
+  --td-space-6: 16px;
+
+  /* Type scale — decision labels/table headers ≥12px, data cells ≥13px,
+     primary financial values 16–20px. */
+  --td-text-xs: 12px;
+  --td-text-sm: 13px;
+  --td-text-md: 14px;
+  --td-text-lg: 16px;
+  --td-text-xl: 20px;
+
+  /* Fine borders for panel chrome */
+  --td-border: 1px solid var(--border);
+  --td-border-strong: 1px solid var(--muted-foreground);
+  --td-radius: 2px;
+
+  /* Numeric rendering: tabular numerals everywhere in the trade detail */
+  font-variant-numeric: tabular-nums;
+  font-size: var(--td-text-md);
+  line-height: 1.35;
+  color: var(--foreground);
+
+  /* Document flow: the grid grows with its content; the page scrolls at
+     the document level. No 100dvh containment, no nested scrollbars. */
+  min-height: 0;
+}
+
+/* ── Grid shell ─────────────────────────────────────────────────────────── */
+
+.td-grid {
+  display: grid;
+  gap: var(--td-space-3);
+  align-items: start;
+  /* 1-column default (<1440px): stacked vertically */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'cockpit'
+    'risk'
+    'history'
+    'review';
+}
+
+/* 2-column layout at 1440–2048px: cockpit+risk on the first row, history+
+   review below (2x2). */
+@media (min-width: 1440px) {
+  .td-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'cockpit risk'
+      'history review';
+  }
+}
+
+/* 4-column layout at >=2560px: cockpit | risk | history | review (equal
+   width, the monitoring-first first screen). */
+@media (min-width: 2560px) {
+  .td-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas: 'cockpit risk history review';
+  }
+}
+
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+
+.td-panel {
+  border: var(--td-border);
+  border-radius: var(--td-radius);
+  background: var(--card);
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* Document flow: panels are content-sized, top-aligned, never stretched
+     to the row height, and never scroll internally. */
+  overflow: visible;
+  height: auto;
+  align-self: start;
+}
+
+.td-panel-header {
+  height: var(--td-panel-header-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+  padding: 0 var(--td-space-4);
+  border-bottom: var(--td-border);
+  font-size: var(--td-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+.td-panel-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td-panel-meta {
+  margin-left: auto;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.td-panel-body {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-3);
+  padding: var(--td-space-3);
+}
+
+/* Grid area assignment — the named template areas above. */
+.td-panel[data-area='cockpit'] {
+  grid-area: cockpit;
+}
+
+.td-panel[data-area='risk'] {
+  grid-area: risk;
+}
+
+.td-panel[data-area='history'] {
+  grid-area: history;
+}
+
+.td-panel[data-area='review'] {
+  grid-area: review;
+}
+
+/* ── Nested legacy card chrome ────────────────────────────────────────────
+ * The panel is the chrome unit; legacy shadcn Cards that land inside a
+ * panel body drop their own ring/rounded/background/padding so the dense
+ * surface shows one border per panel, not a card-in-panel double frame.
+ * Internal row borders, headers, and content spacing are preserved.
+ * Explicit opt-in: `td-compact-card` on a wrapper applies the same strip.
+ */
+.td-panel-body [data-slot='card'],
+.td-compact-card [data-slot='card'] {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.td-panel-body [data-slot='card'],
+.td-compact-card [data-slot='card'] {
+  margin-bottom: 0;
+}
+
+.td-panel-body [data-slot='card'] + [data-slot='card'],
+.td-compact-card [data-slot='card'] + [data-slot='card'] {
+  margin-top: 0;
+}
+
+/* The legacy card header keeps its title but gains the panel-header rhythm
+   inside the compact surface (spacing only, no chrome). */
+.td-panel-body [data-slot='card-header'],
+.td-compact-card [data-slot='card-header'] {
+  padding: var(--td-space-1) var(--td-space-2);
+}
+
+.td-panel-body [data-slot='card-header'] + [data-slot='card-content'],
+.td-compact-card [data-slot='card-header'] + [data-slot='card-content'] {
+  padding-top: var(--td-space-1);
+}
+
+/* ── Risk column density (M020/S01) ───────────────────────────────────────
+ * At >=2560px the risk column is ~1/4 of the viewport (~620px). The
+ * P&L metrics grid collapses from 4-up to 2-up and the plan-vs-actual
+ * cards stack vertically (TradeDetailsCard's 3-column table needs the
+ * full column width). Specificity beats the Tailwind responsive
+ * utilities regardless of stylesheet order.
+ */
+.td-panel[data-area='risk'] .sm\:grid-cols-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.td-panel[data-area='risk'] .sm\:grid-cols-2 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ── Legacy page chrome inside the grid ─────────────────────────────────── */
+
+/* TradeDetailHeader's mb-6 is page rhythm; inside the cockpit panel the
+   gap comes from the panel body's flex gap. */
+.td-panel[data-area='cockpit'] .mb-6 {
+  margin-bottom: var(--td-space-3);
+}
+
+.td-panel-body .mb-8 {
+  margin-bottom: var(--td-space-3);
+}
+
+/* ── Panel Focus Ring ──────────────────────────────────────────────────── */
+
+.td-panel:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+  border-color: var(--ring);
+}
+
+/* ── Reduced Motion ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .td,
+  .td *,
+  .td *::before,
+  .td *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
