@@ -42,6 +42,7 @@ const TSX_TESTS: string[] = [
   'src/app/api/trades/[id]/level-history/__tests__/route.test.ts',
   'src/app/api/trades/[id]/executions/[execId]/__tests__/route.test.ts',
   'src/components/trade-detail/__tests__/trade-history-feed.test.ts',
+  'src/components/trade-detail/__tests__/add-fill-dialog.test.ts',
 ];
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
