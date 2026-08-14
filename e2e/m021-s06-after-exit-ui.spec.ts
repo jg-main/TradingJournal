@@ -272,7 +272,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await expect(pnlCard).toBeVisible();
 
     // ── Verify unified History feed renders (Executions card removed in S05) ──
-    const historyCard = page.locator('[data-slot="card-title"]').filter({ hasText: 'History' });
+    const historyCard = page.locator('[data-slot="card-title"]').filter({ hasText: /^History$/ });
     await expect(historyCard).toBeVisible();
 
     // ── Verify Grade card (only shown on closed trades) ────────────
