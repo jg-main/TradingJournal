@@ -21,6 +21,8 @@ interface RiskSnapshotCardProps {
   tradeId?: string;
   /** Called after a successful level edit so the page refetches both chains. */
   onAdjustmentsChanged?: () => Promise<void>;
+  /** M019/S04/T02: opens the page-owned AddFillDialog from the TradeDetailsCard header button. */
+  onAddFill?: () => void;
 }
 
 export default function RiskSnapshotCard({
@@ -36,6 +38,7 @@ export default function RiskSnapshotCard({
   targetAdjustments,
   tradeId,
   onAdjustmentsChanged,
+  onAddFill,
 }: RiskSnapshotCardProps) {
   if (!riskSnapshot) {
     return (
@@ -129,6 +132,7 @@ export default function RiskSnapshotCard({
           tradeStatus={tradeStatus}
           tradeId={tradeId}
           onAdjustmentsChanged={onAdjustmentsChanged}
+          onAddFill={onAddFill}
         />
 
         {/* Risk & Reward Card */}

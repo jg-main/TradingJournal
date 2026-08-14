@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, PlusCircle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +23,8 @@ interface TradeDetailsCardProps {
   tradeId?: string;
   /** Called after a successful level edit so the page refetches both adjustment chains. */
   onAdjustmentsChanged?: () => Promise<void>;
+  /** M019/S04/T02: opens the page-owned AddFillDialog. Only surfaced for open trades. */
+  onAddFill?: () => void;
 }
 
 type EditingLevel = 'stop' | 'target1' | 'target2';
@@ -52,6 +54,7 @@ export default function TradeDetailsCard({
   tradeStatus,
   tradeId,
   onAdjustmentsChanged,
+  onAddFill,
 }: TradeDetailsCardProps) {
   const [editingLevel, setEditingLevel] = useState<EditingLevel | null>(null);
   const [editForm, setEditForm] = useState({ value: '', reason: '' });
@@ -90,6 +93,9 @@ export default function TradeDetailsCard({
   const hasPlan = !!plannedValues;
   // Edit affordances only on open trades (S02/T02 must-have #3 / #5).
   const canEdit = tradeStatus === 'open' && !!tradeId;
+  // M019/S04/T02: fill creation (Add Entry / Add Exit) lives on this card for
+  // open trades; closed / planned / deleted trades stay read-only (S02 policy).
+  const canAddFill = tradeStatus === 'open' && !!onAddFill;
 
   const editingLabel =
     editingLevel === 'stop'
@@ -192,9 +198,23 @@ export default function TradeDetailsCard({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Trade Details
-        </CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Trade Details
+          </CardTitle>
+          {canAddFill && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onAddFill?.()}
+              aria-label="Add Fill"
+            >
+              <PlusCircle className="mr-1.5 size-3.5" />
+              Add Fill
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="pt-0">
         <table className="w-full text-sm">

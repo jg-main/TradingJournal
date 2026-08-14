@@ -27,6 +27,15 @@ const runAllTestsPath = path.resolve(
   __dirname,
   '../../../../scripts/run-all-tests.ts',
 );
+// M019/S04/T02 wiring targets
+const tradeDetailsCardPath = path.resolve(__dirname, '../trade-details-card.tsx');
+const riskSnapshotCardPath = path.resolve(__dirname, '../risk-snapshot-card.tsx');
+const activePhaseViewPath = path.resolve(__dirname, '../active-phase-view.tsx');
+const closedPhaseViewPath = path.resolve(__dirname, '../closed-phase-view.tsx');
+const tradeDetailPagePath = path.resolve(
+  __dirname,
+  '../../../app/(legacy)/trades/[id]/page.tsx',
+);
 
 let passed = 0;
 let failed = 0;
@@ -234,6 +243,99 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
     assertEqual(JSON.stringify(FILL_ACTIONS_BY_DIRECTION.long), JSON.stringify(serverLong), 'client long actions equal server DIRECTION_ACTIONS.long');
     assertEqual(JSON.stringify(FILL_ACTIONS_BY_DIRECTION.short), JSON.stringify(serverShort), 'client short actions equal server DIRECTION_ACTIONS.short');
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// T02 wiring: AddFillDialog consumer chain from TradeDetailsCard up to the
+// page-owned open state (must-haves #1, #6, S02 read-only policy)
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## T02 wiring (TradeDetailsCard button → page-owned dialog)');
+
+  const cardSource = fs.readFileSync(tradeDetailsCardPath, 'utf-8');
+  const snapshotSource = fs.readFileSync(riskSnapshotCardPath, 'utf-8');
+  const activeSource = fs.readFileSync(activePhaseViewPath, 'utf-8');
+  const closedSource = fs.readFileSync(closedPhaseViewPath, 'utf-8');
+  const pageSource = fs.readFileSync(tradeDetailPagePath, 'utf-8');
+
+  // 1. TradeDetailsCard owns the trigger: an "Add Fill" button gated to open
+  //    trades (closed trades stay read-only per S02 policy) that opens the
+  //    dialog via the onAddFill callback.
+  assert(
+    cardSource.includes('onAddFill?: () => void;'),
+    'TradeDetailsCard accepts the optional onAddFill prop',
+  );
+  assert(
+    cardSource.includes('Add Fill') && cardSource.includes('aria-label="Add Fill"'),
+    'TradeDetailsCard renders an accessible "Add Fill" button',
+  );
+  assert(
+    cardSource.includes("const canAddFill = tradeStatus === 'open' && !!onAddFill;"),
+    'the Add Fill button is gated on tradeStatus === "open" (closed trades read-only)',
+  );
+  assert(
+    cardSource.includes('onClick={() => onAddFill?.()}'),
+    'the button opens the dialog by invoking onAddFill',
+  );
+
+  // 2. RiskSnapshotCard threads the trigger through to TradeDetailsCard.
+  assert(
+    snapshotSource.includes('onAddFill?: () => void;'),
+    'RiskSnapshotCard accepts the optional onAddFill prop',
+  );
+  assert(
+    snapshotSource.includes('onAddFill={onAddFill}'),
+    'RiskSnapshotCard forwards onAddFill to TradeDetailsCard',
+  );
+
+  // 3. Both phase views accept the trigger and thread it to RiskSnapshotCard.
+  assert(
+    activeSource.includes('onAddFill?: () => void;'),
+    'ActivePhaseView accepts the optional onAddFill prop',
+  );
+  assert(
+    activeSource.includes('onAddFill={onAddFill}'),
+    'ActivePhaseView forwards onAddFill to RiskSnapshotCard',
+  );
+  assert(
+    closedSource.includes('onAddFill?: () => void;'),
+    'ClosedPhaseView accepts the optional onAddFill prop',
+  );
+  assert(
+    closedSource.includes('onAddFill={onAddFill}'),
+    'ClosedPhaseView forwards onAddFill to RiskSnapshotCard',
+  );
+
+  // 4. The page owns the open state, renders the dialog, and routes
+  //    onComplete into the handleExecutionAdded refetch path so executions
+  //    and the unified history feed stay current after a fill (must-have #6).
+  assert(
+    pageSource.includes("import { AddFillDialog } from '@/components/trade-detail/add-fill-dialog';")
+      || pageSource.includes("import { AddFillDialog, type AddFillTradeData } from '@/components/trade-detail/add-fill-dialog';"),
+    'page.tsx imports AddFillDialog from the trade-detail component',
+  );
+  assert(
+    pageSource.includes('const [addFillOpen, setAddFillOpen] = useState(false);'),
+    'page.tsx owns the dialog open state (addFillOpen)',
+  );
+  assert(
+    pageSource.includes('const openAddFill = useCallback(() => setAddFillOpen(true), []);'),
+    'page.tsx exposes an openAddFill callback that flips the owned state',
+  );
+  assert(
+    pageSource.includes('onAddFill={openAddFill}'),
+    'page.tsx threads onAddFill into the phase views',
+  );
+  assert(
+    pageSource.includes('<AddFillDialog') &&
+      pageSource.includes('open={addFillOpen}') &&
+      pageSource.includes('onOpenChange={setAddFillOpen}'),
+    'page.tsx renders the controlled AddFillDialog with the owned open state',
+  );
+  assert(
+    pageSource.includes('onComplete={handleExecutionAdded}'),
+    'page.tsx routes onComplete into handleExecutionAdded (executions + level-history refetch)',
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────

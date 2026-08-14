@@ -57,6 +57,8 @@ interface ClosedPhaseViewProps {
   onGradeSave: (payload: GradeFormPayload) => Promise<void>;
   onExecutionAdded?: () => void;
   onEdit?: () => void;
+  /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
+  onAddFill?: () => void;
 }
 
 
@@ -85,6 +87,7 @@ export default function ClosedPhaseView({
   onGradeSave,
   onExecutionAdded,
   onEdit,
+  onAddFill,
 }: ClosedPhaseViewProps) {
 
   const exitExecs = executions.filter((e) =>
@@ -251,6 +254,7 @@ export default function ClosedPhaseView({
           targetAdjustments={targetAdjustments}
           tradeId={trade.id}
           onAdjustmentsChanged={onAdjustmentsChanged}
+          onAddFill={onAddFill}
         />
       </div>
 

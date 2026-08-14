@@ -47,6 +47,8 @@ interface ActivePhaseViewProps {
   onAssetsChanged: () => Promise<void>;
   onExecutionAdded?: () => void;
   onEdit?: () => void;
+  /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
+  onAddFill?: () => void;
   /** Canonical unrealized values from API metrics (FIFO-aware, partial-exit accurate) */
   unrealizedPnl?: number | null;
   unrealizedReturnPct?: number | null;
@@ -73,6 +75,7 @@ export default function ActivePhaseView({
   onAssetsChanged,
   onExecutionAdded,
   onEdit,
+  onAddFill,
   unrealizedPnl,
   unrealizedReturnPct,
   unrealizedRMultiple,
@@ -169,6 +172,7 @@ export default function ActivePhaseView({
           targetAdjustments={targetAdjustments}
           tradeId={trade.id}
           onAdjustmentsChanged={onAdjustmentsChanged}
+          onAddFill={onAddFill}
         />
       </div>
 
