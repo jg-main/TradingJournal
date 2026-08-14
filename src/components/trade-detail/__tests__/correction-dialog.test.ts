@@ -7,8 +7,9 @@
  * the "No accounting record" inline state for trades without an accountId
  * (must-have #5), the canonical correction body shape (accounting decimals +
  * idempotency key), the direct-PUT body shape for planned trades, validation,
- * reset-on-close, the page/phase-view/card wiring (must-have #6), and
- * registration in run-all-tests.ts.
+ * reset-on-close, the S05 wiring removal (the page no longer owns the
+ * CorrectionDialog and the phase views no longer render the standalone
+ * executions/stop-adjustments cards), and registration in run-all-tests.ts.
  *
  * Run: npx tsx src/components/trade-detail/__tests__/correction-dialog.test.ts
  */
@@ -32,8 +33,8 @@ const runAllTestsPath = path.resolve(
   __dirname,
   '../../../../scripts/run-all-tests.ts',
 );
-// M019/S04/T03 wiring targets
-const executionsCardPath = path.resolve(__dirname, '../trade-executions-card.tsx');
+// M019/S04/T03 + S05 wiring targets (S05 removed the page-owned dialog
+// wiring; the phase views and page are asserted in the wiring-removal section)
 const activePhaseViewPath = path.resolve(__dirname, '../active-phase-view.tsx');
 const closedPhaseViewPath = path.resolve(__dirname, '../closed-phase-view.tsx');
 const tradeDetailPagePath = path.resolve(
@@ -342,82 +343,83 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// T03 wiring: TradeExecutionsCard pencil → page-owned dialog → refetch
+// S05 wiring removal: the standalone Executions/Stop Adjustments cards are
+// gone from the phase views and the page no longer owns the CorrectionDialog
+// (the S04/T03 pencil surface was subsumed by the S03 unified history feed
+// and the S04/T02 Add Fill surface on TradeDetailsCard)
 // ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## T03 wiring (executions card pencil → page-owned dialog)');
+  console.log('\n## S05 wiring removal (phase views + page)');
 
-  const cardSource = fs.readFileSync(executionsCardPath, 'utf-8');
   const activeSource = fs.readFileSync(activePhaseViewPath, 'utf-8');
   const closedSource = fs.readFileSync(closedPhaseViewPath, 'utf-8');
   const pageSource = fs.readFileSync(tradeDetailPagePath, 'utf-8');
 
-  // 1. TradeExecutionsCard opens the page-owned dialog via onCorrectExecution.
+  // 1. Phase views no longer import/render the standalone cards and no longer
+  //    accept the card-only props (onCorrectExecution, onAdjustmentAdded).
   assert(
-    cardSource.includes('onCorrectExecution?: (exec: Execution) => void;'),
-    'TradeExecutionsCard accepts the optional onCorrectExecution prop',
+    !activeSource.includes('TradeExecutionsCard') &&
+      !activeSource.includes('TradeStopAdjustmentsCard'),
+    'ActivePhaseView no longer imports or renders TradeExecutionsCard/TradeStopAdjustmentsCard'
   );
   assert(
-    cardSource.includes('onCorrectExecution(exec)') &&
-      cardSource.includes('handleEdit(exec)'),
-    'the pencil routes through onCorrectExecution when supplied (inline dialog fallback otherwise)',
+    !activeSource.includes('onCorrectExecution'),
+    'ActivePhaseView no longer accepts onCorrectExecution'
+  );
+  assert(
+    !activeSource.includes('onAdjustmentAdded'),
+    'ActivePhaseView no longer accepts onAdjustmentAdded'
+  );
+  assert(
+    !closedSource.includes('TradeExecutionsCard') &&
+      !closedSource.includes('TradeStopAdjustmentsCard'),
+    'ClosedPhaseView no longer imports or renders TradeExecutionsCard/TradeStopAdjustmentsCard'
+  );
+  assert(
+    !closedSource.includes('onCorrectExecution'),
+    'ClosedPhaseView no longer accepts onCorrectExecution'
+  );
+  assert(
+    !closedSource.includes('onAdjustmentAdded'),
+    'ClosedPhaseView no longer accepts onAdjustmentAdded'
   );
 
-  // 2. Both phase views accept the callback and thread it to the card.
+  // 2. The page no longer owns the correction dialog state or threads the
+  //    removed wiring (S05 must-have #2).
   assert(
-    activeSource.includes('onCorrectExecution?: (exec: Execution) => void;'),
-    'ActivePhaseView accepts the optional onCorrectExecution prop',
+    !pageSource.includes('CorrectionDialog'),
+    'page.tsx no longer imports or renders CorrectionDialog'
   );
   assert(
-    activeSource.includes('onCorrectExecution={onCorrectExecution}'),
-    'ActivePhaseView forwards onCorrectExecution to TradeExecutionsCard',
+    !pageSource.includes('correctionOpen'),
+    'page.tsx no longer owns correctionOpen dialog state'
   );
   assert(
-    closedSource.includes('onCorrectExecution?: (exec: Execution) => void;'),
-    'ClosedPhaseView accepts the optional onCorrectExecution prop',
+    !pageSource.includes('correctingExecution'),
+    'page.tsx no longer owns the execution being corrected'
   );
   assert(
-    closedSource.includes('onCorrectExecution={onCorrectExecution}'),
-    'ClosedPhaseView forwards onCorrectExecution to TradeExecutionsCard',
+    !pageSource.includes('onCorrectExecution'),
+    'page.tsx no longer threads onCorrectExecution into the phase views'
+  );
+  assert(
+    !pageSource.includes('onAdjustmentAdded={'),
+    'page.tsx no longer threads onAdjustmentAdded into the phase views'
   );
 
-  // 3. The page owns the open state + selected execution, renders the
-  //    dialog, and routes onComplete into handleExecutionAdded (must-have #6).
+  // 3. The remaining trade-detail wiring is intact: Add Fill, execution
+  //    completion, and level-edit refetch still thread through the page.
   assert(
-    pageSource.includes("import { CorrectionDialog } from '@/components/trade-detail/correction-dialog';"),
-    'page.tsx imports CorrectionDialog from the trade-detail component',
+    pageSource.includes('onAddFill={openAddFill}'),
+    'page.tsx still threads onAddFill (Add Fill on TradeDetailsCard — S04/T02)'
   );
   assert(
-    pageSource.includes('const [correctionOpen, setCorrectionOpen] = useState(false);'),
-    'page.tsx owns the dialog open state (correctionOpen)',
+    pageSource.includes('onExecutionAdded={handleExecutionAdded}'),
+    'page.tsx still threads onExecutionAdded (fill/exit completion refetch)'
   );
   assert(
-    pageSource.includes('const [correctingExecution, setCorrectingExecution] = useState<Execution | null>(null);'),
-    'page.tsx owns the execution being corrected',
-  );
-  assert(
-    pageSource.includes('const openCorrectExecution = useCallback((exec: Execution) => {'),
-    'page.tsx exposes an openCorrectExecution callback that selects the execution',
-  );
-  assert(
-    pageSource.includes('onCorrectExecution={openCorrectExecution}'),
-    'page.tsx threads onCorrectExecution into the phase views',
-  );
-  assert(
-    pageSource.includes('<CorrectionDialog') &&
-      pageSource.includes('execution={correctingExecution}') &&
-      pageSource.includes('open={correctionOpen}') &&
-      pageSource.includes('onOpenChange={handleCorrectionOpenChange}'),
-    'page.tsx renders the controlled CorrectionDialog with the owned state',
-  );
-  assert(
-    pageSource.includes('accountId: trade.accountId') &&
-      pageSource.includes('status: trade.status'),
-    'page.tsx passes accountId and status so the dialog can route planned/non-planned',
-  );
-  assert(
-    pageSource.includes('onComplete={handleExecutionAdded}'),
-    'page.tsx routes onComplete into handleExecutionAdded (executions + level-history refetch)',
+    pageSource.includes('onAdjustmentsChanged={handleAdjustmentAdded}'),
+    'page.tsx still threads onAdjustmentsChanged (level edits keep chains + feed current)'
   );
 }
 

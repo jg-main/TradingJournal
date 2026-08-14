@@ -236,7 +236,7 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     console.log('CLOSED_COLLAPSIBLE_RESULT: PASS');
   });
 
-  test('After-exit UI includes Execution card, P&L card, and Grade card', async ({ page }) => {
+  test('After-exit UI includes History feed, P&L card, and Grade card', async ({ page }) => {
     // ── Seed data ─────────────────────────────────────────────────
     const accRes = await page.request.post('/api/accounts', {
       data: { name: `M021-S06-Cards-${TS}`, isActive: true, startingBalance: 50000 },
@@ -271,17 +271,17 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     const pnlCard = page.getByText('Total Fees', { exact: true });
     await expect(pnlCard).toBeVisible();
 
-    // ── Verify execution card with trade details ───────────────────
-    const execCard = page.getByText('Executions').first();
-    await expect(execCard).toBeVisible();
+    // ── Verify unified History feed renders (Executions card removed in S05) ──
+    const historyCard = page.locator('[data-slot="card-title"]').filter({ hasText: 'History' });
+    await expect(historyCard).toBeVisible();
 
     // ── Verify Grade card (only shown on closed trades) ────────────
     const gradeCard = page.getByText('Trade Grade').first();
     await expect(gradeCard).toBeVisible();
 
-    // ── Verify Stop Adjustments card ───────────────────────────────
-    const stopCard = page.getByText('Stop Adjustments').first();
-    await expect(stopCard).toBeVisible();
+    // ── Verify the feed shows the exit execution row (old Executions/Stop
+    //    Adjustments card data now lives in the unified timeline) ──
+    await expect(page.getByText('Sell', { exact: true }).first()).toBeVisible();
 
     // ── Verify both Assess button and assessment sections ──────────
     await openAssessAction(page);

@@ -119,9 +119,10 @@ test.describe('M012 Trade Lifecycle', () => {
     // Use exact text match to avoid matching the account name "E2E Execute Test" in description text
     await expect(page.getByText('Execute', { exact: true })).toBeVisible();
 
-    // Open trades render TradeExecutionsCard with the entry execution action
+    // Open trades render the unified History feed (M019/S03); the standalone
+    // TradeExecutionsCard was removed in S05 and its data now shows as feed rows
     // CardTitle renders as a <div data-slot="card-title">, not a heading role
-    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Executions' })).toBeVisible();
+    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'History' })).toBeVisible();
   });
 
   test('closed trade detail page renders correctly', async ({ page }) => {
@@ -216,8 +217,8 @@ test.describe('M012 Trade Lifecycle', () => {
     // Label is "Unrealized P&L" when currentPrice/MTM data is available, "Realized P&L" otherwise
     await expect(page.getByText(/(Realized|Unrealized) P&L/)).toBeVisible();
 
-    // Verify Executions card renders
-    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Executions' })).toBeVisible();
+    // Verify the unified History feed renders (Executions card removed in S05)
+    await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'History' })).toBeVisible();
 
     // Add partial exit (sell, qty 50)
     const partialExitRes = await page.request.post(`/api/trades/${trade.id}/executions`, {

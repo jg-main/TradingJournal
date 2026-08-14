@@ -15,8 +15,6 @@ import RiskSnapshotCard from './risk-snapshot-card';
 import TradeHistoryFeed, { type LevelHistoryEvent } from './trade-history-feed';
 import PriceWidget from './price-widget';
 import TradePnlCard from './trade-pnl-card';
-import TradeExecutionsCard from './trade-executions-card';
-import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
 import TradeCheckResultsCard from './trade-check-results-card';
 import TradeGradeCard from './trade-grade-card';
 import type { GradeFormPayload } from './trade-grade-card';
@@ -49,7 +47,6 @@ interface ClosedPhaseViewProps {
   stopAdjustments: StopAdjustment[];
   targetAdjustments: TargetAdjustment[];
   checkResults: CheckResult[];
-  onAdjustmentAdded: () => Promise<void>;
   /** Called after a TradeDetailsCard level edit so the page refetches both chains. */
   onAdjustmentsChanged: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
@@ -59,10 +56,6 @@ interface ClosedPhaseViewProps {
   onEdit?: () => void;
   /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
   onAddFill?: () => void;
-  /** M019/S04/T03: opens the page-owned CorrectionDialog for an execution
-   *  (threaded to TradeExecutionsCard; non-planned fills correct through the
-   *  accounting engine instead of the card's inline direct-PUT dialog). */
-  onCorrectExecution?: (exec: Execution) => void;
 }
 
 
@@ -84,7 +77,6 @@ export default function ClosedPhaseView({
   stopAdjustments,
   targetAdjustments,
   checkResults,
-  onAdjustmentAdded,
   onAdjustmentsChanged,
   onAssetsChanged,
   onMistakesChanged,
@@ -92,7 +84,6 @@ export default function ClosedPhaseView({
   onExecutionAdded,
   onEdit,
   onAddFill,
-  onCorrectExecution,
 }: ClosedPhaseViewProps) {
 
   const exitExecs = executions.filter((e) =>
@@ -280,26 +271,6 @@ export default function ClosedPhaseView({
         <TradeHistoryFeed
           levelHistoryEvents={levelHistoryEvents}
           executions={executions}
-        />
-      </div>
-
-      {/* ── Executions ── */}
-      <div className="mb-8">
-        <TradeExecutionsCard
-          executions={executions}
-          tradeId={trade.id}
-          onComplete={onExecutionAdded ?? (() => {})}
-          onCorrectExecution={onCorrectExecution}
-        />
-      </div>
-
-      {/* ── Stop Adjustments ── */}
-      <div className="mb-8">
-        <TradeStopAdjustmentsCard
-          stopAdjustments={stopAdjustments}
-          tradeId={trade.id}
-          tradeStatus={trade.status}
-          onAdjustmentAdded={onAdjustmentAdded}
         />
       </div>
 

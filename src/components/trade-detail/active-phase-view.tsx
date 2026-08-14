@@ -15,8 +15,6 @@ import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import TradeHistoryFeed, { type LevelHistoryEvent } from './trade-history-feed';
 import PriceWidget from './price-widget';
 import TradePnlCard from './trade-pnl-card';
-import TradeExecutionsCard from './trade-executions-card';
-import TradeStopAdjustmentsCard from './trade-stop-adjustments-card';
 import TradeCheckResultsCard from './trade-check-results-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
@@ -41,7 +39,6 @@ interface ActivePhaseViewProps {
   checkResults: CheckResult[];
   mtmData: MtmData;
   onRefreshPrice: () => void;
-  onAdjustmentAdded: () => Promise<void>;
   /** Called after a TradeDetailsCard level edit so the page refetches both chains. */
   onAdjustmentsChanged: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
@@ -49,10 +46,6 @@ interface ActivePhaseViewProps {
   onEdit?: () => void;
   /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
   onAddFill?: () => void;
-  /** M019/S04/T03: opens the page-owned CorrectionDialog for an execution
-   *  (threaded to TradeExecutionsCard; non-planned fills correct through the
-   *  accounting engine instead of the card's inline direct-PUT dialog). */
-  onCorrectExecution?: (exec: Execution) => void;
   /** Canonical unrealized values from API metrics (FIFO-aware, partial-exit accurate) */
   unrealizedPnl?: number | null;
   unrealizedReturnPct?: number | null;
@@ -74,13 +67,11 @@ export default function ActivePhaseView({
   checkResults,
   mtmData,
   onRefreshPrice,
-  onAdjustmentAdded,
   onAdjustmentsChanged,
   onAssetsChanged,
   onExecutionAdded,
   onEdit,
   onAddFill,
-  onCorrectExecution,
   unrealizedPnl,
   unrealizedReturnPct,
   unrealizedRMultiple,
@@ -201,16 +192,6 @@ export default function ActivePhaseView({
         />
       </div>
 
-      {/* ── Executions ── */}
-      <div className="mb-8">
-        <TradeExecutionsCard
-          executions={executions}
-          tradeId={trade.id}
-          onComplete={onExecutionAdded ?? (() => {})}
-          onCorrectExecution={onCorrectExecution}
-        />
-      </div>
-
       <AddExitDialog
         trade={{
           id: trade.id,
@@ -225,16 +206,6 @@ export default function ActivePhaseView({
           setExitDialogOpen(false);
         }}
       />
-
-      {/* ── Stop Adjustments ── */}
-      <div className="mb-8">
-        <TradeStopAdjustmentsCard
-          stopAdjustments={stopAdjustments}
-          tradeId={trade.id}
-          tradeStatus={trade.status}
-          onAdjustmentAdded={onAdjustmentAdded}
-        />
-      </div>
 
       {/* ── Checklist ── */}
       <div className="mb-8">

@@ -7,7 +7,9 @@
  * consumed from the S01 level-history API shape and the existing executions
  * fetch. T02 adds the wiring section: the page fetches the level-history API
  * in parallel and passes events to both phase views, which render the feed
- * between the lifecycle summary and the executions card.
+ * between the lifecycle summary and the checklist card. S05 removed the
+ * standalone Executions/Stop Adjustments cards from both phase views, so the
+ * feed is now the last timeline card before the checklist/grade section.
  *
  * Run: npx tsx src/components/trade-detail/__tests__/trade-history-feed.test.ts
  */
@@ -303,7 +305,8 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
 // ────────────────────────────────────────────────────────────────────────
 // T02 wiring — page fetches the S01 level-history API in parallel and
 // passes events to both phase views; the feed renders between the lifecycle
-// summary and the executions card in each view
+// summary and the checklist card in each view (S05 removed the standalone
+// Executions/Stop Adjustments cards, leaving the feed as the last timeline card)
 // ────────────────────────────────────────────────────────────────────────
 {
   console.log('\n## T02 wiring (page + phase views)');
@@ -353,7 +356,7 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
   );
 
   // ActivePhaseView: accepts the prop, imports the feed, renders it between
-  // the lifecycle summary and the executions card
+  // the lifecycle summary and the checklist card
   assert(
     activeSource.includes('levelHistoryEvents: LevelHistoryEvent[]'),
     'ActivePhaseView accepts levelHistoryEvents: LevelHistoryEvent[]'
@@ -370,11 +373,16 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
   );
   const activeLifecycle = activeSource.indexOf('<TradeLifecycleSummaryCard');
   const activeFeed = activeSource.indexOf('<TradeHistoryFeed');
-  const activeExec = activeSource.indexOf('<TradeExecutionsCard');
+  const activeChecklist = activeSource.indexOf('<TradeCheckResultsCard');
   assert(
-    activeLifecycle !== -1 && activeFeed !== -1 && activeExec !== -1 &&
-      activeLifecycle < activeFeed && activeFeed < activeExec,
-    'ActivePhaseView places the feed between the lifecycle summary and the executions card'
+    activeLifecycle !== -1 && activeFeed !== -1 && activeChecklist !== -1 &&
+      activeLifecycle < activeFeed && activeFeed < activeChecklist,
+    'ActivePhaseView places the feed between the lifecycle summary and the checklist card (last timeline card)'
+  );
+  assert(
+    !activeSource.includes('TradeExecutionsCard') &&
+      !activeSource.includes('TradeStopAdjustmentsCard'),
+    'ActivePhaseView no longer imports or renders TradeExecutionsCard/TradeStopAdjustmentsCard (S05 removal)'
   );
 
   // ClosedPhaseView: same contract
@@ -394,11 +402,16 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
   );
   const closedLifecycle = closedSource.indexOf('<TradeLifecycleSummaryCard');
   const closedFeed = closedSource.indexOf('<TradeHistoryFeed');
-  const closedExec = closedSource.indexOf('<TradeExecutionsCard');
+  const closedChecklist = closedSource.indexOf('<TradeCheckResultsCard');
   assert(
-    closedLifecycle !== -1 && closedFeed !== -1 && closedExec !== -1 &&
-      closedLifecycle < closedFeed && closedFeed < closedExec,
-    'ClosedPhaseView places the feed between the lifecycle summary and the executions card'
+    closedLifecycle !== -1 && closedFeed !== -1 && closedChecklist !== -1 &&
+      closedLifecycle < closedFeed && closedFeed < closedChecklist,
+    'ClosedPhaseView places the feed between the lifecycle summary and the checklist card (last timeline card)'
+  );
+  assert(
+    !closedSource.includes('TradeExecutionsCard') &&
+      !closedSource.includes('TradeStopAdjustmentsCard'),
+    'ClosedPhaseView no longer imports or renders TradeExecutionsCard/TradeStopAdjustmentsCard (S05 removal)'
   );
 
   // Orchestration: the source-contract test is registered in run-all-tests.ts
