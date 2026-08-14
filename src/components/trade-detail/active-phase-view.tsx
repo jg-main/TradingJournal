@@ -80,9 +80,6 @@ export default function ActivePhaseView({
   unrealizedRMultiple,
 }: ActivePhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
-  const entryManagementAssets = assets.filter(
-    (a) => a.phase === 'entry' || a.phase === 'management',
-  );
 
   return (
     <>
@@ -220,7 +217,7 @@ export default function ActivePhaseView({
       {/* ── Assets ── */}
       <div className="mb-8">
         <TradeAssetsCard
-          assets={entryManagementAssets}
+          assets={assets}
           tradeId={trade.id}
           onAssetsChanged={onAssetsChanged}
           defaultPhase="entry"

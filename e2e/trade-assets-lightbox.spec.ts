@@ -126,4 +126,41 @@ test.describe('Trade Assets Lightbox', () => {
     const delRes = await page.request.delete(`/api/trades/${trade.id}`);
     expect(delRes.ok()).toBeTruthy();
   });
+
+  test('keeps a pre-trade screenshot visible after the trade opens', async ({ page }) => {
+    const accRes = await page.request.post('/api/accounts', {
+      data: { name: 'Open Asset Visibility Test', isActive: true },
+    });
+    expect(accRes.ok()).toBeTruthy();
+    const account = await accRes.json();
+    await prepareAccountForTrading(page.request, account.id);
+
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'ASSETOPEN', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    const uploadRes = await page.request.post(`/api/trades/${trade.id}/assets`, {
+      multipart: {
+        file: {
+          name: 'pre-trade-screenshot.png',
+          mimeType: 'image/png',
+          buffer: Buffer.from(MINIMAL_PNG_BASE64, 'base64'),
+        },
+        phase: 'pre_trade',
+        label: 'Pre-trade chart',
+      },
+    });
+    expect(uploadRes.ok()).toBeTruthy();
+    const asset = await uploadRes.json();
+
+    const executeRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: { entryPrice: 100, entryQuantity: 10, stopPrice: 95, fees: 1 },
+    });
+    expect(executeRes.ok()).toBeTruthy();
+
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+    await expect(page.locator(`img[src="${asset.filePath}"]`)).toBeVisible();
+  });
 });
