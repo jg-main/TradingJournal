@@ -216,6 +216,23 @@ function seedStopAdjustment(tradeId: string, overrides: Record<string, unknown> 
   return requireDb().db.select().from(schema.tradeStopAdjustments).where(eq(schema.tradeStopAdjustments.id, id)).get() as Record<string, unknown>;
 }
 
+function seedRiskSnapshot(tradeId: string, overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  requireDb().db.insert(schema.tradeRiskSnapshots)
+    .values({
+      id,
+      tradeId,
+      initialEntryPrice: 150.0,
+      initialStopPrice: 138.5,
+      initialQuantity: 100,
+      createdAt: now,
+      ...overrides,
+    } as typeof schema.tradeRiskSnapshots.$inferInsert)
+    .run();
+  return requireDb().db.select().from(schema.tradeRiskSnapshots).where(eq(schema.tradeRiskSnapshots.id, id)).get() as Record<string, unknown>;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // 3. Tests — each block invokes the REAL route handlers
 // ────────────────────────────────────────────────────────────────────────────
@@ -298,7 +315,6 @@ async function main(): Promise<void> {
     const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
 
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 147.50,
       reason: 'Trailing stop adjustment',
       ruleBased: true,
@@ -308,7 +324,7 @@ async function main(): Promise<void> {
     assert(result.status === 201, 'returns 201');
     const data = result.data as Record<string, unknown>;
     assertNotNull(data.id, 'has id');
-    assertEqual(data.previousStop, 145.0, 'previousStop matches');
+    assertEqual(data.previousStop, null, 'previousStop derived (null: no chain, no snapshot, no planned stop)');
     assertEqual(data.newStop, 147.50, 'newStop matches');
     assertEqual(data.reason, 'Trailing stop adjustment', 'reason matches');
     assertEqual(data.ruleBased, true, 'ruleBased matches');
@@ -318,23 +334,21 @@ async function main(): Promise<void> {
     assertNotNull(data.createdAt, 'has createdAt');
   }
 
-  // ── 5. POST: Creates stop adjustment with optional fields omitted ───
+  // ── 5. POST: Creates stop adjustment with only required fields ────────
 
-  console.log('\n5. POST creates stop adjustment with only required fields:');
+  console.log('\n5. POST creates stop adjustment with only required fields (newStop):');
   {
     cleanup();
     seedAccount({ id: 'test-account-id' });
     const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
 
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 147.0,
     });
 
     assert(result.status === 201, 'returns 201');
     const data = result.data as Record<string, unknown>;
     assertNotNull(data.id, 'has id');
-    assertEqual(data.previousStop, 145.0, 'previousStop matches');
     assertEqual(data.newStop, 147.0, 'newStop matches');
     assertEqual(data.reason, null, 'reason defaults to null');
     assertEqual(data.ruleBased, null, 'ruleBased defaults to null');
@@ -342,27 +356,40 @@ async function main(): Promise<void> {
     assertNotNull(data.adjustedAt, 'adjustedAt defaults to now');
   }
 
-  // ── 6. POST: Validates previousStop positive ────────────────────────
+  // ── 6. POST: previousStop is server-derived (M019) ────────────────────
 
-  console.log('\n6. POST returns 400 for non-positive previousStop:');
+  console.log('\n6. POST derives previousStop server-side (chain, snapshot, planned fallbacks):');
   {
     cleanup();
     seedAccount({ id: 'test-account-id' });
-    const trade = seedTrade({ accountId: 'test-account-id' });
 
-    const result = await callPost(trade.id as string, {
-      previousStop: -10,
-      newStop: 150.0,
-    });
+    // 6a. No chain, no snapshot -> planned stop.
+    const tradeA = seedTrade({ accountId: 'test-account-id', status: 'open', plannedStop: 141.0 });
+    const resA = await callPost(tradeA.id as string, { newStop: 143.0 });
+    assert(resA.status === 201, '6a: returns 201');
+    assertEqual((resA.data as Record<string, unknown>).previousStop, 141.0, '6a: previousStop falls back to plannedStop');
 
-    assert(result.status === 400, 'returns 400 for negative previousStop');
+    // 6b. Risk snapshot initial stop overrides planned stop.
+    const tradeB = seedTrade({ accountId: 'test-account-id', status: 'open', plannedStop: 141.0 });
+    seedRiskSnapshot(tradeB.id as string, { initialStopPrice: 138.5 });
+    const resB = await callPost(tradeB.id as string, { newStop: 143.0 });
+    assert(resB.status === 201, '6b: returns 201');
+    assertEqual((resB.data as Record<string, unknown>).previousStop, 138.5, '6b: previousStop uses initial stop from risk snapshot');
 
-    const result2 = await callPost(trade.id as string, {
-      previousStop: 0,
-      newStop: 150.0,
-    });
+    // 6c. Existing chain: latest adjustment newStop wins over snapshot.
+    const tradeC = seedTrade({ accountId: 'test-account-id', status: 'open', plannedStop: 141.0 });
+    seedRiskSnapshot(tradeC.id as string, { initialStopPrice: 138.5 });
+    seedStopAdjustment(tradeC.id as string, { previousStop: 138.5, newStop: 144.0, adjustedAt: '2025-06-01T10:00:00Z' });
+    seedStopAdjustment(tradeC.id as string, { previousStop: 144.0, newStop: 145.5, adjustedAt: '2025-06-02T10:00:00Z' });
+    const resC = await callPost(tradeC.id as string, { newStop: 147.0 });
+    assert(resC.status === 201, '6c: returns 201');
+    assertEqual((resC.data as Record<string, unknown>).previousStop, 145.5, '6c: previousStop is the latest adjustment newStop');
 
-    assert(result2.status === 400, 'returns 400 for zero previousStop');
+    // 6d. Client-sent previousStop is ignored (stripped by zod).
+    const tradeD = seedTrade({ accountId: 'test-account-id', status: 'open', plannedStop: 141.0 });
+    const resD = await callPost(tradeD.id as string, { previousStop: 999.0, newStop: 143.0 });
+    assert(resD.status === 201, '6d: returns 201');
+    assertEqual((resD.data as Record<string, unknown>).previousStop, 141.0, '6d: client previousStop ignored, derived value used');
   }
 
   // ── 7. POST: Validates newStop positive ─────────────────────────────
@@ -374,7 +401,6 @@ async function main(): Promise<void> {
     const trade = seedTrade({ accountId: 'test-account-id' });
 
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 0,
     });
 
@@ -387,7 +413,6 @@ async function main(): Promise<void> {
   {
     cleanup();
     const result = await callPost('nonexistent-trade', {
-      previousStop: 145.0,
       newStop: 147.0,
     });
     assert(result.status === 404, 'returns 404');
@@ -406,7 +431,6 @@ async function main(): Promise<void> {
     // schema — an explicit null must be rejected by the real handler,
     // unlike the old simulation which silently defaulted it to now.
     const rejected = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 147.0,
       adjustedAt: null,
     });
@@ -415,7 +439,6 @@ async function main(): Promise<void> {
     // Omitting adjustedAt and passing explicit nulls for the genuinely
     // nullable fields succeeds; adjustedAt defaults to now.
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 147.0,
       reason: null,
       ruleBased: null,
@@ -439,7 +462,6 @@ async function main(): Promise<void> {
     const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
 
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 147.0,
       reason: 'Should be rejected',
     });
@@ -469,7 +491,6 @@ async function main(): Promise<void> {
     const trade = seedTrade({ accountId: 'test-account-id', status: 'closed' });
 
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 147.0,
       reason: 'Should be rejected',
     });
@@ -498,7 +519,6 @@ async function main(): Promise<void> {
     const trade = seedTrade({ accountId: 'test-account-id', status: 'deleted' });
 
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 147.0,
       reason: 'Should be rejected',
     });
@@ -520,20 +540,20 @@ async function main(): Promise<void> {
 
   // ── 13. POST: Open trade still creates adjustment (guard does not block) ──
 
-  console.log('\n13. POST still allows stop adjustment for an open trade:');
+  console.log('\n13. POST still allows stop adjustment for an open trade (derived previousStop):');
   {
     cleanup();
     seedAccount({ id: 'test-account-id' });
     const trade = seedTrade({ accountId: 'test-account-id', status: 'open', plannedStop: 145.0 });
 
     const result = await callPost(trade.id as string, {
-      previousStop: 145.0,
       newStop: 148.0,
     });
 
     assert(result.status === 201, 'returns 201');
     const data = result.data as Record<string, unknown>;
     assertNotNull(data.id, 'has id');
+    assertEqual(data.previousStop, 145.0, 'previousStop derived from planned stop');
     assertEqual(data.newStop, 148.0, 'newStop matches');
     assertEqual(data.tradeId, trade.id, 'tradeId matches');
   }

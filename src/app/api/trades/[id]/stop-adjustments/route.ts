@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, tradeStopAdjustments } from '@/db/schema';
+import { trades, tradeStopAdjustments, tradeRiskSnapshots } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
+import { deriveCurrentStop } from '@/lib/trade-levels';
 
 const createStopAdjustmentSchema = z.object({
   adjustedAt: z.string().optional(),
-  previousStop: z.number().positive(),
+  // M019: previousStop is intentionally NOT part of the client contract.
+  // It is derived server-side from the adjustment chain so the audit trail
+  // always records the trade's actual prior stop. Client-sent values are
+  // stripped by zod and never trusted.
   newStop: z.number().positive(),
   reason: z.string().nullable().optional(),
   ruleBased: z.boolean().nullable().optional(),
@@ -89,11 +93,37 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const adjustmentId = randomUUID();
     const now = new Date().toISOString();
 
+    // M019: derive previousStop server-side — current stop is the latest
+    // adjustment's newStop, else the initial stop from the risk snapshot,
+    // else the planned stop. Never trust a client-supplied previousStop.
+    const riskSnapshot = db
+      .select()
+      .from(tradeRiskSnapshots)
+      .where(eq(tradeRiskSnapshots.tradeId, id))
+      .get();
+
+    const existingAdjustments = db
+      .select()
+      .from(tradeStopAdjustments)
+      .where(eq(tradeStopAdjustments.tradeId, id))
+      .all();
+
+    const previousStop = deriveCurrentStop(
+      trade.plannedStop,
+      riskSnapshot?.initialStopPrice ?? null,
+      existingAdjustments.map((a) => ({
+        id: a.id,
+        newStop: a.newStop,
+        adjustedAt: a.adjustedAt,
+        createdAt: a.createdAt,
+      })),
+    );
+
     db.insert(tradeStopAdjustments)
       .values({
         id: adjustmentId,
         tradeId: id,
-        previousStop: parsed.data.previousStop,
+        previousStop,
         newStop: parsed.data.newStop,
         adjustedAt: parsed.data.adjustedAt ?? now,
         reason: parsed.data.reason ?? null,
