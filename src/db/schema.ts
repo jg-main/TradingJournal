@@ -181,6 +181,20 @@ export const tradeStopAdjustments = sqliteTable('trade_stop_adjustments', {
   createdAt: text('created_at').default(sql`(current_timestamp)`),
 });
 
+export const tradeTargetAdjustments = sqliteTable('trade_target_adjustments', {
+  id: text('id').primaryKey().notNull(),
+  tradeId: text('trade_id').references(() => trades.id, { onDelete: 'cascade' }).notNull(),
+  // Which planned target level this adjustment rewrites: 1 = target 1, 2 = target 2.
+  targetIndex: integer('target_index').notNull(),
+  adjustedAt: text('adjusted_at'),
+  previousTarget: real('previous_target'),
+  newTarget: real('new_target'),
+  reason: text('reason'),
+  ruleBased: integer('rule_based', { mode: 'boolean' }),
+  notes: text('notes'),
+  createdAt: text('created_at').default(sql`(current_timestamp)`),
+});
+
 export const tradeAssets = sqliteTable('trade_assets', {
   id: text('id').primaryKey().notNull(),
   tradeId: text('trade_id').references(() => trades.id, { onDelete: 'cascade' }).notNull(),

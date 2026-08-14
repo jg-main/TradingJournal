@@ -38,6 +38,7 @@ const TSX_TESTS: string[] = [
   'src/app/api/trades/__tests__/cross-surface-integration.test.ts',
   'src/app/api/trades/[id]/stop-adjustments/__tests__/route.test.ts',
   'src/app/api/trades/[id]/stop-adjustments/[adjustmentId]/__tests__/route.test.ts',
+  'src/app/api/trades/[id]/target-adjustments/__tests__/route.test.ts',
 ];
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
