@@ -69,6 +69,20 @@ export interface StopAdjustment {
   createdAt: string | null;
 }
 
+export interface TargetAdjustment {
+  id: string;
+  tradeId: string;
+  /** Which planned target level this adjustment rewrites: 1 = target 1, 2 = target 2. */
+  targetIndex: 1 | 2;
+  adjustedAt: string | null;
+  previousTarget: number | null;
+  newTarget: number | null;
+  reason: string | null;
+  ruleBased: boolean | null;
+  notes: string | null;
+  createdAt: string | null;
+}
+
 export interface TradeAsset {
   id: string;
   tradeId: string;

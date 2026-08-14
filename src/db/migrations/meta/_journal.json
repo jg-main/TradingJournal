@@ -239,6 +239,13 @@
       "when": 1790000000002,
       "tag": "0033_light_rhino",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1786724710309,
+      "tag": "0034_mushy_darkstar",
+      "breakpoints": true
     }
   ]
 }

@@ -1,17 +1,57 @@
 /**
- * trade execution by id route test
+ * Trade execution by id route test — REAL handler invocation
  *
- * Tests DELETE (deletes execution and recalculates trade status).
+ * Tests PUT (update execution + recalc trade status) and DELETE (delete
+ * execution + recalc trade status) by invoking the ACTUAL route handlers
+ * exported from route.ts with mock NextRequest objects. Every case runs
+ * through the real request path (params resolution → request.json() →
+ * zod validation → DB access → NextResponse) against a real migrated
+ * SQLite database.
  *
- * Run: npx vitest run --reporter verbose src/app/api/trades/\[id\]/executions/\[execId\]/__tests__/route.test.ts
+ * Covers the M019 S01 T04 contract — the accounting-bypass guard:
+ *   - PUT/DELETE on a non-planned trade → 422, no mutation
+ *   - PUT/DELETE on a planned trade → 200 with status recalc
+ *   - 404 for missing trade / missing execution preserved
+ *   - PUT validation (400) and real-pipeline evidence (malformed JSON → 500)
+ *
+ * Run: npx tsx src/app/api/trades/\[id\]/executions/\[execId\]/__tests__/route.test.ts
  */
 
-import { randomUUID } from 'node:crypto';
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq } from 'drizzle-orm';
+// ────────────────────────────────────────────────────────────────────────────
+// 0. Node/tsx runtime shims
+// ────────────────────────────────────────────────────────────────────────────
+//
+// `src/db/index.ts` imports 'server-only' (a Next.js marker package). Under
+// plain `tsx` the react-server export condition is not active, so the real
+// package throws. Short-circuit it before any module that transitively
+// requires it is loaded. Same pattern as cross-surface-integration.test.ts.
+import Module from 'node:module';
 
+const originalLoad = (Module as unknown as { _load: (r: string, p: unknown, m: boolean) => unknown })._load;
+(Module as unknown as { _load: (r: string, p: unknown, m: boolean) => unknown })._load = function (
+  this: unknown,
+  request: string,
+  parent: unknown,
+  isMain: boolean
+) {
+  if (request === 'server-only') return {};
+  return originalLoad.call(this, request, parent, isMain);
+};
+
+// Point @/db at a dedicated throwaway test database BEFORE it initializes.
+// (This must happen before the dynamic import of '@/db' inside main().)
+const TEST_DB_FILE = './.test-execution-by-id-route.db';
+process.env.DB_FILE_NAME = TEST_DB_FILE;
+
+// ────────────────────────────────────────────────────────────────────────────
+// 1. Static imports (all safe under plain tsx)
+// ────────────────────────────────────────────────────────────────────────────
+
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import * as schema from '@/db/schema';
+import type { NextRequest, NextResponse } from 'next/server';
 
 let passed = 0;
 let failed = 0;
@@ -46,238 +86,99 @@ function assertNotNull(value: unknown, msg: string) {
   }
 }
 
-// ── Setup: test DB ──────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// 2. Real-module handles (populated in main() via dynamic import)
+// ────────────────────────────────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-execution-by-id.db';
-const sqlite = new Database(DB_FILE);
-sqlite.pragma('journal_mode = WAL');
-sqlite.pragma('foreign_keys = ON');
-const db = drizzle(sqlite, { schema });
+type RouteModule = {
+  PUT: (
+    request: NextRequest,
+    ctx: { params: Promise<{ id: string; execId: string }> }
+  ) => Promise<NextResponse>;
+  DELETE: (
+    request: NextRequest,
+    ctx: { params: Promise<{ id: string; execId: string }> }
+  ) => Promise<NextResponse>;
+};
 
-// Create tables
-sqlite.exec(`
-  DROP TABLE IF EXISTS settings;
-  DROP TABLE IF EXISTS account_rollforward;
-  DROP TABLE IF EXISTS account_transactions;
-  DROP TABLE IF EXISTS trade_stop_adjustments;
-  DROP TABLE IF EXISTS trade_risk_snapshots;
-  DROP TABLE IF EXISTS trade_mistakes;
-  DROP TABLE IF EXISTS trade_grades;
-  DROP TABLE IF EXISTS trade_executions;
-  DROP TABLE IF EXISTS trade_assets;
-  DROP TABLE IF EXISTS trades;
-  DROP TABLE IF EXISTS watchlist_items;
-  DROP TABLE IF EXISTS weekly_reviews;
-  DROP TABLE IF EXISTS setup_definitions;
-  DROP TABLE IF EXISTS accounts;
-  CREATE TABLE accounts (
-    id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    broker TEXT,
-    currency TEXT DEFAULT 'USD',
-    is_active INTEGER DEFAULT 1,
-    max_risk_per_trade_pct REAL,
-    default_commission REAL,
-    starting_balance REAL,
-    created_at TEXT DEFAULT (current_timestamp),
-    updated_at TEXT DEFAULT (current_timestamp)
+let route: RouteModule | null = null;
+let NextRequestCtor: typeof NextRequest | null = null;
+let db: (typeof import('@/db'))['db'] | null = null;
+let getSqliteHandle: (() => import('better-sqlite3').Database) | null = null;
+
+function requireDb() {
+  if (!db || !getSqliteHandle) throw new Error('db not initialized — call main() first');
+  return { db, getSqliteHandle };
+}
+
+// ── Route invocation helpers (REAL handlers, REAL NextRequest) ─────────
+
+async function callPut(
+  tradeId: string,
+  execId: string,
+  body: string | Record<string, unknown>
+): Promise<{ status: number; data: unknown }> {
+  if (!route || !NextRequestCtor) throw new Error('route not initialized');
+  const url = `http://localhost:3000/api/trades/${tradeId}/executions/${execId}`;
+  const res = await route.PUT(
+    new NextRequestCtor(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id: tradeId, execId }) }
   );
-  CREATE TABLE IF NOT EXISTS trades (
-    id TEXT PRIMARY KEY NOT NULL,
-    trade_code TEXT UNIQUE NOT NULL,
-    account_id TEXT NOT NULL,
-    symbol TEXT NOT NULL,
-    direction TEXT NOT NULL,
-    sector_id TEXT,
-    setup_id TEXT,
-    market_condition_id TEXT,
-    status TEXT NOT NULL,
-    planned_entry REAL,
-    planned_stop REAL,
-    planned_target_1 REAL,
-    planned_target_2 REAL,
-    planned_quantity REAL,
-    thesis TEXT,
-    invalidation_condition TEXT,
-    pre_trade_plan TEXT,
-    opened_at TEXT,
-    closed_at TEXT,
-    exit_notes TEXT,
-    lesson TEXT,
-    created_at TEXT DEFAULT (current_timestamp),
-    updated_at TEXT DEFAULT (current_timestamp)
+  return { status: res.status, data: await res.json() };
+}
+
+async function callDelete(tradeId: string, execId: string): Promise<{ status: number; data: unknown }> {
+  if (!route || !NextRequestCtor) throw new Error('route not initialized');
+  const url = `http://localhost:3000/api/trades/${tradeId}/executions/${execId}`;
+  const res = await route.DELETE(
+    new NextRequestCtor(url, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }),
+    { params: Promise.resolve({ id: tradeId, execId }) }
   );
-  CREATE TABLE IF NOT EXISTS trade_executions (
-    id TEXT PRIMARY KEY NOT NULL,
-    trade_id TEXT NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
-    executed_at TEXT,
-    action TEXT NOT NULL,
-    quantity REAL NOT NULL,
-    price REAL NOT NULL,
-    fees REAL DEFAULT 0,
-    reason_id TEXT,
-    notes TEXT,
-    created_at TEXT DEFAULT (current_timestamp)
-  );
-`);
-
-// ── Simulated deriveTradeStatus ─────────────────────────────────────
-
-type Direction = 'long' | 'short';
-
-function isEntryAction(action: string, direction: Direction): boolean {
-  if (direction === 'long') return action === 'buy' || action === 'add';
-  return action === 'sell_short';
+  return { status: res.status, data: await res.json() };
 }
 
-function isExitAction(action: string, direction: Direction): boolean {
-  if (direction === 'long') return action === 'sell' || action === 'reduce';
-  return action === 'buy_to_cover';
-}
-
-interface DeriveStatusResult {
-  status: string;
-  openedAt: string | null;
-  closedAt: string | null;
-}
-
-function simulateDeriveStatus(
-  executions: { action: string; quantity: number; executedAt: string }[],
-  direction: Direction,
-): DeriveStatusResult {
-  const entries = executions.filter((e) => isEntryAction(e.action, direction));
-  const exits = executions.filter((e) => isExitAction(e.action, direction));
-
-  const totalEntryQty = entries.reduce((s, e) => s + e.quantity, 0);
-  const totalExitQty = exits.reduce((s, e) => s + e.quantity, 0);
-
-  let status: string;
-  let openedAt: string | null = null;
-  let closedAt: string | null = null;
-
-  if (totalEntryQty === 0) {
-    status = 'planned';
-  } else if (totalExitQty === 0) {
-    status = 'open';
-  } else if (totalExitQty < totalEntryQty) {
-    status = 'partially_closed';
-  } else {
-    status = 'closed';
-  }
-
-  if (totalEntryQty > 0 && entries.length > 0) {
-    const sorted = [...entries].sort(
-      (a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime(),
-    );
-    openedAt = sorted[0].executedAt;
-  }
-
-  if (totalExitQty >= totalEntryQty && exits.length > 0) {
-    const sorted = [...exits].sort(
-      (a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime(),
-    );
-    closedAt = sorted[sorted.length - 1].executedAt;
-  }
-
-  return { status, openedAt, closedAt };
-}
-
-// ── Simulated route logic ───────────────────────────────────────────
-
-function doDeleteExecution(tradeId: string, execId: string): { status: number; data: unknown } {
-  try {
-    const trade = db
-      .select()
-      .from(schema.trades)
-      .where(eq(schema.trades.id, tradeId))
-      .get();
-
-    if (!trade) {
-      return { status: 404, data: { error: 'Trade not found' } };
-    }
-
-    const execution = db
-      .select()
-      .from(schema.tradeExecutions)
-      .where(eq(schema.tradeExecutions.id, execId))
-      .get();
-
-    if (!execution) {
-      return { status: 404, data: { error: 'Execution not found' } };
-    }
-
-    db.delete(schema.tradeExecutions)
-      .where(eq(schema.tradeExecutions.id, execId))
-      .run();
-
-    // ── Recalculate trade status and timestamps ──────────────────────
-
-    const tradeRec = trade as Record<string, unknown>;
-
-    const remaining = db
-      .select()
-      .from(schema.tradeExecutions)
-      .where(eq(schema.tradeExecutions.tradeId, tradeId))
-      .orderBy(schema.tradeExecutions.executedAt, schema.tradeExecutions.createdAt)
-      .all();
-
-    const execData = remaining.map((r) => ({
-      action: r.action,
-      quantity: r.quantity,
-      executedAt: r.executedAt ?? r.createdAt ?? '',
-    }));
-
-    const derived = simulateDeriveStatus(
-      execData.map((e) => ({ ...e, price: 0 })),
-      tradeRec.direction as Direction,
-    );
-
-    db.update(schema.trades)
-      .set({
-        status: derived.status as 'open' | 'planned' | 'closed' | 'deleted',
-        openedAt: derived.openedAt,
-        closedAt: derived.closedAt,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(schema.trades.id, tradeId))
-      .run();
-
-    return { status: 200, data: { message: 'Execution deleted' } };
-  } catch (error) {
-    return { status: 500, data: { error: 'Failed to delete execution', details: String(error) } };
-  }
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────
+// ── Setup: seed/cleanup against the real migrated DB ───────────────────
 
 function cleanup() {
-  sqlite.exec('DELETE FROM trade_executions;');
-  sqlite.exec('DELETE FROM trades;');
-  sqlite.exec('DELETE FROM accounts;');
+  const h = requireDb().getSqliteHandle();
+  h.exec('DELETE FROM trade_executions;');
+  h.exec('DELETE FROM trades;');
+  h.exec('DELETE FROM accounts;');
 }
 
 function seedAccount(overrides: Record<string, unknown> = {}) {
   const id = randomUUID();
   const now = new Date().toISOString();
-  db.insert(schema.accounts)
+  requireDb().db.insert(schema.accounts)
     .values({
       id,
       name: 'Test Account',
       broker: null,
       currency: 'USD',
       isActive: true,
+      maxRiskPerTradePct: null,
+      defaultCommission: null,
+      startingBalance: null,
       createdAt: now,
       updatedAt: now,
       ...overrides,
-    })
+    } as typeof schema.accounts.$inferInsert)
     .run();
-  return db.select().from(schema.accounts).where(eq(schema.accounts.id, id)).get() as Record<string, unknown>;
+  return requireDb().db.select().from(schema.accounts).where(eq(schema.accounts.id, id)).get() as Record<string, unknown>;
 }
 
 function seedTrade(overrides: Record<string, unknown> = {}) {
   const id = randomUUID();
   const now = new Date().toISOString();
-  db.insert(schema.trades)
+  requireDb().db.insert(schema.trades)
     .values({
       id,
       tradeCode: `T-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`,
@@ -288,15 +189,15 @@ function seedTrade(overrides: Record<string, unknown> = {}) {
       createdAt: now,
       updatedAt: now,
       ...overrides,
-    })
+    } as typeof schema.trades.$inferInsert)
     .run();
-  return db.select().from(schema.trades).where(eq(schema.trades.id, id)).get() as Record<string, unknown>;
+  return requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, id)).get() as Record<string, unknown>;
 }
 
 function seedExecution(tradeId: string, overrides: Record<string, unknown> = {}) {
   const id = randomUUID();
   const now = new Date().toISOString();
-  db.insert(schema.tradeExecutions)
+  requireDb().db.insert(schema.tradeExecutions)
     .values({
       id,
       tradeId,
@@ -307,117 +208,310 @@ function seedExecution(tradeId: string, overrides: Record<string, unknown> = {})
       executedAt: now,
       createdAt: now,
       ...overrides,
-    })
+    } as typeof schema.tradeExecutions.$inferInsert)
     .run();
-  return db.select().from(schema.tradeExecutions).where(eq(schema.tradeExecutions.id, id)).get() as Record<string, unknown>;
+  return requireDb().db.select().from(schema.tradeExecutions).where(eq(schema.tradeExecutions.id, id)).get() as Record<string, unknown>;
 }
 
-// ── Tests ───────────────────────────────────────────────────────────
-
-console.log('\n--- Trade Execution By ID API Tests ---\n');
-
-// ── 1. DELETE: Deletes execution and recalculates status ────────────
-
-console.log('\n1. DELETE deletes execution and recalculates status:');
-{
-  cleanup();
-  seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
-  const exec1 = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-
-  const result = doDeleteExecution(trade.id as string, exec1.id as string);
-
-  assert(result.status === 200, 'returns 200');
-  assertEqual((result.data as { message: string }).message, 'Execution deleted', 'message matches');
-
-  // Verify execution was removed
-  const remaining = db
+function executionCount(tradeId: string): number {
+  return requireDb().db
     .select()
     .from(schema.tradeExecutions)
-    .where(eq(schema.tradeExecutions.tradeId, trade.id as string))
-    .all();
-  assertEqual(remaining.length, 0, 'no executions remain');
-
-  // Verify trade reverted to 'planned'
-  const updatedTrade = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
-  assertEqual(updatedTrade.status, 'planned', 'trade status reverted to planned');
-  assertEqual(updatedTrade.openedAt, null, 'openedAt is null');
+    .where(eq(schema.tradeExecutions.tradeId, tradeId))
+    .all().length;
 }
 
-// ── 2. DELETE: 404 for nonexistent trade ────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// 3. Tests — each block invokes the REAL route handlers
+// ────────────────────────────────────────────────────────────────────────────
 
-console.log('\n2. DELETE returns 404 for nonexistent trade:');
-{
-  cleanup();
-  const result = doDeleteExecution('nonexistent-trade', 'some-exec-id');
-  assert(result.status === 404, 'returns 404');
-  assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
+async function main(): Promise<void> {
+  // Load the real modules AFTER the env var is set so @/db initializes
+  // against TEST_DB_FILE with all migrations auto-applied.
+  const dbMod = await import('@/db');
+  db = dbMod.db;
+  getSqliteHandle = dbMod.getSqliteHandle;
+
+  const nextMod = await import('next/server');
+  NextRequestCtor = nextMod.NextRequest;
+
+  const routeMod = await import('../route');
+  route = routeMod as unknown as RouteModule;
+
+  const routePath = fileURLToPath(new URL('../route.ts', import.meta.url)).replace(`${process.cwd()}/`, '');
+
+  console.log('\n--- Trade Execution By ID API Tests (real route handlers) ---\n');
+  console.log(`  Route module: ${routePath}`);
+  console.log(`  DB: ${TEST_DB_FILE} (real migrated schema)`);
+  // Function source proves the imported handlers are the real route exports.
+  console.log(`  PUT handler source: ${route.PUT.toString().slice(0, 64)}…`);
+
+  // ── 1. DELETE: Rejects open trade with 422, no mutation ─────────────
+
+  console.log('\n1. DELETE rejects an open trade with 422 and does not mutate:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'open', openedAt: '2025-06-01T10:00:00Z' });
+    const exec = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+
+    const result = await callDelete(trade.id as string, exec.id as string);
+
+    assert(result.status === 422, 'returns 422');
+    assertEqual(
+      (result.data as { error: string }).error,
+      'Execution changes are only allowed for planned trades',
+      'error message explains lifecycle restriction',
+    );
+
+    // No mutation — execution must still exist and trade must be unchanged.
+    assertEqual(executionCount(trade.id as string), 1, 'execution still present (no delete)');
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'open', 'trade status unchanged');
+    assertEqual(updatedTrade.openedAt, '2025-06-01T10:00:00Z', 'trade openedAt unchanged');
+  }
+
+  // ── 2. PUT: Rejects open trade with 422, no mutation ────────────────
+
+  console.log('\n2. PUT rejects an open trade with 422 and does not mutate:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'open', openedAt: '2025-06-01T10:00:00Z' });
+    const exec = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+
+    const result = await callPut(trade.id as string, exec.id as string, { quantity: 200 });
+
+    assert(result.status === 422, 'returns 422');
+    assertEqual(
+      (result.data as { error: string }).error,
+      'Execution changes are only allowed for planned trades',
+      'error message explains lifecycle restriction',
+    );
+
+    // No mutation — execution fields and trade must be unchanged.
+    const persisted = db!
+      .select()
+      .from(schema.tradeExecutions)
+      .where(eq(schema.tradeExecutions.id, exec.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(persisted.quantity, 100, 'execution quantity unchanged');
+    assertEqual(persisted.price, 150.0, 'execution price unchanged');
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'open', 'trade status unchanged');
+  }
+
+  // ── 3. DELETE: Rejects closed trade with 422 (revert path closed) ───
+
+  console.log('\n3. DELETE rejects a closed trade with 422 (legacy revert path closed):');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      status: 'closed',
+      openedAt: '2025-06-01T10:00:00Z',
+      closedAt: '2025-06-05T14:00:00Z',
+    });
+    seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+    const exit = seedExecution(trade.id as string, { action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-05T14:00:00Z' });
+
+    const result = await callDelete(trade.id as string, exit.id as string);
+
+    assert(result.status === 422, 'returns 422');
+    assertEqual(executionCount(trade.id as string), 2, 'both executions still present (no delete)');
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'closed', 'trade status unchanged (still closed)');
+  }
+
+  // ── 4. DELETE: Planned trade -> 200, execution removed, status recalc ─
+
+  console.log('\n4. DELETE on a planned trade returns 200, removes execution, recalcs status:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const exec = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+
+    const result = await callDelete(trade.id as string, exec.id as string);
+
+    assert(result.status === 200, 'returns 200');
+    assertEqual((result.data as { message: string }).message, 'Execution deleted', 'message matches');
+
+    // Execution was removed and the trade status was recalculated from
+    // the remaining executions (none) → planned, openedAt cleared.
+    assertEqual(executionCount(trade.id as string), 0, 'no executions remain');
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'planned', 'trade status recalced to planned');
+    assertEqual(updatedTrade.openedAt, null, 'openedAt is null');
+  }
+
+  // ── 5. PUT: Planned trade -> 200, execution updated, status recalc ──
+
+  console.log('\n5. PUT on a planned trade returns 200, updates execution, recalcs status:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const exec = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
+
+    const result = await callPut(trade.id as string, exec.id as string, {
+      quantity: 150,
+      price: 152.0,
+      notes: 'Adjusted during planning',
+    });
+
+    assert(result.status === 200, 'returns 200');
+    const data = result.data as Record<string, unknown>;
+    assertEqual(data.quantity, 150, 'execution quantity updated');
+    assertEqual(data.price, 152.0, 'execution price updated');
+    assertEqual(data.notes, 'Adjusted during planning', 'execution notes updated');
+
+    // Status recalc: an entry execution now exists → trade is open.
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'open', 'trade status recalced to open');
+    assertNotNull(updatedTrade.openedAt, 'openedAt set from entry execution');
+  }
+
+  // ── 6. PUT: Validation behavior preserved (400, no mutation) ────────
+
+  console.log('\n6. PUT invalid body returns 400 without mutation:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const exec = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0 });
+
+    const badQuantity = await callPut(trade.id as string, exec.id as string, { quantity: 0 });
+    assert(badQuantity.status === 400, 'returns 400 for non-positive quantity');
+    assertEqual(
+      (badQuantity.data as { error: string }).error,
+      'Invalid execution data',
+      'validation error shape preserved',
+    );
+
+    const badAction = await callPut(trade.id as string, exec.id as string, { action: 'not_an_action' });
+    assert(badAction.status === 400, 'returns 400 for invalid action');
+
+    const persisted = db!
+      .select()
+      .from(schema.tradeExecutions)
+      .where(eq(schema.tradeExecutions.id, exec.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(persisted.quantity, 100, 'execution unchanged after rejected validation');
+  }
+
+  // ── 7. DELETE: 404 for nonexistent trade ────────────────────────────
+
+  console.log('\n7. DELETE returns 404 for nonexistent trade:');
+  {
+    cleanup();
+    const result = await callDelete('nonexistent-trade', 'some-exec-id');
+    assert(result.status === 404, 'returns 404');
+    assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
+  }
+
+  // ── 8. DELETE: 404 for nonexistent execution (planned trade passes gate) ─
+
+  console.log('\n8. DELETE returns 404 for nonexistent execution:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const result = await callDelete(trade.id as string, 'nonexistent-exec');
+    assert(result.status === 404, 'returns 404');
+    assertEqual((result.data as { error: string }).error, 'Execution not found', 'error message');
+  }
+
+  // ── 9. PUT: 404 for nonexistent trade ───────────────────────────────
+
+  console.log('\n9. PUT returns 404 for nonexistent trade:');
+  {
+    cleanup();
+    const result = await callPut('nonexistent-trade', 'some-exec-id', { quantity: 150 });
+    assert(result.status === 404, 'returns 404');
+    assertEqual((result.data as { error: string }).error, 'Trade not found', 'error message');
+  }
+
+  // ── 10. PUT: 404 for nonexistent execution ──────────────────────────
+
+  console.log('\n10. PUT returns 404 for nonexistent execution:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const result = await callPut(trade.id as string, 'nonexistent-exec', { quantity: 150 });
+    assert(result.status === 404, 'returns 404');
+    assertEqual((result.data as { error: string }).error, 'Execution not found', 'error message');
+  }
+
+  // ── 11. Route invocation evidence — real request pipeline ───────────
+
+  console.log('\n11. Route invocation evidence — real request pipeline:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
+    const exec = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0 });
+
+    // A malformed JSON body can only fail inside the REAL handler's
+    // request.json() call — a simulated function that received a parsed
+    // object would never hit this path. The route catches it and returns
+    // a 500 whose details expose the JSON parse error.
+    const result = await callPut(trade.id as string, exec.id as string, '{this-is-not-valid-json');
+    assert(result.status === 500, 'malformed JSON reaches real request.json() and returns 500');
+    const data = result.data as { error: string; details: string };
+    assertEqual(data.error, 'Failed to update execution', '500 body uses route error shape');
+    assert(
+      data.details.includes('JSON') || data.details.includes('Unexpected') || data.details.includes('token'),
+      `details expose JSON parse error (got: ${String(data.details).slice(0, 80)})`,
+    );
+
+    // No mutation may have happened for the failed request.
+    const persisted = db!
+      .select()
+      .from(schema.tradeExecutions)
+      .where(eq(schema.tradeExecutions.id, exec.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(persisted.quantity, 100, 'execution unchanged after failed request');
+  }
+
+  // ── Summary ──────────────────────────────────────────────────────────
+
+  const total = passed + failed;
+  console.log(`\n${'─'.repeat(40)}`);
+  console.log(`Results: ${passed}/${total} passed`);
+  if (failed > 0) {
+    console.error(`         ${failed}/${total} FAILED\n`);
+    process.exit(1);
+  } else {
+    console.log('         All tests passed!\n');
+  }
 }
 
-// ── 3. DELETE: 404 for nonexistent execution ────────────────────────
-
-console.log('\n3. DELETE returns 404 for nonexistent execution:');
-{
-  cleanup();
-  seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id' });
-
-  const result = doDeleteExecution(trade.id as string, 'nonexistent-exec');
-  assert(result.status === 404, 'returns 404');
-  assertEqual((result.data as { error: string }).error, 'Execution not found', 'error message');
-}
-
-// ── 4. DELETE: Reverts from closed to open after removing full exit ─
-
-console.log('\n4. DELETE reverts from closed to open after removing the exit execution:');
-{
-  cleanup();
-  seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'closed', openedAt: '2025-06-01T10:00:00Z', closedAt: '2025-06-05T14:00:00Z' });
-
-  seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-  const exit = seedExecution(trade.id as string, { action: 'sell', quantity: 100, price: 160.0, executedAt: '2025-06-05T14:00:00Z' });
-
-  // Delete the exit
-  const result = doDeleteExecution(trade.id as string, exit.id as string);
-
-  assert(result.status === 200, 'returns 200');
-
-  const updatedTrade = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
-  assertEqual(updatedTrade.status, 'open', 'trade status reverted to open');
-  assertNotNull(updatedTrade.openedAt, 'trade still has openedAt');
-  assertEqual(updatedTrade.closedAt, null, 'closedAt is null');
-}
-
-// ── 5. DELETE: Reverts from partially_closed to open after removing partial exit ─
-
-console.log('\n5. DELETE reverts from partially_closed to open after removing the partial exit:');
-{
-  cleanup();
-  seedAccount({ id: 'test-account-id' });
-  const trade = seedTrade({ accountId: 'test-account-id', status: 'partially_closed', openedAt: '2025-06-01T10:00:00Z' });
-
-  seedExecution(trade.id as string, { action: 'buy', quantity: 150, price: 150.0, executedAt: '2025-06-01T10:00:00Z' });
-  const partialExit = seedExecution(trade.id as string, { action: 'sell', quantity: 50, price: 160.0, executedAt: '2025-06-03T10:00:00Z' });
-
-  // Delete the partial exit
-  const result = doDeleteExecution(trade.id as string, partialExit.id as string);
-
-  assert(result.status === 200, 'returns 200');
-
-  const updatedTrade = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
-  assertEqual(updatedTrade.status, 'open', 'trade status reverted to open');
-  assertNotNull(updatedTrade.openedAt, 'trade still has openedAt');
-}
-
-// ── Summary ──────────────────────────────────────────────────────────
-
-const total = passed + failed;
-console.log(`\n${'─'.repeat(40)}`);
-console.log(`Results: ${passed}/${total} passed`);
-if (failed > 0) {
-  console.error(`         ${failed}/${total} FAILED\n`);
+main().catch((e) => {
+  console.error('route.test.ts: unexpected error', e);
   process.exit(1);
-} else {
-  console.log('         All tests passed!\n');
-}
+});

@@ -55,6 +55,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Accounting-bypass guard: this path mutates trade_executions with no
+    // correction_lineage and no ledger recompute, so it is only allowed
+    // while the trade is still being planned. Non-planned trades must go
+    // through the canonical correction flow (accounts/[id]/executions/
+    // [executionId]/correct).
+    if (trade.status !== 'planned') {
+      return NextResponse.json(
+        { error: 'Execution changes are only allowed for planned trades' },
+        { status: 422 },
+      );
+    }
+
     const execution = db
       .select()
       .from(tradeExecutions)
@@ -139,6 +151,18 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         { error: 'Trade not found' },
         { status: 404 },
+      );
+    }
+
+    // Accounting-bypass guard: this path mutates trade_executions with no
+    // correction_lineage and no ledger recompute, so it is only allowed
+    // while the trade is still being planned. Non-planned trades must go
+    // through the canonical correction flow (accounts/[id]/executions/
+    // [executionId]/correct).
+    if (trade.status !== 'planned') {
+      return NextResponse.json(
+        { error: 'Execution changes are only allowed for planned trades' },
+        { status: 422 },
       );
     }
 

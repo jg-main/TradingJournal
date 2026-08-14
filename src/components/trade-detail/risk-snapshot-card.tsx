@@ -1,8 +1,9 @@
 'use client';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { computeRiskReward, formatPrice, formatCurrency } from './helpers';
-import type { RiskSnapshot, Trade, MtmData } from './types';
+import { computeRiskReward, formatCurrency } from './helpers';
+import TradeDetailsCard from './trade-details-card';
+import type { RiskSnapshot, Trade, StopAdjustment, TargetAdjustment, MtmData } from './types';
 
 interface RiskSnapshotCardProps {
   riskSnapshot: RiskSnapshot | null;
@@ -14,6 +15,8 @@ interface RiskSnapshotCardProps {
   thesis?: string | null;
   invalidationCondition?: string | null;
   preTradePlan?: string | null;
+  stopAdjustments?: StopAdjustment[];
+  targetAdjustments?: TargetAdjustment[];
 }
 
 export default function RiskSnapshotCard({
@@ -21,11 +24,12 @@ export default function RiskSnapshotCard({
   plannedValues,
   actualValues,
   mtmData,
-  onRefreshPrice,
   tradeStatus,
   thesis,
   invalidationCondition,
   preTradePlan,
+  stopAdjustments,
+  targetAdjustments,
 }: RiskSnapshotCardProps) {
   if (!riskSnapshot) {
     return (
@@ -47,7 +51,6 @@ export default function RiskSnapshotCard({
   const planStop = plannedValues?.plannedStop;
   const planQty = plannedValues?.plannedQuantity;
   const planTarget1 = plannedValues?.plannedTarget1 ?? null;
-  const planTarget2 = plannedValues?.plannedTarget2 ?? null;
 
   const planRiskShare = planEntry != null && planStop != null ? Math.abs(planEntry - planStop) : null;
   const planRiskPct = planRiskShare != null && planEntry != null && planEntry > 0 ? (planRiskShare / planEntry) * 100 : null;
@@ -91,22 +94,8 @@ export default function RiskSnapshotCard({
       : ((planStop - mtmData!.price!) / (planStop - planEntry)).toFixed(2)
     : null;
 
-  // ── Market-column metrics for Price Levels table ──
-  const mtmPrice = hasMtm ? mtmData!.price! : null;
-  function mtmDistTo(level: number | null | undefined): { dollar: number; pct: number } | null {
-    if (mtmPrice == null || level == null || level === 0) return null;
-    const dollar = Math.abs(mtmPrice - level);
-    const pct = (dollar / level) * 100;
-    return { dollar, pct };
-  }
-  const mtmDistStop = mtmDistTo(actualStop);
-  const mtmDistTarget1 = mtmDistTo(planTarget1);
-  const mtmDistTarget2 = mtmDistTo(planTarget2);
-  const mtmMarketValue = hasMtm && actualQty != null ? mtmPrice! * actualQty : null;
-
   const T = 'text-muted-foreground';
   const V = 'tabular-nums text-foreground';
-  const D = 'tabular-nums text-muted-foreground';
 
   const mtmPositiveClass = 'text-warning';
   const mtmBadge = (
@@ -121,58 +110,18 @@ export default function RiskSnapshotCard({
     <div className="space-y-4">
       {/* ── Two-column cards ── */}
       <div className="grid gap-4 sm:grid-cols-2">
-        {/* Price Levels Card */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Price Levels
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="pb-1.5 text-left text-xs font-normal text-muted-foreground"></th>
-                  {hasPlan && <th className="pb-1.5 text-right text-xs font-normal text-muted-foreground">Plan</th>}
-                  <th className="pb-1.5 text-right text-xs font-normal text-muted-foreground">Actual</th>
-                  {hasMtm && <th className="pb-1.5 text-right text-xs font-normal text-warning">Market</th>}
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-border">
-                  <td className={'py-1.5 ' + T}>Entry</td>
-                  {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planEntry)}</td>}
-                  <td className={'py-1.5 text-right ' + (actualEntry != null ? V : D)}>{actualEntry != null ? formatPrice(actualEntry) : '—'}</td>
-                  {hasMtm && <td className={'py-1.5 text-right ' + mtmPositiveClass}>{formatPrice(mtmPrice)}{mtmBadge}</td>}
-                </tr>
-                <tr className="border-b border-border">
-                  <td className={'py-1.5 ' + T}>Stop</td>
-                  {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planStop)}</td>}
-                  <td className={'py-1.5 text-right ' + D}>{formatPrice(actualStop)}</td>
-                  {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistStop != null ? `${formatPrice(mtmDistStop.dollar)} (${mtmDistStop.pct.toFixed(1)}%)` : '—'}</td>}
-                </tr>
-                <tr className="border-b border-border">
-                  <td className={'py-1.5 ' + T}>Target 1</td>
-                  {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planTarget1)}</td>}
-                  <td className={'py-1.5 text-right ' + D}>{actualExit ? formatPrice(actualExit) : '—'}</td>
-                  {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistTarget1 != null ? `${formatPrice(mtmDistTarget1.dollar)} (${mtmDistTarget1.pct.toFixed(1)}%)` : '—'}</td>}
-                </tr>
-                <tr className="border-b border-border">
-                  <td className={'py-1.5 ' + T}>Target 2</td>
-                  {hasPlan && <td className={'py-1.5 text-right ' + V}>{formatPrice(planTarget2)}</td>}
-                  <td className={'py-1.5 text-right ' + D}>—</td>
-                  {hasMtm && <td className={'py-1.5 text-right ' + D}>{mtmDistTarget2 != null ? `${formatPrice(mtmDistTarget2.dollar)} (${mtmDistTarget2.pct.toFixed(1)}%)` : '—'}</td>}
-                </tr>
-                <tr>
-                  <td className={'py-1.5 ' + T}>Qty</td>
-                  {hasPlan && <td className={'py-1.5 text-right ' + V}>{planQty ?? '—'}</td>}
-                  <td className={'py-1.5 text-right ' + V}>{actualQty != null ? actualQty.toLocaleString() : '—'}</td>
-                  {hasMtm && <td className={'py-1.5 text-right ' + V}>{mtmMarketValue != null ? formatCurrency(mtmMarketValue) : '—'}</td>}
-                </tr>
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+        {/* Trade Details (Plan / Current / Market) */}
+        <TradeDetailsCard
+          plannedValues={plannedValues}
+          initialEntryPrice={riskSnapshot.initialEntryPrice}
+          initialStopPrice={riskSnapshot.initialStopPrice}
+          initialQuantity={riskSnapshot.initialQuantity}
+          actualEntryPrice={actualValues?.avgEntryPrice ?? null}
+          stopAdjustments={stopAdjustments}
+          targetAdjustments={targetAdjustments}
+          mtmData={mtmData}
+          tradeStatus={tradeStatus}
+        />
 
         {/* Risk & Reward Card */}
         <Card>

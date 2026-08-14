@@ -1,9 +1,11 @@
 /**
  * risk-snapshot-card.test.ts
  *
- * Tests for the RiskSnapshotCard component MTM edge case logic.
- * Verifies source-level contract: tradeStatus prop, MTM status gating,
- * "No entry price — execute first" text, and zero P&L display.
+ * Source-contract tests for the M019/S02 extraction: the inline Price Levels
+ * table moved out of RiskSnapshotCard into a standalone TradeDetailsCard that
+ * renders Plan / Current / Market columns with the current stop and targets
+ * derived from the adjustment chains via trade-levels.ts (deriveCurrentStop /
+ * deriveCurrentTarget). MTM stays gated to open trades.
  *
  * Run: npx tsx src/components/trade-detail/__tests__/risk-snapshot-card.test.ts
  */
@@ -15,6 +17,9 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const compSourcePath = path.resolve(__dirname, '../risk-snapshot-card.tsx');
+const detailsSourcePath = path.resolve(__dirname, '../trade-details-card.tsx');
+const helpersSourcePath = path.resolve(__dirname, '../helpers.ts');
+const levelsSourcePath = path.resolve(__dirname, '../../../lib/trade-levels.ts');
 
 let passed = 0;
 let failed = 0;
@@ -30,23 +35,24 @@ function assert(condition: boolean, msg: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Module contract — verify component exports and props
+// RiskSnapshotCard module contract
 // ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## Module contract');
+  console.log('\n## RiskSnapshotCard module contract');
 
   const source = fs.readFileSync(compSourcePath, 'utf-8');
 
   assert(source.includes('export default function RiskSnapshotCard'), 'exports RiskSnapshotCard as default');
   assert(source.includes('interface RiskSnapshotCardProps'), 'defines RiskSnapshotCardProps interface');
   assert(source.includes("'use client'") || source.includes('"use client"'), 'has use client directive');
+  assert(source.includes("import TradeDetailsCard from './trade-details-card';"), 'imports TradeDetailsCard');
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Props interface — verify all key props including tradeStatus
+// RiskSnapshotCard props interface
 // ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## Props interface');
+  console.log('\n## RiskSnapshotCard props interface');
 
   const source = fs.readFileSync(compSourcePath, 'utf-8');
 
@@ -56,94 +62,148 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('mtmData?: MtmData'), 'accepts optional mtmData prop');
   assert(source.includes('onRefreshPrice?: () => void'), 'accepts optional onRefreshPrice callback');
   assert(source.includes('tradeStatus?: Trade'), 'accepts optional tradeStatus prop');
+  assert(source.includes('stopAdjustments?: StopAdjustment[]'), 'accepts optional stopAdjustments prop');
+  assert(source.includes('targetAdjustments?: TargetAdjustment[]'), 'accepts optional targetAdjustments prop');
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// MTM section gating — verify MTM only renders for open trades
+// Price Levels extraction — the inline table must be gone from
+// RiskSnapshotCard and live in TradeDetailsCard
 // ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## MTM status gating');
+  console.log('\n## Price Levels extraction');
 
-  const source = fs.readFileSync(compSourcePath, 'utf-8');
+  const snapshotSource = fs.readFileSync(compSourcePath, 'utf-8');
+  const detailsSource = fs.readFileSync(detailsSourcePath, 'utf-8');
 
-  // The MTM section should be gated on tradeStatus === 'open'
   assert(
-    source.includes("tradeStatus === 'open'") || source.includes('tradeStatus === "open"'),
-    'MTM section gated on tradeStatus === "open"'
+    !snapshotSource.includes('Price Levels'),
+    'RiskSnapshotCard no longer contains the inline "Price Levels" title'
+  );
+  assert(
+    snapshotSource.includes('<TradeDetailsCard') || snapshotSource.includes('<TradeDetailsCard\n'),
+    'RiskSnapshotCard renders TradeDetailsCard in the two-column grid'
+  );
+  assert(
+    detailsSource.includes('Trade Details'),
+    'TradeDetailsCard carries the "Trade Details" card title'
+  );
+  assert(
+    detailsSource.includes('>Entry</td>') && detailsSource.includes('>Stop</td>'),
+    'TradeDetailsCard renders Entry/Stop rows'
+  );
+  assert(
+    detailsSource.includes('>Target 1</td>') && detailsSource.includes('>Target 2</td>'),
+    'TradeDetailsCard renders Target 1 / Target 2 rows'
+  );
+  assert(detailsSource.includes('>Qty</td>'), 'TradeDetailsCard renders Qty row');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// TradeDetailsCard module contract
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## TradeDetailsCard module contract');
+
+  const source = fs.readFileSync(detailsSourcePath, 'utf-8');
+
+  assert(source.includes('export default function TradeDetailsCard'), 'exports TradeDetailsCard as default');
+  assert(source.includes('interface TradeDetailsCardProps'), 'defines TradeDetailsCardProps interface');
+  assert(source.includes("'use client'") || source.includes('"use client"'), 'has use client directive');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Live value derivation — current stop/targets come from trade-levels.ts
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## Live value derivation');
+
+  const source = fs.readFileSync(detailsSourcePath, 'utf-8');
+  const levelsSource = fs.readFileSync(levelsSourcePath, 'utf-8');
+
+  assert(
+    source.includes("import { deriveCurrentStop, deriveCurrentTarget } from '@/lib/trade-levels';"),
+    'imports deriveCurrentStop and deriveCurrentTarget from trade-levels'
+  );
+  assert(
+    source.includes('deriveCurrentStop(planStop ?? null, initialStopPrice'),
+    'current stop derived via deriveCurrentStop(plannedStop, initialStopPrice, adjustments)'
+  );
+  assert(
+    source.includes('deriveCurrentTarget(planTarget1, 1, targetAdjustments)'),
+    'current target 1 derived via deriveCurrentTarget(plannedTarget1, index 1, adjustments)'
+  );
+  assert(
+    source.includes('deriveCurrentTarget(planTarget2, 2, targetAdjustments)'),
+    'current target 2 derived via deriveCurrentTarget(plannedTarget2, index 2, adjustments)'
   );
 
-  // The MTM section should also require mtmData to be non-null
+  // The derivation helpers themselves must exist in the pure lib (M019 canonical logic)
+  assert(levelsSource.includes('export function deriveCurrentStop('), 'trade-levels exports deriveCurrentStop');
+  assert(levelsSource.includes('export function deriveCurrentTarget('), 'trade-levels exports deriveCurrentTarget');
+  assert(levelsSource.includes('export function compareLevelEventsDesc('), 'trade-levels exports compareLevelEventsDesc');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Plan / Current / Market column structure
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## Plan / Current / Market columns');
+
+  const source = fs.readFileSync(detailsSourcePath, 'utf-8');
+
+  assert(source.includes('>Plan</th>'), 'renders Plan column header');
+  assert(source.includes('>Current</th>'), 'renders Current column header');
+  assert(source.includes('>Market</th>'), 'renders Market column header');
+  assert(source.includes('const hasPlan = !!plannedValues;'), 'Plan column gated on plannedValues');
+  assert(source.includes('const hasMtm = mtmData?.price != null && tradeStatus === \'open\''), 'Market column gated on open trade + MTM price');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// MTM status gating — safe when mtmData present but tradeStatus non-open
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## MTM status gating (error resilience)');
+
+  const snapshotSource = fs.readFileSync(compSourcePath, 'utf-8');
+  const detailsSource = fs.readFileSync(detailsSourcePath, 'utf-8');
+
   assert(
-    source.includes('mtmData != null') || source.includes('mtmData !== null'),
-    'MTM section gated on mtmData != null'
+    detailsSource.includes("tradeStatus === 'open'") || detailsSource.includes('tradeStatus === "open"'),
+    'TradeDetailsCard MTM section gated on tradeStatus === "open"'
+  );
+  assert(
+    detailsSource.includes('mtmData?.price != null'),
+    'TradeDetailsCard MTM gated on mtmData?.price != null (optional chaining — no crash when mtmData absent)'
+  );
+  assert(
+    snapshotSource.includes('mtmData?.price != null && tradeStatus'),
+    'RiskSnapshotCard MTM uses safe conditional (&&) — no crash when mtmData present but tradeStatus non-open'
   );
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// "No entry price" message — verify the execute-first messaging
+// Zero-value handling — helpers.formatCurrency(0) must be $0.00, MTM color
+// uses >= 0 so zero renders as non-negative
 // ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## No entry price handling');
+  console.log('\n## Zero-value handling');
 
-  const source = fs.readFileSync(compSourcePath, 'utf-8');
+  const snapshotSource = fs.readFileSync(compSourcePath, 'utf-8');
+  const helpersSource = fs.readFileSync(helpersSourcePath, 'utf-8');
 
+  assert(snapshotSource.includes('formatCurrency'), 'RiskSnapshotCard uses formatCurrency utility');
+
+  // MTM return color uses >= 0 (zero shows the positive/neutral class, not negative)
   assert(
-    source.includes('No entry price') || source.includes("No entry price"),
-    'displays "No entry price — execute first" fallback message'
+    snapshotSource.includes('mtmReturnPct >= 0') || snapshotSource.includes('mtmReturnDollar >= 0'),
+    'MTM color uses >= 0 comparison (zero shows neutral, not negative)'
   );
 
+  // helpers.formatCurrency: negative branch uses -$, everything else uses plain $
   assert(
-    source.includes('execute first') || source.includes("execute first"),
-    'includes explanatory "execute first" text'
-  );
-
-  assert(
-    source.includes('actualEntry == null'),
-    'conditional check uses actualEntry == null for no-executions detection'
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Zero P&L handling — formatCurrency(0) must return $0.00
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Zero P&L display');
-
-  const source = fs.readFileSync(compSourcePath, 'utf-8');
-
-  // The component should use formatCurrency for dollar amounts
-  assert(source.includes('formatCurrency'), 'component uses formatCurrency utility');
-
-  // The component should handle >= 0 for color selection (includes zero)
-  assert(
-    source.includes('unrealizedPnl >= 0') || source.includes('unrealizedPnlPct >= 0'),
-    'P&L color uses >= 0 comparison (zero shows green)'
-  );
-
-  // Verify the zero-P&L path in helpers via formatCurrency expectation
-  const helpersSource = fs.readFileSync(
-    path.resolve(__dirname, '../helpers.ts'),
-    'utf-8'
-  );
-  assert(
-    helpersSource.includes("v >= 0 ? `$${formatted}`") || helpersSource.includes("v >= 0 ? '$"),
-    'helpers.formatCurrency uses >= 0 for sign prefix (zero = positive/neutral)'
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Error resilience — component must not crash when mtmData is present
-// but tradeStatus is non-open
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Error resilience (non-open status)');
-
-  const source = fs.readFileSync(compSourcePath, 'utf-8');
-
-  // The gating condition is a simple && check — no crashing possible
-  assert(
-    source.includes('mtmData != null && tradeStatus') || source.includes('mtmData !== null && tradeStatus'),
-    'MTM section uses safe conditional (&&) — no crash when mtmData present but tradeStatus non-open'
+    helpersSource.includes("v < 0) return `-$${formatted}`") || helpersSource.includes("if (v < 0) return `-$${formatted}`"),
+    'helpers.formatCurrency only signs negative values (zero renders as $0.00)'
   );
 }
 

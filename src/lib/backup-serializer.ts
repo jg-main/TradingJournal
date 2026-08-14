@@ -125,6 +125,7 @@ const TABLE_REFS: Record<string, unknown> = {
   trade_executions: tables.tradeExecutions,
   trade_risk_snapshots: tables.tradeRiskSnapshots,
   trade_stop_adjustments: tables.tradeStopAdjustments,
+  trade_target_adjustments: tables.tradeTargetAdjustments,
   trade_assets: tables.tradeAssets,
   trade_grades: tables.tradeGrades,
   trade_mistakes: tables.tradeMistakes,
