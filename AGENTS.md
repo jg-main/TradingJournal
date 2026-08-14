@@ -170,6 +170,20 @@ the change touches shared contracts, database schema, or cross-page workflows.
 - `make playwright` runs the entire suite once per configured browser. It is a
   full-matrix command, not an appropriate default for a single GSD task.
 
+### GSD task verification policy
+
+- Leave GSD's static `verification_commands` list empty. It runs each listed
+  command after every task, so a repository-wide suite there repeats unrelated
+  work and can exceed the host command budget.
+- Do not defer all checking to slice close. Each execution task must run and
+  record the smallest mechanical proof for its scope: focused library or API
+  tests; a targeted type/lint check for affected TypeScript contracts; a
+  migration plus a runtime path for schema work; or targeted browser evidence
+  for a changed user-facing workflow.
+- Run the full quality gate only at slice completion. Deliberate UAT is required
+  for user-facing slices, not automatically for every slice. The full
+  multi-browser Playwright matrix belongs at a milestone boundary or in CI.
+
 The slice-completion quality gate is:
 
 ```bash
