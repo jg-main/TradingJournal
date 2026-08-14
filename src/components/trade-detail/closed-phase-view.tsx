@@ -56,6 +56,8 @@ interface ClosedPhaseViewProps {
   onEdit?: () => void;
   /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
   onAddFill?: () => void;
+  /** Opens the page-owned accounting correction workflow for a fill. */
+  onCorrectExecution?: (execution: Execution) => void;
 }
 
 
@@ -84,6 +86,7 @@ export default function ClosedPhaseView({
   onExecutionAdded,
   onEdit,
   onAddFill,
+  onCorrectExecution,
 }: ClosedPhaseViewProps) {
 
   const exitExecs = executions.filter((e) =>
@@ -242,6 +245,7 @@ export default function ClosedPhaseView({
           riskSnapshot={riskSnapshot}
           plannedValues={trade}
           actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
+          currentQuantity={derivedStatus?.openQuantity ?? null}
           tradeStatus={trade.status}
           thesis={trade.thesis}
           invalidationCondition={trade.invalidationCondition}
@@ -271,6 +275,7 @@ export default function ClosedPhaseView({
         <TradeHistoryFeed
           levelHistoryEvents={levelHistoryEvents}
           executions={executions}
+          onCorrectExecution={onCorrectExecution}
         />
       </div>
 

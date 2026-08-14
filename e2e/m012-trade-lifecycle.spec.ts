@@ -237,6 +237,63 @@ test.describe('M012 Trade Lifecycle', () => {
     await expect(page.locator('[data-slot="badge"]').filter({ hasText: 'Closed' }).first()).toBeVisible();
   });
 
+  test('open trade History exposes a correction action for an execution', async ({ page }) => {
+    const account = await setupAccount(page, 'E2E M019 Correction Test');
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'M019CORR', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    const execRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: {
+        entryPrice: 100,
+        entryQuantity: 10,
+        stopPrice: 95,
+        fees: 1,
+      },
+    });
+    expect(execRes.ok()).toBeTruthy();
+
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+
+    const correctButton = page.getByRole('button', { name: 'Correct Buy execution' });
+    await expect(correctButton).toBeVisible();
+    await correctButton.click();
+    await expect(page.getByRole('dialog')).toContainText('Correct Execution: M019CORR');
+  });
+
+  test('Trade Details Current Qty tracks the remaining position after a partial exit', async ({ page }) => {
+    const account = await setupAccount(page, 'E2E M019 Current Quantity Test');
+    const tradeRes = await page.request.post('/api/trades', {
+      data: { symbol: 'M019QTY', direction: 'long', accountId: account.id },
+    });
+    expect(tradeRes.ok()).toBeTruthy();
+    const trade = await tradeRes.json();
+
+    const execRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: {
+        entryPrice: 100,
+        entryQuantity: 10,
+        stopPrice: 95,
+        fees: 1,
+      },
+    });
+    expect(execRes.ok()).toBeTruthy();
+
+    const exitRes = await page.request.post(`/api/trades/${trade.id}/executions`, {
+      data: { action: 'sell', quantity: 4, price: 110, fees: 1 },
+    });
+    expect(exitRes.status()).toBe(201);
+
+    await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
+
+    const tradeDetails = page.locator('[data-slot="card"]').filter({
+      has: page.locator('[data-slot="card-title"]', { hasText: /^Trade Details$/ }),
+    });
+    await expect(tradeDetails.locator('tr').filter({ hasText: 'Qty' })).toContainText('6');
+  });
+
   test('delete a trade via API and verify removal from UI', async ({ page }) => {
     // Create a test account with full setup
     const account = await setupAccount(page, 'E2E Delete Test');

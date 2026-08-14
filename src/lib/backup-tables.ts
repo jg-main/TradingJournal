@@ -53,7 +53,14 @@ export const BACKUP_TABLES = [
   { name: 'trade_executions', label: 'Trade Executions', restoreOrder: 25 },
   { name: 'trade_risk_snapshots', label: 'Trade Risk Snapshots', restoreOrder: 26 },
   { name: 'trade_stop_adjustments', label: 'Trade Stop Adjustments', restoreOrder: 27 },
-  { name: 'trade_target_adjustments', label: 'Trade Target Adjustments', restoreOrder: 28 },
+  // M019 added this table after backup archives already existed. A current-schema
+  // archive that omits it restores with an empty target-adjustment history.
+  {
+    name: 'trade_target_adjustments',
+    label: 'Trade Target Adjustments',
+    restoreOrder: 28,
+    optionalInExistingBackups: true,
+  },
   { name: 'trade_assets', label: 'Trade Assets', restoreOrder: 29 },
   { name: 'trade_grades', label: 'Trade Grades', restoreOrder: 30 },
   { name: 'position_price_snapshots', label: 'Position Price Snapshots', restoreOrder: 31 },

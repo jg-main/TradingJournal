@@ -1,7 +1,8 @@
 'use client';
 
-import { History } from 'lucide-react';
+import { History, Pencil } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useAppTimezone } from '@/lib/timezone-context';
 import { formatAction, formatPrice } from './helpers';
 import type { Execution } from './types';
@@ -38,6 +39,8 @@ interface TradeHistoryFeedProps {
   levelHistoryEvents: LevelHistoryEvent[];
   /** Executions for the trade from the existing executions fetch. */
   executions: Execution[];
+  /** Opens the accounting-true correction workflow for the selected fill. */
+  onCorrectExecution?: (execution: Execution) => void;
 }
 
 /** One normalized row in the unified feed (level event or execution). */
@@ -75,6 +78,7 @@ export type FeedEvent =
       price: number;
       fees: number | null;
       notes: string | null;
+      execution: Execution;
     };
 
 /**
@@ -134,6 +138,7 @@ export function buildFeedEvents(
     price: e.price,
     fees: e.fees,
     notes: e.notes,
+    execution: e,
   }));
   return [...levelEvents, ...executionEvents].sort(compareFeedEventsDesc);
 }
@@ -172,6 +177,7 @@ const META_CLASS = 'mt-0.5 block text-xs text-muted-foreground';
 export default function TradeHistoryFeed({
   levelHistoryEvents,
   executions,
+  onCorrectExecution,
 }: TradeHistoryFeedProps) {
   const { formatDateTime } = useAppTimezone();
   const events = buildFeedEvents(levelHistoryEvents, executions);
@@ -253,6 +259,19 @@ export default function TradeHistoryFeed({
                         </>
                       )}
                     </div>
+
+                    {event.kind === 'execution' && onCorrectExecution && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => onCorrectExecution(event.execution)}
+                        aria-label={`Correct ${formatAction(event.action)} execution`}
+                      >
+                        <Pencil className="size-3" />
+                        Correct
+                      </Button>
+                    )}
 
                     <time
                       dateTime={event.at || undefined}

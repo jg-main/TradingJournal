@@ -9,6 +9,8 @@ interface RiskSnapshotCardProps {
   riskSnapshot: RiskSnapshot | null;
   plannedValues?: Pick<Trade, 'direction' | 'plannedEntry' | 'plannedStop' | 'plannedQuantity' | 'plannedTarget1' | 'plannedTarget2'> | null;
   actualValues?: { avgEntryPrice: number | null; avgExitPrice: number | null } | null;
+  /** Canonical remaining position quantity for the Trade Details Current column. */
+  currentQuantity?: number | null;
   mtmData?: MtmData;
   onRefreshPrice?: () => void;
   tradeStatus?: Trade['status'];
@@ -29,6 +31,7 @@ export default function RiskSnapshotCard({
   riskSnapshot,
   plannedValues,
   actualValues,
+  currentQuantity,
   mtmData,
   tradeStatus,
   thesis,
@@ -125,6 +128,7 @@ export default function RiskSnapshotCard({
           initialEntryPrice={riskSnapshot.initialEntryPrice}
           initialStopPrice={riskSnapshot.initialStopPrice}
           initialQuantity={riskSnapshot.initialQuantity}
+          currentQuantity={currentQuantity}
           actualEntryPrice={actualValues?.avgEntryPrice ?? null}
           stopAdjustments={stopAdjustments}
           targetAdjustments={targetAdjustments}

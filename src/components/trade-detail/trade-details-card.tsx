@@ -14,6 +14,8 @@ interface TradeDetailsCardProps {
   initialEntryPrice?: number | null;
   initialStopPrice?: number | null;
   initialQuantity?: number | null;
+  /** Canonical remaining position quantity, when executions exist. */
+  currentQuantity?: number | null;
   actualEntryPrice?: number | null;
   stopAdjustments?: StopAdjustment[];
   targetAdjustments?: TargetAdjustment[];
@@ -47,6 +49,7 @@ export default function TradeDetailsCard({
   initialEntryPrice,
   initialStopPrice,
   initialQuantity,
+  currentQuantity,
   actualEntryPrice,
   stopAdjustments = [],
   targetAdjustments = [],
@@ -73,7 +76,7 @@ export default function TradeDetailsCard({
   const currentStop = deriveCurrentStop(planStop ?? null, initialStopPrice ?? null, stopAdjustments);
   const currentTarget1 = deriveCurrentTarget(planTarget1, 1, targetAdjustments);
   const currentTarget2 = deriveCurrentTarget(planTarget2, 2, targetAdjustments);
-  const currentQty = initialQuantity ?? null;
+  const currentQty = currentQuantity ?? initialQuantity ?? null;
 
   // ── Market-column metrics ──
   const hasMtm = mtmData?.price != null && tradeStatus === 'open';

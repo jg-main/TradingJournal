@@ -62,7 +62,7 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
   assert(source.includes('export interface LevelHistoryEvent'), 'exports the LevelHistoryEvent interface (S01 API shape)');
   assert(source.includes("'use client'") || source.includes('"use client"'), 'has use client directive');
   assert(source.includes("import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';"), 'renders inside a Card');
-  assert(source.includes("import { History } from 'lucide-react';"), 'uses the History icon for the card title');
+  assert(source.includes('History') && source.includes('<History'), 'uses the History icon for the card title');
   assert(
     !source.includes("from '@/app/api") && !source.includes("from '../app/api"),
     'does not import from an API route module (client component stays server-only free)'
@@ -79,6 +79,7 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
 
   assert(source.includes('levelHistoryEvents: LevelHistoryEvent[]'), 'accepts levelHistoryEvents: LevelHistoryEvent[] (S01 API)');
   assert(source.includes('executions: Execution[]'), 'accepts executions: Execution[] (existing fetch)');
+  assert(source.includes('onCorrectExecution?: (execution: Execution) => void;'), 'accepts an optional correction callback for execution rows');
   assert(source.includes("import type { Execution } from './types';"), 'types executions from the shared trade-detail types');
 }
 
@@ -122,6 +123,8 @@ function assertEqual<T>(actual: T, expected: T, msg: string) {
   assert(source.includes('event.notes'), 'execution rows render notes when present');
   assert(source.includes('event.fees != null'), 'execution rows render fees when present');
   assert(source.includes("'Auto' : 'Manual'"), 'rule-based flag renders as Auto/Manual label');
+  assert(source.includes('Correct ${formatAction(event.action)} execution'), 'execution correction control has an accessible label');
+  assert(source.includes('onCorrectExecution(event.execution)'), 'execution correction control forwards the selected fill');
 }
 
 // ────────────────────────────────────────────────────────────────────────

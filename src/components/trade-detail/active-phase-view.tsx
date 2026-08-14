@@ -46,6 +46,8 @@ interface ActivePhaseViewProps {
   onEdit?: () => void;
   /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
   onAddFill?: () => void;
+  /** Opens the page-owned accounting correction workflow for a fill. */
+  onCorrectExecution?: (execution: Execution) => void;
   /** Canonical unrealized values from API metrics (FIFO-aware, partial-exit accurate) */
   unrealizedPnl?: number | null;
   unrealizedReturnPct?: number | null;
@@ -72,6 +74,7 @@ export default function ActivePhaseView({
   onExecutionAdded,
   onEdit,
   onAddFill,
+  onCorrectExecution,
   unrealizedPnl,
   unrealizedReturnPct,
   unrealizedRMultiple,
@@ -158,6 +161,7 @@ export default function ActivePhaseView({
           riskSnapshot={riskSnapshot}
           plannedValues={trade}
           actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice: null }}
+          currentQuantity={derivedStatus?.openQuantity ?? null}
           mtmData={mtmData}
           onRefreshPrice={onRefreshPrice}
           tradeStatus={trade.status}
@@ -189,6 +193,7 @@ export default function ActivePhaseView({
         <TradeHistoryFeed
           levelHistoryEvents={levelHistoryEvents}
           executions={executions}
+          onCorrectExecution={onCorrectExecution}
         />
       </div>
 

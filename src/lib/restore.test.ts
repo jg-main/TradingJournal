@@ -327,6 +327,29 @@ describe('Restore Pipeline', () => {
       }
     });
 
+    it('accepts a same-version archive created before target adjustments were registered', async () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'restore-target-adjustments-compat-'));
+      const dbPath = join(testDir, '.trading-journal', 'journal.db');
+      const { sqlite, db: testDb } = createSchemaDb(dbPath);
+
+      try {
+        const backupData = await serializeBackup(testDb);
+        const bakZip = new AdmZip();
+        delete backupData.manifest.tables.trade_target_adjustments;
+        bakZip.addFile('manifest.json', Buffer.from(JSON.stringify(backupData.manifest, null, 2), 'utf-8'));
+
+        for (const { name } of TABLE_REGISTRY) {
+          if (name === 'trade_target_adjustments') continue;
+          bakZip.addFile(`data/${name}.json`, Buffer.from(JSON.stringify(backupData.tables[name] ?? []), 'utf-8'));
+        }
+
+        expect(validateRestoreZip(bakZip.toBuffer())).toEqual({ valid: true });
+      } finally {
+        sqlite.close();
+        rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+
     it('rejects an optional table count when its data file is absent', async () => {
       const testDir = mkdtempSync(join(tmpdir(), 'restore-optional-count-'));
       const dbPath = join(testDir, '.trading-journal', 'journal.db');
