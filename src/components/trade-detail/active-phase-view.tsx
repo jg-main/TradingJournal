@@ -19,6 +19,7 @@ import TradeCheckResultsCard from './trade-check-results-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
 import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
+import TradeContextBand from './trade-context-band';
 import TradeAssetsCard from './trade-assets-card';
 import type { Trade, Execution, RiskSnapshot, StopAdjustment, TargetAdjustment, TradeAsset, CheckResult, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-metrics';
@@ -177,9 +178,33 @@ export default function ActivePhaseView({
         <TradeDetailPanel area="review" title="Review">
           <TradeCheckResultsCard checkResults={checkResults} />
         </TradeDetailPanel>
+
+        {/* Context band: thesis / invalidation / pre-trade plan
+            (cols 1-2 at >=2560px). Omitted entirely when the trade has
+            no narrative content — no empty titled band in the grid. */}
+        {(trade.thesis || trade.invalidationCondition || trade.preTradePlan) && (
+          <TradeDetailPanel area="context" title="Context">
+            <TradeContextBand
+              thesis={trade.thesis}
+              invalidationCondition={trade.invalidationCondition}
+              preTradePlan={trade.preTradePlan}
+            />
+          </TradeDetailPanel>
+        )}
+
+        {/* Assets band: stage screenshots (cols 3-4 at >=2560px) */}
+        <TradeDetailPanel area="assets" title="Assets">
+          <TradeAssetsCard
+            assets={assets}
+            tradeId={trade.id}
+            onAssetsChanged={onAssetsChanged}
+            defaultPhase="entry"
+          />
+        </TradeDetailPanel>
       </TradeDetailGrid>
 
-      {/* ── Below the grid (document flow) ── */}
+      {/* ── Below the grid (document flow): lifecycle stepper stays
+            accessible below the bands ── */}
       <div className="mt-8">
         <LifecycleStepper
           status={trade.status}
@@ -187,15 +212,6 @@ export default function ActivePhaseView({
           openedAt={trade.openedAt}
           exitNotes={trade.exitNotes}
           lesson={trade.lesson}
-        />
-      </div>
-
-      <div className="mt-8">
-        <TradeAssetsCard
-          assets={assets}
-          tradeId={trade.id}
-          onAssetsChanged={onAssetsChanged}
-          defaultPhase="entry"
         />
       </div>
 

@@ -8,10 +8,14 @@
  * document level (the legacy shell's <main> owns the scrollbar), so no
  * panel ever creates a competing inner scrollbar.
  *
- * Named grid areas: cockpit | risk | history | review. The grid is the
- * monitoring-first first screen: identity + price + actions (cockpit),
- * P&L + plan-vs-actual + levels (risk), the unified lifecycle feed
- * (history), and the pre-execution checklist (review).
+ * Named grid areas: cockpit | risk | history | review, with the context
+ * and assets bands below. The grid is the monitoring-first first screen:
+ * identity + price + actions (cockpit), P&L + plan-vs-actual + levels
+ * (risk), the unified lifecycle feed (history), the pre-execution
+ * checklist (review), then the context band (thesis / invalidation /
+ * pre-trade plan, cols 1-2 at >=2560px) beside the assets band (stage
+ * screenshots, cols 3-4 at >=2560px). Below >=2560px both bands stack
+ * full-width.
  */
 
 .td {
@@ -57,32 +61,39 @@
   display: grid;
   gap: var(--td-space-3);
   align-items: start;
-  /* 1-column default (<1440px): stacked vertically */
+  /* 1-column default (<1440px): stacked vertically, bands last */
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'cockpit'
     'risk'
     'history'
-    'review';
+    'review'
+    'context'
+    'assets';
 }
 
 /* 2-column layout at 1440–2048px: cockpit+risk on the first row, history+
-   review below (2x2). */
+   review below (2x2), then the context and assets bands stacked full-width. */
 @media (min-width: 1440px) {
   .td-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
       'cockpit risk'
-      'history review';
+      'history review'
+      'context context'
+      'assets assets';
   }
 }
 
 /* 4-column layout at >=2560px: cockpit | risk | history | review (equal
-   width, the monitoring-first first screen). */
+   width, the monitoring-first first screen), then the context band spanning
+   cols 1-2 beside the assets band spanning cols 3-4. */
 @media (min-width: 2560px) {
   .td-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-template-areas: 'cockpit risk history review';
+    grid-template-areas:
+      'cockpit risk history review'
+      'context context assets assets';
   }
 }
 
@@ -157,6 +168,14 @@
 
 .td-panel[data-area='review'] {
   grid-area: review;
+}
+
+.td-panel[data-area='context'] {
+  grid-area: context;
+}
+
+.td-panel[data-area='assets'] {
+  grid-area: assets;
 }
 
 /* ── Nested legacy card chrome ────────────────────────────────────────────

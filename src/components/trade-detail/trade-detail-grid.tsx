@@ -19,7 +19,13 @@ import { cn } from '@/lib/utils';
 import './trade-detail-grid.css';
 
 /** Named grid areas for the open-trade (monitoring) grid. */
-export type TradeDetailArea = 'cockpit' | 'risk' | 'history' | 'review';
+export type TradeDetailArea =
+  | 'cockpit'
+  | 'risk'
+  | 'history'
+  | 'review'
+  | 'context'
+  | 'assets';
 
 interface TradeDetailGridProps {
   children: ReactNode;

@@ -97,8 +97,10 @@ function assert(condition: boolean, msg: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Call-site wiring — phase views no longer thread narrative props to
-// RiskSnapshotCard (the band re-enters via ActivePhaseView in S02/T02)
+// Call-site wiring — the narrative re-enters the UI exactly once via
+// ActivePhaseView's context band (S02/T02). RiskSnapshotCard's call site
+// stays clean (no double rendering), and ClosedPhaseView never threads
+// the narrative (it renders the frozen snapshot only).
 // ────────────────────────────────────────────────────────────────────────
 {
   console.log('\n## Call-site wiring');
@@ -106,13 +108,24 @@ function assert(condition: boolean, msg: string) {
   const activeSource = fs.readFileSync(activeViewPath, 'utf-8');
   const closedSource = fs.readFileSync(closedViewPath, 'utf-8');
 
-  assert(!activeSource.includes('thesis={trade.thesis}'), 'ActivePhaseView no longer passes thesis to RiskSnapshotCard');
-  assert(!activeSource.includes('invalidationCondition={trade.invalidationCondition}'), 'ActivePhaseView no longer passes invalidationCondition to RiskSnapshotCard');
-  assert(!activeSource.includes('preTradePlan={trade.preTradePlan}'), 'ActivePhaseView no longer passes preTradePlan to RiskSnapshotCard');
+  // The band is wired exactly once, inside the context grid area.
+  assert(activeSource.includes("import TradeContextBand from './trade-context-band'"), 'ActivePhaseView imports TradeContextBand');
+  assert(activeSource.includes('<TradeDetailPanel area="context"'), 'ActivePhaseView renders the band inside the context grid area');
+  assert(activeSource.includes('thesis={trade.thesis}'), 'ActivePhaseView wires thesis into TradeContextBand');
+  assert(activeSource.includes('invalidationCondition={trade.invalidationCondition}'), 'ActivePhaseView wires invalidationCondition into TradeContextBand');
+  assert(activeSource.includes('preTradePlan={trade.preTradePlan}'), 'ActivePhaseView wires preTradePlan into TradeContextBand');
 
-  assert(!closedSource.includes('thesis={trade.thesis}'), 'ClosedPhaseView no longer passes thesis to RiskSnapshotCard');
-  assert(!closedSource.includes('invalidationCondition={trade.invalidationCondition}'), 'ClosedPhaseView no longer passes invalidationCondition to RiskSnapshotCard');
-  assert(!closedSource.includes('preTradePlan={trade.preTradePlan}'), 'ClosedPhaseView no longer passes preTradePlan to RiskSnapshotCard');
+  // Each prop appears exactly once in the file — the narrative renders
+  // in one place only (no double rendering at the call-site level).
+  const count = (src: string, needle: string) =>
+    src.split(needle).length - 1;
+  assert(count(activeSource, 'thesis={trade.thesis}') === 1, 'thesis prop is threaded exactly once');
+  assert(count(activeSource, 'invalidationCondition={trade.invalidationCondition}') === 1, 'invalidationCondition prop is threaded exactly once');
+  assert(count(activeSource, 'preTradePlan={trade.preTradePlan}') === 1, 'preTradePlan prop is threaded exactly once');
+
+  assert(!closedSource.includes('thesis={trade.thesis}'), 'ClosedPhaseView never threads thesis');
+  assert(!closedSource.includes('invalidationCondition={trade.invalidationCondition}'), 'ClosedPhaseView never threads invalidationCondition');
+  assert(!closedSource.includes('preTradePlan={trade.preTradePlan}'), 'ClosedPhaseView never threads preTradePlan');
 }
 
 // ────────────────────────────────────────────────────────────────────────
