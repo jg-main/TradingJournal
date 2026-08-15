@@ -279,8 +279,11 @@ function assert(condition: boolean, msg: string) {
     pageSource.includes("trade.status === 'open' || trade.status === 'planned'"),
     'page.tsx extends the .td wrapper to planned status',
   );
+  // M020/S04 integration closure: the page wrapper condition extends to
+  // closed (open+planned+closed); the planned assertion intent (planned
+  // renders full-bleed, no max-w-4xl) is unchanged.
   assert(
-    pageSource.includes('className={trade.status === \'open\' || trade.status === \'planned\' ? \'td px-8 py-10\''),
+    pageSource.includes('className={trade.status === \'open\' || trade.status === \'planned\' || trade.status === \'closed\' ? \'td px-8 py-10\''),
     'planned trades render in the full-bleed td scope (no max-w-4xl)',
   );
 }

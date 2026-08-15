@@ -15,8 +15,9 @@
  * contract (Radix Collapsible primitive, collapsed by default, chevron
  * state rotation, accessible trigger), the shared card-strip chrome rule
  * for section content, and the no-nested-scrollbar document-scroll model.
- * ClosedPhaseView composition and the page-wrapper .td scope extension
- * are guarded by T02's additions to this file.
+ * T02 additions: ClosedPhaseView composition (panel-to-card mapping,
+ * collapsible sections, actions preserved, assets below the grid) and the
+ * page-wrapper .td scope extension for closed trades.
  *
  * Run: npx tsx src/components/trade-detail/__tests__/closed-phase-grid.test.ts
  */
@@ -36,6 +37,14 @@ const collapsibleSectionPath = path.resolve(
 const runAllTestsPath = path.resolve(
   __dirname,
   '../../../../scripts/run-all-tests.ts',
+);
+const closedPhaseViewPath = path.resolve(
+  __dirname,
+  '../closed-phase-view.tsx',
+);
+const pagePath = path.resolve(
+  __dirname,
+  '../../../app/(legacy)/trades/[id]/page.tsx',
 );
 
 let passed = 0;
@@ -266,6 +275,168 @@ function assert(condition: boolean, msg: string) {
     css.includes(".td-review-section-content [data-slot='card']") &&
       css.includes('border: none'),
     'section content reuses the card-strip rule (one chrome unit per section)',
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// ClosedPhaseView composition (T02) — the closed grid renders the frozen
+// snapshot (cockpit | risk | history) beside the review column with
+// collapsible grade / mistakes / AI assessment / exit-notes sections, and
+// assets render below the grid in document flow
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## ClosedPhaseView grid composition');
+
+  const source = fs.readFileSync(closedPhaseViewPath, 'utf-8');
+
+  // The view renders the grid shell with the closed variant.
+  assert(
+    source.includes('<TradeDetailGrid variant="closed">'),
+    'ClosedPhaseView renders the grid with the closed variant',
+  );
+  assert(
+    source.includes("import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';") &&
+      source.includes("import { TradeCollapsibleReviewSection } from './trade-collapsible-review-section';"),
+    'composition imports the grid shell and the collapsible section',
+  );
+
+  // Cockpit panel: identity header + actions + frozen price + lifecycle summary.
+  assert(
+    source.includes('<TradeDetailPanel area="cockpit" title="Cockpit">') &&
+      source.includes('<TradeDetailHeader') &&
+      source.includes('<PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} frozen />') &&
+      source.includes('<TradeLifecycleSummaryCard'),
+    'cockpit panel holds identity header, frozen price, and lifecycle summary',
+  );
+
+  // Risk panel: P&L / R + plan vs actual + levels.
+  assert(
+    source.includes('<TradeDetailPanel area="risk" title="Risk">') &&
+      source.includes('<TradePnlCard') &&
+      source.includes('<RiskSnapshotCard'),
+    'risk panel holds P&L and plan-vs-actual + levels',
+  );
+
+  // History panel: unified feed (owns its own title).
+  assert(
+    source.includes('<TradeDetailPanel area="history">') &&
+      source.includes('<TradeHistoryFeed'),
+    'history panel holds the unified feed (own title)',
+  );
+
+  // Review panel: checklist stays visible above the collapsible sections.
+  assert(
+    source.includes('<TradeDetailPanel area="review" title="Review">') &&
+      source.includes('<TradeCheckResultsCard checkResults={checkResults} />'),
+    'review panel keeps the checklist visible (critical evidence never hides)',
+  );
+  assert(
+    source.includes('title="Grade"') &&
+      source.includes('<TradeGradeCard grade={grade} tradeStatus={trade.status} onSave={onGradeSave} />'),
+    'grade renders inside a collapsible review section with the grade-label meta',
+  );
+  assert(
+    source.includes('title="Mistakes"') &&
+      source.includes('<TradeMistakesCard') &&
+      source.includes('meta={mistakes.length > 0'),
+    'mistakes render inside a collapsible review section with the count meta',
+  );
+  assert(
+    source.includes('title="AI Assessment"') &&
+      source.includes('<AssessmentCard') &&
+      source.includes('<AssessmentHistory'),
+    'AI assessment (card + history) renders inside a collapsible review section',
+  );
+  assert(
+    source.includes('title="Exit Notes"') &&
+      source.includes('<TradeExitNotesCard'),
+    'exit notes render inside a collapsible review section',
+  );
+  assert(
+    source.includes('(trade.exitNotes || trade.lesson) &&'),
+    'exit notes section is omitted when the trade has no notes (no empty titled section)',
+  );
+  assert(
+    !/defaultOpen/.test(source),
+    'review sections use the component default (collapsed) — no override in composition',
+  );
+
+  // All existing closed-trade actions preserved.
+  assert(
+    source.includes('<DropdownMenuItem onClick={() => onEdit?.()}') &&
+      source.includes('<Pencil'),
+    'Edit action preserved in the cockpit header menu',
+  );
+  assert(
+    source.includes('handleRequestAssessment') &&
+      source.includes('<Brain'),
+    'Assess action preserved in the cockpit header menu',
+  );
+  assert(
+    source.includes('onGradeSave'),
+    'grade save action wired (TradeGradeCard onSave)',
+  );
+  assert(
+    source.includes('onMistakesChanged'),
+    'mistake add/edit action wired',
+  );
+  assert(
+    source.includes('onAssetsChanged'),
+    'assets action wired',
+  );
+  assert(
+    source.includes('onAddFill'),
+    'add fill action wired (RiskSnapshotCard level editing)',
+  );
+  assert(
+    source.includes('onCorrectExecution'),
+    'correct execution action wired (history feed)',
+  );
+  assert(
+    source.includes('onExecutionAdded'),
+    'execution-added refetch hook preserved',
+  );
+
+  // Assets and stepper render below the grid in document flow.
+  assert(
+    source.indexOf('<TradeAssetsCard') > source.indexOf('</TradeDetailGrid>'),
+    'assets render below the grid in document flow (must-have)',
+  );
+  assert(
+    source.includes('defaultPhase="review"'),
+    'assets band keeps the review phase default',
+  );
+  assert(
+    source.indexOf('<LifecycleStepper') > source.indexOf('</TradeDetailGrid>'),
+    'lifecycle stepper renders below the grid (document flow)',
+  );
+  assert(
+    source.includes('hasGrade={!!grade}') && source.includes('hasMistakes={mistakes.length > 0}'),
+    'stepper still reflects grade/mistake state',
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Page wrapper (T02) — the .td scope extends to closed trades
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## Page wrapper .td scope');
+
+  const source = fs.readFileSync(pagePath, 'utf-8');
+
+  assert(
+    source.includes("trade.status === 'open' || trade.status === 'planned' || trade.status === 'closed'") &&
+      source.includes("'td px-8 py-10'"),
+    'page wrapper extends the .td scope to closed trades (same condition pattern as S03 planned)',
+  );
+  assert(
+    source.includes("trade.status === 'closed' &&") &&
+      source.includes('<ClosedPhaseView'),
+    'closed status still routes to ClosedPhaseView',
+  );
+  assert(
+    !source.includes("trade.status === 'closed' ? 'mx-auto max-w-4xl"),
+    'closed trades no longer render in the max-w-4xl legacy shell',
   );
 }
 

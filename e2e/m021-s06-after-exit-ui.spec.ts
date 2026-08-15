@@ -11,6 +11,19 @@ async function openAssessAction(page: Page) {
   await expect(action).toBeVisible();
   return action;
 }
+
+/**
+ * Expand a collapsible review section by its header (M020/S04). Review
+ * sections (grade / mistakes / AI assessment / exit notes) start collapsed
+ * in the closed-phase grid, so their content must be expanded before
+ * asserting it.
+ */
+async function expandReviewSection(page: Page, title: string): Promise<void> {
+  const trigger = page.locator('.td-review-section-trigger').filter({ hasText: title });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(page.locator('.td-review-section').filter({ hasText: title }).first()).toHaveAttribute('data-state', 'open');
+}
 const DB_PATH = process.env.DB_FILE_NAME || './.trading-journal/playwright-readiness.db';
 
 /**
@@ -104,6 +117,13 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await openAssessAction(page);
     await page.keyboard.press('Escape');
 
+    // ── Verify the AI Assessment review section header is visible ──
+    const assessSectionHeader = page.locator('.td-review-section-trigger').filter({ hasText: 'AI Assessment' });
+    await expect(assessSectionHeader).toBeVisible();
+
+    // ── Expand it (M020/S04: review sections start collapsed) ─────
+    await expandReviewSection(page, 'AI Assessment');
+
     // ── Verify AssessmentCard section is present ───────────────────
     await expect(page.getByText('AI Quality Assessment').first()).toBeVisible();
 
@@ -173,6 +193,9 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await openAssessAction(page);
     await page.keyboard.press('Escape');
 
+    // ── Expand the AI Assessment section to surface the result ─────
+    await expandReviewSection(page, 'AI Assessment');
+
     // ── Verify either error message OR assessment heading is shown ─
     const hasError = await page.getByText('AI not configured').isVisible().catch(() => false);
     const hasHeading = await page.getByText('AI Quality Assessment').first().isVisible().catch(() => false);
@@ -216,6 +239,9 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     // ── Navigate to closed trade detail page ───────────────────────
     await page.goto(`/trades/${trade.id}`);
     await page.waitForLoadState('networkidle');
+
+    // ── Expand the AI Assessment section (M020/S04: collapsed default) ──
+    await expandReviewSection(page, 'AI Assessment');
 
     // ── Verify the AssessmentCard shows scorecard data ─────────────
     await expect(page.getByText('72/100').first()).toBeVisible();
@@ -275,6 +301,10 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     const historyCard = page.locator('[data-slot="card-title"]').filter({ hasText: /^History$/ });
     await expect(historyCard).toBeVisible();
 
+    // ── Expand Grade + AI Assessment sections (M020/S04 collapsed default) ──
+    await expandReviewSection(page, 'Grade');
+    await expandReviewSection(page, 'AI Assessment');
+
     // ── Verify Grade card (only shown on closed trades) ────────────
     const gradeCard = page.getByText('Trade Grade').first();
     await expect(gradeCard).toBeVisible();
@@ -289,8 +319,10 @@ test.describe('M021 S06 After-Exit Assessment UI Smoke Tests', () => {
     await expect(page.getByText('AI Quality Assessment').first()).toBeVisible();
     await expect(page.getByText('Assessment History').first()).toBeVisible();
 
-    // ── Verify lifecycle stepper shows all phases ──────────────────
-    await expect(page.locator('span').filter({ hasText: /^Grade$/ }).first()).toBeVisible();
+    // ── Verify lifecycle stepper shows all phases (stepper label spans
+    //    are text-[11px]; the Grade review section title is 13px, so the
+    //    stepper label is the exact match) ─────────────────────────
+    await expect(page.locator('span.text-\\[11px\\]').filter({ hasText: /^Grade$/ })).toBeVisible();
 
     console.log('CLOSED_CARDS_RESULT: PASS');
   });

@@ -24,6 +24,8 @@ import TradeExitNotesCard from './trade-exit-notes-card';
 import AssessmentCard from './assessment-card';
 import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
+import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
+import { TradeCollapsibleReviewSection } from './trade-collapsible-review-section';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, TargetAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
@@ -172,42 +174,160 @@ export default function ClosedPhaseView({
 
   return (
     <>
-      {/* ── Compact header with grade ── */}
-      <TradeDetailHeader
-        symbol={trade.symbol}
-        status={trade.status}
-        direction={trade.direction}
-        tradeCode={trade.tradeCode}
-        openedAt={trade.openedAt}
-        setupName={trade.setupName}
-        gradeLabel={grade?.gradeLabel ?? null}
-        rightContent={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center justify-center rounded-md border border-border p-2 text-foreground hover:bg-muted dark:border-input dark:hover:bg-input/50"
-                aria-label="More actions"
-              >
-                <MoreHorizontal className="size-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit?.()}>
-                <Pencil className="size-4" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
-                {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
-                {requestLoading ? 'Assessing...' : 'Assess'}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        }
-      />
+      {/* ── Closed grid (M020/S04): cockpit | risk | history | review — the
+            frozen snapshot beside the review column ── */}
+      <TradeDetailGrid variant="closed">
+        {/* Cockpit: identity + actions + frozen price + compact lifecycle
+            summary (cols 1 at >=2560px). */}
+        <TradeDetailPanel area="cockpit" title="Cockpit">
+          <TradeDetailHeader
+            symbol={trade.symbol}
+            status={trade.status}
+            direction={trade.direction}
+            tradeCode={trade.tradeCode}
+            openedAt={trade.openedAt}
+            setupName={trade.setupName}
+            gradeLabel={grade?.gradeLabel ?? null}
+            rightContent={
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded-md border border-border p-2 text-foreground hover:bg-muted dark:border-input dark:hover:bg-input/50"
+                    aria-label="More actions"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onEdit?.()}>
+                    <Pencil className="size-4" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
+                    {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
+                    {requestLoading ? 'Assessing...' : 'Assess'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            }
+          />
 
-      {/* ── Lifecycle Stepper ── */}
-      <div className="mb-8">
+          <PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} frozen />
+
+          {derivedStatus && (
+            <TradeLifecycleSummaryCard
+              status={trade.status}
+              openedAt={derivedStatus.openedAt}
+              closedAt={derivedStatus.closedAt}
+              openQuantity={derivedStatus.openQuantity}
+            />
+          )}
+        </TradeDetailPanel>
+
+        {/* Risk: P&L / R + plan vs actual + levels + inline editing */}
+        <TradeDetailPanel area="risk" title="Risk">
+          <TradePnlCard
+            realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
+            rMultiple={rMultiple?.rMultiple ?? null}
+            avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
+            totalEntryQty={pnlResult?.totalEntryQty ?? 0}
+            totalExitQty={pnlResult?.totalExitQty ?? 0}
+            duration={perfMetrics?.duration ?? null}
+            returnPercent={perfMetrics?.returnPercent ?? null}
+            totalFees={perfMetrics?.totalFees ?? 0}
+            setupName={trade.setupName}
+          />
+          <RiskSnapshotCard
+            riskSnapshot={riskSnapshot}
+            plannedValues={trade}
+            actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
+            currentQuantity={derivedStatus?.openQuantity ?? null}
+            tradeStatus={trade.status}
+            stopAdjustments={stopAdjustments}
+            targetAdjustments={targetAdjustments}
+            tradeId={trade.id}
+            onAdjustmentsChanged={onAdjustmentsChanged}
+            onAddFill={onAddFill}
+          />
+        </TradeDetailPanel>
+
+        {/* History: unified stop/target/execution timeline (own title) */}
+        <TradeDetailPanel area="history">
+          <TradeHistoryFeed
+            levelHistoryEvents={levelHistoryEvents}
+            executions={executions}
+            onCorrectExecution={onCorrectExecution}
+          />
+        </TradeDetailPanel>
+
+        {/* Review: checklist (stays visible — critical evidence never hides
+            inside a collapsible) above the collapsible grade / mistakes /
+            AI assessment / exit-notes sections. */}
+        <TradeDetailPanel area="review" title="Review">
+          <TradeCheckResultsCard checkResults={checkResults} />
+
+          <TradeCollapsibleReviewSection
+            title="Grade"
+            meta={grade ? grade.gradeLabel : undefined}
+          >
+            <TradeGradeCard grade={grade} tradeStatus={trade.status} onSave={onGradeSave} />
+          </TradeCollapsibleReviewSection>
+
+          <TradeCollapsibleReviewSection
+            title="Mistakes"
+            meta={mistakes.length > 0 ? `${mistakes.length} recorded` : undefined}
+          >
+            <TradeMistakesCard
+              mistakes={mistakes}
+              mistakeTypes={mistakeTypes}
+              tradeId={trade.id}
+              onMistakesChanged={onMistakesChanged}
+            />
+          </TradeCollapsibleReviewSection>
+
+          <TradeCollapsibleReviewSection title="AI Assessment">
+            <AssessmentCard
+              scorecard={latestAssessment?.scorecard ?? null}
+              loading={assessmentsLoading}
+              error={assessmentsError}
+              onRequestAssessment={handleRequestAssessment}
+              requestLoading={requestLoading}
+              promptText={latestAssessment?.promptText}
+              rawResponse={latestAssessment?.rawResponse}
+            />
+            <AssessmentHistory
+              assessments={assessments}
+              loading={assessmentsLoading}
+              error={assessmentsError}
+            />
+          </TradeCollapsibleReviewSection>
+
+          {/* Exit notes are the one review section that may be absent
+              entirely — no empty titled section when the trade has no notes
+              (same pattern as the context band in S01/S03). */}
+          {(trade.exitNotes || trade.lesson) && (
+            <TradeCollapsibleReviewSection title="Exit Notes">
+              <TradeExitNotesCard exitNotes={trade.exitNotes} lesson={trade.lesson} />
+            </TradeCollapsibleReviewSection>
+          )}
+        </TradeDetailPanel>
+      </TradeDetailGrid>
+
+      {/* ── Below the grid (document flow): assets band, then the lifecycle
+            stepper — the closed arrangement omits assets from the template
+            (must-have), so they render beneath the grid like the open
+            trade's bands ── */}
+      <div className="mt-8">
+        <TradeAssetsCard
+          assets={assets}
+          tradeId={trade.id}
+          onAssetsChanged={onAssetsChanged}
+          defaultPhase="review"
+        />
+      </div>
+
+      <div className="mt-8">
         <LifecycleStepper
           status={trade.status}
           direction={trade.direction}
@@ -217,119 +337,6 @@ export default function ClosedPhaseView({
           hasGrade={!!grade}
           hasMistakes={mistakes.length > 0}
         />
-      </div>
-
-      {/* ── Price Widget ── */}
-      <div className="mb-8">
-        <PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} frozen />
-      </div>
-
-      {/* ── P&L-R Metrics ── */}
-      <div className="mb-8">
-        <TradePnlCard
-          realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
-          rMultiple={rMultiple?.rMultiple ?? null}
-          avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
-          totalEntryQty={pnlResult?.totalEntryQty ?? 0}
-          totalExitQty={pnlResult?.totalExitQty ?? 0}
-          duration={perfMetrics?.duration ?? null}
-          returnPercent={perfMetrics?.returnPercent ?? null}
-          totalFees={perfMetrics?.totalFees ?? 0}
-          setupName={trade.setupName}
-        />
-      </div>
-
-      {/* ── Unified Plan vs Actual ── */}
-      <div className="mb-8">
-        <RiskSnapshotCard
-          riskSnapshot={riskSnapshot}
-          plannedValues={trade}
-          actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
-          currentQuantity={derivedStatus?.openQuantity ?? null}
-          tradeStatus={trade.status}
-          stopAdjustments={stopAdjustments}
-          targetAdjustments={targetAdjustments}
-          tradeId={trade.id}
-          onAdjustmentsChanged={onAdjustmentsChanged}
-          onAddFill={onAddFill}
-        />
-      </div>
-
-      {/* ── Lifecycle Summary ── */}
-      {derivedStatus && (
-        <div className="mb-8">
-          <TradeLifecycleSummaryCard
-            status={trade.status}
-            openedAt={derivedStatus.openedAt}
-            closedAt={derivedStatus.closedAt}
-            openQuantity={derivedStatus.openQuantity}
-          />
-        </div>
-      )}
-
-      {/* ── History Feed (unified stop/target/execution timeline) ── */}
-      <div className="mb-8">
-        <TradeHistoryFeed
-          levelHistoryEvents={levelHistoryEvents}
-          executions={executions}
-          onCorrectExecution={onCorrectExecution}
-        />
-      </div>
-
-      {/* ── Checklist ── */}
-      <div className="mb-8">
-        <TradeCheckResultsCard checkResults={checkResults} />
-      </div>
-
-      {/* ── Trade Grade ── */}
-      <div className="mb-8">
-        <TradeGradeCard grade={grade} tradeStatus={trade.status} onSave={onGradeSave} />
-      </div>
-
-      {/* ── Mistakes ── */}
-      <div className="mb-8">
-        <TradeMistakesCard
-          mistakes={mistakes}
-          mistakeTypes={mistakeTypes}
-          tradeId={trade.id}
-          onMistakesChanged={onMistakesChanged}
-        />
-      </div>
-
-      {/* ── Assets ── */}
-      <div className="mb-8">
-        <TradeAssetsCard
-          assets={assets}
-          tradeId={trade.id}
-          onAssetsChanged={onAssetsChanged}
-          defaultPhase="review"
-        />
-      </div>
-
-      {/* ── AI Assessment ── */}
-      <div className="mb-8">
-        <AssessmentCard
-          scorecard={latestAssessment?.scorecard ?? null}
-          loading={assessmentsLoading}
-          error={assessmentsError}
-          onRequestAssessment={handleRequestAssessment}
-          requestLoading={requestLoading}
-          promptText={latestAssessment?.promptText}
-          rawResponse={latestAssessment?.rawResponse}
-        />
-      </div>
-
-      <div className="mb-8">
-        <AssessmentHistory
-          assessments={assessments}
-          loading={assessmentsLoading}
-          error={assessmentsError}
-        />
-      </div>
-
-      {/* ── Exit Notes ── */}
-      <div className="mb-8">
-        <TradeExitNotesCard exitNotes={trade.exitNotes} lesson={trade.lesson} />
       </div>
     </>
   );

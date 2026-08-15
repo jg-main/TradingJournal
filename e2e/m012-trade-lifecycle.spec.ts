@@ -161,8 +161,10 @@ test.describe('M012 Trade Lifecycle', () => {
     // Lifecycle stepper shows at least step 5 (Exit) for closed trades
     await expect(page.getByText('Exit', { exact: true })).toBeVisible();
 
-    // Closed trades render TradeGradeCard (always rendered, even without grade data)
+    // Closed trades render TradeGradeCard inside the collapsible Grade
+    // review section (M020/S04) — expand the section first.
     // CardTitle renders as a <div data-slot="card-title">, not a heading role
+    await page.locator('.td-review-section-trigger').filter({ hasText: 'Grade' }).click();
     await expect(page.locator('[data-slot="card-title"]').filter({ hasText: 'Trade Grade' })).toBeVisible();
     // TradePnlCard is always present for closed trades with executions;
     // it renders without a CardHeader/CardTitle, showing "Realized P&L" as a label
