@@ -1,19 +1,40 @@
 /**
  * Seed a rich closed trade for M020/S04/T02 browser evidence.
  *
- * Uses the running dev server's API (http://localhost:4321) to create the
+ * Uses an explicitly supplied isolated server's API to create the
  * account → trade → execute (entry+exit+checkResults) → grade → mistakes →
- * link asset chain, then writes the two DB-only fields (exit_notes, lesson)
- * and an assessment snapshot directly into .trading-journal/journal.db —
+ * link asset chain, then writes the isolated checklist prerequisite, the two
+ * DB-only fields (exit_notes, lesson), and an assessment snapshot directly
+ * into the supplied evidence database —
  * mirroring the m021-s06 e2e seeding pattern (the AI provider is not
  * configured in this environment, and the trade PUT API has no exitNotes
  * write path).
  */
-import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const BASE = 'http://localhost:4321';
-const DB_PATH = './.trading-journal/journal.db';
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is required. Run this helper only against an isolated evidence server/database.`);
+  }
+  return value;
+}
+
+const BASE = requiredEnv('M020_EVIDENCE_BASE_URL').replace(/\/$/, '');
+const DB_PATH = requiredEnv('M020_EVIDENCE_DB_PATH');
+const FIXTURE_PATH = requiredEnv('M020_EVIDENCE_FIXTURE_PATH');
+const productionJournalPath = path.resolve(process.cwd(), '.trading-journal', 'journal.db');
+if (path.resolve(DB_PATH) === productionJournalPath) {
+  throw new Error('M020 evidence must use a disposable database, never the local journal database.');
+}
+try {
+  fs.accessSync(DB_PATH, fs.constants.W_OK);
+} catch {
+  throw new Error(`M020 evidence database must exist and be writable by this helper: ${DB_PATH}`);
+}
 const SYMBOL = 'S04EV';
 
 async function api(path: string, options: RequestInit = {}) {
@@ -46,9 +67,39 @@ const fe = await api(`/api/accounts/${accountId}/financial-events`, {
 });
 console.log('financial event:', fe.status ?? 'ok');
 
+// A fresh evidence database has no account checklist definitions. Create the
+// prerequisite locally instead of relying on an ID from a user journal.
+const evidenceCheckId = randomUUID();
+const prerequisiteDb = new Database(DB_PATH);
+try {
+  const now = new Date().toISOString();
+  prerequisiteDb.prepare(`
+    INSERT INTO checklist_definitions
+      (id, account_id, description, sort_order, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    evidenceCheckId,
+    accountId,
+    'Confirm entry, risk, and invalidation before execution.',
+    0,
+    1,
+    now,
+    now,
+  );
+} finally {
+  prerequisiteDb.close();
+}
+
 const trade = await api('/api/trades', {
   method: 'POST',
-  body: JSON.stringify({ symbol: SYMBOL, direction: 'long', accountId }),
+  body: JSON.stringify({
+    symbol: SYMBOL,
+    direction: 'long',
+    accountId,
+    thesis: 'Breakout continuation after a strong earnings gap with volume confirmation.',
+    invalidationCondition: 'Exit if price loses the opening-range low on sustained volume.',
+    preTradePlan: 'Enter on the first orderly pullback, risk 2%, and hold the second target.',
+  }),
 });
 const tradeId = trade.id ?? trade.trade?.id ?? trade.data?.id;
 if (!tradeId) throw new Error(`No trade id in ${JSON.stringify(trade).slice(0, 200)}`);
@@ -65,7 +116,7 @@ const exec = await api(`/api/trades/${tradeId}/execute`, {
     exit1Quantity: 100,
     fees: 2.5,
     checkResults: [
-      { checklistDefinitionId: '733a4e22-5710-44ec-a134-f2a25c7e8358', passed: true },
+      { checklistDefinitionId: evidenceCheckId, passed: true },
     ],
   }),
 });
@@ -155,4 +206,6 @@ try {
   db.close();
 }
 
+fs.mkdirSync(path.dirname(FIXTURE_PATH), { recursive: true });
+fs.writeFileSync(FIXTURE_PATH, `${JSON.stringify({ tradeId }, null, 2)}\n`, 'utf-8');
 console.log('TRADE_ID=' + tradeId);

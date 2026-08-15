@@ -1,9 +1,10 @@
 /**
  * M020/S04/T02 browser evidence — closed-phase dense grid.
  *
- * Runs the slice-verification checks at 2560x1440 and 3840x2400@1.25:
+ * Runs the slice-verification checks at the 1600px workstation breakpoint,
+ * 2560x1440, and 3840x2400@1.25:
  *  - .td scope on closed trades (page wrapper), no max-w-4xl cap
- *  - grid-template-areas with the closed variant (4 columns >=2560px)
+ *  - lifecycle-first grid-template-areas with independent side stacks
  *  - collapsible review sections: 4 sections, data-state=closed by
  *    default, click-to-expand flips data-state + chevron rotation
  *  - computed overflow-y on .td descendants (document scroll only)
@@ -14,10 +15,23 @@
 import { chromium, type Browser } from '@playwright/test';
 import fs from 'node:fs';
 
-const BASE = 'http://localhost:4321';
-const TRADE_ID = '224c4246-7747-46db-8778-c6e390e2b526';
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is required. Run this helper only against an isolated evidence server/database.`);
+  }
+  return value;
+}
+
+const BASE = requiredEnv('M020_EVIDENCE_BASE_URL').replace(/\/$/, '');
+const fixturePath = requiredEnv('M020_EVIDENCE_FIXTURE_PATH');
+const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf-8')) as { tradeId?: string };
+const TRADE_ID = fixture.tradeId;
+if (!TRADE_ID) {
+  throw new Error(`Evidence fixture at ${fixturePath} does not include tradeId.`);
+}
 const TRADE_URL = `${BASE}/trades/${TRADE_ID}`;
-const OUT = '/tmp/s04-t02';
+const OUT = process.env.M020_EVIDENCE_OUTPUT_DIR ?? '/tmp/s04-t02';
 fs.mkdirSync(OUT, { recursive: true });
 
 let passed = 0;
@@ -89,7 +103,7 @@ async function runViewport(
     `${label}: no max-w-4xl cap on the closed trade shell (computed max-width: ${wrapperInfo.maxWidth})`,
   );
 
-  // ── Grid: closed variant + 4-column template at >=2560px ──
+  // ── Grid: closed variant + lifecycle-first template at >=1600px ──
   const grid = page.locator('.td-grid');
   const gridInfo = await grid.evaluate((el) => {
     const cs = getComputedStyle(el);
@@ -106,28 +120,58 @@ async function runViewport(
   );
   const areaText = gridInfo.areas.replace(/\s+/g, ' ').trim();
   check(
-    areaText.includes('cockpit') && areaText.includes('risk') &&
-      areaText.includes('history') && areaText.includes('review'),
+    areaText.includes('lifecycle') && areaText.includes('left') &&
+      areaText.includes('risk') && areaText.includes('right'),
     `${label}: grid-template-areas = ${JSON.stringify(areaText)}`,
   );
+  const expectedWideAreas = '"lifecycle lifecycle lifecycle" "left risk right"';
   check(
-    areaText === '"cockpit risk history review"',
-    `${label}: four equal columns at >=2560px (cockpit | risk | history | review)`,
+    areaText === expectedWideAreas,
+    `${label}: lifecycle-first wide hierarchy with independent side stacks`,
   );
   const colCount = gridInfo.cols.split(' ').length;
   check(
-    colCount === 4,
-    `${label}: grid resolves 4 columns (got ${colCount})`,
+    colCount === 3,
+    `${label}: grid resolves 3 operational columns (got ${colCount})`,
   );
 
-  // Panels occupy the four named areas.
+  // Panels remain present inside the two side stacks.
   const panelAreas = await page.$$eval('.td-panel', (els) =>
     els.map((el) => ({ area: el.getAttribute('data-area'), gridArea: getComputedStyle(el).gridArea })),
   );
   check(
-    panelAreas.length === 4 &&
-      ['cockpit', 'risk', 'history', 'review'].every((a) => panelAreas.some((p) => p.area === a)),
-    `${label}: panels resolve to cockpit | risk | history | review grid areas`,
+    panelAreas.length === 6 &&
+      ['lifecycle', 'cockpit', 'risk', 'history', 'context', 'review'].every((a) =>
+        panelAreas.some((p) => p.area === a),
+      ),
+    `${label}: panels resolve to lifecycle | cockpit | risk | history | context | review`,
+  );
+  const stackInfo = await page.$$eval('.td-grid-stack', (els) =>
+    els.map((el) => ({
+      area: el.getAttribute('data-area'),
+      display: getComputedStyle(el).display,
+    })),
+  );
+  check(
+    stackInfo.length === 2 &&
+      ['left', 'right'].every((area) => stackInfo.some((stack) => stack.area === area && stack.display === 'flex')),
+    `${label}: left and right side stacks are independent flex columns`,
+  );
+  const sideFlow = await page.evaluate(() => {
+    const context = document.querySelector<HTMLElement>('.td-panel[data-area="context"]');
+    const review = document.querySelector<HTMLElement>('.td-panel[data-area="review"]');
+    const right = document.querySelector<HTMLElement>('.td-grid-stack[data-area="right"]');
+    if (!context || !review || !right) return null;
+    const contextRect = context.getBoundingClientRect();
+    const reviewRect = review.getBoundingClientRect();
+    return {
+      gap: parseFloat(getComputedStyle(right).gap),
+      space: reviewRect.top - contextRect.bottom,
+    };
+  });
+  check(
+    sideFlow !== null && Math.abs(sideFlow.space - sideFlow.gap) < 1,
+    `${label}: Review follows Context by one stack gap (measured ${sideFlow?.space}px)`,
   );
 
   // ── Collapsible review sections ──
@@ -270,6 +314,7 @@ async function runViewport(
 
 const browser = await chromium.launch();
 try {
+  await runViewport(browser, '1600x1200', 1600, 1200, 1, 'closed-1600x1200.png');
   await runViewport(browser, '2560x1440', 2560, 1440, 1, 'closed-2560x1440.png');
   await runViewport(browser, '3840x2400@125%', 3840, 2400, 1.25, 'closed-3840x2400-125.png');
 } finally {

@@ -5,9 +5,9 @@
  * trades render in the full-bleed .td grid shell with a frozen snapshot
  * (cockpit | risk | history) and a review column containing the checklist
  * plus collapsible review sections (grade, mistakes, AI assessment, exit
- * notes) — four equal columns at >=2560px, the 2x2 fold at 1440-2048px,
- * a single column below that, and no context/assets bands (assets render
- * below the grid in document flow).
+ * notes) — a lifecycle-first three-column workstation hierarchy at >=1600px,
+ * a 2x2 fold from 1440px, and a single column below that. Assets render
+ * below the grid in document flow.
  *
  * Guards the T01 must-haves at the source level: the TradeDetailGrid
  * closed variant wiring, the closed grid template at all three
@@ -98,49 +98,49 @@ function assert(condition: boolean, msg: string) {
     reviewColumnSection !== -1 ? reviewColumnSection : undefined,
   );
 
-  // 1-column default (<1440px): cockpit, risk, history, review stack.
+  // 1-column default (<1440px): lifecycle leads the stacked decision flow.
   assert(
     closedBlock.includes(".td-grid--closed") &&
+      closedBlock.includes("'lifecycle'") &&
       closedBlock.includes("'cockpit'") &&
       closedBlock.includes("'risk'") &&
       closedBlock.includes("'history'") &&
+      closedBlock.includes("'context'") &&
       closedBlock.includes("'review'"),
-    'default closed template stacks cockpit, risk, history, review rows',
+    'default closed template stacks lifecycle, cockpit, risk, history, context, review',
   );
 
-  // 1440-2048px: 2 columns — cockpit+risk above history+review (2x2 fold).
+  // 1440-1599px: lifecycle spans above the compact monitoring fold.
   assert(
-    closedBlock.includes("'cockpit risk'") &&
-      closedBlock.includes("'history review'"),
-    '1440px closed template folds the snapshot into a 2x2',
+    closedBlock.includes("'lifecycle lifecycle'") &&
+      closedBlock.includes("'cockpit risk'") &&
+      closedBlock.includes("'history review'") &&
+      closedBlock.includes("'context context'"),
+    '1440px closed template keeps lifecycle first and context below the fold',
   );
 
-  // >=2560px: 4 equal columns — cockpit | risk | history | review.
+  // >=1600px: lifecycle spans above the independent left/risk/right columns.
   assert(
-    closedBlock.includes("'cockpit risk history review'"),
-    '2560px closed template places the frozen snapshot beside the review column',
+    closedBlock.includes("'lifecycle lifecycle lifecycle'") &&
+      closedBlock.includes("'left risk right'"),
+    '1600px closed template uses independent side stacks around risk',
   );
 
-  // No context/assets bands in the closed arrangement — assets render
-  // below the grid in document flow (must-have).
+  // Context is optional inside the grid; assets remain below it in document flow.
   assert(
     closedBlock.includes('grid-template-areas') &&
-      !closedBlock.includes("'context'") &&
       !closedBlock.includes("'assets'"),
-    'closed template has no context/assets band areas',
+    'closed template keeps assets out of named grid areas',
   );
 
-  // The monitoring and planned arrangements are untouched (no S01/S03
-  // regression): the monitoring 2560px template and the planned 2560px
-  // template both still exist verbatim.
+  // Monitoring and planned variants retain their intended wide arrangements.
   assert(
-    css.includes("'cockpit risk history review'") &&
-      css.includes("'context context assets assets'"),
-    'monitoring 2560px template unchanged',
+    css.includes("'lifecycle lifecycle lifecycle'\n      'left risk right'"),
+    'monitoring 1600px template preserves independent side stacks around risk',
   );
   assert(
-    css.includes("'plan plan assets assets'"),
-    'planned 2560px template unchanged',
+    css.includes("'lifecycle lifecycle lifecycle'") && css.includes("'plan plan plan'"),
+    'planned 1600px template preserves the lifecycle-first hierarchy',
   );
 }
 
@@ -291,11 +291,11 @@ function assert(condition: boolean, msg: string) {
 
   // The view renders the grid shell with the closed variant.
   assert(
-    source.includes('<TradeDetailGrid variant="closed">'),
+    source.includes('<TradeDetailGrid variant="closed" hasContextContent={hasContextContent}>'),
     'ClosedPhaseView renders the grid with the closed variant',
   );
   assert(
-    source.includes("import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';") &&
+    source.includes("import { TradeDetailGrid, TradeDetailPanel, TradeDetailStack } from './trade-detail-grid';") &&
       source.includes("import { TradeCollapsibleReviewSection } from './trade-collapsible-review-section';"),
     'composition imports the grid shell and the collapsible section',
   );
@@ -322,6 +322,11 @@ function assert(condition: boolean, msg: string) {
     source.includes('<TradeDetailPanel area="history">') &&
       source.includes('<TradeHistoryFeed'),
     'history panel holds the unified feed (own title)',
+  );
+  assert(
+    source.includes('<TradeDetailStack area="left">') &&
+      source.includes('<TradeDetailStack area="right">'),
+    'closed side panels render in independent wide stacks',
   );
 
   // Review panel: checklist stays visible above the collapsible sections.
@@ -397,7 +402,7 @@ function assert(condition: boolean, msg: string) {
     'execution-added refetch hook preserved',
   );
 
-  // Assets and stepper render below the grid in document flow.
+  // Lifecycle renders in the grid; assets render below it in document flow.
   assert(
     source.indexOf('<TradeAssetsCard') > source.indexOf('</TradeDetailGrid>'),
     'assets render below the grid in document flow (must-have)',
@@ -407,8 +412,9 @@ function assert(condition: boolean, msg: string) {
     'assets band keeps the review phase default',
   );
   assert(
-    source.indexOf('<LifecycleStepper') > source.indexOf('</TradeDetailGrid>'),
-    'lifecycle stepper renders below the grid (document flow)',
+    source.indexOf('<TradeDetailPanel area="lifecycle"') > source.indexOf('<TradeDetailGrid') &&
+      source.indexOf('<LifecycleStepper') < source.indexOf('<TradeDetailPanel area="cockpit"'),
+    'lifecycle stepper renders in the leading grid panel',
   );
   assert(
     source.includes('hasGrade={!!grade}') && source.includes('hasMistakes={mistakes.length > 0}'),

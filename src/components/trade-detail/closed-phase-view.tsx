@@ -24,8 +24,9 @@ import TradeExitNotesCard from './trade-exit-notes-card';
 import AssessmentCard from './assessment-card';
 import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
-import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
+import { TradeDetailGrid, TradeDetailPanel, TradeDetailStack } from './trade-detail-grid';
 import { TradeCollapsibleReviewSection } from './trade-collapsible-review-section';
+import TradeContextBand from './trade-context-band';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, TargetAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
@@ -99,6 +100,9 @@ export default function ClosedPhaseView({
   const avgExitPrice = exitExecs.length > 0
     ? exitExecs.reduce((sum, e) => sum + e.price * e.quantity, 0) / exitExecs.reduce((sum, e) => sum + e.quantity, 0)
     : null;
+  const hasContextContent = Boolean(
+    trade.thesis || trade.invalidationCondition || trade.preTradePlan,
+  );
 
   // ── AI Assessment State ──
   const [assessments, setAssessments] = useState<AssessmentSnapshot[]>([]);
@@ -174,12 +178,23 @@ export default function ClosedPhaseView({
 
   return (
     <>
-      {/* ── Closed grid (M020/S04): cockpit | risk | history | review — the
-            frozen snapshot beside the review column ── */}
-      <TradeDetailGrid variant="closed">
-        {/* Cockpit: identity + actions + frozen price + compact lifecycle
-            summary (cols 1 at >=2560px). */}
-        <TradeDetailPanel area="cockpit" title="Cockpit">
+      {/* ── Closed grid: lifecycle | left stack/risk/right stack ── */}
+      <TradeDetailGrid variant="closed" hasContextContent={hasContextContent}>
+        <TradeDetailPanel area="lifecycle" title="Lifecycle">
+          <LifecycleStepper
+            status={trade.status}
+            direction={trade.direction}
+            openedAt={trade.openedAt}
+            exitNotes={trade.exitNotes}
+            lesson={trade.lesson}
+            hasGrade={!!grade}
+            hasMistakes={mistakes.length > 0}
+          />
+        </TradeDetailPanel>
+
+        <TradeDetailStack area="left">
+          {/* Cockpit: identity + actions + frozen price + compact lifecycle summary. */}
+          <TradeDetailPanel area="cockpit" title="Cockpit">
           <TradeDetailHeader
             symbol={trade.symbol}
             status={trade.status}
@@ -223,7 +238,17 @@ export default function ClosedPhaseView({
               openQuantity={derivedStatus.openQuantity}
             />
           )}
-        </TradeDetailPanel>
+          </TradeDetailPanel>
+
+          {/* History: unified stop/target/execution timeline (own title) */}
+          <TradeDetailPanel area="history">
+            <TradeHistoryFeed
+              levelHistoryEvents={levelHistoryEvents}
+              executions={executions}
+              onCorrectExecution={onCorrectExecution}
+            />
+          </TradeDetailPanel>
+        </TradeDetailStack>
 
         {/* Risk: P&L / R + plan vs actual + levels + inline editing */}
         <TradeDetailPanel area="risk" title="Risk">
@@ -252,19 +277,21 @@ export default function ClosedPhaseView({
           />
         </TradeDetailPanel>
 
-        {/* History: unified stop/target/execution timeline (own title) */}
-        <TradeDetailPanel area="history">
-          <TradeHistoryFeed
-            levelHistoryEvents={levelHistoryEvents}
-            executions={executions}
-            onCorrectExecution={onCorrectExecution}
-          />
-        </TradeDetailPanel>
+        <TradeDetailStack area="right">
+          {hasContextContent && (
+            <TradeDetailPanel area="context" title="Context">
+              <TradeContextBand
+                thesis={trade.thesis}
+                invalidationCondition={trade.invalidationCondition}
+                preTradePlan={trade.preTradePlan}
+              />
+            </TradeDetailPanel>
+          )}
 
-        {/* Review: checklist (stays visible — critical evidence never hides
-            inside a collapsible) above the collapsible grade / mistakes /
-            AI assessment / exit-notes sections. */}
-        <TradeDetailPanel area="review" title="Review">
+          {/* Review: checklist (stays visible — critical evidence never hides
+              inside a collapsible) above the collapsible grade / mistakes /
+              AI assessment / exit-notes sections. */}
+          <TradeDetailPanel area="review" title="Review">
           <TradeCheckResultsCard checkResults={checkResults} />
 
           <TradeCollapsibleReviewSection
@@ -311,13 +338,12 @@ export default function ClosedPhaseView({
               <TradeExitNotesCard exitNotes={trade.exitNotes} lesson={trade.lesson} />
             </TradeCollapsibleReviewSection>
           )}
-        </TradeDetailPanel>
+          </TradeDetailPanel>
+        </TradeDetailStack>
       </TradeDetailGrid>
 
-      {/* ── Below the grid (document flow): assets band, then the lifecycle
-            stepper — the closed arrangement omits assets from the template
-            (must-have), so they render beneath the grid like the open
-            trade's bands ── */}
+      {/* Assets remain below the grid so post-mortem evidence does not expand
+          the monitoring/review hierarchy. */}
       <div className="mt-8">
         <TradeAssetsCard
           assets={assets}
@@ -327,17 +353,6 @@ export default function ClosedPhaseView({
         />
       </div>
 
-      <div className="mt-8">
-        <LifecycleStepper
-          status={trade.status}
-          direction={trade.direction}
-          openedAt={trade.openedAt}
-          exitNotes={trade.exitNotes}
-          lesson={trade.lesson}
-          hasGrade={!!grade}
-          hasMistakes={mistakes.length > 0}
-        />
-      </div>
     </>
   );
 }

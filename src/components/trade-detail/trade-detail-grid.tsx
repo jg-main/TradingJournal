@@ -6,8 +6,9 @@
  * `TradeDetailGrid` renders the `.td` scope (density tokens) with the
  * `.td-grid` CSS grid beneath it. `TradeDetailPanel` is the single panel
  * primitive: it renders `.td-panel` chrome (header + body) and assigns the
- * panel to a named grid area via `data-area`, which the grid CSS maps to
- * `grid-area`.
+ * panel to a named grid area via `data-area`. At the wide breakpoint,
+ * `TradeDetailStack` keeps the left and right panel pairs independent so a
+ * short Context panel never inherits Cockpit's grid-row height.
  *
  * The grid is a fixed layout per phase — monitoring (open trades), planned,
  * and closed — it is intentionally not user-customizable, so no
@@ -20,25 +21,26 @@ import './trade-detail-grid.css';
 
 /** Named grid areas for the trade detail grid. */
 export type TradeDetailArea =
+  | 'lifecycle'
   | 'cockpit'
   | 'risk'
   | 'history'
   | 'review'
   | 'context'
-  | 'assets'
-  /** Planned-phase arrangement: plan (definition + narrative + assessment) and assets. */
+  /** Planned-phase arrangement: plan definition, narrative, and assessment. */
   | 'plan';
+
+/** Wide monitoring side stacks; they flatten into direct panel items below 1600px. */
+export type TradeDetailStackArea = 'left' | 'right';
 
 /**
  * Grid arrangement variants.
- * - `monitoring` (default): the open-trade cockpit | risk | history | review
- *   grid with the context + assets bands below.
- * - `planned`: plan (cols 1-2 at >=2560px) beside assets (cols 3-4) — no
- *   price/risk/history/review columns.
- * - `closed`: frozen snapshot (cockpit | risk | history) beside the review
- *   column (checklist + collapsible grade / mistakes / assessment / exit
- *   notes) — the four columns at >=2560px, with no context/assets bands
- *   (assets render below the grid in document flow).
+ * - `monitoring` (default): lifecycle first, then cockpit | risk | context /
+ *   history | risk | review at >=1600px, using independent side stacks.
+ * - `planned`: lifecycle followed by the plan surface; assets remain below in
+ *   document flow.
+ * - `closed`: lifecycle first, then the frozen snapshot and review with the
+ *   same wide-screen hierarchy as monitoring.
  */
 export type TradeDetailGridVariant = 'monitoring' | 'planned' | 'closed';
 
@@ -47,12 +49,15 @@ interface TradeDetailGridProps {
   className?: string;
   /** Grid arrangement variant; defaults to the monitoring grid. */
   variant?: TradeDetailGridVariant;
+  /** Removes the reserved context slot when this trade has no narrative. */
+  hasContextContent?: boolean;
 }
 
 export function TradeDetailGrid({
   children,
   className,
   variant = 'monitoring',
+  hasContextContent = true,
 }: TradeDetailGridProps) {
   return (
     <div className={cn('td', className)}>
@@ -61,12 +66,23 @@ export function TradeDetailGrid({
           'td-grid',
           variant === 'planned' && 'td-grid--planned',
           variant === 'closed' && 'td-grid--closed',
+          !hasContextContent && variant !== 'planned' && 'td-grid--without-context',
         )}
       >
         {children}
       </div>
     </div>
   );
+}
+
+interface TradeDetailStackProps {
+  /** The wide-screen column this panel stack occupies. */
+  area: TradeDetailStackArea;
+  children: ReactNode;
+}
+
+export function TradeDetailStack({ area, children }: TradeDetailStackProps) {
+  return <div className="td-grid-stack" data-area={area}>{children}</div>;
 }
 
 interface TradeDetailPanelProps {

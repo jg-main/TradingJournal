@@ -203,8 +203,18 @@ export default function PlannedPhaseView({
 
   return (
     <>
-      {/* ── Planned grid (M020/S03): plan | assets — no price/risk columns ── */}
+      {/* ── Planned grid: lifecycle then plan — no price/risk columns ── */}
       <TradeDetailGrid variant="planned">
+        <TradeDetailPanel area="lifecycle" title="Lifecycle">
+          <LifecycleStepper
+            status={trade.status}
+            direction={trade.direction}
+            openedAt={trade.openedAt}
+            exitNotes={trade.exitNotes}
+            lesson={trade.lesson}
+          />
+        </TradeDetailPanel>
+
         {/* Plan: identity + actions + trade definition + narrative + AI
             assessment (cols 1-2 at >=2560px). */}
         <TradeDetailPanel area="plan" title="Plan">
@@ -278,25 +288,14 @@ export default function PlannedPhaseView({
           />
         </TradeDetailPanel>
 
-        {/* Assets: pre-trade screenshots (cols 3-4 at >=2560px) */}
-        <TradeDetailPanel area="assets" title="Assets">
-          <TradeAssetsCard
-            assets={preTradeAssets}
-            tradeId={trade.id}
-            onAssetsChanged={onAssetsChanged}
-          />
-        </TradeDetailPanel>
       </TradeDetailGrid>
 
-      {/* ── Below the grid (document flow): lifecycle stepper stays
-            accessible below the panels ── */}
+      {/* Pre-trade assets remain in document flow beneath the primary plan. */}
       <div className="mt-8">
-        <LifecycleStepper
-          status={trade.status}
-          direction={trade.direction}
-          openedAt={trade.openedAt}
-          exitNotes={trade.exitNotes}
-          lesson={trade.lesson}
+        <TradeAssetsCard
+          assets={preTradeAssets}
+          tradeId={trade.id}
+          onAssetsChanged={onAssetsChanged}
         />
       </div>
     </>

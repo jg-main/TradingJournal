@@ -1,15 +1,9 @@
 /**
- * trade-detail-grid.test.ts
+ * Source-contract tests for M020's lifecycle-first monitoring layout.
  *
- * Source-contract tests for the M020/S02/T02 band integration: the trade
- * detail grid gains two band areas below the monitoring grid — context
- * (thesis / invalidation / pre-trade plan, cols 1-2 at >=2560px) and
- * assets (stage screenshots, cols 3-4 at >=2560px) — with both bands
- * stacking full-width at <1440px and 1440-2048px. Guards the S02
- * must-haves at the source level: band grid areas at all three
- * breakpoints, TradeAssetsCard moved out of below-grid document flow
- * into the assets grid area, the lifecycle stepper still below the grid,
- * and the no-nested-scrollbar document-scroll model preserved.
+ * At wide viewports the grid is intentionally shaped as:
+ * lifecycle (full width), then independent Cockpit/History and
+ * Context/Review side stacks around Risk. Assets remain in document flow.
  *
  * Run: npx tsx src/components/trade-detail/__tests__/trade-detail-grid.test.ts
  */
@@ -23,10 +17,7 @@ const __dirname = path.dirname(__filename);
 const gridSourcePath = path.resolve(__dirname, '../trade-detail-grid.tsx');
 const gridCssPath = path.resolve(__dirname, '../trade-detail-grid.css');
 const activeViewPath = path.resolve(__dirname, '../active-phase-view.tsx');
-const runAllTestsPath = path.resolve(
-  __dirname,
-  '../../../../scripts/run-all-tests.ts',
-);
+const runAllTestsPath = path.resolve(__dirname, '../../../../scripts/run-all-tests.ts');
 
 let passed = 0;
 let failed = 0;
@@ -41,172 +32,87 @@ function assert(condition: boolean, msg: string) {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Grid area type — the shell knows the two new band areas
-// ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## Grid area type');
-
+  console.log('\n## Grid contract');
   const source = fs.readFileSync(gridSourcePath, 'utf-8');
-
-  assert(source.includes("'cockpit'") && source.includes("'risk'"), 'TradeDetailArea keeps cockpit and risk');
-  assert(source.includes("'history'") && source.includes("'review'"), 'TradeDetailArea keeps history and review');
-  assert(source.includes("'context'"), 'TradeDetailArea includes the context band area');
-  assert(source.includes("'assets'"), 'TradeDetailArea includes the assets band area');
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Grid template areas — bands at all three breakpoints
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Grid template areas at 3 breakpoints');
-
   const css = fs.readFileSync(gridCssPath, 'utf-8');
 
-  // 1-column default (<1440px): bands stack full-width after review.
+  assert(source.includes("'lifecycle'"), 'TradeDetailArea includes a lifecycle area');
+  assert(source.includes("'context'"), 'TradeDetailArea includes a context area');
+  assert(!source.includes("| 'assets'"), 'assets are not a grid area');
   assert(
-    css.includes("'review'") && css.includes("'context'") && css.includes("'assets'"),
-    'default template lists review, context, assets rows',
-  );
-
-  // 1440-2048px: 2 columns, bands span both columns (full-width stacked).
-  assert(
-    css.includes("'cockpit risk'") &&
-      css.includes("'history review'") &&
-      css.includes("'context context'") &&
-      css.includes("'assets assets'"),
-    '1440px template stacks both bands full-width (context context / assets assets)',
-  );
-
-  // >=2560px: 4 columns, context spans cols 1-2, assets spans cols 3-4.
-  assert(
-    css.includes("'cockpit risk history review'") &&
-      css.includes("'context context assets assets'"),
-    '2560px template places context (cols 1-2) beside assets (cols 3-4)',
-  );
-
-  // History keeps its own column in every arrangement (no S01 regression).
-  assert(
-    css.includes("'cockpit risk'") && css.includes("'history review'"),
-    'history remains a named column in the 2-col template',
+    source.includes("export type TradeDetailStackArea = 'left' | 'right';") &&
+      source.includes('export function TradeDetailStack') &&
+      css.includes("'lifecycle lifecycle lifecycle'\n      'left risk right'") &&
+      css.includes('.td-grid-stack {\n  display: contents;'),
+    'wide grid uses independent side stacks around the central risk surface',
   );
   assert(
-    css.includes("'cockpit risk history review'"),
-    'history remains a named column in the 4-col template',
+    css.includes('grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);'),
+    'risk receives the deliberate wider centre column',
   );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Area assignment — panels land in the band areas
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Area assignment');
-
-  const css = fs.readFileSync(gridCssPath, 'utf-8');
-
+  assert(
+    css.includes(".td-grid.td-grid--without-context") &&
+      css.includes("'lifecycle lifecycle lifecycle'\n      'left risk right'"),
+    'context-free trades preserve a complete right-side review column',
+  );
+  assert(
+    css.includes(".td-panel[data-area='lifecycle']") && css.includes('grid-area: lifecycle;'),
+    'lifecycle panel maps to its grid area',
+  );
   assert(
     css.includes(".td-panel[data-area='context']") && css.includes('grid-area: context;'),
-    'context panel maps to the context grid area',
-  );
-  assert(
-    css.includes(".td-panel[data-area='assets']") && css.includes('grid-area: assets;'),
-    'assets panel maps to the assets grid area',
+    'context panel maps to its grid area',
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// ActivePhaseView wiring — bands inside the grid, stepper below it
-// ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## ActivePhaseView wiring');
+  console.log('\n## Active-phase composition');
+  const source = fs.readFileSync(activeViewPath, 'utf-8');
+  const gridOpen = source.indexOf('<TradeDetailGrid');
+  const gridClose = source.indexOf('</TradeDetailGrid>');
+  const lifecycle = source.indexOf('<TradeDetailPanel area="lifecycle"');
+  const leftStack = source.indexOf('<TradeDetailStack area="left">');
+  const cockpit = source.indexOf('<TradeDetailPanel area="cockpit"');
+  const history = source.indexOf('<TradeDetailPanel area="history">');
+  const rightStack = source.indexOf('<TradeDetailStack area="right">');
+  const context = source.indexOf('<TradeDetailPanel area="context"');
+  const review = source.indexOf('<TradeDetailPanel area="review"');
+  const assets = source.indexOf('<TradeAssetsCard');
 
-  const activeSource = fs.readFileSync(activeViewPath, 'utf-8');
-
-  // Context band renders inside the context grid area, gated on narrative
-  // content so a narrative-less trade never shows an empty titled band.
+  assert(source.includes('hasContextContent={hasContextContent}'), 'grid receives explicit context availability');
   assert(
-    activeSource.includes('<TradeDetailPanel area="context" title="Context">'),
-    'ActivePhaseView renders the context panel with its title',
+    lifecycle > gridOpen && lifecycle < cockpit && cockpit < gridClose,
+    'LifecycleStepper renders in the leading grid panel before cockpit',
   );
   assert(
-    activeSource.includes('<TradeContextBand'),
-    'ActivePhaseView renders TradeContextBand inside the context panel',
+    leftStack < cockpit && cockpit < history && history < rightStack &&
+      rightStack < context && context < review && review < gridClose,
+    'Cockpit/History and Context/Review render in their independent side stacks',
   );
   assert(
-    activeSource.includes('(trade.thesis || trade.invalidationCondition || trade.preTradePlan)'),
-    'context panel is gated on narrative content (no empty band)',
-  );
-
-  // Assets band renders inside the grid, not in below-grid document flow.
-  assert(
-    activeSource.includes('<TradeDetailPanel area="assets" title="Assets">'),
-    'ActivePhaseView renders the assets panel with its title',
+    source.includes('<LifecycleStepper') && source.includes('<TradeContextBand'),
+    'active view retains lifecycle and narrative context content',
   );
   assert(
-    activeSource.includes('<TradeAssetsCard'),
-    'ActivePhaseView renders TradeAssetsCard inside the assets panel',
-  );
-
-  // The assets card no longer lives in its own below-grid div (the old
-  // document-flow placement is gone).
-  const assetsCardInGrid =
-    activeSource.indexOf('<TradeDetailPanel area="assets"') !== -1 &&
-    activeSource.indexOf('<TradeDetailPanel area="assets"') <
-      activeSource.indexOf('<TradeAssetsCard');
-  assert(assetsCardInGrid, 'TradeAssetsCard sits inside the assets grid panel');
-
-  // LifecycleStepper stays accessible below the grid (outside the bands).
-  const gridClose = activeSource.indexOf('</TradeDetailGrid>');
-  const stepper = activeSource.indexOf('<LifecycleStepper');
-  assert(
-    gridClose !== -1 && stepper !== -1 && gridClose < stepper,
-    'LifecycleStepper renders below the grid (document flow preserved)',
-  );
-
-  // Both band panels render between the review panel and the grid close.
-  const reviewPanel = activeSource.indexOf('<TradeDetailPanel area="review"');
-  const contextPanel = activeSource.indexOf('<TradeDetailPanel area="context"');
-  const assetsPanel = activeSource.indexOf('<TradeDetailPanel area="assets"');
-  assert(
-    reviewPanel !== -1 && contextPanel !== -1 && assetsPanel !== -1 &&
-      reviewPanel < contextPanel && contextPanel < assetsPanel && assetsPanel < gridClose,
-    'band panels are ordered review → context → assets inside the grid',
+    !source.includes('<TradeDetailPanel area="assets"') && assets > gridClose,
+    'assets render after the grid in document flow',
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Document scroll model — no nested scrollbars introduced
-// ────────────────────────────────────────────────────────────────────────
 {
-  console.log('\n## Document scroll model');
-
+  console.log('\n## Document scroll and orchestration');
   const css = fs.readFileSync(gridCssPath, 'utf-8');
-
-  assert(css.includes('overflow: visible'), 'panels keep overflow visible (no inner scrolling)');
-  assert(!css.includes('overflow-y: auto') && !css.includes('overflow-y: scroll'), 'no panel scrolls vertically');
-  assert(!css.includes('overflow-x: auto') && !css.includes('overflow-x: scroll'), 'no panel scrolls horizontally');
-  assert(
-    !/[a-z-]+\s*:\s*100d?vh/.test(css),
-    'no viewport containment — document-level scroll only',
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Orchestration — registered in run-all-tests.ts
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Orchestration');
-
   const runAllSource = fs.readFileSync(runAllTestsPath, 'utf-8');
+
+  assert(css.includes('overflow: visible'), 'panels retain document-level scrolling');
+  assert(!css.includes('overflow-y: auto') && !css.includes('overflow-y: scroll'), 'no vertical nested scrollbar');
   assert(
     runAllSource.includes("'src/components/trade-detail/__tests__/trade-detail-grid.test.ts'"),
-    'run-all-tests.ts registers the trade-detail-grid source-contract test',
+    'test remains registered in the complete test runner',
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────
-// Summary
-// ────────────────────────────────────────────────────────────────────────
 const total = passed + failed;
 console.log(`\n## Results: ${passed}/${total} passed, ${failed}/${total} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

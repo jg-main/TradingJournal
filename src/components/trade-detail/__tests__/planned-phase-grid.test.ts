@@ -3,11 +3,11 @@
  *
  * Source-contract tests for the M020/S03 planned-phase grid: planned trades
  * render in the full-bleed .td grid shell with a plan panel (header + trade
- * definition + narrative context + AI assessment) spanning cols 1-2 and an
- * assets panel (pre-trade screenshots) spanning cols 3-4 at >=2560px, with
- * Execute and Scratch actions preserved and LifecycleStepper below the grid
- * in document flow. No price/risk/history/review columns exist in this
- * phase.
+ * definition + narrative context + AI assessment) below a full-width
+ * lifecycle band at >=1600px, with Execute and Scratch actions preserved and
+ * LifecycleStepper in the leading grid panel. Pre-trade screenshots remain
+ * below the grid in document flow. No price/risk/history/review columns
+ * exist in this phase.
  *
  * Guards the S03 must-haves at the source level: the plan grid area and
  * template at all three breakpoints, the TradeDetailGrid planned variant
@@ -55,9 +55,9 @@ function assert(condition: boolean, msg: string) {
 
   const source = fs.readFileSync(gridSourcePath, 'utf-8');
 
+  assert(source.includes("'lifecycle'"), 'TradeDetailArea includes the lifecycle area');
   assert(source.includes("'plan'"), 'TradeDetailArea includes the plan area');
-  assert(source.includes("'assets'"), 'TradeDetailArea keeps the assets area');
-  assert(source.includes("'context'"), 'TradeDetailArea keeps the context area');
+  assert(!source.includes("| 'assets'"), 'assets remain outside the named grid areas');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -81,31 +81,31 @@ function assert(condition: boolean, msg: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Planned grid template areas — plan and assets at all three breakpoints
+// Planned grid template areas — lifecycle followed by plan at all breakpoints
 // ────────────────────────────────────────────────────────────────────────
 {
   console.log('\n## Planned grid template areas at 3 breakpoints');
 
   const css = fs.readFileSync(gridCssPath, 'utf-8');
 
-  // 1-column default (<1440px): plan then assets stack full-width.
+  // 1-column default (<1440px): lifecycle then plan.
   assert(
     css.includes(".td-grid--planned") &&
-      css.includes("'plan'") &&
-      css.includes("'assets'"),
-    'default planned template stacks plan and assets rows',
+      css.includes("'lifecycle'") &&
+      css.includes("'plan'"),
+    'default planned template stacks lifecycle then plan',
   );
 
-  // 1440-2048px: 2 columns, both panels span both columns (full-width).
+  // 1440-1599px: both panels span the grid width.
   assert(
-    css.includes("'plan plan'") && css.includes("'assets assets'"),
-    '1440px planned template stacks plan and assets full-width',
+    css.includes("'lifecycle lifecycle'") && css.includes("'plan plan'"),
+    '1440px planned template keeps lifecycle and plan full-width',
   );
 
-  // >=2560px: 4 columns, plan spans cols 1-2, assets spans cols 3-4.
+  // >=1600px: lifecycle and plan both span the operational width.
   assert(
-    css.includes("'plan plan assets assets'"),
-    '2560px planned template places plan (cols 1-2) beside assets (cols 3-4)',
+    css.includes("'lifecycle lifecycle lifecycle'") && css.includes("'plan plan plan'"),
+    '1600px planned template gives lifecycle and plan the full width',
   );
 
   // No price/risk/history/review columns in the planned arrangement.
@@ -131,11 +131,10 @@ function assert(condition: boolean, msg: string) {
     'planned template has no cockpit/risk/history/review areas',
   );
 
-  // The monitoring grid keeps its own arrangement (no S01/S02 regression).
+  // The monitoring grid keeps its risk-first arrangement.
   assert(
-    css.includes("'cockpit risk history review'") &&
-      css.includes("'context context assets assets'"),
-    'monitoring 2560px template unchanged',
+    css.includes("'lifecycle lifecycle lifecycle'\n      'left risk right'"),
+    'monitoring wide template preserves independent side stacks around risk',
   );
 }
 
@@ -152,8 +151,8 @@ function assert(condition: boolean, msg: string) {
     'plan panel maps to the plan grid area',
   );
   assert(
-    css.includes(".td-panel[data-area='assets']") && css.includes('grid-area: assets;'),
-    'assets panel maps to the assets grid area',
+    css.includes(".td-panel[data-area='lifecycle']") && css.includes('grid-area: lifecycle;'),
+    'lifecycle panel maps to the lifecycle grid area',
   );
 }
 
@@ -206,25 +205,26 @@ function assert(condition: boolean, msg: string) {
     'Scratch action preserved in the plan panel header',
   );
 
-  // Assets panel: pre-trade screenshots.
+  // Lifecycle leads the grid and pre-trade screenshots remain in document flow.
   assert(
-    viewSource.includes('<TradeDetailPanel area="assets" title="Assets">'),
-    'PlannedPhaseView renders the assets panel with its title',
+    viewSource.includes('<TradeDetailPanel area="lifecycle" title="Lifecycle">'),
+    'PlannedPhaseView renders the lifecycle panel first',
   );
   assert(
     viewSource.includes('<TradeAssetsCard'),
-    'PlannedPhaseView renders TradeAssetsCard inside the assets panel',
+    'PlannedPhaseView renders TradeAssetsCard for pre-trade evidence',
   );
 
-  // Panel order: plan → assets inside the grid, then stepper below.
+  // Panel order: lifecycle → plan inside the grid, then assets below it.
+  const lifecyclePanel = viewSource.indexOf('<TradeDetailPanel area="lifecycle"');
   const planPanel = viewSource.indexOf('<TradeDetailPanel area="plan"');
   const header = viewSource.indexOf('<TradeDetailHeader');
   const planCard = viewSource.indexOf('<TradePlanCard');
   const contextBand = viewSource.indexOf('<TradeContextBand');
   const assessment = viewSource.indexOf('<AssessmentCard');
-  const planPanelClose = viewSource.indexOf('</TradeDetailPanel>');
-  const assetsPanel = viewSource.indexOf('<TradeDetailPanel area="assets"');
+  const planPanelClose = viewSource.indexOf('</TradeDetailPanel>', planPanel);
   const gridClose = viewSource.indexOf('</TradeDetailGrid>');
+  const assets = viewSource.indexOf('<TradeAssetsCard');
   const stepper = viewSource.indexOf('<LifecycleStepper');
 
   assert(
@@ -233,17 +233,17 @@ function assert(condition: boolean, msg: string) {
     'plan panel contains header, definition, narrative, and assessment',
   );
   assert(
-    planPanel < header && header < planCard && planCard < contextBand &&
+    lifecyclePanel < planPanel && planPanel < header && header < planCard && planCard < contextBand &&
       contextBand < assessment && assessment < planPanelClose,
-    'plan panel content is ordered header → definition → narrative → assessment',
+    'lifecycle leads the plan panel content in operational order',
   );
   assert(
-    planPanelClose < assetsPanel && assetsPanel < gridClose,
-    'assets panel renders after the plan panel and before the grid closes',
+    planPanelClose < gridClose && gridClose < assets,
+    'assets render after the plan grid in document flow',
   );
   assert(
-    gridClose !== -1 && stepper !== -1 && gridClose < stepper,
-    'LifecycleStepper renders below the grid (document flow preserved)',
+    lifecyclePanel < stepper && stepper < planPanel,
+    'LifecycleStepper renders in the leading lifecycle panel',
   );
 }
 

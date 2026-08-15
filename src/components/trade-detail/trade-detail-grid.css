@@ -8,25 +8,19 @@
  * document level (the legacy shell's <main> owns the scrollbar), so no
  * panel ever creates a competing inner scrollbar.
  *
- * Named grid areas: cockpit | risk | history | review, with the context
- * and assets bands below. The grid is the monitoring-first first screen:
- * identity + price + actions (cockpit), P&L + plan-vs-actual + levels
- * (risk), the unified lifecycle feed (history), the pre-execution
- * checklist (review), then the context band (thesis / invalidation /
- * pre-trade plan, cols 1-2 at >=2560px) beside the assets band (stage
- * screenshots, cols 3-4 at >=2560px). Below >=2560px both bands stack
- * full-width.
+ * Named panel areas: lifecycle, cockpit, risk, history, context, and review.
+ * The grid is lifecycle-first: the stepper spans the top, then the wide
+ * layout places independent cockpit/history and context/review stacks around
+ * the central risk surface. Assets stay below the main grid in document flow
+ * so rich screenshot collections never distort the monitoring scan path.
  *
  * A `.td-grid--planned` variant (S03) swaps the arrangement for planned
- * trades: a single plan panel (definition + narrative + AI assessment,
- * cols 1-2 at >=2560px) beside the assets panel (pre-trade screenshots,
- * cols 3-4 at >=2560px), with no price/risk/history/review columns.
+ * trades: a lifecycle band followed by one plan panel; pre-trade screenshots
+ * remain below the grid in document flow.
  *
  * A `.td-grid--closed` variant (S04) freezes the snapshot for closed
- * trades: cockpit | risk | history beside the review column (checklist +
- * collapsible grade / mistakes / assessment / exit notes) — the four
- * columns at >=2560px, with no context/assets bands (assets render below
- * the grid in document flow).
+ * trades: lifecycle first, then cockpit/history, central risk, and
+ * context/review; assets remain below in document flow.
  */
 
 .td {
@@ -72,88 +66,74 @@
   display: grid;
   gap: var(--td-space-3);
   align-items: start;
-  /* 1-column default (<1440px): stacked vertically, bands last */
+  /* 1-column default (<1440px): lifecycle first, then the decision flow. */
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
+    'lifecycle'
     'cockpit'
     'risk'
     'history'
     'review'
-    'context'
-    'assets';
+    'context';
 }
 
-/* 2-column layout at 1440–2048px: cockpit+risk on the first row, history+
-   review below (2x2), then the context and assets bands stacked full-width. */
+/* 2-column layout at 1440–1599px: lifecycle spans the first row, then the
+   compact monitoring fold with context below. */
 @media (min-width: 1440px) {
   .td-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
+      'lifecycle lifecycle'
       'cockpit risk'
       'history review'
-      'context context'
-      'assets assets';
+      'context context';
   }
 }
 
-/* 4-column layout at >=2560px: cockpit | risk | history | review (equal
-   width, the monitoring-first first screen), then the context band spanning
-   cols 1-2 beside the assets band spanning cols 3-4. */
-@media (min-width: 2560px) {
+/* Wide operational layout: lifecycle is the full-width orienting band;
+   independent side stacks prevent either column's content height from
+   creating a void above its next panel. */
+@media (min-width: 1600px) {
   .td-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
     grid-template-areas:
-      'cockpit risk history review'
-      'context context assets assets';
+      'lifecycle lifecycle lifecycle'
+      'left risk right';
   }
 }
 
-/* ── Planned-phase variant (M020/S03) ─────────────────────────────────────
- * Planned trades swap the monitoring arrangement for a two-panel surface:
- * the plan panel (header + trade definition + narrative context + AI
- * assessment) and the assets panel (pre-trade screenshots). No price/risk/
- * history/review columns exist in this phase.
- *
- * Same three breakpoints as the monitoring grid: 1 column below 1440px,
- * both panels stacking full-width at 1440-2048px, and plan spanning cols
- * 1-2 beside assets spanning cols 3-4 at >=2560px. Placed after the
- * monitoring rules so the variant wins at equal specificity. */
-.td-grid--planned {
-  grid-template-columns: minmax(0, 1fr);
+/* Below the wide breakpoint stacks are transparent to the one- and
+   two-column named-area fallbacks. At >=1600px they become independent
+   vertical columns, so Context and Review remain adjacent regardless of
+   Cockpit or Risk height. */
+.td-grid-stack {
+  display: contents;
+}
+
+@media (min-width: 1600px) {
+  .td-grid-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--td-space-3);
+    min-width: 0;
+    align-self: start;
+  }
+
+  .td-grid-stack[data-area='left'] {
+    grid-area: left;
+  }
+
+  .td-grid-stack[data-area='right'] {
+    grid-area: right;
+  }
+}
+
+/* Do not reserve an empty narrative panel. In its absence Review takes the
+   entire right-side stack at wide widths and the context row disappears at
+   narrower desktop widths. */
+.td-grid.td-grid--without-context {
   grid-template-areas:
-    'plan'
-    'assets';
-}
-
-@media (min-width: 1440px) {
-  .td-grid--planned {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      'plan plan'
-      'assets assets';
-  }
-}
-
-@media (min-width: 2560px) {
-  .td-grid--planned {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-template-areas:
-      'plan plan assets assets';
-  }
-}
-
-/* ── Closed-phase variant (M020/S04) ──────────────────────────────────────
- * Closed trades freeze the snapshot (cockpit | risk | history) beside a
- * review column: the checklist above collapsible grade / mistakes / AI
- * assessment / exit-notes sections. Same three breakpoints as monitoring
- * and planned: 1 column below 1440px, the 2x2 fold at 1440-2048px, and
- * the full four columns at >=2560px. No context or assets bands exist in
- * this phase — assets render below the grid in document flow (must-have),
- * so the template deliberately omits those areas. Placed after the
- * planned rules so the variant wins at equal specificity. */
-.td-grid--closed {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
+    'lifecycle'
     'cockpit'
     'risk'
     'history'
@@ -161,19 +141,85 @@
 }
 
 @media (min-width: 1440px) {
-  .td-grid--closed {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .td-grid.td-grid--without-context {
     grid-template-areas:
+      'lifecycle lifecycle'
       'cockpit risk'
       'history review';
   }
 }
 
-@media (min-width: 2560px) {
-  .td-grid--closed {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+@media (min-width: 1600px) {
+  .td-grid.td-grid--without-context {
     grid-template-areas:
-      'cockpit risk history review';
+      'lifecycle lifecycle lifecycle'
+      'left risk right';
+  }
+}
+
+/* ── Planned-phase variant (M020/S03) ─────────────────────────────────────
+ * Planned trades swap the monitoring arrangement for a lifecycle band followed
+ * by the plan surface. No price/risk/history/review columns exist in this
+ * phase.
+ *
+ * Same three breakpoints as the monitoring grid, with the lifecycle band
+ * spanning each grid width. */
+.td-grid--planned {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'lifecycle'
+    'plan';
+}
+
+@media (min-width: 1440px) {
+  .td-grid--planned {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'lifecycle lifecycle'
+      'plan plan';
+  }
+}
+
+@media (min-width: 1600px) {
+  .td-grid--planned {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
+    grid-template-areas:
+      'lifecycle lifecycle lifecycle'
+      'plan plan plan';
+  }
+}
+
+/* ── Closed-phase variant (M020/S04) ──────────────────────────────────────
+ * Closed trades share the monitoring hierarchy but pair the fixed snapshot
+ * with collapsible review sections. Assets remain below the grid. */
+.td-grid--closed {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'lifecycle'
+    'cockpit'
+    'risk'
+    'history'
+    'context'
+    'review';
+}
+
+@media (min-width: 1440px) {
+  .td-grid--closed {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'lifecycle lifecycle'
+      'cockpit risk'
+      'history review'
+      'context context';
+  }
+}
+
+@media (min-width: 1600px) {
+  .td-grid--closed {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
+    grid-template-areas:
+      'lifecycle lifecycle lifecycle'
+      'left risk right';
   }
 }
 
@@ -289,6 +335,10 @@
 }
 
 /* Grid area assignment — the named template areas above. */
+.td-panel[data-area='lifecycle'] {
+  grid-area: lifecycle;
+}
+
 .td-panel[data-area='cockpit'] {
   grid-area: cockpit;
 }
@@ -307,10 +357,6 @@
 
 .td-panel[data-area='context'] {
   grid-area: context;
-}
-
-.td-panel[data-area='assets'] {
-  grid-area: assets;
 }
 
 .td-panel[data-area='plan'] {
@@ -361,7 +407,8 @@
 }
 
 /* ── Risk column density (M020/S01) ───────────────────────────────────────
- * At >=2560px the risk column is ~1/4 of the viewport (~620px). The
+ * At the wide workstation breakpoint, the risk column gets a wider central
+ * share. The
  * P&L metrics grid collapses from 4-up to 2-up and the plan-vs-actual
  * cards stack vertically (TradeDetailsCard's 3-column table needs the
  * full column width). Specificity beats the Tailwind responsive

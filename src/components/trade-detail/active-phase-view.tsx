@@ -18,7 +18,7 @@ import TradePnlCard from './trade-pnl-card';
 import TradeCheckResultsCard from './trade-check-results-card';
 import { AddExitDialog } from '@/components/add-exit-dialog';
 import { Button } from '@/components/ui/button';
-import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
+import { TradeDetailGrid, TradeDetailPanel, TradeDetailStack } from './trade-detail-grid';
 import TradeContextBand from './trade-context-band';
 import TradeAssetsCard from './trade-assets-card';
 import type { Trade, Execution, RiskSnapshot, StopAdjustment, TargetAdjustment, TradeAsset, CheckResult, MtmData } from './types';
@@ -82,13 +82,27 @@ export default function ActivePhaseView({
   unrealizedRMultiple,
 }: ActivePhaseViewProps) {
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
+  const hasContextContent = Boolean(
+    trade.thesis || trade.invalidationCondition || trade.preTradePlan,
+  );
 
   return (
     <>
-      {/* ── Monitoring grid (M020/S01): cockpit | risk | history | review ── */}
-      <TradeDetailGrid>
-        {/* Cockpit: identity + price + actions + compact lifecycle summary */}
-        <TradeDetailPanel area="cockpit" title="Cockpit">
+      {/* ── Monitoring grid: lifecycle | left stack/risk/right stack ── */}
+      <TradeDetailGrid hasContextContent={hasContextContent}>
+        <TradeDetailPanel area="lifecycle" title="Lifecycle">
+          <LifecycleStepper
+            status={trade.status}
+            direction={trade.direction}
+            openedAt={trade.openedAt}
+            exitNotes={trade.exitNotes}
+            lesson={trade.lesson}
+          />
+        </TradeDetailPanel>
+
+        <TradeDetailStack area="left">
+          {/* Cockpit: identity + price + actions + compact lifecycle summary */}
+          <TradeDetailPanel area="cockpit" title="Cockpit">
           <TradeDetailHeader
             symbol={trade.symbol}
             status={trade.status}
@@ -131,7 +145,17 @@ export default function ActivePhaseView({
               openQuantity={derivedStatus.openQuantity}
             />
           )}
-        </TradeDetailPanel>
+          </TradeDetailPanel>
+
+          {/* History: unified stop/target/execution timeline (own title) */}
+          <TradeDetailPanel area="history">
+            <TradeHistoryFeed
+              levelHistoryEvents={levelHistoryEvents}
+              executions={executions}
+              onCorrectExecution={onCorrectExecution}
+            />
+          </TradeDetailPanel>
+        </TradeDetailStack>
 
         {/* Risk: P&L / R + plan vs actual + levels + inline editing */}
         <TradeDetailPanel area="risk" title="Risk">
@@ -165,53 +189,35 @@ export default function ActivePhaseView({
           />
         </TradeDetailPanel>
 
-        {/* History: unified stop/target/execution timeline (own title) */}
-        <TradeDetailPanel area="history">
-          <TradeHistoryFeed
-            levelHistoryEvents={levelHistoryEvents}
-            executions={executions}
-            onCorrectExecution={onCorrectExecution}
-          />
-        </TradeDetailPanel>
+        <TradeDetailStack area="right">
+          {/* Context band: thesis / invalidation / pre-trade plan. Omitted
+              entirely when the trade has no narrative content. */}
+          {hasContextContent && (
+            <TradeDetailPanel area="context" title="Context">
+              <TradeContextBand
+                thesis={trade.thesis}
+                invalidationCondition={trade.invalidationCondition}
+                preTradePlan={trade.preTradePlan}
+              />
+            </TradeDetailPanel>
+          )}
 
-        {/* Review: pre-execution checklist */}
-        <TradeDetailPanel area="review" title="Review">
-          <TradeCheckResultsCard checkResults={checkResults} />
-        </TradeDetailPanel>
-
-        {/* Context band: thesis / invalidation / pre-trade plan
-            (cols 1-2 at >=2560px). Omitted entirely when the trade has
-            no narrative content — no empty titled band in the grid. */}
-        {(trade.thesis || trade.invalidationCondition || trade.preTradePlan) && (
-          <TradeDetailPanel area="context" title="Context">
-            <TradeContextBand
-              thesis={trade.thesis}
-              invalidationCondition={trade.invalidationCondition}
-              preTradePlan={trade.preTradePlan}
-            />
+          {/* Review: pre-execution checklist */}
+          <TradeDetailPanel area="review" title="Review">
+            <TradeCheckResultsCard checkResults={checkResults} />
           </TradeDetailPanel>
-        )}
+        </TradeDetailStack>
 
-        {/* Assets band: stage screenshots (cols 3-4 at >=2560px) */}
-        <TradeDetailPanel area="assets" title="Assets">
-          <TradeAssetsCard
-            assets={assets}
-            tradeId={trade.id}
-            onAssetsChanged={onAssetsChanged}
-            defaultPhase="entry"
-          />
-        </TradeDetailPanel>
       </TradeDetailGrid>
 
-      {/* ── Below the grid (document flow): lifecycle stepper stays
-            accessible below the bands ── */}
+      {/* Assets remain in document flow so visual evidence cannot distort the
+          monitoring hierarchy above. */}
       <div className="mt-8">
-        <LifecycleStepper
-          status={trade.status}
-          direction={trade.direction}
-          openedAt={trade.openedAt}
-          exitNotes={trade.exitNotes}
-          lesson={trade.lesson}
+        <TradeAssetsCard
+          assets={assets}
+          tradeId={trade.id}
+          onAssetsChanged={onAssetsChanged}
+          defaultPhase="entry"
         />
       </div>
 

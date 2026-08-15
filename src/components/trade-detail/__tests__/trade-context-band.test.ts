@@ -99,8 +99,8 @@ function assert(condition: boolean, msg: string) {
 // ────────────────────────────────────────────────────────────────────────
 // Call-site wiring — the narrative re-enters the UI exactly once via
 // ActivePhaseView's context band (S02/T02). RiskSnapshotCard's call site
-// stays clean (no double rendering), and ClosedPhaseView never threads
-// the narrative (it renders the frozen snapshot only).
+// stays clean (no double rendering), and ClosedPhaseView uses the same
+// guarded context band when a closed trade retains narrative evidence.
 // ────────────────────────────────────────────────────────────────────────
 {
   console.log('\n## Call-site wiring');
@@ -123,9 +123,18 @@ function assert(condition: boolean, msg: string) {
   assert(count(activeSource, 'invalidationCondition={trade.invalidationCondition}') === 1, 'invalidationCondition prop is threaded exactly once');
   assert(count(activeSource, 'preTradePlan={trade.preTradePlan}') === 1, 'preTradePlan prop is threaded exactly once');
 
-  assert(!closedSource.includes('thesis={trade.thesis}'), 'ClosedPhaseView never threads thesis');
-  assert(!closedSource.includes('invalidationCondition={trade.invalidationCondition}'), 'ClosedPhaseView never threads invalidationCondition');
-  assert(!closedSource.includes('preTradePlan={trade.preTradePlan}'), 'ClosedPhaseView never threads preTradePlan');
+  assert(
+    closedSource.includes("import TradeContextBand from './trade-context-band'") &&
+      closedSource.includes('<TradeDetailPanel area="context" title="Context">'),
+    'ClosedPhaseView renders the same narrative band in its Context panel',
+  );
+  assert(
+    closedSource.includes('{hasContextContent && (') &&
+      count(closedSource, 'thesis={trade.thesis}') === 1 &&
+      count(closedSource, 'invalidationCondition={trade.invalidationCondition}') === 1 &&
+      count(closedSource, 'preTradePlan={trade.preTradePlan}') === 1,
+    'ClosedPhaseView gates and threads each narrative field exactly once',
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────

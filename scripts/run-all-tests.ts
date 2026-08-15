@@ -45,10 +45,12 @@ const TSX_TESTS: string[] = [
   'src/components/trade-detail/__tests__/trade-history-feed.test.ts',
   'src/components/trade-detail/__tests__/trade-context-band.test.ts',
   'src/components/trade-detail/__tests__/trade-detail-grid.test.ts',
+  'src/components/trade-detail/__tests__/lifecycle-first-grid.test.ts',
   'src/components/trade-detail/__tests__/planned-phase-grid.test.ts',
   'src/components/trade-detail/__tests__/closed-phase-grid.test.ts',
   'src/components/trade-detail/__tests__/add-fill-dialog.test.ts',
   'src/components/trade-detail/__tests__/correction-dialog.test.ts',
+  'scripts/__tests__/m020-evidence-isolation.test.ts',
 ];
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
