@@ -9,9 +9,9 @@
  * panel to a named grid area via `data-area`, which the grid CSS maps to
  * `grid-area`.
  *
- * The grid is a fixed layout per phase (open trades here; planned/closed
- * phases get their own arrangements in later slices) — it is intentionally
- * not user-customizable, so no react-grid-layout is involved (D073).
+ * The grid is a fixed layout per phase — monitoring (open trades), planned,
+ * and closed — it is intentionally not user-customizable, so no
+ * react-grid-layout is involved (D073).
  */
 
 import type { ReactNode } from 'react';
@@ -35,8 +35,12 @@ export type TradeDetailArea =
  *   grid with the context + assets bands below.
  * - `planned`: plan (cols 1-2 at >=2560px) beside assets (cols 3-4) — no
  *   price/risk/history/review columns.
+ * - `closed`: frozen snapshot (cockpit | risk | history) beside the review
+ *   column (checklist + collapsible grade / mistakes / assessment / exit
+ *   notes) — the four columns at >=2560px, with no context/assets bands
+ *   (assets render below the grid in document flow).
  */
-export type TradeDetailGridVariant = 'monitoring' | 'planned';
+export type TradeDetailGridVariant = 'monitoring' | 'planned' | 'closed';
 
 interface TradeDetailGridProps {
   children: ReactNode;
@@ -53,7 +57,11 @@ export function TradeDetailGrid({
   return (
     <div className={cn('td', className)}>
       <div
-        className={cn('td-grid', variant === 'planned' && 'td-grid--planned')}
+        className={cn(
+          'td-grid',
+          variant === 'planned' && 'td-grid--planned',
+          variant === 'closed' && 'td-grid--closed',
+        )}
       >
         {children}
       </div>

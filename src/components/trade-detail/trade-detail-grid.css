@@ -21,6 +21,12 @@
  * trades: a single plan panel (definition + narrative + AI assessment,
  * cols 1-2 at >=2560px) beside the assets panel (pre-trade screenshots,
  * cols 3-4 at >=2560px), with no price/risk/history/review columns.
+ *
+ * A `.td-grid--closed` variant (S04) freezes the snapshot for closed
+ * trades: cockpit | risk | history beside the review column (checklist +
+ * collapsible grade / mistakes / assessment / exit notes) — the four
+ * columns at >=2560px, with no context/assets bands (assets render below
+ * the grid in document flow).
  */
 
 .td {
@@ -136,6 +142,96 @@
   }
 }
 
+/* ── Closed-phase variant (M020/S04) ──────────────────────────────────────
+ * Closed trades freeze the snapshot (cockpit | risk | history) beside a
+ * review column: the checklist above collapsible grade / mistakes / AI
+ * assessment / exit-notes sections. Same three breakpoints as monitoring
+ * and planned: 1 column below 1440px, the 2x2 fold at 1440-2048px, and
+ * the full four columns at >=2560px. No context or assets bands exist in
+ * this phase — assets render below the grid in document flow (must-have),
+ * so the template deliberately omits those areas. Placed after the
+ * planned rules so the variant wins at equal specificity. */
+.td-grid--closed {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'cockpit'
+    'risk'
+    'history'
+    'review';
+}
+
+@media (min-width: 1440px) {
+  .td-grid--closed {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'cockpit risk'
+      'history review';
+  }
+}
+
+@media (min-width: 2560px) {
+  .td-grid--closed {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas:
+      'cockpit risk history review';
+  }
+}
+
+/* ── Closed-phase review column (M020/S04) ───────────────────────────────
+ * Collapsible review sections (grade, mistakes, AI assessment, exit
+ * notes) inside the review panel: each section is its own chrome unit — a
+ * bordered box whose header is a full-width trigger button (title + meta
+ * + chevron) over the Radix collapsible body. The chevron rotates with
+ * the trigger's data-state (open/closed). Legacy cards inside the content
+ * drop their chrome via the shared card-strip rule below. */
+.td-review-section {
+  border: var(--td-border);
+  border-radius: var(--td-radius);
+  background: var(--card);
+}
+
+.td-review-section-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--td-space-3);
+  padding: 0 var(--td-space-4);
+  min-height: var(--td-panel-header-h);
+  border-radius: 0;
+  text-align: left;
+  font-size: var(--td-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+.td-review-section-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td-review-section-meta {
+  margin-left: auto;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.td-review-section-chevron {
+  transition: transform 160ms ease;
+}
+
+.td-review-section-trigger[data-state='open'] .td-review-section-chevron {
+  transform: rotate(180deg);
+}
+
+.td-review-section-content {
+  padding: 0 var(--td-space-3) var(--td-space-3);
+}
+
 /* ── Panels ─────────────────────────────────────────────────────────────── */
 
 .td-panel {
@@ -229,6 +325,7 @@
  * Explicit opt-in: `td-compact-card` on a wrapper applies the same strip.
  */
 .td-panel-body [data-slot='card'],
+.td-review-section-content [data-slot='card'],
 .td-compact-card [data-slot='card'] {
   border: none;
   border-radius: 0;
@@ -238,11 +335,13 @@
 }
 
 .td-panel-body [data-slot='card'],
+.td-review-section-content [data-slot='card'],
 .td-compact-card [data-slot='card'] {
   margin-bottom: 0;
 }
 
 .td-panel-body [data-slot='card'] + [data-slot='card'],
+.td-review-section-content [data-slot='card'] + [data-slot='card'],
 .td-compact-card [data-slot='card'] + [data-slot='card'] {
   margin-top: 0;
 }
@@ -250,11 +349,13 @@
 /* The legacy card header keeps its title but gains the panel-header rhythm
    inside the compact surface (spacing only, no chrome). */
 .td-panel-body [data-slot='card-header'],
+.td-review-section-content [data-slot='card-header'],
 .td-compact-card [data-slot='card-header'] {
   padding: var(--td-space-1) var(--td-space-2);
 }
 
 .td-panel-body [data-slot='card-header'] + [data-slot='card-content'],
+.td-review-section-content [data-slot='card-header'] + [data-slot='card-content'],
 .td-compact-card [data-slot='card-header'] + [data-slot='card-content'] {
   padding-top: var(--td-space-1);
 }

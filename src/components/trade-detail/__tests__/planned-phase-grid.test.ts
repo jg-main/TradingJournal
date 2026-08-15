@@ -111,12 +111,17 @@ function assert(condition: boolean, msg: string) {
   // No price/risk/history/review columns in the planned arrangement.
   // Bound the scan to the variant rule (anchored on the rule definition,
   // not the header-comment mention) so the later [data-area='cockpit']
-  // selectors and the monitoring templates don't trip it.
+  // selectors, the monitoring templates, and the M020/S04 closed variant
+  // (which does use those areas) don't trip it.
   const panelsSection = css.indexOf('/* ── Panels');
-  const plannedBlock = css.slice(
-    css.indexOf('.td-grid--planned {'),
-    panelsSection !== -1 ? panelsSection : undefined,
-  );
+  const closedVariantSection = css.indexOf('.td-grid--closed {');
+  const plannedEnd =
+    closedVariantSection !== -1
+      ? closedVariantSection
+      : panelsSection !== -1
+        ? panelsSection
+        : undefined;
+  const plannedBlock = css.slice(css.indexOf('.td-grid--planned {'), plannedEnd);
   assert(
     plannedBlock.includes('grid-template-areas') &&
       !plannedBlock.includes("'cockpit'") &&
