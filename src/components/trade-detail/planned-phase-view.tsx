@@ -13,6 +13,8 @@ import TradeDetailHeader from './trade-detail-header';
 import TradePlanCard from './trade-plan-card';
 import TradeAssetsCard from './trade-assets-card';
 import AssessmentCard from './assessment-card';
+import { TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
+import TradeContextBand from './trade-context-band';
 import type { Trade, TradeAsset } from './types';
 import type { Scorecard } from '@/lib/scorecard';
 
@@ -201,86 +203,100 @@ export default function PlannedPhaseView({
 
   return (
     <>
-      <TradeDetailHeader
-        symbol={trade.symbol}
-        status={trade.status}
-        direction={trade.direction}
-        tradeCode={trade.tradeCode}
-        rightContent={
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={onExecute}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
-            >
-              <Play className="size-4" />
-              Execute
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+      {/* ── Planned grid (M020/S03): plan | assets — no price/risk columns ── */}
+      <TradeDetailGrid variant="planned">
+        {/* Plan: identity + actions + trade definition + narrative + AI
+            assessment (cols 1-2 at >=2560px). */}
+        <TradeDetailPanel area="plan" title="Plan">
+          <TradeDetailHeader
+            symbol={trade.symbol}
+            status={trade.status}
+            direction={trade.direction}
+            tradeCode={trade.tradeCode}
+            rightContent={
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  className="inline-flex items-center justify-center rounded-md border border-border p-2 text-foreground hover:bg-muted dark:border-input dark:hover:bg-input/50"
-                  aria-label="More actions"
+                  onClick={onExecute}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
                 >
-                  <MoreHorizontal className="size-4" />
+                  <Play className="size-4" />
+                  Execute
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit?.()}>
-                  <Pencil className="size-4" />
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onScratch?.()}>
-                  <Trash2 className="size-4" />
-                  Scratch
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
-                  {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
-                  {requestLoading ? 'Assessing...' : 'Assess'}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        }
-      />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-md border border-border p-2 text-foreground hover:bg-muted dark:border-input dark:hover:bg-input/50"
+                      aria-label="More actions"
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onEdit?.()}>
+                      <Pencil className="size-4" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onScratch?.()}>
+                      <Trash2 className="size-4" />
+                      Scratch
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
+                      {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
+                      {requestLoading ? 'Assessing...' : 'Assess'}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            }
+          />
 
-      {/* Lifecycle Stepper */}
-      <div className="mb-8">
+          <TradePlanCard trade={trade} />
+
+          {/* Narrative context — single owner (S02 pattern): the definition
+              card holds the numbers only; thesis / invalidation / pre-trade
+              plan render here. Omitted entirely when the trade has no
+              narrative content — no empty titled band in the grid. */}
+          {(trade.thesis || trade.invalidationCondition || trade.preTradePlan) && (
+            <TradeContextBand
+              thesis={trade.thesis}
+              invalidationCondition={trade.invalidationCondition}
+              preTradePlan={trade.preTradePlan}
+            />
+          )}
+
+          <AssessmentCard
+            scorecard={scorecard}
+            warnings={warnings}
+            loading={loading}
+            error={error}
+            onRequestAssessment={handleRequestAssessment}
+            requestLoading={requestLoading}
+            promptText={promptText}
+            rawResponse={rawResponse}
+          />
+        </TradeDetailPanel>
+
+        {/* Assets: pre-trade screenshots (cols 3-4 at >=2560px) */}
+        <TradeDetailPanel area="assets" title="Assets">
+          <TradeAssetsCard
+            assets={preTradeAssets}
+            tradeId={trade.id}
+            onAssetsChanged={onAssetsChanged}
+          />
+        </TradeDetailPanel>
+      </TradeDetailGrid>
+
+      {/* ── Below the grid (document flow): lifecycle stepper stays
+            accessible below the panels ── */}
+      <div className="mt-8">
         <LifecycleStepper
           status={trade.status}
           direction={trade.direction}
           openedAt={trade.openedAt}
           exitNotes={trade.exitNotes}
           lesson={trade.lesson}
-        />
-      </div>
-
-      {/* Trade Plan Card */}
-      <div className="mb-8">
-        <TradePlanCard trade={trade} />
-      </div>
-
-      {/* AI Quality Assessment — shown after Trade Plan per design */}
-      <div className="mb-8">
-        <AssessmentCard
-          scorecard={scorecard}
-          warnings={warnings}
-          loading={loading}
-          error={error}
-          onRequestAssessment={handleRequestAssessment}
-          requestLoading={requestLoading}
-          promptText={promptText}
-          rawResponse={rawResponse}
-        />
-      </div>
-
-      {/* Assets — pre_trade only */}
-      <div className="mb-8">
-        <TradeAssetsCard
-          assets={preTradeAssets}
-          tradeId={trade.id}
-          onAssetsChanged={onAssetsChanged}
         />
       </div>
     </>

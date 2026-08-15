@@ -579,7 +579,7 @@ export default function TradeDetailPage() {
   );
 
   return (
-    <div className={trade.status === 'open' ? 'td px-8 py-10' : 'mx-auto max-w-4xl px-8 py-10'}>
+    <div className={trade.status === 'open' || trade.status === 'planned' ? 'td px-8 py-10' : 'mx-auto max-w-4xl px-8 py-10'}>
       <div className="mb-6 flex items-center justify-between">
         <Link href="/trades" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" />

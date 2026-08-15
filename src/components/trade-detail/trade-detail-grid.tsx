@@ -18,24 +18,45 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import './trade-detail-grid.css';
 
-/** Named grid areas for the open-trade (monitoring) grid. */
+/** Named grid areas for the trade detail grid. */
 export type TradeDetailArea =
   | 'cockpit'
   | 'risk'
   | 'history'
   | 'review'
   | 'context'
-  | 'assets';
+  | 'assets'
+  /** Planned-phase arrangement: plan (definition + narrative + assessment) and assets. */
+  | 'plan';
+
+/**
+ * Grid arrangement variants.
+ * - `monitoring` (default): the open-trade cockpit | risk | history | review
+ *   grid with the context + assets bands below.
+ * - `planned`: plan (cols 1-2 at >=2560px) beside assets (cols 3-4) — no
+ *   price/risk/history/review columns.
+ */
+export type TradeDetailGridVariant = 'monitoring' | 'planned';
 
 interface TradeDetailGridProps {
   children: ReactNode;
   className?: string;
+  /** Grid arrangement variant; defaults to the monitoring grid. */
+  variant?: TradeDetailGridVariant;
 }
 
-export function TradeDetailGrid({ children, className }: TradeDetailGridProps) {
+export function TradeDetailGrid({
+  children,
+  className,
+  variant = 'monitoring',
+}: TradeDetailGridProps) {
   return (
     <div className={cn('td', className)}>
-      <div className="td-grid">{children}</div>
+      <div
+        className={cn('td-grid', variant === 'planned' && 'td-grid--planned')}
+      >
+        {children}
+      </div>
     </div>
   );
 }

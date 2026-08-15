@@ -5,7 +5,7 @@ import { formatPrice } from './helpers';
 import type { Trade } from './types';
 
 interface TradePlanCardProps {
-  trade: Pick<Trade, 'plannedEntry' | 'plannedStop' | 'plannedTarget1' | 'plannedTarget2' | 'plannedQuantity' | 'thesis' | 'invalidationCondition' | 'preTradePlan' | 'setupName' | 'direction' | 'symbol'>;
+  trade: Pick<Trade, 'plannedEntry' | 'plannedStop' | 'plannedTarget1' | 'plannedTarget2' | 'plannedQuantity' | 'setupName' | 'direction' | 'symbol'>;
   /** When provided, shows side-by-side Planned | Executed columns */
   executedValues?: {
     avgEntryPrice: number | null;
@@ -98,26 +98,6 @@ export default function TradePlanCard({ trade, executedValues }: TradePlanCardPr
             </tbody>
           </table>
         </div>
-
-        {/* ── Narrative fields ── */}
-        {trade.thesis && (
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Thesis</div>
-            <p className="text-sm text-foreground">{trade.thesis}</p>
-          </div>
-        )}
-        {trade.invalidationCondition && (
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Invalidation</div>
-            <p className="text-sm text-foreground">{trade.invalidationCondition}</p>
-          </div>
-        )}
-        {trade.preTradePlan && (
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Pre-Trade Plan</div>
-            <p className="text-sm text-foreground">{trade.preTradePlan}</p>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

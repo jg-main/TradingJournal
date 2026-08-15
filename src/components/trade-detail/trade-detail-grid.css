@@ -16,6 +16,11 @@
  * pre-trade plan, cols 1-2 at >=2560px) beside the assets band (stage
  * screenshots, cols 3-4 at >=2560px). Below >=2560px both bands stack
  * full-width.
+ *
+ * A `.td-grid--planned` variant (S03) swaps the arrangement for planned
+ * trades: a single plan panel (definition + narrative + AI assessment,
+ * cols 1-2 at >=2560px) beside the assets panel (pre-trade screenshots,
+ * cols 3-4 at >=2560px), with no price/risk/history/review columns.
  */
 
 .td {
@@ -94,6 +99,40 @@
     grid-template-areas:
       'cockpit risk history review'
       'context context assets assets';
+  }
+}
+
+/* ── Planned-phase variant (M020/S03) ─────────────────────────────────────
+ * Planned trades swap the monitoring arrangement for a two-panel surface:
+ * the plan panel (header + trade definition + narrative context + AI
+ * assessment) and the assets panel (pre-trade screenshots). No price/risk/
+ * history/review columns exist in this phase.
+ *
+ * Same three breakpoints as the monitoring grid: 1 column below 1440px,
+ * both panels stacking full-width at 1440-2048px, and plan spanning cols
+ * 1-2 beside assets spanning cols 3-4 at >=2560px. Placed after the
+ * monitoring rules so the variant wins at equal specificity. */
+.td-grid--planned {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'plan'
+    'assets';
+}
+
+@media (min-width: 1440px) {
+  .td-grid--planned {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'plan plan'
+      'assets assets';
+  }
+}
+
+@media (min-width: 2560px) {
+  .td-grid--planned {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-areas:
+      'plan plan assets assets';
   }
 }
 
@@ -178,6 +217,10 @@
   grid-area: assets;
 }
 
+.td-panel[data-area='plan'] {
+  grid-area: plan;
+}
+
 /* ── Nested legacy card chrome ────────────────────────────────────────────
  * The panel is the chrome unit; legacy shadcn Cards that land inside a
  * panel body drop their own ring/rounded/background/padding so the dense
@@ -236,6 +279,11 @@
 /* TradeDetailHeader's mb-6 is page rhythm; inside the cockpit panel the
    gap comes from the panel body's flex gap. */
 .td-panel[data-area='cockpit'] .mb-6 {
+  margin-bottom: var(--td-space-3);
+}
+
+/* Same normalization for the planned-phase plan panel (S03). */
+.td-panel[data-area='plan'] .mb-6 {
   margin-bottom: var(--td-space-3);
 }
 
