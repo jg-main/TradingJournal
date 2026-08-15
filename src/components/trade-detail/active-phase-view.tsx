@@ -156,9 +156,6 @@ export default function ActivePhaseView({
             mtmData={mtmData}
             onRefreshPrice={onRefreshPrice}
             tradeStatus={trade.status}
-            thesis={trade.thesis}
-            invalidationCondition={trade.invalidationCondition}
-            preTradePlan={trade.preTradePlan}
             stopAdjustments={stopAdjustments}
             targetAdjustments={targetAdjustments}
             tradeId={trade.id}

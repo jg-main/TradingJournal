@@ -283,6 +283,30 @@ function assert(condition: boolean, msg: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// M020/S02/T01 narrative extraction — thesis/invalidation/pre-trade plan
+// moved to TradeContextBand; RiskSnapshotCard must not render them again
+// (S02 must-have: no double rendering)
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## Narrative extraction (M020/S02)');
+
+  const snapshotSource = fs.readFileSync(compSourcePath, 'utf-8');
+  const bandSourcePath = path.resolve(__dirname, '../trade-context-band.tsx');
+  const bandSource = fs.readFileSync(bandSourcePath, 'utf-8');
+
+  assert(bandSource.includes('export default function TradeContextBand'), 'TradeContextBand extracted as a standalone component');
+  assert(bandSource.includes('>Thesis</div>'), 'TradeContextBand renders the Thesis label');
+  assert(bandSource.includes('>Invalidation</div>'), 'TradeContextBand renders the Invalidation label');
+  assert(bandSource.includes('>Pre-Trade Plan</div>'), 'TradeContextBand renders the Pre-Trade Plan label');
+
+  assert(!snapshotSource.includes('thesis?: string | null;'), 'RiskSnapshotCard no longer accepts the thesis prop');
+  assert(!snapshotSource.includes('invalidationCondition?: string | null;'), 'RiskSnapshotCard no longer accepts the invalidationCondition prop');
+  assert(!snapshotSource.includes('preTradePlan?: string | null;'), 'RiskSnapshotCard no longer accepts the preTradePlan prop');
+  assert(!snapshotSource.includes('>Pre-Trade Plan</div>'), 'RiskSnapshotCard no longer renders the Pre-Trade Plan label');
+  assert(!snapshotSource.includes('Narrative fields'), 'RiskSnapshotCard no longer contains the narrative section');
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Summary
 // ────────────────────────────────────────────────────────────────────────
 const total = passed + failed;

@@ -14,9 +14,6 @@ interface RiskSnapshotCardProps {
   mtmData?: MtmData;
   onRefreshPrice?: () => void;
   tradeStatus?: Trade['status'];
-  thesis?: string | null;
-  invalidationCondition?: string | null;
-  preTradePlan?: string | null;
   stopAdjustments?: StopAdjustment[];
   targetAdjustments?: TargetAdjustment[];
   /** Open-trade inline editing (M019/S02/T02): forwarded to TradeDetailsCard. */
@@ -34,9 +31,6 @@ export default function RiskSnapshotCard({
   currentQuantity,
   mtmData,
   tradeStatus,
-  thesis,
-  invalidationCondition,
-  preTradePlan,
   stopAdjustments,
   targetAdjustments,
   tradeId,
@@ -197,30 +191,6 @@ export default function RiskSnapshotCard({
           </CardContent>
         </Card>
       </div>
-
-      {/* ── Narrative fields ── */}
-      {(thesis || invalidationCondition || preTradePlan) && (
-        <div className="space-y-3 border-t border-border pt-4">
-          {thesis && (
-            <div>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">Thesis</div>
-              <p className="text-sm leading-relaxed text-foreground">{thesis}</p>
-            </div>
-          )}
-          {invalidationCondition && (
-            <div>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">Invalidation</div>
-              <p className="text-sm leading-relaxed text-foreground">{invalidationCondition}</p>
-            </div>
-          )}
-          {preTradePlan && (
-            <div>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">Pre-Trade Plan</div>
-              <p className="text-sm leading-relaxed text-foreground">{preTradePlan}</p>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

@@ -247,9 +247,6 @@ export default function ClosedPhaseView({
           actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
           currentQuantity={derivedStatus?.openQuantity ?? null}
           tradeStatus={trade.status}
-          thesis={trade.thesis}
-          invalidationCondition={trade.invalidationCondition}
-          preTradePlan={trade.preTradePlan}
           stopAdjustments={stopAdjustments}
           targetAdjustments={targetAdjustments}
           tradeId={trade.id}
