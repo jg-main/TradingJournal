@@ -45,6 +45,7 @@ const TSX_TESTS: string[] = [
   'src/components/trade-detail/__tests__/trade-history-feed.test.ts',
   'src/components/trade-detail/__tests__/trade-context-band.test.ts',
   'src/components/trade-detail/__tests__/trade-detail-grid.test.ts',
+  'src/components/trade-detail/__tests__/planned-phase-grid.test.ts',
   'src/components/trade-detail/__tests__/add-fill-dialog.test.ts',
   'src/components/trade-detail/__tests__/correction-dialog.test.ts',
 ];
