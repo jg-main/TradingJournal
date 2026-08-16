@@ -203,7 +203,7 @@ export default function PlannedPhaseView({
 
   return (
     <>
-      {/* ── Planned grid: lifecycle then plan — no price/risk columns ── */}
+      {/* ── Planned grid: lifecycle, plan, then full-width evidence ── */}
       <TradeDetailGrid variant="planned">
         <TradeDetailPanel area="lifecycle" title="Lifecycle">
           <LifecycleStepper
@@ -288,16 +288,15 @@ export default function PlannedPhaseView({
           />
         </TradeDetailPanel>
 
-      </TradeDetailGrid>
+        <TradeDetailPanel area="assets">
+          <TradeAssetsCard
+            assets={preTradeAssets}
+            tradeId={trade.id}
+            onAssetsChanged={onAssetsChanged}
+          />
+        </TradeDetailPanel>
 
-      {/* Pre-trade assets remain in document flow beneath the primary plan. */}
-      <div className="mt-8">
-        <TradeAssetsCard
-          assets={preTradeAssets}
-          tradeId={trade.id}
-          onAssetsChanged={onAssetsChanged}
-        />
-      </div>
+      </TradeDetailGrid>
     </>
   );
 }

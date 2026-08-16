@@ -216,16 +216,18 @@ export default function PriceWidget({ mtmData, onRefreshPrice, frozen = false }:
           </div>
 
           <div className="flex items-center gap-2">
-            {isCachedWithError && !frozen && onRefreshPrice && (
+            {!frozen && onRefreshPrice && (
               <Button
-                data-testid="price-widget-retry"
+                data-testid="price-widget-refresh"
                 variant="ghost"
                 size="sm"
                 onClick={onRefreshPrice}
                 className="h-7 text-xs"
+                disabled={mtmData.loading}
+                aria-label="Refresh quote"
               >
-                <RefreshCw className="mr-1 size-3" />
-                Retry
+                <RefreshCw className={`mr-1 size-3 ${mtmData.loading ? 'animate-spin' : ''}`} />
+                {isCachedWithError ? 'Retry' : 'Refresh'}
               </Button>
             )}
           </div>

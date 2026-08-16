@@ -166,9 +166,9 @@ function levelDelta(oldValue: number | null, newValue: number | null): { text: s
   return { text, className };
 }
 
-/** Badge/description label for a target-level event, e.g. "Target 1". */
-function targetLabel(targetIndex: number | undefined): string {
-  return targetIndex != null ? `Target ${targetIndex}` : 'Target';
+/** Historical target events remain visible without exposing retired target slots. */
+function targetLabel(): string {
+  return 'Target';
 }
 
 const BADGE_BASE = 'inline-block shrink-0 rounded-full px-2 py-0.5 text-xs font-medium';
@@ -202,7 +202,7 @@ export default function TradeHistoryFeed({
                 event.kind === 'stop'
                   ? 'Stop'
                   : event.kind === 'target'
-                    ? targetLabel(event.targetIndex)
+                    ? targetLabel()
                     : formatAction(event.action);
 
               return (

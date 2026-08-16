@@ -1,10 +1,10 @@
 /**
- * Lifecycle-first trade detail layout contract.
+ * Active-trade operational grid contract.
  *
- * The wide monitoring layout follows the approved operational hierarchy:
- * a full-width lifecycle band above independent cockpit/history and
- * context/review stacks around the central risk surface. This prevents a
- * short Context panel from inheriting Cockpit's row height.
+ * The approved workstation layout is a lifecycle band above three independent
+ * vertical columns: Cockpit → Context, Trade Details → History, and Risk →
+ * Review; Assets span underneath. It intentionally avoids grid rows that
+ * make shorter panels wait for a taller neighbouring panel.
  *
  * Run: npx tsx src/components/trade-detail/__tests__/lifecycle-first-grid.test.ts
  */
@@ -18,8 +18,6 @@ const __dirname = path.dirname(__filename);
 const gridSource = fs.readFileSync(path.resolve(__dirname, '../trade-detail-grid.tsx'), 'utf-8');
 const gridCss = fs.readFileSync(path.resolve(__dirname, '../trade-detail-grid.css'), 'utf-8');
 const activeView = fs.readFileSync(path.resolve(__dirname, '../active-phase-view.tsx'), 'utf-8');
-const closedView = fs.readFileSync(path.resolve(__dirname, '../closed-phase-view.tsx'), 'utf-8');
-const plannedView = fs.readFileSync(path.resolve(__dirname, '../planned-phase-view.tsx'), 'utf-8');
 
 const failures: string[] = [];
 
@@ -32,60 +30,62 @@ function assert(condition: boolean, message: string) {
   }
 }
 
-console.log('\n## Lifecycle-first grid contract');
+console.log('\n## Active-trade operational grid contract');
 
 assert(gridSource.includes("| 'lifecycle'"), 'grid exposes a lifecycle area');
+assert(gridSource.includes("| 'details'"), 'grid exposes a standalone Trade Details area');
+assert(gridSource.includes("| 'assets'"), 'grid exposes an Assets area');
+assert(gridSource.includes('TradeDetailColumn'), 'grid exposes independent vertical columns');
+
 assert(
-  gridSource.includes("export type TradeDetailStackArea = 'left' | 'right';") &&
-    gridSource.includes('export function TradeDetailStack'),
-  'grid exposes independent left and right side stacks',
+  gridCss.includes("'lifecycle lifecycle lifecycle'\n      'left details right'\n      'assets assets assets'"),
+  'wide grid keeps independent columns below Lifecycle and above Assets',
 );
 assert(
-  gridCss.includes('@media (min-width: 1600px)'),
-  'three-column operational hierarchy activates at the 1600px workstation breakpoint',
+  gridCss.includes('grid-template-columns: repeat(3, minmax(0, 1fr));'),
+  'wide grid uses the approved equal-width operational columns',
 );
 assert(
-  gridCss.includes("'lifecycle lifecycle lifecycle'\n      'left risk right'") &&
-    gridCss.includes('.td-grid-stack {\n  display: contents;'),
-  'wide monitoring grid uses independent side stacks around risk',
+  gridCss.includes(".td-panel[data-area='details']") && gridCss.includes('grid-area: details;'),
+  'Trade Details panel maps to its named grid area',
 );
 assert(
-  gridCss.includes("grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);"),
-  'wide monitoring grid gives risk a wider central column',
+  gridCss.includes(".td-panel[data-area='assets']") && gridCss.includes('grid-area: assets;'),
+  'Assets panel maps to its full-width grid area',
 );
 assert(
-  gridCss.includes(".td-panel[data-area='lifecycle']") && gridCss.includes('grid-area: lifecycle;'),
-  'lifecycle panel maps to its named grid area',
+  gridCss.includes('.td-grid-column > .td-panel') && gridCss.includes('width: 100%;'),
+  'each panel fills the width of its equal-width continuous column',
 );
 
-for (const [name, source] of [
-  ['active', activeView],
-  ['closed', closedView],
-  ['planned', plannedView],
-] as const) {
-  const gridStart = source.indexOf('<TradeDetailGrid');
-  const lifecycle = source.indexOf('<TradeDetailPanel area="lifecycle" title="Lifecycle">');
-  const gridClose = source.indexOf('</TradeDetailGrid>');
-  assert(
-    gridStart !== -1 && lifecycle > gridStart && lifecycle < gridClose,
-    `${name} phase renders LifecycleStepper in the top grid band`,
-  );
-}
+const gridOpen = activeView.indexOf('<TradeDetailGrid');
+const gridClose = activeView.indexOf('</TradeDetailGrid>');
+const lifecycle = activeView.indexOf('<TradeDetailPanel area="lifecycle"');
+const leftColumn = activeView.indexOf('<TradeDetailColumn area="left">');
+const detailsColumn = activeView.indexOf('<TradeDetailColumn area="details">');
+const rightColumn = activeView.indexOf('<TradeDetailColumn area="right">');
+const assets = activeView.indexOf('<TradeDetailPanel area="assets"');
 
-for (const [name, source] of [
-  ['active', activeView],
-  ['closed', closedView],
-] as const) {
-  assert(
-    source.includes('<TradeDetailStack area="left">') &&
-      source.includes('<TradeDetailStack area="right">'),
-    `${name} phase groups the side panels into independent wide stacks`,
-  );
-}
+assert(
+  gridOpen !== -1 && lifecycle > gridOpen && lifecycle < leftColumn && leftColumn < detailsColumn &&
+    detailsColumn < rightColumn && rightColumn < assets && assets < gridClose,
+  'ActivePhaseView composes Lifecycle, the three continuous columns, and Assets in scan order',
+);
+assert(
+  activeView.includes('<TradeDetailPanel area="cockpit"') && activeView.includes('<TradeDetailPanel area="context"') &&
+    activeView.includes('<TradeDetailPanel area="details"') && activeView.includes('<TradeDetailPanel area="history"') &&
+    activeView.includes('<TradeDetailPanel area="risk"') && activeView.includes('<TradeDetailPanel area="review"'),
+  'each continuous column keeps its two owning panels together',
+);
+assert(
+  !activeView.includes('AddExitDialog') && !activeView.includes('MoreHorizontal') &&
+    !activeView.includes('DropdownMenu'),
+  'Cockpit has no duplicate Add Exit action or overflow menu',
+);
 
 if (failures.length > 0) {
-  console.error(`\n${failures.length} lifecycle-first layout assertions failed.`);
+  console.error(`\n${failures.length} active-trade operational grid assertions failed.`);
   process.exit(1);
 }
 
-console.log('\nAll lifecycle-first layout assertions passed.');
+console.log('\nAll active-trade operational grid assertions passed.');

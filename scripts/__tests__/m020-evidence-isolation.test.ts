@@ -54,12 +54,14 @@ assert(
 );
 assert(
   browserSource.includes('lifecycle lifecycle lifecycle') &&
-    browserSource.includes('left risk right'),
-  'browser helper asserts the lifecycle-first independent-stack hierarchy',
+    browserSource.includes('left details right'),
+  'browser helper asserts the lifecycle-first continuous-column hierarchy',
 );
 assert(
-  !browserSource.includes('"cockpit risk history review"'),
-  'browser helper no longer expects the obsolete four-column layout',
+  !browserSource.includes('cockpit details risk') &&
+    !browserSource.includes('context history review') &&
+    !browserSource.includes('td-grid-stack'),
+  'browser helper no longer expects row-aligned or retired-stack layouts',
 );
 
 if (failures.length > 0) {

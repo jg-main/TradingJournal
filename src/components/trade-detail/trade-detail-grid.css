@@ -8,19 +8,18 @@
  * document level (the legacy shell's <main> owns the scrollbar), so no
  * panel ever creates a competing inner scrollbar.
  *
- * Named panel areas: lifecycle, cockpit, risk, history, context, and review.
- * The grid is lifecycle-first: the stepper spans the top, then the wide
- * layout places independent cockpit/history and context/review stacks around
- * the central risk surface. Assets stay below the main grid in document flow
- * so rich screenshot collections never distort the monitoring scan path.
+ * Named panel areas: lifecycle, cockpit, details, risk, context, history,
+ * review, and assets. The grid is lifecycle-first: the stepper spans the
+ * top, then three continuous columns follow: Cockpit → Context, Trade Details
+ * → History, and Risk → Review. Assets span the final grid row.
  *
  * A `.td-grid--planned` variant (S03) swaps the arrangement for planned
  * trades: a lifecycle band followed by one plan panel; pre-trade screenshots
- * remain below the grid in document flow.
+ * live in the full-width Assets row.
  *
  * A `.td-grid--closed` variant (S04) freezes the snapshot for closed
  * trades: lifecycle first, then cockpit/history, central risk, and
- * context/review; assets remain below in document flow.
+ * context/review; assets occupy the final full-width row.
  */
 
 .td {
@@ -66,94 +65,36 @@
   display: grid;
   gap: var(--td-space-3);
   align-items: start;
-  /* 1-column default (<1440px): lifecycle first, then the decision flow. */
+  /* 1-column default (<1440px): lifecycle first, then each continuous flow. */
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'lifecycle'
-    'cockpit'
-    'risk'
-    'history'
-    'review'
-    'context';
+    'left'
+    'details'
+    'right'
+    'assets';
 }
 
-/* 2-column layout at 1440–1599px: lifecycle spans the first row, then the
-   compact monitoring fold with context below. */
+/* 2-column fallback at 1440–1599px. */
 @media (min-width: 1440px) {
   .td-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle'
-      'cockpit risk'
-      'history review'
-      'context context';
+      'left details'
+      'right right'
+      'assets assets';
   }
 }
 
-/* Wide operational layout: lifecycle is the full-width orienting band;
-   independent side stacks prevent either column's content height from
-   creating a void above its next panel. */
+/* Wide operational layout: three continuous vertical management columns. */
 @media (min-width: 1600px) {
   .td-grid {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle lifecycle'
-      'left risk right';
-  }
-}
-
-/* Below the wide breakpoint stacks are transparent to the one- and
-   two-column named-area fallbacks. At >=1600px they become independent
-   vertical columns, so Context and Review remain adjacent regardless of
-   Cockpit or Risk height. */
-.td-grid-stack {
-  display: contents;
-}
-
-@media (min-width: 1600px) {
-  .td-grid-stack {
-    display: flex;
-    flex-direction: column;
-    gap: var(--td-space-3);
-    min-width: 0;
-    align-self: start;
-  }
-
-  .td-grid-stack[data-area='left'] {
-    grid-area: left;
-  }
-
-  .td-grid-stack[data-area='right'] {
-    grid-area: right;
-  }
-}
-
-/* Do not reserve an empty narrative panel. In its absence Review takes the
-   entire right-side stack at wide widths and the context row disappears at
-   narrower desktop widths. */
-.td-grid.td-grid--without-context {
-  grid-template-areas:
-    'lifecycle'
-    'cockpit'
-    'risk'
-    'history'
-    'review';
-}
-
-@media (min-width: 1440px) {
-  .td-grid.td-grid--without-context {
-    grid-template-areas:
-      'lifecycle lifecycle'
-      'cockpit risk'
-      'history review';
-  }
-}
-
-@media (min-width: 1600px) {
-  .td-grid.td-grid--without-context {
-    grid-template-areas:
-      'lifecycle lifecycle lifecycle'
-      'left risk right';
+      'left details right'
+      'assets assets assets';
   }
 }
 
@@ -168,7 +109,8 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'lifecycle'
-    'plan';
+    'plan'
+    'assets';
 }
 
 @media (min-width: 1440px) {
@@ -176,31 +118,32 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle'
-      'plan plan';
+      'plan plan'
+      'assets assets';
   }
 }
 
 @media (min-width: 1600px) {
   .td-grid--planned {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle lifecycle'
-      'plan plan plan';
+      'plan plan plan'
+      'assets assets assets';
   }
 }
 
 /* ── Closed-phase variant (M020/S04) ──────────────────────────────────────
- * Closed trades share the monitoring hierarchy but pair the fixed snapshot
- * with collapsible review sections. Assets remain below the grid. */
+ * Closed trades share the continuous monitoring columns and pair the fixed
+ * snapshot with collapsible review sections. Assets remain below the grid. */
 .td-grid--closed {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'lifecycle'
-    'cockpit'
-    'risk'
-    'history'
-    'context'
-    'review';
+    'left'
+    'details'
+    'right'
+    'assets';
 }
 
 @media (min-width: 1440px) {
@@ -208,18 +151,19 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle'
-      'cockpit risk'
-      'history review'
-      'context context';
+      'left details'
+      'right right'
+      'assets assets';
   }
 }
 
 @media (min-width: 1600px) {
   .td-grid--closed {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle lifecycle'
-      'left risk right';
+      'left details right'
+      'assets assets assets';
   }
 }
 
@@ -334,6 +278,37 @@
   padding: var(--td-space-3);
 }
 
+/* Columns own their internal vertical rhythm. A shorter panel in one column
+   never delays the panel beneath it because of a taller neighbour elsewhere
+   in the workstation. */
+.td-grid-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  gap: var(--td-space-3);
+}
+
+.td-grid-column[data-area='left'] {
+  grid-area: left;
+}
+
+.td-grid-column[data-area='details'] {
+  grid-area: details;
+}
+
+.td-grid-column[data-area='right'] {
+  grid-area: right;
+}
+
+/* Panels retain their natural height, but never shrink horizontally inside a
+   continuous column. Every operational widget uses the full, equal column
+   width so the scan path stays aligned. */
+.td-grid-column > .td-panel {
+  align-self: stretch;
+  width: 100%;
+}
+
 /* Grid area assignment — the named template areas above. */
 .td-panel[data-area='lifecycle'] {
   grid-area: lifecycle;
@@ -341,6 +316,10 @@
 
 .td-panel[data-area='cockpit'] {
   grid-area: cockpit;
+}
+
+.td-panel[data-area='details'] {
+  grid-area: details;
 }
 
 .td-panel[data-area='risk'] {
@@ -361,6 +340,10 @@
 
 .td-panel[data-area='plan'] {
   grid-area: plan;
+}
+
+.td-panel[data-area='assets'] {
+  grid-area: assets;
 }
 
 /* ── Nested legacy card chrome ────────────────────────────────────────────
@@ -406,13 +389,9 @@
   padding-top: var(--td-space-1);
 }
 
-/* ── Risk column density (M020/S01) ───────────────────────────────────────
- * At the wide workstation breakpoint, the risk column gets a wider central
- * share. The
- * P&L metrics grid collapses from 4-up to 2-up and the plan-vs-actual
- * cards stack vertically (TradeDetailsCard's 3-column table needs the
- * full column width). Specificity beats the Tailwind responsive
- * utilities regardless of stylesheet order.
+/* ── Risk column density ──────────────────────────────────────────────────
+ * Risk remains a compact decision-support panel; Trade Details owns the
+ * position fields in its own equal-width column.
  */
 .td-panel[data-area='risk'] .sm\:grid-cols-4 {
   grid-template-columns: repeat(2, minmax(0, 1fr));

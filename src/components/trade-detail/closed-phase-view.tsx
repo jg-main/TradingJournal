@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MoreHorizontal, Pencil, Brain, Loader2 } from 'lucide-react';
+import { MoreHorizontal, Brain, Loader2 } from 'lucide-react';
 import { LifecycleStepper } from '@/components/lifecycle-stepper';
 import {
   DropdownMenu,
@@ -12,6 +12,7 @@ import {
 import TradeDetailHeader from './trade-detail-header';
 import TradeLifecycleSummaryCard from './trade-lifecycle-summary-card';
 import RiskSnapshotCard from './risk-snapshot-card';
+import TradeDetailsCard from './trade-details-card';
 import TradeHistoryFeed, { type LevelHistoryEvent } from './trade-history-feed';
 import PriceWidget from './price-widget';
 import TradePnlCard from './trade-pnl-card';
@@ -24,7 +25,7 @@ import TradeExitNotesCard from './trade-exit-notes-card';
 import AssessmentCard from './assessment-card';
 import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
-import { TradeDetailGrid, TradeDetailPanel, TradeDetailStack } from './trade-detail-grid';
+import { TradeDetailColumn, TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
 import { TradeCollapsibleReviewSection } from './trade-collapsible-review-section';
 import TradeContextBand from './trade-context-band';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, TargetAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
@@ -50,15 +51,9 @@ interface ClosedPhaseViewProps {
   stopAdjustments: StopAdjustment[];
   targetAdjustments: TargetAdjustment[];
   checkResults: CheckResult[];
-  /** Called after a TradeDetailsCard level edit so the page refetches both chains. */
-  onAdjustmentsChanged: () => Promise<void>;
   onAssetsChanged: () => Promise<void>;
   onMistakesChanged: () => Promise<void>;
   onGradeSave: (payload: GradeFormPayload) => Promise<void>;
-  onExecutionAdded?: () => void;
-  onEdit?: () => void;
-  /** M019/S04/T02: opens the page-owned AddFillDialog (threaded to TradeDetailsCard). */
-  onAddFill?: () => void;
   /** Opens the page-owned accounting correction workflow for a fill. */
   onCorrectExecution?: (execution: Execution) => void;
 }
@@ -82,13 +77,9 @@ export default function ClosedPhaseView({
   stopAdjustments,
   targetAdjustments,
   checkResults,
-  onAdjustmentsChanged,
   onAssetsChanged,
   onMistakesChanged,
   onGradeSave,
-  onExecutionAdded,
-  onEdit,
-  onAddFill,
   onCorrectExecution,
 }: ClosedPhaseViewProps) {
 
@@ -178,8 +169,8 @@ export default function ClosedPhaseView({
 
   return (
     <>
-      {/* ── Closed grid: lifecycle | left stack/risk/right stack ── */}
-      <TradeDetailGrid variant="closed" hasContextContent={hasContextContent}>
+      {/* ── Closed grid: lifecycle, position facts, risk, and review ── */}
+      <TradeDetailGrid variant="closed">
         <TradeDetailPanel area="lifecycle" title="Lifecycle">
           <LifecycleStepper
             status={trade.status}
@@ -192,7 +183,7 @@ export default function ClosedPhaseView({
           />
         </TradeDetailPanel>
 
-        <TradeDetailStack area="left">
+        <TradeDetailColumn area="left">
           {/* Cockpit: identity + actions + frozen price + compact lifecycle summary. */}
           <TradeDetailPanel area="cockpit" title="Cockpit">
           <TradeDetailHeader
@@ -215,10 +206,6 @@ export default function ClosedPhaseView({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onEdit?.()}>
-                    <Pencil className="size-4" />
-                    Edit
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleRequestAssessment} disabled={requestLoading}>
                     {requestLoading ? <Loader2 className="size-4 animate-spin" /> : <Brain className="size-4" />}
                     {requestLoading ? 'Assessing...' : 'Assess'}
@@ -240,44 +227,6 @@ export default function ClosedPhaseView({
           )}
           </TradeDetailPanel>
 
-          {/* History: unified stop/target/execution timeline (own title) */}
-          <TradeDetailPanel area="history">
-            <TradeHistoryFeed
-              levelHistoryEvents={levelHistoryEvents}
-              executions={executions}
-              onCorrectExecution={onCorrectExecution}
-            />
-          </TradeDetailPanel>
-        </TradeDetailStack>
-
-        {/* Risk: P&L / R + plan vs actual + levels + inline editing */}
-        <TradeDetailPanel area="risk" title="Risk">
-          <TradePnlCard
-            realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
-            rMultiple={rMultiple?.rMultiple ?? null}
-            avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
-            totalEntryQty={pnlResult?.totalEntryQty ?? 0}
-            totalExitQty={pnlResult?.totalExitQty ?? 0}
-            duration={perfMetrics?.duration ?? null}
-            returnPercent={perfMetrics?.returnPercent ?? null}
-            totalFees={perfMetrics?.totalFees ?? 0}
-            setupName={trade.setupName}
-          />
-          <RiskSnapshotCard
-            riskSnapshot={riskSnapshot}
-            plannedValues={trade}
-            actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
-            currentQuantity={derivedStatus?.openQuantity ?? null}
-            tradeStatus={trade.status}
-            stopAdjustments={stopAdjustments}
-            targetAdjustments={targetAdjustments}
-            tradeId={trade.id}
-            onAdjustmentsChanged={onAdjustmentsChanged}
-            onAddFill={onAddFill}
-          />
-        </TradeDetailPanel>
-
-        <TradeDetailStack area="right">
           {hasContextContent && (
             <TradeDetailPanel area="context" title="Context">
               <TradeContextBand
@@ -287,6 +236,54 @@ export default function ClosedPhaseView({
               />
             </TradeDetailPanel>
           )}
+        </TradeDetailColumn>
+
+        <TradeDetailColumn area="details">
+          <TradeDetailPanel area="details" title="Trade Details">
+            <TradeDetailsCard
+              plannedValues={trade}
+              initialEntryPrice={riskSnapshot?.initialEntryPrice ?? null}
+              initialStopPrice={riskSnapshot?.initialStopPrice ?? null}
+              initialQuantity={riskSnapshot?.initialQuantity ?? null}
+              currentQuantity={derivedStatus?.openQuantity ?? null}
+              actualEntryPrice={pnlResult?.avgEntryPrice ?? null}
+              totalEntryQuantity={pnlResult?.totalEntryQty ?? 0}
+              totalExitQuantity={pnlResult?.totalExitQty ?? 0}
+              stopAdjustments={stopAdjustments}
+              targetAdjustments={targetAdjustments}
+              tradeStatus={trade.status}
+            />
+          </TradeDetailPanel>
+
+          <TradeDetailPanel area="history">
+            <TradeHistoryFeed
+              levelHistoryEvents={levelHistoryEvents}
+              executions={executions}
+              onCorrectExecution={onCorrectExecution}
+            />
+          </TradeDetailPanel>
+        </TradeDetailColumn>
+
+        <TradeDetailColumn area="right">
+          <TradeDetailPanel area="risk" title="Risk">
+            <TradePnlCard
+              realizedPnl={pnlResult?.totalRealizedPnL ?? 0}
+              rMultiple={rMultiple?.rMultiple ?? null}
+              avgEntryPrice={pnlResult?.avgEntryPrice ?? null}
+              totalEntryQty={pnlResult?.totalEntryQty ?? 0}
+              totalExitQty={pnlResult?.totalExitQty ?? 0}
+              duration={perfMetrics?.duration ?? null}
+              returnPercent={perfMetrics?.returnPercent ?? null}
+              totalFees={perfMetrics?.totalFees ?? 0}
+              setupName={trade.setupName}
+            />
+            <RiskSnapshotCard
+              riskSnapshot={riskSnapshot}
+              plannedValues={trade}
+              actualValues={{ avgEntryPrice: pnlResult?.avgEntryPrice ?? null, avgExitPrice }}
+              tradeStatus={trade.status}
+            />
+          </TradeDetailPanel>
 
           {/* Review: checklist (stays visible — critical evidence never hides
               inside a collapsible) above the collapsible grade / mistakes /
@@ -339,19 +336,16 @@ export default function ClosedPhaseView({
             </TradeCollapsibleReviewSection>
           )}
           </TradeDetailPanel>
-        </TradeDetailStack>
+        </TradeDetailColumn>
+        <TradeDetailPanel area="assets">
+          <TradeAssetsCard
+            assets={assets}
+            tradeId={trade.id}
+            onAssetsChanged={onAssetsChanged}
+            defaultPhase="review"
+          />
+        </TradeDetailPanel>
       </TradeDetailGrid>
-
-      {/* Assets remain below the grid so post-mortem evidence does not expand
-          the monitoring/review hierarchy. */}
-      <div className="mt-8">
-        <TradeAssetsCard
-          assets={assets}
-          tradeId={trade.id}
-          onAssetsChanged={onAssetsChanged}
-          defaultPhase="review"
-        />
-      </div>
 
     </>
   );

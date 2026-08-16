@@ -2,40 +2,22 @@
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { computeRiskReward, formatCurrency } from './helpers';
-import TradeDetailsCard from './trade-details-card';
-import type { RiskSnapshot, Trade, StopAdjustment, TargetAdjustment, MtmData } from './types';
+import type { RiskSnapshot, Trade, MtmData } from './types';
 
 interface RiskSnapshotCardProps {
   riskSnapshot: RiskSnapshot | null;
   plannedValues?: Pick<Trade, 'direction' | 'plannedEntry' | 'plannedStop' | 'plannedQuantity' | 'plannedTarget1' | 'plannedTarget2'> | null;
   actualValues?: { avgEntryPrice: number | null; avgExitPrice: number | null } | null;
-  /** Canonical remaining position quantity for the Trade Details Current column. */
-  currentQuantity?: number | null;
   mtmData?: MtmData;
-  onRefreshPrice?: () => void;
   tradeStatus?: Trade['status'];
-  stopAdjustments?: StopAdjustment[];
-  targetAdjustments?: TargetAdjustment[];
-  /** Open-trade inline editing (M019/S02/T02): forwarded to TradeDetailsCard. */
-  tradeId?: string;
-  /** Called after a successful level edit so the page refetches both chains. */
-  onAdjustmentsChanged?: () => Promise<void>;
-  /** M019/S04/T02: opens the page-owned AddFillDialog from the TradeDetailsCard header button. */
-  onAddFill?: () => void;
 }
 
 export default function RiskSnapshotCard({
   riskSnapshot,
   plannedValues,
   actualValues,
-  currentQuantity,
   mtmData,
   tradeStatus,
-  stopAdjustments,
-  targetAdjustments,
-  tradeId,
-  onAdjustmentsChanged,
-  onAddFill,
 }: RiskSnapshotCardProps) {
   if (!riskSnapshot) {
     return (
@@ -113,28 +95,7 @@ export default function RiskSnapshotCard({
   const hasPlan = !!plannedValues;
 
   return (
-    <div className="space-y-4">
-      {/* ── Two-column cards ── */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        {/* Trade Details (Plan / Current / Market) */}
-        <TradeDetailsCard
-          plannedValues={plannedValues}
-          initialEntryPrice={riskSnapshot.initialEntryPrice}
-          initialStopPrice={riskSnapshot.initialStopPrice}
-          initialQuantity={riskSnapshot.initialQuantity}
-          currentQuantity={currentQuantity}
-          actualEntryPrice={actualValues?.avgEntryPrice ?? null}
-          stopAdjustments={stopAdjustments}
-          targetAdjustments={targetAdjustments}
-          mtmData={mtmData}
-          tradeStatus={tradeStatus}
-          tradeId={tradeId}
-          onAdjustmentsChanged={onAdjustmentsChanged}
-          onAddFill={onAddFill}
-        />
-
-        {/* Risk & Reward Card */}
-        <Card>
+    <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Risk &amp; Reward
@@ -189,8 +150,6 @@ export default function RiskSnapshotCard({
               </tbody>
             </table>
           </CardContent>
-        </Card>
-      </div>
-    </div>
+    </Card>
   );
 }

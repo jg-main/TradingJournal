@@ -471,6 +471,10 @@ export default function TradeDetailPage() {
     if (lRes.ok) setLevelHistory(await lRes.json());
   };
   const handleAssetsChanged = async () => { const res = await fetch(`/api/trades/${id}/assets`); if (res.ok) setAssets(await res.json()); };
+  const handleTradeChanged = async () => {
+    const res = await fetch(`/api/trades/${id}`);
+    if (res.ok) setTrade(await res.json());
+  };
   const handleMistakesChanged = async () => { const [mR, tR] = await Promise.all([fetch(`/api/trades/${id}/mistakes`), fetch('/api/lookups?type=mistake_type')]); if (mR.ok) setMistakes(await mR.json()); if (tR.ok) setMistakeTypes(await tR.json()); };
 
   const handleExecutionAdded = async () => {
@@ -607,13 +611,12 @@ export default function TradeDetailPage() {
           checkResults={checkResults}
           onAdjustmentsChanged={handleAdjustmentAdded}
           onAssetsChanged={handleAssetsChanged}
-          onExecutionAdded={handleExecutionAdded}
+          onTradeChanged={handleTradeChanged}
           mtmData={mtmData}
           onRefreshPrice={handleRefreshPrice}
           unrealizedPnl={unrealizedPnl}
           unrealizedReturnPct={unrealizedReturnPct}
           unrealizedRMultiple={unrealizedRMultiple}
-          onEdit={() => setEditOpen(true)}
           onAddFill={openAddFill}
           onCorrectExecution={openCorrectExecution}
         />
@@ -635,15 +638,11 @@ export default function TradeDetailPage() {
           stopAdjustments={stopAdjustments}
           targetAdjustments={targetAdjustments}
           checkResults={checkResults}
-          onAdjustmentsChanged={handleAdjustmentAdded}
           onAssetsChanged={handleAssetsChanged}
           onMistakesChanged={handleMistakesChanged}
           onGradeSave={handleGradeSave}
-          onExecutionAdded={handleExecutionAdded}
           mtmData={mtmData}
           onRefreshPrice={handleRefreshPrice}
-          onEdit={() => setEditOpen(true)}
-          onAddFill={openAddFill}
           onCorrectExecution={openCorrectExecution}
         />
       )}

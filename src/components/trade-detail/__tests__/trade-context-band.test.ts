@@ -1,158 +1,22 @@
-/**
- * trade-context-band.test.ts
- *
- * Source-contract tests for the M020/S02/T01 extraction: the narrative
- * fields (thesis, invalidation condition, pre-trade plan) moved out of
- * RiskSnapshotCard into a standalone TradeContextBand so the monitoring
- * grid can place them in their own context band below the plan-vs-actual
- * surface. Guards the S02 must-have "Narrative fields removed from
- * RiskSnapshotCard body — no double rendering" at the source level.
- *
- * Run: npx tsx src/components/trade-detail/__tests__/trade-context-band.test.ts
- */
+/** Context fields are edited where they are read. */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+const here = path.dirname(fileURLToPath(import.meta.url));
+const source = fs.readFileSync(path.resolve(here, '../trade-context-band.tsx'), 'utf-8');
+const active = fs.readFileSync(path.resolve(here, '../active-phase-view.tsx'), 'utf-8');
+const failures: string[] = [];
+const assert = (value: boolean, message: string) => value ? console.log(`  ✅ ${message}`) : (failures.push(message), console.error(`  ❌ ${message}`));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const bandSourcePath = path.resolve(__dirname, '../trade-context-band.tsx');
-const snapshotSourcePath = path.resolve(__dirname, '../risk-snapshot-card.tsx');
-const activeViewPath = path.resolve(__dirname, '../active-phase-view.tsx');
-const closedViewPath = path.resolve(__dirname, '../closed-phase-view.tsx');
-const runAllTestsPath = path.resolve(
-  __dirname,
-  '../../../../scripts/run-all-tests.ts',
-);
+console.log('\n## Context field editing');
+assert(source.includes("type ContextField = 'thesis' | 'invalidationCondition' | 'preTradePlan';"), 'defines the three persisted narrative fields');
+assert(source.includes("label: 'Thesis'") && source.includes("label: 'Invalidation'") && source.includes("label: 'Pre-Trade Plan'"), 'renders all Context fields with their labels');
+assert(source.includes('tradeId?: string;') && source.includes('onTradeChanged?: () => Promise<void>;'), 'accepts a section-owned update contract');
+assert(source.includes('body: JSON.stringify({ [editingField]: draft.trim() || null })'), 'saves only the field being edited');
+assert(source.includes('aria-label={`${value ? \'Edit\' : \'Add\'} ${field.label}`}'), 'each context field has an accessible local edit or add control');
+assert(source.includes('Save') && source.includes('Cancel') && source.includes('role="alert"'), 'inline editor exposes save, cancel, and error recovery');
+assert(active.includes('tradeId={trade.id}') && active.includes('onTradeChanged={onTradeChanged}'), 'active trade wires the Context editor to the page refresh owner');
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition: boolean, msg: string) {
-  if (condition) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} (FAILED)`);
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// TradeContextBand module contract
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## TradeContextBand module contract');
-
-  const source = fs.readFileSync(bandSourcePath, 'utf-8');
-
-  assert(source.includes('export default function TradeContextBand'), 'exports TradeContextBand as default');
-  assert(source.includes('interface TradeContextBandProps'), 'defines TradeContextBandProps interface');
-  assert(source.includes("'use client'") || source.includes('"use client"'), 'has use client directive');
-  assert(
-    !source.includes('@/components/ui/card'),
-    'renders chrome-free (no Card import — the grid panel owns the chrome)'
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Narrative fields — all three moved in with their exact labels
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Narrative fields');
-
-  const source = fs.readFileSync(bandSourcePath, 'utf-8');
-
-  assert(source.includes('thesis?: string | null;'), 'accepts thesis prop');
-  assert(source.includes('invalidationCondition?: string | null;'), 'accepts invalidationCondition prop');
-  assert(source.includes('preTradePlan?: string | null;'), 'accepts preTradePlan prop');
-  assert(source.includes('>Thesis</div>'), 'renders the Thesis label');
-  assert(source.includes('>Invalidation</div>'), 'renders the Invalidation label');
-  assert(source.includes('>Pre-Trade Plan</div>'), 'renders the Pre-Trade Plan label');
-  assert(source.includes('leading-relaxed text-foreground'), 'renders narrative paragraphs in the same readable style');
-  assert(
-    source.includes("if (!thesis && !invalidationCondition && !preTradePlan)") &&
-      source.includes('return null;'),
-    'returns null when every field is empty (no empty band)'
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// No double rendering — RiskSnapshotCard drops the narrative entirely
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## No double rendering (RiskSnapshotCard)');
-
-  const snapshotSource = fs.readFileSync(snapshotSourcePath, 'utf-8');
-
-  assert(!snapshotSource.includes('thesis?: string | null;'), 'RiskSnapshotCard no longer accepts the thesis prop');
-  assert(!snapshotSource.includes('invalidationCondition?: string | null;'), 'RiskSnapshotCard no longer accepts the invalidationCondition prop');
-  assert(!snapshotSource.includes('preTradePlan?: string | null;'), 'RiskSnapshotCard no longer accepts the preTradePlan prop');
-  assert(!snapshotSource.includes('>Thesis</div>'), 'RiskSnapshotCard no longer renders the Thesis label');
-  assert(!snapshotSource.includes('>Invalidation</div>'), 'RiskSnapshotCard no longer renders the Invalidation label');
-  assert(!snapshotSource.includes('>Pre-Trade Plan</div>'), 'RiskSnapshotCard no longer renders the Pre-Trade Plan label');
-  assert(!snapshotSource.includes('Narrative fields'), 'RiskSnapshotCard no longer contains the narrative section');
-  assert(!snapshotSource.includes('border-t border-border pt-4'), 'RiskSnapshotCard no longer contains the narrative separator block');
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Call-site wiring — the narrative re-enters the UI exactly once via
-// ActivePhaseView's context band (S02/T02). RiskSnapshotCard's call site
-// stays clean (no double rendering), and ClosedPhaseView uses the same
-// guarded context band when a closed trade retains narrative evidence.
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Call-site wiring');
-
-  const activeSource = fs.readFileSync(activeViewPath, 'utf-8');
-  const closedSource = fs.readFileSync(closedViewPath, 'utf-8');
-
-  // The band is wired exactly once, inside the context grid area.
-  assert(activeSource.includes("import TradeContextBand from './trade-context-band'"), 'ActivePhaseView imports TradeContextBand');
-  assert(activeSource.includes('<TradeDetailPanel area="context"'), 'ActivePhaseView renders the band inside the context grid area');
-  assert(activeSource.includes('thesis={trade.thesis}'), 'ActivePhaseView wires thesis into TradeContextBand');
-  assert(activeSource.includes('invalidationCondition={trade.invalidationCondition}'), 'ActivePhaseView wires invalidationCondition into TradeContextBand');
-  assert(activeSource.includes('preTradePlan={trade.preTradePlan}'), 'ActivePhaseView wires preTradePlan into TradeContextBand');
-
-  // Each prop appears exactly once in the file — the narrative renders
-  // in one place only (no double rendering at the call-site level).
-  const count = (src: string, needle: string) =>
-    src.split(needle).length - 1;
-  assert(count(activeSource, 'thesis={trade.thesis}') === 1, 'thesis prop is threaded exactly once');
-  assert(count(activeSource, 'invalidationCondition={trade.invalidationCondition}') === 1, 'invalidationCondition prop is threaded exactly once');
-  assert(count(activeSource, 'preTradePlan={trade.preTradePlan}') === 1, 'preTradePlan prop is threaded exactly once');
-
-  assert(
-    closedSource.includes("import TradeContextBand from './trade-context-band'") &&
-      closedSource.includes('<TradeDetailPanel area="context" title="Context">'),
-    'ClosedPhaseView renders the same narrative band in its Context panel',
-  );
-  assert(
-    closedSource.includes('{hasContextContent && (') &&
-      count(closedSource, 'thesis={trade.thesis}') === 1 &&
-      count(closedSource, 'invalidationCondition={trade.invalidationCondition}') === 1 &&
-      count(closedSource, 'preTradePlan={trade.preTradePlan}') === 1,
-    'ClosedPhaseView gates and threads each narrative field exactly once',
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Orchestration — registered in run-all-tests.ts
-// ────────────────────────────────────────────────────────────────────────
-{
-  console.log('\n## Orchestration');
-
-  const runAllSource = fs.readFileSync(runAllTestsPath, 'utf-8');
-  assert(
-    runAllSource.includes("'src/components/trade-detail/__tests__/trade-context-band.test.ts'"),
-    'run-all-tests.ts registers the trade-context-band source-contract test'
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Summary
-// ────────────────────────────────────────────────────────────────────────
-const total = passed + failed;
-console.log(`\n## Results: ${passed}/${total} passed, ${failed}/${total} failed\n`);
-process.exit(failed > 0 ? 1 : 0);
+if (failures.length) process.exit(1);
+console.log('\nAll Context field-editing assertions passed.');

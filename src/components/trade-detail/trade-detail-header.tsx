@@ -1,8 +1,10 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { TrendingUp, TrendingDown, Calendar, Tag } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Calendar, Check, Pencil, Tag, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { statusBadgeVariant, statusLabel } from './helpers';
 import { useAppTimezone } from '@/lib/timezone-context';
 import type { Trade } from './types';
@@ -15,74 +17,138 @@ interface TradeDetailHeaderProps {
   openedAt?: string | null;
   setupName?: string | null;
   gradeLabel?: string | null;
+  tradeId?: string;
+  onTradeChanged?: () => Promise<void>;
   rightContent?: ReactNode;
 }
 
+/** Compact trade identity with a section-owned setup editor. */
 export default function TradeDetailHeader({
   symbol,
   status,
-  direction,
   tradeCode,
   openedAt,
   setupName,
   gradeLabel,
+  tradeId,
+  onTradeChanged,
   rightContent,
 }: TradeDetailHeaderProps) {
   const { timezone } = useAppTimezone();
+  const [editingSetup, setEditingSetup] = useState(false);
+  const [setupDraft, setSetupDraft] = useState(setupName ?? '');
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [savingSetup, setSavingSetup] = useState(false);
   const isDeleted = status === 'deleted';
-
-  const symbolClasses = isDeleted
-    ? 'text-xl font-semibold tracking-tight text-muted-foreground line-through'
-    : 'text-xl font-semibold tracking-tight text-foreground';
-
-  const DirectionIcon = direction === 'long' ? TrendingUp : TrendingDown;
+  const canEditSetup = Boolean(tradeId && onTradeChanged && status === 'open');
 
   const openedDate = openedAt
     ? new Date(openedAt).toLocaleDateString(undefined, { timeZone: timezone, month: 'short', day: 'numeric' })
     : null;
 
+  const cancelSetupEdit = () => {
+    setEditingSetup(false);
+    setSetupDraft(setupName ?? '');
+    setSetupError(null);
+  };
+
+  const saveSetup = async () => {
+    if (!tradeId || !onTradeChanged) return;
+    setSavingSetup(true);
+    setSetupError(null);
+    try {
+      const response = await fetch(`/api/trades/${tradeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ setup: setupDraft.trim() || null }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setSetupError(body.error ?? 'Failed to update setup.');
+        return;
+      }
+      setEditingSetup(false);
+      await onTradeChanged();
+    } catch {
+      setSetupError('Failed to update setup. Check your connection and try again.');
+    } finally {
+      setSavingSetup(false);
+    }
+  };
+
   return (
-    <div className="mb-6 flex items-start justify-between">
-      <div className="flex flex-col gap-1">
+    <div className="mb-6 flex items-start justify-between gap-3">
+      <div className="min-w-0 flex flex-col gap-1">
         <div className="flex items-center gap-2.5">
-          <h1 className={symbolClasses}>{symbol}</h1>
-          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-            <DirectionIcon className="size-3" />
-            {direction === 'long' ? 'Long' : 'Short'}
-          </span>
+          <h1 className={isDeleted ? 'text-xl font-semibold tracking-tight text-muted-foreground line-through' : 'text-xl font-semibold tracking-tight text-foreground'}>{symbol}</h1>
           <Badge variant={statusBadgeVariant(status).variant} className={statusBadgeVariant(status).className}>
             {statusLabel(status)}
           </Badge>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-mono">{tradeCode}</span>
           {openedDate && (
             <>
-              <span className="text-muted-foreground">·</span>
+              <span>·</span>
               <span className="inline-flex items-center gap-1">
                 <Calendar className="size-3" />
                 {openedDate}
               </span>
             </>
           )}
-          {setupName && (
-            <>
-              <span className="text-muted-foreground">·</span>
-              <span className="inline-flex items-center gap-1">
-                <Tag className="size-3" />
-                {setupName}
-              </span>
-            </>
+          <span>·</span>
+          {editingSetup ? (
+            <span className="inline-flex items-center gap-1">
+              <Tag className="size-3" aria-hidden="true" />
+              <Input
+                aria-label="Setup"
+                value={setupDraft}
+                onChange={(event) => setSetupDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void saveSetup();
+                  if (event.key === 'Escape') cancelSetupEdit();
+                }}
+                className="h-7 w-44 text-xs"
+                autoFocus
+                disabled={savingSetup}
+              />
+              <Button type="button" variant="ghost" size="icon-sm" onClick={() => void saveSetup()} disabled={savingSetup} aria-label="Save setup">
+                <Check className="size-3" />
+              </Button>
+              <Button type="button" variant="ghost" size="icon-sm" onClick={cancelSetupEdit} disabled={savingSetup} aria-label="Cancel setup edit">
+                <X className="size-3" />
+              </Button>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <Tag className="size-3" />
+              {setupName ?? 'No setup'}
+              {canEditSetup && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSetupDraft(setupName ?? '');
+                    setEditingSetup(true);
+                    setSetupError(null);
+                  }}
+                  className="inline-flex size-5 items-center justify-center rounded hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Edit setup"
+                >
+                  <Pencil className="size-3" />
+                </button>
+              )}
+            </span>
           )}
           {gradeLabel && (
             <>
-              <span className="text-muted-foreground">·</span>
-              <span className="font-medium text-muted-foreground">Grade: {gradeLabel}</span>
+              <span>·</span>
+              <span className="font-medium">Grade: {gradeLabel}</span>
             </>
           )}
         </div>
+        {setupError && <p role="alert" className="text-xs text-destructive">{setupError}</p>}
       </div>
-      {rightContent && <div>{rightContent}</div>}
+      {rightContent && <div className="shrink-0">{rightContent}</div>}
     </div>
   );
 }

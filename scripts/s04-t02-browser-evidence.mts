@@ -4,7 +4,7 @@
  * Runs the slice-verification checks at the 1600px workstation breakpoint,
  * 2560x1440, and 3840x2400@1.25:
  *  - .td scope on closed trades (page wrapper), no max-w-4xl cap
- *  - lifecycle-first grid-template-areas with independent side stacks
+ *  - lifecycle-first grid-template-areas with three fixed panel columns
  *  - collapsible review sections: 4 sections, data-state=closed by
  *    default, click-to-expand flips data-state + chevron rotation
  *  - computed overflow-y on .td descendants (document scroll only)
@@ -103,7 +103,7 @@ async function runViewport(
     `${label}: no max-w-4xl cap on the closed trade shell (computed max-width: ${wrapperInfo.maxWidth})`,
   );
 
-  // ── Grid: closed variant + lifecycle-first template at >=1600px ──
+  // ── Grid: closed variant + lifecycle-first matrix at >=1600px ──
   const grid = page.locator('.td-grid');
   const gridInfo = await grid.evaluate((el) => {
     const cs = getComputedStyle(el);
@@ -119,15 +119,11 @@ async function runViewport(
     `${label}: grid carries td-grid--closed`,
   );
   const areaText = gridInfo.areas.replace(/\s+/g, ' ').trim();
-  check(
-    areaText.includes('lifecycle') && areaText.includes('left') &&
-      areaText.includes('risk') && areaText.includes('right'),
-    `${label}: grid-template-areas = ${JSON.stringify(areaText)}`,
-  );
-  const expectedWideAreas = '"lifecycle lifecycle lifecycle" "left risk right"';
+  const expectedWideAreas =
+    '"lifecycle lifecycle lifecycle" "left details right" "assets assets assets"';
   check(
     areaText === expectedWideAreas,
-    `${label}: lifecycle-first wide hierarchy with independent side stacks`,
+    `${label}: lifecycle-first wide hierarchy with continuous three-column flows`,
   );
   const colCount = gridInfo.cols.split(' ').length;
   check(
@@ -135,45 +131,17 @@ async function runViewport(
     `${label}: grid resolves 3 operational columns (got ${colCount})`,
   );
 
-  // Panels remain present inside the two side stacks.
+  // Every named panel remains present inside the three continuous columns.
   const panelAreas = await page.$$eval('.td-panel', (els) =>
     els.map((el) => ({ area: el.getAttribute('data-area'), gridArea: getComputedStyle(el).gridArea })),
   );
   check(
-    panelAreas.length === 6 &&
-      ['lifecycle', 'cockpit', 'risk', 'history', 'context', 'review'].every((a) =>
+    panelAreas.length === 8 &&
+      ['lifecycle', 'cockpit', 'details', 'risk', 'context', 'history', 'review', 'assets'].every((a) =>
         panelAreas.some((p) => p.area === a),
       ),
-    `${label}: panels resolve to lifecycle | cockpit | risk | history | context | review`,
+    `${label}: panels resolve to lifecycle | cockpit | details | risk | context | history | review | assets`,
   );
-  const stackInfo = await page.$$eval('.td-grid-stack', (els) =>
-    els.map((el) => ({
-      area: el.getAttribute('data-area'),
-      display: getComputedStyle(el).display,
-    })),
-  );
-  check(
-    stackInfo.length === 2 &&
-      ['left', 'right'].every((area) => stackInfo.some((stack) => stack.area === area && stack.display === 'flex')),
-    `${label}: left and right side stacks are independent flex columns`,
-  );
-  const sideFlow = await page.evaluate(() => {
-    const context = document.querySelector<HTMLElement>('.td-panel[data-area="context"]');
-    const review = document.querySelector<HTMLElement>('.td-panel[data-area="review"]');
-    const right = document.querySelector<HTMLElement>('.td-grid-stack[data-area="right"]');
-    if (!context || !review || !right) return null;
-    const contextRect = context.getBoundingClientRect();
-    const reviewRect = review.getBoundingClientRect();
-    return {
-      gap: parseFloat(getComputedStyle(right).gap),
-      space: reviewRect.top - contextRect.bottom,
-    };
-  });
-  check(
-    sideFlow !== null && Math.abs(sideFlow.space - sideFlow.gap) < 1,
-    `${label}: Review follows Context by one stack gap (measured ${sideFlow?.space}px)`,
-  );
-
   // ── Collapsible review sections ──
   const sections = page.locator('.td-review-section');
   check(
@@ -241,22 +209,20 @@ async function runViewport(
   // (the document-scroll contract is asserted below — inner scrollbars gate
   // already passed above)
 
-  // ── Assets render below the grid in document flow ──
-  const assetsBelowGrid = await page.evaluate(() => {
-    const gridEl = document.querySelector('.td-grid');
-    const assetsCard = [...document.querySelectorAll('[data-slot="card"]')].find((el) => {
-      const title = el.querySelector('[data-slot="card-title"]')?.textContent?.trim() ?? '';
-      return title === 'Assets';
-    });
-    if (!gridEl || !assetsCard) return { found: false };
+  // ── Assets own the final full-width grid row ──
+  const assetsInGrid = await page.evaluate(() => {
+    const assetsPanel = document.querySelector<HTMLElement>('.td-panel[data-area="assets"]');
+    if (!assetsPanel) return { found: false };
+    const style = getComputedStyle(assetsPanel);
     return {
       found: true,
-      assetsBelow: assetsCard.getBoundingClientRect().top >= gridEl.getBoundingClientRect().bottom,
+      gridArea: style.gridArea,
+      title: assetsPanel.textContent?.includes('Assets') ?? false,
     };
   });
   check(
-    assetsBelowGrid.found === true && assetsBelowGrid.assetsBelow === true,
-    `${label}: assets card renders below the grid in document flow (must-have)`,
+    assetsInGrid.found === true && assetsInGrid.gridArea === 'assets' && assetsInGrid.title,
+    `${label}: Assets occupy the final full-width grid area`,
   );
 
   // ── Console errors ──
