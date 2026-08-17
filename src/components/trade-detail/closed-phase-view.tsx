@@ -25,7 +25,7 @@ import TradeExitNotesCard from './trade-exit-notes-card';
 import AssessmentCard from './assessment-card';
 import AssessmentHistory from './assessment-history';
 import type { AssessmentSnapshot } from './assessment-history';
-import { TradeDetailColumn, TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
+import { TradeDetailColumn, TradeDetailGrid, TradeDetailMain, TradeDetailPanel } from './trade-detail-grid';
 import { TradeCollapsibleReviewSection } from './trade-collapsible-review-section';
 import TradeContextBand from './trade-context-band';
 import type { Trade, Execution, TradeGrade, TradeMistake, LookupValue, TradeAsset, StopAdjustment, TargetAdjustment, CheckResult, RiskSnapshot, MtmData } from './types';
@@ -183,6 +183,7 @@ export default function ClosedPhaseView({
           />
         </TradeDetailPanel>
 
+        <TradeDetailMain>
         <TradeDetailColumn area="left">
           {/* Cockpit: identity + actions + frozen price + compact lifecycle summary. */}
           <TradeDetailPanel area="cockpit" title="Cockpit">
@@ -264,6 +265,16 @@ export default function ClosedPhaseView({
           </TradeDetailPanel>
         </TradeDetailColumn>
 
+        <TradeDetailPanel area="assets">
+          <TradeAssetsCard
+            assets={assets}
+            tradeId={trade.id}
+            onAssetsChanged={onAssetsChanged}
+            defaultPhase="review"
+          />
+        </TradeDetailPanel>
+        </TradeDetailMain>
+
         <TradeDetailColumn area="right">
           <TradeDetailPanel area="risk" title="Risk">
             <TradePnlCard
@@ -337,14 +348,6 @@ export default function ClosedPhaseView({
           )}
           </TradeDetailPanel>
         </TradeDetailColumn>
-        <TradeDetailPanel area="assets">
-          <TradeAssetsCard
-            assets={assets}
-            tradeId={trade.id}
-            onAssetsChanged={onAssetsChanged}
-            defaultPhase="review"
-          />
-        </TradeDetailPanel>
       </TradeDetailGrid>
 
     </>

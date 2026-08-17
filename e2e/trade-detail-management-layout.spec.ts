@@ -84,9 +84,20 @@ test.describe('Active trade detail management layout', () => {
       };
     });
     expect(gridInfo.areas).toBe(
-      '"lifecycle lifecycle lifecycle" "left details right" "assets assets assets"',
+      '"lifecycle lifecycle lifecycle" "main main right"',
     );
     expect(gridInfo.columns).toBe(3);
+
+    const primaryWorkspace = page.locator('.td-grid-main');
+    const primaryInfo = await primaryWorkspace.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        areas: style.gridTemplateAreas.replace(/\s+/g, ' ').trim(),
+        columns: style.gridTemplateColumns.split(' ').length,
+      };
+    });
+    expect(primaryInfo.areas).toBe('"left details" "assets assets"');
+    expect(primaryInfo.columns).toBe(2);
 
     const panelAreas = await page.locator('.td-panel').evaluateAll((panels) =>
       panels.map((panel) => panel.getAttribute('data-area')),
@@ -97,9 +108,9 @@ test.describe('Active trade detail management layout', () => {
       'context',
       'details',
       'history',
+      'assets',
       'risk',
       'review',
-      'assets',
     ]);
 
     const panelBounds = await Promise.all(
@@ -142,6 +153,19 @@ test.describe('Active trade detail management layout', () => {
     const context = page.locator('.td-panel[data-area="context"]');
     const assets = page.locator('.td-panel[data-area="assets"]');
 
+    const assetBox = await assets.boundingBox();
+    const leftBox = await page.locator('.td-grid-column[data-area="left"]').boundingBox();
+    const detailsBox = await page.locator('.td-grid-column[data-area="details"]').boundingBox();
+    expect(assetBox).not.toBeNull();
+    expect(leftBox).not.toBeNull();
+    expect(detailsBox).not.toBeNull();
+    expect(Math.abs(assetBox!.x - leftBox!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs((assetBox!.x + assetBox!.width) - (detailsBox!.x + detailsBox!.width))).toBeLessThanOrEqual(1);
+    expect(assetBox!.y).toBeGreaterThanOrEqual(Math.max(
+      bounds.context!.y + bounds.context!.height,
+      bounds.history!.y + bounds.history!.height,
+    ) + 5);
+
     await expect(cockpit.getByRole('button', { name: /add exit/i })).toHaveCount(0);
     await expect(details.getByRole('button', { name: 'Add Fill' })).toBeVisible();
     await expect(details.getByText('Side', { exact: true })).toBeVisible();
@@ -156,6 +180,7 @@ test.describe('Active trade detail management layout', () => {
     const thesisEditor = context.locator('textarea').first();
     await thesisEditor.fill('Updated thesis is saved from Context.');
     await context.getByRole('button', { name: 'Save' }).click();
+    await expect(thesisEditor).toHaveCount(0);
     await expect(context.getByText('Updated thesis is saved from Context.')).toBeVisible();
 
     await page.screenshot({

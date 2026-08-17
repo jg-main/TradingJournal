@@ -9,7 +9,7 @@ import TradeHistoryFeed, { type LevelHistoryEvent } from './trade-history-feed';
 import PriceWidget from './price-widget';
 import TradePnlCard from './trade-pnl-card';
 import TradeCheckResultsCard from './trade-check-results-card';
-import { TradeDetailColumn, TradeDetailGrid, TradeDetailPanel } from './trade-detail-grid';
+import { TradeDetailColumn, TradeDetailGrid, TradeDetailMain, TradeDetailPanel } from './trade-detail-grid';
 import TradeContextBand from './trade-context-band';
 import TradeAssetsCard from './trade-assets-card';
 import type {
@@ -91,6 +91,7 @@ export default function ActivePhaseView({
         />
       </TradeDetailPanel>
 
+      <TradeDetailMain>
       <TradeDetailColumn area="left">
         <TradeDetailPanel area="cockpit" title="Cockpit">
           <TradeDetailHeader
@@ -154,6 +155,16 @@ export default function ActivePhaseView({
         </TradeDetailPanel>
       </TradeDetailColumn>
 
+      <TradeDetailPanel area="assets">
+        <TradeAssetsCard
+          assets={assets}
+          tradeId={trade.id}
+          onAssetsChanged={onAssetsChanged}
+          defaultPhase="management"
+        />
+      </TradeDetailPanel>
+      </TradeDetailMain>
+
       <TradeDetailColumn area="right">
         <TradeDetailPanel area="risk" title="Risk">
           <TradePnlCard
@@ -184,14 +195,6 @@ export default function ActivePhaseView({
         </TradeDetailPanel>
       </TradeDetailColumn>
 
-      <TradeDetailPanel area="assets">
-        <TradeAssetsCard
-          assets={assets}
-          tradeId={trade.id}
-          onAssetsChanged={onAssetsChanged}
-          defaultPhase="management"
-        />
-      </TradeDetailPanel>
     </TradeDetailGrid>
   );
 }

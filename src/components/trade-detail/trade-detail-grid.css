@@ -11,7 +11,8 @@
  * Named panel areas: lifecycle, cockpit, details, risk, context, history,
  * review, and assets. The grid is lifecycle-first: the stepper spans the
  * top, then three continuous columns follow: Cockpit → Context, Trade Details
- * → History, and Risk → Review. Assets span the final grid row.
+ * → History, and Risk → Review. Assets span the first two columns beneath
+ * Context and History, without waiting for the right-hand review column.
  *
  * A `.td-grid--planned` variant (S03) swaps the arrangement for planned
  * trades: a lifecycle band followed by one plan panel; pre-trade screenshots
@@ -19,7 +20,7 @@
  *
  * A `.td-grid--closed` variant (S04) freezes the snapshot for closed
  * trades: lifecycle first, then cockpit/history, central risk, and
- * context/review; assets occupy the final full-width row.
+ * context/review; assets occupy the two-column operational workspace.
  */
 
 .td {
@@ -87,14 +88,14 @@
   }
 }
 
-/* Wide operational layout: three continuous vertical management columns. */
+/* Wide operational layout: a two-column workspace plus an independent
+   Risk/Review column. */
 @media (min-width: 1600px) {
   .td-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle lifecycle'
-      'left details right'
-      'assets assets assets';
+      'main main right';
   }
 }
 
@@ -135,7 +136,8 @@
 
 /* ── Closed-phase variant (M020/S04) ──────────────────────────────────────
  * Closed trades share the continuous monitoring columns and pair the fixed
- * snapshot with collapsible review sections. Assets remain below the grid. */
+ * snapshot with collapsible review sections. Assets remain beneath its two
+ * operational columns rather than waiting for the review column. */
 .td-grid--closed {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
@@ -162,8 +164,7 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-areas:
       'lifecycle lifecycle lifecycle'
-      'left details right'
-      'assets assets assets';
+      'main main right';
   }
 }
 
@@ -276,6 +277,28 @@
   flex-direction: column;
   gap: var(--td-space-3);
   padding: var(--td-space-3);
+}
+
+/* The primary workspace is transparent to the single-/two-column fallbacks,
+   preserving their existing reading order. On wide screens it becomes its
+   own two-column grid, so Assets sit beneath Context and History even while
+   Risk/Review continues independently to the right. */
+.td-grid-main {
+  display: contents;
+}
+
+@media (min-width: 1600px) {
+  .td-grid-main {
+    grid-area: main;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      'left details'
+      'assets assets';
+    align-items: start;
+    gap: var(--td-space-3);
+  }
 }
 
 /* Columns own their internal vertical rhythm. A shorter panel in one column

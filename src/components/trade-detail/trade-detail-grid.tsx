@@ -5,7 +5,7 @@
  *
  * Open and closed trades use three continuous desktop columns beneath
  * Lifecycle: Cockpit → Context, Trade Details → History, and Risk → Review.
- * Assets span underneath the three columns.
+ * Assets span beneath the first two columns, without waiting for Risk/Review.
  * Planned trades retain their dedicated plan surface. This is a reading and
  * management layout, never a customizable canvas.
  */
@@ -67,6 +67,16 @@ export function TradeDetailColumn({ area, className, children }: TradeDetailColu
       {children}
     </div>
   );
+}
+
+interface TradeDetailMainProps {
+  className?: string;
+  children: ReactNode;
+}
+
+/** The two-column operational workspace: Cockpit/Context and Details/History. */
+export function TradeDetailMain({ className, children }: TradeDetailMainProps) {
+  return <div className={cn('td-grid-main', className)}>{children}</div>;
 }
 
 interface TradeDetailPanelProps {

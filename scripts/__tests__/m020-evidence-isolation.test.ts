@@ -54,8 +54,8 @@ assert(
 );
 assert(
   browserSource.includes('lifecycle lifecycle lifecycle') &&
-    browserSource.includes('left details right'),
-  'browser helper asserts the lifecycle-first continuous-column hierarchy',
+    browserSource.includes('main main right') && browserSource.includes('left details'),
+  'browser helper asserts Assets beneath the two primary columns',
 );
 assert(
   !browserSource.includes('cockpit details risk') &&

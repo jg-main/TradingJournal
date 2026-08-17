@@ -4,7 +4,7 @@
  * Runs the slice-verification checks at the 1600px workstation breakpoint,
  * 2560x1440, and 3840x2400@1.25:
  *  - .td scope on closed trades (page wrapper), no max-w-4xl cap
- *  - lifecycle-first grid-template-areas with three fixed panel columns
+ *  - lifecycle-first grid with Assets beneath the two primary panel columns
  *  - collapsible review sections: 4 sections, data-state=closed by
  *    default, click-to-expand flips data-state + chevron rotation
  *  - computed overflow-y on .td descendants (document scroll only)
@@ -119,11 +119,10 @@ async function runViewport(
     `${label}: grid carries td-grid--closed`,
   );
   const areaText = gridInfo.areas.replace(/\s+/g, ' ').trim();
-  const expectedWideAreas =
-    '"lifecycle lifecycle lifecycle" "left details right" "assets assets assets"';
+  const expectedWideAreas = '"lifecycle lifecycle lifecycle" "main main right"';
   check(
     areaText === expectedWideAreas,
-    `${label}: lifecycle-first wide hierarchy with continuous three-column flows`,
+    `${label}: lifecycle-first wide hierarchy with an independent Risk/Review column`,
   );
   const colCount = gridInfo.cols.split(' ').length;
   check(
@@ -131,7 +130,7 @@ async function runViewport(
     `${label}: grid resolves 3 operational columns (got ${colCount})`,
   );
 
-  // Every named panel remains present inside the three continuous columns.
+  // Every named panel remains present inside the two primary columns plus Risk/Review.
   const panelAreas = await page.$$eval('.td-panel', (els) =>
     els.map((el) => ({ area: el.getAttribute('data-area'), gridArea: getComputedStyle(el).gridArea })),
   );
@@ -209,20 +208,26 @@ async function runViewport(
   // (the document-scroll contract is asserted below — inner scrollbars gate
   // already passed above)
 
-  // ── Assets own the final full-width grid row ──
-  const assetsInGrid = await page.evaluate(() => {
+  // ── Assets span the primary Cockpit/Context + Details/History workspace ──
+  const assetsInPrimaryWorkspace = await page.evaluate(() => {
+    const primaryWorkspace = document.querySelector<HTMLElement>('.td-grid-main');
     const assetsPanel = document.querySelector<HTMLElement>('.td-panel[data-area="assets"]');
-    if (!assetsPanel) return { found: false };
+    if (!primaryWorkspace || !assetsPanel) return { found: false };
     const style = getComputedStyle(assetsPanel);
     return {
       found: true,
       gridArea: style.gridArea,
+      workspaceColumns: getComputedStyle(primaryWorkspace).gridTemplateColumns.split(' ').length,
+      workspaceAreas: getComputedStyle(primaryWorkspace).gridTemplateAreas.replace(/\s+/g, ' ').trim(),
       title: assetsPanel.textContent?.includes('Assets') ?? false,
     };
   });
   check(
-    assetsInGrid.found === true && assetsInGrid.gridArea === 'assets' && assetsInGrid.title,
-    `${label}: Assets occupy the final full-width grid area`,
+    assetsInPrimaryWorkspace.found === true && assetsInPrimaryWorkspace.gridArea === 'assets' &&
+      assetsInPrimaryWorkspace.workspaceColumns === 2 &&
+      assetsInPrimaryWorkspace.workspaceAreas === '"left details" "assets assets"' &&
+      assetsInPrimaryWorkspace.title,
+    `${label}: Assets occupy the two-column primary workspace`,
   );
 
   // ── Console errors ──
