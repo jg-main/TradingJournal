@@ -77,8 +77,9 @@ export interface ReviewWriteSheetProps {
 
 /** Local-time Monday of the given date, as YYYY-MM-DD (UTC date part).
  *  Mirrors the legacy /reviews page week detection so both surfaces agree
- *  on the same week boundary. */
-function mondayIsoDate(now: Date): string {
+ *  on the same week boundary. Exported for the host panel (S02/T02) so the
+ *  panel summary and the sheet always filter/generate the same week. */
+export function mondayIsoDate(now: Date): string {
   const date = new Date(now);
   const day = date.getDay();
   const diff = day === 0 ? -6 : 1 - day;
@@ -106,14 +107,15 @@ function fmtPct(fraction: number | null | undefined): string {
   return `${(fraction * 100).toFixed(1)}%`;
 }
 
-function fmtDecimal(value: number | null | undefined, digits = 2): string {
+export function fmtDecimal(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined) return '—';
   return value.toFixed(digits);
 }
 
 /** Map a process score (0–60) to a letter grade using the canonical
- *  GRADE_RUBRIC from src/lib/grading.ts. */
-function gradeLabelFromScore(score: number | null | undefined): string | null {
+ *  GRADE_RUBRIC from src/lib/grading.ts. Exported for the host panel's
+ *  weekly review summary so both surfaces render the same grade. */
+export function gradeLabelFromScore(score: number | null | undefined): string | null {
   if (score === null || score === undefined) return null;
   for (const tier of GRADE_RUBRIC) {
     if (score >= tier.min) return tier.label;
@@ -124,8 +126,9 @@ function gradeLabelFromScore(score: number | null | undefined): string | null {
 /** Best-effort extraction of an API error message. Routes under
  *  /api/reviews return { error, details?: { fieldErrors } }. Field-level
  *  errors are preferred for specificity (same convention as the watchlist
- *  panel), then the top-level error, then the fallback. */
-function extractApiError(body: unknown, fallback: string): string {
+ *  panel), then the top-level error, then the fallback. Exported for the
+ *  host panel's summary fetch. */
+export function extractApiError(body: unknown, fallback: string): string {
   if (!body || typeof body !== 'object') return fallback;
   const details = (body as { details?: unknown }).details;
   if (details && typeof details === 'object') {
@@ -145,7 +148,7 @@ function extractApiError(body: unknown, fallback: string): string {
   return fallback;
 }
 
-function formatWeekRange(start: string, end: string): string {
+export function formatWeekRange(start: string, end: string): string {
   const s = new Date(`${start}T00:00:00`);
   const e = new Date(`${end}T00:00:00`);
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
