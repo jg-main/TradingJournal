@@ -4,9 +4,21 @@ import { watchlistItems } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
+const WATCHLIST_DIRECTIONS = ['long', 'short'] as const;
+const WATCHLIST_STATUSES = [
+  'pending',
+  'watching',
+  'triggered',
+  'skipped',
+  'expired',
+] as const;
+
 const updateWatchlistItemSchema = z.object({
   symbol: z.string().trim().min(1).max(20).optional(),
   keyLevel: z.number().nullable().optional(),
+  triggerPrice: z.number().nullable().optional(),
+  direction: z.enum(WATCHLIST_DIRECTIONS).optional(),
+  status: z.enum(WATCHLIST_STATUSES).optional(),
   alertConfig: z.any().nullable().optional(),
 });
 
@@ -67,6 +79,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const updateData: Record<string, unknown> = {};
     if (parsed.data.symbol !== undefined) updateData.symbol = parsed.data.symbol;
     if (parsed.data.keyLevel !== undefined) updateData.keyLevel = parsed.data.keyLevel;
+    if (parsed.data.triggerPrice !== undefined) updateData.triggerPrice = parsed.data.triggerPrice;
+    if (parsed.data.direction !== undefined) updateData.direction = parsed.data.direction;
+    if (parsed.data.status !== undefined) updateData.status = parsed.data.status;
     if (parsed.data.alertConfig !== undefined) updateData.alertConfig = parsed.data.alertConfig != null ? JSON.stringify(parsed.data.alertConfig) : null;
     updateData.updatedAt = new Date().toISOString();
 

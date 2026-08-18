@@ -1,78 +1,36 @@
 /**
  * watchlist item by id route test
  *
- * Tests GET (by id), PUT (update), and DELETE (soft-delete) handlers.
+ * Tests GET (by id), PUT (update), and DELETE (soft-delete) handlers for
+ * /api/watchlist/[id] using the real route handlers backed by an in-memory
+ * SQLite DB.
  *
- * Run: npx vitest run --reporter verbose src/app/api/watchlist/\[id\]/__tests__/route.test.ts
+ * Run: npx vitest run 'src/app/api/watchlist/[id]/__tests__/route.test.ts'
  */
 
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as schema from '@/db/schema';
 
-let passed = 0;
-let failed = 0;
-
-function assert(condition: boolean, msg: string) {
-  if (condition) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} (FAILED)`);
-  }
-}
-
-function assertEqual(actual: unknown, expected: unknown, msg: string) {
-  if (actual === expected) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)} (FAILED)`);
-  }
-}
-
-function assertNotNull(value: unknown, msg: string) {
-  if (value !== null && value !== undefined) {
-    passed++;
-    console.log(`  ✅ ${msg}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${msg} — value is null/undefined (FAILED)`);
-  }
-}
-
-// ── Setup: test DB ──────────────────────────────────────────────────
-
-const DB_FILE = process.env.DB_FILE_NAME || './.test-watchlist-item.db';
-const sqlite = new Database(DB_FILE);
+const sqlite = new Database(':memory:');
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 const db = drizzle(sqlite, { schema });
 
-// Create tables
+// Mirror the real watchlist_items table (src/db/schema.ts). All FK columns
+// are inserted as NULL, so referenced tables are never consulted.
 sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS lookup_values (
-    id TEXT PRIMARY KEY NOT NULL,
-    type TEXT NOT NULL,
-    value TEXT NOT NULL,
-    description TEXT,
-    sort_order INTEGER DEFAULT 0,
-    is_active INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT (current_timestamp),
-    updated_at TEXT DEFAULT (current_timestamp)
-  );
-  CREATE TABLE IF NOT EXISTS watchlist_items (
+  CREATE TABLE watchlist_items (
     id TEXT PRIMARY KEY NOT NULL,
     date_added TEXT,
     symbol TEXT NOT NULL,
     sector_id TEXT,
-    sector TEXT,
     name TEXT,
+    sector TEXT,
     industry TEXT,
     setup_id TEXT,
     direction TEXT NOT NULL DEFAULT 'long',
@@ -91,90 +49,53 @@ sqlite.exec(`
   );
 `);
 
-// ── Simulated route logic ───────────────────────────────────────────
+vi.mock('@/db', () => ({
+  db,
+  getSqliteHandle: () => sqlite,
+}));
 
-function doGetWatchlistItem(id: string): { status: number; data: unknown } {
-  try {
-    const row = db
-      .select()
-      .from(schema.watchlistItems)
-      .where(eq(schema.watchlistItems.id, id))
-      .get();
+// ── Module-level imports (after mocks) ────────────────────────────────────
 
-    if (!row) {
-      return { status: 404, data: { error: 'Watchlist item not found' } };
-    }
+const { GET, PUT, DELETE } = await import('../route');
 
-    return { status: 200, data: row };
-  } catch (error) {
-    return { status: 500, data: { error: 'Failed to fetch watchlist item', details: String(error) } };
-  }
+// ── Test helpers ──────────────────────────────────────────────────────────
+
+async function callGet(
+  id: string,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const request = new Request(`http://localhost/api/watchlist/${id}`) as never;
+  const response = await GET(request, { params: Promise.resolve({ id }) });
+  const data = (await response.json()) as Record<string, unknown>;
+  return { status: response.status, data };
 }
 
-function doPutWatchlistItem(id: string, body: Record<string, unknown>): { status: number; data: unknown } {
-  try {
-    const existing = db
-      .select()
-      .from(schema.watchlistItems)
-      .where(eq(schema.watchlistItems.id, id))
-      .get();
-
-    if (!existing) {
-      return { status: 404, data: { error: 'Watchlist item not found' } };
-    }
-
-    // Update fields passed in body
-    const updateData: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-    if (body.symbol !== undefined) updateData.symbol = body.symbol;
-    if (body.keyLevel !== undefined) updateData.keyLevel = body.keyLevel;
-    if (body.alertConfig !== undefined) updateData.alertConfig = body.alertConfig != null ? JSON.stringify(body.alertConfig) : null;
-
-    db.update(schema.watchlistItems)
-      .set(updateData)
-      .where(eq(schema.watchlistItems.id, id))
-      .run();
-
-    const row = db
-      .select()
-      .from(schema.watchlistItems)
-      .where(eq(schema.watchlistItems.id, id))
-      .get();
-
-    return { status: 200, data: row };
-  } catch (error) {
-    return { status: 500, data: { error: 'Failed to update watchlist item', details: String(error) } };
-  }
+async function callPut(
+  id: string,
+  body: unknown,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const request = new Request(`http://localhost/api/watchlist/${id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }) as never;
+  const response = await PUT(request, { params: Promise.resolve({ id }) });
+  const data = (await response.json()) as Record<string, unknown>;
+  return { status: response.status, data };
 }
 
-function doDeleteWatchlistItem(id: string): { status: number; data: unknown } {
-  try {
-    const existing = db
-      .select()
-      .from(schema.watchlistItems)
-      .where(eq(schema.watchlistItems.id, id))
-      .get();
-
-    if (!existing) {
-      return { status: 404, data: { error: 'Watchlist item not found' } };
-    }
-
-    // Soft delete: mark as expired
-    db.update(schema.watchlistItems)
-      .set({ status: 'expired', updatedAt: new Date().toISOString() })
-      .where(eq(schema.watchlistItems.id, id))
-      .run();
-
-    return { status: 200, data: { message: 'Watchlist item expired' } };
-  } catch (error) {
-    return { status: 500, data: { error: 'Failed to delete watchlist item', details: String(error) } };
-  }
+async function callDelete(
+  id: string,
+): Promise<{ status: number; data: Record<string, unknown> }> {
+  const request = new Request(`http://localhost/api/watchlist/${id}`, {
+    method: 'DELETE',
+  }) as never;
+  const response = await DELETE(request, { params: Promise.resolve({ id }) });
+  const data = (await response.json()) as Record<string, unknown>;
+  return { status: response.status, data };
 }
-
-// ── Helpers ─────────────────────────────────────────────────────────
 
 function cleanup() {
   sqlite.exec('DELETE FROM watchlist_items;');
-  sqlite.exec('DELETE FROM lookup_values;');
 }
 
 function seedWatchlistItem(overrides: Record<string, unknown> = {}) {
@@ -192,128 +113,168 @@ function seedWatchlistItem(overrides: Record<string, unknown> = {}) {
       ...overrides,
     })
     .run();
-  return db.select().from(schema.watchlistItems).where(eq(schema.watchlistItems.id, id)).get() as Record<string, unknown>;
+  return db
+    .select()
+    .from(schema.watchlistItems)
+    .where(eq(schema.watchlistItems.id, id))
+    .get() as Record<string, unknown>;
 }
 
-// ── Tests ───────────────────────────────────────────────────────────
+// ── Tests ─────────────────────────────────────────────────────────────────
 
-console.log('\n--- Watchlist Item By ID API Tests ---\n');
+describe('GET /api/watchlist/[id]', () => {
+  beforeEach(cleanup);
 
-// ── 1. GET: Returns item by id ──────────────────────────────────────
+  it('returns the watchlist item by id', async () => {
+    const item = seedWatchlistItem({ symbol: 'AAPL' });
 
-console.log('\n1. GET returns watchlist item by id:');
-{
-  cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL' });
-
-  const result = doGetWatchlistItem(item.id as string);
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.id, item.id, 'id matches');
-  assertEqual(data.symbol, 'AAPL', 'symbol matches');
-}
-
-// ── 2. GET: 404 for nonexistent id ──────────────────────────────────
-
-console.log('\n2. GET returns 404 for nonexistent id:');
-{
-  cleanup();
-  const result = doGetWatchlistItem('nonexistent-id');
-  assert(result.status === 404, 'returns 404');
-  assertEqual((result.data as { error: string }).error, 'Watchlist item not found', 'error message');
-}
-
-// ── 3. PUT: Updates keyLevel ────────────────────────────────────────
-
-console.log('\n3. PUT updates keyLevel:');
-{
-  cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL' });
-
-  const result = doPutWatchlistItem(item.id as string, {
-    keyLevel: 150,
+    const { status, data } = await callGet(item.id as string);
+    expect(status).toBe(200);
+    expect(data.id).toBe(item.id);
+    expect(data.symbol).toBe('AAPL');
   });
 
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.keyLevel, 150, 'keyLevel updated');
-  assertEqual(data.symbol, 'AAPL', 'symbol preserved');
-}
+  it('returns 404 for a nonexistent id', async () => {
+    const { status, data } = await callGet('nonexistent-id');
+    expect(status).toBe(404);
+    expect(data.error).toBe('Watchlist item not found');
+  });
+});
 
-// ── 4. PUT: 404 for nonexistent id ─────────────────────────────────
+describe('PUT /api/watchlist/[id]', () => {
+  beforeEach(cleanup);
 
-console.log('\n4. PUT returns 404 for nonexistent id:');
-{
-  cleanup();
-  const result = doPutWatchlistItem('nonexistent-id', { keyLevel: 150 });
-  assert(result.status === 404, 'returns 404');
-  assertEqual((result.data as { error: string }).error, 'Watchlist item not found', 'error message');
-}
+  it('updates keyLevel', async () => {
+    const item = seedWatchlistItem({ symbol: 'AAPL' });
 
-// ── 5. PUT: Persists alertConfig as JSON ────────────────────────────
+    const { status, data } = await callPut(item.id as string, {
+      keyLevel: 150,
+    });
+    expect(status).toBe(200);
+    expect(data.keyLevel).toBe(150);
+    expect(data.symbol).toBe('AAPL');
+  });
 
-console.log('\n5. PUT persists alertConfig as JSON string:');
-{
-  cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL' });
-  const alertConfig = {
-    priceBelowKeyLevel: { enabled: true },
-    rsiBelow: { enabled: true, threshold: 30 },
-  };
+  it('returns 404 for a nonexistent id', async () => {
+    const { status, data } = await callPut('nonexistent-id', {
+      keyLevel: 150,
+    });
+    expect(status).toBe(404);
+    expect(data.error).toBe('Watchlist item not found');
+  });
 
-  const result = doPutWatchlistItem(item.id as string, { alertConfig });
+  it('persists alertConfig as a JSON string and null clears it', async () => {
+    const item = seedWatchlistItem({ symbol: 'AAPL' });
+    const alertConfig = {
+      priceBelowKeyLevel: { enabled: true },
+      rsiBelow: { enabled: true, threshold: 30 },
+    };
 
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  assertNotNull(data.alertConfig, 'has alertConfig');
-  assertEqual(typeof data.alertConfig, 'string', 'alertConfig is a string (JSON serialized)');
-  const parsed = JSON.parse(data.alertConfig as string);
-  assertEqual(parsed.priceBelowKeyLevel.enabled, true, 'priceBelowKeyLevel.enabled is true');
-  assertEqual(parsed.rsiBelow.enabled, true, 'rsiBelow.enabled is true');
-  assertEqual(parsed.rsiBelow.threshold, 30, 'rsiBelow.threshold is 30');
+    const { status, data } = await callPut(item.id as string, { alertConfig });
+    expect(status).toBe(200);
+    expect(typeof data.alertConfig).toBe('string');
+    const parsed = JSON.parse(data.alertConfig as string);
+    expect(parsed.priceBelowKeyLevel.enabled).toBe(true);
+    expect(parsed.rsiBelow.enabled).toBe(true);
+    expect(parsed.rsiBelow.threshold).toBe(30);
 
-  // Verify null/removal
-  const resultNull = doPutWatchlistItem(item.id as string, { alertConfig: null });
-  assert(resultNull.status === 200, 'returns 200');
-  const dataNull = resultNull.data as Record<string, unknown>;
-  assertEqual(dataNull.alertConfig, null, 'alertConfig is null after removal');
-}
+    const cleared = await callPut(item.id as string, { alertConfig: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.data.alertConfig).toBeNull();
+  });
 
-// ── 6. DELETE: Soft-deletes by setting status to expired ───────────
+  it('updates triggerPrice, direction and status', async () => {
+    const item = seedWatchlistItem({
+      symbol: 'TSLA',
+      direction: 'long',
+      status: 'pending',
+    });
 
-console.log('\n6. DELETE soft-deletes watchlist item by setting status to expired:');
-{
-  cleanup();
-  const item = seedWatchlistItem({ symbol: 'AAPL', status: 'pending' });
+    const { status, data } = await callPut(item.id as string, {
+      triggerPrice: 245.5,
+      direction: 'short',
+      status: 'watching',
+    });
+    expect(status).toBe(200);
+    expect(data.triggerPrice).toBe(245.5);
+    expect(data.direction).toBe('short');
+    expect(data.status).toBe('watching');
+  });
 
-  const result = doDeleteWatchlistItem(item.id as string);
+  it('null clears triggerPrice and keyLevel', async () => {
+    const item = seedWatchlistItem({
+      symbol: 'TSLA',
+      triggerPrice: 245.5,
+      keyLevel: 250,
+    });
 
-  assert(result.status === 200, 'returns 200');
-  assertEqual((result.data as { message: string }).message, 'Watchlist item expired', 'message matches');
+    const { status, data } = await callPut(item.id as string, {
+      triggerPrice: null,
+      keyLevel: null,
+    });
+    expect(status).toBe(200);
+    expect(data.triggerPrice).toBeNull();
+    expect(data.keyLevel).toBeNull();
+  });
 
-  // Verify DB: item.status = 'expired'
-  const updated = db.select().from(schema.watchlistItems).where(eq(schema.watchlistItems.id, item.id as string)).get() as Record<string, unknown>;
-  assertEqual(updated.status, 'expired', 'status is expired after soft delete');
-}
+  it('rejects invalid direction/status enums and non-numeric prices, leaving the row unchanged', async () => {
+    const item = seedWatchlistItem({ symbol: 'TSLA' });
 
-// ── 7. DELETE: 404 for nonexistent id ──────────────────────────────
+    const badDir = await callPut(item.id as string, { direction: 'sideways' });
+    expect(badDir.status).toBe(400);
+    expect(
+      (badDir.data.details as { fieldErrors: Record<string, string[]> })
+        .fieldErrors.direction,
+    ).toBeDefined();
 
-console.log('\n7. DELETE returns 404 for nonexistent id:');
-{
-  cleanup();
-  const result = doDeleteWatchlistItem('nonexistent-id');
-  assert(result.status === 404, 'returns 404');
-  assertEqual((result.data as { error: string }).error, 'Watchlist item not found', 'error message');
-}
+    const badStatus = await callPut(item.id as string, { status: 'nope' });
+    expect(badStatus.status).toBe(400);
+    expect(
+      (badStatus.data.details as { fieldErrors: Record<string, string[]> })
+        .fieldErrors.status,
+    ).toBeDefined();
 
-// ── Summary ──────────────────────────────────────────────────────────
+    const badPrice = await callPut(item.id as string, {
+      triggerPrice: '12.5',
+    });
+    expect(badPrice.status).toBe(400);
+    expect(
+      (badPrice.data.details as { fieldErrors: Record<string, string[]> })
+        .fieldErrors.triggerPrice,
+    ).toBeDefined();
 
-const total = passed + failed;
-console.log(`\n${'─'.repeat(40)}`);
-console.log(`Results: ${passed}/${total} passed`);
-if (failed > 0) {
-  console.error(`         ${failed}/${total} FAILED\n`);
-  process.exit(1);
-} else {
-  console.log('         All tests passed!\n');
-}
+    const after = db
+      .select()
+      .from(schema.watchlistItems)
+      .where(eq(schema.watchlistItems.id, item.id as string))
+      .get() as Record<string, unknown>;
+    expect(after.direction).toBe('long');
+    expect(after.status).toBe('pending');
+    expect(after.triggerPrice).toBeNull();
+  });
+});
+
+describe('DELETE /api/watchlist/[id]', () => {
+  beforeEach(cleanup);
+
+  it('soft-deletes by setting status to expired', async () => {
+    const item = seedWatchlistItem({ symbol: 'AAPL', status: 'pending' });
+
+    const { status, data } = await callDelete(item.id as string);
+    expect(status).toBe(200);
+    expect(data.message).toBe('Watchlist item expired');
+
+    const updated = db
+      .select()
+      .from(schema.watchlistItems)
+      .where(eq(schema.watchlistItems.id, item.id as string))
+      .get() as Record<string, unknown>;
+    expect(updated.status).toBe('expired');
+  });
+
+  it('returns 404 for a nonexistent id', async () => {
+    const { status, data } = await callDelete('nonexistent-id');
+    expect(status).toBe(404);
+    expect(data.error).toBe('Watchlist item not found');
+  });
+});

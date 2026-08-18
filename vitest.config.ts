@@ -74,6 +74,8 @@ export default defineConfig({
       'src/app/api/trades/[id]/mtm/__tests__/post.vitest.test.ts',
       'src/app/api/watchlist/prices/__tests__/route.test.ts',
       'src/app/api/watchlist/ohlc/__tests__/route.test.ts',
+      'src/app/api/watchlist/__tests__/route.test.ts',
+      'src/app/api/watchlist/[id]/__tests__/route.test.ts',
       'src/lib/alert-engine.test.ts',
       'src/lib/alert-polling.test.ts',
       'src/hooks/use-visibility-polling.test.ts',

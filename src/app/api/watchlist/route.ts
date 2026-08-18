@@ -6,9 +6,21 @@ import { z } from 'zod';
 import { YahooFinanceProvider } from '@/lib/market-quote';
 import { fetchYahooProfiles } from '@/lib/profile-enricher';
 
+const WATCHLIST_DIRECTIONS = ['long', 'short'] as const;
+const WATCHLIST_STATUSES = [
+  'pending',
+  'watching',
+  'triggered',
+  'skipped',
+  'expired',
+] as const;
+
 const createWatchlistItemSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
   keyLevel: z.number().nullable().optional(),
+  triggerPrice: z.number().nullable().optional(),
+  direction: z.enum(WATCHLIST_DIRECTIONS).optional(),
+  status: z.enum(WATCHLIST_STATUSES).optional(),
   alertConfig: z.any().nullable().optional(),
 });
 
@@ -66,14 +78,14 @@ export async function POST(request: NextRequest) {
         industry: null,
         sectorId: null,
         setupId: null,
-        direction: 'long',
+        direction: parsed.data.direction ?? 'long',
         thesis: null,
         marketContext: null,
         keyLevel: parsed.data.keyLevel ?? null,
-        triggerPrice: null,
+        triggerPrice: parsed.data.triggerPrice ?? null,
         plannedStop: null,
         targetPrice: null,
-        status: 'pending',
+        status: parsed.data.status ?? 'pending',
         notes: null,
         promotedTradeId: null,
         alertConfig: parsed.data.alertConfig != null ? JSON.stringify(parsed.data.alertConfig) : null,
