@@ -159,6 +159,45 @@ ordinary reading depend on nested panel scrollbars.
 For small changes, run the narrowest relevant command first, then broaden when
 the change touches shared contracts, database schema, or cross-page workflows.
 
+### Auto-mode visibility
+
+Auto-mode feedback is not defined in this file; it comes from the GSD extension
+(TUI widget, status cards, headless stderr progress) and the `notifications`
+block in `.gsd/PREFERENCES.md`. Both run paths are silent by default in
+specific ways, so pick a monitoring setup:
+
+- **Short interactive runs (in TUI):** `set` the widget to full with
+  `/gsd widget full`, then start with `/gsd auto --verbose`. Check progress
+  with `/gsd status`; control with `/gsd pause` and `/gsd stop`.
+- **Long unattended runs (headless):** run in a detached tmux session with
+  verbose streaming and a tee'd log, then watch from another terminal:
+
+  ```bash
+  tmux new-session -d -s gsd-auto \
+    "gsd headless auto --verbose 2>&1 | tee /tmp/gsd-auto.log"
+  tail -f /tmp/gsd-auto.log        # live activity feed
+  # or: tmux attach -t gsd-auto
+  ```
+
+- Headless progress goes to **stderr** — always redirect with `2>&1`. In
+  non-verbose mode only GSD notifications print, so long tool calls
+  (builds, tests, browser runs) appear silent; `--verbose` streams thinking
+  deltas and every tool call with arguments and duration.
+- `gsd headless auto` needs no `--timeout` (auto-mode disables the overall
+  timeout and uses its own supervisor). If another headless command needs
+  `--timeout N`, `N` is in **milliseconds**.
+- Do not launch `gsd headless auto` from inside a tool call or piped through
+  `| tail` — the process is reaped when the call returns, and pipes hit
+  SIGPIPE past the output cap. tmux (or a shell session outside the harness)
+  is the reliable host.
+- Durable trail for post-run inspection: `.gsd/notifications.jsonl`,
+  `.gsd/event-log.jsonl`, and `.gsd/journal/YYYY-MM-DD.jsonl` (unit start,
+  iteration end, orchestrator events). In-session, `gsd_journal_query` reads
+  the same journal.
+- Notification events (milestone transition, completion, errors, budget) are
+  controlled by the `notifications` block in `.gsd/PREFERENCES.md`;
+  `local_bell` rings the terminal bell for the enabled event kinds.
+
 ### GSD verification time budget
 
 - GSD host verification has a per-command time limit. Run browser verification,
