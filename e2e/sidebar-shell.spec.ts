@@ -20,9 +20,10 @@ test.describe('Sidebar Shell', () => {
     const headers = nav.locator('div.uppercase');
     await expect(headers).toHaveText(['Trading', 'Accounts', 'Analysis', 'System']);
 
-    // Trading section contains the daily workflow: Dashboard, Watchlist, Trades, Reviews, Checks
+    // Trading section contains the daily workflow (S03: Watchlist and Reviews
+    // were removed from the sidebar — reachable only from dashboard widgets)
     const tradingSection = nav.locator('div', { has: page.locator('div.uppercase', { hasText: 'Trading' }) }).first();
-    for (const label of ['Dashboard', 'Watchlist', 'Trades', 'Reviews', 'Checks']) {
+    for (const label of ['Dashboard', 'Trades', 'Checks']) {
       await expect(tradingSection.getByRole('link', { name: label })).toBeVisible();
     }
 
@@ -51,10 +52,10 @@ test.describe('Sidebar Shell', () => {
     expect(cls).toContain('before:bg-sidebar-primary');
     expect(cls).toContain('bg-sidebar-accent');
 
-    // Inactive link has no rail
-    const reviewsLink = page.locator('aside').getByRole('link', { name: 'Reviews' });
-    const reviewsCls = await reviewsLink.getAttribute('class');
-    expect(reviewsCls).not.toContain('before:bg-sidebar-primary');
+    // Inactive link has no rail (S03: Reviews left the sidebar, so use a retained link)
+    const inactiveLink = page.locator('aside').getByRole('link', { name: 'Checks' });
+    const inactiveCls = await inactiveLink.getAttribute('class');
+    expect(inactiveCls).not.toContain('before:bg-sidebar-primary');
   });
 
   test('collapse switches to icon-only mode and persists across reload', async ({ page }) => {
@@ -107,8 +108,8 @@ test.describe('Sidebar Shell', () => {
     await hideDevOverlay(page);
     await page.locator(COLLAPSE_TOGGLE).click();
 
-    await page.locator('aside').getByRole('link', { name: 'Reviews' }).hover();
-    const tooltip = page.locator('[data-slot="tooltip-content"]', { hasText: 'Reviews' });
+    await page.locator('aside').getByRole('link', { name: 'Trades' }).hover();
+    const tooltip = page.locator('[data-slot="tooltip-content"]', { hasText: 'Trades' });
     await expect(tooltip).toBeVisible();
   });
 
