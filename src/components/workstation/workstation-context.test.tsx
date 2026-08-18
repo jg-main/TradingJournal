@@ -19,6 +19,7 @@ const fetchAccountsLive = vi.fn();
 const fetchAllLiveDashboardData = vi.fn();
 const refreshMtmPricesLive = vi.fn();
 const fetchMtmRefreshIntervalLive = vi.fn();
+const fetchWatchlistPricesLive = vi.fn();
 
 vi.mock('@/lib/workstation-live-adapter', async (importOriginal) => {
   const original =
@@ -32,7 +33,8 @@ vi.mock('@/lib/workstation-live-adapter', async (importOriginal) => {
       refreshMtmPricesLive(...args),
     fetchMtmRefreshIntervalLive: (...args: unknown[]) =>
       fetchMtmRefreshIntervalLive(...args),
-    fetchWatchlistPricesLive: vi.fn().mockResolvedValue({ success: true, data: {} }),
+    fetchWatchlistPricesLive: (...args: unknown[]) =>
+      fetchWatchlistPricesLive(...args),
   };
 });
 
@@ -48,6 +50,8 @@ function Probe() {
     accountSelectionExternal,
     error,
     mtmPollingState,
+    refreshLiveData,
+    fixtures,
   } = useWorkstation();
   return (
     <div>
@@ -56,7 +60,14 @@ function Probe() {
       <span data-testid="accounts">{accounts.map((a) => a.id).join(',')}</span>
       <span data-testid="error">{error ?? ''}</span>
       <span data-testid="mtm-state">{mtmPollingState}</span>
+      <span data-testid="watchlist">
+        {fixtures.watchlist.map((w) => w.symbol).join(',')}
+      </span>
+      <span data-testid="symbol-prices">
+        {Object.keys(fixtures.symbolPrices).join(',')}
+      </span>
       <button data-testid="switch" onClick={() => setActiveAccountId('acc-2')} />
+      <button data-testid="refresh" onClick={() => refreshLiveData()} />
     </div>
   );
 }
@@ -93,6 +104,7 @@ describe('WorkstationProvider account control', () => {
       data: { updated: 1, failed: [], timestamp: '2026-08-13T15:00:00.000Z' },
     });
     fetchMtmRefreshIntervalLive.mockResolvedValue({ success: true, data: 45 });
+    fetchWatchlistPricesLive.mockResolvedValue({ success: true, data: {} });
   });
 
   afterEach(() => {
@@ -246,5 +258,145 @@ describe('WorkstationProvider account control', () => {
     expect(fetchAllLiveDashboardData).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId('error').textContent).toBe('');
     expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+  });
+
+  it('refreshLiveData re-fetches dashboard data and refreshes watchlist + symbolPrices', async () => {
+    render(
+      <WorkstationProvider
+        liveMode
+        accounts={controlledAccounts}
+        accountId="acc-1"
+        onAccountIdChange={vi.fn()}
+      >
+        <Probe />
+      </WorkstationProvider>,
+    );
+    await flush();
+
+    // Initial load: empty watchlist, no prices.
+    expect(fetchAllLiveDashboardData).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('watchlist').textContent).toBe('');
+    expect(screen.getByTestId('symbol-prices').textContent).toBe('');
+
+    // The next refresh returns a watchlist row + a quote for its symbol.
+    fetchAllLiveDashboardData.mockResolvedValueOnce({
+      success: true,
+      data: {
+        accounts: controlledAccounts,
+        positions: [],
+        watchlist: [
+          {
+            id: 'wl-1',
+            dateAdded: '2026-08-13T00:00:00.000Z',
+            symbol: 'AAPL',
+            sectorId: null,
+            name: 'Apple Inc.',
+            sector: null,
+            industry: null,
+            setupId: null,
+            direction: 'long',
+            thesis: null,
+            marketContext: null,
+            keyLevel: null,
+            triggerPrice: 200,
+            plannedStop: null,
+            targetPrice: null,
+            status: 'watching',
+            notes: null,
+            promotedTradeId: null,
+            alertConfig: null,
+            createdAt: '2026-08-13T00:00:00.000Z',
+            updatedAt: '2026-08-13T00:00:00.000Z',
+          },
+        ],
+        dashboard: { setupRanking: [] },
+        dashboardV2: { account: {} },
+        risk: {},
+      },
+    });
+    fetchWatchlistPricesLive.mockResolvedValueOnce({
+      success: true,
+      data: {
+        AAPL: {
+          symbol: 'AAPL',
+          price: 205,
+          marketState: 'REGULAR',
+          fetchedAt: '2026-08-13T15:01:00.000Z',
+          source: 'mock',
+          previousClose: 202,
+          change: 3,
+          changePercent: 1.485,
+        },
+      },
+    });
+
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flush();
+    await flush();
+
+    // Refresh re-fetched without changing selection or the account list.
+    expect(fetchAllLiveDashboardData).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('active').textContent).toBe('acc-1');
+    expect(screen.getByTestId('accounts').textContent).toBe('acc-1,acc-2');
+    // Watchlist row and its derived price data are visible in fixtures.
+    expect(screen.getByTestId('watchlist').textContent).toBe('AAPL');
+    expect(screen.getByTestId('symbol-prices').textContent).toBe('AAPL');
+  });
+
+  it('refreshLiveData failure surfaces the error and keeps prior data', async () => {
+    render(
+      <WorkstationProvider
+        liveMode
+        accounts={controlledAccounts}
+        accountId="acc-1"
+        onAccountIdChange={vi.fn()}
+      >
+        <Probe />
+      </WorkstationProvider>,
+    );
+    await flush();
+
+    fetchAllLiveDashboardData.mockResolvedValueOnce({
+      success: false,
+      error: 'Dashboard API unavailable',
+      status: 503,
+    });
+
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flush();
+
+    expect(fetchAllLiveDashboardData).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('error').textContent).toBe(
+      'Dashboard API unavailable',
+    );
+    // Prior data is retained (stale-while-revalidate), and the account is
+    // untouched.
+    expect(screen.getByTestId('watchlist').textContent).toBe('');
+    expect(screen.getByTestId('active').textContent).toBe('acc-1');
+  });
+
+  it('refreshLiveData is a safe no-op in fixture mode', async () => {
+    render(
+      <WorkstationProvider>
+        <Probe />
+      </WorkstationProvider>,
+    );
+    await flush();
+
+    const callsBefore = fetchAllLiveDashboardData.mock.calls.length;
+
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flush();
+
+    // No live fetch fires, nothing crashes, selection stays local.
+    expect(fetchAllLiveDashboardData.mock.calls.length).toBe(callsBefore);
+    expect(screen.getByTestId('external').textContent).toBe('false');
+    expect(screen.getByTestId('error').textContent).toBe('');
   });
 });

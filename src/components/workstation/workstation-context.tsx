@@ -110,6 +110,11 @@ export interface WorkstationContextValue {
   accounts: { id: string; name: string; currency: string }[];
   activeAccountId: string;
   setActiveAccountId: (id: string) => void;
+  /** Re-fetch live dashboard data for the active account without changing
+   *  selection. Used after a mutation (e.g. watchlist CRUD) so panels
+   *  reflect the change without a page reload. Safe no-op in fixture mode
+   *  or before an account resolves. */
+  refreshLiveData: () => void;
   /** True when account selection is owned by an external provider
    *  (e.g. the global AccountProvider in the legacy shell). The toolbar
    *  hides its own account selector in this mode to avoid duplicate
@@ -277,23 +282,28 @@ export function WorkstationProvider({
     return () => { cancelled = true; };
   }, [liveMode]);
 
-  // ── Fetch dashboard data (live mode, on account resolved) ──────────
-  useEffect(() => {
+  // ── Refresh live dashboard data (live mode) ────────────────────────
+  // Stable callback re-running the account-scoped dashboard fetch without
+  // changing selection. Consumed by panels (e.g. watchlist CRUD) after a
+  // mutation so the UI reflects the change without a full page reload.
+  // Safe no-op in fixture mode or before an account resolves. Reuses the
+  // abort/refetch pattern of the account-change effect: the newest call
+  // wins, and any superseded request discards its result via signal.aborted.
+  const refreshLiveData = useCallback((): void => {
     if (!liveMode || !activeAccountId) return;
 
-    // Abort any in-flight fetch
+    // Abort any in-flight fetch so the newest request owns the state.
     fetchAbortRef.current?.abort();
     const controller = new AbortController();
     fetchAbortRef.current = controller;
 
-    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
 
     const fetchLive = async () => {
       console.info(
         `[workstation] LIVE MODE — fetching data for account: ${activeAccountId}`,
       );
-      setIsLoading(true);
-      setError(null);
 
       const result = await fetchAllLiveDashboardData(
         activeAccountId,
@@ -301,7 +311,9 @@ export function WorkstationProvider({
         { skipAccounts: isAccountControlled },
       );
 
-      if (cancelled) return;
+      // A newer refresh (or unmount/account change) superseded this
+      // request; it owns loading/error state from here on.
+      if (controller.signal.aborted) return;
 
       if (!result.success) {
         console.error(
@@ -327,13 +339,22 @@ export function WorkstationProvider({
       setIsLoading(false);
     };
 
-    fetchLive();
+    void fetchLive();
+  }, [liveMode, activeAccountId, isAccountControlled]);
+
+  // ── Fetch dashboard data (live mode, on account resolved) ──────────
+  // The account-change effect drives the first fetch and supersedes any
+  // in-flight request when selection changes. Shares fetchAbortRef with
+  // manual refreshLiveData() calls so a selection change always wins.
+  useEffect(() => {
+    if (!liveMode || !activeAccountId) return;
+
+    refreshLiveData();
 
     return () => {
-      cancelled = true;
-      controller.abort();
+      fetchAbortRef.current?.abort();
     };
-  }, [liveMode, activeAccountId, isAccountControlled]);
+  }, [liveMode, activeAccountId, refreshLiveData]);
 
   // ── Live price fetching (fills marketIndices, symbolPrices, tradeIdeas) ─
   // Fetches prices for market indices + watchlist symbols when liveData
@@ -564,6 +585,7 @@ export function WorkstationProvider({
       accounts,
       activeAccountId,
       setActiveAccountId,
+      refreshLiveData,
       accountSelectionExternal: isAccountControlled,
       fixtureMode: !liveMode,
       liveMode,
@@ -580,6 +602,7 @@ export function WorkstationProvider({
       accounts,
       activeAccountId,
       setActiveAccountId,
+      refreshLiveData,
       isAccountControlled,
       isLoading,
       error,
