@@ -294,59 +294,11 @@ export function WatchlistPanel() {
     }
   };
 
-  // ── Empty state (fixture mode: text only; live mode: + Add) ──────────
-  if (watchlist.length === 0) {
-    return (
-      <section
-        className="ws-panel"
-        style={{ gridArea: 'watchlist' }}
-        data-testid="ws-panel-watchlist"
-      >
-        <div className="ws-panel-header">
-          <span>Watchlist</span>
-          {liveMode && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto"
-              data-testid="ws-watchlist-add"
-              onClick={openAdd}
-            >
-              + Add
-            </Button>
-          )}
-        </div>
-        <div className="ws-panel-body">
-          {liveMode && mutationError && (
-            <div
-              className="ws-watchlist-error text-destructive"
-              data-testid="ws-watchlist-mutation-error"
-              role="alert"
-            >
-              {mutationError}
-            </div>
-          )}
-          <div className="ws-empty" data-testid="ws-watchlist-empty">
-            Watchlist is empty
-          </div>
-          {liveMode && (
-            <div className="flex justify-center pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                data-testid="ws-watchlist-empty-add"
-                onClick={openAdd}
-              >
-                + Add symbol
-              </Button>
-            </div>
-          )}
-        </div>
-      </section>
-    );
-  }
-
-  // ── Populated state ──────────────────────────────────────────────────
+  // ── Single render path ─────────────────────────────────────────────
+  // The header, body, and CRUD dialogs render in both states. The empty
+  // state keeps its text-only fixture-mode form and gains the live-mode Add
+  // actions; the dialogs must be mounted in BOTH states or the empty-state
+  // '+ Add' buttons would set dialogOpen with nothing to open.
   return (
     <section
       className="ws-panel"
@@ -355,11 +307,16 @@ export function WatchlistPanel() {
     >
       <div className="ws-panel-header">
         <span>Watchlist</span>
-        <span className="ws-panel-meta ws-mono">{watchlist.length} items</span>
+        {watchlist.length > 0 && (
+          <span className="ws-panel-meta ws-mono">
+            {watchlist.length} items
+          </span>
+        )}
         {liveMode && (
           <Button
             variant="outline"
             size="sm"
+            className={watchlist.length === 0 ? 'ml-auto' : undefined}
             data-testid="ws-watchlist-add"
             onClick={openAdd}
           >
@@ -368,7 +325,7 @@ export function WatchlistPanel() {
         )}
       </div>
       <div className="ws-panel-body">
-        <MarketStrip />
+        {watchlist.length > 0 && <MarketStrip />}
         {liveMode && mutationError && (
           <div
             className="ws-watchlist-error text-destructive"
@@ -378,7 +335,26 @@ export function WatchlistPanel() {
             {mutationError}
           </div>
         )}
-        <table className="ws-table" data-testid="ws-watchlist-table">
+        {watchlist.length === 0 ? (
+          <>
+            <div className="ws-empty" data-testid="ws-watchlist-empty">
+              Watchlist is empty
+            </div>
+            {liveMode && (
+              <div className="flex justify-center pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="ws-watchlist-empty-add"
+                  onClick={openAdd}
+                >
+                  + Add symbol
+                </Button>
+              </div>
+            )}
+          </>
+        ) : (
+          <table className="ws-table" data-testid="ws-watchlist-table">
           <thead>
             <tr>
               <th>Symbol</th>
@@ -461,7 +437,8 @@ export function WatchlistPanel() {
               );
             })}
           </tbody>
-        </table>
+          </table>
+        )}
       </div>
 
       {/* ── Add / edit dialog ───────────────────────────────────────── */}

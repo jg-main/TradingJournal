@@ -189,6 +189,25 @@ describe('WatchlistPanel live-mode gating', () => {
     expect(screen.getByTestId('ws-watchlist-add')).toBeTruthy();
   });
 
+  it('empty-state Add action opens the add dialog (dialogs mount in the empty state)', async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      liveMode: true,
+      fixtures: { watchlist: [], symbolPrices: {}, marketIndices: [] },
+    });
+
+    // Regression: the dialog must be mounted in the empty state too, or the
+    // empty-state '+ Add' button sets dialogOpen with nothing to open.
+    await user.click(screen.getByTestId('ws-watchlist-empty-add'));
+    expect(await screen.findByTestId('ws-watchlist-dialog')).toBeTruthy();
+    expect(screen.getByTestId('ws-watchlist-form-symbol')).toBeTruthy();
+
+    // Cancel closes it again without a fetch.
+    await user.click(screen.getByTestId('ws-watchlist-form-cancel'));
+    expect(screen.queryByTestId('ws-watchlist-dialog')).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('empty state stays text-only in fixture mode', () => {
     renderPanel({
       liveMode: false,
