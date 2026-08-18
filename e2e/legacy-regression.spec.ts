@@ -45,12 +45,14 @@ function assertNoConsoleErrors(errors: string[]): void {
 
 // ── Route Families ──────────────────────────────────────────────────
 
+// /watchlist and /reviews are intentionally absent: since S03 both workflows are
+// reachable exclusively from dashboard widgets (Watchlist panel CRUD and Review
+// Metrics write sheet). The pages remain functional routes and are covered by
+// watchlist.spec.ts / reviews.spec.ts, which navigate directly to the URLs.
 const LEGACY_ROUTES = [
   { path: '/trades', heading: 'Trades', family: 'trades' },
-  { path: '/watchlist', heading: 'Watchlist', family: 'watchlist' },
   { path: '/alerts', heading: 'Alerts', family: 'alerts' },
   { path: '/sizing', heading: 'Sizing', family: 'sizing' },
-  { path: '/reviews', heading: 'Reviews', family: 'reviews' },
   { path: '/checks', heading: 'Checks & Validation', family: 'checks' },
   { path: '/help', heading: 'Help & Documentation', family: 'help' },
   { path: '/lookups', heading: 'Lookups', family: 'lookups' },
@@ -74,6 +76,23 @@ test.describe('Application Route Rendering Regression', () => {
     await expect(page.getByTestId('ws-live-badge')).toBeVisible();
     await expect(page.locator('aside').first()).toBeVisible();
     assertNoConsoleErrors(errors);
+  });
+
+  test('sidebar lists only curated nav sections — no Watchlist or Reviews entries', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const nav = page.locator('aside nav').first();
+
+    // Positive control: retained nav links are present, so the negative
+    // assertions below cannot pass vacuously against a broken selector.
+    await expect(nav.getByRole('link', { name: 'Dashboard' }).first()).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Trades' }).first()).toBeVisible();
+
+    // S03: Watchlist/Reviews are reachable only from dashboard widgets —
+    // the sidebar must no longer list them.
+    await expect(nav.getByRole('link', { name: 'Watchlist' })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Reviews' })).toHaveCount(0);
   });
 
   for (const { path, heading, family } of LEGACY_ROUTES) {
@@ -149,11 +168,16 @@ test.describe('Legacy Keyboard Shortcut Navigation', () => {
     await expect(page.locator('h1')).toContainText('Trades');
   });
 
-  test('"w" key navigates to Watchlist', async ({ page }) => {
+  test('"w" and "r" keys no longer navigate to Watchlist/Reviews', async ({ page }) => {
+    // S03 removed the Watchlist/Reviews shortcuts; pressing them must not
+    // navigate away from the dashboard.
     await page.keyboard.press('w');
-    await page.waitForURL('/watchlist');
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Watchlist');
+    await page.waitForTimeout(400);
+    expect(new URL(page.url()).pathname).toBe('/');
+
+    await page.keyboard.press('r');
+    await page.waitForTimeout(400);
+    expect(new URL(page.url()).pathname).toBe('/');
   });
 
   test('"s" key navigates to Settings', async ({ page }) => {
@@ -161,13 +185,6 @@ test.describe('Legacy Keyboard Shortcut Navigation', () => {
     await page.waitForURL('/settings');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('h1')).toContainText('Settings');
-  });
-
-  test('"r" key navigates to Reviews', async ({ page }) => {
-    await page.keyboard.press('r');
-    await page.waitForURL('/reviews');
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Reviews');
   });
 
   test('"c" key navigates to Checks', async ({ page }) => {
@@ -282,13 +299,14 @@ test.describe('Workstation cutover contract', () => {
     await page.waitForLoadState('networkidle');
 
     // Dense layout: the period KPI band is gone; the surviving operational
-    // panels render and Watchlist stays out of the curated default.
+    // panels render and Watchlist + Review Metrics stay out of the curated
+    // default (M018) — Process Review has its dedicated saved view.
     await expect(page.getByTestId('ws-panel-kpis')).toHaveCount(0);
     await expect(page.getByTestId('ws-panel-account-state')).toBeVisible();
     await expect(page.getByTestId('ws-panel-positions')).toBeVisible();
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
     await expect(page.getByTestId('ws-panel-risk')).toBeVisible();
-    await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
     await expect(page.locator('aside').first()).toBeVisible();
   });
 
