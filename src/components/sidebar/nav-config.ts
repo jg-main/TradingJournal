@@ -1,8 +1,6 @@
 import {
   LayoutDashboard,
-  Eye,
   NotebookPen,
-  Star,
   ClipboardCheck,
   Target,
   Landmark,
@@ -28,7 +26,7 @@ export interface NavSection {
  * rather than by database entity (M014 S02).
  * Order matters: sections render top-to-bottom in this sequence.
  *
- * - Trading: the daily workflow (dashboard, watchlist, trades, review, checks)
+ * - Trading: the daily workflow (dashboard, trades, checks)
  * - Accounts: account management
  * - Analysis: planning/analytics tooling (position sizing)
  * - System: settings and maintenance
@@ -41,9 +39,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Trading',
     items: [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/watchlist', label: 'Watchlist', icon: Eye },
       { href: '/trades', label: 'Trades', icon: NotebookPen },
-      { href: '/reviews', label: 'Reviews', icon: Star },
       { href: '/checks', label: 'Checks', icon: ClipboardCheck },
     ],
   },

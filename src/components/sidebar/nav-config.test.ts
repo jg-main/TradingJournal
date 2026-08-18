@@ -18,8 +18,6 @@ describe('resolveActiveHref', () => {
 
   it('matches exact nav hrefs', () => {
     expect(resolveActiveHref('/trades')).toBe('/trades');
-    expect(resolveActiveHref('/watchlist')).toBe('/watchlist');
-    expect(resolveActiveHref('/reviews')).toBe('/reviews');
     expect(resolveActiveHref('/checks')).toBe('/checks');
     expect(resolveActiveHref('/sizing')).toBe('/sizing');
     expect(resolveActiveHref('/alerts')).toBe('/alerts');
@@ -30,8 +28,6 @@ describe('resolveActiveHref', () => {
   it('keeps a section active on nested child routes', () => {
     expect(resolveActiveHref('/trades/42')).toBe('/trades');
     expect(resolveActiveHref('/trades/42/assessments')).toBe('/trades');
-    expect(resolveActiveHref('/watchlist/123')).toBe('/watchlist');
-    expect(resolveActiveHref('/reviews/weekly')).toBe('/reviews');
   });
 
   it('prefers the longest matching href for nested prefixes', () => {
@@ -44,6 +40,12 @@ describe('resolveActiveHref', () => {
 
   it('returns null for paths with no matching nav item', () => {
     expect(resolveActiveHref('/does-not-exist')).toBeNull();
+    // S03: Watchlist and Reviews are dashboard-widget-only workflows; the
+    // legacy pages remain functional routes but have no sidebar nav item.
+    expect(resolveActiveHref('/watchlist')).toBeNull();
+    expect(resolveActiveHref('/reviews')).toBeNull();
+    expect(resolveActiveHref('/watchlist/123')).toBeNull();
+    expect(resolveActiveHref('/reviews/weekly')).toBeNull();
   });
 
   it('keeps the Settings section active on its child routes', () => {

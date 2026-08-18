@@ -11,9 +11,7 @@ interface Shortcut {
 const SHORTCUTS: Shortcut[] = [
   { key: 'd', label: 'Dashboard' },
   { key: 't', label: 'Trades' },
-  { key: 'w', label: 'Watchlist' },
   { key: 's', label: 'Settings' },
-  { key: 'r', label: 'Reviews' },
   { key: 'c', label: 'Checks' },
   { key: 'n', label: 'New Trade' },
   { key: '?', label: 'Show shortcuts' },
@@ -36,9 +34,7 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
       switch (e.key) {
         case 'd': e.preventDefault(); router.push('/'); break;
         case 't': e.preventDefault(); router.push('/trades'); break;
-        case 'w': e.preventDefault(); router.push('/watchlist'); break;
         case 's': e.preventDefault(); router.push('/settings'); break;
-        case 'r': e.preventDefault(); router.push('/reviews'); break;
         case 'c': e.preventDefault(); router.push('/checks'); break;
         case 'n': e.preventDefault(); {
           const planBtn = document.querySelector<HTMLButtonElement>(

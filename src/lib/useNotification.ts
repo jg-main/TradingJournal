@@ -20,7 +20,7 @@ export interface FireNotificationParams {
   symbol: string;
   /** Human-readable body text */
   message: string;
-  /** URL to open when the notification is clicked (default: /watchlist) */
+  /** URL to open when the notification is clicked (default: /) */
   url?: string;
 }
 
@@ -162,7 +162,7 @@ export function useNotification(): UseNotificationResult {
 
       try {
         const title = `\u{1F514} ${params.symbol} Alert`;
-        const tag = `alert-${params.symbol}-${params.url ?? 'watchlist'}`;
+        const tag = `alert-${params.symbol}-${params.url ?? '/'}`;
 
         const notification = new (window.Notification as typeof Notification)(
           title,
@@ -173,10 +173,10 @@ export function useNotification(): UseNotificationResult {
           },
         );
 
-        // Permalink: clicking the notification opens /watchlist
+        // Permalink: clicking the notification opens the dashboard by default
         notification.onclick = () => {
           window.focus();
-          window.location.href = params.url ?? '/watchlist';
+          window.location.href = params.url ?? '/';
         };
 
         return notification;
