@@ -49,6 +49,7 @@ function Probe() {
     setActiveAccountId,
     accountSelectionExternal,
     error,
+    isLoading,
     mtmPollingState,
     refreshLiveData,
     fixtures,
@@ -58,6 +59,7 @@ function Probe() {
       <span data-testid="external">{String(accountSelectionExternal)}</span>
       <span data-testid="active">{activeAccountId}</span>
       <span data-testid="accounts">{accounts.map((a) => a.id).join(',')}</span>
+      <span data-testid="loading">{String(isLoading)}</span>
       <span data-testid="error">{error ?? ''}</span>
       <span data-testid="mtm-state">{mtmPollingState}</span>
       <span data-testid="watchlist">
@@ -377,6 +379,67 @@ describe('WorkstationProvider account control', () => {
     // untouched.
     expect(screen.getByTestId('watchlist').textContent).toBe('');
     expect(screen.getByTestId('active').textContent).toBe('acc-1');
+  });
+
+  it('refreshLiveData toggles isLoading across the refresh window and clears a prior error', async () => {
+    // First load fails → error state, not loading.
+    fetchAllLiveDashboardData.mockResolvedValueOnce({
+      success: false,
+      error: 'Boom',
+      status: 500,
+    });
+
+    render(
+      <WorkstationProvider
+        liveMode
+        accounts={controlledAccounts}
+        accountId="acc-1"
+        onAccountIdChange={vi.fn()}
+      >
+        <Probe />
+      </WorkstationProvider>,
+    );
+    await flush();
+
+    expect(screen.getByTestId('error').textContent).toBe('Boom');
+    expect(screen.getByTestId('loading').textContent).toBe('false');
+
+    // Manual refresh with the fetch kept pending so the in-flight window
+    // is observable: loading is entered synchronously with the refresh
+    // call and the prior error clears at the same time (T05 preserves
+    // this loading/error timing while moving the transition off the
+    // effect tick for react-hooks/set-state-in-effect).
+    let resolveFetch!: (v: unknown) => void;
+    fetchAllLiveDashboardData.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+
+    expect(screen.getByTestId('loading').textContent).toBe('true');
+    expect(screen.getByTestId('error').textContent).toBe('');
+
+    await act(async () => {
+      resolveFetch({
+        success: true,
+        data: {
+          accounts: controlledAccounts,
+          positions: [],
+          watchlist: [],
+          dashboard: { setupRanking: [] },
+          dashboardV2: { account: {} },
+          risk: {},
+        },
+      });
+    });
+    await flush();
+
+    expect(screen.getByTestId('loading').textContent).toBe('false');
   });
 
   it('refreshLiveData is a safe no-op in fixture mode', async () => {

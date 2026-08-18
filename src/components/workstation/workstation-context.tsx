@@ -297,10 +297,14 @@ export function WorkstationProvider({
     const controller = new AbortController();
     fetchAbortRef.current = controller;
 
-    setIsLoading(true);
-    setError(null);
-
     const fetchLive = async () => {
+      // Enter the loading state inside the async continuation instead of
+      // synchronously on the calling tick: the account-change effect
+      // invokes refreshLiveData() and must not trigger a render cascade
+      // (react-hooks/set-state-in-effect).
+      setIsLoading(true);
+      setError(null);
+
       console.info(
         `[workstation] LIVE MODE — fetching data for account: ${activeAccountId}`,
       );
