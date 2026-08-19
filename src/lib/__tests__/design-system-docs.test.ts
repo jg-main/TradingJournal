@@ -23,7 +23,11 @@
  *     the directory-wide section inventory, doc→code citation, and
  *     placeholder checks; its --ws-* custom properties resolve against
  *     workstation.css rather than globals.css (M025/S02/T02).
- *   - trade-detail.md: surface stub (section presence only).
+ *   - trade-detail.md: the full td- pattern reference, guarded by its own
+ *     contract test (trade-detail-docs.test.ts). This file still reads it for
+ *     the directory-wide section inventory, doc→code citation, and
+ *     placeholder checks; its --td-* custom properties resolve against
+ *     trade-detail-grid.css rather than globals.css (M025/S03/T01).
  *
  * Contract groups:
  *   1. Document inventory — every file exists and is non-trivial; the 16
@@ -40,9 +44,9 @@
  *      every chartTokens value from chart-palette.ts appears verbatim in
  *      tokens.md.
  *   4. Doc → code coverage — every `--` custom-property name cited anywhere
- *      in the directory exists in globals.css. A prefix rule tolerates
- *      documented abstract patterns (`--font-size-*`, `--chart-*`,
- *      `--density-control-h*`).
+ *      in the directory exists in globals.css, workstation.css, or
+ *      trade-detail-grid.css. A prefix rule tolerates documented abstract
+ *      patterns (`--font-size-*`, `--chart-*`, `--density-control-h*`).
  *   5. No placeholders — PLACEHOLDER/TODO markers are banned across the
  *      directory.
  *   6. Scanner self-test — the matchers reject a doctored doc that drops a
@@ -65,6 +69,7 @@ const WORKSTATION_PATH = path.join(DOCS_DIR, 'workstation.md');
 const TRADE_DETAIL_PATH = path.join(DOCS_DIR, 'trade-detail.md');
 const GLOBALS_CSS_PATH = path.resolve(process.cwd(), 'src/app/globals.css');
 const WORKSTATION_CSS_PATH = path.resolve(process.cwd(), 'src/app/(workstation)/workspace/workstation.css');
+const TRADE_DETAIL_CSS_PATH = path.resolve(process.cwd(), 'src/components/trade-detail/trade-detail-grid.css');
 
 function loadDoc(filePath: string, label: string): string {
   const doc = fs.readFileSync(filePath, 'utf-8');
@@ -101,6 +106,17 @@ function loadWorkstationCss(): string {
 
 const workstationCssSource = loadWorkstationCss();
 
+/** trade-detail-grid.css — owns the --td-* density/spacing/type tokens the
+ *  trade-detail.md reference cites. Loaded so those citations resolve here
+ *  (the td- contract itself is guarded by trade-detail-docs.test.ts). */
+function loadTradeDetailCss(): string {
+  const css = fs.readFileSync(TRADE_DETAIL_CSS_PATH, 'utf-8');
+  expect(css.length, 'trade-detail-grid.css should not be empty').toBeGreaterThan(1000);
+  return css;
+}
+
+const tradeDetailCssSource = loadTradeDetailCss();
+
 /**
  * Extract the raw custom-property map for a top-level block — same parser as
  * token-structure.test.ts. Only `:root {` and `.dark {` blocks carry the raw
@@ -136,8 +152,13 @@ const allCssTokenNames = new Set<string>([...cssSource.matchAll(/--[a-z][\w-]*/g
  *  by workstation.css, not globals.css (D077 concern split; M025/S02/T02). */
 const allWsTokenNames = new Set<string>([...workstationCssSource.matchAll(/--ws-[a-z][\w-]*/g)].map((m) => m[0]));
 
-/** Known custom-property names across both token sources. */
-const allKnownTokenNames = new Set<string>([...allCssTokenNames, ...allWsTokenNames]);
+/** Every `--td-*` custom-property name anywhere in trade-detail-grid.css —
+ *  the `.td` token definitions plus var() usages inside rules. These are
+ *  owned by trade-detail-grid.css, not globals.css (M025/S03/T01). */
+const allTdTokenNames = new Set<string>([...tradeDetailCssSource.matchAll(/--td-[a-z][\w-]*/g)].map((m) => m[0]));
+
+/** Known custom-property names across all three token sources. */
+const allKnownTokenNames = new Set<string>([...allCssTokenNames, ...allWsTokenNames, ...allTdTokenNames]);
 
 /* ── Contract matchers (also exercised by the scanner self-test) ────────── */
 
@@ -411,11 +432,11 @@ describe('code → doc token coverage (globals.css + chart-palette.ts → tokens
 /* ── 4. Doc → code coverage ─────────────────────────────────────────────── */
 
 describe('doc → code token coverage', () => {
-  it('every custom-property name cited in the docs exists in globals.css or workstation.css', () => {
+  it('every custom-property name cited in the docs exists in a token source (globals.css, workstation.css, or trade-detail-grid.css)', () => {
     const unknown = findUnknownCitedTokens(docSource, allKnownTokenNames);
     expect(
       unknown,
-      `docs cite tokens neither globals.css nor workstation.css define (neither exact nor name-* family): ${unknown.join(', ')}`,
+      `docs cite tokens no token source defines (neither exact nor name-* family): ${unknown.join(', ')}`,
     ).toEqual([]);
   });
 
