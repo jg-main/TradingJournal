@@ -18,7 +18,12 @@
  *     token half of the coverage contract (all coverage checks read here).
  *   - charts.md: chart palette API and the dashboard widget registry — the
  *     chart half (API phrases, widget ids, ECharts constraint read here).
- *   - workstation.md / trade-detail.md: surface stubs (section presence only).
+ *   - workstation.md: the full ws- pattern reference, guarded by its own
+ *     contract test (workstation-docs.test.ts). This file still reads it for
+ *     the directory-wide section inventory, doc→code citation, and
+ *     placeholder checks; its --ws-* custom properties resolve against
+ *     workstation.css rather than globals.css (M025/S02/T02).
+ *   - trade-detail.md: surface stub (section presence only).
  *
  * Contract groups:
  *   1. Document inventory — every file exists and is non-trivial; the 16
@@ -59,6 +64,7 @@ const CHARTS_PATH = path.join(DOCS_DIR, 'charts.md');
 const WORKSTATION_PATH = path.join(DOCS_DIR, 'workstation.md');
 const TRADE_DETAIL_PATH = path.join(DOCS_DIR, 'trade-detail.md');
 const GLOBALS_CSS_PATH = path.resolve(process.cwd(), 'src/app/globals.css');
+const WORKSTATION_CSS_PATH = path.resolve(process.cwd(), 'src/app/(workstation)/workspace/workstation.css');
 
 function loadDoc(filePath: string, label: string): string {
   const doc = fs.readFileSync(filePath, 'utf-8');
@@ -83,6 +89,17 @@ function loadGlobalsCss(): string {
 }
 
 const cssSource = loadGlobalsCss();
+
+/** workstation.css — owns the --ws-* density/spacing/type tokens the
+ *  workstation.md reference cites. Loaded so those citations resolve here
+ *  (the ws- contract itself is guarded by workstation-docs.test.ts). */
+function loadWorkstationCss(): string {
+  const css = fs.readFileSync(WORKSTATION_CSS_PATH, 'utf-8');
+  expect(css.length, 'workstation.css should not be empty').toBeGreaterThan(1000);
+  return css;
+}
+
+const workstationCssSource = loadWorkstationCss();
 
 /**
  * Extract the raw custom-property map for a top-level block — same parser as
@@ -113,6 +130,14 @@ const darkTokens = extractTokens(cssSource, '.dark');
  *  aliases (--font-sans / --font-mono / --font-heading) in addition to the
  *  raw `:root`/`.dark` token definitions. The doc cites these aliases too. */
 const allCssTokenNames = new Set<string>([...cssSource.matchAll(/--[a-z][\w-]*/g)].map((m) => m[0]));
+
+/** Every `--ws-*` custom-property name anywhere in workstation.css — the
+ *  `.ws` token definitions plus var() usages inside rules. These are owned
+ *  by workstation.css, not globals.css (D077 concern split; M025/S02/T02). */
+const allWsTokenNames = new Set<string>([...workstationCssSource.matchAll(/--ws-[a-z][\w-]*/g)].map((m) => m[0]));
+
+/** Known custom-property names across both token sources. */
+const allKnownTokenNames = new Set<string>([...allCssTokenNames, ...allWsTokenNames]);
 
 /* ── Contract matchers (also exercised by the scanner self-test) ────────── */
 
@@ -386,11 +411,11 @@ describe('code → doc token coverage (globals.css + chart-palette.ts → tokens
 /* ── 4. Doc → code coverage ─────────────────────────────────────────────── */
 
 describe('doc → code token coverage', () => {
-  it('every custom-property name cited in the docs exists in globals.css', () => {
-    const unknown = findUnknownCitedTokens(docSource, allCssTokenNames);
+  it('every custom-property name cited in the docs exists in globals.css or workstation.css', () => {
+    const unknown = findUnknownCitedTokens(docSource, allKnownTokenNames);
     expect(
       unknown,
-      `docs cite tokens globals.css does not define (neither exact nor name-* family): ${unknown.join(', ')}`,
+      `docs cite tokens neither globals.css nor workstation.css define (neither exact nor name-* family): ${unknown.join(', ')}`,
     ).toEqual([]);
   });
 

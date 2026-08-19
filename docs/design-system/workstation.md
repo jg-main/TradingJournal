@@ -166,13 +166,14 @@ body), so panel ids must stay in sync with the grid-area names in
 `src/lib/workstation-view-types.ts`.
 
 **Dense summary row contract.** In document flow, the Account State,
-Performance, and Process Review panels are content-sized — never stretched to
-fill their row — with `align-self: start`, `justify-content: flex-start`, and
-no internal scrollbar in normal use. The CSS pins this with explicit
-`data-testid` selectors under the document-flow scope so future content growth
-cannot re-introduce viewport-fill heights or nested scrolling. Contained
-workstations (Performance, Process Review) keep their shared-viewport grid
-behavior.
+Performance, and Process Review panels (`ws-panel-account-state`,
+`ws-panel-performance`, `ws-panel-process-review`) are content-sized — never
+stretched to fill their row — with `align-self: start`,
+`justify-content: flex-start`, and no internal scrollbar in normal use. The
+CSS pins this with explicit `data-testid` selectors under the document-flow
+scope so future content growth cannot re-introduce viewport-fill heights or
+nested scrolling. Contained workstations (Performance, Process Review) keep
+their shared-viewport grid behavior.
 
 **Document-flow mode.** Risk & Positions is a single page-scrolling workflow.
 The shell sets `data-scroll-mode="document"` on `.ws-grid`; a `:has()`
