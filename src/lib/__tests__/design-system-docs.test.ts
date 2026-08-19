@@ -1,28 +1,45 @@
 /**
- * design-system-docs.test.ts — M014/S07/T02
+ * design-system-docs.test.ts — M014/S07/T02, restructured in M025/S01/T02
  *
- * Source-parsing contract test guarding docs/design-system.md against drift
- * from the token code it documents (decision D056). Reads the document and the
- * authoritative token sources (src/app/globals.css, src/lib/chart-palette.ts)
- * from disk — the same approach token-structure.test.ts uses for globals.css —
- * so a token added to the CSS but missing from the doc, or removed from the
- * CSS while still documented, fails the suite at the source level, before any
- * rendering.
+ * Source-parsing contract test guarding the docs/design-system/ directory
+ * against drift from the token code it documents (decision D056; split into
+ * concern files by D077; multi-file reading by D078). Reads the split files
+ * and the authoritative token sources (src/app/globals.css,
+ * src/lib/chart-palette.ts) from disk — the same approach
+ * token-structure.test.ts uses for globals.css — so a token added to the CSS
+ * but missing from the doc, or removed from the CSS while still documented,
+ * fails the suite at the source level, before any rendering.
+ *
+ * File ownership (D077 concern split):
+ *   - README.md: index, identity, semantic color meanings, navigation and
+ *     shell, component usage guidance, prohibited patterns, migration notes.
+ *   - tokens.md: light/dark token tables, typography, density, radius and
+ *     elevation, financial number conventions, warning-state hierarchy — the
+ *     token half of the coverage contract (all coverage checks read here).
+ *   - charts.md: chart palette API and the dashboard widget registry — the
+ *     chart half (API phrases, widget ids, ECharts constraint read here).
+ *   - workstation.md / trade-detail.md: surface stubs (section presence only).
  *
  * Contract groups:
- *   1. Document inventory — docs/design-system.md exists, is non-trivial, and
- *      declares the 16 canonical top-level sections (D053 content areas plus
- *      the D061 dashboard workstation standard).
- *   2. Required content — identity phrases, financial conventions, the
- *      chart-palette API surface, all 14 normalized primitives, and all 9
- *      dashboard chart categories are present.
+ *   1. Document inventory — every file exists and is non-trivial; the 16
+ *      canonical top-level sections (D053 content areas plus the D061
+ *      dashboard workstation standard) are covered across the directory, each
+ *      owned by the file where its concern lives, in canonical order.
+ *   2. Required content — identity phrases and governing decisions
+ *      (README.md), financial conventions and canonical primary values
+ *      (tokens.md), the chart-palette API surface (charts.md), all 14
+ *      normalized primitives (README.md), and all 11 registered widget ids
+ *      (9 chart + 2 valuation, charts.md).
  *   3. Code → doc coverage — every custom property defined in globals.css
- *      `:root` (light) and `.dark` (name AND value) appears in the doc; every
- *      chartTokens value from chart-palette.ts appears verbatim.
- *   4. Doc → code coverage — every `--` custom-property name the doc cites
- *      exists in globals.css. A prefix rule tolerates documented abstract
- *      patterns (`--font-size-*`, `--chart-*`, `--density-control-h*`).
- *   5. No placeholders — PLACEHOLDER/TODO markers are banned.
+ *      `:root` (light) and `.dark` (name AND value) appears in tokens.md;
+ *      every chartTokens value from chart-palette.ts appears verbatim in
+ *      tokens.md.
+ *   4. Doc → code coverage — every `--` custom-property name cited anywhere
+ *      in the directory exists in globals.css. A prefix rule tolerates
+ *      documented abstract patterns (`--font-size-*`, `--chart-*`,
+ *      `--density-control-h*`).
+ *   5. No placeholders — PLACEHOLDER/TODO markers are banned across the
+ *      directory.
  *   6. Scanner self-test — the matchers reject a doctored doc that drops a
  *      token, invents a token, or omits a required section.
  *
@@ -35,16 +52,29 @@ import { chartTokens } from '../chart-palette';
 
 /* ── Document + CSS loading ─────────────────────────────────────────────── */
 
-const DOCS_PATH = path.resolve(process.cwd(), 'docs/design-system.md');
+const DOCS_DIR = path.resolve(process.cwd(), 'docs/design-system');
+const README_PATH = path.join(DOCS_DIR, 'README.md');
+const TOKENS_PATH = path.join(DOCS_DIR, 'tokens.md');
+const CHARTS_PATH = path.join(DOCS_DIR, 'charts.md');
+const WORKSTATION_PATH = path.join(DOCS_DIR, 'workstation.md');
+const TRADE_DETAIL_PATH = path.join(DOCS_DIR, 'trade-detail.md');
 const GLOBALS_CSS_PATH = path.resolve(process.cwd(), 'src/app/globals.css');
 
-function loadDoc(): string {
-  const doc = fs.readFileSync(DOCS_PATH, 'utf-8');
-  expect(doc.length, 'docs/design-system.md should not be empty').toBeGreaterThan(1000);
+function loadDoc(filePath: string, label: string): string {
+  const doc = fs.readFileSync(filePath, 'utf-8');
+  expect(doc.length, `${label} should not be empty`).toBeGreaterThan(1000);
   return doc;
 }
 
-const docSource = loadDoc();
+const readmeSource = loadDoc(README_PATH, 'docs/design-system/README.md');
+const tokensSource = loadDoc(TOKENS_PATH, 'docs/design-system/tokens.md');
+const chartsSource = loadDoc(CHARTS_PATH, 'docs/design-system/charts.md');
+const workstationSource = loadDoc(WORKSTATION_PATH, 'docs/design-system/workstation.md');
+const tradeDetailSource = loadDoc(TRADE_DETAIL_PATH, 'docs/design-system/trade-detail.md');
+
+/** Union of every file in the directory — used by directory-wide checks
+ *  (section coverage, doc→code citations, placeholder guard, self-tests). */
+const docSource = [readmeSource, tokensSource, chartsSource, workstationSource, tradeDetailSource].join('\n');
 
 function loadGlobalsCss(): string {
   const css = fs.readFileSync(GLOBALS_CSS_PATH, 'utf-8');
@@ -87,8 +117,11 @@ const allCssTokenNames = new Set<string>([...cssSource.matchAll(/--[a-z][\w-]*/g
 /* ── Contract matchers (also exercised by the scanner self-test) ────────── */
 
 /** A `--` custom-property citation in the doc: requires a letter right after
- *  the hyphens so markdown table separators (`---`) never match. */
-const TOKEN_NAME_RE = /--[a-z][\w-]*/g;
+ *  the hyphens so markdown table separators (`---`) never match. The negative
+ *  lookbehind rejects BEM-style modifier class suffixes such as
+ *  `.td-grid--planned` / `.td-grid--closed` — those `--` names are class
+ *  fragments, not custom-property citations. */
+const TOKEN_NAME_RE = /(?<![\w-])--[a-z][\w-]*/g;
 
 /** Unique token names the doc cites, with trailing hyphens stripped so
  *  abstract patterns like `--font-size-*` normalize to `--font-size`. */
@@ -137,27 +170,61 @@ const REQUIRED_SECTIONS = [
   '## Migration notes',
 ] as const;
 
+/** Where each canonical section is owned after the D077 split. The union must
+ *  cover all 16 REQUIRED_SECTIONS; each file must contain its own sections
+ *  in canonical order. */
+const SECTION_OWNERSHIP = [
+  {
+    file: 'README.md',
+    source: readmeSource,
+    sections: [
+      '## Design principles',
+      '## Visual character and examples',
+      '## Semantic color meanings',
+      '## Navigation and shell',
+      '## Component usage guidance',
+      '## Prohibited patterns',
+      '## Migration notes',
+    ],
+  },
+  {
+    file: 'tokens.md',
+    source: tokensSource,
+    sections: [
+      '## Light theme tokens',
+      '## Dark theme tokens',
+      '## Typography',
+      '## Density',
+      '## Radius and elevation',
+      '## Financial number conventions',
+      '## Warning-state hierarchy',
+    ],
+  },
+  {
+    file: 'charts.md',
+    source: chartsSource,
+    sections: ['## Chart palette and categories'],
+  },
+  {
+    file: 'workstation.md',
+    source: workstationSource,
+    sections: ['## Dashboard workstation standard'],
+  },
+] as const;
+
+/** Sections from `sections` that do not appear in `source`. */
+function findMissingSections(source: string, sections: readonly string[]): string[] {
+  return sections.filter((heading) => !source.includes(heading));
+}
+
 /* ── Required content inventory ─────────────────────────────────────────── */
 
-const REQUIRED_PHRASES = [
+/** Identity phrases, overlay token, and governing decisions — README.md. */
+const README_REQUIRED_PHRASES = [
   // identity
   'reserved for positive financial meaning',
   'Steel Blue',
   'Graphite + Steel Blue',
-  // canonical light/dark primary values (T01 verify command anchors)
-  'oklch(0.48 0.1 235)',
-  'oklch(0.65 0.1 235)',
-  // financial number conventions
-  'formatMoney',
-  'formatPnlClass',
-  'tabular-nums',
-  // chart-palette public API surface (M014/S04)
-  'chartTokens',
-  'chartPalette',
-  'deriveChartPalette',
-  'withAlpha',
-  'convertOklchToHex',
-  'zrender',
   // overlay token (replaces theme-blind bg-black/10)
   'bg-overlay',
   // governing decisions
@@ -166,9 +233,34 @@ const REQUIRED_PHRASES = [
   'D055',
   'D056',
   'D061',
+  // split-governing decisions (D077/D078)
+  'D077',
+  'D078',
 ] as const;
 
-/** All 14 normalized primitives, referenced by their component source file. */
+/** Financial conventions and canonical primary values — tokens.md. */
+const TOKENS_REQUIRED_PHRASES = [
+  // canonical light/dark primary values
+  'oklch(0.48 0.1 235)',
+  'oklch(0.65 0.1 235)',
+  // financial number conventions
+  'formatMoney',
+  'formatPnlClass',
+  'tabular-nums',
+] as const;
+
+/** Chart-palette public API surface (M014/S04) — charts.md. */
+const CHARTS_REQUIRED_PHRASES = [
+  'chartTokens',
+  'chartPalette',
+  'deriveChartPalette',
+  'withAlpha',
+  'convertOklchToHex',
+  'zrender',
+] as const;
+
+/** All 14 normalized primitives, referenced by their component source file —
+ *  Component usage guidance in README.md. */
 const PRIMITIVE_SOURCES = [
   'badge.tsx',
   'button.tsx',
@@ -186,8 +278,8 @@ const PRIMITIVE_SOURCES = [
   'tooltip.tsx',
 ] as const;
 
-/** All 9 dashboard chart categories by widget id (matches widget-registry). */
-const CHART_CATEGORY_IDS = [
+/** All 9 chart widget ids (matches widget-registry) — charts.md. */
+const CHART_WIDGET_IDS = [
   'equity-drawdown',
   'calendar-heatmap',
   'period-matrix',
@@ -199,19 +291,24 @@ const CHART_CATEGORY_IDS = [
   'directional-performance',
 ] as const;
 
+/** The 2 valuation widgets added to the registry documentation — charts.md. */
+const VALUATION_WIDGET_IDS = ['valuation-positions', 'open-positions-risk'] as const;
+
 /* ── 1. Document inventory ──────────────────────────────────────────────── */
 
 describe('design-system doc inventory', () => {
-  it('declares all 16 canonical top-level sections', () => {
-    for (const heading of REQUIRED_SECTIONS) {
-      expect(docSource, `missing section heading "${heading}"`).toContain(heading);
-    }
+  it('declares all 16 canonical top-level sections across the directory', () => {
+    const missing = findMissingSections(docSource, REQUIRED_SECTIONS);
+    expect(missing, `sections missing from docs/design-system/: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('declares each canonical section in order', () => {
+  it.each(SECTION_OWNERSHIP)('$file owns its canonical sections in order', ({ file, source, sections }) => {
+    for (const heading of sections) {
+      expect(source, `missing section heading "${heading}" in ${file}`).toContain(heading);
+    }
     let cursor = 0;
-    for (const heading of REQUIRED_SECTIONS) {
-      const idx = docSource.indexOf(heading, cursor);
+    for (const heading of sections) {
+      const idx = source.indexOf(heading, cursor);
       expect(idx, `"${heading}" must appear after the previous section`).toBeGreaterThanOrEqual(cursor);
       cursor = idx;
     }
@@ -221,65 +318,79 @@ describe('design-system doc inventory', () => {
 /* ── 2. Required content ────────────────────────────────────────────────── */
 
 describe('design-system doc required content', () => {
-  it.each(REQUIRED_PHRASES)('documents "%s"', (phrase) => {
-    expect(docSource, `required phrase "${phrase}" missing from docs/design-system.md`).toContain(phrase);
+  it.each(README_REQUIRED_PHRASES)('README.md documents "%s"', (phrase) => {
+    expect(readmeSource, `required phrase "${phrase}" missing from docs/design-system/README.md`).toContain(phrase);
+  });
+
+  it.each(TOKENS_REQUIRED_PHRASES)('tokens.md documents "%s"', (phrase) => {
+    expect(tokensSource, `required phrase "${phrase}" missing from docs/design-system/tokens.md`).toContain(phrase);
+  });
+
+  it.each(CHARTS_REQUIRED_PHRASES)('charts.md documents "%s"', (phrase) => {
+    expect(chartsSource, `required phrase "${phrase}" missing from docs/design-system/charts.md`).toContain(phrase);
   });
 
   it('documents usage guidance for all 14 normalized primitives', () => {
     for (const source of PRIMITIVE_SOURCES) {
-      expect(docSource, `primitive ${source} missing from Component usage guidance`).toContain(source);
+      expect(readmeSource, `primitive ${source} missing from Component usage guidance`).toContain(source);
     }
   });
 
-  it('documents all 9 dashboard chart categories by widget id', () => {
-    for (const id of CHART_CATEGORY_IDS) {
-      expect(docSource, `chart category ${id} missing from Chart palette and categories`).toContain(id);
+  it('documents all 9 dashboard chart widgets by widget id', () => {
+    for (const id of CHART_WIDGET_IDS) {
+      expect(chartsSource, `chart widget ${id} missing from the widget registry`).toContain(id);
+    }
+  });
+
+  it('documents the 2 valuation widgets in the widget registry', () => {
+    for (const id of VALUATION_WIDGET_IDS) {
+      expect(chartsSource, `valuation widget ${id} missing from the widget registry`).toContain(id);
     }
   });
 
   it('documents the oklch-in-ECharts limitation (hex conversion requirement)', () => {
-    expect(docSource, 'doc must warn that ECharts/zrender cannot parse oklch()').toMatch(/ECharts/i);
-    expect(docSource, 'doc must mention the hex conversion requirement').toContain('convertOklchToHex');
+    expect(chartsSource, 'doc must warn that ECharts/zrender cannot parse oklch()').toMatch(/ECharts/i);
+    expect(chartsSource, 'doc must mention the hex conversion requirement').toContain('convertOklchToHex');
   });
 });
 
 /* ── 3. Code → doc coverage ─────────────────────────────────────────────── */
 
-describe('code → doc token coverage (globals.css + chart-palette.ts)', () => {
+describe('code → doc token coverage (globals.css + chart-palette.ts → tokens.md)', () => {
   it.each(['light', 'dark'] as const)('%s: every token name is documented', (theme) => {
     const tokens = theme === 'light' ? lightTokens : darkTokens;
-    const missing = findMissingTokenNames(docSource, tokens);
-    expect(missing, `tokens missing from docs/design-system.md: ${missing.join(', ')}`).toEqual([]);
+    const missing = findMissingTokenNames(tokensSource, tokens);
+    expect(missing, `tokens missing from docs/design-system/tokens.md: ${missing.join(', ')}`).toEqual([]);
   });
 
   it.each(['light', 'dark'] as const)('%s: every token value appears verbatim', (theme) => {
     const tokens = theme === 'light' ? lightTokens : darkTokens;
-    const missing = findMissingTokenValues(docSource, tokens);
+    const missing = findMissingTokenValues(tokensSource, tokens);
     const rendered = missing.map(([name, value]) => `${name}=${value}`);
-    expect(rendered, `token values missing from docs/design-system.md: ${rendered.join(', ')}`).toEqual([]);
+    expect(rendered, `token values missing from docs/design-system/tokens.md: ${rendered.join(', ')}`).toEqual([]);
   });
 
   it.each(['light', 'dark'] as const)('%s: every chartTokens value appears verbatim', (theme) => {
     const palette = chartTokens[theme];
-    const missing = Object.entries(palette).filter(([, value]) => !docSource.includes(value));
+    const missing = Object.entries(palette).filter(([, value]) => !tokensSource.includes(value));
     const rendered = missing.map(([key, value]) => `chartTokens.${key}=${value}`);
-    expect(rendered, `chartTokens values missing from docs/design-system.md: ${rendered.join(', ')}`).toEqual([]);
+    expect(rendered, `chartTokens values missing from docs/design-system/tokens.md: ${rendered.join(', ')}`).toEqual([]);
   });
 
   it('the doc token inventory is non-trivial (guards against a truncated doc)', () => {
     expect(Object.keys(lightTokens).length).toBeGreaterThanOrEqual(45);
-    expect(citedTokenNames(docSource).length).toBeGreaterThan(40);
+    expect(citedTokenNames(tokensSource).length).toBeGreaterThan(40);
   });
 });
 
 /* ── 4. Doc → code coverage ─────────────────────────────────────────────── */
 
 describe('doc → code token coverage', () => {
-  it('every custom-property name cited in the doc exists in globals.css', () => {
+  it('every custom-property name cited in the docs exists in globals.css', () => {
     const unknown = findUnknownCitedTokens(docSource, allCssTokenNames);
     expect(
       unknown,
-      `doc cites tokens globals.css does not define (neither exact nor name-* family): ${unknown.join(', ')}`,
+      `docs cite tokens globals.css does not define (neither exact nor name-* family): ${unknown.join(', ')}`,
     ).toEqual([]);
   });
 
@@ -339,11 +450,18 @@ describe('scanner self-test (the contract rejects drift)', () => {
     expect(findUnknownCitedTokens('var(--font-size-*) and --chart-* and --density-control-h*', allCssTokenNames)).toEqual([]);
   });
 
+  it('ignores BEM-style modifier class suffixes (--planned/--closed are not token citations)', () => {
+    // .td-grid--planned / .td-grid--closed appear in trade-detail.md; the
+    // `--` there is a class-modifier separator, not a custom property.
+    expect(findUnknownCitedTokens('.td-grid--planned and .td-grid--closed', allCssTokenNames)).toEqual([]);
+  });
+
   it('flags a doc missing a required section heading', () => {
     const doctored = docSource.replace('## Migration notes', '## Removed section');
     for (const heading of ['## Migration notes'] as const) {
       expect(doctored).not.toContain(heading);
     }
+    expect(findMissingSections(doctored, REQUIRED_SECTIONS)).toContain('## Migration notes');
     expect(findMissingTokenNames(doctored, lightTokens)).not.toContain('--primary'); // name check still passes — heading check is separate
   });
 });
