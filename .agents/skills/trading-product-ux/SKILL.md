@@ -28,7 +28,7 @@ Applicable surfaces include:
 This skill governs product reasoning, information architecture, interaction
 design, visual acceptance, and GSD-Pi decomposition. For visual tokens,
 primitives, density values, and prohibited patterns, follow
-`docs/design-system.md`; do not restate or replace it here.
+`docs/design-system/README.md`; do not restate or replace it here.
 
 Read `AGENTS.md`, repository preferences, and the active GSD context first.
 
