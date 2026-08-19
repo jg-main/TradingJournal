@@ -1109,3 +1109,54 @@ canonical computation > UI-local calculation
 domain stability > opportunistic refactoring
 small vertical change > broad architectural rewrite
 ```
+
+---
+
+# 27. S01 Audit Findings (2026-08-19)
+
+Result of the S01 audit (inventory `26-01-INVENTORY.md`, capability matrix `26-01-MATRIX.md`, gap record `26-01-GAPS.md` in `.gsd/phases/26-1bw68n-workstation-architecture-evolution/`). Classification of all 17 capability areas from direct source inspection: **13 Complete / 3 Refine / 1 Missing-deferred / 0 Obsolete**. The two determinations this requirement asked S01 to make — workstation roles and panel extension contract — are both Complete with no architectural change required.
+
+## 27.1 Classification summary
+
+| Area | Verdict |
+|---|---|
+| Panel catalogue | Complete |
+| Curated templates | Complete |
+| Saved views | Complete |
+| Validation | Complete |
+| Versioning/migration | Complete |
+| Hide/show | Complete |
+| Customize mode | Complete |
+| Arrange mode | Complete |
+| Drag/resize constraints | Complete |
+| Protected anchors | Complete |
+| Account context | Complete |
+| Date/period context | **Refine** (G1) |
+| Performance-unit context | **Missing — deferred** (G3) |
+| Live/historical separation | **Refine** (G1) |
+| Shared data ownership | Complete |
+| Market-data trust propagation | Complete |
+| Responsive architecture | **Refine** (G2) |
+| Workstation roles | Complete (no zone abstraction needed) |
+| Panel extension contract | Complete (documentation only) |
+
+## 27.2 Gaps and decisions
+
+- **G1 — Live/historical separation is by construction, not contract.** The Performance panel's P&L scope is a per-panel versioned preference (`workstation:performance-pnl-scope:v1`); live-state panels never read it. The separation is real but has no documented contract and no safety test. Change: document the Live vs Historical scope contract in `docs/design-system/workstation.md` and add a contract test proving the live payload is independent of period scope. No new global date context is introduced.
+- **G2 — Responsive contract at 1024px unverified.** Breakpoints exist at 1800px/980px + reduced-motion; there is no explicit 1024px workstation contract and no evidence that risk/trades stay visible and arrange/customize chrome behaves at constrained widths. Change: verification-first browser evidence at 1440/1280/1024, fixing only architectural breakage revealed.
+- **G3 — Performance-unit context deliberately deferred.** No global unit switch exists; no user demand or duplicated unit state is evidenced. Per §6.2, do not implement a global unit switch without concrete evidence. Documented rejection for this milestone.
+
+## 27.3 Explicitly rejected (obsolete / not desirable)
+
+- Generic dashboard builder (plugins, user queries, remote panels, executable layouts) — requirement §15 non-goal.
+- New "zone" abstraction (Live/Performance/Process containers) — the three curated templates already express the roles.
+- Global performance-unit switch — deferred, no evidence of need.
+- Second saved-view system — the existing validated, versioned, migration-aware store is preserved.
+- Replacing react-grid-layout — constrained drag/resize is implemented and tested.
+
+## 27.4 Implications for downstream slices
+
+- Gap-free areas are marked complete and must not be rebuilt.
+- S02 placeholder is replaced by vertical slices derived strictly from G1–G3 evidence (shared workstation context; responsive/ergonomics verification; architecture UAT closure).
+- Performance-unit context gets no slice; revisit only with concrete product evidence.
+- All domain computations, freshness semantics, and the curated risk-first default remain unchanged (per §15/§16).
