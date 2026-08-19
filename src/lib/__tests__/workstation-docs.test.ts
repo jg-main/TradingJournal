@@ -288,6 +288,7 @@ const REQUIRED_SECTIONS = [
   '## Risk positions table',
   '## Risk band',
   '## Performance KPI grid',
+  '## Process Review panel',
   '## Setups and ideas panel',
   '## Equity chart',
   '## Keyboard navigation',
