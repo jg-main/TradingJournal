@@ -62,7 +62,7 @@ expectations are restated here in prose. When you change one, change the other.
 
 Select the narrowest applicable skill and load only the references the active
 task needs. A skill supplies technique; it does not override this file,
-`docs/design-system.md`, or a documented domain invariant.
+`docs/design-system/README.md`, or a documented domain invariant.
 
 | Situation | Use | Also consider |
 |---|---|---|
@@ -100,16 +100,16 @@ load only its needed references.
 `trading-product-ux` owns workflow structure, information architecture, and
 visual acceptance for this product. The general frontend skills above supply
 implementation technique only; where they disagree with `trading-product-ux` or
-`docs/design-system.md`, this repository's guidance wins.
+`docs/design-system/README.md`, this repository's guidance wins.
 
-`docs/design-system.md` is the authoritative visual reference for product
-identity, tokens, density, primitives, chart semantics, and prohibited
-patterns. `src/app/globals.css` and `src/lib/chart-palette.ts` are the
+`docs/design-system/README.md` is the authoritative visual reference for
+product identity, tokens, density, primitives, chart semantics, and
+prohibited patterns. `src/app/globals.css` and `src/lib/chart-palette.ts` are the
 authoritative token implementations. Do not create a competing design guide.
 
 For dashboard work, `PRODUCT.md` defines the risk-first product role and
-`docs/design-system.md` defines the workstation readability and data-state
-rules. General visual skills can improve implementation craft, but must not
+`docs/design-system/README.md` defines the workstation readability and
+data-state rules. General visual skills can improve implementation craft, but must not
 replace these priorities or invent a separate dashboard direction.
 
 The current application design is established. Treat `implementation` as the
@@ -286,8 +286,9 @@ workflow.
 
 ## Frontend Conventions
 
-- Follow `docs/design-system.md` for visual and interaction conventions; reuse
-  the normalized primitives in `src/components/ui` before adding a new one.
+- Follow `docs/design-system/README.md` for visual and interaction
+  conventions; reuse the normalized primitives in `src/components/ui` before
+  adding a new one.
 - Use semantic Tailwind utilities backed by `globals.css`; do not introduce
   arbitrary colors, spacing systems, or competing visual tokens.
 - Use `lucide-react` only when an icon adds action meaning. The product remains
