@@ -28,14 +28,20 @@
  *   5. Panel testids — every ws-panel-* testid the doc cites exists in the
  *      component source or the CSS scoping selectors (ws-panel-equity is a
  *      CSS-only scoping testid).
- *   6. Keyboard shortcuts — the documented shortcut table matches
+ *   6. Component → CSS coverage — every ws- class referenced from a className
+ *      attribute in the workstation components is defined in workstation.css.
+ *      This is the guard that was missing while ws-arrange-grid,
+ *      ws-attention-*, ws-directional-grid, ws-process-score-bars,
+ *      ws-process-bar, ws-trades-body, and ws-watchlist-error went undefined.
+ *   7. Keyboard shortcuts — the documented shortcut table matches
  *      workstation-keyboard-shortcuts.tsx (SHORTCUT_ENTRIES keys + labels,
  *      ArrowUp/ArrowDown/Enter row navigation) and the arrange ceiling
  *      ARRANGE_KEYBOARD_MAX_Y matches workstation-keyboard-arrange.tsx.
- *   7. No placeholders — PLACEHOLDER/TODO markers are banned.
- *   8. Scanner self-test — the matchers reject a doctored doc that drops a
+ *   8. No placeholders — PLACEHOLDER/TODO markers are banned.
+ *   9. Scanner self-test — the matchers reject a doctored doc that drops a
  *      class, invents a class, stale-drops a token value, cites an unknown
- *      panel testid, drops a shortcut key, or omits a required section.
+ *      panel testid, drops a shortcut key, or omits a required section; the
+ *      component→CSS matcher rejects components that use undefined ws- classes.
  *
  * Runs under vitest (jsdom env is fine — no DOM interaction here).
  */
@@ -90,6 +96,50 @@ const cssDataAttributeNames = new Set<string>([...cssSource.matchAll(/data-(ws-[
 
 /** data-testid attributes defined in the workstation components. */
 const componentTestidNames = new Set<string>([...componentSources.matchAll(/data-testid=["'](ws-[\w-]+)["']/g)].map((m) => m[1]));
+
+/* ── Component → CSS extraction ─────────────────────────────────────────── */
+
+/** Component source with full-line and block comments removed, so a
+ *  commented-out className never counts as a live usage. */
+function stripComments(source: string): string {
+  return source.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/** ws- class names referenced from className attributes in a component
+ *  source: className="..." literals, className={'...'} strings, and
+ *  className={`...`} template literals. Tokens that end in a hyphen are
+ *  dynamic tails (e.g. the `ws-dq-` of `ws-dq-${severity}`) and are skipped —
+ *  the concrete ws-dq-* classes are what the CSS defines. */
+function extractClassNameWsTokens(source: string): string[] {
+  const values = [
+    ...source.matchAll(/className\s*=\s*["']([^"']*)["']/g),
+    ...source.matchAll(/className\s*=\s*\{\s*["']([^"']*)["']\s*\}/g),
+    ...source.matchAll(/className\s*=\s*\{`([^`]*)`\}/g),
+  ].map((m) => m[1]);
+
+  const tokens: string[] = [];
+  for (const value of values) {
+    for (const token of value.matchAll(/ws-[\w-]+/g)) {
+      if (!token[0].endsWith('-')) tokens.push(token[0]);
+    }
+  }
+  return tokens;
+}
+
+/** Unique ws- classes referenced from className attributes in the
+ *  workstation components. */
+const componentClassNameNames = new Set<string>(extractClassNameWsTokens(stripComments(componentSources)));
+
+/** ws- classes used in a component source's className attributes with no
+ *  matching definition in workstation.css (sorted for stable failures). */
+function findUndefinedComponentClasses(source: string): string[] {
+  return [...new Set(extractClassNameWsTokens(stripComments(source)))]
+    .filter((name) => !cssClassNames.has(name))
+    .sort();
+}
+
+/** Live component→CSS gap at scan time. */
+const undefinedComponentClasses = findUndefinedComponentClasses(componentSources);
 
 /** Raw --ws-* token definitions from the `.ws { ... }` root block. */
 function extractWsTokenBlock(css: string): Record<string, string> {
@@ -379,7 +429,22 @@ describe('panel testids match component source', () => {
   });
 });
 
-/* ── 6. Keyboard shortcuts match implementation ────────────────────────── */
+/* ── 6. Component → CSS coverage ───────────────────────────────────────── */
+
+describe('component → CSS coverage (components → workstation.css)', () => {
+  it('extracts a non-trivial ws- className inventory from the components', () => {
+    expect(componentClassNameNames.size).toBeGreaterThan(80);
+  });
+
+  it('every ws- class used in a workstation component className is defined in workstation.css', () => {
+    expect(
+      undefinedComponentClasses,
+      `ws- classes used in src/components/workstation but missing from workstation.css: ${undefinedComponentClasses.join(', ')}`,
+    ).toEqual([]);
+  });
+});
+
+/* ── 7. Keyboard shortcuts match implementation ────────────────────────── */
 
 describe('keyboard shortcuts match implementation', () => {
   it('parses the SHORTCUT_ENTRIES inventory from the implementation', () => {
@@ -411,7 +476,7 @@ describe('keyboard shortcuts match implementation', () => {
   });
 });
 
-/* ── 7. No placeholders ────────────────────────────────────────────────── */
+/* ── 8. No placeholders ────────────────────────────────────────────────── */
 
 describe('workstation doc placeholder guard', () => {
   it('contains no PLACEHOLDER markers', () => {
@@ -423,7 +488,7 @@ describe('workstation doc placeholder guard', () => {
   });
 });
 
-/* ── 8. Scanner self-test ──────────────────────────────────────────────── */
+/* ── 9. Scanner self-test ──────────────────────────────────────────────── */
 
 describe('scanner self-test (the contract rejects drift)', () => {
   it('flags a doc that silently drops a class', () => {
@@ -460,5 +525,19 @@ describe('scanner self-test (the contract rejects drift)', () => {
     const doctored = docSource.replace('## Arrange mode', '## Removed section');
     expect(doctored).not.toContain('## Arrange mode');
     expect(findMissingSections(doctored, REQUIRED_SECTIONS)).toContain('## Arrange mode');
+  });
+
+  it('flags a component className that references an undefined ws- class', () => {
+    const doctored = `${componentSources}\n<div className="ws-fake-component-class">x</div>`;
+    expect(findUndefinedComponentClasses(doctored)).toContain('ws-fake-component-class');
+  });
+
+  it('flags a template-literal component className whose ws- class is undefined', () => {
+    const doctored = `${componentSources}\n<div className={\`ws-panel-body ws-ghost-bar\`}>x</div>`;
+    expect(findUndefinedComponentClasses(doctored)).toContain('ws-ghost-bar');
+  });
+
+  it('accepts a component that only uses defined ws- classes', () => {
+    expect(findUndefinedComponentClasses('<div className="ws-panel ws-panel-body ws-num">x</div>')).toEqual([]);
   });
 });
