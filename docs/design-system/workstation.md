@@ -109,6 +109,51 @@ anything itself.
 as a stale last-known presentation with a visible failure state — never a
 live/fresh presentation merely because a polling loop is running.
 
+### Live vs Historical scope contract
+
+The workstation separates **live** context — what the market and the journal
+look like right now — from **historical** context — what happened over a
+period or after decisions closed. Both are distinct scopes of the single
+parent-owned snapshot (see *Explicit scopes* above); there is no separate
+fetch lane and no global date context. This contract makes that separation
+explicit and is guarded by `src/lib/__tests__/live-historical-contract.test.ts`.
+
+**Current-state panels.** Panels that render the live scopes of the snapshot
+(current positions, marks, exposure, risk, NAV, open trades, and quote
+state): Main Risk Metrics (`ws-panel-risk`), Account State
+(`ws-panel-account-state`), Positions (`ws-panel-positions`), Watchlist
+(`ws-panel-watchlist`), Setups and ideas (`ws-panel-insights`), the Equity
+chart (`ws-panel-equity`), the Market strip, and the open/current tab of the
+Trades workspace. These answer *what is open, what is at risk, and whether
+the displayed market state is trustworthy* — never *what happened over a
+period*.
+
+**Retrospective panels.** Panels that render the period and closed-decision
+scopes of the same snapshot: Performance (`ws-panel-performance`), Process
+Review (`ws-panel-process-review`), and the closed/historical tab of the
+Trades workspace. Analytical chart widgets below the trades workspace
+(monthly performance, R distribution, directional performance) are
+retrospective as well. They answer *what happened over a period or after a
+decision closed*.
+
+**Separation rule.** Live-state selectors never read period context:
+
+- The live adapter (`src/lib/workstation-live-adapter.ts`) exposes no
+  period or date parameters. Its fetch functions take at most an
+  `accountId` and an `AbortSignal` (plus the documented `skipAccounts`
+  option); none take a period or date filter. The parent-owned snapshot is
+  fetched once, without period context.
+- Changing a period-scope preference never alters the live snapshot payload.
+  Period selection is presentation-only: a panel reads the already-fetched
+  snapshot and applies its own scope locally; it never re-requests or
+  rewrites the current-state scopes.
+- The per-panel P&L scope preference on Performance (the Realized / Open /
+  Total segmented control, `use-performance-pnl-scope`) is the workstation's
+  only scope selector and it stays per-panel: `WorkstationContext` never
+  imports the hook and there is no global date context.
+- No runtime behavior change: this contract documents the existing
+  separation and pins it with tests.
+
 ---
 
 ## Density tokens
