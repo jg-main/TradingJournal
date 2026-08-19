@@ -376,6 +376,25 @@ Internal row borders, headers, and content spacing are preserved.
 }
 ```
 
+The strip also zeroes card-to-card vertical margins (`.td-panel-body
+[data-slot='card'] + [data-slot='card']`, and the review-section and
+compact-card equivalents) and re-applies the panel-header rhythm to the
+legacy card header and content — spacing only, no chrome:
+
+```css
+.td-panel-body [data-slot='card-header'],
+.td-review-section-content [data-slot='card-header'],
+.td-compact-card [data-slot='card-header'] {
+  padding: var(--td-space-1) var(--td-space-2);
+}
+
+.td-panel-body [data-slot='card-header'] + [data-slot='card-content'],
+.td-review-section-content [data-slot='card-header'] + [data-slot='card-content'],
+.td-compact-card [data-slot='card-header'] + [data-slot='card-content'] {
+  padding-top: var(--td-space-1);
+}
+```
+
 The strip rule also removes card-to-card vertical margins inside the panel
 body and review content, and re-applies the panel-header rhythm to the
 legacy card header (spacing only, no chrome — `padding: var(--td-space-1)
