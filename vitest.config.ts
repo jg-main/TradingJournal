@@ -40,6 +40,7 @@ export default defineConfig({
       'src/lib/__tests__/design-system-docs.test.ts',
       'src/lib/__tests__/workstation-docs.test.ts',
       'src/lib/__tests__/live-historical-contract.test.ts',
+      'src/lib/__tests__/workstation-architecture-safety.test.ts',
       'src/lib/__tests__/trade-detail-docs.test.ts',
       'src/lib/__tests__/token-structure.test.ts',
       'src/lib/__tests__/surface-token-migration.test.ts',
