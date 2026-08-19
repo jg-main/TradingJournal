@@ -85,6 +85,30 @@ Expose a known price source in that panel or its immediate detail. Do not
 let a global freshness indicator make an individual P&L total appear current
 when one of its positions is stale, unpriced, or otherwise incomplete.
 
+## Data ownership
+
+The workstation is a single-owner data surface: `WorkstationContext` fetches
+one parent-owned typed overview snapshot (the dashboard v2 contract) for the
+active account and owns its refresh lifecycle. Panels and widgets render from
+that snapshot; they never independently fetch or recompute shared positions,
+P&L, account state, or price freshness.
+
+- One result per refresh: the snapshot is a single typed result with an
+explicit snapshot id / computed-at timestamp, so a rendered view cannot mix
+values from unrelated refreshes.
+- Explicit scopes: current account state (positions, marks, exposure, risk,
+NAV), current journal state (open trades and canonical metrics), and period
+performance are carried as distinct scopes in the same snapshot — no scope is
+used as an unlabelled substitute for another.
+- Refresh discipline: live market-data refresh updates only current-state
+data; historical performance refreshes only when its filters or journal data
+change. After a panel-driven mutation (e.g. watchlist CRUD), the mutating
+panel calls the context's single refresh callback rather than fetching
+anything itself.
+- Failure state: a transport or provider failure preserves last-known values
+as a stale last-known presentation with a visible failure state — never a
+live/fresh presentation merely because a polling loop is running.
+
 ---
 
 ## Density tokens
