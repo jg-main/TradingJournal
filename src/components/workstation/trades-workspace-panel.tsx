@@ -328,7 +328,7 @@ export function TradesWorkspacePanel({
       <div className="ws-panel-header">
         <span>Trades Workspace</span>
       </div>
-      <div className="ws-panel-body ws-trades-body">
+      <div className="ws-panel-body">
         <Tabs defaultValue="open" className="ws-trades-root">
           <TabsList className="ws-trades-tabs" aria-label="Trades workspace scope">
             <TabsTrigger

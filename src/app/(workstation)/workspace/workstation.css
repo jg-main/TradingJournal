@@ -986,6 +986,22 @@
   color: var(--muted-foreground);
 }
 
+/* Inline mutation-error banner (live-mode CRUD failures): destructive-wash
+   row shown above the table until the next successful mutation. The message
+   is always readable as text (role="alert", testid
+   ws-watchlist-mutation-error) — colour is reinforcement, never the only
+   signal (reuses the destructive-tone wash of the weekly-review-error
+   pattern). */
+.ws-watchlist-error {
+  margin: var(--ws-space-3) 0 0;
+  padding: var(--ws-space-3) var(--ws-space-4);
+  border: 1px solid color-mix(in srgb, var(--destructive) 30%, transparent);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+  border-radius: var(--ws-radius);
+  font-size: var(--ws-text-sm);
+  line-height: 1.35;
+}
+
 /* ── Positions Panel ─────────────────────────────────────────────────────── */
 
 /* Stale / missing mark indicator — small amber dot rendered inline before
@@ -1368,6 +1384,70 @@
    testid compatibility. */
 .ws-setups-empty {
   padding: var(--ws-space-4) 0;
+}
+
+/* ── Process Review Panel ───────────────────────────────────────────────── */
+
+/* Attention items — the top-3 severity-sorted insight list. Each item is a
+   row of shared .ws-severity-badge pill + bold title + muted flex-fill
+   message; severity is always readable as CRIT / WARN / INFO text, never by
+   colour alone. */
+.ws-attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ws-attention-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ws-space-2);
+  padding: var(--ws-space-2) 0;
+  border-bottom: var(--ws-border);
+  font-size: var(--ws-text-sm);
+  line-height: 1.35;
+}
+
+.ws-attention-item:last-child {
+  border-bottom: none;
+}
+
+.ws-attention-title {
+  flex: none;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ws-attention-message {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted-foreground);
+}
+
+/* Directional performance — Long vs Short as two equal columns; each column
+   keeps the shared .ws-stat-row contract. */
+.ws-directional-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ws-space-4);
+}
+
+/* Process score distribution — grade rows stacked in a column. Each row is
+   a .ws-stat-row whose fill bar takes the inline width as its basis and
+   shrinks to fit the row (flex: 0 1 auto); the A–B / D–F grade tokens
+   (ws-pos / ws-neg) colour the bar via currentColor. */
+.ws-process-score-bars {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-process-bar {
+  display: inline-block;
+  height: 10px;
+  background: currentColor;
+  flex: 0 1 auto;
+  min-width: 0;
+  border-radius: 1px;
 }
 
 /* ── Equity Chart ───────────────────────────────────────────────────────── */

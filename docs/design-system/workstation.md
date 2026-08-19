@@ -380,6 +380,13 @@ Watchlist rows use the shared `.ws-table` contract; the panel hosts the
 `.ws-market-strip` above the table and the watchlist add dialog. Watchlist is
 deliberately not in the curated default — it can be added to a saved view.
 
+- **Mutation errors** (live mode): a failed add/edit/remove renders
+  `.ws-watchlist-error` — an inline destructive-wash banner (testid
+  `ws-watchlist-mutation-error`, `role="alert"`) between the market strip
+  and the table that stays until the next successful mutation. The message
+  is always readable as text; the wash is reinforcement, never the only
+  signal.
+
 ---
 
 ## Positions panel
@@ -464,6 +471,34 @@ columns read as stat lists, and every `ws-perf-*` testid stays in the same
 Responsive: at `max-width: 980px` (or when a saved view places Performance
 in a single grid column), `.ws-perf-grid` collapses to one column so rows
 never cramp.
+
+---
+
+## Process Review panel
+
+The Review Metrics panel (testid `ws-panel-process-review`, grid area
+`review`) stacks the weekly review summary, process score distribution,
+directional performance, and attention items in a vertically scrolling body.
+Sub-sections render bare (no headers) and each shows the shared `.ws-empty`
+state when its fixture is absent. In live mode the panel hosts the weekly
+review write surface (`ws-update-review` opens the review write sheet) and
+a panel-local summary fetch (`ws-weekly-review-summary` and its loading /
+error / empty / week / metric siblings); fixture mode is
+read-only with no summary section.
+
+- **Attention items** (testid `ws-attention-items`): the top-3
+  severity-sorted insights as a compact list. `.ws-attention-list` resets the
+  list chrome; `.ws-attention-item` is one row — shared `.ws-severity-badge`
+  pill + `.ws-attention-title` (weight 600) + `.ws-attention-message`
+  (muted, flex-fill, wraps). Severity is always readable as CRIT / WARN /
+  INFO text from the cross-panel severity tokens, never by colour alone.
+- **Process score distribution** (testid `ws-process-score-dist`): one
+  `.ws-stat-row` per grade bin, stacked by `.ws-process-score-bars`;
+  `.ws-process-bar` is the proportional fill (inline width basis, 10px,
+  `currentColor` so the A–B `ws-pos` / D–F `ws-neg` grade tokens colour it).
+- **Directional performance** (testid `ws-directional-performance`):
+  `.ws-directional-grid` lays Long and Short out as two equal columns, each
+  keeping the shared `ws-stat-row` contract.
 
 ---
 

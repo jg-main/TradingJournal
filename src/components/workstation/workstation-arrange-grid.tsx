@@ -164,7 +164,6 @@ export function WorkstationArrangeGrid({
           onDragStop={handleCommit}
           onResizeStop={handleCommit}
           autoSize
-          className="ws-arrange-grid"
         >
           {visiblePanels.map((id) => {
             const def = WORKSTATION_PANEL_CATALOGUE[id];
