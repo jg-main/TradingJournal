@@ -272,15 +272,7 @@ Audit the current surfaces for:
 
 Bring drift into alignment using the existing tokens. Do not introduce a replacement token system and do not re-define semantic token meanings.
 
-Semantic state meaning is already established:
-
-```text
-profit / favorable value      → positive
-loss / adverse value          → negative
-stale market data             → warning
-unavailable/error state       → error
-neutral informational value   → neutral
-```
+Apply the semantic meanings, financial-state conventions, and warning-state hierarchy defined in `docs/design-system/tokens.md`. Do not duplicate, reinterpret, or redefine token semantics inside this milestone. Where implementation and documentation differ, treat the repository's established source-of-truth hierarchy as authoritative and resolve the inconsistency rather than inventing a new meaning.
 
 Do not communicate critical state through color alone.
 
@@ -728,7 +720,7 @@ Do not implement:
 - saved workstation layouts;
 - new dashboard customization architecture.
 
-Reserved for the downstream **Workstation Architecture** phase.
+Reserved for the downstream **Workstation Architecture Evolution** phase.
 
 ## No trading-workflow redesign
 
@@ -748,7 +740,7 @@ Reserved for the downstream **Trading Workflow** phase.
 
 Do not substantially redesign analytical functionality or introduce new charts. Visual containers may be normalized.
 
-Reserved for the downstream **Analytics & Review** phase.
+Reserved for the downstream **Analytics & Review Expansion** phase.
 
 ## No import redesign
 
@@ -972,13 +964,13 @@ Classify it into the downstream pipeline:
 
 ```text
 Dashboard architecture / panels / saved layouts
-→ Workstation Architecture
+→ Workstation Architecture Evolution
 
 Trade lifecycle / management
 → Trading Workflow
 
 Metrics / analytics / charts
-→ Analytics & Review
+→ Analytics & Review Expansion
 
 Imports / onboarding / final polish
 → Product Polish
@@ -995,32 +987,32 @@ Milestone IDs are assigned by the GSD workflow. The roadmap pipeline is:
 
 ```text
 UX Foundation / Consistency        (this milestone; formerly labelled v0.8)
-→ Workstation Architecture
+→ Workstation Architecture Evolution
 → Trading Workflow
-→ Analytics & Review
+→ Analytics & Review Expansion
 → Product Polish
 → v1.0 Readiness
 ```
 
-## Workstation Architecture
+## Workstation Architecture Evolution
 
 Purpose:
 
-> Formalize TradingJournal as a curated active-trading workstation.
+> Audit and evolve the existing workstation architecture only where current product needs expose real gaps. Do not rebuild capabilities already implemented by prior workstation milestones.
 
 Planned scope:
 
-- declarative panel registry;
-- Live / Performance / Process zones;
-- saved workstation views;
-- layout editing;
-- reset/default layouts;
-- account context;
-- date context where semantically appropriate;
-- performance-unit context;
-- clean panel-extension architecture.
+- audit the existing workstation panel catalogue, templates, saved-view model, arrangement mode, persistence, and validation;
+- identify actual remaining architectural gaps before implementation;
+- refine panel extensibility only where the current catalogue is insufficient;
+- refine account/date/performance context propagation where needed;
+- improve saved-view migration/versioning only when required by a concrete change;
+- improve layout constraints and workstation ergonomics where evidence supports it;
+- preserve the curated risk-first default;
+- preserve protected safety-critical panels;
+- avoid replacing the existing validated layout architecture without a documented gap.
 
-Do not implement a completely unrestricted generic dashboard builder.
+> **Baseline rule:** Existing workstation architecture is the baseline. A future milestone must begin with repository inspection and gap analysis; absence from this roadmap document is not evidence that a capability is missing.
 
 ## Trading Workflow
 
@@ -1051,30 +1043,26 @@ Planned scope:
 - screenshots;
 - notes.
 
-## Analytics & Review
+## Analytics & Review Expansion
 
 Purpose:
 
-> Establish a centralized deterministic analytical layer and high-quality review experience.
+> Extend TradingJournal's analytical and review capabilities on top of the existing canonical computation layer. Do not reconsolidate or replace the established calculation libraries unless a concrete defect or domain change requires it.
 
 Planned scope:
 
-- metric-engine consolidation;
-- canonical metric definitions;
-- expectancy;
-- profit factor;
-- payoff ratio;
-- R statistics;
-- drawdowns;
-- setup analytics;
-- strategy analytics;
-- behavioral metrics;
-- grades;
-- mistakes;
-- ECharts improvements;
-- distributions;
-- comparative analytics;
-- golden metric tests.
+- extend retrospective performance analytics;
+- improve expectancy, profit factor, payoff-ratio, and R presentation where useful;
+- add setup / strategy comparative analytics;
+- add behavioral and process analytics;
+- add MAE / MFE only when the available data supports correct computation;
+- improve ECharts interaction, hierarchy, tooltips, legends, filtering, and comparison UX;
+- improve trade-review and weekly-review analytical presentation;
+- add distribution and comparative views where they improve decision quality;
+- add tests for newly introduced analytical calculations and presentation contracts;
+- preserve the existing canonical computation libraries and their domain invariants.
+
+> **No-duplicate rule:** Do not create duplicate calculation paths in UI components or new analytics modules when an existing canonical library already owns the computation.
 
 ## Product Polish
 
@@ -1145,7 +1133,7 @@ Possible later work:
 
 Execute this milestone under the following instruction:
 
-> **Refine and consistently apply TradingJournal's existing Graphite + Steel Blue design system across the current user-facing product. Treat `PRODUCT.md`, `docs/design-system/`, `src/app/globals.css`, `src/lib/chart-palette.ts`, `src/components/ui/*`, and `AGENTS.md` as authoritative. Inspect `https://github.com/HonzaPrikryl/Tradenza` as an external UX benchmark for hierarchy, composition, density, interaction patterns, and state presentation, but do not replace TradingJournal's design system or architecture with Tradenza's. Execute the milestone as user-visible vertical GSD slices, preserve all domain/accounting/risk/metric semantics, and defer workstation architecture, workflow redesign, analytics expansion, and import redesign to their downstream milestones. Passing the repository quality gates and light/dark screenshot-based UAT are required for completion.**
+> **Refine and consistently apply TradingJournal's existing Graphite + Steel Blue design system across the current user-facing product. Treat `PRODUCT.md`, `docs/design-system/`, `src/app/globals.css`, `src/lib/chart-palette.ts`, `src/components/ui/*`, and `AGENTS.md` as authoritative. Inspect `https://github.com/HonzaPrikryl/Tradenza` as an external UX benchmark for hierarchy, composition, density, interaction patterns, and state presentation, but do not replace TradingJournal's design system or architecture with Tradenza's. Execute the milestone as user-visible vertical GSD slices, preserve all domain/accounting/risk/metric semantics, and defer workstation architecture evolution, workflow redesign, analytics expansion, and import redesign to their downstream milestones. Passing the repository quality gates and light/dark screenshot-based UAT are required for completion.**
 
 When ambiguous, prefer:
 
