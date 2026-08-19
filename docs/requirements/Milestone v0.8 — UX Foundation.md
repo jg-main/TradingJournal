@@ -1,11 +1,14 @@
-# Milestone v0.8 — UX Foundation
+# Milestone — UX Foundation / Consistency
 
 ## Status
 
-**Pipeline position:** 1 of 5 core milestones before v1.0
-**Type:** UX / design-system consolidation
+**Pipeline position:** 1 of 6 roadmap phases before v1.0 Readiness
+**Roadmap label:** v0.8 — UX Foundation (label only; does not drive `package.json` versioning)
+**Type:** UX / design-system application and consolidation
 **Priority:** High
 **Risk:** Low–Medium
+
+> **Naming note.** The "v0.8" label describes this milestone's position in the product roadmap. It does **not** control application versioning: `package.json` remains at its own application version, and the repository's GSD milestone identifiers (`M0XX`) are assigned by the GSD workflow, not derived from the roadmap label.
 
 ---
 
@@ -16,7 +19,7 @@ TradingJournal is the current application being developed in this repository:
 **Canonical project:**
 `https://github.com/jg-main/TradingJournal`
 
-TradingJournal is intended to become a **local-first trading workstation**, covering the complete trader lifecycle:
+TradingJournal is a **local-first trading workstation**, covering the complete trader lifecycle:
 
 ```text
 Planning
@@ -28,20 +31,44 @@ Planning
 → Review
 ```
 
-The core trading-domain functionality is already substantially implemented.
+The core trading-domain functionality and the application's **design system are already substantially implemented** (identity and design-system foundation from M014, restructured into `docs/design-system/` in M025).
 
-The primary objective of this milestone is therefore **not to add functionality**, but to improve visual consistency, UX quality, information hierarchy, reusable components, and interaction polish.
+The primary objective of this milestone is therefore **not to create a design system** and **not to add functionality** — it is to **apply, consolidate, and refine the existing TradingJournal design system across the current product surfaces**, using Tradenza as an external UX benchmark for evidence-backed improvements.
+
+The milestone purpose is:
+
+> Apply, consolidate, and refine the existing TradingJournal design system across current product surfaces, using Tradenza as an external UX benchmark for evidence-backed improvements.
 
 ---
 
-# 2. External UX Benchmark: Tradenza
+# 2. Design System Sources of Truth (authoritative)
+
+The repository already has an implemented and authoritative design system. Treat the following as the current sources of truth — do **not** instruct GSD to create a new design system, new visual identity, replacement token system, or replacement primitive library:
+
+```text
+PRODUCT.md
+docs/design-system/          (README.md index, tokens.md, charts.md, workstation.md, trade-detail.md
+                             — the M025 consolidation of the former monolithic docs/design-system.md)
+src/app/globals.css          (authoritative token implementation)
+src/lib/chart-palette.ts     (authoritative chart token implementation)
+src/components/ui/*          (existing shared UI primitives, incl. __tests__)
+AGENTS.md
+```
+
+The existing **Graphite + Steel Blue** identity is authoritative and must remain so unless a future milestone explicitly changes it.
+
+**Working mode:** audit the current implementation against these sources of truth, then apply the existing system consistently — using the established tokens, primitives, and patterns. Where a surface drifts from the system, bring it into alignment. Do not redefine the system itself.
+
+---
+
+# 3. External UX Benchmark: Tradenza
 
 During this milestone, use the following external open-source project as a **UX and product-design benchmark**:
 
 **Reference project:**
 `https://github.com/HonzaPrikryl/Tradenza`
 
-Tradenza is another trading-journal application with a more polished current user interface in several areas, particularly:
+Tradenza is another trading-journal application with a polished current user interface in several areas, particularly:
 
 - overall visual hierarchy;
 - dashboard presentation;
@@ -59,7 +86,7 @@ Tradenza is another trading-journal application with a more polished current use
 
 TradingJournal and Tradenza do **not** have the same product architecture.
 
-TradingJournal is intended to remain a **local-first active trading workstation**, with capabilities such as:
+TradingJournal is a **local-first active trading workstation**, with capabilities such as:
 
 - planned trades;
 - open positions;
@@ -75,13 +102,40 @@ TradingJournal is intended to remain a **local-first active trading workstation*
 
 Tradenza should therefore be treated as:
 
-> **a UX reference, not a replacement architecture and not a dependency.**
+> **a UX reference, not a dependency and not a design-system authority.**
+
+Tradenza **may influence**:
+
+```text
+visual hierarchy
+information grouping
+composition
+density
+navigation presentation
+filters
+forms
+dialogs
+trade-review presentation
+loading / empty / error states
+interaction polish
+```
+
+Tradenza must **not** automatically redefine:
+
+```text
+color identity
+semantic token meanings
+typography system
+chart palette
+domain semantics
+product information architecture
+```
 
 ---
 
-# 3. Reference Repository Inspection
+# 4. Reference Repository Inspection
 
-As part of the initial audit, inspect the current Tradenza repository.
+As part of the initial audit (S01), inspect the current Tradenza repository.
 
 The orchestrator may clone it into a temporary/read-only location if useful, for example:
 
@@ -122,7 +176,7 @@ color semantics
 responsive behavior
 ```
 
-When identifying a useful pattern, extract the **design principle** and implement it using TradingJournal's own components and architecture.
+When identifying a useful pattern, extract the **design principle** and implement it using TradingJournal's own components, tokens, and architecture.
 
 Example:
 
@@ -131,7 +185,7 @@ Observed in Tradenza:
 Consistent compact KPI cards with clear value hierarchy.
 
 Correct response:
-Implement a reusable TradingJournal KPI primitive.
+Apply TradingJournal's existing KPI presentation consistently.
 
 Incorrect response:
 Copy the Tradenza KPI component into TradingJournal.
@@ -139,7 +193,7 @@ Copy the Tradenza KPI component into TradingJournal.
 
 ---
 
-# 4. Licensing Constraint
+# 5. Licensing Constraint
 
 Tradenza is licensed under **AGPL-3.0**.
 
@@ -158,17 +212,17 @@ The safest default is:
 
 ---
 
-# 5. Purpose
+# 6. Purpose
 
-Improve TradingJournal's UX foundation before additional workstation, workflow, and analytics development.
+Apply and consolidate TradingJournal's existing design system across the current user-facing product before additional workstation, workflow, and analytics development.
 
-This milestone establishes:
+This milestone results in:
 
-- one visual language;
-- one typography hierarchy;
-- one spacing system;
-- one semantic color system;
-- one component vocabulary;
+- one consistent application of the existing visual language;
+- consistent application of the existing typography hierarchy;
+- consistent application of the existing spacing system;
+- consistent application of the existing semantic color system;
+- consistent use of the existing component vocabulary (`src/components/ui/*`);
 - consistent tables;
 - consistent forms;
 - consistent dialogs;
@@ -176,9 +230,11 @@ This milestone establishes:
 - consistent page structure;
 - consistent application shell.
 
+It does **not** create a new visual identity, token system, or primitive library.
+
 ---
 
-# 6. Governing Principle
+# 7. Governing Principle
 
 This milestone changes:
 
@@ -192,7 +248,7 @@ Given identical input data before and after this milestone, trading/accounting/r
 
 ---
 
-# 7. Primary Outcome
+# 8. Primary Outcome
 
 At milestone completion, all major TradingJournal screens should clearly appear to belong to the same professionally designed application.
 
@@ -202,53 +258,21 @@ The application should remain optimized for a **dense desktop trading workstatio
 
 ---
 
-# 8. Scope
+# 9. Scope
 
-## 8.1 Design Tokens
+## 9.1 Design tokens — apply, do not recreate
 
-Create or normalize semantic tokens.
+Apply the **existing** semantic token vocabulary defined in `src/app/globals.css` (`:root` / `.dark`) and documented in `docs/design-system/tokens.md`.
 
-### Surface
+Audit the current surfaces for:
 
-```text
-background
-surface
-surface-elevated
-surface-muted
-```
+- hard-coded colors / spacing / radii where an existing token applies;
+- token drift from the documented values;
+- inconsistent use of semantic states.
 
-### Text
+Bring drift into alignment using the existing tokens. Do not introduce a replacement token system and do not re-define semantic token meanings.
 
-```text
-text-primary
-text-secondary
-text-muted
-```
-
-### Borders
-
-```text
-border-default
-border-subtle
-```
-
-### Semantic states
-
-```text
-positive
-negative
-warning
-info
-neutral
-focus
-selected
-hover
-disabled
-```
-
-Trading-related semantics must be consistent.
-
-Example:
+Semantic state meaning is already established:
 
 ```text
 profit / favorable value      → positive
@@ -260,11 +284,9 @@ neutral informational value   → neutral
 
 Do not communicate critical state through color alone.
 
----
+## 9.2 Typography
 
-# 9. Typography
-
-Define a deliberate hierarchy covering:
+Apply the **existing** typography hierarchy (globals.css + tokens.md) consistently:
 
 ```text
 Page title
@@ -291,11 +313,11 @@ Requirements:
 - avoid unnecessary bold text;
 - preserve high information density.
 
----
+Do not replace the typography system.
 
-# 10. Spacing and Layout
+## 9.3 Spacing and layout
 
-Normalize:
+Apply the existing spacing scale consistently:
 
 - page margins;
 - content gutters;
@@ -307,15 +329,11 @@ Normalize:
 - dialog spacing;
 - icon/button spacing.
 
-Prefer a controlled spacing scale rather than one-off values.
+Use the controlled spacing scale; eliminate one-off values where an existing token applies.
 
----
+## 9.4 Application shell
 
-# 11. Application Shell
-
-Normalize the application's global structure.
-
-Target conceptual structure:
+Refine the application's existing global structure for consistency:
 
 ```text
 Application
@@ -325,7 +343,6 @@ Application
 └── Main
     ├── Page Header
     │   ├── Title
-    │   ├── Optional context
     │   └── Actions
     │
     └── Page Content
@@ -338,48 +355,46 @@ Review:
 - selected state;
 - hover state;
 - page padding;
-- page maximum width where relevant;
 - page-title positioning;
 - action placement;
 - content alignment.
 
 Do not restructure the application's information architecture in this milestone.
 
----
+## 9.5 Shared UI primitives
 
-# 12. Shared UI Primitives
+Prefer the **existing** primitives in `src/components/ui/*`.
 
-Prefer existing components where adequate.
+Refactor duplicated implementations into the existing primitives where a vertical slice demonstrates the need and doing so materially improves consistency.
 
-Refactor duplicated implementations into reusable primitives where doing so materially improves consistency.
-
-At minimum review:
+Review surfaces against:
 
 ```text
 Button
 Card / Panel
-KPI
 Badge
 Table
-PageHeader
+PageHeader patterns
 Input
 Textarea
 Select
 Tabs
-Dialog
+Dialog / Sheet
 Alert
 EmptyState
 Skeleton
 Tooltip
 ```
 
-Do not introduce a new UI framework unless clearly necessary.
+Do not introduce a new UI framework or build a parallel primitive library. Shared primitive changes are allowed when a vertical slice demonstrates the need; do not create standalone broad refactor slices whose only outcome is "build components" or "improve styling".
 
----
+## 9.6 Component and state guidance
 
-# 13. Buttons
+The following component-level expectations apply while working through the vertical slices. They are **application** guidance for the existing system, not mandates to build new systems.
 
-Normalize variants such as:
+### Buttons
+
+Apply existing button variants consistently:
 
 ```text
 Primary
@@ -389,74 +404,15 @@ Destructive
 Icon
 ```
 
-Standardize:
+Standardize size, padding, radius, typography, icon alignment, hover, active, focus, disabled, and loading across surfaces. Primary buttons remain visually distinctive and used sparingly.
 
-- size;
-- padding;
-- radius;
-- typography;
-- icon alignment;
-- hover;
-- active;
-- focus;
-- disabled;
-- loading.
+### Cards and panels
 
-Primary buttons should remain visually distinctive and used sparingly.
+Use the existing panel structure consistently. Allow controlled variants such as standard, compact, KPI, and warning. Avoid page-specific card implementations when the shared primitive is appropriate.
 
----
+### Tables
 
-# 14. Cards and Panels
-
-Use consistent panel structure.
-
-Conceptually:
-
-```text
-┌─────────────────────────────────────┐
-│ Title                      Actions  │
-│ Optional supporting context         │
-├─────────────────────────────────────┤
-│                                     │
-│ Content                             │
-│                                     │
-└─────────────────────────────────────┘
-```
-
-Allow controlled variants such as:
-
-```text
-standard
-compact
-KPI
-warning
-```
-
-Avoid page-specific card implementations when a shared primitive is appropriate.
-
----
-
-# 15. Tables
-
-Tables are a critical workstation component.
-
-Optimize for **clarity + density**.
-
-Normalize:
-
-- header styling;
-- row height;
-- borders;
-- hover;
-- selected state;
-- column spacing;
-- numeric alignment;
-- truncation;
-- sorting presentation;
-- action columns;
-- overflow;
-- empty state;
-- loading state.
+Tables are a critical workstation component. Optimize for **clarity + density**, applying the established table patterns (header styling, row height, borders, hover, selected state, column spacing, numeric alignment, truncation, sorting presentation, action columns, overflow, empty/loading states).
 
 General alignment rule:
 
@@ -474,269 +430,62 @@ AAPL     Long      500     212.45     215.20    +1,375    +1.2R
 
 Do not reduce useful trading-data density simply to create more whitespace.
 
----
+### KPI presentation
 
-# 16. KPI Presentation
+Apply the existing KPI presentation consistently (label, primary value, optional context, optional state/change). Do not introduce new KPIs during this milestone.
 
-Normalize KPI components.
+### Badges and statuses
 
-Conceptual anatomy:
+Apply the existing semantic status presentation (Planned / Open / Closed, Long / Short, Live / Stale / Unavailable, Warning / Error, Grade, Setup). Avoid arbitrary colors per component.
 
-```text
-Label
-Primary value
-Optional context
-Optional state/change
-```
+### Forms
 
-Examples:
+Apply the existing form styling consistently (field labels, input heights, focus state, borders, placeholders, helper text, validation text, textareas, selects, date/number fields, grouped fields, section spacing). Existing business validation remains unchanged unless correcting an existing confirmed defect.
 
-```text
-Net P&L
-+$12,450
-```
+### Dialogs / sheets
 
-```text
-Open Risk
-$2,310
-3.2% equity
-```
+Apply the existing dialog/sheet patterns consistently (width, heading, content, footer, button order, backdrop, close behavior, spacing, keyboard behavior, destructive confirmation). Destructive operations remain explicit.
 
-```text
-Profit Factor
-2.14
-```
+### Tabs
 
-Do not introduce new KPIs during this milestone.
+Apply the existing tab pattern consistently (active/inactive state, hover, focus, spacing, optional counts).
 
----
+### Loading, empty, and error states
 
-# 17. Badges and Statuses
+- **Loading:** prefer structural skeletons; avoid unnecessary whole-page spinners; prevent large layout shifts where practical.
+- **Empty states:** answer what is empty, why it might be empty, and what the user should do.
+- **Error states:** explain what failed, preserve unaffected surrounding UI, provide retry where meaningful, avoid exposing irrelevant technical traces.
 
-Normalize semantics for states including:
+### Focus and disabled states
 
-```text
-Planned
-Open
-Closed
+Interactive controls must have intentional hover, focus, active, disabled, and loading states. Keyboard focus must remain visible. Do not replace semantic controls with clickable generic containers merely for styling.
 
-Long
-Short
+## 9.7 Financial formatting
 
-Live
-Stale
-Unavailable
-
-Warning
-Error
-
-Grade
-Setup
-```
-
-Avoid arbitrary colors per component.
+Apply the existing financial number conventions consistently (currency, percentage, R, quantity, missing-value presentation such as `—`). Do not inconsistently mix `NA / N/A / - / -- / null / undefined` unless they genuinely represent different states.
 
 ---
 
-# 18. Forms
+# 10. Watchlist and Weekly Review scope
 
-Normalize:
+The latest product architecture moved Watchlist and Weekly Review into **dashboard-hosted workflows** (M024). The milestone targets:
 
-- field labels;
-- input heights;
-- focus state;
-- borders;
-- placeholders;
-- helper text;
-- validation text;
-- textarea styling;
-- selects;
-- date fields;
-- number inputs;
-- grouped fields;
-- section spacing.
+```text
+Dashboard-hosted Watchlist workflow
+Dashboard-hosted Weekly Review workflow
+```
 
-Existing business validation must remain unchanged unless correcting an existing confirmed defect.
+**Explicit rule:**
+
+> Legacy `/watchlist` and `/reviews` routes are not primary UX-polish targets unless current repository inspection demonstrates that they remain part of an intended user journey. Do not spend milestone effort polishing deprecated or compatibility-only routes.
 
 ---
 
-# 19. Dialogs
-
-Normalize:
-
-- width;
-- heading;
-- content;
-- footer;
-- button order;
-- backdrop;
-- close behavior;
-- spacing;
-- keyboard behavior;
-- destructive confirmation.
-
-Destructive operations must remain explicit.
-
----
-
-# 20. Tabs
-
-Normalize:
-
-- active state;
-- inactive state;
-- hover;
-- focus;
-- spacing;
-- optional counts.
-
-The same tab pattern should look and behave consistently across the application.
-
----
-
-# 21. Loading States
-
-Prefer structural skeletons.
-
-Desired behavior:
-
-```text
-Shell renders
-↓
-Expected content geometry appears
-↓
-Data populates
-```
-
-Avoid unnecessary whole-page spinners.
-
-Prevent large layout shifts where practical.
-
----
-
-# 22. Empty States
-
-Useful empty states answer:
-
-1. What is empty?
-2. Why might it be empty?
-3. What should the user do?
-
-Example:
-
-```text
-No planned trades
-
-Trades prepared for future execution will appear here.
-
-[Add planned trade]
-```
-
-Keep copy concise.
-
----
-
-# 23. Error States
-
-Errors should:
-
-- explain what failed;
-- preserve unaffected surrounding UI;
-- provide retry where meaningful;
-- avoid exposing irrelevant technical traces.
-
-Example:
-
-```text
-Market prices could not be refreshed.
-
-Stored prices are still being displayed.
-
-[Retry]
-```
-
----
-
-# 24. Focus and Disabled States
-
-Interactive controls must have intentional:
-
-```text
-hover
-focus
-active
-disabled
-loading
-```
-
-Keyboard focus must remain visible.
-
-Do not replace semantic controls with clickable generic containers merely for styling.
-
----
-
-# 25. Financial Formatting
-
-Consolidate presentation formatting where appropriate without changing underlying values.
-
-### Currency
-
-```text
-$12,450
--$1,240
-$0
-```
-
-### Percentage
-
-```text
-+3.24%
--1.12%
-0.00%
-```
-
-### R
-
-```text
-+2.4R
--1.0R
-0.0R
-```
-
-### Quantity
-
-```text
-1,250
-```
-
-### Missing value
-
-Prefer:
-
-```text
-—
-```
-
-Do not inconsistently mix:
-
-```text
-NA
-N/A
--
---
-null
-undefined
-```
-
-unless they genuinely represent different states.
-
----
-
-# 26. Responsive Targets
+# 11. Responsive Targets
 
 TradingJournal remains primarily desktop-first.
 
-Validate at minimum:
+Validate major proving surfaces at minimum:
 
 ```text
 1440 px
@@ -755,11 +504,9 @@ A full mobile-first redesign is out of scope.
 
 ---
 
-# 27. Accessibility Baseline
+# 12. Accessibility Baseline
 
-Modified/new UI should preserve basic accessibility.
-
-At minimum:
+Modified/new UI should preserve basic accessibility:
 
 - visible focus;
 - form labels;
@@ -772,28 +519,177 @@ At minimum:
 
 ---
 
-# 28. Pages in Scope
+# 13. Vertical Slice Decomposition
 
-Inspect the current repository and determine the actual route structure.
-
-At minimum normalize major surfaces representing:
-
-- Dashboard / Workstation;
-- Open Trades / Positions;
-- Closed Trades;
-- Planned Trades;
-- Trade Detail;
-- Trade creation/editing;
-- Accounts;
-- Reviews;
-- Watchlist if currently active;
-- primary settings/configuration pages.
-
-Do not assume route names without inspecting the repository.
+Do not execute the milestone as one monolithic change and do not use generic horizontal work packages. Execute it as **user-visible vertical slices** that map to routes, workflows, domain contracts, or verifiable outcomes, per `AGENTS.md`. Each slice is independently implemented, tested, reviewed, and committed.
 
 ---
 
-# 29. Explicit Non-Goals
+## S01 — UX benchmark audit and locked visual direction
+
+Inspect:
+
+- current implementation;
+- `PRODUCT.md`;
+- `docs/design-system/`;
+- `AGENTS.md`;
+- existing shared UI primitives (`src/components/ui/*`);
+- current Tradenza repository.
+
+Identify:
+
+- actual UX inconsistencies;
+- opportunities to reuse existing primitives;
+- Tradenza patterns worth conceptually adapting;
+- Tradenza patterns that conflict with TradingJournal's workstation model.
+
+Output:
+
+- concise decisions/gap record;
+- implementation plan for the remaining slices.
+
+Do not perform broad product implementation in S01.
+
+---
+
+## S02 — Application shell and primary navigation coherence
+
+Primary proving surfaces:
+
+- Dashboard;
+- Trades;
+- Accounts;
+- Settings / primary system navigation.
+
+Improve:
+
+- shell consistency;
+- page headers;
+- navigation states;
+- spacing;
+- page hierarchy;
+- shared shell behavior.
+
+Preserve the existing information architecture.
+
+---
+
+## S03 — Daily trading lists
+
+Primary proving surfaces:
+
+- Planned trades;
+- Open trades / positions;
+- Closed trades.
+
+Improve:
+
+- tables;
+- filters;
+- action placement;
+- status presentation;
+- density;
+- loading;
+- empty states;
+- error states;
+- responsive behavior.
+
+Do not change trade-state semantics or calculations.
+
+---
+
+## S04 — Trade detail and trade-entry experience
+
+Primary proving surfaces:
+
+- Trade Detail;
+- Plan/Create Trade;
+- Edit Trade;
+- execution/management dialogs already part of the current workflow.
+
+Improve:
+
+- information hierarchy;
+- forms;
+- dialogs;
+- section structure;
+- metadata presentation;
+- action clarity.
+
+Do not redesign the trade lifecycle.
+
+---
+
+## S05 — Dashboard / workstation visual consolidation
+
+Improve the current workstation presentation only.
+
+Focus on:
+
+- hierarchy;
+- panel consistency;
+- density;
+- KPI presentation;
+- existing widget composition;
+- state handling;
+- alignment.
+
+Do not add:
+
+- new panel architecture;
+- new saved-layout architecture;
+- new metrics;
+- new widgets solely for this milestone.
+
+Those remain downstream work.
+
+---
+
+## S06 — Accounts and secondary operational surfaces
+
+Cover current user-facing operational surfaces such as:
+
+- Accounts;
+- Checks;
+- Sizing;
+- Settings;
+- other routes identified during S01 as still part of the intended product.
+
+Apply the same existing design system and UX consistency rules.
+
+---
+
+## S07 — Cross-surface UX UAT and consistency closure
+
+Perform:
+
+- final cross-page consistency pass;
+- screenshot review;
+- light-theme UAT;
+- dark-theme UAT;
+- viewport validation;
+- keyboard/focus validation;
+- accessibility baseline;
+- regression verification.
+
+Close remaining milestone-scoped UX defects only.
+
+---
+
+# 14. Explicit Non-Goals
+
+## No design-system recreation
+
+Do not create:
+
+- a new visual identity;
+- a replacement token system;
+- a replacement typography system;
+- a replacement chart palette;
+- a replacement primitive library;
+- a competing design guide.
+
+The existing **Graphite + Steel Blue** identity, `docs/design-system/`, `globals.css`, `chart-palette.ts`, and `src/components/ui/*` remain authoritative.
 
 ## No domain-model changes
 
@@ -807,8 +703,6 @@ Do not change:
 - market-data semantics;
 - trade-state definitions;
 - risk snapshots.
-
----
 
 ## No metric work
 
@@ -825,8 +719,6 @@ Do not introduce or redefine:
 
 Existing numbers may be visually reformatted only.
 
----
-
 ## No workstation architecture changes
 
 Do not implement:
@@ -836,11 +728,7 @@ Do not implement:
 - saved workstation layouts;
 - new dashboard customization architecture.
 
-Reserved for:
-
-**v0.9 — Workstation Architecture**
-
----
+Reserved for the downstream **Workstation Architecture** phase.
 
 ## No trading-workflow redesign
 
@@ -854,23 +742,13 @@ Planned
 → Reviewed
 ```
 
-Reserved for:
-
-**v0.10 — Trading Workflow**
-
----
+Reserved for the downstream **Trading Workflow** phase.
 
 ## No analytics expansion
 
-Do not substantially redesign analytical functionality or introduce new charts.
+Do not substantially redesign analytical functionality or introduce new charts. Visual containers may be normalized.
 
-Visual containers may be normalized.
-
-Reserved for:
-
-**v0.11 — Analytics & Review**
-
----
+Reserved for the downstream **Analytics & Review** phase.
 
 ## No import redesign
 
@@ -881,13 +759,11 @@ Do not build:
 - broker import presets;
 - import history redesign.
 
-Reserved for:
-
-**v0.12 — Product Polish**
+Reserved for the downstream **Product Polish** phase.
 
 ---
 
-# 30. Engineering Constraints
+# 15. Engineering Constraints
 
 Preserve the current TradingJournal technical stack unless a change is clearly justified.
 
@@ -906,22 +782,22 @@ TradingJournal's local-first architecture remains intentional.
 
 ---
 
-# 31. Refactoring Policy
+# 16. Refactoring Policy
 
-Refactor when directly useful to the UX foundation.
+Refactor when directly useful to UX consistency and when a vertical slice demonstrates the need.
 
 Good:
 
 ```text
 Multiple inconsistent KPI implementations
-→ one reusable KPI primitive
+→ reuse the existing KPI primitive consistently
 ```
 
 Good:
 
 ```text
 Repeated page-header markup
-→ reusable PageHeader
+→ reuse the shared PageHeader pattern
 ```
 
 Good:
@@ -942,197 +818,45 @@ UX refactoring must remain orthogonal to domain refactoring.
 
 ---
 
-# 32. Implementation Sequence
+# 17. Verification (aligned with AGENTS.md)
 
-## Phase A — Audit
+Use the repository's established GSD verification policy. Do not invent a parallel verification policy.
 
-Inspect TradingJournal.
+## At slice completion
 
-Inventory:
+Run, as separate commands:
 
-- routes;
-- components;
-- design tokens;
-- colors;
-- typography;
-- spacing;
-- cards;
-- tables;
-- forms;
-- dialogs;
-- navigation;
-- loading states;
-- empty states;
-- error states;
-- formatting helpers.
-
-Also inspect the external Tradenza reference repository defined above.
-
-Identify:
-
-1. TradingJournal inconsistencies;
-2. reusable primitives that already exist;
-3. duplicated implementations;
-4. Tradenza UX patterns worth conceptually adopting;
-5. patterns that should NOT be adopted because they conflict with TradingJournal's workstation purpose.
-
-Produce a concise internal implementation plan.
-
-Avoid producing a large standalone design document unless required by the GSD workflow.
-
----
-
-## Phase B — Design Foundation
-
-Normalize:
-
-- tokens;
-- typography;
-- spacing;
-- surfaces;
-- borders;
-- state semantics;
-- formatting conventions.
-
----
-
-## Phase C — Shared Components
-
-Normalize/reuse:
-
-```text
-Button
-Card
-Panel
-KPI
-Badge
-Table
-PageHeader
-Input
-Select
-Textarea
-Tabs
-Dialog
-Alert
-EmptyState
-Skeleton
+```bash
+make lint
+make typecheck
+make build
+make test-all
 ```
 
+For changed user-facing workflows, also run **targeted Playwright or browser verification** appropriate to the slice.
+
+Do not run the entire multi-browser matrix after every task. `make playwright` is a full-matrix command reserved for an explicitly budgeted milestone-boundary or CI run.
+
+## At milestone completion
+
+Run the full repository quality gate plus the required milestone-level browser/UAT verification defined by `AGENTS.md`.
+
+## Test policy
+
+Do not weaken existing tests to accommodate styling changes. Where E2E tests rely on fragile visual selectors, replace them with stable semantic selectors where appropriate — without reducing coverage.
+
 ---
 
-## Phase D — Shell
+# 18. Visual UAT (both themes)
 
-Normalize:
-
-- navigation;
-- sidebar;
-- page container;
-- page header;
-- global spacing.
-
----
-
-## Phase E — Page Migration
-
-Suggested sequence:
+Visual UAT is **required in both themes**:
 
 ```text
-1. Dashboard
-2. Open Trades / Positions
-3. Planned Trades
-4. Closed Trades
-5. Trade Detail
-6. Accounts
-7. Reviews
-8. Secondary surfaces
+Light theme
+Dark theme
 ```
 
----
-
-## Phase F — State Consistency
-
-Normalize:
-
-```text
-loading
-empty
-error
-disabled
-focus
-selected
-```
-
----
-
-## Phase G — Final Consistency Pass
-
-Search for remaining:
-
-- hard-coded colors;
-- one-off spacing;
-- duplicated cards;
-- duplicated buttons;
-- inconsistent formatting;
-- inconsistent loaders;
-- inconsistent empty states;
-- inconsistent table styles.
-
----
-
-# 33. GSD Work Packages
-
-Do not execute the milestone as one monolithic change.
-
-Recommended work decomposition:
-
-```text
-01-ux-audit-and-reference-analysis
-02-design-system-foundation
-03-shared-ui-primitives
-04-app-shell-navigation
-05-dashboard-visual-normalization
-06-trade-lists-normalization
-07-trade-detail-and-forms
-08-accounts-reviews-secondary-pages
-09-loading-empty-error-states
-10-responsive-accessibility-pass
-11-final-ux-consistency-qc
-```
-
-Each plan/work package should be independently:
-
-- implemented;
-- tested;
-- reviewed;
-- committed.
-
-Prefer coherent commits.
-
----
-
-# 34. Testing Requirements
-
-Run the repository's established verification suite.
-
-At minimum, where available:
-
-```text
-lint
-typecheck
-unit tests
-build
-Playwright / E2E
-```
-
-Do not weaken domain tests because of visual changes.
-
-When E2E tests rely on fragile visual selectors, replace them with stable semantic selectors where appropriate.
-
----
-
-# 35. Visual Validation
-
-Perform screenshot/visual inspection of major pages at:
+For major proving surfaces, validate representative desktop widths:
 
 ```text
 1440 px
@@ -1140,45 +864,46 @@ Perform screenshot/visual inspection of major pages at:
 1024 px
 ```
 
-Inspect for:
+Review at minimum:
 
 - clipping;
 - broken grids;
-- bad wrapping;
-- inconsistent spacing;
 - table overflow;
-- incorrect alignment;
-- typography issues;
-- dialog overflow;
+- wrapping;
+- visual hierarchy;
+- alignment;
+- density;
+- dialogs/sheets;
 - loading states;
 - empty states;
 - error states;
-- focus states.
+- focus states;
+- theme-specific contrast or token regressions.
 
-Use screenshot review as a required acceptance step.
+Preserve screenshots or equivalent browser evidence for visual acceptance (per `AGENTS.md`).
 
 ---
 
-# 36. Acceptance Criteria
+# 19. Acceptance Criteria
 
-## Design system
+## Application of the existing design system
 
-- [ ] Semantic color vocabulary is defined and consistently used.
-- [ ] Typography hierarchy is consistent.
-- [ ] Spacing uses a controlled system.
+- [ ] Existing semantic color vocabulary is applied consistently (no new ad-hoc colors).
+- [ ] Existing typography hierarchy is applied consistently.
+- [ ] Existing spacing scale is applied consistently.
 - [ ] Financial numbers have consistent presentation.
 - [ ] Missing-value formatting is consistent.
 
 ## Components
 
-- [ ] Buttons use consistent variants.
-- [ ] Cards/panels use consistent structure.
+- [ ] Buttons use the existing variants consistently.
+- [ ] Cards/panels use the existing structure consistently.
 - [ ] Tables use consistent density and alignment.
 - [ ] KPI presentation is consistent.
 - [ ] Forms are consistent.
-- [ ] Dialogs are consistent.
+- [ ] Dialogs/sheets are consistent.
 - [ ] Tabs are consistent.
-- [ ] Status badges follow semantic rules.
+- [ ] Status badges follow the existing semantic rules.
 
 ## States
 
@@ -1196,6 +921,12 @@ Use screenshot review as a required acceptance step.
 - [ ] Major pages use consistent margins/padding.
 - [ ] Application remains usable at 1024 px.
 
+## Themes and viewports
+
+- [ ] Light-theme visual UAT passes at 1440/1280/1024 px.
+- [ ] Dark-theme visual UAT passes at 1440/1280/1024 px.
+- [ ] No theme-specific contrast or token regressions.
+
 ## Domain safety
 
 - [ ] Trading calculations are unchanged.
@@ -1206,51 +937,51 @@ Use screenshot review as a required acceptance step.
 
 ## Engineering
 
-- [ ] Shared UI duplication is reduced.
+- [ ] Shared UI duplication is reduced (reuse over duplication).
 - [ ] No unjustified dependency has been introduced.
 - [ ] Lint passes.
 - [ ] Typecheck passes.
 - [ ] Build passes.
 - [ ] Unit tests pass.
-- [ ] Relevant E2E tests pass.
+- [ ] Relevant targeted E2E tests pass.
 
 ---
 
-# 37. Definition of Done
+# 20. Definition of Done
 
 The milestone is complete when:
 
-1. a coherent UX foundation exists;
-2. major screens use it;
+1. the existing design system is applied coherently across the current product surfaces;
+2. major screens use it consistently;
 3. visual inconsistencies are materially reduced;
 4. TradingJournal's existing domain behavior remains intact;
-5. automated verification passes;
-6. desktop screenshot review passes;
+5. the repository quality gates pass (`make lint`, `make typecheck`, `make build`, `make test-all`);
+6. light- and dark-theme screenshot UAT passes at the required viewports;
 7. no unresolved P0/P1 UX defects created by the milestone remain;
 8. downstream ideas have been deferred rather than absorbed into this milestone.
 
 ---
 
-# 38. Scope-Control Rule
+# 21. Scope-Control Rule
 
 When desirable functionality outside this milestone is discovered:
 
 > **Do not implement it immediately.**
 
-Classify it into the downstream pipeline.
+Classify it into the downstream pipeline:
 
 ```text
-Dashboard architecture / panels
-→ v0.9
+Dashboard architecture / panels / saved layouts
+→ Workstation Architecture
 
 Trade lifecycle / management
-→ v0.10
+→ Trading Workflow
 
 Metrics / analytics / charts
-→ v0.11
+→ Analytics & Review
 
 Imports / onboarding / final polish
-→ v0.12
+→ Product Polish
 
 Optional upstream Tradenza contribution
 → post-v1.0 evaluation
@@ -1258,9 +989,20 @@ Optional upstream Tradenza contribution
 
 ---
 
-# 39. Remaining Milestone Pipeline
+# 22. Roadmap Pipeline (labels only)
 
-## v0.9 — Workstation Architecture
+Milestone IDs are assigned by the GSD workflow. The roadmap pipeline is:
+
+```text
+UX Foundation / Consistency        (this milestone; formerly labelled v0.8)
+→ Workstation Architecture
+→ Trading Workflow
+→ Analytics & Review
+→ Product Polish
+→ v1.0 Readiness
+```
+
+## Workstation Architecture
 
 Purpose:
 
@@ -1280,9 +1022,7 @@ Planned scope:
 
 Do not implement a completely unrestricted generic dashboard builder.
 
----
-
-## v0.10 — Trading Workflow
+## Trading Workflow
 
 Purpose:
 
@@ -1311,9 +1051,7 @@ Planned scope:
 - screenshots;
 - notes.
 
----
-
-## v0.11 — Analytics & Review
+## Analytics & Review
 
 Purpose:
 
@@ -1338,9 +1076,7 @@ Planned scope:
 - comparative analytics;
 - golden metric tests.
 
----
-
-## v0.12 — Product Polish
+## Product Polish
 
 Purpose:
 
@@ -1362,11 +1098,9 @@ Planned scope:
 - performance;
 - final consistency review.
 
----
+## v1.0 Readiness
 
-# 40. v1.0 Target
-
-The core pipeline converges on:
+The pipeline converges on:
 
 > **TradingJournal v1.0 — Stable Local-First Trading Workstation**
 
@@ -1392,7 +1126,7 @@ with a coherent professional UX.
 
 ---
 
-# 41. Post-v1.0 Candidates
+# 23. Post-v1.0 Candidates
 
 Possible later work:
 
@@ -1407,19 +1141,21 @@ Possible later work:
 
 ---
 
-# 42. Final Orchestrator Directive
+# 24. Final Orchestrator Directive
 
 Execute this milestone under the following instruction:
 
-> **Improve TradingJournal's visual system, reusable UI primitives, application shell, information hierarchy, and interaction-state consistency. Preserve all trading-domain behavior, metric semantics, persistence semantics, risk calculations, and existing workflows. Inspect `https://github.com/HonzaPrikryl/Tradenza` as an external UX benchmark during the audit, but treat it only as a reference: do not make TradingJournal dependent on it, do not migrate TradingJournal onto its architecture, and prefer conceptual adaptation over source copying. Do not introduce functionality reserved for downstream milestones. Automated verification and screenshot-based visual review are required completion criteria.**
+> **Refine and consistently apply TradingJournal's existing Graphite + Steel Blue design system across the current user-facing product. Treat `PRODUCT.md`, `docs/design-system/`, `src/app/globals.css`, `src/lib/chart-palette.ts`, `src/components/ui/*`, and `AGENTS.md` as authoritative. Inspect `https://github.com/HonzaPrikryl/Tradenza` as an external UX benchmark for hierarchy, composition, density, interaction patterns, and state presentation, but do not replace TradingJournal's design system or architecture with Tradenza's. Execute the milestone as user-visible vertical GSD slices, preserve all domain/accounting/risk/metric semantics, and defer workstation architecture, workflow redesign, analytics expansion, and import redesign to their downstream milestones. Passing the repository quality gates and light/dark screenshot-based UAT are required for completion.**
 
-When ambiguity exists, prefer:
+When ambiguous, prefer:
 
 ```text
+existing design-system authority > external benchmark
 consistency > novelty
 reuse > duplication
 clarity > decoration
 information density > excessive whitespace
 domain stability > opportunistic refactoring
+vertical user-visible slices > horizontal refactor packages
 small coherent changes > broad rewrites
 ```
