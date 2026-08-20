@@ -391,6 +391,30 @@ async function seedPropagationFixture(page: Page, tag = `${Date.now().toString(3
 }
 
 /**
+ * Shape of the /api/performance/analytics JSON response body.
+ *
+ * The test only introspects kpiMetrics, charts.monthlyPerformance, and
+ * metadata.tradeCount; deep metric values are compared via JSON.stringify,
+ * so `unknown` is sufficient for those fields (keeps the file free of
+ * `any` so the slice-completion `make lint` gate stays green).
+ */
+interface AnalyticsResponseBody {
+  kpiMetrics: Record<string, unknown>;
+  charts: {
+    monthlyPerformance: unknown;
+  };
+  metadata: {
+    accountCount: number;
+    mixedCurrencies: boolean;
+    tradeCount: number;
+    dateRange: { from: string | null; to: string | null };
+    distinctSymbols: string[];
+    periodStartEquity: number | null;
+    totalInitialRisk: number | null;
+  };
+}
+
+/**
  * Observe every shared-analytics request and response.
  *
  * Request URLs are captured with a plain listener. Response bodies are
@@ -402,7 +426,7 @@ async function seedPropagationFixture(page: Page, tag = `${Date.now().toString(3
  */
 function observeAnalytics(page: Page) {
   const analyticsRequests: string[] = [];
-  const analyticsResponses: Array<{ url: string; status: number; body: Record<string, any> | null; error?: string }> = [];
+  const analyticsResponses: Array<{ url: string; status: number; body: AnalyticsResponseBody | null; error?: string }> = [];
   let otherPerfRequests = 0;
 
   page.on('request', (req) => {
@@ -425,9 +449,9 @@ function observeAnalytics(page: Page) {
       analyticsResponses.push({ url, status: 0, body: null, error: String(err) });
       return route.continue();
     }
-    let body: Record<string, any> | null = null;
+    let body: AnalyticsResponseBody | null = null;
     try {
-      body = (await response.json()) as Record<string, any>;
+      body = (await response.json()) as AnalyticsResponseBody;
     } catch {
       // Non-JSON body (e.g. a dev error page) — record null; assertions surface it.
     }
@@ -441,7 +465,7 @@ function observeAnalytics(page: Page) {
     get otherPerfRequests() {
       return otherPerfRequests;
     },
-    lastBody(): Record<string, any> | null {
+    lastBody(): AnalyticsResponseBody | null {
       const last = analyticsResponses[analyticsResponses.length - 1];
       return last ? last.body : null;
     },
