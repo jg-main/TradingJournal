@@ -88,7 +88,21 @@ function DashboardSync() {
     if (target && target.config.instances.length > 0) {
       setTimeout(() => restoreDashboard(target.config.instances), 0);
     }
+    // The on-screen instance state now belongs to the newly active dashboard,
+    // so later edits are captured on the next switch-away.
+    lastSavedDashboardId.current = id;
   }, [activeDashboard, captureCurrentState, switchDashboard, dashboards, restoreDashboard]);
+
+  // Create a dashboard from the current state: attribute the on-screen
+  // instance state to the new dashboard so edits made after creation are
+  // captured when switching away.
+  const handleCreate = useCallback(
+    (name: string) => {
+      const newId = createDashboard(name);
+      lastSavedDashboardId.current = newId;
+    },
+    [createDashboard],
+  );
 
   // The exposed save action.
   const handleSave = useCallback(() => {
@@ -113,7 +127,7 @@ function DashboardSync() {
         dashboards={dashboards}
         activeDashboard={activeDashboard}
         writeFailed={writeFailed}
-        onCreate={createDashboard}
+        onCreate={handleCreate}
         onRename={renameDashboard}
         onDuplicate={duplicateDashboard}
         onDelete={deleteDashboard}

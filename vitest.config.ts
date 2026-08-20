@@ -174,6 +174,7 @@ export default defineConfig({
       'src/components/performance/__tests__/kpi-row.test.tsx',
       'src/components/performance/__tests__/chart-widget.test.tsx',
       'src/components/performance/__tests__/performance-toolbar.test.tsx',
+      'src/components/performance/__tests__/dashboard-switcher.test.tsx',
       'src/components/performance/__tests__/kpi-micro-viz.test.tsx',
       'src/components/performance/__tests__/performance-filter-bar.test.tsx',
       'src/components/accounting/account-correction-form.test.tsx',
