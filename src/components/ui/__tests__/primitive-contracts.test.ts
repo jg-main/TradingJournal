@@ -1,7 +1,7 @@
 /**
  * primitive-contracts.test.ts — M014/S03/T04
  *
- * Structural contract tests for the 14 UI primitives in src/components/ui.
+ * Structural contract tests for the 15 UI primitives in src/components/ui.
  * The parallel guard to src/lib/__tests__/token-structure.test.ts (which
  * protects the CSS token definitions in globals.css); this file protects the
  * component source code that consumes those tokens:
@@ -35,7 +35,7 @@ import path from 'node:path';
 
 const UI_DIR = path.resolve(process.cwd(), 'src/components/ui');
 
-/** The 14 primitives normalized in M014/S03. */
+/** The 15 primitives normalized in M014/S03. */
 const PRIMITIVES = [
   'badge',
   'button',
@@ -44,6 +44,7 @@ const PRIMITIVES = [
   'dialog',
   'dropdown-menu',
   'input',
+  'popover',
   'select',
   'separator',
   'sheet',
@@ -105,6 +106,7 @@ const REQUIRED_SLOTS: Record<Primitive, string[]> = {
   dialog: ['dialog', 'dialog-overlay', 'dialog-content', 'dialog-trigger', 'dialog-close', 'dialog-title', 'dialog-description'],
   'dropdown-menu': ['dropdown-menu', 'dropdown-menu-trigger', 'dropdown-menu-content', 'dropdown-menu-item', 'dropdown-menu-separator'],
   input: ['input'],
+  popover: ['popover', 'popover-trigger', 'popover-content', 'popover-close'],
   select: ['select', 'select-trigger', 'select-content', 'select-item', 'select-value'],
   separator: ['separator'],
   sheet: ['sheet', 'sheet-overlay', 'sheet-content', 'sheet-title', 'sheet-description'],
@@ -144,7 +146,7 @@ const BANNED_HEIGHTS = /\bh-(?:6|7|8|9|10)\b/;
 /* ── 1. Inventory ───────────────────────────────────────────────────────── */
 
 describe('primitive inventory', () => {
-  it('all 14 primitives exist as non-empty source files', () => {
+  it('all 15 primitives exist as non-empty source files', () => {
     for (const name of PRIMITIVES) {
       const src = sources[name];
       expect(src.length, `${name}.tsx should be non-trivial`).toBeGreaterThan(200);

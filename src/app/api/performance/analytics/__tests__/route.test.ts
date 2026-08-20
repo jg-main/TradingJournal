@@ -307,6 +307,9 @@ describe('GET /api/performance/analytics', () => {
     expect(body.metadata.tradeCount).toBe(4); // boundary, jan, loss, eur (deleted excluded)
     expect(body.metadata.totalInitialRisk).toBe(1150); // 500+250+300+100
     expect(body.metadata.periodStartEquity).toBe(151500); // aggregated Jan 31 equity
+    // Distinct-symbol facet: all non-deleted trades across both accounts,
+    // sorted and deduplicated (AAPL appears twice — one deleted, excluded).
+    expect(body.metadata.distinctSymbols).toEqual(['AAPL', 'MSFT', 'NVDA', 'TSLA', 'VWAGY']);
 
     // kpiMetrics — all 4 closed trades, deleted excluded from totalTrades
     expect(body.kpiMetrics.totalTrades).toBe(5); // 4 closed + 1 open, no deleted
@@ -392,6 +395,8 @@ describe('GET /api/performance/analytics', () => {
     const body = await response.json();
     expect(body.kpiMetrics.closedTrades).toBe(1);
     expect(body.kpiMetrics.netPnl).toBeCloseTo(-510, 5);
+    // The facet responds to non-symbol filters (only the short NVDA trade remains).
+    expect(body.metadata.distinctSymbols).toEqual(['NVDA']);
   });
 
   it('applies the symbols advanced filter', async () => {
@@ -401,6 +406,9 @@ describe('GET /api/performance/analytics', () => {
     const body = await response.json();
     expect(body.kpiMetrics.closedTrades).toBe(1);
     expect(body.kpiMetrics.netPnl).toBeCloseTo(-510, 5);
+    // The symbol facet stays stable under the symbol filter itself (checkbox
+    // options never vanish while narrowing the dimension).
+    expect(body.metadata.distinctSymbols).toEqual(['AAPL', 'MSFT', 'NVDA', 'TSLA']);
   });
 
   it('applies the tradeResults advanced filter (win/loss derived from realized P&L)', async () => {

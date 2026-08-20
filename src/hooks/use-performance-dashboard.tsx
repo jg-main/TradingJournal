@@ -20,6 +20,8 @@ export interface PerformanceAnalyticsData {
     mixedCurrencies: boolean;
     tradeCount: number;
     dateRange: { from: string | null; to: string | null };
+    /** Distinct symbols in the current filter scope (facet for the Filters popover). */
+    distinctSymbols: string[];
   };
 }
 

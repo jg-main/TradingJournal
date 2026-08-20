@@ -197,36 +197,48 @@ export async function GET(request: NextRequest) {
     // NULL closedAt and would be dropped by a closedAt >= / <= predicate,
     // corrupting totalTrades/openTrades counts. Close-date attribution is
     // applied in JS to closed trades only (see below).
-    const conditions = [
+    //
+    // The base set carries account scope + setup/direction filters but NOT the
+    // symbol filter: the distinct-symbol facet is derived from it so the
+    // Filters popover's checkbox list stays stable while the user narrows the
+    // symbol dimension (already-selected options must never vanish from the
+    // list). The symbol filter is then applied in memory for aggregation.
+    const baseConditions = [
       inArray(trades.accountId, accountIds),
       ne(trades.status, 'deleted'),
     ];
 
-    // Advanced filters (apply to the full trade set, open and closed alike)
+    // Setup + direction advanced filters (apply to the full trade set, open
+    // and closed alike)
     if (setupIdsParam) {
       const setupIds = setupIdsParam.split(',').filter(Boolean);
       if (setupIds.length > 0) {
-        conditions.push(inArray(trades.setupId, setupIds));
+        baseConditions.push(inArray(trades.setupId, setupIds));
       }
     }
     if (directionsParam) {
       const directions = directionsParam.split(',').filter(Boolean) as Array<'long' | 'short'>;
       if (directions.length > 0) {
-        conditions.push(inArray(trades.direction, directions));
-      }
-    }
-    if (symbolsParam) {
-      const symbols = symbolsParam.split(',').filter(Boolean);
-      if (symbols.length > 0) {
-        conditions.push(inArray(trades.symbol, symbols));
+        baseConditions.push(inArray(trades.direction, directions));
       }
     }
 
-    const allTrades = db
+    const baseTrades = db
       .select()
       .from(trades)
-      .where(and(...conditions))
+      .where(and(...baseConditions))
       .all();
+
+    // Distinct-symbol facet for the Filters popover (sorted, deduplicated).
+    const distinctSymbols = Array.from(new Set(baseTrades.map((t) => t.symbol).filter(Boolean))).sort();
+
+    // Symbol advanced filter (in-memory so the facet above stays stable).
+    let symbols: string[] = [];
+    if (symbolsParam) {
+      symbols = symbolsParam.split(',').filter(Boolean);
+    }
+    const allTrades =
+      symbols.length > 0 ? baseTrades.filter((t) => symbols.includes(t.symbol)) : baseTrades;
 
     const allTradeIds = allTrades.map((t) => t.id);
 
@@ -463,6 +475,9 @@ export async function GET(request: NextRequest) {
         mixedCurrencies,
         tradeCount: filteredClosedTrades.length,
         dateRange: { from: dateFrom, to: dateTo },
+        // Distinct symbols in the current scope (stable under the symbol filter
+        // itself) — feeds the Filters popover Symbol dimension.
+        distinctSymbols,
         // % baseline: earliest available equity across selected accounts in period.
         periodStartEquity: periodStartEquity > 0 ? periodStartEquity : null,
         // R baseline: sum of positive initial risk across selected-period closed trades.

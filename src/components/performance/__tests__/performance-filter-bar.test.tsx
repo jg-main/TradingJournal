@@ -34,6 +34,25 @@ const ACCOUNTS = [
   { id: 'acc-eur', name: 'Cash EUR', broker: 'IBKR', currency: 'EUR', isActive: true },
 ];
 
+/** Rows returned by GET /api/lookups?type=setup. */
+const SETUPS = [
+  { id: 'setup-breakout', value: 'Breakout' },
+  { id: 'setup-pullback', value: 'Pullback' },
+];
+
+/** Default /api/performance/analytics body incl. the distinct-symbol facet. */
+const ANALYTICS_BODY = {
+  kpiMetrics: {},
+  charts: {},
+  metadata: {
+    accountCount: 1,
+    mixedCurrencies: false,
+    tradeCount: 0,
+    dateRange: { from: null, to: null },
+    distinctSymbols: ['AAPL', 'NVDA'],
+  },
+};
+
 function okResponse(body: unknown): Response {
   return {
     ok: true,
@@ -54,6 +73,7 @@ function FilterProbe() {
         from: filter.dateRange.from,
         to: filter.dateRange.to,
         unit: filter.unit,
+        advancedFilters: filter.advancedFilters,
       })}
     </pre>
   );
@@ -100,13 +120,10 @@ describe('PerformanceFilterBar', () => {
         if (url.startsWith('/api/accounts')) {
           return Promise.resolve(okResponse(ACCOUNTS));
         }
-        return Promise.resolve(
-          okResponse({
-            kpiMetrics: {},
-            charts: {},
-            metadata: { accountCount: 1, mixedCurrencies: false, tradeCount: 0, dateRange: { from: null, to: null } },
-          }),
-        );
+        if (url.startsWith('/api/lookups')) {
+          return Promise.resolve(okResponse(SETUPS));
+        }
+        return Promise.resolve(okResponse(ANALYTICS_BODY));
       });
   });
 
@@ -128,6 +145,21 @@ describe('PerformanceFilterBar', () => {
   /** Read the live filter state from the probe. */
   function probe(): Record<string, unknown> {
     return JSON.parse(screen.getByTestId('filter-probe').textContent ?? '{}');
+  }
+
+  /** Read the committed advanced filters (typed). */
+  function advancedProbe(): {
+    setupIds: string[];
+    directions: string[];
+    symbols: string[];
+    tradeResults: string[];
+  } {
+    return (probe().advancedFilters ?? {}) as unknown as {
+      setupIds: string[];
+      directions: string[];
+      symbols: string[];
+      tradeResults: string[];
+    };
   }
 
   it('renders account scope, period, and unit controls', async () => {
@@ -231,13 +263,10 @@ describe('PerformanceFilterBar', () => {
         if (url.startsWith('/api/accounts')) {
           return Promise.reject(new Error('Network error'));
         }
-        return Promise.resolve(
-          okResponse({
-            kpiMetrics: {},
-            charts: {},
-            metadata: { accountCount: 1, mixedCurrencies: false, tradeCount: 0, dateRange: { from: null, to: null } },
-          }),
-        );
+        if (url.startsWith('/api/lookups')) {
+          return Promise.resolve(okResponse(SETUPS));
+        }
+        return Promise.resolve(okResponse(ANALYTICS_BODY));
       });
 
     renderBar();
@@ -255,5 +284,137 @@ describe('PerformanceFilterBar', () => {
     // Switching to multiple shows the inline error message.
     await chooseSelectOption('Account scope', 'Multiple Accounts');
     expect(screen.getByText('Network error')).toBeDefined();
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Filters popover (advanced dimensions)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  describe('Filters popover (advanced dimensions)', () => {
+    /** Open the Filters popover by clicking its trigger button. */
+    async function openFilters() {
+      fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    it('opens a lightweight popover with Setup, Direction, Symbol and Trade Result dimensions', async () => {
+      renderBar();
+      await flushAsync();
+
+      // No active filters → no count badge on the trigger.
+      expect(screen.queryByTestId('filters-active-count')).toBeNull();
+
+      await openFilters();
+
+      // Four dimension groups.
+      expect(screen.getByText('Setup')).toBeDefined();
+      expect(screen.getByText('Direction')).toBeDefined();
+      expect(screen.getByText('Symbol')).toBeDefined();
+      expect(screen.getByText('Trade Result')).toBeDefined();
+
+      // Setup options come from /api/lookups?type=setup (names → IDs).
+      expect(screen.getByRole('checkbox', { name: 'Breakout' })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: 'Pullback' })).toBeDefined();
+      // Direction options are the fixed long/short pair.
+      expect(screen.getByRole('checkbox', { name: 'Long' })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: 'Short' })).toBeDefined();
+      // Symbol options come from the analytics metadata facet.
+      expect(screen.getByRole('checkbox', { name: 'AAPL' })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: 'NVDA' })).toBeDefined();
+      // Trade result options are the fixed win/loss/scratch triple.
+      expect(screen.getByRole('checkbox', { name: 'Winner' })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: 'Loser' })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: 'Scratch' })).toBeDefined();
+    });
+
+    it('commits each dimension selection to the shared advanced filters', async () => {
+      renderBar();
+      await flushAsync();
+      await openFilters();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Long' }));
+      expect(advancedProbe().directions).toEqual(['long']);
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Breakout' }));
+      expect(advancedProbe().setupIds).toEqual(['setup-breakout']);
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'AAPL' }));
+      expect(advancedProbe().symbols).toEqual(['AAPL']);
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Winner' }));
+      expect(advancedProbe().tradeResults).toEqual(['win']);
+
+      // Active-count badge + summary reflect the committed selections.
+      expect(screen.getByTestId('filters-active-count').textContent).toBe('4');
+      expect(screen.getByTestId('filters-summary').textContent).toContain('4 active');
+    });
+
+    it('unchecks a selected dimension by toggling the same checkbox', async () => {
+      renderBar();
+      await flushAsync();
+      await openFilters();
+
+      const long = screen.getByRole('checkbox', { name: 'Long' });
+      fireEvent.click(long);
+      expect(advancedProbe().directions).toEqual(['long']);
+      fireEvent.click(long);
+      expect(advancedProbe().directions).toEqual([]);
+    });
+
+    it('pushes advanced filter selections into the analytics query params', async () => {
+      renderBar();
+      await flushAsync();
+      await openFilters();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Long' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Winner' }));
+      await flushAsync(); // advance past the debounced analytics fetch
+
+      const analyticsCalls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+        .map((c) => c[0] as string)
+        .filter((u) => u.startsWith('/api/performance/analytics'));
+      const last = analyticsCalls[analyticsCalls.length - 1];
+      expect(last).toContain('directions=long');
+      expect(last).toContain('tradeResults=win');
+    });
+
+    it('Clear all resets every dimension and hides the badge', async () => {
+      renderBar();
+      await flushAsync();
+      await openFilters();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Long' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Breakout' }));
+      expect(screen.getByTestId('filters-active-count').textContent).toBe('2');
+
+      fireEvent.click(screen.getByTestId('filters-clear'));
+      expect(advancedProbe()).toEqual({
+        setupIds: [],
+        directions: [],
+        symbols: [],
+        tradeResults: [],
+      });
+      expect(screen.queryByTestId('filters-active-count')).toBeNull();
+    });
+
+    it('degrades the Setup dimension when the lookups fetch fails', async () => {
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.startsWith('/api/accounts')) return Promise.resolve(okResponse(ACCOUNTS));
+        if (url.startsWith('/api/lookups')) return Promise.reject(new Error('Network error'));
+        return Promise.resolve(okResponse(ANALYTICS_BODY));
+      });
+
+      renderBar();
+      await flushAsync();
+      await openFilters();
+
+      expect(screen.getByText('Setups unavailable')).toBeDefined();
+      // Other dimensions still render.
+      expect(screen.getByRole('checkbox', { name: 'Long' })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: 'AAPL' })).toBeDefined();
+    });
   });
 });
