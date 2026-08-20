@@ -1,0 +1,168 @@
+'use client';
+
+import React from 'react';
+import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
+import { getKpiMetricDefinition, applyUnit } from '@/lib/performance-kpi-catalogue';
+import { MicroViz } from './kpi-micro-viz';
+import type { WidgetConfig, PerformanceUnit } from '@/lib/performance-view-types';
+
+// ── Formatting Helpers ──────────────────────────────────────────────────────
+
+function formatCurrencyValue(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatPercentValue(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatRatioValue(value: number): string {
+  return value.toFixed(2);
+}
+
+function formatRValue(value: number): string {
+  return `${value.toFixed(2)}R`;
+}
+
+function formatCountValue(value: number): string {
+  return value.toString();
+}
+
+function formatDurationValue(value: number): string {
+  if (value < 1) return `${Math.round(value * 24)}h`;
+  return `${value.toFixed(1)}d`;
+}
+
+// ── KPI Card Component ──────────────────────────────────────────────────────
+
+export interface KpiCardProps {
+  instanceId: string;
+  widgetType: string;
+  config: WidgetConfig;
+  onConfigure?: (instanceId: string, config: WidgetConfig) => void;
+  onDuplicate?: (instanceId: string) => void;
+  onRemove?: (instanceId: string) => void;
+  editMode?: boolean;
+}
+
+export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplicate, onRemove, editMode }: KpiCardProps) {
+  const { analyticsData, filter, isLoading } = usePerformanceDashboard();
+
+  const definition = getKpiMetricDefinition(widgetType);
+  const rawValue = definition ? definition.accessor((analyticsData?.kpiMetrics ?? {}) as Record<string, unknown>) : null;
+
+  // Determine period-start equity for % conversion (sum of starting balances).
+  const metadata = analyticsData?.metadata as { periodStartEquity?: number | null } | undefined;
+  const periodStartEquity = metadata?.periodStartEquity ?? null;
+
+  // Determine total initial risk for R conversion (from risk snapshots via kpi metrics)
+  const totalInitialRisk = computeTotalInitialRisk(analyticsData?.kpiMetrics);
+
+  const unit: PerformanceUnit = filter.unit;
+  const converted = definition
+    ? applyUnit(rawValue, definition, unit, { periodStartEquity, totalInitialRisk })
+    : { value: null, unit: 'currency' as PerformanceUnit };
+
+  const title = config.titleOverride || definition?.title || widgetType;
+  const displayValue = formatValue(converted.value, definition?.formatKind ?? 'currency', converted.unit);
+
+  // Micro-visualization: sparkline for Net P&L (cumulative trend), donut for Win Rate.
+  const charts = analyticsData?.charts as Record<string, unknown> | undefined;
+  const cumulative = charts?.cumulativeDailyPnl as Array<{ cumulativePnl: number }> | undefined;
+  const microViz =
+    widgetType === 'net-pnl' && cumulative && cumulative.length > 1
+      ? { kind: 'sparkline' as const, values: cumulative.map((d) => d.cumulativePnl) }
+      : widgetType === 'win-rate' && rawValue !== null
+        ? { kind: 'donut' as const, fraction: Math.max(0, Math.min(1, rawValue)) }
+        : null;
+
+  return (
+    <div className="border border-border rounded-lg p-3 bg-card flex flex-col justify-between min-h-[72px]">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-muted-foreground truncate" title={title}>
+          {title}
+        </div>
+        {editMode && (
+          <div className="flex items-center gap-1">
+            {onConfigure && (
+              <button
+                onClick={() => onConfigure(instanceId, config)}
+                className="text-xs px-1.5 py-0.5 rounded border border-border hover:bg-muted"
+                aria-label={`Configure ${title}`}
+              >
+                ⚙
+              </button>
+            )}
+            {onDuplicate && (
+              <button
+                onClick={() => onDuplicate(instanceId)}
+                className="text-xs px-1.5 py-0.5 rounded border border-border hover:bg-muted"
+                aria-label={`Duplicate ${title}`}
+              >
+                +
+              </button>
+            )}
+            {onRemove && (
+              <button
+                onClick={() => onRemove(instanceId)}
+                className="text-xs px-1.5 py-0.5 rounded border border-border hover:bg-destructive/10 text-destructive"
+                aria-label={`Remove ${title}`}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="text-lg font-semibold tabular-nums mt-1" data-kpi-value={widgetType}>
+        {isLoading && rawValue === null ? '…' : displayValue}
+      </div>
+      {!editMode && microViz && (
+        <div className="mt-1 flex justify-end">
+          <MicroViz kind={microViz.kind} values={microViz.kind === 'sparkline' ? microViz.values : undefined} fraction={microViz.kind === 'donut' ? microViz.fraction : undefined} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Extract total initial risk from kpi metrics if available.
+ * Currently the analytics API does not surface total initial risk;
+ * R conversion falls back to null (R-multiple guard) when unavailable.
+ */
+function computeTotalInitialRisk(kpiMetrics: unknown): number | null {
+  const k = kpiMetrics as Record<string, unknown> | null | undefined;
+  const v = k?.totalInitialRisk;
+  return typeof v === 'number' && v > 0 ? v : null;
+}
+
+function formatValue(value: number | null, formatKind: string, unit: string): string {
+  if (value === null) return '—';
+  // Converted unit takes precedence over the native format kind.
+  if (unit === 'percent') return formatPercentValue(value);
+  if (unit === 'r') return formatRValue(value);
+  switch (formatKind) {
+    case 'currency':
+      return formatCurrencyValue(value);
+    case 'percent':
+      return formatPercentValue(value);
+    case 'ratio':
+      return formatRatioValue(value);
+    case 'r':
+      return formatRValue(value);
+    case 'count':
+      return formatCountValue(value);
+    case 'duration':
+      return formatDurationValue(value);
+    default:
+      return value.toString();
+  }
+}

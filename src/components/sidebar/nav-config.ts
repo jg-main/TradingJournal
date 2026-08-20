@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   NotebookPen,
   ClipboardCheck,
+  TrendingUp,
   Target,
   Landmark,
   Bell,
@@ -39,6 +40,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Trading',
     items: [
       { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/performance', label: 'Performance', icon: TrendingUp },
       { href: '/trades', label: 'Trades', icon: NotebookPen },
       { href: '/checks', label: 'Checks', icon: ClipboardCheck },
     ],
