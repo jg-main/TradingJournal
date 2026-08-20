@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ChartWidget } from '../chart-widget';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 // Mock the echarts wrapper to avoid canvas rendering in jsdom
 vi.mock('@/components/dashboard-chart', () => ({
@@ -22,13 +25,22 @@ describe('ChartWidget', () => {
     expect(screen.getByText(/Unknown widget type/)).toBeDefined();
   });
 
-  it('renders loading state without analytics data', () => {
+  it('renders a per-widget loading skeleton without analytics data', async () => {
+    // isLoading flips true once the debounced fetch effect fires; a pending
+    // fetch keeps the widget in the loading state (no stale data yet).
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise<Response>(() => {}));
     render(
       <PerformanceDashboardProvider>
         <ChartWidget instanceId="i1" widgetType="daily-cumulative-pnl" config={{}} />
       </PerformanceDashboardProvider>,
     );
     expect(screen.getByText('Daily Cumulative P&L')).toBeDefined();
+    // First load shows a skeleton in the chart body, localized to this widget.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByTestId('chart-skeleton-daily-cumulative-pnl')).toBeDefined();
   });
 
   it('renders chart title from registry', () => {

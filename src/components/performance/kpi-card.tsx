@@ -4,6 +4,7 @@ import React from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 import { getKpiMetricDefinition, applyUnit } from '@/lib/performance-kpi-catalogue';
 import { MicroViz } from './kpi-micro-viz';
+import { Skeleton } from '@/components/ui/skeleton';
 import type { WidgetConfig, PerformanceUnit } from '@/lib/performance-view-types';
 
 // ── Formatting Helpers ──────────────────────────────────────────────────────
@@ -121,7 +122,10 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
       </div>
       <div className="text-lg font-semibold tabular-nums mt-1" data-kpi-value={widgetType}>
         {isLoading && rawValue === null && !error ? (
-          '…'
+          <div data-testid={`kpi-skeleton-${widgetType}`} aria-hidden="true">
+            <Skeleton className="h-5 w-16" />
+            <span className="sr-only">Loading</span>
+          </div>
         ) : error && !analyticsData ? (
           <span className="text-xs font-normal text-destructive" title={error} data-testid={`kpi-error-${widgetType}`}>
             Error loading

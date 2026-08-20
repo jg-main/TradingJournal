@@ -156,15 +156,20 @@ export function PerformanceFilterBar() {
   );
   const mixedCurrencies = filter.accountScope.mode !== 'all' && selectedCurrencies.size > 1;
 
+  // Compact density: controls use the global --density-control-h-sm (28px)
+  // token — the same compact scale the normalized ui/ primitives use. The
+  // workstation-only ws-* classes (.ws-select etc.) are intentionally NOT
+  // used here: they are scoped to the .ws surface and would be inert on this
+  // dashboard, which has no .ws ancestor.
   return (
-    <div className="ws-filter-bar flex flex-wrap items-center gap-3 px-4 py-2 border-b border-border bg-card">
+    <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-border bg-card">
       {/* Account Scope */}
       <div className="flex items-center gap-2">
         <label className="text-sm font-medium text-muted-foreground">Accounts:</label>
         <select
           value={filter.accountScope.mode}
           onChange={(e) => handleAccountModeChange(e.target.value as AccountScopeMode)}
-          className="ws-select text-sm rounded-md border border-border bg-background px-2 py-1"
+          className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
           aria-label="Account scope"
         >
           <option value="all">All Accounts</option>
@@ -176,7 +181,7 @@ export function PerformanceFilterBar() {
           <select
             value={filter.accountScope.accountIds[0] ?? ''}
             onChange={(e) => setAccountScope({ mode: 'single', accountIds: [e.target.value] })}
-            className="ws-select text-sm rounded-md border border-border bg-background px-2 py-1"
+            className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
             aria-label="Select account"
             data-testid="account-single-select"
           >
@@ -208,7 +213,7 @@ export function PerformanceFilterBar() {
                     type="checkbox"
                     checked={filter.accountScope.accountIds.includes(acc.id)}
                     onChange={() => toggleAccount(acc.id)}
-                    className="ws-checkbox accent-primary"
+                    className="size-4 accent-primary"
                   />
                   {acc.name}
                 </label>
@@ -224,7 +229,7 @@ export function PerformanceFilterBar() {
         <select
           value={filter.dateRange.preset}
           onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
-          className="ws-select text-sm rounded-md border border-border bg-background px-2 py-1"
+          className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
           aria-label="Date period"
         >
           <option value="Whole period">Whole Period</option>
@@ -244,7 +249,7 @@ export function PerformanceFilterBar() {
             type="date"
             value={customFrom}
             onChange={(e) => setCustomFrom(e.target.value)}
-            className="ws-input text-sm rounded-md border border-border bg-background px-2 py-1"
+            className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
             aria-label="Custom from date"
             placeholder="From"
           />
@@ -253,13 +258,13 @@ export function PerformanceFilterBar() {
             type="date"
             value={customTo}
             onChange={(e) => setCustomTo(e.target.value)}
-            className="ws-input text-sm rounded-md border border-border bg-background px-2 py-1"
+            className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
             aria-label="Custom to date"
             placeholder="To"
           />
           <button
             onClick={handleCustomDateApply}
-            className="ws-button text-sm rounded-md bg-primary text-primary-foreground px-3 py-1 hover:bg-primary/90"
+            className="h-(--density-control-h-sm) inline-flex items-center text-sm rounded-md bg-primary text-primary-foreground px-3 hover:bg-primary/90"
           >
             Apply
           </button>
@@ -272,7 +277,7 @@ export function PerformanceFilterBar() {
         <div className="flex rounded-md border border-border overflow-hidden">
           <button
             onClick={() => handleUnitChange('currency')}
-            className={`text-sm px-3 py-1 ${
+            className={`inline-flex h-(--density-control-h-sm) items-center text-sm px-3 ${
               filter.unit === 'currency'
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-background text-foreground hover:bg-muted'
@@ -283,7 +288,7 @@ export function PerformanceFilterBar() {
           </button>
           <button
             onClick={() => handleUnitChange('percent')}
-            className={`text-sm px-3 py-1 border-l border-border ${
+            className={`inline-flex h-(--density-control-h-sm) items-center text-sm px-3 border-l border-border ${
               filter.unit === 'percent'
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-background text-foreground hover:bg-muted'
@@ -294,7 +299,7 @@ export function PerformanceFilterBar() {
           </button>
           <button
             onClick={() => handleUnitChange('r')}
-            className={`text-sm px-3 py-1 border-l border-border ${
+            className={`inline-flex h-(--density-control-h-sm) items-center text-sm px-3 border-l border-border ${
               filter.unit === 'r'
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-background text-foreground hover:bg-muted'

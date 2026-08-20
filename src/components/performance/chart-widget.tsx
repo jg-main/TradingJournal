@@ -27,6 +27,7 @@ import {
   type MonthlyPerfItem,
 } from '@/lib/performance-chart-options';
 import { PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
+import { Skeleton } from '@/components/ui/skeleton';
 import type { EChartsOption } from 'echarts-for-react';
 import type { ChartPalette } from '@/lib/chart-palette';
 
@@ -202,7 +203,9 @@ export function ChartWidget({ instanceId, widgetType, config, onConfigChange, ed
             Failed to load analytics
           </div>
         ) : isLoading && !analyticsData ? (
-          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Loading…</div>
+          <div className="h-full w-full" data-testid={`chart-skeleton-${widgetType}`} aria-hidden="true">
+            <Skeleton className="h-full w-full rounded-md" />
+          </div>
         ) : !option ? (
           <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
             No data for this period

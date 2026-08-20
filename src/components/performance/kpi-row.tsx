@@ -48,7 +48,11 @@ export function KpiRow({ editMode }: KpiRowProps) {
   // The KPI card reads config.metricId or defaults to widgetType as the metric.
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      {/* Responsive KPI columns: 2 → 4 (≥768px) → 6 (≥1280px). At 1024px six
+          columns would squeeze each card to ~152px; four columns keep the
+          label, value, and micro-viz scannable. 1280/1440 show all six
+          default cards on one row. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-4">
         {instances.map((instance, index) => (
           <div key={instance.instanceId} className="relative">
             <KpiCard

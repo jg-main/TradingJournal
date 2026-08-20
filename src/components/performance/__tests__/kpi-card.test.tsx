@@ -109,13 +109,13 @@ describe('KpiCard conversion and data states', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('shows a loading ellipsis while the first fetch is in flight (no data yet)', async () => {
+  it('shows a loading skeleton while the first fetch is in flight (no data yet)', async () => {
     globalThis.fetch = vi.fn().mockReturnValue(new Promise<Response>(() => {}));
     renderCard('net-pnl');
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
-    expect(screen.getByText('…')).toBeDefined();
+    expect(screen.getByTestId('kpi-skeleton-net-pnl')).toBeDefined();
   });
 
   it('converts a currency metric to percent of period-start equity', async () => {
@@ -189,6 +189,6 @@ describe('KpiCard conversion and data states', () => {
       await vi.advanceTimersByTimeAsync(300);
     });
     expect(screen.getByText('$1,000')).toBeDefined();
-    expect(screen.queryByText('…')).toBeNull();
+    expect(screen.queryByTestId('kpi-skeleton-net-pnl')).toBeNull();
   });
 });
