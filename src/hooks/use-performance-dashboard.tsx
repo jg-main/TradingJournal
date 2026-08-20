@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type {
   PerformanceDashboardFilter,
   AccountScope,
@@ -49,7 +49,12 @@ export interface PerformanceDashboardProviderProps {
 
 // ── Helper: build query params from filter ──────────────────────────────────
 
-function buildQueryParams(filter: PerformanceDashboardFilter): URLSearchParams {
+/**
+ * Serialize a PerformanceDashboardFilter into the /api/performance/analytics
+ * query string. `unit` is deliberately excluded — it is a client-side
+ * presentation concern only and must not trigger refetches or cache variance.
+ */
+export function buildQueryParams(filter: PerformanceDashboardFilter): URLSearchParams {
   const params = new URLSearchParams();
 
   // Account scope
@@ -95,10 +100,17 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
   const [error, setError] = useState<string | null>(null);
 
   // Serialized query drives the fetch effect — unit changes (client-side
-  // presentation only) must not trigger a redundant refetch.
+  // presentation only) produce an identical queryKey string, so the memoized
+  // string value stays stable and no redundant refetch fires.
   const queryKey = useMemo(() => buildQueryParams(filter).toString(), [filter]);
 
+  // Monotonic request sequence: a slow older response must never overwrite a
+  // newer one (debounced refetches can overlap in flight). Only the response
+  // matching the latest request id is applied.
+  const requestSeqRef = useRef(0);
+
   const fetchAnalytics = useCallback(async () => {
+    const requestId = ++requestSeqRef.current;
     setIsLoading(true);
     setError(null);
 
@@ -111,11 +123,16 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
       }
 
       const data = await response.json();
+      // Ignore responses superseded by a newer request.
+      if (requestId !== requestSeqRef.current) return;
       setAnalyticsData(data);
     } catch (err) {
+      if (requestId !== requestSeqRef.current) return;
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setIsLoading(false);
+      if (requestId === requestSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [queryKey]);
 

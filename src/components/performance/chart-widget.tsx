@@ -132,7 +132,7 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export function ChartWidget({ instanceId, widgetType, config, onConfigChange, editMode }: ChartWidgetProps) {
-  const { analyticsData, isLoading } = usePerformanceDashboard();
+  const { analyticsData, isLoading, error } = usePerformanceDashboard();
   const palette = useChartPalette();
   const [showSeriesMenu, setShowSeriesMenu] = useState(false);
 
@@ -193,7 +193,15 @@ export function ChartWidget({ instanceId, widgetType, config, onConfigChange, ed
       )}
 
       <div className="flex-1 min-h-0">
-        {isLoading && !analyticsData ? (
+        {error && !analyticsData ? (
+          <div
+            className="h-full flex items-center justify-center text-sm text-destructive"
+            title={error}
+            data-testid={`chart-error-${widgetType}`}
+          >
+            Failed to load analytics
+          </div>
+        ) : isLoading && !analyticsData ? (
           <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Loading…</div>
         ) : !option ? (
           <div className="h-full flex items-center justify-center text-sm text-muted-foreground">

@@ -51,7 +51,7 @@ export interface KpiCardProps {
 }
 
 export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplicate, onRemove, editMode }: KpiCardProps) {
-  const { analyticsData, filter, isLoading } = usePerformanceDashboard();
+  const { analyticsData, filter, isLoading, error } = usePerformanceDashboard();
 
   const definition = getKpiMetricDefinition(widgetType);
   const rawValue = definition ? definition.accessor((analyticsData?.kpiMetrics ?? {}) as Record<string, unknown>) : null;
@@ -120,7 +120,15 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
         )}
       </div>
       <div className="text-lg font-semibold tabular-nums mt-1" data-kpi-value={widgetType}>
-        {isLoading && rawValue === null ? '…' : displayValue}
+        {isLoading && rawValue === null && !error ? (
+          '…'
+        ) : error && !analyticsData ? (
+          <span className="text-xs font-normal text-destructive" title={error} data-testid={`kpi-error-${widgetType}`}>
+            Error loading
+          </span>
+        ) : (
+          displayValue
+        )}
       </div>
       {!editMode && microViz && (
         <div className="mt-1 flex justify-end">

@@ -1,14 +1,24 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 import type { DatePreset, AccountScopeMode, PerformanceUnit } from '@/lib/performance-view-types';
+
+// ── Account Shape (matches GET /api/accounts) ───────────────────────────────
+
+export interface FilterBarAccount {
+  id: string;
+  name: string;
+  broker: string | null;
+  currency: string | null;
+  isActive: boolean | number;
+}
 
 // ── Date Preset Helpers ─────────────────────────────────────────────────────
 
 function presetToDateRange(preset: DatePreset): { from: string; to: string } {
   const now = new Date();
-  
+
   switch (preset) {
     case 'Whole period':
       return { from: '', to: '' };
@@ -43,10 +53,57 @@ function presetToDateRange(preset: DatePreset): { from: string; to: string } {
 
 // ── Filter Bar Component ────────────────────────────────────────────────────
 
+/**
+ * Global filter bar for the Performance dashboard.
+ *
+ * Owns no state of its own beyond transient UI (account list + custom range
+ * inputs); every filter decision is pushed into the shared
+ * PerformanceDashboardContext so the KPI row and chart grid react together.
+ *
+ * States:
+ * - Accounts: scope mode (all/single/multiple) + an account picker for
+ *   single/multiple modes, populated from GET /api/accounts. Loading shows a
+ *   skeleton; a failed account fetch degrades to an inline error while the
+ *   rest of the bar keeps working (all-accounts mode is still usable).
+ * - Period: relative presets + Custom with from/to date inputs and Apply.
+ * - Unit: $/%/R presentation toggle (client-side only — never refetches).
+ */
 export function PerformanceFilterBar() {
   const { filter, setAccountScope, setDateRange, setUnit } = usePerformanceDashboard();
   const [customFrom, setCustomFrom] = useState(filter.dateRange.from);
   const [customTo, setCustomTo] = useState(filter.dateRange.to);
+
+  // Account list for the single/multiple pickers.
+  const [accounts, setAccounts] = useState<FilterBarAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAccountsLoading(true);
+    setAccountsError(null);
+
+    fetch('/api/accounts')
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load accounts');
+        return res.json() as Promise<FilterBarAccount[]>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setAccounts(data);
+        setAccountsLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setAccountsError(err instanceof Error ? err.message : 'Failed to load accounts');
+        setAccountsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePresetChange = (preset: DatePreset) => {
     if (preset === 'Custom') {
@@ -57,8 +114,24 @@ export function PerformanceFilterBar() {
     }
   };
 
-  const handleAccountScopeChange = (mode: AccountScopeMode) => {
-    setAccountScope({ mode, accountIds: [] });
+  const handleAccountModeChange = (mode: AccountScopeMode) => {
+    if (mode === 'all') {
+      setAccountScope({ mode: 'all', accountIds: [] });
+      return;
+    }
+    // Preserve existing ids when they are still valid for this mode; otherwise
+    // default to the first account so a single/multiple scope is immediately
+    // actionable instead of erroring with an empty accountIds list.
+    const existing = filter.accountScope.accountIds.filter((id) => accounts.some((a) => a.id === id));
+    const ids =
+      existing.length > 0
+        ? existing
+        : accounts.length > 0
+          ? mode === 'single'
+            ? [accounts[0].id]
+            : [accounts[0].id]
+          : [];
+    setAccountScope({ mode, accountIds: ids });
   };
 
   const handleUnitChange = (unit: PerformanceUnit) => {
@@ -69,6 +142,20 @@ export function PerformanceFilterBar() {
     setDateRange({ preset: 'Custom', from: customFrom, to: customTo });
   };
 
+  const toggleAccount = (id: string) => {
+    const current = filter.accountScope.accountIds;
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    setAccountScope({ mode: 'multiple', accountIds: next });
+  };
+
+  // Mixed-currency warning: only when the concrete selection spans >1 currency.
+  const selectedCurrencies = new Set(
+    filter.accountScope.accountIds
+      .map((id) => accounts.find((a) => a.id === id)?.currency)
+      .filter((c): c is string => Boolean(c)),
+  );
+  const mixedCurrencies = filter.accountScope.mode !== 'all' && selectedCurrencies.size > 1;
+
   return (
     <div className="ws-filter-bar flex flex-wrap items-center gap-3 px-4 py-2 border-b border-border bg-card">
       {/* Account Scope */}
@@ -76,13 +163,59 @@ export function PerformanceFilterBar() {
         <label className="text-sm font-medium text-muted-foreground">Accounts:</label>
         <select
           value={filter.accountScope.mode}
-          onChange={(e) => handleAccountScopeChange(e.target.value as AccountScopeMode)}
+          onChange={(e) => handleAccountModeChange(e.target.value as AccountScopeMode)}
           className="ws-select text-sm rounded-md border border-border bg-background px-2 py-1"
+          aria-label="Account scope"
         >
           <option value="all">All Accounts</option>
           <option value="single">Single Account</option>
           <option value="multiple">Multiple Accounts</option>
         </select>
+
+        {filter.accountScope.mode === 'single' && (
+          <select
+            value={filter.accountScope.accountIds[0] ?? ''}
+            onChange={(e) => setAccountScope({ mode: 'single', accountIds: [e.target.value] })}
+            className="ws-select text-sm rounded-md border border-border bg-background px-2 py-1"
+            aria-label="Select account"
+            data-testid="account-single-select"
+          >
+            {accountsLoading ? (
+              <option value="">Loading accounts…</option>
+            ) : accountsError ? (
+              <option value="">Accounts unavailable</option>
+            ) : (
+              accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                  {acc.broker ? ` (${acc.broker})` : ''}
+                </option>
+              ))
+            )}
+          </select>
+        )}
+
+        {filter.accountScope.mode === 'multiple' && (
+          <div className="flex items-center gap-3 text-sm" data-testid="account-multi-select">
+            {accountsLoading ? (
+              <span className="text-xs text-muted-foreground">Loading accounts…</span>
+            ) : accountsError ? (
+              <span className="text-xs text-destructive">{accountsError}</span>
+            ) : (
+              accounts.map((acc) => (
+                <label key={acc.id} className="flex items-center gap-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filter.accountScope.accountIds.includes(acc.id)}
+                    onChange={() => toggleAccount(acc.id)}
+                    className="ws-checkbox accent-primary"
+                  />
+                  {acc.name}
+                </label>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* Date Range Presets */}
@@ -92,6 +225,7 @@ export function PerformanceFilterBar() {
           value={filter.dateRange.preset}
           onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
           className="ws-select text-sm rounded-md border border-border bg-background px-2 py-1"
+          aria-label="Date period"
         >
           <option value="Whole period">Whole Period</option>
           <option value="YTD">YTD</option>
@@ -111,6 +245,7 @@ export function PerformanceFilterBar() {
             value={customFrom}
             onChange={(e) => setCustomFrom(e.target.value)}
             className="ws-input text-sm rounded-md border border-border bg-background px-2 py-1"
+            aria-label="Custom from date"
             placeholder="From"
           />
           <span className="text-muted-foreground">to</span>
@@ -119,6 +254,7 @@ export function PerformanceFilterBar() {
             value={customTo}
             onChange={(e) => setCustomTo(e.target.value)}
             className="ws-input text-sm rounded-md border border-border bg-background px-2 py-1"
+            aria-label="Custom to date"
             placeholder="To"
           />
           <button
@@ -141,6 +277,7 @@ export function PerformanceFilterBar() {
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-background text-foreground hover:bg-muted'
             }`}
+            aria-pressed={filter.unit === 'currency'}
           >
             $
           </button>
@@ -151,6 +288,7 @@ export function PerformanceFilterBar() {
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-background text-foreground hover:bg-muted'
             }`}
+            aria-pressed={filter.unit === 'percent'}
           >
             %
           </button>
@@ -161,6 +299,7 @@ export function PerformanceFilterBar() {
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-background text-foreground hover:bg-muted'
             }`}
+            aria-pressed={filter.unit === 'r'}
           >
             R
           </button>
@@ -168,8 +307,8 @@ export function PerformanceFilterBar() {
       </div>
 
       {/* Mixed Currency Warning */}
-      {filter.accountScope.mode !== 'all' && (
-        <div className="ml-auto text-xs text-warning">
+      {mixedCurrencies && (
+        <div className="ml-auto text-xs text-warning" data-testid="mixed-currency-warning">
           Note: Multi-account aggregation uses USD only
         </div>
       )}

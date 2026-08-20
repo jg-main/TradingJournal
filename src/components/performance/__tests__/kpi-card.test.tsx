@@ -1,5 +1,5 @@
-import { afterEach, describe, it, expect } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { KpiCard } from '../kpi-card';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
@@ -62,5 +62,16 @@ describe('KpiCard', () => {
     expect(screen.queryByLabelText('Configure Net P&L')).toBeNull();
     expect(screen.queryByLabelText('Duplicate Net P&L')).toBeNull();
     expect(screen.queryByLabelText('Remove Net P&L')).toBeNull();
+  });
+
+  it('renders a widget-level error state when the analytics fetch fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+    renderCard('net-pnl');
+    // The debounced fetch (300ms) fails → the card shows its own error slot
+    // instead of a stale value or a whole-dashboard crash.
+    await waitFor(() => {
+      expect(screen.getByTestId('kpi-error-net-pnl')).toBeDefined();
+    });
+    expect(screen.getByText('Error loading')).toBeDefined();
   });
 });

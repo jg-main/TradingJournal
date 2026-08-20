@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ChartWidget } from '../chart-widget';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
@@ -64,5 +64,19 @@ describe('ChartWidget', () => {
       </PerformanceDashboardProvider>,
     );
     expect(screen.getByLabelText('Series visibility for Drawdown Curve')).toBeDefined();
+  });
+
+  it('renders a widget-level error state when the analytics fetch fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+    render(
+      <PerformanceDashboardProvider>
+        <ChartWidget instanceId="i1" widgetType="daily-cumulative-pnl" config={{}} />
+      </PerformanceDashboardProvider>,
+    );
+    // Debounced fetch fails → chart shows its own error slot, not a crash.
+    await waitFor(() => {
+      expect(screen.getByTestId('chart-error-daily-cumulative-pnl')).toBeDefined();
+    });
+    expect(screen.getByText('Failed to load analytics')).toBeDefined();
   });
 });
