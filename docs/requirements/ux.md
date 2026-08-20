@@ -6,7 +6,7 @@
 **Type:** Existing-feature UX remediation and application-shell integration  
 **Priority:** High  
 **Risk:** Medium  
-**Primary UX benchmark:** Tradenza  
+**Primary UX benchmark:** Tradenza  https://github.com/HonzaPrikryl/Tradenza
 **Scope:** Improve the existing `/performance` implementation in the current codebase.  
 **Critical principle:** **Preserve the existing technical foundation; correct the product experience.**
 
