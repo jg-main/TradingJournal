@@ -76,13 +76,18 @@ function reducer(state: PerformanceDashboardsState, action: Action): Performance
         dashboards: [...state.dashboards, action.dashboard],
         activeDashboardId: action.dashboard.id,
       };
-    case 'delete':
+    case 'delete': {
+      const target = state.dashboards.find((d) => d.id === action.id);
+      if (!target || target.isSystem) return state; // system dashboards are immutable
       return {
         ...state,
         dashboards: state.dashboards.filter((d) => d.id !== action.id),
         activeDashboardId:
-          state.activeDashboardId === action.id ? state.dashboards[0]?.id ?? action.id : state.activeDashboardId,
+          state.activeDashboardId === action.id
+            ? state.dashboards[0]?.id ?? action.id
+            : state.activeDashboardId,
       };
+    }
     case 'switch':
       return { ...state, activeDashboardId: action.id };
     case 'saveState':
@@ -95,8 +100,9 @@ function reducer(state: PerformanceDashboardsState, action: Action): Performance
     case 'reset':
       return {
         ...state,
+        // System dashboards are immutable — reset only user-owned dashboards.
         dashboards: state.dashboards.map((d) =>
-          d.id === action.id ? { ...d, config: resetDashboardToTemplate() } : d,
+          d.id === action.id && !d.isSystem ? { ...d, config: resetDashboardToTemplate() } : d,
         ),
       };
     default:
@@ -263,7 +269,9 @@ export function usePerformanceDashboards(): UsePerformanceDashboardsResult {
       isSystem: envelope.isSystem,
       isDefault: envelope.id === PERFORMANCE_SYSTEM_DASHBOARD_IDS.DEFAULT,
     };
-    saveViewApi(payload).catch(() => dispatch({ type: 'setWriteFailed', failed: true }));
+    saveViewApi(payload)
+      .then(() => dispatch({ type: 'setWriteFailed', failed: false }))
+      .catch(() => dispatch({ type: 'setWriteFailed', failed: true }));
   }, []);
 
   const createDashboard = useCallback(
