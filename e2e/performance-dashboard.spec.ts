@@ -103,6 +103,48 @@ test.describe('coexistence', () => {
     // Navigation contains the Performance entry.
     await expect(page.getByRole('link', { name: 'Performance' })).toBeVisible();
   });
+
+  test('shell continuity: sidebar persists and keeps consistent width across / → /performance → /trades → /performance', async ({ page }) => {
+    // M001 S01 (R001): /performance must behave as a normal application page
+    // inside the shared sidebar shell. The sidebar must stay visible on every
+    // stop of the navigation chain and keep the same width on /performance
+    // and /trades (the same shell layout), while / stays the workstation.
+    const aside = page.locator('aside');
+    const asideWidth = async () => (await aside.boundingBox())?.width ?? 0;
+
+    // Stop 1: / — workstation root, sidebar present.
+    await page.goto('/');
+    await expect(page.getByText(/OPEN POSITIONS/i).first()).toBeVisible({ timeout: 20_000 });
+    await expect(aside).toBeVisible();
+    const rootWidth = await asideWidth();
+
+    // Stop 2: /performance — sidebar present, same width as the root shell.
+    await page.goto('/performance');
+    await expect(page).toHaveTitle(/Performance Dashboard/);
+    await expect(page.getByRole('button', { name: /Customize/ })).toBeVisible({ timeout: 15_000 });
+    await expect(aside).toBeVisible();
+    const perfWidth = await asideWidth();
+    expect(perfWidth).toBe(rootWidth);
+
+    // Stop 3: /trades — sidebar present, same width as /performance.
+    await page.goto('/trades');
+    await expect(page).toHaveTitle(/Trades/);
+    await expect(aside).toBeVisible();
+    const tradesWidth = await asideWidth();
+    expect(tradesWidth).toBe(perfWidth);
+
+    // Stop 4: back to /performance — sidebar still present and consistent.
+    await page.goto('/performance');
+    await expect(page.getByRole('button', { name: /Customize/ })).toBeVisible({ timeout: 15_000 });
+    await expect(aside).toBeVisible();
+    expect(await asideWidth()).toBe(perfWidth);
+
+    // No horizontal document overflow on the performance page.
+    const overflowX = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflowX).toBeLessThanOrEqual(0);
+  });
 });
 
 test.describe('/performance structure', () => {
