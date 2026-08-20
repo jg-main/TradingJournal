@@ -9,7 +9,7 @@
  */
 
 import { computeTradeMetrics, type ExecutionData, type TradeMetricsResult } from './trade-metrics';
-import { classifyPnlDecision, computeWinRate } from './metrics';
+import { computeWinRate } from './metrics';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

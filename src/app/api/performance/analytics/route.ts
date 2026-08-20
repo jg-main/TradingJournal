@@ -5,9 +5,23 @@
  *
  * Returns consolidated performance analytics for the /performance dashboard.
  * Supports multi-account scope, close-date filtering, and advanced filters.
- * Reuses canonical computation kernels (computeTradeMetrics, computeKpiMetrics, etc.).
+ * Reuses canonical computation kernels (computeTradeMetrics, computeKpiMetrics,
+ * computeDrawdown, computeSetupPerformance, etc.).
  *
  * Pattern: mirrors /api/dashboard but with multi-account and advanced filter support.
+ *
+ * Filter semantics (locked by the S01 contract):
+ * - Multi-account scope: `accountScope=all` (default) selects every account;
+ *   `single`/`multiple` select the comma-separated `accountIds`. Mixed currencies
+ *   surface a `mixedCurrencies` warning flag — no implicit FX is applied.
+ * - Close-date attribution: realized metrics attribute trades to the selected
+ *   period by CLOSE DATE only (never entry date), using the same
+ *   `closedAt.slice(0, 10)` string comparison as /api/dashboard.
+ * - Advanced filters: `setupIds`, `directions`, `symbols` filter at the trade
+ *   level; `tradeResults` (win/loss/scratch) is derived per trade from net
+ *   realized P&L via classifyPnlDecision (includeZeroAsLoss).
+ * - D057/R027: soft-deleted (scratched) trades are excluded from every
+ *   aggregation, matching /api/dashboard.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,10 +32,9 @@ import {
   tradeGrades,
   tradeRiskSnapshots,
   accountRollforward,
-  settings,
   accounts,
 } from '@/db/schema';
-import { eq, inArray, and, gte, lte, sql } from 'drizzle-orm';
+import { eq, inArray, and, ne } from 'drizzle-orm';
 import { type ExecutionData, computeTradeMetrics } from '@/lib/trade-metrics';
 import {
   computeKpiMetrics,
@@ -50,6 +63,7 @@ import { classifyPnlDecision } from '@/lib/metrics';
 
 /**
  * Chunk an array of IDs into batches of CHUNK_SIZE and run a query for each chunk.
+ * Avoids the SQLite parameter limit (999) for large account/trade id sets.
  */
 function batchInArray<T>(ids: string[], queryFn: (chunk: string[]) => T[], chunkSize = 999): T[] {
   const results: T[] = [];
@@ -59,62 +73,99 @@ function batchInArray<T>(ids: string[], queryFn: (chunk: string[]) => T[], chunk
   return results;
 }
 
+/** Map a DB execution row to the canonical ExecutionData shape (as /api/dashboard does). */
+function toExecutionData(ex: {
+  action: string;
+  quantity: number;
+  price: number;
+  fees: number | null;
+  executedAt: string | null;
+}): ExecutionData {
+  return {
+    action: ex.action,
+    quantity: ex.quantity,
+    price: ex.price,
+    fees: ex.fees ?? null,
+    executedAt: ex.executedAt ?? '',
+  };
+}
+
 /**
- * Compute net P&L grouped by setup for the selected closed trades, in one pass.
- * Uses computeTradeMetrics on each trade's executions.
+ * Aggregate per-account account_rollforward rows into a single portfolio series.
+ *
+ * Multi-account rollforward tables share the same calendar dates; concatenating
+ * them produces duplicate x-values that would corrupt computeEquityCurve /
+ * computeDrawdown. This helper sums endingEquity and cumulativePnl per date and
+ * derives highWaterMark, drawdownAmount and drawdownPct from the combined series
+ * (peak-to-trough against the running high-water mark).
+ *
+ * Single-account input (one row per date) passes through unchanged, preserving
+ * stored drawdown values and exact parity with /api/dashboard.
+ *
+ * Input must be sorted by date ASC. There is no implicit FX — the route's
+ * `mixedCurrencies` flag warns when currencies differ across accounts.
  */
-function computeSetupNetPnlBySetup(trades: PerformanceTradeInput[], cache: ReturnType<typeof computeTradeMetricsCache>): Map<string, number> {
-  const bySetup = new Map<string, number>();
-  for (const trade of trades) {
-    const metrics = cache.get(trade.id) ?? computeTradeMetrics({
-      executions: trade.executions,
-      direction: trade.direction,
-      riskSnapshot: trade.riskSnapshot
-        ? { initialRiskAmount: trade.riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
-        : null,
-      stopAdjustments: [],
-      currentMark: null,
-      currentAccountEquity: null,
-    });
-    const key = trade.setupId ?? '__null__';
-    bySetup.set(key, (bySetup.get(key) ?? 0) + metrics.realizedPnl.netRealizedPnl);
+function aggregateRollforwardByDate(rows: RollforwardRow[]): RollforwardRow[] {
+  // Group per date, summing equity and cumulative P&L across accounts.
+  const byDate = new Map<string, { endingEquity: number; cumulativePnl: number }>();
+  for (const row of rows) {
+    if (row.endingEquity === null) continue;
+    const agg = byDate.get(row.date) ?? { endingEquity: 0, cumulativePnl: 0 };
+    agg.endingEquity += row.endingEquity;
+    agg.cumulativePnl += row.cumulativePnl ?? 0;
+    byDate.set(row.date, agg);
   }
-  return bySetup;
+
+  const dates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
+  const result: RollforwardRow[] = [];
+  let highWaterMark = 0;
+
+  for (const date of dates) {
+    const agg = byDate.get(date)!;
+    highWaterMark = Math.max(highWaterMark, agg.endingEquity);
+    const drawdownAmount = highWaterMark > 0 ? highWaterMark - agg.endingEquity : 0;
+    result.push({
+      date,
+      endingEquity: agg.endingEquity,
+      cumulativePnl: agg.cumulativePnl,
+      drawdownAmount,
+      drawdownPct: highWaterMark > 0 ? drawdownAmount / highWaterMark : null,
+      highWaterMark,
+    });
+  }
+
+  return result;
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // Parse account scope
+    // ── Parse query parameters ──────────────────────────────────────────
     const accountIdsParam = searchParams.get('accountIds');
     const accountScopeMode = searchParams.get('accountScope') || 'all'; // 'all' | 'single' | 'multiple'
-
-    // Parse date range
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
-
-    // Parse advanced filters
     const setupIdsParam = searchParams.get('setupIds');
     const directionsParam = searchParams.get('directions');
     const symbolsParam = searchParams.get('symbols');
     const tradeResultsParam = searchParams.get('tradeResults');
 
-    // Validate date parameters
+    // ── Validate date parameters ────────────────────────────────────────
     if (dateFrom && isNaN(Date.parse(dateFrom))) {
       return NextResponse.json(
-        { error: 'Invalid dateFrom parameter', details: { fieldErrors: { dateFrom: ['Invalid date format'] } } },
+        { error: 'Invalid dateFrom parameter', details: { fieldErrors: { dateFrom: ['Invalid date format. Use ISO date (YYYY-MM-DD).'] } } },
         { status: 400 },
       );
     }
     if (dateTo && isNaN(Date.parse(dateTo))) {
       return NextResponse.json(
-        { error: 'Invalid dateTo parameter', details: { fieldErrors: { dateTo: ['Invalid date format'] } } },
+        { error: 'Invalid dateTo parameter', details: { fieldErrors: { dateTo: ['Invalid date format. Use ISO date (YYYY-MM-DD).'] } } },
         { status: 400 },
       );
     }
 
-    // Resolve account IDs
+    // ── Resolve account scope ───────────────────────────────────────────
     let accountIds: string[] = [];
     if (accountScopeMode === 'all') {
       const allAccounts = db.select().from(accounts).all();
@@ -130,28 +181,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check currency consistency
-    const accountCurrencies = new Set<string>();
-    for (const accountId of accountIds) {
-      const account = db.select().from(accounts).where(eq(accounts.id, accountId)).get();
-      if (account) {
-        accountCurrencies.add(account.currency || 'USD');
-      }
-    }
+    // ── Batch account lookup: currency consistency + starting balances ──
+    const accountRows = batchInArray(accountIds, (ids) =>
+      db.select().from(accounts).where(inArray(accounts.id, ids)).all(),
+    );
+    const accountCurrencies = new Set(accountRows.map((a) => a.currency || 'USD'));
     const mixedCurrencies = accountCurrencies.size > 1;
+    const startingAccountValue = accountRows.reduce((sum, a) => sum + (a.startingBalance ?? 0), 0);
 
-    // Build trade query conditions
-    const conditions = [inArray(trades.accountId, accountIds)];
+    // ── Fetch trades ────────────────────────────────────────────────────
+    // D057/R027: soft-deleted (scratched) trades are excluded from every
+    // unfiltered aggregation — they must only surface in the Deleted tab
+    // (?status=deleted). Matches /api/dashboard.
+    // Date conditions are deliberately NOT applied here: open trades have a
+    // NULL closedAt and would be dropped by a closedAt >= / <= predicate,
+    // corrupting totalTrades/openTrades counts. Close-date attribution is
+    // applied in JS to closed trades only (see below).
+    const conditions = [
+      inArray(trades.accountId, accountIds),
+      ne(trades.status, 'deleted'),
+    ];
 
-    // Close-date filtering (attribute trades by close date)
-    if (dateFrom) {
-      conditions.push(gte(trades.closedAt, dateFrom));
-    }
-    if (dateTo) {
-      conditions.push(lte(trades.closedAt, dateTo + 'T23:59:59.999Z'));
-    }
-
-    // Advanced filters
+    // Advanced filters (apply to the full trade set, open and closed alike)
     if (setupIdsParam) {
       const setupIds = setupIdsParam.split(',').filter(Boolean);
       if (setupIds.length > 0) {
@@ -171,98 +222,124 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fetch trades
     const allTrades = db
       .select()
       .from(trades)
       .where(and(...conditions))
       .all();
 
-    // Filter to closed trades for realized metrics
-    const closedTrades = allTrades.filter((t) => t.status === 'closed');
+    const allTradeIds = allTrades.map((t) => t.id);
 
-    // Apply trade result filter (win/loss/scratch) after P&L computation
-    let filteredClosedTrades = closedTrades;
+    // ── Close-date attribution ──────────────────────────────────────────
+    // Realized metrics attribute trades to the selected period by CLOSE DATE
+    // (never entry date), via the same closedAt.slice(0, 10) string comparison
+    // as /api/dashboard. ISO dates sort correctly as strings.
+    const closedTrades = allTrades.filter((t) => t.status === 'closed');
+    const dateFilteredClosedTrades =
+      dateFrom || dateTo
+        ? closedTrades.filter((t) => {
+            if (!t.closedAt) return false;
+            const closedDate = t.closedAt.slice(0, 10);
+            if (dateFrom && closedDate < dateFrom) return false;
+            if (dateTo && closedDate > dateTo) return false;
+            return true;
+          })
+        : closedTrades;
+
+    // ── Batch-fetch related data for ALL trades (single pass, no N+1) ──
+    // Mirrors the /api/dashboard map pattern. Fetching before the tradeResults
+    // filter keeps the filter in-memory instead of running per-trade queries.
+    const executionsByTrade = new Map<string, ExecutionData[]>();
+    const gradesByTrade = new Map<string, { totalScore: number | null }>();
+    const riskSnapshotsByTrade = new Map<string, { initialRiskAmount: number | null }>();
+
+    if (allTradeIds.length > 0) {
+      const execs = batchInArray(allTradeIds, (chunk) =>
+        db.select().from(tradeExecutions).where(inArray(tradeExecutions.tradeId, chunk)).all(),
+      );
+      for (const exec of execs) {
+        const list = executionsByTrade.get(exec.tradeId) ?? [];
+        list.push(toExecutionData(exec));
+        executionsByTrade.set(exec.tradeId, list);
+      }
+
+      const gradeRows = batchInArray(allTradeIds, (chunk) =>
+        db.select().from(tradeGrades).where(inArray(tradeGrades.tradeId, chunk)).all(),
+      );
+      for (const grade of gradeRows) {
+        gradesByTrade.set(grade.tradeId, { totalScore: grade.totalScore ?? null });
+      }
+
+      const snapshots = batchInArray(allTradeIds, (chunk) =>
+        db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, chunk)).all(),
+      );
+      for (const snap of snapshots) {
+        riskSnapshotsByTrade.set(snap.tradeId, { initialRiskAmount: snap.initialRiskAmount ?? null });
+      }
+    }
+
+    /** Compute realized trade metrics from the in-memory maps. */
+    function metricsForTradeRow(trade: (typeof allTrades)[number]) {
+      const snapshot = riskSnapshotsByTrade.get(trade.id);
+      return computeTradeMetrics({
+        executions: executionsByTrade.get(trade.id) ?? [],
+        direction: trade.direction,
+        riskSnapshot: snapshot
+          ? { initialRiskAmount: snapshot.initialRiskAmount, accountEquityAtOpen: null }
+          : null,
+        stopAdjustments: [],
+        currentMark: null,
+        currentAccountEquity: null,
+      });
+    }
+
+    // ── Trade-result advanced filter (derived from realized P&L) ───────
+    let filteredClosedTrades = dateFilteredClosedTrades;
     if (tradeResultsParam) {
       const tradeResults = tradeResultsParam.split(',').filter(Boolean) as Array<'win' | 'loss' | 'scratch'>;
       if (tradeResults.length > 0) {
-        filteredClosedTrades = closedTrades.filter((trade) => {
-          const executions = batchInArray(
-            [trade.id],
-            (ids) =>
-              db
-                .select()
-                .from(tradeExecutions)
-                .where(inArray(tradeExecutions.tradeId, ids))
-                .all(),
-          );
-          const riskSnapshot = db
-            .select()
-            .from(tradeRiskSnapshots)
-            .where(eq(tradeRiskSnapshots.tradeId, trade.id))
-            .get();
-
-          const metrics = computeTradeMetrics({
-            executions: executions as ExecutionData[],
-            direction: trade.direction,
-            riskSnapshot: riskSnapshot
-              ? { initialRiskAmount: riskSnapshot.initialRiskAmount, accountEquityAtOpen: null }
-              : null,
-            stopAdjustments: [],
-            currentMark: null,
-            currentAccountEquity: null,
-          });
-          const pnl = metrics.realizedPnl.netRealizedPnl;
-          const decision = classifyPnlDecision(pnl, 'includeZeroAsLoss');
-
-          return tradeResults.includes(decision);
+        filteredClosedTrades = dateFilteredClosedTrades.filter((trade) => {
+          const pnl = metricsForTradeRow(trade).realizedPnl.netRealizedPnl;
+          return tradeResults.includes(classifyPnlDecision(pnl, 'includeZeroAsLoss'));
         });
       }
     }
 
-    // Fetch related data for filtered trades
-    const tradeIds = filteredClosedTrades.map((t) => t.id);
-    const executions = batchInArray(tradeIds, (ids) =>
-      db.select().from(tradeExecutions).where(inArray(tradeExecutions.tradeId, ids)).all(),
-    );
-    const grades = batchInArray(tradeIds, (ids) =>
-      db.select().from(tradeGrades).where(inArray(tradeGrades.tradeId, ids)).all(),
-    );
-    const riskSnapshots = batchInArray(tradeIds, (ids) =>
-      db.select().from(tradeRiskSnapshots).where(inArray(tradeRiskSnapshots.tradeId, ids)).all(),
-    );
-
-    // Build KpiTradeInput array
-    const kpiTrades: KpiTradeInput[] = filteredClosedTrades.map((trade) => {
-      const grade = grades.find((g) => g.tradeId === trade.id);
+    // ── Build typed computation inputs ──────────────────────────────────
+    function toKpiTradeInput(trade: (typeof allTrades)[number]): KpiTradeInput {
+      const grade = gradesByTrade.get(trade.id);
+      const totalScore = grade?.totalScore;
       return {
         id: trade.id,
         direction: trade.direction,
         status: trade.status,
-        executions: executions.filter((e) => e.tradeId === trade.id) as ExecutionData[],
-        grade: grade ? { totalScore: grade.totalScore ?? 0 } : null,
-        riskSnapshot: riskSnapshots.find((r) => r.tradeId === trade.id) || null,
-        closedAt: trade.closedAt,
+        executions: executionsByTrade.get(trade.id) ?? [],
+        grade: totalScore != null ? { totalScore } : null,
+        riskSnapshot: riskSnapshotsByTrade.get(trade.id) ?? null,
+        closedAt: trade.closedAt ?? null,
       };
-    });
+    }
 
-    // Build PerformanceTradeInput array for new computations
+    const kpiTrades: KpiTradeInput[] = filteredClosedTrades.map(toKpiTradeInput);
+    const allTradesKpi: KpiTradeInput[] = allTrades.map(toKpiTradeInput);
+
     const perfTrades: PerformanceTradeInput[] = filteredClosedTrades.map((trade) => ({
       id: trade.id,
       direction: trade.direction,
       status: trade.status,
       symbol: trade.symbol,
       setupId: trade.setupId,
-      executions: executions.filter((e) => e.tradeId === trade.id) as ExecutionData[],
-      riskSnapshot: riskSnapshots.find((r) => r.tradeId === trade.id) || null,
-      closedAt: trade.closedAt,
-      openedAt: trade.openedAt,
+      executions: executionsByTrade.get(trade.id) ?? [],
+      riskSnapshot: riskSnapshotsByTrade.get(trade.id) ?? null,
+      closedAt: trade.closedAt ?? null,
+      openedAt: trade.openedAt ?? null,
     }));
 
-    // Compute per-trade metrics ONCE and share across all aggregations.
+    // Per-trade metrics computed ONCE and shared across all aggregations
+    // (O(trades), not O(functions × trades)).
     const metricsCache = computeTradeMetricsCache(perfTrades);
 
-    // Fetch rollforward data for equity curve and drawdown
+    // ── Rollforward: equity curve + drawdown ────────────────────────────
     const rollforwardRows: RollforwardRow[] = [];
     for (const accountId of accountIds) {
       const rows = db
@@ -271,56 +348,54 @@ export async function GET(request: NextRequest) {
         .where(eq(accountRollforward.accountId, accountId))
         .orderBy(accountRollforward.date)
         .all();
-      rollforwardRows.push(...rows);
-    }
-
-    // Sort by date and deduplicate (if multiple accounts, aggregate)
-    rollforwardRows.sort((a, b) => a.date.localeCompare(b.date));
-
-    // Get starting account value (sum of all accounts' starting balances)
-    let startingAccountValue = 0;
-    for (const accountId of accountIds) {
-      const account = db.select().from(accounts).where(eq(accounts.id, accountId)).get();
-      if (account) {
-        startingAccountValue += account.startingBalance || 0;
+      for (const r of rows) {
+        rollforwardRows.push({
+          date: r.date,
+          endingEquity: r.endingEquity ?? null,
+          drawdownAmount: r.drawdownAmount ?? null,
+          drawdownPct: r.drawdownPct ?? null,
+          cumulativePnl: r.cumulativePnl ?? null,
+          highWaterMark: r.highWaterMark ?? null,
+        });
       }
     }
+    rollforwardRows.sort((a, b) => a.date.localeCompare(b.date));
 
-    // Period-start equity for % conversion: earliest available equity
-    // (first rollforward row with positive ending equity), falling back to
-    // the sum of account starting balances.
+    // Multi-account: merge per-account rows into one portfolio series.
+    // Single-account: pass through unchanged (parity with /api/dashboard).
+    const mergedRollforward = accountIds.length > 1 ? aggregateRollforwardByDate(rollforwardRows) : rollforwardRows;
+
+    // Scope the series to the selected period (mirrors /api/dashboard).
+    const dateFilteredRollforward = dateFrom || dateTo
+      ? mergedRollforward.filter((r) => {
+          if (dateFrom && r.date < dateFrom) return false;
+          if (dateTo && r.date > dateTo) return false;
+          return true;
+        })
+      : mergedRollforward;
+
+    // Period-start equity for % conversion: earliest available equity within
+    // the selected period, falling back to the sum of account starting balances.
     let periodStartEquity = startingAccountValue;
-    const earliestPositiveEquity = rollforwardRows.find((r) => r.endingEquity !== null && r.endingEquity > 0);
+    const earliestPositiveEquity = dateFilteredRollforward.find((r) => r.endingEquity !== null && r.endingEquity > 0);
     if (earliestPositiveEquity && earliestPositiveEquity.endingEquity !== null) {
       periodStartEquity = earliestPositiveEquity.endingEquity;
     }
 
-    const latestRollforward = rollforwardRows.length > 0 ? rollforwardRows[rollforwardRows.length - 1] : null;
+    // End-of-period rollforward state (period-scoped current drawdown/equity).
+    const latestRollforward: RollforwardRow | null =
+      dateFilteredRollforward.length > 0 ? dateFilteredRollforward[dateFilteredRollforward.length - 1] : null;
 
-    // Build allTrades as KpiTradeInput (for total trade count)
-    const allTradesKpi: KpiTradeInput[] = allTrades.map((trade) => {
-      const grade = grades.find((g) => g.tradeId === trade.id);
-      return {
-        id: trade.id,
-        direction: trade.direction,
-        status: trade.status,
-        executions: executions.filter((e) => e.tradeId === trade.id) as ExecutionData[],
-        grade: grade ? { totalScore: grade.totalScore ?? 0 } : null,
-        riskSnapshot: riskSnapshots.find((r) => r.tradeId === trade.id) || null,
-        closedAt: trade.closedAt,
-      };
-    });
-
-    // Compute KPI metrics
+    // ── Compute KPI metrics ─────────────────────────────────────────────
     const kpiMetrics = computeKpiMetrics(allTradesKpi, kpiTrades, latestRollforward, startingAccountValue);
 
-    // Compute missing KPI metrics
+    // Missing KPI kernels (added in this milestone)
     const grossPnl = computeGrossPnl(perfTrades, metricsCache);
     const medianR = computeMedianR(perfTrades, metricsCache);
     const dayWinRate = computeDayWinRate(perfTrades, metricsCache);
-    const maxDrawdown = computeMaxDrawdown(rollforwardRows);
+    const maxDrawdown = computeMaxDrawdown(dateFilteredRollforward);
 
-    // Compute chart data
+    // ── Compute chart data ──────────────────────────────────────────────
     const monthlyPerformance = computeMonthlyPerformance(kpiTrades);
     const rDistribution = computeRDistribution(kpiTrades);
     const directionalPerformance = computeDirectionalPerformance(kpiTrades);
@@ -330,22 +405,37 @@ export async function GET(request: NextRequest) {
     const performanceByDayOfWeek = computePerformanceByDayOfWeek(perfTrades, metricsCache);
     const performanceByTimeOfDay = computePerformanceByTimeOfDay(perfTrades, metricsCache);
 
-    // Compute equity curve and drawdown
-    const equityCurve = computeEquityCurve(rollforwardRows);
-    const drawdownCurve = computeDrawdown(rollforwardRows);
+    const equityCurve = computeEquityCurve(dateFilteredRollforward);
+    const drawdownCurve = computeDrawdown(dateFilteredRollforward);
 
-    // Compute setup performance (add netPnl per setup — required for metric selection)
-    // Single pass: group net P&L by setup once, then merge into each setup row.
-    const setupNetPnlBySetup = computeSetupNetPnlBySetup(perfTrades, metricsCache);
+    // ── Setup performance with per-setup net P&L (single pass) ─────────
+    const setupNetPnlBySetup = new Map<string, number>();
+    for (const trade of perfTrades) {
+      const metrics = metricsCache.get(trade.id);
+      if (!metrics) continue;
+      const key = trade.setupId ?? '__null__';
+      setupNetPnlBySetup.set(key, (setupNetPnlBySetup.get(key) ?? 0) + metrics.realizedPnl.netRealizedPnl);
+    }
     const setupPerfTrades: SetupPerfTradeInput[] = perfTrades.map((t) => ({
-      ...t,
-      grade: grades.find((g) => g.tradeId === t.id) || null,
+      id: t.id,
+      direction: t.direction,
+      executions: t.executions,
+      grade: gradesByTrade.get(t.id) ?? null,
+      riskSnapshot: t.riskSnapshot,
+      setupId: t.setupId,
     }));
     const setupPerfResult = computeSetupPerformance(setupPerfTrades);
-    const setupPerformanceWithNetPnl = setupPerfResult.setupPerformance.map((item) => ({
+    const setupPerformance = setupPerfResult.setupPerformance.map((item) => ({
       ...item,
       netPnl: setupNetPnlBySetup.get(item.setupId ?? '__null__') ?? 0,
     }));
+
+    // Total initial risk across selected-period closed trades — denominator
+    // for R conversion of currency metrics (applyUnit / currencyToR).
+    const totalInitialRisk = perfTrades.reduce((sum, t) => {
+      const ir = t.riskSnapshot?.initialRiskAmount ?? null;
+      return ir !== null && ir > 0 ? sum + ir : sum;
+    }, 0);
 
     return NextResponse.json({
       kpiMetrics: {
@@ -366,15 +456,17 @@ export async function GET(request: NextRequest) {
         performanceByTimeOfDay,
         equityCurve,
         drawdownCurve,
-        setupPerformance: setupPerformanceWithNetPnl,
+        setupPerformance,
       },
       metadata: {
         accountCount: accountIds.length,
         mixedCurrencies,
         tradeCount: filteredClosedTrades.length,
         dateRange: { from: dateFrom, to: dateTo },
-        // % baseline: earliest available equity across selected accounts.
+        // % baseline: earliest available equity across selected accounts in period.
         periodStartEquity: periodStartEquity > 0 ? periodStartEquity : null,
+        // R baseline: sum of positive initial risk across selected-period closed trades.
+        totalInitialRisk: totalInitialRisk > 0 ? totalInitialRisk : null,
       },
     });
   } catch (error) {

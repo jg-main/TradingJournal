@@ -2,6 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   computeDailyNetPnl,
   computeCumulativeDailyPnl,
+  computeGrossPnl,
+  computeMedianR,
+  computeDayWinRate,
+  computeMaxDrawdown,
+  computeTradeDurationPerformance,
+  computePerformanceByDayOfWeek,
+  computePerformanceByTimeOfDay,
   type PerformanceTradeInput,
 } from '../performance-analytics';
 import {
@@ -134,5 +141,45 @@ describe('unit semantics contract', () => {
     const r = applyUnit(1000, currencyDef, 'r', ctx);
     expect(r.value).toBe(2);
     expect(r.unit).toBe('r');
+  });
+});
+
+describe('new kernel edge cases', () => {
+  it('returns zero/null for empty trade sets', () => {
+    expect(computeGrossPnl([]).grossProfit).toBe(0);
+    expect(computeGrossPnl([]).grossLoss).toBe(0);
+    expect(computeGrossPnl([]).grossPnl).toBe(0);
+    expect(computeMedianR([])).toBeNull();
+    expect(computeDayWinRate([])).toBeNull();
+    expect(computeTradeDurationPerformance([])).toEqual([
+      { bucket: '0-1 days', netPnl: 0, count: 0, winRate: null },
+      { bucket: '2-5 days', netPnl: 0, count: 0, winRate: null },
+      { bucket: '6-10 days', netPnl: 0, count: 0, winRate: null },
+      { bucket: '11+ days', netPnl: 0, count: 0, winRate: null },
+    ]);
+    expect(computePerformanceByDayOfWeek([])).toHaveLength(7);
+    expect(computePerformanceByTimeOfDay([])).toHaveLength(24);
+  });
+
+  it('computeMaxDrawdown returns null when every drawdown is zero or missing', () => {
+    expect(computeMaxDrawdown([])).toBeNull();
+    expect(computeMaxDrawdown([{ drawdownAmount: 0, drawdownPct: 0 }])).toBeNull();
+    expect(computeMaxDrawdown([{ drawdownAmount: null, drawdownPct: null }])).toBeNull();
+  });
+
+  it('median R averages the two middle values for an even count and skips null R', () => {
+    const first = makeTrade({ id: 'median-a', riskSnapshot: { initialRiskAmount: 500 } }); // R = 1990/500 = 3.98
+    const second = makeTrade({ id: 'median-b', riskSnapshot: { initialRiskAmount: 250 } }); // R = 1990/250 = 7.96
+    expect(computeMedianR([first, second])).toBeCloseTo((3.98 + 7.96) / 2, 5);
+
+    const noRisk = makeTrade({ id: 'median-null', riskSnapshot: { initialRiskAmount: null } });
+    expect(computeMedianR([first, noRisk])).toBeCloseTo(3.98, 5); // null-R trade skipped
+  });
+
+  it('day win rate averages per-day win rates', () => {
+    const winMon = makeTrade({ id: 'd1', closedAt: '2024-01-08T15:00:00Z' }); // 1990 win → day rate 1
+    const lossMon = makeTrade({ id: 'd2', closedAt: '2024-01-08T16:00:00Z' }); // 1990 win (still positive)
+    const winTue = makeTrade({ id: 'd3', closedAt: '2024-01-09T15:00:00Z' });
+    expect(computeDayWinRate([winMon, lossMon, winTue])).toBeCloseTo(1, 5); // (1 + 1) / 2
   });
 });
