@@ -118,25 +118,51 @@ parent-owned snapshot (see *Explicit scopes* above); there is no separate
 fetch lane and no global date context. This contract makes that separation
 explicit and is guarded by `src/lib/__tests__/live-historical-contract.test.ts`.
 
-**Current-state panels.** Panels that render the live scopes of the snapshot
-(current positions, marks, exposure, risk, NAV, open trades, and quote
-state): Main Risk Metrics (`ws-panel-risk`), Account State
-(`ws-panel-account-state`), Positions (`ws-panel-positions`), Watchlist
-(`ws-panel-watchlist`), Setups and ideas (`ws-panel-insights`), the Equity
-chart (`ws-panel-equity`), the Market strip, and the open/current tab of the
-Trades workspace. These answer *what is open, what is at risk, and whether
-the displayed market state is trustworthy* — never *what happened over a
-period*.
+**Current / Live state.** Surfaces whose data scope is the present market and
+journal state — current positions, marks, exposure, risk, NAV, open trades,
+quotes, and the trustworthiness of the displayed market data. They answer
+*what is open, what is at risk, and whether the displayed market state is
+trustworthy* — never *what happened over a period*:
 
-**Retrospective panels.** Panels that render the period and closed-decision
-scopes of the same snapshot: Performance (`ws-panel-performance`), Process
-Review (`ws-panel-process-review`), and the closed/historical tab of the
-Trades workspace. Analytical chart widgets below the trades workspace
-(monthly performance, R distribution, directional performance) are
-retrospective as well. They answer *what happened over a period or after a
-decision closed*.
+```text
+Main Risk Metrics (risk)
+Account State current-state values (account)
+Open/current Trades workspace tab (trades)
+Watchlist current quote/state information (watchlist)
+current positions
+current market marks
+current unrealized P&L
+current open risk
+current exposure / portfolio heat
+current market-data freshness / trust state
+```
 
-**Separation rule.** Live-state selectors never read period context:
+**Historical / Retrospective.** Surfaces whose data scope is a dated time
+series or closed-decision period — equity curves, drawdown, closed trades,
+period performance, and derived analytics. They answer *what happened over a
+period or after a decision closed*:
+
+```text
+Performance (perf)
+Process Review (review)
+Closed/historical Trades workspace tab
+Equity / drawdown time series (equity chart: equityCurve, drawdown,
+tradeMarkers)
+monthly performance
+R distribution
+directional performance
+setup / strategy analytics
+other closed-trade or period-based analytics
+```
+
+Classification follows **data scope**, not component location: the equity
+chart and the analytical widgets below the trades workspace are
+retrospective even though they live on the workstation, because they render
+dated time series rather than current market state.
+
+**Separation rule.** Historical or retrospective presentation preferences
+must not alter the underlying current/live workstation snapshot or
+current-state semantics:
 
 - The live adapter (`src/lib/workstation-live-adapter.ts`) exposes no
   period or date parameters. Its fetch functions take at most an

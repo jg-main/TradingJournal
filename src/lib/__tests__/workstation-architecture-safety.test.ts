@@ -819,14 +819,45 @@ describe('context-separation invariants (S02 live/historical contract)', () => {
 describe('doc-code alignment invariants (S01/S02)', () => {
   it('workstation.md documents the Live vs Historical scope contract', () => {
     expect(docSource).toContain('### Live vs Historical scope contract');
-    expect(docSource).toContain('**Current-state panels.**');
-    expect(docSource).toContain('**Retrospective panels.**');
+    expect(docSource).toContain('**Current / Live state.**');
+    expect(docSource).toContain('**Historical / Retrospective.**');
     expect(docSource).toContain('**Separation rule.**');
+    expect(docSource).toContain(
+      'must not alter the underlying current/live workstation snapshot',
+    );
   });
 
-  it('workstation.md documents the canonical panel testids', () => {
-    for (const testid of ['ws-panel-risk', 'ws-panel-positions', 'ws-panel-watchlist', 'ws-panel-insights', 'ws-panel-performance', 'ws-panel-equity']) {
-      expect(docSource, `doc must cite ${testid}`).toContain(testid);
+  it('every catalogue panel is documented and documented panels stay catalogue-only', () => {
+    // Catalogue → doc: each approved saved-view panel id is cited in the
+    // scope contract as a `(id)` annotation, so the top-level panel
+    // inventory in the documentation derives from the catalogue.
+    for (const id of WORKSTATION_PANEL_ID_LIST) {
+      expect(docSource, `doc must cite catalogue panel (${id})`).toContain(`(${id})`);
+    }
+    // Doc → catalogue: the scope contract expresses top-level panels in
+    // catalogue terms only — subordinate `ws-panel-*` component testids are
+    // component inventory, not saved-view panels, and must not appear in the
+    // top-level contract (a future panel would be added to the catalogue
+    // first and then cited here).
+    const scopeContract = docSource.slice(
+      docSource.indexOf('### Live vs Historical scope contract'),
+      docSource.indexOf('## Density tokens'),
+    );
+    expect(scopeContract, 'scope contract must not cite subordinate ws-panel-* testids').not.toContain('ws-panel-');
+  });
+
+  it('every catalogue panel has a renderable workstation representation', () => {
+    // The shell's panel renderer (renderPanelById) covers every catalogue
+    // id — adding a catalogue panel without wiring its renderer is a
+    // compile/contract failure. Source check: the shell must reference each
+    // catalogue id inside its rendering switch.
+    const shellSource = loadSource(
+      path.resolve(process.cwd(), 'src/components/workstation/workstation-shell.tsx'),
+      'workstation-shell.tsx',
+      1000,
+    );
+    for (const id of WORKSTATION_PANEL_ID_LIST) {
+      expect(shellSource, `shell must render catalogue panel ${id}`).toContain(id);
     }
   });
 

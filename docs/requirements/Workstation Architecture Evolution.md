@@ -1112,6 +1112,34 @@ small vertical change > broad architectural rewrite
 
 ---
 
+# Final Closure
+
+Closed **2026-08-20** as an evolution/verification milestone — no runtime architecture rebuild was required. The S01 findings resolved as follows:
+
+```text
+G1 Live/Historical contract:                     closed (scope-based classification + contract tests)
+G2 Responsive verification:                      closed (Playwright at 1440/1280/1024; no CSS changes needed)
+G3 Global performance-unit context:              intentionally deferred (no evidence of need)
+Production-route integration smoke:              passed (/, light@1440 + dark@1024)
+Architecture safety contract:                    catalogue-aligned (WORKSTATION_PANEL_CATALOGUE is the authority)
+Final quality gate:                              passed (lint, typecheck, build, test-all as separate commands)
+```
+
+Explicitly preserved as **not required** by this milestone:
+
+```text
+global performance-unit switch
+new zone abstraction
+second saved-view system
+replacement dashboard framework
+replacement of react-grid-layout
+generic dashboard/widget builder
+```
+
+See the milestone closure record `.gsd/phases/26-1bw68n-workstation-architecture-evolution/26-CLOSURE-VERIFICATION.md` for the full evidence table.
+
+---
+
 # 27. S01 Audit Findings (2026-08-19)
 
 Result of the S01 audit (inventory `26-01-INVENTORY.md`, capability matrix `26-01-MATRIX.md`, gap record `26-01-GAPS.md` in `.gsd/phases/26-1bw68n-workstation-architecture-evolution/`). Classification of all 17 capability areas from direct source inspection: **13 Complete / 3 Refine / 1 Missing-deferred / 0 Obsolete**. The two determinations this requirement asked S01 to make — workstation roles and panel extension contract — are both Complete with no architectural change required.
