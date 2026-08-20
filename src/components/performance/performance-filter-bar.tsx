@@ -2,6 +2,16 @@
 
 import React, { useEffect, useState } from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import type { DatePreset, AccountScopeMode, PerformanceUnit } from '@/lib/performance-view-types';
 
 // ── Account Shape (matches GET /api/accounts) ───────────────────────────────
@@ -13,6 +23,30 @@ export interface FilterBarAccount {
   currency: string | null;
   isActive: boolean | number;
 }
+
+// ── Option Catalogues ───────────────────────────────────────────────────────
+
+const ACCOUNT_SCOPE_OPTIONS: Array<{ value: AccountScopeMode; label: string }> = [
+  { value: 'all', label: 'All Accounts' },
+  { value: 'single', label: 'Single Account' },
+  { value: 'multiple', label: 'Multiple Accounts' },
+];
+
+const DATE_PRESET_OPTIONS: Array<{ value: DatePreset; label: string }> = [
+  { value: 'Whole period', label: 'Whole Period' },
+  { value: 'YTD', label: 'YTD' },
+  { value: '1Y', label: '1 Year' },
+  { value: '6M', label: '6 Months' },
+  { value: '3M', label: '3 Months' },
+  { value: '1M', label: '1 Month' },
+  { value: 'Custom', label: 'Custom' },
+];
+
+const UNIT_OPTIONS: Array<{ value: PerformanceUnit; label: string }> = [
+  { value: 'currency', label: '$' },
+  { value: 'percent', label: '%' },
+  { value: 'r', label: 'R' },
+];
 
 // ── Date Preset Helpers ─────────────────────────────────────────────────────
 
@@ -60,10 +94,15 @@ function presetToDateRange(preset: DatePreset): { from: string; to: string } {
  * inputs); every filter decision is pushed into the shared
  * PerformanceDashboardContext so the KPI row and chart grid react together.
  *
+ * Controls are TradingJournal primitives (Select/Button/Input) at the
+ * --density-control-h-lg (36px) height — the sizing that lands inside the
+ * R002 34-36px control-height window at 1440px (the default 32px and sm 28px
+ * token values both sit below it).
+ *
  * States:
  * - Accounts: scope mode (all/single/multiple) + an account picker for
  *   single/multiple modes, populated from GET /api/accounts. Loading shows a
- *   skeleton; a failed account fetch degrades to an inline error while the
+ *   placeholder; a failed account fetch degrades to an inline error while the
  *   rest of the bar keeps working (all-accounts mode is still usable).
  * - Period: relative presets + Custom with from/to date inputs and Apply.
  * - Unit: $/%/R presentation toggle (client-side only — never refetches).
@@ -156,48 +195,57 @@ export function PerformanceFilterBar() {
   );
   const mixedCurrencies = filter.accountScope.mode !== 'all' && selectedCurrencies.size > 1;
 
-  // Compact density: controls use the global --density-control-h-sm (28px)
-  // token — the same compact scale the normalized ui/ primitives use. The
-  // workstation-only ws-* classes (.ws-select etc.) are intentionally NOT
-  // used here: they are scoped to the .ws surface and would be inert on this
-  // dashboard, which has no .ws ancestor.
+  const accountsAvailable = !accountsLoading && !accountsError && accounts.length > 0;
+
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-border bg-card">
       {/* Account Scope */}
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-muted-foreground">Accounts:</label>
-        <select
+        <label htmlFor="perf-account-scope" className="text-sm font-medium text-muted-foreground">
+          Accounts:
+        </label>
+        <Select
           value={filter.accountScope.mode}
-          onChange={(e) => handleAccountModeChange(e.target.value as AccountScopeMode)}
-          className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
-          aria-label="Account scope"
+          onValueChange={(v) => handleAccountModeChange(v as AccountScopeMode)}
         >
-          <option value="all">All Accounts</option>
-          <option value="single">Single Account</option>
-          <option value="multiple">Multiple Accounts</option>
-        </select>
+          <SelectTrigger id="perf-account-scope" size="lg" aria-label="Account scope">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ACCOUNT_SCOPE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {filter.accountScope.mode === 'single' && (
-          <select
+          <Select
             value={filter.accountScope.accountIds[0] ?? ''}
-            onChange={(e) => setAccountScope({ mode: 'single', accountIds: [e.target.value] })}
-            className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
-            aria-label="Select account"
-            data-testid="account-single-select"
+            onValueChange={(v) => setAccountScope({ mode: 'single', accountIds: [v] })}
           >
-            {accountsLoading ? (
-              <option value="">Loading accounts…</option>
-            ) : accountsError ? (
-              <option value="">Accounts unavailable</option>
-            ) : (
-              accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
+            <SelectTrigger
+              size="lg"
+              aria-label="Select account"
+              data-testid="account-single-select"
+              disabled={!accountsAvailable}
+            >
+              <SelectValue
+                placeholder={
+                  accountsLoading ? 'Loading accounts…' : accountsError ? 'Accounts unavailable' : 'Select account'
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((acc) => (
+                <SelectItem key={acc.id} value={acc.id}>
                   {acc.name}
                   {acc.broker ? ` (${acc.broker})` : ''}
-                </option>
-              ))
-            )}
-          </select>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
 
         {filter.accountScope.mode === 'multiple' && (
@@ -225,89 +273,78 @@ export function PerformanceFilterBar() {
 
       {/* Date Range Presets */}
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-muted-foreground">Period:</label>
-        <select
-          value={filter.dateRange.preset}
-          onChange={(e) => handlePresetChange(e.target.value as DatePreset)}
-          className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
-          aria-label="Date period"
-        >
-          <option value="Whole period">Whole Period</option>
-          <option value="YTD">YTD</option>
-          <option value="1Y">1 Year</option>
-          <option value="6M">6 Months</option>
-          <option value="3M">3 Months</option>
-          <option value="1M">1 Month</option>
-          <option value="Custom">Custom</option>
-        </select>
+        <label htmlFor="perf-date-period" className="text-sm font-medium text-muted-foreground">
+          Period:
+        </label>
+        <Select value={filter.dateRange.preset} onValueChange={(v) => handlePresetChange(v as DatePreset)}>
+          <SelectTrigger id="perf-date-period" size="lg" aria-label="Date period">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DATE_PRESET_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Custom Date Range (shown when Custom is selected) */}
       {filter.dateRange.preset === 'Custom' && (
         <div className="flex items-center gap-2">
-          <input
+          <Input
             type="date"
             value={customFrom}
             onChange={(e) => setCustomFrom(e.target.value)}
-            className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
+            className="h-(--density-control-h-lg) w-auto"
             aria-label="Custom from date"
             placeholder="From"
           />
           <span className="text-muted-foreground">to</span>
-          <input
+          <Input
             type="date"
             value={customTo}
             onChange={(e) => setCustomTo(e.target.value)}
-            className="h-(--density-control-h-sm) text-sm rounded-md border border-border bg-background px-2"
+            className="h-(--density-control-h-lg) w-auto"
             aria-label="Custom to date"
             placeholder="To"
           />
-          <button
-            onClick={handleCustomDateApply}
-            className="h-(--density-control-h-sm) inline-flex items-center text-sm rounded-md bg-primary text-primary-foreground px-3 hover:bg-primary/90"
-          >
+          <Button type="button" size="lg" onClick={handleCustomDateApply}>
             Apply
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Performance Unit */}
       <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-muted-foreground">Unit:</label>
-        <div className="flex rounded-md border border-border overflow-hidden">
-          <button
-            onClick={() => handleUnitChange('currency')}
-            className={`inline-flex h-(--density-control-h-sm) items-center text-sm px-3 ${
-              filter.unit === 'currency'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-background text-foreground hover:bg-muted'
-            }`}
-            aria-pressed={filter.unit === 'currency'}
-          >
-            $
-          </button>
-          <button
-            onClick={() => handleUnitChange('percent')}
-            className={`inline-flex h-(--density-control-h-sm) items-center text-sm px-3 border-l border-border ${
-              filter.unit === 'percent'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-background text-foreground hover:bg-muted'
-            }`}
-            aria-pressed={filter.unit === 'percent'}
-          >
-            %
-          </button>
-          <button
-            onClick={() => handleUnitChange('r')}
-            className={`inline-flex h-(--density-control-h-sm) items-center text-sm px-3 border-l border-border ${
-              filter.unit === 'r'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-background text-foreground hover:bg-muted'
-            }`}
-            aria-pressed={filter.unit === 'r'}
-          >
-            R
-          </button>
+        <span id="perf-unit-label" className="text-sm font-medium text-muted-foreground">
+          Unit:
+        </span>
+        <div
+          role="group"
+          aria-labelledby="perf-unit-label"
+          className="flex rounded-lg border border-border overflow-hidden"
+        >
+          {UNIT_OPTIONS.map((opt, index) => {
+            const active = filter.unit === opt.value;
+            return (
+              <Button
+                key={opt.value}
+                type="button"
+                size="lg"
+                variant={active ? 'default' : 'outline'}
+                aria-pressed={active}
+                className={cn(
+                  'rounded-none px-3',
+                  index > 0 ? 'border-0 border-l border-border' : 'border-0',
+                )}
+                onClick={() => handleUnitChange(opt.value)}
+              >
+                {opt.label}
+              </Button>
+            );
+          })}
         </div>
       </div>
 

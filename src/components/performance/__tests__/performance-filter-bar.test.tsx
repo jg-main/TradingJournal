@@ -6,6 +6,11 @@
  * account picker, accounts-fetch failure degradation, and the mixed-currency
  * warning.
  *
+ * The bar is built on TradingJournal primitives (radix-based Select/Button/
+ * Input at --density-control-h-lg height), so select interactions follow the
+ * repository pattern for radix Select: open the combobox trigger, then click
+ * the option rendered in the portal.
+ *
  * Run: npx vitest run src/components/performance/__tests__/performance-filter-bar.test.tsx
  */
 
@@ -14,6 +19,11 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import React from 'react';
 import { PerformanceFilterBar } from '../performance-filter-bar';
 import { PerformanceDashboardProvider, usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
+
+// jsdom does not implement Element.prototype.scrollIntoView; Radix Select calls
+// it when opening its option list, so stub it out (matches the repo pattern in
+// plan-trade-form.test.tsx and watchlist-panel.test.tsx).
+Element.prototype.scrollIntoView = () => {};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Fixtures & helpers
@@ -56,6 +66,23 @@ function renderBar() {
       <FilterProbe />
     </PerformanceDashboardProvider>,
   );
+}
+
+/** Open a radix Select by combobox name and click the given option label. */
+async function chooseSelectOption(comboboxName: string, optionName: string | RegExp) {
+  fireEvent.click(screen.getByRole('combobox', { name: comboboxName }));
+  // Radix renders the option list in a portal after the open state settles;
+  // flush microtasks under fake timers before querying the option.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+  });
+  const option = screen.getByRole('option', { name: optionName });
+  fireEvent.click(option);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -108,8 +135,8 @@ describe('PerformanceFilterBar', () => {
     expect(screen.getByText('Accounts:')).toBeDefined();
     expect(screen.getByText('Period:')).toBeDefined();
     expect(screen.getByText('Unit:')).toBeDefined();
-    expect(screen.getByLabelText('Account scope')).toBeDefined();
-    expect(screen.getByLabelText('Date period')).toBeDefined();
+    expect(screen.getByRole('combobox', { name: 'Account scope' })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: 'Date period' })).toBeDefined();
     // Default unit is currency ($ pressed).
     expect(screen.getByRole('button', { name: '$' }).getAttribute('aria-pressed')).toBe('true');
     await flushAsync();
@@ -118,7 +145,7 @@ describe('PerformanceFilterBar', () => {
   it('applies a relative preset to the shared date range', async () => {
     renderBar();
     await flushAsync();
-    fireEvent.change(screen.getByLabelText('Date period'), { target: { value: '1M' } });
+    await chooseSelectOption('Date period', '1 Month');
     expect(probe().preset).toBe('1M');
     // 1M preset computes a concrete from date (today minus one month).
     expect(probe().from).not.toBe('');
@@ -128,7 +155,7 @@ describe('PerformanceFilterBar', () => {
     renderBar();
     await flushAsync();
 
-    fireEvent.change(screen.getByLabelText('Date period'), { target: { value: 'Custom' } });
+    await chooseSelectOption('Date period', 'Custom');
     expect(screen.getByLabelText('Custom from date')).toBeDefined();
     expect(screen.getByLabelText('Custom to date')).toBeDefined();
 
@@ -166,13 +193,14 @@ describe('PerformanceFilterBar', () => {
     renderBar();
     await flushAsync();
 
-    fireEvent.change(screen.getByLabelText('Account scope'), { target: { value: 'single' } });
+    await chooseSelectOption('Account scope', 'Single Account');
     // Single mode auto-selects the first account.
     expect(probe().mode).toBe('single');
     expect(probe().accountIds).toEqual(['acc-usd']);
 
-    // Switching to the EUR account updates the scope.
-    fireEvent.change(screen.getByTestId('account-single-select'), { target: { value: 'acc-eur' } });
+    // Switching to the EUR account updates the scope (option name includes
+    // the broker suffix, e.g. "Cash EUR (IBKR)").
+    await chooseSelectOption('Select account', /Cash EUR/);
     expect(probe().accountIds).toEqual(['acc-eur']);
   });
 
@@ -180,7 +208,7 @@ describe('PerformanceFilterBar', () => {
     renderBar();
     await flushAsync();
 
-    fireEvent.change(screen.getByLabelText('Account scope'), { target: { value: 'multiple' } });
+    await chooseSelectOption('Account scope', 'Multiple Accounts');
     const checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes).toHaveLength(2);
 
@@ -216,14 +244,16 @@ describe('PerformanceFilterBar', () => {
     await flushAsync();
 
     // Accounts: controls still render.
-    expect(screen.getByLabelText('Account scope')).toBeDefined();
+    expect(screen.getByRole('combobox', { name: 'Account scope' })).toBeDefined();
 
-    // Switching to single mode shows the degraded "unavailable" option, not a crash.
-    fireEvent.change(screen.getByLabelText('Account scope'), { target: { value: 'single' } });
+    // Switching to single mode shows the degraded "unavailable" placeholder,
+    // not a crash.
+    await chooseSelectOption('Account scope', 'Single Account');
     expect(screen.getByTestId('account-single-select')).toBeDefined();
+    expect(screen.getByText('Accounts unavailable')).toBeDefined();
 
     // Switching to multiple shows the inline error message.
-    fireEvent.change(screen.getByLabelText('Account scope'), { target: { value: 'multiple' } });
+    await chooseSelectOption('Account scope', 'Multiple Accounts');
     expect(screen.getByText('Network error')).toBeDefined();
   });
 });

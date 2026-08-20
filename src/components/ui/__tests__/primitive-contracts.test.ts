@@ -311,8 +311,9 @@ describe('interaction-state consistency', () => {
     expect(sources[name]).toContain('aria-invalid:border-destructive');
   });
 
-  it('select trigger heights switch on data-size (sm vs default)', () => {
+  it('select trigger heights switch on data-size (sm vs default vs lg)', () => {
     expect(sources.select).toContain('data-[size=sm]:h-(--density-control-h-sm)');
     expect(sources.select).toContain('data-[size=default]:h-(--density-control-h)');
+    expect(sources.select).toContain('data-[size=lg]:h-(--density-control-h-lg)');
   });
 });
