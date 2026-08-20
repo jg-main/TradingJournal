@@ -13,6 +13,7 @@
  */
 
 import type { LayoutItem } from 'react-grid-layout';
+import { getDefaultWidgetInstances } from './performance-widget-registry';
 
 // ── Filter Types ────────────────────────────────────────────────────────────
 
@@ -193,10 +194,22 @@ export function createDefaultFilter(): PerformanceDashboardFilter {
 // ── Dashboard Templates & Envelopes ─────────────────────────────────────────
 
 /**
+ * The immutable system default dashboard template id (pd- namespace).
+ *
+ * Canonical template id: the system default envelope, every Reset, and the
+ * hook's ensureSystemDefault merge all reference this id. The system default
+ * dashboard is a local template — it is never persisted server-side, so it
+ * must always be merged back in after API hydration.
+ */
+export const PD_SYSTEM_DEFAULT_TEMPLATE = 'pd-system-default' as const;
+
+/**
  * Canonical system dashboard IDs (pd- namespace).
+ * `DEFAULT` aliases PD_SYSTEM_DEFAULT_TEMPLATE — the system default serves as
+ * both the saved envelope id and the reset template id.
  */
 export const PERFORMANCE_SYSTEM_DASHBOARD_IDS = {
-  DEFAULT: 'pd-system-default',
+  DEFAULT: PD_SYSTEM_DEFAULT_TEMPLATE,
 } as const;
 
 export type PerformanceSystemDashboardId = (typeof PERFORMANCE_SYSTEM_DASHBOARD_IDS)[keyof typeof PERFORMANCE_SYSTEM_DASHBOARD_IDS];
@@ -214,15 +227,26 @@ export interface PerformanceDashboardEnvelope {
 }
 
 /**
- * Create the curated default Performance dashboard config:
- * Net P&L, Win Rate, Profit Factor, Average R, Total Trades, Expectancy KPIs
- * plus the six must-have chart widgets, positioned by the registry defaults.
+ * Create the curated default Performance dashboard config: the
+ * default-visible KPI widgets (Net P&L, Gross P&L, Total Trades, Win Rate,
+ * Profit Factor, Average R) plus the six must-have chart widgets, positioned
+ * by the registry defaults via getDefaultWidgetInstances().
+ *
+ * The system default envelope and every Reset reference this template. Each
+ * instance's RGL layout gets `i` bound to its instanceId so the persisted
+ * LayoutItems are self-describing.
  */
 export function createDefaultDashboardConfig(): PerformanceDashboardConfig {
+  const defaults = getDefaultWidgetInstances();
   return {
     version: PERFORMANCE_DASHBOARD_CONFIG_VERSION,
     name: 'Performance Default',
-    instances: [],
+    instances: defaults.map((inst) => ({
+      instanceId: inst.instanceId,
+      widgetType: inst.widgetType,
+      config: { ...inst.config },
+      layout: { ...inst.layout, i: inst.instanceId },
+    })),
   };
 }
 
