@@ -97,6 +97,7 @@ export default defineConfig({
       'src/hooks/use-customize-mode.test.ts',
       'src/hooks/__tests__/use-performance-dashboards.test.ts',
       'src/hooks/__tests__/use-performance-dashboard.test.tsx',
+      'src/hooks/__tests__/use-performance-instances.test.tsx',
       'src/types/dashboard-view.test.ts',
       'src/lib/accounting/decimal.test.ts',
       'src/lib/accounting/legacy-migration.test.ts',

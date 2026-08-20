@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { KpiRow } from '../kpi-row';
@@ -6,6 +6,12 @@ import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard'
 import { PerformanceInstanceProvider } from '../performance-instance-context';
 
 afterEach(() => cleanup());
+
+// Isolate the instance store per test so add/duplicate/remove mutations in one
+// test cannot leak into the next via the persisted localStorage key.
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 function renderKpiRow(editMode?: boolean) {
   return render(
@@ -59,7 +65,8 @@ describe('KpiRow', () => {
     const before = screen.getAllByText('Net P&L').length;
     const removeButtons = screen.getAllByLabelText('Remove Net P&L');
     fireEvent.click(removeButtons[0]);
-    expect(screen.getAllByText('Net P&L').length).toBe(before - 1);
+    // queryAllByText so removing the final card (0 matches) is a valid assertion.
+    expect(screen.queryAllByText('Net P&L').length).toBe(before - 1);
   });
 
   it('resets to default instances', () => {
@@ -70,5 +77,37 @@ describe('KpiRow', () => {
     expect(afterRemove).toBeLessThan(screen.getAllByText('Win Rate').length + 1);
     fireEvent.click(screen.getByText('Reset'));
     expect(screen.getAllByText('Net P&L').length).toBeGreaterThan(0);
+  });
+
+  it('reorders KPI cards with the move controls', () => {
+    const { container } = renderKpiRow(true);
+    const order = () =>
+      Array.from(container.querySelectorAll('[data-kpi-value]')).map((el) =>
+        el.getAttribute('data-kpi-value'),
+      );
+    expect(order()[0]).toBe('net-pnl');
+    expect(order()[1]).toBe('gross-pnl');
+
+    fireEvent.click(screen.getByLabelText('Move net-pnl down'));
+    expect(order()[0]).toBe('gross-pnl');
+    expect(order()[1]).toBe('net-pnl');
+
+    // Boundary: first card's up control and last card's down control are disabled.
+    expect(screen.getByLabelText('Move gross-pnl up')).toBeDefined();
+    const lastDown = screen.getByLabelText('Move average-r down') as HTMLButtonElement;
+    expect(lastDown.disabled).toBe(true);
+  });
+
+  it('persists KPI instances across remounts (simulated reload)', () => {
+    const first = renderKpiRow(true);
+    fireEvent.click(screen.getByText('+ Add KPI'));
+    fireEvent.click(screen.getByText('Median R'));
+    expect(screen.getByText('Median R')).toBeDefined();
+    first.unmount();
+
+    // Reload: a fresh tree reads the persisted instances back from localStorage.
+    renderKpiRow(false);
+    expect(screen.getByText('Median R')).toBeDefined();
+    expect(screen.getAllByText('Net P&L').length).toBe(1);
   });
 });
