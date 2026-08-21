@@ -18,6 +18,9 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { hideDevOverlay } from './helpers';
 
 const TS = Date.now().toString(36);
 
@@ -1377,5 +1380,413 @@ test.describe('widget actions menu (S05 R005)', () => {
     // Cleanup: exit edit mode, delete the user dashboard.
     await page.getByRole('button', { name: 'Done' }).click();
     await deleteUserDashboard(page, dashName);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// S06 (R006): Visual UAT screenshot matrix
+//
+// Captures the full visual UAT matrix for /performance at
+// 1440/1280/1024 × dark/light (6 captures) using the localStorage 'theme'
+// script to set dark/light. Every capture walks the R006 review checklist
+// (sidebar continuity, page hierarchy, filter-bar density, KPI equal-height
+// geometry, chart proportions, charts per row, empty space usage, widget
+// chrome, Customize affordances, alignment, spacing rhythm, responsive
+// wrapping, empty/loading states, dark/light quality) and records per-capture
+// PASS/notes findings. Customize mode (1440 dark + light), the loading state
+// (analytics delayed → skeletons) and the empty state (no-trade custom
+// period → em dashes + 'No data for this period') get dedicated captures.
+// Captures + findings land in a per-run artifact directory
+// (PERF_UAT_ARTIFACT_DIR or /tmp/perf-uat-S06-<run>) referenced as the UAT
+// evidence record.
+// ────────────────────────────────────────────────────────────────────────────
+
+const UAT_ARTIFACT_DIR = process.env.PERF_UAT_ARTIFACT_DIR ?? join('/tmp', `perf-uat-S06-${TS}`);
+mkdirSync(UAT_ARTIFACT_DIR, { recursive: true });
+
+/** One R006 checklist finding for a capture. */
+interface ChecklistFinding {
+  item: string;
+  status: 'PASS' | 'note' | 'FAIL';
+  detail: string;
+}
+
+/**
+ * Seed a realistic single-currency visual fixture (YTD window, all past):
+ * one USD account + 3 setups + 21 trades across Jan..current month-1 with
+ * varied symbols/directions/results so every chart renders populated data
+ * and the KPI semantics show real signed/threshold coloring.
+ */
+async function seedVisualFixture(page: Page, tag = `VIS${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`) {
+  const account = await seedAccount(page, `Visual-${tag}`, 'USD');
+  const setupA = await seedSetup(page, `visual alpha ${tag}`);
+  const setupB = await seedSetup(page, `visual beta ${tag}`);
+  const setupC = await seedSetup(page, `visual gamma ${tag}`);
+  const setups = [setupA.value, setupB.value, setupC.value];
+  const symbols = ['AAAU', 'BBBV', 'CCCW', 'DDDX', 'EEEY'];
+  const y = new Date().getFullYear();
+  const currentMonth = new Date().getMonth(); // 0-based
+  const specs: SeededTradeSpec[] = [];
+  for (let i = 0; i < 21; i++) {
+    const month = i % Math.max(1, currentMonth); // Jan .. month-1 (all past)
+    const day = 5 + ((i * 5) % 19);
+    const direction = i % 2 === 0 ? 'long' : 'short';
+    const win = i % 5 !== 3; // ~80% wins, mixed
+    const entry = 50 + ((i * 17) % 120);
+    const qty = 10 + ((i * 7) % 90);
+    const movePct = win ? 0.03 + ((i % 3) * 0.025) : -(0.02 + ((i % 3) * 0.02));
+    const signedMove = direction === 'short' ? -movePct : movePct;
+    const exit = Math.round(entry * (1 + signedMove) * 100) / 100;
+    specs.push({
+      account: 'A',
+      symbol: symbols[i % symbols.length],
+      direction,
+      setup: setups[i % 3],
+      entryPrice: entry,
+      entryQuantity: qty,
+      exitPrice: exit,
+      exitQuantity: qty,
+      stopPrice: Math.round(entry * (direction === 'long' ? 0.9 : 1.1) * 100) / 100,
+      fees: 2 + (i % 4),
+      executedAt: `${y}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T15:00:00.000Z`,
+    });
+  }
+  for (const t of specs) await seedTrade(page, account.id, t);
+  return { account, tradeCount: specs.length };
+}
+
+/** Set the theme via the localStorage 'theme' script + reload, then wait for the shell + data. */
+async function loadPerformanceWithTheme(page: Page, width: number, theme: 'dark' | 'light') {
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto('/performance');
+  await expect(page).toHaveTitle(/Performance Dashboard/);
+  await page.evaluate((t) => localStorage.setItem('theme', t), theme);
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+  await hideDevOverlay(page);
+  await expect(page.getByRole('button', { name: /Customize/ })).toBeVisible({ timeout: 15_000 });
+  await waitForAnalytics(page);
+  await waitForChartGrid(page);
+}
+
+/** Scroll the app's <main> scroll container to the bottom (second chart row). */
+async function scrollMainToBottom(page: Page) {
+  await page.evaluate(() => {
+    const main = document.querySelector('main');
+    if (main) main.scrollTop = main.scrollHeight;
+  });
+  await page.waitForTimeout(300);
+}
+
+/** The five filter-bar control locators (density + alignment targets). */
+function filterBarControls(page: Page) {
+  return [
+    { name: 'account-scope', loc: page.locator('#perf-account-scope') },
+    { name: 'date-period', loc: page.locator('#perf-date-period') },
+    { name: 'filters', loc: page.getByTestId('filters-trigger') },
+    { name: 'unit', loc: page.locator('[aria-labelledby="perf-unit-label"]') },
+  ];
+}
+
+/** Group rects into rows by shared top edge (2px tolerance). */
+function clusterRows<T extends { top: number }>(items: T[]): T[][] {
+  const sorted = [...items].sort((a, b) => a.top - b.top);
+  const rows: T[][] = [];
+  for (const it of sorted) {
+    const last = rows[rows.length - 1];
+    if (last && Math.abs(it.top - last[0].top) <= 2) last.push(it);
+    else rows.push([it]);
+  }
+  return rows;
+}
+
+/**
+ * Walk the full R006 review checklist for one capture. Records findings for
+ * every item (PASS/note/FAIL) without throwing, so all 6 captures always
+ * complete; the matrix test asserts no FAIL status at the end.
+ */
+async function walkChecklist(
+  page: Page,
+  width: number,
+  theme: 'dark' | 'light',
+): Promise<ChecklistFinding[]> {
+  const f: ChecklistFinding[] = [];
+  const rec = (item: string, status: ChecklistFinding['status'], detail: string) => f.push({ item, status, detail });
+  const note = (item: string, detail: string) => rec(item, 'note', detail);
+  const fail = (item: string, detail: string) => rec(item, 'FAIL', detail);
+
+  // 1. Sidebar continuity
+  const aside = page.locator('aside');
+  const asideVisible = await aside.isVisible();
+  const asideW = (await aside.boundingBox())?.width ?? 0;
+  if (asideVisible && asideW > 0) rec('sidebar continuity', 'PASS', `aside visible, width ${Math.round(asideW)}px`);
+  else fail('sidebar continuity', `aside visible=${asideVisible}, width=${Math.round(asideW)}px`);
+
+  // 2. Page hierarchy: toolbar → filter bar → KPI rail → charts
+  const toolbarBox = await page.getByRole('button', { name: /Customize/ }).boundingBox();
+  const filterLabel = await page.getByText('Accounts:', { exact: true }).boundingBox();
+  const kpiSection = await page.locator('section[aria-label="Performance KPI row"]').boundingBox();
+  const chartsSection = await page.locator('section[aria-label="Performance charts"]').boundingBox();
+  if (toolbarBox && filterLabel && kpiSection && chartsSection && toolbarBox.y < filterLabel.y && filterLabel.y < kpiSection.y && kpiSection.y < chartsSection.y) {
+    rec('page hierarchy', 'PASS', `toolbar(${Math.round(toolbarBox.y)}) < filter(${Math.round(filterLabel.y)}) < KPI(${Math.round(kpiSection.y)}) < charts(${Math.round(chartsSection.y)})`);
+  } else {
+    fail('page hierarchy', `y: toolbar=${Math.round(toolbarBox?.y ?? -1)} filter=${Math.round(filterLabel?.y ?? -1)} KPI=${Math.round(kpiSection?.y ?? -1)} charts=${Math.round(chartsSection?.y ?? -1)}`);
+  }
+
+  // 3. Filter-bar density: every control at the 36px lg height, row-aligned tops
+  const ctrlBoxes: Array<{ name: string; top: number; height: number }> = [];
+  for (const { name, loc } of filterBarControls(page)) {
+    const b = await loc.boundingBox();
+    if (b) ctrlBoxes.push({ name, top: b.y, height: b.height });
+  }
+  const ctrlRows = clusterRows(ctrlBoxes);
+  const heightOk = ctrlBoxes.length === 4 && ctrlBoxes.every((c) => Math.abs(c.height - 36) <= 1.5);
+  const topsOk = ctrlRows.every((row) => Math.max(...row.map((c) => c.top)) - Math.min(...row.map((c) => c.top)) <= 1.5);
+  if (ctrlBoxes.length === 4 && heightOk && topsOk) {
+    rec('filter-bar density', 'PASS', `controls=${ctrlBoxes.map((c) => `${c.name}:${Math.round(c.height)}px`).join(', ')} rows=${ctrlRows.length}`);
+  } else {
+    fail('filter-bar density', `controls=${ctrlBoxes.map((c) => `${c.name}:${Math.round(c.height)}px@y${Math.round(c.top)}`).join(', ') || 'missing'} rows=${ctrlRows.length}`);
+  }
+
+  // 4. KPI equal-height geometry (row-aware: 5 in a row ≥1280, 3+2 at 1024)
+  const cards = page.locator('[data-kpi-card]');
+  const cardCount = await cards.count();
+  const cardGeo = await cards.evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { id: el.getAttribute('data-kpi-card'), top: r.top, bottom: r.bottom, height: r.height };
+    }),
+  );
+  const kpiRows = clusterRows(cardGeo);
+  const kpiGeometryOk =
+    cardCount === 5 &&
+    kpiRows.every((row) => {
+      const tops = row.map((c) => c.top);
+      const bottoms = row.map((c) => c.bottom);
+      return Math.max(...tops) - Math.min(...tops) <= 1 && Math.max(...bottoms) - Math.min(...bottoms) <= 1 && row.every((c) => c.height >= 108 && c.height <= 112);
+    });
+  if (kpiGeometryOk) {
+    rec('KPI equal-height geometry', 'PASS', `cards=5 rows=${kpiRows.length} heights=${cardGeo.map((c) => Math.round(c.height)).join('/')}`);
+  } else {
+    fail('KPI equal-height geometry', `cards=${cardCount} rows=${kpiRows.length} heights=${cardGeo.map((c) => Math.round(c.height)).join('/')}`);
+  }
+
+  // 5. Chart proportions: 6 widgets, uniform row heights, sane header/body split
+  const chartItems = page.locator('section[aria-label="Performance charts"] .react-grid-item');
+  const chartCount = await chartItems.count();
+  const chartHeights = await chartItems.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+  const firstHeader = await chartItems.first().locator('h4').boundingBox();
+  const uniformHeights = chartCount === 6 && Math.max(...chartHeights) - Math.min(...chartHeights) <= 2;
+  const proportionsOk = uniformHeights && firstHeader !== null && firstHeader.height <= 60;
+  if (proportionsOk) {
+    rec('chart proportions', 'PASS', `charts=6 uniform heights=[${chartHeights.map((h) => Math.round(h)).join('/')}] header=${Math.round(firstHeader?.height ?? 0)}px`);
+  } else {
+    fail('chart proportions', `charts=${chartCount} heights=[${chartHeights.map((h) => Math.round(h)).join('/')}] header=${Math.round(firstHeader?.height ?? -1)}px`);
+  }
+
+  // 6. Charts per row (dense R004: 3 at 1440, 2-3 at 1280/1024) + no full-width
+  const chartBoxes = await readChartBoxes(page);
+  const row1 = firstAnalyticalRow(chartBoxes);
+  const gridW = await chartGridWidth(page);
+  const row1Ok = width >= 1440 ? row1.length === 3 : row1.length >= 2 && row1.length <= 3;
+  const widthRatioOk = chartBoxes.every((b) => b.width / gridW > 0.28 && b.width / gridW < 0.45);
+  if (row1Ok && widthRatioOk) {
+    rec('charts per row', 'PASS', `row1=${row1.length} widthRatio=${chartBoxes.map((b) => (b.width / gridW).toFixed(2)).join('/')}`);
+  } else {
+    fail('charts per row', `row1=${row1.length} (expect ${width >= 1440 ? 3 : '2-3'}) widthRatio=${chartBoxes.map((b) => (b.width / gridW).toFixed(2)).join('/')}`);
+  }
+
+  // 7. Empty space usage: no horizontal document overflow
+  const overflowX = await docOverflowX(page);
+  if (overflowX <= 1) rec('empty space usage', 'PASS', `doc overflowX=${overflowX}px, grid ${Math.round(gridW)}px`);
+  else fail('empty space usage', `doc overflowX=${overflowX}px`);
+
+  // 8. Widget chrome: normal mode is free of editing chrome
+  const chromeSelectors = ['[aria-label^="Actions for"]', 'section[aria-label="Performance charts"] .drag-handle', '[aria-label="Resize widget"]', '.chart-edit-frame'];
+  let chromeCount = 0;
+  for (const sel of chromeSelectors) chromeCount += await page.locator(sel).count();
+  if (chromeCount === 0) rec('widget chrome', 'PASS', 'zero editing chrome in normal mode');
+  else fail('widget chrome', `editing chrome elements=${chromeCount}`);
+
+  // 9. Customize affordances (trigger visible; editing chrome captured separately)
+  const customizeVisible = await page.getByRole('button', { name: 'Customize' }).isVisible();
+  if (customizeVisible) rec('Customize affordances', 'PASS', 'Customize trigger visible; editing chrome captured in dedicated 1440 dark/light captures');
+  else fail('Customize affordances', 'Customize trigger not visible');
+
+  // 10. Alignment: KPI value tops aligned within each row; toolbar buttons at 36px
+  const valueRects = await page.locator('[data-kpi-value]').evaluateAll((els) => els.map((el) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height })));
+  const valueRows = clusterRows(valueRects);
+  const valueAlignOk = valueRows.every((row) => Math.max(...row.map((v) => v.top)) - Math.min(...row.map((v) => v.top)) <= 1.5);
+  const customizeBtn = await page.getByRole('button', { name: 'Customize' }).boundingBox();
+  const btn36 = customizeBtn !== null && Math.abs(customizeBtn.height - 36) <= 1.5;
+  if (valueAlignOk && btn36) rec('alignment', 'PASS', `KPI value rows=${valueRows.length} aligned; Customize btn ${Math.round(customizeBtn?.height ?? 0)}px`);
+  else fail('alignment', `valueRows=${valueRows.length} aligned=${valueAlignOk} btnH=${Math.round(customizeBtn?.height ?? -1)}`);
+
+  // 11. Spacing rhythm: uniform KPI card gap (gap-4 = 16px)
+  const cardRects = await cards.evaluateAll((els) => els.map((el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, right: r.right, top: r.top };
+  }));
+  const firstRowCards = clusterRows(cardRects)[0] ?? [];
+  const sorted = [...firstRowCards].sort((a, b) => a.left - b.left);
+  const gaps: number[] = [];
+  for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i].left - sorted[i - 1].right);
+  const rhythmOk = gaps.length > 0 && gaps.every((g) => Math.abs(g - 16) <= 2);
+  if (rhythmOk) rec('spacing rhythm', 'PASS', `KPI card gaps=[${gaps.map((g) => Math.round(g)).join(',')}]px (gap-4=16)`);
+  else note('spacing rhythm', `KPI card gaps=[${gaps.map((g) => Math.round(g)).join(',')}]px`);
+
+  // 12. Responsive wrapping
+  const kpiRowCount = kpiRows.length;
+  const wrapOk = width >= 1280 ? kpiRowCount === 1 : kpiRowCount === 2;
+  if (wrapOk && row1Ok) rec('responsive wrapping', 'PASS', `KPI rows=${kpiRowCount} (expect ${width >= 1280 ? 1 : 2}), charts row1=${row1.length}`);
+  else fail('responsive wrapping', `KPI rows=${kpiRowCount} (expect ${width >= 1280 ? 1 : 2}), charts row1=${row1.length}`);
+
+  // 13. Empty/loading states: populated captures show data, no skeletons
+  const skeletonCount = await page.locator('[data-testid^="kpi-skeleton-"], [data-testid^="chart-skeleton-"]').count();
+  const netPnl = await page.locator('[data-kpi-value="net-pnl"]').textContent();
+  if (skeletonCount === 0 && netPnl && netPnl !== '—') rec('empty/loading states', 'PASS', `no skeletons; net-pnl=${netPnl} (loading/empty captured separately)`);
+  else fail('empty/loading states', `skeletons=${skeletonCount} netPnl=${netPnl}`);
+
+  // 14. Dark/light quality: .dark class matches theme; card bg resolves per theme
+  const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+  const cardBg = await page.locator('[data-kpi-card]').first().evaluate((el) => getComputedStyle(el).backgroundColor);
+  const themeOk = isDark === (theme === 'dark');
+  if (themeOk) rec('dark/light quality', 'PASS', `theme=${theme} html.dark=${isDark} cardBg=${cardBg}`);
+  else fail('dark/light quality', `theme=${theme} html.dark=${isDark} cardBg=${cardBg}`);
+
+  return f;
+}
+
+/** Render the findings as a markdown table section for the artifact record. */
+function renderFindingsMd(captures: Array<{ name: string; findings: ChecklistFinding[] }>): string {
+  const lines: string[] = ['# S06 (R006) /performance Visual UAT Matrix — findings', ''];
+  for (const { name, findings } of captures) {
+    lines.push(`## ${name}`, '');
+    lines.push('| Checklist item | Status | Detail |', '|---|---|---|');
+    for (const f of findings) lines.push(`| ${f.item} | ${f.status} | ${f.detail} |`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+test.describe('S06 visual UAT matrix (R006)', () => {
+  test('captures the 6-combo matrix (1440/1280/1024 × dark/light) with checklist findings', async ({ page }) => {
+    await seedVisualFixture(page);
+
+    const combos: Array<{ width: number; theme: 'dark' | 'light' }> = [
+      { width: 1440, theme: 'dark' },
+      { width: 1440, theme: 'light' },
+      { width: 1280, theme: 'dark' },
+      { width: 1280, theme: 'light' },
+      { width: 1024, theme: 'dark' },
+      { width: 1024, theme: 'light' },
+    ];
+    const captures: Array<{ name: string; findings: ChecklistFinding[] }> = [];
+    const asideWidths = new Set<number>();
+    const cardBgs: Record<string, string> = {};
+
+    for (const { width, theme } of combos) {
+      await loadPerformanceWithTheme(page, width, theme);
+      const findings = await walkChecklist(page, width, theme);
+      const asideW = (await page.locator('aside').boundingBox())?.width ?? 0;
+      asideWidths.add(asideW);
+      const cardBg = await page.locator('[data-kpi-card]').first().evaluate((el) => getComputedStyle(el).backgroundColor);
+      cardBgs[`${width}-${theme}`] = cardBg;
+
+      const name = `${width}-${theme}`;
+      const topFile = join(UAT_ARTIFACT_DIR, `${name}-top.png`);
+      await page.screenshot({ path: topFile });
+      await scrollMainToBottom(page);
+      const bottomFile = join(UAT_ARTIFACT_DIR, `${name}-bottom.png`);
+      await page.screenshot({ path: bottomFile });
+      captures.push({ name, findings });
+      console.log(`[S06-UAT] ${name}: top=${topFile} bottom=${bottomFile}`);
+    }
+
+    // Cross-capture continuity: sidebar width stable, themes resolve to different card bg.
+    const sidebarContinuityOk = asideWidths.size === 1;
+    if (!sidebarContinuityOk) {
+      captures.push({ name: 'cross-capture', findings: [{ item: 'sidebar continuity (cross)', status: 'FAIL', detail: `aside widths varied: ${[...asideWidths].map((w) => Math.round(w)).join(', ')}px` }] });
+    }
+    for (const width of [1440, 1280, 1024]) {
+      if (cardBgs[`${width}-dark`] === cardBgs[`${width}-light`]) {
+        captures.push({ name: `cross-${width}`, findings: [{ item: 'dark/light quality (cross)', status: 'FAIL', detail: `card bg identical in dark+light: ${cardBgs[`${width}-dark`]}` }] });
+      }
+    }
+
+    writeFileSync(join(UAT_ARTIFACT_DIR, 'findings.md'), renderFindingsMd(captures));
+    writeFileSync(join(UAT_ARTIFACT_DIR, 'captures.json'), JSON.stringify(captures, null, 2));
+
+    const allFailing = captures.flatMap((c) => c.findings.filter((f) => f.status === 'FAIL'));
+    const passCount = captures.flatMap((c) => c.findings).filter((f) => f.status === 'PASS').length;
+    console.log(`[S06-UAT] artifact dir: ${UAT_ARTIFACT_DIR} (passes=${passCount}, fails=${allFailing.length})`);
+    expect(allFailing, JSON.stringify(allFailing, null, 2)).toEqual([]);
+
+    // 6 primary captures (top) + 6 bottom captures exist.
+    for (const { width, theme } of combos) {
+      expect(existsSync(join(UAT_ARTIFACT_DIR, `${width}-${theme}-top.png`))).toBeTruthy();
+      expect(existsSync(join(UAT_ARTIFACT_DIR, `${width}-${theme}-bottom.png`))).toBeTruthy();
+    }
+  });
+
+  test('captures Customize mode at 1440 dark and light with editing chrome verified', async ({ page }) => {
+    await seedVisualFixture(page);
+    for (const theme of ['dark', 'light'] as const) {
+      await loadPerformanceWithTheme(page, 1440, theme);
+      await page.getByRole('button', { name: 'Customize' }).click();
+      await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+      await expect(page.getByText('+ Add KPI')).toBeVisible();
+      await expect(page.getByText('+ Add Chart')).toBeVisible();
+      await expect(page.locator('[aria-label^="Actions for"]')).toHaveCount(11);
+      await expect(page.locator('section[aria-label="Performance charts"] .drag-handle')).toHaveCount(6);
+      await expect(page.locator('[aria-label="Resize widget"]')).toHaveCount(6);
+      await expect(page.locator('.chart-edit-frame')).toHaveCount(6);
+      const file = join(UAT_ARTIFACT_DIR, `customize-1440-${theme}.png`);
+      await page.screenshot({ path: file });
+      console.log(`[S06-UAT] customize-1440-${theme}: ${file}`);
+      // Done restores chrome-free normal mode.
+      await page.getByRole('button', { name: 'Done' }).click();
+      await expect(page.locator('[aria-label^="Actions for"]')).toHaveCount(0);
+      await expect(page.locator('.chart-edit-frame')).toHaveCount(0);
+    }
+  });
+
+  test('captures loading and empty states at 1440', async ({ page }) => {
+    await seedVisualFixture(page);
+
+    // ── Loading state: delay the analytics response, capture skeletons. ──
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/performance');
+    await page.evaluate(() => localStorage.setItem('theme', 'dark'));
+    await page.route('**/api/performance/analytics*', async (route) => {
+      await new Promise((r) => setTimeout(r, 4000));
+      await route.continue();
+    });
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+    await hideDevOverlay(page);
+    await expect(page.getByRole('button', { name: /Customize/ })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid^="kpi-skeleton-"]').first()).toBeVisible({ timeout: 10_000 });
+    const loadingFile = join(UAT_ARTIFACT_DIR, 'loading-1440-dark.png');
+    await page.screenshot({ path: loadingFile });
+    console.log(`[S06-UAT] loading-1440-dark: ${loadingFile}`);
+    await page.unroute('**/api/performance/analytics*');
+    await waitForAnalytics(page);
+    await expect(page.locator('[data-testid^="kpi-skeleton-"]')).toHaveCount(0, { timeout: 60_000 });
+
+    // ── Empty state: custom 2020 period → em dashes + 'No data for this period'. ──
+    await page.getByTestId('filters-trigger'); // ensure filter bar mounted
+    await page.locator('#perf-date-period').click();
+    await page.getByRole('option', { name: 'Custom' }).click();
+    await page.getByLabel('Custom from date').fill('2020-01-01');
+    await page.getByLabel('Custom to date').fill('2020-12-31');
+    await page.getByRole('button', { name: 'Apply' }).click();
+    for (const id of KPI_IDS) {
+      await expect(page.locator(`[data-kpi-value="${id}"]`)).toHaveText('—', { timeout: 15_000 });
+    }
+    await expect(page.getByText('No data for this period')).toHaveCount(6, { timeout: 15_000 });
+    const emptyFile = join(UAT_ARTIFACT_DIR, 'empty-1440-dark.png');
+    await page.screenshot({ path: emptyFile });
+    console.log(`[S06-UAT] empty-1440-dark: ${emptyFile}`);
   });
 });
