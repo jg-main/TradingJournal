@@ -5,6 +5,7 @@ import { AlertCircle, ArrowLeft, Banknote, CheckCircle2, Loader2, Wallet } from 
 import { Button } from '@/components/ui/button';
 import { extractApiErrorMessage } from '@/lib/error-utils';
 import { cn } from '@/lib/utils';
+import { OpeningBalanceForm } from './opening-balance-form';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -79,8 +80,9 @@ function PathCard({ icon, title, description, onClick, disabled, busy }: PathCar
  *
  * Rendered by AccountOverview for draft accounts (inactive with no financial
  * events and no positions). Presents two paths:
- * - "Add opening balance" — hands off to the opening-balance panel whose form
- *   (OpeningBalanceForm) is wired in S02/T03.
+ * - "Add opening balance" — hands off to the opening-balance panel with
+ *   OpeningBalanceForm, which posts an `opening_balance` financial event and
+ *   reports success through `onInitialized`.
  * - "Start with zero" — activates the account via PUT /api/accounts/:id with
  *   `{ isActive: true }`, then reports success through `onInitialized`.
  *
@@ -138,11 +140,11 @@ export function AccountInitialization({
             as an editable account property.
           </p>
 
-          {/* OpeningBalanceForm (amount, optional description and date) is
-              mounted here in S02/T03. */}
-          <div className="mt-4 rounded-md border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-            Amount, description, and date are collected here.
-          </div>
+          <OpeningBalanceForm
+            accountId={accountId}
+            currency={currency}
+            onInitialized={onInitialized}
+          />
 
           <Button
             type="button"
