@@ -44,6 +44,16 @@ test('verifies the refined KPI presentation metrics in dark mode', async ({ page
       const vcs = value ? getComputedStyle(value) : null;
       const label = Array.from(c.querySelectorAll('div')).find((d) => d.className?.includes?.('text-xs')) as HTMLElement | null;
       const tcs = label ? getComputedStyle(label) : null;
+      // Supporting caption text (labels + values) inside the slot.
+      const captions = Array.from(c.querySelectorAll('[data-testid="kpi-pnl-split-captions"] span')) as HTMLElement[];
+      // Horizontal clipping check: a text element is clipped when its content
+      // overflows its own box (scrollWidth > clientWidth) or its rect extends
+      // past the card's right edge.
+      const clipped = captions.filter((el) => {
+        const er = el.getBoundingClientRect();
+        const overflowX = el.scrollWidth - el.clientWidth;
+        return overflowX > 0.5 || er.right > r.right + 0.5 || er.left < r.left - 0.5;
+      }).map((el) => el.textContent);
       return {
         id: c.getAttribute('data-kpi-card'),
         h: Math.round(r.height),
@@ -59,6 +69,8 @@ test('verifies the refined KPI presentation metrics in dark mode', async ({ page
         slotKind: slot?.querySelector('[data-testid="kpi-sparkline"]') ? 'sparkline'
           : slot?.querySelector('[data-testid="kpi-donut"]') ? 'donut'
             : slot?.querySelector('[data-testid="kpi-pnl-split-bar"]') ? 'pnl-split' : 'none',
+        captionTexts: captions.map((el) => el.textContent ?? ''),
+        clippedTexts: clipped,
       };
     });
     // Slot containment: every slot rect inside its card rect.
@@ -69,6 +81,8 @@ test('verifies the refined KPI presentation metrics in dark mode', async ({ page
       const cr = card.getBoundingClientRect();
       return sr.top >= cr.top - 0.5 && sr.bottom <= cr.bottom + 0.5 && sr.left >= cr.left - 0.5 && sr.right <= cr.right + 0.5;
     });
+    // No document-level horizontal overflow from any KPI card.
+    out.docOverflowX = document.documentElement.scrollWidth - document.documentElement.clientWidth;
     out.isDark = document.documentElement.classList.contains('dark');
     return out;
   });
@@ -102,4 +116,34 @@ test('verifies the refined KPI presentation metrics in dark mode', async ({ page
   // Slot containment: all inside.
   expect((report.containment as boolean[]).every(Boolean)).toBe(true);
   expect(report.isDark).toBe(true);
+
+  // ── Corrective Task 1A assertions ────────────────────────────────────────
+
+  // 1. Payoff Ratio supporting labels are present and canonical values render.
+  const payoff = byId['payoff-ratio'] as Record<string, unknown>;
+  expect(payoff.captionTexts).toContain('Avg win');
+  expect(payoff.captionTexts).toContain('Avg loss');
+  expect((payoff.captionTexts as string[]).some((t) => /^\$[\d,]+$/.test(t))).toBe(true);
+  expect((payoff.captionTexts as string[]).some((t) => /^-\$[\d,]+$/.test(t))).toBe(true);
+
+  // 2. At 1440px: no supporting text element is horizontally clipped in ANY
+  //    default KPI card (no overflowX, no rect past the card edge).
+  const clipped = cards.flatMap((c) => (c.clippedTexts as string[] | undefined) ?? []);
+  expect(clipped).toEqual([]);
+
+  // 3. Profit Factor supporting content is within its card bounds.
+  const pf = byId['profit-factor'] as Record<string, unknown>;
+  expect(pf.captionTexts).toContain('Profit');
+  expect(pf.captionTexts).toContain('Loss');
+  expect((pf.clippedTexts as string[]).length).toBe(0);
+
+  // 4. All five KPI cards remain equal 128px height (already asserted for
+  //    equality; pin the exact window here).
+  for (const h of heights) {
+    expect(h).toBeGreaterThanOrEqual(124);
+    expect(h).toBeLessThanOrEqual(132);
+  }
+
+  // 5. No KPI card causes document-level horizontal overflow at 1440px.
+  expect(report.docOverflowX as number).toBeLessThanOrEqual(0);
 });

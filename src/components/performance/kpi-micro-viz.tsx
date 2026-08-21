@@ -153,8 +153,11 @@ export interface PnlSplitBarProps {
   negativeLabel?: string;
   positiveValue?: string;
   negativeValue?: string;
-  /** Render the caption row (labels + values) below the bar. */
+  /** Render the caption area (labels + values) below the bar. */
   showCaptions?: boolean;
+  /** 'stacked' — label above value in two columns (default, space-safe);
+   *  'inline' — label and value on one row per side. */
+  captionLayout?: 'stacked' | 'inline';
 }
 
 /**
@@ -162,8 +165,13 @@ export interface PnlSplitBarProps {
  * positive magnitude (profit) and a negative magnitude (loss) using the
  * semantic financial colors. Widths are proportional to the two magnitudes;
  * a center divider marks the boundary. Used by Profit Factor (gross profit vs
- * gross loss) and Payoff Ratio (average win vs average loss). When captions
- * are enabled, tiny labels/values render beneath the bar.
+ * gross loss) and Payoff Ratio (average win vs average loss).
+ *
+ * Caption area (when enabled) renders two fully readable columns — positive
+ * side left-aligned, negative side right-aligned, values in tabular numerals
+ * with semantic colors — without truncation or decorative bullets. The
+ * default 'stacked' layout (label above value) stays within a 5-across card
+ * at 1280-1440px; 'inline' puts label and value on one row per side.
  *
  * Guard: renders nothing when both magnitudes are non-positive.
  */
@@ -175,6 +183,7 @@ export function PnlSplitBar({
   positiveValue,
   negativeValue,
   showCaptions = false,
+  captionLayout = 'stacked',
 }: PnlSplitBarProps) {
   const total = positive + negative;
   if (total <= 0 || positive <= 0 || negative <= 0) return null;
@@ -193,16 +202,37 @@ export function PnlSplitBar({
         <div className="h-full bg-negative" style={{ width: `${negPct}%` }} />
       </div>
       {showCaptions && (positiveLabel || negativeLabel) && (
-        <div className="mt-1 flex items-center justify-between gap-2 text-xs leading-none text-muted-foreground tabular-nums">
-          <span className="flex min-w-0 items-center gap-1">
-            <span className="size-1.5 shrink-0 rounded-full bg-positive" aria-hidden />
-            <span className="truncate">{positiveLabel}</span>
-            {positiveValue !== undefined && <span className="truncate text-positive">{positiveValue}</span>}
+        <div
+          data-testid="kpi-pnl-split-captions"
+          className={
+            captionLayout === 'inline'
+              ? 'mt-1 flex items-baseline justify-between gap-3 text-xs leading-none tabular-nums'
+              : 'mt-1 grid grid-cols-2 gap-3 text-xs leading-none tabular-nums'
+          }
+        >
+          <span
+            className={
+              captionLayout === 'inline'
+                ? 'flex min-w-0 items-baseline gap-1.5 whitespace-nowrap'
+                : 'flex min-w-0 flex-col items-start gap-0.5'
+            }
+          >
+            <span className="max-w-full text-muted-foreground">{positiveLabel}</span>
+            {positiveValue !== undefined && (
+              <span className="max-w-full whitespace-nowrap text-positive">{positiveValue}</span>
+            )}
           </span>
-          <span className="flex min-w-0 items-center gap-1">
-            {negativeValue !== undefined && <span className="truncate text-negative">{negativeValue}</span>}
-            <span className="truncate">{negativeLabel}</span>
-            <span className="size-1.5 shrink-0 rounded-full bg-negative" aria-hidden />
+          <span
+            className={
+              captionLayout === 'inline'
+                ? 'flex min-w-0 items-baseline justify-end gap-1.5 whitespace-nowrap'
+                : 'flex min-w-0 flex-col items-end gap-0.5'
+            }
+          >
+            {negativeValue !== undefined && (
+              <span className="max-w-full whitespace-nowrap text-negative">{negativeValue}</span>
+            )}
+            <span className="max-w-full text-muted-foreground">{negativeLabel}</span>
           </span>
         </div>
       )}
@@ -223,6 +253,7 @@ export interface MicroVizProps {
   positiveValue?: string;
   negativeValue?: string;
   showCaptions?: boolean;
+  captionLayout?: 'stacked' | 'inline';
 }
 
 /**
@@ -245,6 +276,7 @@ export function MicroViz({
   positiveValue,
   negativeValue,
   showCaptions,
+  captionLayout,
 }: MicroVizProps) {
   if (kind === 'sparkline') {
     if (!values || values.length < 2) return null;
@@ -265,6 +297,7 @@ export function MicroViz({
         positiveValue={positiveValue}
         negativeValue={negativeValue}
         showCaptions={showCaptions}
+        captionLayout={captionLayout}
       />
     );
   }

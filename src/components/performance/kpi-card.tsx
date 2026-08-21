@@ -55,6 +55,8 @@ interface KpiSupportingData {
   positiveValue?: string;
   negativeValue?: string;
   showCaptions?: boolean;
+  /** Caption layout: stacked (label above value) or inline (label+value on one row). */
+  captionLayout?: 'stacked' | 'inline';
 }
 
 /**
@@ -94,6 +96,9 @@ function resolveSupportingData(
         positiveValue: formatCurrencyValue(grossProfit),
         negativeValue: formatCurrencyValue(grossLoss),
         showCaptions: true,
+        // Two-sided stacked captions keep both label and value fully readable
+        // at 5-across widths (1280-1440px) even with large gross amounts.
+        captionLayout: 'stacked',
       };
     }
     case 'payoff-ratio': {
@@ -103,11 +108,14 @@ function resolveSupportingData(
       if (avgWin === null || avgLoss === null || avgWin <= 0 || avgLoss <= 0) return null;
       return {
         pnlSplit: { positive: avgWin, negative: avgLoss },
-        positiveLabel: 'Avg Win',
-        negativeLabel: 'Avg Loss',
+        positiveLabel: 'Avg win',
+        negativeLabel: 'Avg loss',
         positiveValue: formatCurrencyValue(avgWin),
         negativeValue: `-${formatCurrencyValue(avgLoss)}`,
         showCaptions: true,
+        // Two-sided stacked captions: "Avg win / +$3,363" left, "Avg loss /
+        // -$1,373" right — fully readable, no truncation.
+        captionLayout: 'stacked',
       };
     }
     default:
@@ -180,6 +188,7 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
               positiveValue: support.positiveValue,
               negativeValue: support.negativeValue,
               showCaptions: support.showCaptions,
+              captionLayout: support.captionLayout ?? 'stacked',
             })
           : null
     : null;
@@ -251,6 +260,7 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
                 positiveValue={microViz.positiveValue}
                 negativeValue={microViz.negativeValue}
                 showCaptions={microViz.showCaptions}
+                captionLayout={microViz.captionLayout}
               />
             </div>
           ) : (

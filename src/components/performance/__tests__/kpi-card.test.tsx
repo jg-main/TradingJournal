@@ -422,7 +422,7 @@ describe('KpiCard refined presentation', () => {
     expect(container.querySelector('[data-kpi-microviz-slot]')).toBeNull();
   });
 
-  it('Payoff Ratio renders the win/loss relationship bar only when avgWin/avgLoss exist', async () => {
+  it('Payoff Ratio renders the win/loss relationship bar with readable two-sided captions', async () => {
     globalThis.fetch = vi
       .fn()
       .mockResolvedValue(okResponse(analyticsWith({
@@ -434,11 +434,48 @@ describe('KpiCard refined presentation', () => {
     await loadData();
     const bar = container.querySelector('[data-testid="kpi-pnl-split-bar"]');
     expect(bar).not.toBeNull();
-    // Captions carry the Avg Win / Avg Loss relationship.
-    expect(screen.getByText('Avg Win')).toBeDefined();
-    expect(screen.getByText('Avg Loss')).toBeDefined();
+    // Two-sided captions carry the required 'Avg win' / 'Avg loss' labels with
+    // the canonical average-win and average-loss values.
+    expect(screen.getByText('Avg win')).toBeDefined();
+    expect(screen.getByText('Avg loss')).toBeDefined();
     expect(screen.getByText('$363')).toBeDefined();
     expect(screen.getByText('-$263')).toBeDefined();
+    // No truncation classes on the caption labels or values: supporting text
+    // must stay fully readable at 1440px without ellipsis.
+    const captions = container.querySelector('[data-testid="kpi-pnl-split-captions"]') as HTMLElement;
+    expect(captions).not.toBeNull();
+    const captionText = Array.from(captions.querySelectorAll('span'));
+    expect(captionText.some((s) => s.textContent === 'Avg win' && !s.className.includes('truncate'))).toBe(true);
+    expect(captionText.some((s) => s.textContent === 'Avg loss' && !s.className.includes('truncate'))).toBe(true);
+    expect(captionText.some((s) => s.textContent === '$363' && !s.className.includes('truncate'))).toBe(true);
+    expect(captionText.some((s) => s.textContent === '-$263' && !s.className.includes('truncate'))).toBe(true);
+    // Stacked layout: label above value in two columns (left/right aligned).
+    expect(captions.className).toContain('grid-cols-2');
+  });
+
+  it('Profit Factor uses stacked captions with canonical values (no truncation at 5-across)', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({
+        profitFactor: 1.5,
+        grossPnl: { grossProfit: 1500, grossLoss: 1000, grossPnl: 500 },
+      })));
+    const { container } = renderCard('profit-factor');
+    await loadData();
+    const bar = container.querySelector('[data-testid="kpi-pnl-split-bar"]');
+    expect(bar).not.toBeNull();
+    // Profit / Loss labels with canonical gross profit/loss values.
+    expect(screen.getByText('Profit')).toBeDefined();
+    expect(screen.getByText('Loss')).toBeDefined();
+    expect(screen.getByText('$1,500')).toBeDefined();
+    expect(screen.getByText('$1,000')).toBeDefined();
+    // Stacked two-column captions (label above value) — space-safe at
+    // 1280-1440px with large gross amounts; no truncation on any span.
+    const captions = container.querySelector('[data-testid="kpi-pnl-split-captions"]') as HTMLElement;
+    expect(captions).not.toBeNull();
+    expect(captions.className).toContain('grid-cols-2');
+    const captionText = Array.from(captions.querySelectorAll('span'));
+    expect(captionText.every((s) => !s.className.includes('truncate'))).toBe(true);
   });
 
   it('Payoff Ratio stays value-first when avgWin/avgLoss are missing', async () => {

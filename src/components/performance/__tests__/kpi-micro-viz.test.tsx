@@ -70,22 +70,45 @@ describe('kpi-micro-viz', () => {
       expect(c2.querySelector('[data-testid="kpi-pnl-split-bar"]')).toBeNull();
     });
 
-    it('renders captions (labels + values) when enabled', () => {
-      render(
+    it('renders stacked captions (labels + values) when enabled', () => {
+      const { container } = render(
         <PnlSplitBar
           positive={363}
           negative={263}
-          positiveLabel="Avg Win"
-          negativeLabel="Avg Loss"
+          positiveLabel="Avg win"
+          negativeLabel="Avg loss"
           positiveValue="$363"
           negativeValue="-$263"
           showCaptions
         />,
       );
-      expect(screen.getByText('Avg Win')).toBeDefined();
-      expect(screen.getByText('Avg Loss')).toBeDefined();
+      expect(screen.getByText('Avg win')).toBeDefined();
+      expect(screen.getByText('Avg loss')).toBeDefined();
       expect(screen.getByText('$363')).toBeDefined();
       expect(screen.getByText('-$263')).toBeDefined();
+      // Stacked two-column layout: label above value, no truncation.
+      const captions = container.querySelector('[data-testid="kpi-pnl-split-captions"]') as HTMLElement;
+      expect(captions.className).toContain('grid-cols-2');
+      expect(Array.from(captions.querySelectorAll('span')).every((s) => !s.className.includes('truncate'))).toBe(true);
+    });
+
+    it('renders inline captions (label + value on one row) when requested', () => {
+      render(
+        <PnlSplitBar
+          positive={1500}
+          negative={1000}
+          positiveLabel="Profit"
+          negativeLabel="Loss"
+          positiveValue="$1,500"
+          negativeValue="$1,000"
+          showCaptions
+          captionLayout="inline"
+        />,
+      );
+      expect(screen.getByText('Profit')).toBeDefined();
+      expect(screen.getByText('Loss')).toBeDefined();
+      expect(screen.getByText('$1,500')).toBeDefined();
+      expect(screen.getByText('$1,000')).toBeDefined();
     });
   });
 
