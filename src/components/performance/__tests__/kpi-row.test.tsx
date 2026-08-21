@@ -24,13 +24,17 @@ function renderKpiRow(editMode?: boolean) {
 }
 
 describe('KpiRow', () => {
-  it('renders default KPI instances', () => {
+  it('renders the curated five default KPI cards', () => {
     renderKpiRow();
-    // Default dashboard: Net P&L, Win Rate, Profit Factor, Average R, Total Trades, Expectancy
+    // Curated default rail (R003): Net P&L, Win Rate, Profit Factor, Average R, Payoff Ratio.
     expect(screen.getByText('Net P&L')).toBeDefined();
     expect(screen.getByText('Win Rate')).toBeDefined();
     expect(screen.getByText('Profit Factor')).toBeDefined();
     expect(screen.getByText('Average R')).toBeDefined();
+    expect(screen.getByText('Payoff Ratio')).toBeDefined();
+    // Gross P&L and Total Trades are no longer on the default rail.
+    expect(screen.queryByText('Gross P&L')).toBeNull();
+    expect(screen.queryByText('Total Trades')).toBeNull();
   });
 
   it('renders add/remove/reset controls only in edit mode', () => {
@@ -86,15 +90,15 @@ describe('KpiRow', () => {
         el.getAttribute('data-kpi-value'),
       );
     expect(order()[0]).toBe('net-pnl');
-    expect(order()[1]).toBe('gross-pnl');
+    expect(order()[1]).toBe('win-rate');
 
     fireEvent.click(screen.getByLabelText('Move net-pnl down'));
-    expect(order()[0]).toBe('gross-pnl');
+    expect(order()[0]).toBe('win-rate');
     expect(order()[1]).toBe('net-pnl');
 
     // Boundary: first card's up control and last card's down control are disabled.
-    expect(screen.getByLabelText('Move gross-pnl up')).toBeDefined();
-    const lastDown = screen.getByLabelText('Move average-r down') as HTMLButtonElement;
+    expect(screen.getByLabelText('Move win-rate up')).toBeDefined();
+    const lastDown = screen.getByLabelText('Move payoff-ratio down') as HTMLButtonElement;
     expect(lastDown.disabled).toBe(true);
   });
 

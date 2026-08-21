@@ -86,7 +86,7 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     minSize: { w: 2, h: 2 },
     maxSize: { w: 6, h: 3 },
     canDuplicate: true,
-    defaultVisible: true,
+    defaultVisible: false,
   },
   [PERFORMANCE_WIDGET_IDS.TOTAL_TRADES]: {
     id: PERFORMANCE_WIDGET_IDS.TOTAL_TRADES,
@@ -98,7 +98,7 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     minSize: { w: 2, h: 2 },
     maxSize: { w: 4, h: 3 },
     canDuplicate: true,
-    defaultVisible: true,
+    defaultVisible: false,
   },
   [PERFORMANCE_WIDGET_IDS.WIN_RATE]: {
     id: PERFORMANCE_WIDGET_IDS.WIN_RATE,
@@ -206,7 +206,7 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     minSize: { w: 2, h: 2 },
     maxSize: { w: 4, h: 3 },
     canDuplicate: true,
-    defaultVisible: false,
+    defaultVisible: true,
   },
   [PERFORMANCE_WIDGET_IDS.LARGEST_WIN]: {
     id: PERFORMANCE_WIDGET_IDS.LARGEST_WIN,

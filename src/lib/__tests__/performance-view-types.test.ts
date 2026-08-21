@@ -242,6 +242,19 @@ describe('performance-view-types', () => {
       expect(validatePerformanceDashboardConfig(config, getValidWidgetTypes())).toBeNull();
     });
 
+    it('default KPI instances are exactly the curated five (R003)', () => {
+      // Curated rail: Net P&L, Win Rate, Profit Factor, Average R, Payoff Ratio.
+      // Gross P&L and Total Trades are registered but no longer default-visible.
+      const kpiDefaults = getDefaultWidgetInstances('kpi');
+      expect(kpiDefaults.map((i) => i.widgetType)).toEqual([
+        'net-pnl',
+        'win-rate',
+        'profit-factor',
+        'average-r',
+        'payoff-ratio',
+      ]);
+    });
+
     it('cloneDashboardConfig produces a deep-independent copy', () => {
       const config: PerformanceDashboardConfig = {
         version: PERFORMANCE_DASHBOARD_CONFIG_VERSION,
