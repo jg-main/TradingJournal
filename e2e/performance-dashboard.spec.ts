@@ -817,65 +817,167 @@ test.describe('KPI rail equal geometry (S03 R003)', () => {
 });
 
 test.describe('KPI reorder persistence (S03 R003)', () => {
-  test('Customize reorder → Save → reload restores the saved card order', async ({ page }) => {
+  test('direct drag reorder → Save → reload restores order; dashboards keep independent orders', async ({ page }) => {
     page.on('dialog', (dialog) => dialog.accept());
 
     await seedPropagationFixture(page);
+    await page.addInitScript(() => localStorage.setItem('theme', 'dark'));
     await gotoPerformance(page);
     await waitForAnalytics(page);
+    // Let the mount-time API hydrate settle: its GET /api/dashboard/views
+    // response REPLACES the dashboards state, so any create/save racing it
+    // would be dropped and the active dashboard fall back to the system
+    // default (documented persistence gotcha). Network-idle guarantees the
+    // hydrate response has landed before the dashboard work starts.
+    await page.waitForLoadState('networkidle');
 
-    const dashName = `Reorder UAT ${TS}`;
+    // CT6 evidence: the normal KPI rail at 1440 dark (approved presentation,
+    // no drag affordance).
+    await page.screenshot({ path: '/tmp/ct6-kpi-normal-1440-dark.png' });
 
-    // Create a USER dashboard. The system default is immutable (saveState skips
-    // isSystem dashboards), so reorder persistence is proven on a user-owned
-    // dashboard, which is persisted to /api/dashboard/views + localStorage.
-    await page.locator('button', { hasText: 'Performance Default' }).click();
-    await page.getByText('+ New Dashboard').click();
-    await page.getByPlaceholder('Dashboard name').fill(dashName);
-    const createResp = page.waitForResponse(
-      (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
-    );
-    await page.getByRole('button', { name: 'OK', exact: true }).click();
-    await createResp;
-    await expect(page.locator('button', { hasText: dashName })).toBeVisible();
+    const dashA = `Reorder A ${TS}`;
+    const dashB = `Reorder B ${TS}`;
 
-    // Enter Customize: the five curated cards in registry order.
+    /** Create a user dashboard (system default is immutable for persistence).
+     *  `currentName` is the switcher's active dashboard before opening it. */
+    async function createDashboard(name: string, currentName: string) {
+      await page.locator('button', { hasText: currentName }).click();
+      await page.getByText('+ New Dashboard').click();
+      await page.getByPlaceholder('Dashboard name').fill(name);
+      const createResp = page.waitForResponse(
+        (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
+      );
+      await page.getByRole('button', { name: 'OK', exact: true }).click();
+      await createResp;
+      await expect(page.locator('button', { hasText: name })).toBeVisible();
+    }
+
+    /** Real pointer drag: grab the source card's drag handle and drop it onto
+     *  the target card's center. Not an arrow-click emulation. */
+    async function dragKpi(from: string, to: string) {
+      const handle = page.locator(`[data-kpi-card="${from}"] [data-kpi-drag-handle]`);
+      await expect(handle).toBeVisible();
+      const handleBox = (await handle.boundingBox())!;
+      const targetBox = (await page.locator(`[data-kpi-card="${to}"]`).boundingBox())!;
+      await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+        steps: 30,
+      });
+      await page.mouse.up();
+      // dnd-kit suppresses the click event for ~50ms after a drag ends (to
+      // avoid accidental activation of the drop target); wait it out so the
+      // subsequent Done/Save clicks are never swallowed.
+      await page.waitForTimeout(200);
+      await expect.poll(() => readKpiOrder(page)).not.toEqual(KPI_IDS);
+    }
+
+    /** Save the current Customize state and wait for the server write. */
+    async function saveCustomize() {
+      const saveResp = page.waitForResponse(
+        (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
+      );
+      await page.getByRole('button', { name: 'Save' }).click();
+      await saveResp;
+    }
+
+    // ── Dashboard A: drag Payoff Ratio between Net P&L and Win Rate ──────
+    await createDashboard(dashA, 'Performance Default');
     await page.getByRole('button', { name: 'Customize' }).click();
     await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
     await expect(page.locator('[data-kpi-card]')).toHaveCount(5);
     expect(await readKpiOrder(page)).toEqual(KPI_IDS);
+    // CT6 evidence: Customize mode shows the explicit grip drag handles.
+    await expect(page.locator('[data-kpi-drag-handle]')).toHaveCount(5);
+    await page.screenshot({ path: '/tmp/ct6-kpi-customize-1440-dark.png' });
 
-    // Reorder two cards via the visible arrow controls.
-    // win-rate ↓ → [net-pnl, profit-factor, win-rate, average-r, payoff-ratio]
-    await page.getByRole('button', { name: 'Move win-rate down' }).click();
+    // Actual drag: Payoff Ratio (last) onto Win Rate → lands at index 1:
+    // [net-pnl, payoff-ratio, win-rate, profit-factor, average-r]
+    await dragKpi('payoff-ratio', 'win-rate');
     await expect.poll(() => readKpiOrder(page)).toEqual([
-      'net-pnl', 'profit-factor', 'win-rate', 'average-r', 'payoff-ratio',
+      'net-pnl', 'payoff-ratio', 'win-rate', 'profit-factor', 'average-r',
     ]);
-    // average-r ↓ → [net-pnl, profit-factor, win-rate, payoff-ratio, average-r]
-    await page.getByRole('button', { name: 'Move average-r down' }).click();
-    await expect.poll(() => readKpiOrder(page)).toEqual([
-      'net-pnl', 'profit-factor', 'win-rate', 'payoff-ratio', 'average-r',
-    ]);
+    // CT6 evidence: the reordered rail (Payoff Ratio now second).
+    await page.screenshot({ path: '/tmp/ct6-kpi-reordered-1440-dark.png' });
 
-    // Save (explicit Save button in Customize mode) and wait for the server
-    // write so the reload cannot race the API hydrate.
-    const saveResp = page.waitForResponse(
-      (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
-    );
-    await page.getByRole('button', { name: 'Save' }).click();
-    await saveResp;
+    // Normal mode: drag affordance disappears; direct drag no longer reorders.
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.locator('[data-kpi-drag-handle]')).toHaveCount(0);
+    await expect(page.locator('[aria-label^="Actions for"]')).toHaveCount(0);
+    const normalOrder = await readKpiOrder(page);
+    // No handles + the pointer sensor is disabled in normal mode: a drag
+    // gesture across the rail cannot move a card.
+    const firstBox = (await page.locator('[data-kpi-card]').first().boundingBox())!;
+    const lastBox = (await page.locator('[data-kpi-card]').last().boundingBox())!;
+    await page.mouse.move(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height / 2, { steps: 20 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    expect(await readKpiOrder(page)).toEqual(normalOrder);
 
-    // Reload → the saved order must be restored on the user dashboard.
+    // Back to Customize and Save → reload restores the dragged order.
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await saveCustomize();
     await page.reload();
     await expect(page.getByRole('button', { name: /Customize/ })).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('button', { hasText: dashName })).toBeVisible();
+    await expect(page.locator('button', { hasText: dashA })).toBeVisible();
     await expect(page.locator('[data-kpi-card]')).toHaveCount(5, { timeout: 15_000 });
     await expect.poll(() => readKpiOrder(page)).toEqual([
-      'net-pnl', 'profit-factor', 'win-rate', 'payoff-ratio', 'average-r',
+      'net-pnl', 'payoff-ratio', 'win-rate', 'profit-factor', 'average-r',
     ]);
 
-    // Cleanup: delete the user dashboard (confirm dialog auto-accepted).
-    await page.locator('button', { hasText: dashName }).click();
+    // ── Dashboard B: a different order — must stay isolated from A ───────
+    // (The reload above reset edit mode; re-enter Customize before creating B
+    // so the subsequent drag has handles. Save does not exit edit mode.)
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await createDashboard(dashB, dashA);
+    await expect(page.locator('[data-kpi-card]')).toHaveCount(5);
+    // A new dashboard snapshots the current instance composition (the same
+    // model as Duplicate), so B starts from A's dragged order — then a second
+    // drag gives B its OWN distinct order, which is the isolation claim.
+    await dragKpi('average-r', 'net-pnl');
+    await expect.poll(() => readKpiOrder(page)).toEqual([
+      'average-r', 'net-pnl', 'payoff-ratio', 'win-rate', 'profit-factor',
+    ]);
+    await saveCustomize();
+
+    // Leave Customize before dashboard switching (Save keeps edit mode on).
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.locator('[data-kpi-drag-handle]')).toHaveCount(0);
+
+    // Switch A → B → A: each dashboard restores its own KPI order.
+    await page.locator('button', { hasText: dashB }).click();
+    await page.getByRole('option', { name: dashA }).click();
+    await expect(page.locator('button', { hasText: dashA })).toBeVisible();
+    await expect.poll(() => readKpiOrder(page)).toEqual([
+      'net-pnl', 'payoff-ratio', 'win-rate', 'profit-factor', 'average-r',
+    ]);
+
+    await page.locator('button', { hasText: dashA }).click();
+    await page.getByRole('option', { name: dashB }).click();
+    await expect(page.locator('button', { hasText: dashB })).toBeVisible();
+    await expect.poll(() => readKpiOrder(page)).toEqual([
+      'average-r', 'net-pnl', 'payoff-ratio', 'win-rate', 'profit-factor',
+    ]);
+
+    // ── Accessibility path still works inside Customize (menu Move right) ─
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await page.getByRole('button', { name: 'Actions for Average R', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Move right' }).click();
+    await expect.poll(() => readKpiOrder(page)).toEqual([
+      'net-pnl', 'average-r', 'payoff-ratio', 'win-rate', 'profit-factor',
+    ]);
+    await page.getByRole('button', { name: 'Done' }).click();
+
+    // Cleanup: delete both user dashboards (confirm dialogs auto-accepted).
+    // Deleting the active dashboard returns the switcher to the system default.
+    await page.locator('button', { hasText: dashB }).click();
+    await page.getByRole('button', { name: /Delete/ }).click();
+    await expect(page.locator('button', { hasText: 'Performance Default' })).toBeVisible();
+    await page.locator('button', { hasText: 'Performance Default' }).click();
+    await page.getByRole('option', { name: dashA }).click();
+    await page.locator('button', { hasText: dashA }).click();
     await page.getByRole('button', { name: /Delete/ }).click();
     await expect(page.locator('button', { hasText: 'Performance Default' })).toBeVisible();
   });

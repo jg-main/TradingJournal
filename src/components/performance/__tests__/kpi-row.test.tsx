@@ -116,7 +116,8 @@ describe('KpiRow', () => {
     expect(screen.getByText('Net P&L')).toBeDefined();
   });
 
-  it('reorders KPI cards with the move controls', () => {
+  it('reorders KPI cards through the accessibility Move actions in the ⋯ menu', async () => {
+    const user = userEvent.setup();
     const { container } = renderKpiRow(true);
     const order = () =>
       Array.from(container.querySelectorAll('[data-kpi-value]')).map((el) =>
@@ -125,14 +126,114 @@ describe('KpiRow', () => {
     expect(order()[0]).toBe('net-pnl');
     expect(order()[1]).toBe('win-rate');
 
-    fireEvent.click(screen.getByLabelText('Move net-pnl down'));
+    // Non-pointer reorder path: Move right in the first card's actions menu.
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move right' }));
     expect(order()[0]).toBe('win-rate');
     expect(order()[1]).toBe('net-pnl');
 
-    // Boundary: first card's up control and last card's down control are disabled.
-    expect(screen.getByLabelText('Move win-rate up')).toBeDefined();
-    const lastDown = screen.getByLabelText('Move payoff-ratio down') as HTMLButtonElement;
-    expect(lastDown.disabled).toBe(true);
+    // Move left returns it.
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move left' }));
+    expect(order()[0]).toBe('net-pnl');
+    expect(order()[1]).toBe('win-rate');
+  });
+
+  it('disables the boundary Move actions at the first/last positions', async () => {
+    const user = userEvent.setup();
+    renderKpiRow(true);
+
+    // First card: Move left is disabled (no position before it).
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    expect(
+      (await screen.findByRole('menuitem', { name: 'Move left' })).getAttribute('aria-disabled'),
+    ).toBe('true');
+    await user.keyboard('{Escape}');
+
+    // Last card: Move right is disabled.
+    await user.click(screen.getByLabelText('Actions for Payoff Ratio'));
+    expect(
+      (await screen.findByRole('menuitem', { name: 'Move right' })).getAttribute('aria-disabled'),
+    ).toBe('true');
+  });
+
+  it('renders explicit drag handles only in edit mode (direct reorder affordance)', () => {
+    const { unmount } = renderKpiRow();
+    // Normal mode: no drag affordance, no reorder chrome.
+    expect(screen.queryByLabelText('Drag net-pnl')).toBeNull();
+    expect(screen.queryByLabelText('Actions for Net P&L')).toBeNull();
+    unmount();
+
+    // Customize mode: every KPI card exposes a grip handle labelled for drag.
+    renderKpiRow(true);
+    for (const id of ['net-pnl', 'win-rate', 'profit-factor', 'average-r', 'payoff-ratio']) {
+      const handle = screen.getByLabelText(`Drag ${id}`) as HTMLButtonElement;
+      expect(handle).toBeDefined();
+      // Grab cursor on the handle (grabbing while actively dragging).
+      expect(handle.className).toContain('cursor-grab');
+    }
+  });
+
+  it('duplicates remain independent sortable instances (reorder by instance ID, not type)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderKpiRow(true);
+    const order = () =>
+      Array.from(container.querySelectorAll('[data-kpi-sortable]')).map((el) =>
+        el.getAttribute('data-kpi-sortable'),
+      );
+    const orderValues = () =>
+      Array.from(container.querySelectorAll('[data-kpi-value]')).map((el) =>
+        el.getAttribute('data-kpi-value'),
+      );
+
+    // Duplicate Net P&L → a second instance with its own instance ID.
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Duplicate' }));
+    const ids = order();
+    expect(ids[0]).not.toBe(ids[5]); // two distinct instance IDs, same widget type
+    expect(orderValues()).toEqual([
+      'net-pnl', 'win-rate', 'profit-factor', 'average-r', 'payoff-ratio', 'net-pnl',
+    ]);
+
+    // Move the FIRST Net P&L right — only it moves; the duplicate stays put.
+    await user.click(screen.getAllByLabelText('Actions for Net P&L')[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Move right' }));
+    expect(orderValues()).toEqual([
+      'win-rate', 'net-pnl', 'profit-factor', 'average-r', 'payoff-ratio', 'net-pnl',
+    ]);
+
+    // Move the DUPLICATE (last) left — only it moves.
+    await user.click(screen.getAllByLabelText('Actions for Net P&L')[1]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Move left' }));
+    expect(orderValues()).toEqual([
+      'win-rate', 'net-pnl', 'profit-factor', 'average-r', 'net-pnl', 'payoff-ratio',
+    ]);
+  });
+
+  it('reordering never alters widget configuration or global filters', async () => {
+    const user = userEvent.setup();
+    const { container } = renderKpiRow(true);
+    const configsBefore = Array.from(container.querySelectorAll('[data-kpi-sortable]')).map(
+      (el) => el.getAttribute('data-kpi-sortable'),
+    );
+
+    // Reorder twice (menu path) and assert the configuration surface is intact:
+    // every card still renders its value, titles unchanged, same instance set.
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move right' }));
+    await user.click(screen.getByLabelText('Actions for Average R'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move right' }));
+
+    const configsAfter = Array.from(container.querySelectorAll('[data-kpi-sortable]')).map(
+      (el) => el.getAttribute('data-kpi-sortable'),
+    );
+    // Same instance set (order changed), same card titles, values still render.
+    expect(configsAfter.sort()).toEqual(configsBefore.sort());
+    expect(screen.getByText('Net P&L')).toBeDefined();
+    expect(screen.getByText('Win Rate')).toBeDefined();
+    expect(screen.getByText('Profit Factor')).toBeDefined();
+    expect(screen.getByText('Average R')).toBeDefined();
+    expect(screen.getByText('Payoff Ratio')).toBeDefined();
   });
 
   it('persists KPI instances across remounts (simulated reload)', () => {

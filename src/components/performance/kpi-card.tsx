@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { GripVertical } from 'lucide-react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 import { getKpiMetricDefinition, applyUnit, kpiValueClass } from '@/lib/performance-kpi-catalogue';
 import { MicroViz } from './kpi-micro-viz';
@@ -126,6 +127,14 @@ function resolveSupportingData(
 
 // ── KPI Card Component ──────────────────────────────────────────────────────
 
+export interface KpiDragHandleProps {
+  'aria-label'?: string;
+  role?: string;
+  tabIndex?: number;
+  onPointerDown?: (event: React.PointerEvent<HTMLElement>) => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
+}
+
 export interface KpiCardProps {
   instanceId: string;
   widgetType: string;
@@ -135,9 +144,16 @@ export interface KpiCardProps {
   onRemove?: (instanceId: string) => void;
   onReset?: (instanceId: string) => void;
   editMode?: boolean;
+  /** True while this card is being dragged (visual emphasis only). */
+  isDragging?: boolean;
+  /** dnd-kit activator props spread onto the explicit grip handle (edit mode). */
+  dragHandleProps?: KpiDragHandleProps;
+  /** Accessibility reorder path: Move left/right in the actions menu. */
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
 }
 
-export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplicate, onRemove, onReset, editMode }: KpiCardProps) {
+export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplicate, onRemove, onReset, editMode, isDragging, dragHandleProps, onMoveLeft, onMoveRight }: KpiCardProps) {
   const { analyticsData, filter, isLoading, error } = usePerformanceDashboard();
 
   const definition = getKpiMetricDefinition(widgetType);
@@ -202,12 +218,30 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
   return (
     <div
       data-kpi-card={widgetType}
-      className="flex h-kpi-card flex-col rounded-lg border border-border bg-card p-3"
+      className={cn(
+        'flex h-kpi-card flex-col rounded-lg border border-border bg-card p-3',
+        isDragging && 'shadow-lg ring-1 ring-ring/40 opacity-90',
+      )}
     >
-      {/* Header row: title + ⋯ actions menu (edit mode) — pinned to the shared top edge */}
+      {/* Header row: drag handle + title + ⋯ actions menu (edit mode) — pinned
+          to the shared top edge. The grip is the ONLY drag activator; the ⋯
+          menu stops propagation so opening it never starts a drag. */}
       <div className="flex items-center justify-between gap-2">
-        <div className="truncate text-xs text-muted-foreground" title={title}>
-          {title}
+        <div className="flex min-w-0 items-center gap-1">
+          {editMode && dragHandleProps && (
+            <button
+              type="button"
+              {...dragHandleProps}
+              title="Drag to reorder"
+              data-kpi-drag-handle
+              className="grid h-5 w-4 shrink-0 cursor-grab place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring/50 touch-none"
+            >
+              <GripVertical className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+          <div className="truncate text-xs text-muted-foreground" title={title}>
+            {title}
+          </div>
         </div>
         {editMode && (
           <WidgetActionsMenu
@@ -216,6 +250,8 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
             onDuplicate={onDuplicate ? () => onDuplicate(instanceId) : undefined}
             onRemove={onRemove ? () => onRemove(instanceId) : undefined}
             onReset={onReset ? () => onReset(instanceId) : undefined}
+            onMoveLeft={onMoveLeft}
+            onMoveRight={onMoveRight}
           />
         )}
       </div>

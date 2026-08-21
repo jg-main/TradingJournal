@@ -17,6 +17,10 @@ export interface WidgetActionsMenuProps {
   onDuplicate?: () => void;
   onRemove?: () => void;
   onReset?: () => void;
+  /** Accessibility reorder path: undefined renders the item disabled at the
+   *  rail boundary (first card has no Move left; last has no Move right). */
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
 }
 
 /**
@@ -39,8 +43,10 @@ export function WidgetActionsMenu({
   onDuplicate,
   onRemove,
   onReset,
+  onMoveLeft,
+  onMoveRight,
 }: WidgetActionsMenuProps) {
-  if (!onConfigure && !onDuplicate && !onRemove && !onReset) return null;
+  if (!onConfigure && !onDuplicate && !onRemove && !onReset && !onMoveLeft && !onMoveRight) return null;
 
   return (
     <DropdownMenu>
@@ -58,6 +64,15 @@ export function WidgetActionsMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {/* Accessibility reorder path (keyboard-operable via the menu);
+            disabled at the rail boundaries (first/last position). */}
+        <DropdownMenuItem onSelect={onMoveLeft} disabled={!onMoveLeft}>
+          Move left
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onMoveRight} disabled={!onMoveRight}>
+          Move right
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         {onConfigure && (
           <DropdownMenuItem onSelect={onConfigure}>Configure</DropdownMenuItem>
         )}
