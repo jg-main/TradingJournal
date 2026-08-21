@@ -11,6 +11,10 @@
  * 5. Saved dashboard create → switch → restore round-trip.
  * 6. S03 (R003): five-card KPI rail equal geometry at 1440px with contained
  *    microvisualizations; Customize reorder → Save → reload persistence.
+ * 7. S05 (R005): one consistent ⋯ actions menu (Configure/Duplicate/Remove/
+ *    Reset) on every widget in Customize mode; Configure opens the shared
+ *    typed dialog (chart series + KPI metric); Duplicate/Remove/Reset drive
+ *    the instance model; normal mode stays chrome-free.
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -1193,6 +1197,182 @@ test.describe('chart drag/resize persistence (S04 R004)', () => {
     expect(Math.abs(restored.x - after.x)).toBeLessThanOrEqual(3);
     expect(Math.abs(restored.y - after.y)).toBeLessThanOrEqual(3);
     expect(await chartSlot(page, 'Drawdown Curve')).toEqual({ col: 0, row: 5 });
+
+    // Cleanup: exit edit mode, delete the user dashboard.
+    await page.getByRole('button', { name: 'Done' }).click();
+    await deleteUserDashboard(page, dashName);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// S05 (R005): consistent widget actions menu (⋯)
+//
+// Proves the R005 contract end-to-end:
+// 1. In Customize mode every configurable widget (5 KPI cards + 6 default
+//    charts) shows ONE consistent ⋯ actions menu with Configure / Duplicate /
+//    Remove (destructive) / Reset; the chart drag-handle bar keeps its grip +
+//    'Drag to move' label with the +/× controls gone from the bar; normal mode
+//    shows zero triggers, drag handles, resize grips, or edit frames.
+// 2. Configure opens the shared typed ConfigureDialog (chart series
+//    visibility + title override; KPI metric + unit that follows the metric)
+//    and the changes persist through the saved-dashboard Save → reload flow on
+//    a user dashboard (the immutable system default skips server persistence).
+// 3. Duplicate creates a second widget; Remove deletes one; Reset restores
+//    the widget's registry default config.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Read the persisted instance config for one widget type from localStorage. */
+async function readStoredInstanceConfig(page: Page, category: 'kpi' | 'chart', widgetType: string) {
+  return page.evaluate(
+    ({ key, type }: { key: string; type: string }) => {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return null;
+      const instances = JSON.parse(raw) as Array<{ widgetType: string; config: Record<string, unknown> }>;
+      return instances.find((i) => i.widgetType === type)?.config ?? null;
+    },
+    { key: `performance:${category}-instances:v1`, type: widgetType },
+  );
+}
+
+/** Assert the open ⋯ menu offers the full R005 item set (Remove destructive). */
+async function expectActionsMenuItems(page: Page) {
+  await expect(page.getByRole('menuitem', { name: 'Configure' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Duplicate' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Remove' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Remove' })).toHaveAttribute('data-variant', 'destructive');
+  await expect(page.getByRole('menuitem', { name: 'Reset' })).toBeVisible();
+}
+
+test.describe('widget actions menu (S05 R005)', () => {
+  test('Customize shows one ⋯ actions menu per widget; normal mode stays clean', async ({ page }) => {
+    await gotoPerformance(page);
+
+    const actionsTrigger = page.locator('[aria-label^="Actions for"]');
+    const dragHandles = page.locator('section[aria-label="Performance charts"] .drag-handle');
+    const resizeGrips = page.locator('[aria-label="Resize widget"]');
+    const editFrames = page.locator('.chart-edit-frame');
+
+    // Normal mode: zero editing chrome — no ⋯ triggers, drag handles, resize
+    // grips, or edit frames anywhere on the dashboard.
+    await expect(actionsTrigger).toHaveCount(0);
+    await expect(dragHandles).toHaveCount(0);
+    await expect(resizeGrips).toHaveCount(0);
+    await expect(editFrames).toHaveCount(0);
+
+    // Enter Customize: every widget gains the ⋯ menu (5 KPI + 6 charts = 11),
+    // and every chart gains a drag handle, resize grip, and edit frame (6).
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+    await expect(actionsTrigger).toHaveCount(11);
+    await expect(dragHandles).toHaveCount(6);
+    await expect(resizeGrips).toHaveCount(6);
+    await expect(editFrames).toHaveCount(6);
+
+    // The chart drag-handle bar keeps its grip + 'Drag to move' label; the +/×
+    // controls are gone — the only control left is the ⋯ actions menu.
+    const handleBar = dragHandles.first();
+    await expect(handleBar.getByText('Drag to move')).toBeVisible();
+    await expect(handleBar.getByRole('button', { name: /Actions for/ })).toBeVisible();
+    await expect(handleBar.getByText('+', { exact: true })).toHaveCount(0);
+    await expect(handleBar.getByText('×', { exact: true })).toHaveCount(0);
+
+    // A chart widget's menu offers the full R005 item set.
+    await page.getByRole('button', { name: 'Actions for Daily Cumulative P&L', exact: true }).click();
+    await expectActionsMenuItems(page);
+    await page.keyboard.press('Escape');
+
+    // A KPI card's menu offers the same item set.
+    await page.getByRole('button', { name: 'Actions for Net P&L', exact: true }).click();
+    await expectActionsMenuItems(page);
+    await page.keyboard.press('Escape');
+
+    // Done restores the chrome-free normal mode.
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(actionsTrigger).toHaveCount(0);
+    await expect(dragHandles).toHaveCount(0);
+    await expect(resizeGrips).toHaveCount(0);
+    await expect(editFrames).toHaveCount(0);
+  });
+
+  test('Configure opens typed settings that persist; Duplicate/Remove/Reset drive the instance model', async ({ page }) => {
+    page.on('dialog', (dialog) => dialog.accept());
+    const dashName = `S05 Actions ${TS}`;
+
+    await seedAnalyticsData(page);
+    await gotoPerformance(page);
+    await waitForAnalytics(page);
+    await createUserDashboard(page, dashName);
+
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+
+    // ── Configure a chart: typed series visibility + title override ──────
+    await page.getByRole('button', { name: 'Actions for Drawdown Curve', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Configure' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: 'Configure Drawdown Curve' })).toBeVisible();
+    // Typed fields from the registry configSchema: series multi-select,
+    // legend boolean, title text — no unrestricted visualization builder.
+    await expect(dialog.getByRole('checkbox', { name: 'Amount ($)' })).toBeChecked();
+    await expect(dialog.getByRole('checkbox', { name: 'Percent (%)' })).toBeChecked();
+    await expect(dialog.getByRole('checkbox', { name: 'Show legend' })).not.toBeChecked();
+    await dialog.getByRole('checkbox', { name: 'Percent (%)' }).uncheck();
+    await dialog.getByLabel('Title').fill('My Drawdown Curve');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    // The widget re-renders with the override and the instance model holds it.
+    await expect(page.getByText('My Drawdown Curve', { exact: true })).toBeVisible();
+    await expect.poll(() => readStoredInstanceConfig(page, 'chart', 'drawdown-curve')).toEqual({
+      visibleSeries: ['drawdownAmount'],
+      titleOverride: 'My Drawdown Curve',
+    });
+
+    // ── Configure a KPI: metric change (unit field follows the metric) ────
+    await page.getByRole('button', { name: 'Actions for Net P&L', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Configure' }).click();
+    await expect(dialog.getByRole('heading', { name: 'Configure Net P&L' })).toBeVisible();
+    // Net P&L supports $/%/R → a per-widget Unit override is offered…
+    await expect(dialog.getByLabel('Metric')).toBeVisible();
+    await expect(dialog.getByLabel('Unit')).toBeVisible();
+    await dialog.getByLabel('Metric').click();
+    await page.getByRole('option', { name: 'Total Trades' }).click();
+    // …but Total Trades is fixed-count → the Unit field disappears live.
+    await expect(dialog.getByLabel('Unit')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect(page.locator('[data-kpi-card="total-trades"]')).toBeVisible();
+    await expect(page.locator('[data-kpi-value="total-trades"]')).toBeVisible();
+    await expect.poll(() => readStoredInstanceConfig(page, 'kpi', 'net-pnl')).toEqual({
+      metricId: 'total-trades',
+    });
+
+    // ── Configure changes persist through the saved-dashboard flow ────────
+    await saveAndReload(page);
+    await expect(page.locator('button', { hasText: dashName })).toBeVisible();
+    await expect(page.getByText('My Drawdown Curve', { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[data-kpi-card="total-trades"]')).toBeVisible({ timeout: 20_000 });
+
+    // ── Re-enter Customize: Duplicate creates a second widget ─────────────
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+    await expect(page.locator('[data-kpi-card]')).toHaveCount(5);
+    await page.getByRole('button', { name: 'Actions for Win Rate', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Duplicate' }).click();
+    await expect(page.locator('[data-kpi-card]')).toHaveCount(6);
+    await expect(page.locator('[data-kpi-value="win-rate"]')).toHaveCount(2);
+
+    // ── Remove deletes one (the duplicated card, appended last) ───────────
+    await page.getByRole('button', { name: 'Actions for Win Rate', exact: true }).last().click();
+    await page.getByRole('menuitem', { name: 'Remove' }).click();
+    await expect(page.locator('[data-kpi-card]')).toHaveCount(5);
+    await expect(page.locator('[data-kpi-value="win-rate"]')).toHaveCount(1);
+
+    // ── Reset restores the registry default config on the configured chart ──
+    await page.getByRole('button', { name: 'Actions for Drawdown Curve', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Reset' }).click();
+    await expect(page.getByText('My Drawdown Curve', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Drawdown Curve', { exact: true })).toBeVisible();
+    await expect.poll(() => readStoredInstanceConfig(page, 'chart', 'drawdown-curve')).toEqual({});
 
     // Cleanup: exit edit mode, delete the user dashboard.
     await page.getByRole('button', { name: 'Done' }).click();
