@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useCallback, useState } from 'react';
-import GridLayout, { useContainerWidth, type Layout, type LayoutItem } from 'react-grid-layout';
+import GridLayout, { useContainerWidth, type Layout, type LayoutItem, type ResizeHandleAxis } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
+import { GripVertical } from 'lucide-react';
 import { usePerformanceInstanceContext } from './performance-instance-context';
 import { ChartWidget } from './chart-widget';
 import { PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
@@ -10,6 +11,39 @@ import type { WidgetConfig } from '@/lib/performance-view-types';
 
 export interface ChartGridProps {
   editMode?: boolean;
+}
+
+/**
+ * Edit-mode wrapper chrome: dashed accent frame + subtle tint so Customize
+ * mode is unmistakable. Applied per-widget only while editMode is on; normal
+ * mode renders a bare wrapper with no editing chrome.
+ */
+const EDIT_FRAME_CLASS =
+  'chart-edit-frame relative flex h-full flex-col rounded-lg border border-dashed border-primary/50 bg-primary/[0.04]';
+
+/**
+ * Visible SE resize grip (RGL v2 resizeConfig.handleComponent).
+ * RGL v2 passes the handle axis plus a ref that must be attached to the
+ * returned element for drag-to-resize to work. The grip is intentionally a
+ * plain span styled with Tailwind utilities (no react-resizable-handle class)
+ * so it stays visible in edit mode and never relies on the vendor hover rule.
+ * It is only supplied to react-grid-layout while editMode is on.
+ */
+function ResizeGrip(axis: ResizeHandleAxis, ref: React.Ref<HTMLElement>) {
+  return (
+    <span
+      ref={ref}
+      role="button"
+      tabIndex={0}
+      aria-label="Resize widget"
+      title={`Drag to resize (${axis} corner)`}
+      className="absolute bottom-1 right-1 z-20 grid h-4 w-4 cursor-se-resize place-items-center text-muted-foreground"
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+        <path d="M9 1v8H1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
 }
 
 /**
@@ -31,15 +65,24 @@ export function ChartGrid({ editMode }: ChartGridProps) {
 
   const [showAddDialog, setShowAddDialog] = useState(false);
 
-  const layout: Layout = instances.map((inst) => ({
-    i: inst.instanceId,
-    x: inst.layout.x,
-    y: inst.layout.y,
-    w: inst.layout.w,
-    h: inst.layout.h,
-    minW: inst.layout.minW ?? 4,
-    minH: inst.layout.minH ?? 4,
-  }));
+  // Per-item constraints come from the registry definition (authoritative for
+  // widget readability — R004) with the instance layout as fallback. This
+  // prevents resizing a chart below its readable minimum (minSize) or back to
+  // full-width stacking (maxSize.w) even when persisted layouts lack bounds.
+  const layout: Layout = instances.map((inst) => {
+    const def = PERFORMANCE_WIDGET_REGISTRY[inst.widgetType];
+    return {
+      i: inst.instanceId,
+      x: inst.layout.x,
+      y: inst.layout.y,
+      w: inst.layout.w,
+      h: inst.layout.h,
+      minW: def?.minSize.w ?? inst.layout.minW ?? 4,
+      minH: def?.minSize.h ?? inst.layout.minH ?? 4,
+      maxW: def?.maxSize.w ?? inst.layout.maxW,
+      maxH: def?.maxSize.h ?? inst.layout.maxH,
+    };
+  });
 
   // Commit RGL changes back to the instance store (single source of truth).
   const handleCommit = useCallback(
@@ -58,47 +101,66 @@ export function ChartGrid({ editMode }: ChartGridProps) {
           width={width}
           layout={layout}
           gridConfig={{ cols: 12, rowHeight: 40, margin: [10, 10] }}
-          dragConfig={{ enabled: editMode, handle: '.drag-handle' }}
-          resizeConfig={{ enabled: editMode, handles: ['se'] }}
+          dragConfig={{ enabled: Boolean(editMode), handle: '.drag-handle' }}
+          resizeConfig={{
+            enabled: Boolean(editMode),
+            handles: editMode ? ['se'] : [],
+            handleComponent: editMode ? ResizeGrip : undefined,
+          }}
           autoSize
           onLayoutChange={handleCommit}
           onDragStop={handleCommit}
           onResizeStop={handleCommit}
         >
-          {instances.map((instance) => (
-            <div key={instance.instanceId} className="relative">
-              {editMode && (
-                <div className="drag-handle absolute top-0 left-1/2 -translate-x-1/2 z-10 cursor-move text-xs text-muted-foreground px-2 py-0.5 rounded bg-background/80 border border-border">
-                  ⠿
-                </div>
-              )}
-              <ChartWidget
-                instanceId={instance.instanceId}
-                widgetType={instance.widgetType}
-                config={instance.config}
-                editMode={editMode}
-                onConfigChange={(id, cfg) => updateInstanceConfig(id, cfg as WidgetConfig)}
-              />
-              {editMode && (
-                <div className="absolute top-1 right-1 z-10 flex gap-1">
-                  <button
-                    onClick={() => duplicateInstance(instance.instanceId)}
-                    className="text-[10px] px-1 py-0.5 rounded border border-border bg-background hover:bg-muted"
-                    aria-label={`Duplicate ${instance.widgetType}`}
+          {instances.map((instance) => {
+            const definition = PERFORMANCE_WIDGET_REGISTRY[instance.widgetType];
+            const widgetTitle = definition?.title ?? instance.widgetType;
+            return (
+              <div key={instance.instanceId} className={editMode ? EDIT_FRAME_CLASS : 'relative h-full'}>
+                {editMode && (
+                  <div
+                    className="drag-handle flex shrink-0 cursor-move select-none items-center gap-1.5 rounded-t-[calc(0.5rem-1px)] border-b border-dashed border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Drag ${widgetTitle} to move`}
+                    title="Drag to move"
                   >
-                    +
-                  </button>
-                  <button
-                    onClick={() => removeInstance(instance.instanceId)}
-                    className="text-[10px] px-1 py-0.5 rounded border border-border bg-background hover:bg-destructive/10 text-destructive"
-                    aria-label={`Remove ${instance.widgetType}`}
-                  >
-                    ×
-                  </button>
+                    <GripVertical className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Drag to move</span>
+                    <span className="ml-auto flex items-center gap-1">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => duplicateInstance(instance.instanceId)}
+                        className="rounded border border-border bg-background px-1 py-0.5 text-[10px] hover:bg-muted"
+                        aria-label={`Duplicate ${widgetTitle}`}
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => removeInstance(instance.instanceId)}
+                        className="rounded border border-border bg-background px-1 py-0.5 text-[10px] text-destructive hover:bg-destructive/10"
+                        aria-label={`Remove ${widgetTitle}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </div>
+                )}
+                <div className={editMode ? 'min-h-0 flex-1' : 'h-full'}>
+                  <ChartWidget
+                    instanceId={instance.instanceId}
+                    widgetType={instance.widgetType}
+                    config={instance.config}
+                    editMode={editMode}
+                    onConfigChange={(id, cfg) => updateInstanceConfig(id, cfg as WidgetConfig)}
+                  />
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </GridLayout>
       )}
 

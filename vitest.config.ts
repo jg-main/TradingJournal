@@ -172,6 +172,7 @@ export default defineConfig({
       'src/components/sidebar/nav-config.test.ts',
       'src/components/performance/__tests__/kpi-card.test.tsx',
       'src/components/performance/__tests__/kpi-row.test.tsx',
+      'src/components/performance/__tests__/chart-grid.test.tsx',
       'src/components/performance/__tests__/chart-widget.test.tsx',
       'src/components/performance/__tests__/performance-toolbar.test.tsx',
       'src/components/performance/__tests__/dashboard-switcher.test.tsx',
