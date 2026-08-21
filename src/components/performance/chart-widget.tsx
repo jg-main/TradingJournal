@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { useChartPalette } from '@/hooks/use-chart-palette';
@@ -195,6 +195,16 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
 export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
   const { analyticsData, filter, isLoading, error } = usePerformanceDashboard();
   const palette = useChartPalette();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Store the live ECharts instance on the container (test/inspection surface
+  // only — no visual effect) so browser verification can dispatch tooltips and
+  // read axis/tooltip config from the real rendered chart.
+  const handleChartReady = useCallback((instance: unknown) => {
+    if (containerRef.current) {
+      (containerRef.current as HTMLElement & { __echartsInstance?: unknown }).__echartsInstance = instance;
+    }
+  }, []);
 
   const extractor = CHART_EXTRACTORS[widgetType];
   const definition = PERFORMANCE_WIDGET_REGISTRY[widgetType];
@@ -233,6 +243,7 @@ export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
 
   return (
     <div
+      ref={containerRef}
       className="border border-border rounded-lg bg-card p-3 h-full flex flex-col"
       data-widget-type={widgetType}
       data-chart-series={option ? String(seriesValuesForTest(option)) : ''}
@@ -259,7 +270,7 @@ export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
             No data for this period
           </div>
         ) : (
-          <DashboardChart option={option} flexHeight />
+          <DashboardChart option={option} flexHeight onChartReady={handleChartReady} />
         )}
       </div>
     </div>

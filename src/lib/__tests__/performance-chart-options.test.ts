@@ -10,6 +10,12 @@ import {
   performanceByTimeOfDayOption,
   longVsShortOption,
   monthlyPnlOption,
+  formatAxisValue,
+  formatTooltipValue,
+  formatDateLabel,
+  formatDurationBucketLabel,
+  formatRBinLabel,
+  rBinColor,
 } from '../performance-chart-options';
 import { chartPalette } from '../chart-palette';
 
@@ -112,7 +118,8 @@ describe('performance-chart-options', () => {
     it('builds with counts', () => {
       const option = rDistributionOption([{ label: '-2R', count: 3 }, { label: '+2R', count: 5 }], palette);
       expect(option).not.toBeNull();
-      expect((option!.series[0] as { data: number[] }).data).toEqual([3, 5]);
+      const data = (option!.series[0] as { data: Array<{ value: number }> }).data;
+      expect(data.map((d) => d.value)).toEqual([3, 5]);
     });
   });
 
@@ -336,12 +343,14 @@ describe('performance-chart-options', () => {
 
     it('R-Multiple Distribution semantics are fixed (counts) under any unit', () => {
       const data = [{ label: '0 to 1R', count: 5 }];
+      const extract = (opt: NonNullable<ReturnType<typeof rDistributionOption>>) =>
+        (opt.series[0] as { data: Array<{ value: number }> }).data.map((d) => d.value);
       const base = rDistributionOption(data, palette);
-      expect((base!.series[0] as { data: number[] }).data).toEqual([5]);
+      expect(extract(base!)).toEqual([5]);
       const pct = rDistributionOption(data, palette, ['count'], { unit: 'percent', periodStartEquity: 10000 });
-      expect((pct!.series[0] as { data: number[] }).data).toEqual([5]);
+      expect(extract(pct!)).toEqual([5]);
       const r = rDistributionOption(data, palette, ['count'], { unit: 'r', totalInitialRisk: 200 });
-      expect((r!.series[0] as { data: number[] }).data).toEqual([5]);
+      expect(extract(r!)).toEqual([5]);
     });
 
     it('Monthly Win Rate line stays fixed-semantic under global R (never becomes R-like)', () => {
@@ -378,9 +387,108 @@ describe('performance-chart-options', () => {
 
     it('R-Multiple Distribution stays fixed (counts) under every global unit', () => {
       const data = [{ label: '0 to 1R', count: 5 }, { label: '1 to 2R', count: 3 }];
+      const extract = (opt: NonNullable<ReturnType<typeof rDistributionOption>>) =>
+        (opt.series[0] as { data: Array<{ value: number }> }).data.map((d) => d.value);
       for (const unit of ['currency', 'percent', 'r'] as const) {
         const opt = rDistributionOption(data, palette, ['count'], { unit, periodStartEquity: 10000, totalInitialRisk: 200 });
-        expect(((opt!.series[0] as { data: number[] }).data)).toEqual([5, 3]);
+        expect(extract(opt!)).toEqual([5, 3]);
       }
+    });
+  });
+  // ── Corrective Task 3: shared presentation helpers ───────────────────────
+
+  describe('shared presentation helpers (Corrective Task 3)', () => {
+    describe('formatAxisValue', () => {
+      it('formats currency compactly', () => {
+        expect(formatAxisValue(0, 'currency')).toBe('$0');
+        expect(formatAxisValue(500, 'currency')).toBe('$500');
+        expect(formatAxisValue(1000, 'currency')).toBe('$1k');
+        expect(formatAxisValue(2500, 'currency')).toBe('$2.5k');
+        expect(formatAxisValue(-1500, 'currency')).toBe('-$1.5k');
+        expect(formatAxisValue(10000, 'currency')).toBe('$10k');
+      });
+
+      it('formats percent from internal ratios', () => {
+        expect(formatAxisValue(0.025, 'percent')).toBe('2.5%');
+        expect(formatAxisValue(-0.04, 'percent')).toBe('-4%');
+        expect(formatAxisValue(0, 'percent')).toBe('0%');
+      });
+
+      it('formats R', () => {
+        expect(formatAxisValue(0, 'r')).toBe('0R');
+        expect(formatAxisValue(0.5, 'r')).toBe('0.5R');
+        expect(formatAxisValue(1.25, 'r')).toBe('1.25R');
+        expect(formatAxisValue(-1, 'r')).toBe('-1R');
+      });
+
+      it('formats count as integers only', () => {
+        expect(formatAxisValue(0, 'count')).toBe('0');
+        expect(formatAxisValue(1.5, 'count')).toBe('2');
+        expect(formatAxisValue(5, 'count')).toBe('5');
+      });
+    });
+
+    describe('formatTooltipValue', () => {
+      it('uses full precision for currency tooltips', () => {
+        expect(formatTooltipValue(7266, 'currency')).toBe('$7,266');
+        expect(formatTooltipValue(-1356, 'currency')).toBe('-$1,356');
+      });
+
+      it('formats percent and R tooltips', () => {
+        expect(formatTooltipValue(0.073, 'percent')).toBe('7.3%');
+        expect(formatTooltipValue(5.42, 'r')).toBe('5.42R');
+        expect(formatTooltipValue(8, 'count')).toBe('8');
+      });
+    });
+
+    describe('label formatters', () => {
+      it('formats dates as abbreviated month', () => {
+        expect(formatDateLabel('2026-08-21')).toBe('Aug 21');
+        expect(formatDateLabel('2026-06-08')).toBe('Jun 08');
+      });
+
+      it('compacts duration buckets for the axis without changing canonical definitions', () => {
+        expect(formatDurationBucketLabel('0-1 days')).toBe('0-1d');
+        expect(formatDurationBucketLabel('11+ days')).toBe('11+d');
+      });
+
+      it('compacts R buckets for the axis without changing canonical definitions', () => {
+        expect(formatRBinLabel('<= -3')).toBe('≤-3R');
+        expect(formatRBinLabel('-3 to -2')).toBe('-3R to -2R');
+        expect(formatRBinLabel('> 3')).toBe('>3R');
+      });
+    });
+
+    describe('rBinColor', () => {
+      it('colors negative buckets with the negative semantic and positive with positive', () => {
+        expect(rBinColor('<= -3', palette)).toBe(palette.negative);
+        expect(rBinColor('-2 to -1', palette)).toBe(palette.negative);
+        expect(rBinColor('> 3', palette)).toBe(palette.positive);
+        expect(rBinColor('1 to 2', palette)).toBe(palette.positive);
+      });
+
+      it('uses neutral for the zero-boundary bucket', () => {
+        expect(rBinColor('0 to 1', palette)).toBe(palette.info);
+      });
+    });
+
+    describe('metric-dependent setup axis', () => {
+      it('renders the correct axis name and semantics for each Setup metric', () => {
+        const data = [{ setup: 'Breakout', netPnl: 500, winRate: 0.6, avgR: 0.8, count: 10 }];
+        const net = performanceBySetupOption(data, palette, { metric: 'netPnl' })!;
+        expect((net.yAxis as { name: string }).name).toBe('Net P&L');
+        const wr = performanceBySetupOption(data, palette, { metric: 'winRate' })!;
+        expect((wr.yAxis as { name: string }).name).toBe('Win Rate');
+        const ar = performanceBySetupOption(data, palette, { metric: 'avgR' })!;
+        expect((ar.yAxis as { name: string }).name).toBe('Average R');
+        const cnt = performanceBySetupOption(data, palette, { metric: 'count' })!;
+        expect((cnt.yAxis as { name: string }).name).toBe('Trades');
+      });
+
+      it('uses integer minInterval for the Trades setup axis', () => {
+        const data = [{ setup: 'Breakout', netPnl: 500, winRate: 0.6, avgR: 0.8, count: 10 }];
+        const opt = performanceBySetupOption(data, palette, { metric: 'count' })!;
+        expect((opt.yAxis as { minInterval?: number }).minInterval).toBe(1);
+      });
     });
   });
