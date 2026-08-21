@@ -9,6 +9,8 @@
  * 4. Customize mode reveals editing controls; Done restores a chrome-free
  *    normal mode.
  * 5. Saved dashboard create → switch → restore round-trip.
+ * 6. S03 (R003): five-card KPI rail equal geometry at 1440px with contained
+ *    microvisualizations; Customize reorder → Save → reload persistence.
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -62,7 +64,9 @@ async function seedAnalyticsData(page: Page) {
 }
 
 // The KPI cards render their metric titles regardless of data volume.
-const KPI_TITLES = ['Net P&L', 'Win Rate', 'Profit Factor', 'Average R', 'Total Trades'];
+// The curated five-card default rail (S03/R003): Payoff Ratio replaced
+// Total Trades (and Gross P&L), which are no longer default-visible.
+const KPI_TITLES = ['Net P&L', 'Win Rate', 'Profit Factor', 'Average R', 'Payoff Ratio'];
 const CHART_TITLES = [
   'Daily Cumulative P&L',
   'Net Daily P&L',
@@ -474,7 +478,7 @@ function observeAnalytics(page: Page) {
 
 type AnalyticsObserver = ReturnType<typeof observeAnalytics>;
 
-const KPI_IDS = ['net-pnl', 'win-rate', 'profit-factor', 'average-r', 'total-trades'];
+const KPI_IDS = ['net-pnl', 'win-rate', 'profit-factor', 'average-r', 'payoff-ratio'];
 
 async function readKpis(page: Page): Promise<string[]> {
   const out: string[] = [];
@@ -649,7 +653,7 @@ test.describe('filter propagation (T3)', () => {
     await waitForInitialAnalytics(page, analytics);
 
     const reqBefore = analytics.analyticsRequests.length;
-    const fixedIds = ['win-rate', 'profit-factor', 'average-r', 'total-trades'];
+    const fixedIds = ['win-rate', 'profit-factor', 'average-r', 'payoff-ratio'];
     const readFixed = async () => {
       const out: string[] = [];
       for (const id of fixedIds) {
@@ -683,7 +687,7 @@ test.describe('filter propagation (T3)', () => {
     await expect(page.locator('[data-kpi-value="win-rate"]')).toContainText('%');
     await expect(page.locator('[data-kpi-value="profit-factor"]')).not.toContainText('%');
     await expect(page.locator('[data-kpi-value="average-r"]')).toContainText('R');
-    await expect(page.locator('[data-kpi-value="total-trades"]')).toHaveText(/\d+/);
+    await expect(page.locator('[data-kpi-value="payoff-ratio"]')).toHaveText(/\d+/);
   });
 
   test('mixed-currency warning surfaces for multi-currency selections', async ({ page }) => {
@@ -712,5 +716,157 @@ test.describe('filter propagation (T3)', () => {
     // Untick it → back to a single currency → warning disappears.
     await multi.getByRole('checkbox', { name: `MixB-${PROP}` }).uncheck();
     await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// S03 (R003): KPI rail equal geometry + reorder persistence
+//
+// Proves at 1440px that the five curated default KPI cards share one row with
+// equal geometry (same top/bottom edges, height delta ≤ 2px, each inside the
+// 108-112px window) and that microvisualizations stay inside the card bounds
+// without changing card height. Then proves the customize persistence contract:
+// Customize → reorder two cards via the visible arrow controls → Save → reload
+// → the saved order is restored (user-owned dashboards persist; the immutable
+// system default is the restore baseline).
+// ────────────────────────────────────────────────────────────────────────────
+
+/** DOM order of the KPI cards (data-kpi-card attributes, left-to-right). */
+async function readKpiOrder(page: Page): Promise<string[]> {
+  return page.locator('[data-kpi-card]').evaluateAll((els) =>
+    els.map((el) => el.getAttribute('data-kpi-card') ?? ''),
+  );
+}
+
+test.describe('KPI rail equal geometry (S03 R003)', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('five curated cards share top/bottom edges, height delta ≤ 2px, microviz contained', async ({ page }) => {
+    await seedPropagationFixture(page);
+    await gotoPerformance(page);
+    await waitForAnalytics(page);
+
+    // Microviz slots require analytics data: sparkline (Net P&L) + donut (Win Rate).
+    await expect(page.locator('[data-kpi-microviz-slot]')).toHaveCount(2, { timeout: 60_000 });
+
+    const cards = page.locator('[data-kpi-card]');
+    await expect(cards).toHaveCount(5);
+
+    const geometry = await cards.evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { id: el.getAttribute('data-kpi-card'), top: r.top, bottom: r.bottom, height: r.height };
+      }),
+    );
+
+    // Exactly the curated five, left-to-right in registry order (one row at 1440px).
+    expect(geometry.map((g) => g.id)).toEqual(KPI_IDS);
+
+    const tops = geometry.map((g) => g.top);
+    const bottoms = geometry.map((g) => g.bottom);
+    const heights = geometry.map((g) => g.height);
+
+    // Every card sits inside the 108-112px window.
+    for (const h of heights) {
+      expect(h).toBeGreaterThanOrEqual(108);
+      expect(h).toBeLessThanOrEqual(112);
+    }
+    // Shared top and bottom edges (delta ≤ 1px guards subpixel rounding).
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(1);
+    expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThanOrEqual(1);
+    // Equal heights across all five cards: delta ≤ 2px.
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
+
+    // Microviz does not change card height: a card WITH a slot (net-pnl) has the
+    // same height as a card WITHOUT (profit-factor).
+    const withViz = geometry.find((g) => g.id === 'net-pnl');
+    const withoutViz = geometry.find((g) => g.id === 'profit-factor');
+    expect(withViz).toBeDefined();
+    expect(withoutViz).toBeDefined();
+    if (!withViz || !withoutViz) throw new Error('geometry missing expected cards');
+    expect(Math.abs(withViz.height - withoutViz.height)).toBeLessThanOrEqual(2);
+
+    // Microviz contained within the card bounds (slot rect inside card rect).
+    const containment = await page.locator('[data-kpi-microviz-slot]').evaluateAll((slots) =>
+      slots.map((slot) => {
+        const sr = slot.getBoundingClientRect();
+        const card = slot.closest('[data-kpi-card]');
+        if (!card) return false;
+        const cr = card.getBoundingClientRect();
+        return (
+          sr.top >= cr.top - 0.5 &&
+          sr.bottom <= cr.bottom + 0.5 &&
+          sr.left >= cr.left - 0.5 &&
+          sr.right <= cr.right + 0.5
+        );
+      }),
+    );
+    expect(containment).toHaveLength(2);
+    expect(containment.every((inside) => inside)).toBe(true);
+  });
+});
+
+test.describe('KPI reorder persistence (S03 R003)', () => {
+  test('Customize reorder → Save → reload restores the saved card order', async ({ page }) => {
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await seedPropagationFixture(page);
+    await gotoPerformance(page);
+    await waitForAnalytics(page);
+
+    const dashName = `Reorder UAT ${TS}`;
+
+    // Create a USER dashboard. The system default is immutable (saveState skips
+    // isSystem dashboards), so reorder persistence is proven on a user-owned
+    // dashboard, which is persisted to /api/dashboard/views + localStorage.
+    await page.locator('button', { hasText: 'Performance Default' }).click();
+    await page.getByText('+ New Dashboard').click();
+    await page.getByPlaceholder('Dashboard name').fill(dashName);
+    const createResp = page.waitForResponse(
+      (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    await createResp;
+    await expect(page.locator('button', { hasText: dashName })).toBeVisible();
+
+    // Enter Customize: the five curated cards in registry order.
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+    await expect(page.locator('[data-kpi-card]')).toHaveCount(5);
+    expect(await readKpiOrder(page)).toEqual(KPI_IDS);
+
+    // Reorder two cards via the visible arrow controls.
+    // win-rate ↓ → [net-pnl, profit-factor, win-rate, average-r, payoff-ratio]
+    await page.getByRole('button', { name: 'Move win-rate down' }).click();
+    await expect.poll(() => readKpiOrder(page)).toEqual([
+      'net-pnl', 'profit-factor', 'win-rate', 'average-r', 'payoff-ratio',
+    ]);
+    // average-r ↓ → [net-pnl, profit-factor, win-rate, payoff-ratio, average-r]
+    await page.getByRole('button', { name: 'Move average-r down' }).click();
+    await expect.poll(() => readKpiOrder(page)).toEqual([
+      'net-pnl', 'profit-factor', 'win-rate', 'payoff-ratio', 'average-r',
+    ]);
+
+    // Save (explicit Save button in Customize mode) and wait for the server
+    // write so the reload cannot race the API hydrate.
+    const saveResp = page.waitForResponse(
+      (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Save' }).click();
+    await saveResp;
+
+    // Reload → the saved order must be restored on the user dashboard.
+    await page.reload();
+    await expect(page.getByRole('button', { name: /Customize/ })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('button', { hasText: dashName })).toBeVisible();
+    await expect(page.locator('[data-kpi-card]')).toHaveCount(5, { timeout: 15_000 });
+    await expect.poll(() => readKpiOrder(page)).toEqual([
+      'net-pnl', 'profit-factor', 'win-rate', 'payoff-ratio', 'average-r',
+    ]);
+
+    // Cleanup: delete the user dashboard (confirm dialog auto-accepted).
+    await page.locator('button', { hasText: dashName }).click();
+    await page.getByRole('button', { name: /Delete/ }).click();
+    await expect(page.locator('button', { hasText: 'Performance Default' })).toBeVisible();
   });
 });
