@@ -145,11 +145,12 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
   const rawValue = definition ? definition.accessor(kpiMetrics) : null;
 
   // Determine period-start equity for % conversion (sum of starting balances).
-  const metadata = analyticsData?.metadata as { periodStartEquity?: number | null } | undefined;
+  const metadata = analyticsData?.metadata as { periodStartEquity?: number | null; totalInitialRisk?: number | null } | undefined;
   const periodStartEquity = metadata?.periodStartEquity ?? null;
 
-  // Determine total initial risk for R conversion (from risk snapshots via kpi metrics)
-  const totalInitialRisk = computeTotalInitialRisk(kpiMetrics);
+  // Canonical R denominator for the selected analytical scope comes from the
+  // response metadata (metadata.totalInitialRisk), not from kpiMetrics.
+  const totalInitialRisk = metadata?.totalInitialRisk ?? null;
 
   const unit: PerformanceUnit = config.unit ?? filter.unit;
   const converted = definition
@@ -277,16 +278,6 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Extract total initial risk from kpi metrics if available.
- * Currently the analytics API does not surface total initial risk;
- * R conversion falls back to null (R-multiple guard) when unavailable.
- */
-function computeTotalInitialRisk(kpiMetrics: Record<string, unknown>): number | null {
-  const v = kpiMetrics.totalInitialRisk;
-  return typeof v === 'number' && v > 0 ? v : null;
-}
 
 function formatValue(value: number | null, formatKind: string, unit: string): string {
   if (value === null) return '—';

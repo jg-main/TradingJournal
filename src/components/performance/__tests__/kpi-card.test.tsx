@@ -163,7 +163,7 @@ describe('KpiCard conversion and data states', () => {
     vi.useFakeTimers();
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000, totalInitialRisk: 200 })));
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 }, { totalInitialRisk: 200 })));
   });
 
   afterEach(() => {
@@ -208,6 +208,106 @@ describe('KpiCard conversion and data states', () => {
     });
     expect(screen.getByText('—')).toBeDefined();
     expect(screen.queryByText(/R$/)).toBeNull();
+  });
+
+  it('proves the full $ / % / R contract from canonical metadata denominators', async () => {
+    // Exact scenario from Corrective Task 2: netPnl=1000, periodStartEquity=10000,
+    // totalInitialRisk=200 (both denominators live in metadata, as production returns).
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith(
+        { netPnl: 1000 },
+        { periodStartEquity: 10000, totalInitialRisk: 200 },
+      )));
+
+    renderCard('net-pnl', {}, { unit: 'currency' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('$1,000')).toBeDefined();
+    cleanup();
+
+    renderCard('net-pnl', {}, { unit: 'percent' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('10.0%')).toBeDefined();
+    cleanup();
+
+    renderCard('net-pnl', {}, { unit: 'r' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('5.00R')).toBeDefined();
+  });
+
+  it('renders missing % and R states (em dash) when the canonical denominator is absent', async () => {
+    // No periodStartEquity → % unavailable; no totalInitialRisk → R unavailable.
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 }, { periodStartEquity: null, totalInitialRisk: null })));
+
+    renderCard('net-pnl', {}, { unit: 'percent' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('—')).toBeDefined();
+    expect(screen.queryByText(/0%/)).toBeNull();
+    cleanup();
+
+    renderCard('net-pnl', {}, { unit: 'r' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('—')).toBeDefined();
+    expect(screen.queryByText(/0R/)).toBeNull();
+  });
+
+  it('keeps fixed-semantic KPIs identical across $ / % / R toggles', async () => {
+    // Win Rate %, Profit Factor ratio, Average R R, Payoff Ratio ratio never convert.
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith(
+        { winRate: 0.6, profitFactor: 2.1, avgR: 1.2, payoffRatio: 1.8, closedTrades: 42 },
+        { periodStartEquity: 10000, totalInitialRisk: 200 },
+      )));
+
+    const readFixed = () => ({
+      winRate: screen.getByText('60.0%').textContent,
+      profitFactor: screen.getByText('2.10').textContent,
+      avgR: screen.getByText('1.20R').textContent,
+      payoffRatio: screen.getByText('1.80').textContent,
+      totalTrades: screen.getByText('42').textContent,
+    });
+
+    const base = async () => {
+      renderCard('win-rate', {}, { unit: 'currency' });
+      renderCard('profit-factor', {}, { unit: 'currency' });
+      renderCard('average-r', {}, { unit: 'currency' });
+      renderCard('payoff-ratio', {}, { unit: 'currency' });
+      renderCard('total-trades', {}, { unit: 'currency' });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      return readFixed();
+    };
+
+    const before = await base();
+    cleanup();
+
+    // Re-render under % then R — fixed metrics must be byte-identical.
+    for (const unit of ['percent', 'r'] as const) {
+      renderCard('win-rate', {}, { unit });
+      renderCard('profit-factor', {}, { unit });
+      renderCard('average-r', {}, { unit });
+      renderCard('payoff-ratio', {}, { unit });
+      renderCard('total-trades', {}, { unit });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(readFixed()).toEqual(before);
+      cleanup();
+    }
   });
 
   it('falls back to the widget type title for an unknown metric id without crashing', () => {
@@ -597,7 +697,7 @@ describe('KpiCard equal geometry and microviz containment', () => {
   it('keeps the title and value in the top block, ahead of the bottom microviz slot', async () => {
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000, totalInitialRisk: 200 }, {}, sparklineCharts)));
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 }, { totalInitialRisk: 200 }, sparklineCharts)));
     const { container } = renderCard('net-pnl');
     await loadData();
 
@@ -614,7 +714,7 @@ describe('KpiCard equal geometry and microviz containment', () => {
   it('contains the microviz in a fixed reserved slot that cannot grow the card', async () => {
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000, totalInitialRisk: 200 }, {}, sparklineCharts)));
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 }, { totalInitialRisk: 200 }, sparklineCharts)));
     const { container } = renderCard('net-pnl');
     await loadData();
 
@@ -650,7 +750,7 @@ describe('KpiCard equal geometry and microviz containment', () => {
     // Net P&L with sparkline data vs Average R which never has a microviz.
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000, totalInitialRisk: 200, avgR: 0.5 }, {}, sparklineCharts)));
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000, avgR: 0.5 }, { totalInitialRisk: 200 }, sparklineCharts)));
     const withViz = renderCard('net-pnl');
     const withoutViz = renderCard('average-r');
     await loadData();

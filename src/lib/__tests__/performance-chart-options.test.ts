@@ -246,4 +246,109 @@ describe('performance-chart-options', () => {
       expect((option!.legend as { show: boolean }).show).toBe(true);
     });
   });
+
+  // ── Corrective Task 2: global $ / % / R unit propagation ────────────────
+
+  describe('global unit conversion (Corrective Task 2)', () => {
+    const ctx = {
+      unit: 'percent' as const,
+      periodStartEquity: 10000,
+      totalInitialRisk: 200,
+    };
+
+    it('Daily Cumulative P&L converts series values currency → percent → R', () => {
+      const data = [
+        { date: '2024-01-01', cumulativePnl: 1000 },
+        { date: '2024-01-02', cumulativePnl: 2000 },
+      ];
+      // currency (default)
+      const cur = dailyCumulativePnlOption(data, palette);
+      expect((cur!.series[0] as { data: number[] }).data).toEqual([1000, 2000]);
+      // percent of period-start equity
+      const pct = dailyCumulativePnlOption(data, palette, ['cumulativePnl'], { unit: 'percent', periodStartEquity: 10000 });
+      expect((pct!.series[0] as { data: number[] }).data).toEqual([0.1, 0.2]);
+      // R-multiples of aggregate eligible initial risk
+      const r = dailyCumulativePnlOption(data, palette, ['cumulativePnl'], { unit: 'r', totalInitialRisk: 200 });
+      expect((r!.series[0] as { data: number[] }).data).toEqual([5, 10]);
+    });
+
+    it('Daily Cumulative P&L renders unavailable (null) values when the denominator is missing', () => {
+      const data = [{ date: '2024-01-01', cumulativePnl: 1000 }];
+      const pct = dailyCumulativePnlOption(data, palette, ['cumulativePnl'], { unit: 'percent', periodStartEquity: null });
+      expect((pct!.series[0] as { data: (number | null)[] }).data).toEqual([null]);
+      const r = dailyCumulativePnlOption(data, palette, ['cumulativePnl'], { unit: 'r', totalInitialRisk: 0 });
+      expect((r!.series[0] as { data: (number | null)[] }).data).toEqual([null]);
+    });
+
+    it('Net Daily P&L converts each bar currency → percent → R with sign-preserving color', () => {
+      const data = [
+        { date: '2024-01-01', netPnl: 1000 },
+        { date: '2024-01-02', netPnl: -500 },
+      ];
+      const cur = netDailyPnlOption(data, palette);
+      const curBars = (cur!.series[0] as { data: Array<{ value: number; itemStyle: { color: string } }> }).data;
+      expect(curBars.map((b) => b.value)).toEqual([1000, -500]);
+      expect(curBars[0].itemStyle.color).toBe(palette.positive);
+      expect(curBars[1].itemStyle.color).toBe(palette.negative);
+
+      const pct = netDailyPnlOption(data, palette, ['netPnl'], { unit: 'percent', periodStartEquity: 10000 });
+      const pctBars = (pct!.series[0] as { data: Array<{ value: number; itemStyle: { color: string } }> }).data;
+      expect(pctBars.map((b) => b.value)).toEqual([0.1, -0.05]);
+
+      const r = netDailyPnlOption(data, palette, ['netPnl'], { unit: 'r', totalInitialRisk: 200 });
+      const rBars = (r!.series[0] as { data: Array<{ value: number; itemStyle: { color: string } }> }).data;
+      expect(rBars.map((b) => b.value)).toEqual([5, -2.5]);
+    });
+
+    it('Trade Duration, Day of Week, Time of Day, Long vs Short, Monthly convert only P&L series', () => {
+      const dur = [{ bucket: '0-1 days', netPnl: 1000, count: 3, winRate: 0.6 }];
+      expect(((tradeDurationOption(dur, palette, ['netPnl'], ctx)!.series[0] as { data: Array<{ value: number }> }).data.map((b) => b.value))).toEqual([0.1]);
+
+      const dow = [{ day: 'Mon', netPnl: 1000, count: 3, winRate: 0.6 }];
+      expect(((performanceByDayOfWeekOption(dow, palette, ['netPnl'], ctx)!.series[0] as { data: Array<{ value: number }> }).data.map((b) => b.value))).toEqual([0.1]);
+
+      const tod = [{ hour: '09:00', netPnl: 1000, count: 3 }];
+      expect(((performanceByTimeOfDayOption(tod, palette, ['netPnl'], ctx)!.series[0] as { data: number[] }).data)).toEqual([0.1]);
+
+      const lvs = [{ direction: 'long' as const, netPnl: 1000, count: 2, winRate: 0.6 }];
+      expect(((longVsShortOption(lvs, palette, ['long', 'short'], ctx)!.series[0] as { data: number[] }).data)).toEqual([0.1]);
+
+      const monthly = [{ month: '2024-01', netPnl: 1000, winRate: 0.6 }];
+      const m = monthlyPnlOption(monthly, palette, ['netPnl', 'winRate'], ctx)!;
+      expect(((m.series[0] as { data: Array<{ value: number }> }).data.map((b) => b.value))).toEqual([0.1]);
+    });
+
+    it('Performance by Setup converts only the Net P&L metric; Win Rate / Avg R / Count stay fixed', () => {
+      const data = [{ setup: 'Breakout', netPnl: 1000, winRate: 0.6, avgR: 0.8, count: 10 }];
+      // netPnl metric converts under R
+      const net = performanceBySetupOption(data, palette, { metric: 'netPnl', unit: 'r', totalInitialRisk: 200 });
+      expect((net!.series[0] as { data: number[] }).data).toEqual([5]);
+      // winRate stays its native percentage fraction under global R
+      const wr = performanceBySetupOption(data, palette, { metric: 'winRate', unit: 'r', totalInitialRisk: 200 });
+      expect((wr!.series[0] as { data: number[] }).data).toEqual([0.6]);
+      // avgR stays R
+      const ar = performanceBySetupOption(data, palette, { metric: 'avgR', unit: 'r', totalInitialRisk: 200 });
+      expect((ar!.series[0] as { data: number[] }).data).toEqual([0.8]);
+      // count stays count
+      const cnt = performanceBySetupOption(data, palette, { metric: 'count', unit: 'r', totalInitialRisk: 200 });
+      expect((cnt!.series[0] as { data: number[] }).data).toEqual([10]);
+    });
+
+    it('R-Multiple Distribution semantics are fixed (counts) under any unit', () => {
+      const data = [{ label: '0 to 1R', count: 5 }];
+      const base = rDistributionOption(data, palette);
+      expect((base!.series[0] as { data: number[] }).data).toEqual([5]);
+      const pct = rDistributionOption(data, palette, ['count'], { unit: 'percent', periodStartEquity: 10000 });
+      expect((pct!.series[0] as { data: number[] }).data).toEqual([5]);
+      const r = rDistributionOption(data, palette, ['count'], { unit: 'r', totalInitialRisk: 200 });
+      expect((r!.series[0] as { data: number[] }).data).toEqual([5]);
+    });
+
+    it('Monthly Win Rate line stays fixed-semantic under global R (never becomes R-like)', () => {
+      const data = [{ month: '2024-01', netPnl: 1000, winRate: 0.6 }];
+      const m = monthlyPnlOption(data, palette, ['netPnl', 'winRate'], { unit: 'r', totalInitialRisk: 200 })!;
+      // winRate line unchanged (native fraction)
+      expect((m.series[1] as { data: number[] }).data).toEqual([0.6]);
+    });
+  });
 });

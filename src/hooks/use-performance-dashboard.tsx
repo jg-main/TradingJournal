@@ -22,6 +22,10 @@ export interface PerformanceAnalyticsData {
     dateRange: { from: string | null; to: string | null };
     /** Distinct symbols in the current filter scope (facet for the Filters popover). */
     distinctSymbols: string[];
+    /** % denominator: period-start equity for the selected analytical scope. */
+    periodStartEquity: number | null;
+    /** R denominator: aggregate eligible initial risk for the selected scope. */
+    totalInitialRisk: number | null;
   };
 }
 

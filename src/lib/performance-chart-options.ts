@@ -12,6 +12,11 @@
 
 import type { EChartsOption } from 'echarts-for-react';
 import type { ChartPalette } from './chart-palette';
+import {
+  convertCurrencyValue,
+  type PerformanceUnitContext,
+  type SupportedUnit,
+} from './performance-kpi-catalogue';
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -41,13 +46,38 @@ function tooltip(): EChartsOption['tooltip'] {
 }
 
 /**
- * Per-widget chart rendering options surfaced by the Configure dialog.
- * Visible series are passed positionally (legacy contract); legend visibility
- * travels via this options object.
+ * Per-widget chart rendering options surfaced by the Configure dialog and the
+ * global unit selector. Visible series are passed positionally (legacy
+ * contract); legend visibility and the global `$ / % / R` presentation unit
+ * travel via this options object.
  */
 export interface ChartRenderConfig {
   /** Render the ECharts legend (dense workstation default: hidden). */
   legendVisible?: boolean;
+  /** Global performance unit applied to convertible series (default currency). */
+  unit?: SupportedUnit;
+  /** % denominator for the selected analytical scope (metadata.periodStartEquity). */
+  periodStartEquity?: number | null;
+  /** R denominator for the selected analytical scope (metadata.totalInitialRisk). */
+  totalInitialRisk?: number | null;
+}
+
+/** Canonical denominators extracted from the render config for conversion. */
+function unitContext(options: ChartRenderConfig = {}): PerformanceUnitContext {
+  return {
+    periodStartEquity: options.periodStartEquity ?? null,
+    totalInitialRisk: options.totalInitialRisk ?? null,
+  };
+}
+
+/**
+ * Convert a currency series value under the selected global unit using the
+ * shared presentation conversion layer (same semantics as KpiCard). Returns
+ * null (unavailable) when the target unit's denominator is absent — never a
+ * fabricated 0.
+ */
+function convertPnl(value: number, options: ChartRenderConfig = {}): number | null {
+  return convertCurrencyValue(value, options.unit ?? 'currency', unitContext(options));
 }
 
 /** Legend configuration — absent (undefined) when the dense default applies. */
@@ -132,6 +162,9 @@ export function dailyCumulativePnlOption(
 ): EChartsOption | null {
   if (!data || data.length === 0) return null;
   const show = visibleSeries.includes('cumulativePnl');
+  // Cumulative P&L is a convertible currency series: under global % / R the
+  // values become percent-of-equity / R-multiples of the same line shape.
+  const seriesData = show ? data.map((d) => convertPnl(d.cumulativePnl, options)) : [];
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -142,7 +175,7 @@ export function dailyCumulativePnlOption(
       {
         name: 'Cumulative P&L',
         type: 'line',
-        data: show ? data.map((d) => d.cumulativePnl) : [],
+        data: seriesData,
         showSymbol: false,
         smooth: true,
         lineStyle: { color: palette.primary, width: 2 },
@@ -162,6 +195,15 @@ export function netDailyPnlOption(
 ): EChartsOption | null {
   if (!data || data.length === 0) return null;
   const show = visibleSeries.includes('netPnl');
+  // Daily P&L is convertible: under % / R each bar becomes percent-of-equity
+  // / R-multiple using the same selected-scope denominators (sign preserved
+  // for profit/loss coloring; null = unavailable).
+  const bars = show
+    ? data.map((d) => {
+        const v = convertPnl(d.netPnl, options);
+        return { value: v, itemStyle: { color: (v ?? 0) >= 0 ? palette.positive : palette.negative } };
+      })
+    : [];
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -172,12 +214,7 @@ export function netDailyPnlOption(
       {
         name: 'Net P&L',
         type: 'bar',
-        data: show
-          ? data.map((d) => ({
-              value: d.netPnl,
-              itemStyle: { color: d.netPnl >= 0 ? palette.positive : palette.negative },
-            }))
-          : [],
+        data: bars,
       },
     ],
   };
@@ -192,6 +229,13 @@ export function tradeDurationOption(
 ): EChartsOption | null {
   if (!data || data.some((d) => d.count > 0) === false) return null;
   const show = visibleSeries.includes('netPnl');
+  // Net P&L series is convertible; count/winRate stay fixed-semantic.
+  const bars = show
+    ? data.map((d) => {
+        const v = convertPnl(d.netPnl, options);
+        return { value: v, itemStyle: { color: (v ?? 0) >= 0 ? palette.positive : palette.negative } };
+      })
+    : [];
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -202,12 +246,7 @@ export function tradeDurationOption(
       {
         name: 'Net P&L',
         type: 'bar',
-        data: show
-          ? data.map((d) => ({
-              value: d.netPnl,
-              itemStyle: { color: d.netPnl >= 0 ? palette.positive : palette.negative },
-            }))
-          : [],
+        data: bars,
       },
     ],
   };
@@ -223,6 +262,10 @@ export function drawdownCurveOption(
   if (!data || data.length === 0) return null;
   const showAmount = visibleSeries.includes('drawdownAmount');
   const showPct = visibleSeries.includes('drawdownPct');
+  // drawdownAmount is a currency magnitude (convertible under % per the
+  // registry declaration); drawdownPct is already a native percentage of peak
+  // equity and stays fixed-semantic.
+  const amountSeries = showAmount ? data.map((d) => convertPnl(d.drawdownAmount, options)) : [];
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -233,7 +276,7 @@ export function drawdownCurveOption(
       {
         name: 'Drawdown $',
         type: 'line',
-        data: showAmount ? data.map((d) => d.drawdownAmount) : [],
+        data: amountSeries,
         showSymbol: false,
         lineStyle: { color: palette.warning, width: 2 },
         itemStyle: { color: palette.warning },
@@ -288,11 +331,14 @@ export function performanceBySetupOption(
   const metric = config.metric ?? 'netPnl';
   const show = config.visibleSeries?.includes(metric) ?? true;
 
+  // Only the Net P&L metric is convertible under the global unit. Win Rate,
+  // Average R, and Trade Count keep their fixed semantics — selecting global
+  // R must never transform Win Rate into an R-like number.
   const values = data.map((d) => {
     if (metric === 'winRate') return d.winRate ?? null;
     if (metric === 'avgR') return d.avgR ?? null;
     if (metric === 'count') return d.count;
-    return d.netPnl;
+    return convertPnl(d.netPnl, config);
   });
 
   return {
@@ -321,6 +367,13 @@ export function performanceByDayOfWeekOption(
 ): EChartsOption | null {
   if (!data || data.every((d) => d.count === 0)) return null;
   const show = visibleSeries.includes('netPnl');
+  // Net P&L series is convertible under the global unit.
+  const bars = show
+    ? data.map((d) => {
+        const v = convertPnl(d.netPnl, options);
+        return { value: v, itemStyle: { color: (v ?? 0) >= 0 ? palette.positive : palette.negative } };
+      })
+    : [];
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -331,12 +384,7 @@ export function performanceByDayOfWeekOption(
       {
         name: 'Net P&L',
         type: 'bar',
-        data: show
-          ? data.map((d) => ({
-              value: d.netPnl,
-              itemStyle: { color: d.netPnl >= 0 ? palette.positive : palette.negative },
-            }))
-          : [],
+        data: bars,
       },
     ],
   };
@@ -351,6 +399,8 @@ export function performanceByTimeOfDayOption(
 ): EChartsOption | null {
   if (!data || data.every((d) => d.netPnl === 0)) return null;
   const show = visibleSeries.includes('netPnl');
+  // Net P&L series is convertible under the global unit.
+  const bars = show ? data.map((d) => convertPnl(d.netPnl, options)) : [];
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -361,7 +411,7 @@ export function performanceByTimeOfDayOption(
       {
         name: 'Net P&L',
         type: 'bar',
-        data: show ? data.map((d) => d.netPnl) : [],
+        data: bars,
         itemStyle: { color: palette.info },
       },
     ],
@@ -379,6 +429,7 @@ export function longVsShortOption(
   const long = data.find((d) => d.direction === 'long');
   const short = data.find((d) => d.direction === 'short');
 
+  // Net P&L per direction is convertible under the global unit.
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -389,13 +440,13 @@ export function longVsShortOption(
       {
         name: 'Long',
         type: 'bar',
-        data: visibleSeries.includes('long') && long ? [long.netPnl] : [],
+        data: visibleSeries.includes('long') && long ? [convertPnl(long.netPnl, options)] : [],
         itemStyle: { color: palette.positive },
       },
       {
         name: 'Short',
         type: 'bar',
-        data: visibleSeries.includes('short') && short ? [short.netPnl] : [],
+        data: visibleSeries.includes('short') && short ? [convertPnl(short.netPnl, options)] : [],
         itemStyle: { color: palette.negative },
       },
     ],
@@ -412,6 +463,14 @@ export function monthlyPnlOption(
   if (!data || data.length === 0) return null;
   const showNet = visibleSeries.includes('netPnl');
   const showWin = visibleSeries.includes('winRate');
+  // Net P&L bars are convertible under the global unit; Win Rate line stays
+  // fixed-semantic on its own percent axis (never becomes an R-like number).
+  const netBars = showNet
+    ? data.map((d) => {
+        const v = convertPnl(d.netPnl, options);
+        return { value: v, itemStyle: { color: (v ?? 0) >= 0 ? palette.positive : palette.negative } };
+      })
+    : [];
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
@@ -431,12 +490,7 @@ export function monthlyPnlOption(
       {
         name: 'Net P&L',
         type: 'bar',
-        data: showNet
-          ? data.map((d) => ({
-              value: d.netPnl,
-              itemStyle: { color: d.netPnl >= 0 ? palette.positive : palette.negative },
-            }))
-          : [],
+        data: netBars,
       },
       {
         name: 'Win Rate',

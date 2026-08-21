@@ -25,6 +25,7 @@ import {
   type TimeOfDayData,
   type LongVsShortItem,
   type MonthlyPerfItem,
+  type ChartRenderConfig,
 } from '@/lib/performance-chart-options';
 import { PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,63 +41,68 @@ export interface ChartWidgetProps {
 
 interface ChartDataExtractors {
   extract: (charts: Record<string, unknown>) => unknown;
-  build: (data: unknown, palette: ChartPalette, config: Record<string, unknown>) => EChartsOption | null;
+  build: (
+    data: unknown,
+    palette: ChartPalette,
+    config: Record<string, unknown>,
+    renderOptions: ChartRenderConfig,
+  ) => EChartsOption | null;
   series: string[];
 }
 
 const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
   'daily-cumulative-pnl': {
     extract: (c) => c.cumulativeDailyPnl as CumulativePnlPoint[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       dailyCumulativePnlOption(
         data as CumulativePnlPoint[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['cumulativePnl'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['cumulativePnl'],
   },
   'net-daily-pnl': {
     extract: (c) => c.dailyNetPnl as DailyPnlPoint[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       netDailyPnlOption(
         data as DailyPnlPoint[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['netPnl'],
   },
   'trade-duration-performance': {
     extract: (c) => c.tradeDurationPerformance as DurationBucketData[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       tradeDurationOption(
         data as DurationBucketData[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['netPnl'],
   },
   'drawdown-curve': {
     extract: (c) => c.drawdownCurve as DrawdownPoint[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       drawdownCurveOption(
         data as DrawdownPoint[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['drawdownAmount', 'drawdownPct'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['drawdownAmount', 'drawdownPct'],
   },
   'r-distribution': {
     extract: (c) => c.rDistribution as RDistributionItem[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       rDistributionOption(
         data as RDistributionItem[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['count'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['count'],
   },
@@ -119,33 +125,33 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
         netPnl: r.netPnl ?? 0,
       }));
     },
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       performanceBySetupOption(data as SetupPerfItem[], palette, {
         metric: (config.metric as string | undefined) ?? undefined,
         visibleSeries: (config.visibleSeries as string[] | undefined) ?? undefined,
-        legendVisible: Boolean(config.legendVisible),
+        ...ro,
       }),
     series: ['netPnl', 'winRate', 'avgR', 'count'],
   },
   'performance-by-day-of-week': {
     extract: (c) => c.performanceByDayOfWeek as DayOfWeekData[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       performanceByDayOfWeekOption(
         data as DayOfWeekData[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['netPnl'],
   },
   'performance-by-time-of-day': {
     extract: (c) => c.performanceByTimeOfDay as TimeOfDayData[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       performanceByTimeOfDayOption(
         data as TimeOfDayData[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['netPnl'],
   },
@@ -161,23 +167,23 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
         { direction: 'short' as const, netPnl: raw.short?.netPnl ?? 0, count: raw.short?.tradeCount ?? 0, winRate: raw.short?.winRate ?? null },
       ];
     },
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       longVsShortOption(
         data as LongVsShortItem[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['long', 'short'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['long', 'short'],
   },
   'monthly-pnl': {
     extract: (c) => c.monthlyPerformance as MonthlyPerfItem[],
-    build: (data, palette, config) =>
+    build: (data, palette, config, ro) =>
       monthlyPnlOption(
         data as MonthlyPerfItem[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['netPnl', 'winRate'],
-        { legendVisible: Boolean(config.legendVisible) },
+        ro,
       ),
     series: ['netPnl', 'winRate'],
   },
@@ -186,7 +192,7 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
-  const { analyticsData, isLoading, error } = usePerformanceDashboard();
+  const { analyticsData, filter, isLoading, error } = usePerformanceDashboard();
   const palette = useChartPalette();
 
   const extractor = CHART_EXTRACTORS[widgetType];
@@ -196,8 +202,17 @@ export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
     if (!extractor || !analyticsData) return null;
     const charts = analyticsData.charts as Record<string, unknown>;
     const data = extractor.extract(charts);
-    return extractor.build(data, palette, config);
-  }, [extractor, analyticsData, palette, config]);
+    // Global presentation unit + canonical denominators flow to the builder
+    // through the shared render config, so convertible series use the same
+    // $ / % / R contract as the KPI cards (no per-widget conversion formulas).
+    const renderOptions: ChartRenderConfig = {
+      legendVisible: Boolean(config.legendVisible),
+      unit: filter.unit,
+      periodStartEquity: analyticsData.metadata.periodStartEquity ?? null,
+      totalInitialRisk: analyticsData.metadata.totalInitialRisk ?? null,
+    };
+    return extractor.build(data, palette, config, renderOptions);
+  }, [extractor, analyticsData, palette, config, filter.unit]);
 
   if (!extractor || !definition) {
     return (
@@ -208,7 +223,11 @@ export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
   }
 
   return (
-    <div className="border border-border rounded-lg bg-card p-3 h-full flex flex-col">
+    <div
+      className="border border-border rounded-lg bg-card p-3 h-full flex flex-col"
+      data-widget-type={widgetType}
+      data-chart-series={option ? String(seriesValuesForTest(option)) : ''}
+    >
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-sm font-medium truncate">{typeof config.titleOverride === 'string' ? config.titleOverride : definition.title}</h4>
       </div>
@@ -236,4 +255,20 @@ export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
       </div>
     </div>
   );
+}
+
+/**
+ * Test contract: serialize the first series' numeric values for browser
+ * verification of the global unit conversion. Rounded to 6 decimals so the
+ * value is stable against float noise while remaining exact for the $/%/R
+ * assertions. Renders into a data attribute (invisible, no visual change).
+ */
+function seriesValuesForTest(option: EChartsOption): number[] {
+  const series = Array.isArray(option.series) ? option.series : [];
+  const first = series[0] as { data?: unknown } | undefined;
+  if (!first?.data || !Array.isArray(first.data)) return [];
+  return first.data.map((d) => {
+    const v = typeof d === 'object' && d !== null ? (d as { value: number }).value : (d as number);
+    return typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : NaN;
+  });
 }

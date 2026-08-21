@@ -16,6 +16,8 @@
 
 import type { SupportedUnit } from './performance-view-types';
 
+export type { SupportedUnit } from './performance-view-types';
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type KpiFormatKind = 'currency' | 'percent' | 'ratio' | 'r' | 'count' | 'duration';
@@ -258,6 +260,44 @@ export function getKpiMetricDefinition(metricId: string): KpiMetricDefinition | 
 // ── Unit Conversion Helpers ─────────────────────────────────────────────────
 
 /**
+ * Denomination context shared by every presentation conversion (KPI cards and
+ * chart series). The canonical denominators come from the analytics response
+ * metadata (`metadata.periodStartEquity`, `metadata.totalInitialRisk`); this
+ * is the single source for `%` and `R` conversion. Do not read denominators
+ * from kpiMetrics — production does not return them there.
+ */
+export interface PerformanceUnitContext {
+  /** % denominator: period-start equity for the selected analytical scope. */
+  periodStartEquity: number | null;
+  /** R denominator: aggregate eligible initial risk for the selected scope. */
+  totalInitialRisk: number | null;
+}
+
+/**
+ * Convert a scalar currency P&L value to the selected presentation unit.
+ *
+ * - `currency` → unchanged (canonical monetary P&L).
+ * - `percent` → value / period-start equity (null when equity missing/≤0).
+ * - `r` → value / aggregate eligible initial risk (null when risk missing/≤0).
+ * - `fixed` → unchanged (native semantics; caller should not route fixed
+ *   metrics here).
+ *
+ * This is the one shared conversion used by both KpiCard and the chart
+ * builders, so the `$ / % / R` contract cannot diverge between surfaces.
+ * Returns null (unavailable) rather than a fabricated 0 when the target
+ * unit's denominator is absent or invalid.
+ */
+export function convertCurrencyValue(
+  value: number,
+  unit: SupportedUnit,
+  context: PerformanceUnitContext,
+): number | null {
+  if (unit === 'percent') return currencyToPercent(value, context.periodStartEquity);
+  if (unit === 'r') return currencyToR(value, context.totalInitialRisk);
+  return value;
+}
+
+/**
  * Convert a currency value to a percentage of period-start equity.
  * Returns null when periodStartEquity is missing or non-positive.
  */
@@ -284,7 +324,7 @@ export function applyUnit(
   value: number | null,
   definition: KpiMetricDefinition,
   unit: SupportedUnit,
-  context: { periodStartEquity: number | null; totalInitialRisk: number | null },
+  context: PerformanceUnitContext,
 ): { value: number | null; unit: SupportedUnit } {
   if (value === null) return { value: null, unit };
 
@@ -299,13 +339,7 @@ export function applyUnit(
     return { value, unit: 'currency' };
   }
 
-  if (unit === 'percent') {
-    const pct = currencyToPercent(value, context.periodStartEquity);
-    return { value: pct, unit: 'percent' };
-  }
-  if (unit === 'r') {
-    const r = currencyToR(value, context.totalInitialRisk);
-    return { value: r, unit: 'r' };
-  }
-  return { value, unit: 'currency' };
+  // Shared scalar conversion: percent-of-equity / R-multiple (guards included).
+  const converted = convertCurrencyValue(value, unit, context);
+  return { value: converted, unit };
 }

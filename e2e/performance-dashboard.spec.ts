@@ -18,6 +18,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import Database from 'better-sqlite3';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hideDevOverlay } from './helpers';
@@ -1790,5 +1791,122 @@ test.describe('S06 visual UAT matrix (R006)', () => {
     const emptyFile = join(UAT_ARTIFACT_DIR, 'empty-1440-dark.png');
     await page.screenshot({ path: emptyFile });
     console.log(`[S06-UAT] empty-1440-dark: ${emptyFile}`);
+  });
+});
+
+// ── Corrective Task 2: global $ / % / R unit propagation ────────────────────
+//
+// Proves the full unit contract in the browser with deterministic seeded data:
+//  - convertible KPI (Net P&L) changes value under % and R using canonical
+//    metadata denominators (periodStartEquity, totalInitialRisk);
+//  - convertible chart series (Daily Cumulative P&L) change under % and R;
+//  - fixed-semantic KPIs (Win Rate, Profit Factor, Average R, Payoff Ratio)
+//    remain byte-identical;
+//  - switching units never triggers a new /api/performance/analytics request.
+//
+// Chart series state is read from the live ECharts instance (echarts-for-react
+// registers instances via echarts.getInstanceByDom), not from a unit label.
+
+test.describe('global unit propagation (CT2)', () => {
+  test('unit toggles convert KPI + chart series while fixed KPIs hold and no refetch occurs', async ({ page }) => {
+    const analytics = observeAnalytics(page);
+    // Deterministic fixture: two accounts with win/loss trades across days,
+    // plus a rollforward row so periodStartEquity is a real number.
+    const seeded = await seedPropagationFixture(page);
+    void seeded;
+
+    // Seed a deterministic rollforward equity row directly into the
+    // Playwright-owned disposable DB (same pattern the analytics route unit
+    // test uses) so metadata.periodStartEquity is populated for the % proof.
+    const dbFile = process.env.DB_FILE_NAME;
+    expect(dbFile).toBeTruthy();
+    const db = new Database(dbFile as string);
+    const accounts = db.prepare('SELECT id FROM accounts ORDER BY created_at ASC LIMIT 1').all() as Array<{ id: string }>;
+    const accountId = accounts[0]?.id;
+    expect(accountId).toBeTruthy();
+    db.prepare(
+      'INSERT OR REPLACE INTO account_rollforward (id, account_id, date, beginning_equity, deposits_withdrawals, realized_gross_pnl, fees, ending_equity, cumulative_pnl, high_water_mark, drawdown_amount, drawdown_pct, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, ?, 0, 0, ?, ?)'
+    ).run(
+      crypto.randomUUID(),
+      accountId,
+      '2026-01-31',
+      10000, 10000, 10000, 10000,
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
+    db.close();
+
+    await gotoPerformance(page);
+    await waitForInitialAnalytics(page, analytics);
+
+    const reqBefore = analytics.analyticsRequests.length;
+    const baseline = analytics.lastBody();
+    expect(baseline).not.toBeNull();
+    const equity = baseline!.metadata.periodStartEquity as number | null;
+    const risk = baseline!.metadata.totalInitialRisk as number | null;
+    expect(typeof equity).toBe('number');
+    expect(typeof risk).toBe('number');
+    if (equity === null || risk === null) throw new Error('seeded fixture must provide both denominators');
+    const netPnl = baseline!.kpiMetrics.netPnl as number;
+
+    /** Read the primary chart series via the inspectable data contract. */
+    const readChartSeries = async (widgetType: string): Promise<number[]> => {
+      const raw = (await page.locator(`[data-widget-type="${widgetType}"]`).getAttribute('data-chart-series')) ?? '';
+      if (!raw) return [];
+      return raw.split(',').map((v) => Number(v));
+    };
+
+    // Baseline under $: convertible KPI is raw currency; cumulative chart
+    // series ends at the raw cumulative Net P&L.
+    const kpiBaseline = (await page.locator('[data-kpi-value="net-pnl"]').textContent()) ?? '';
+    expect(kpiBaseline).toMatch(/^\$\d/);
+    const fixedBaseline = {
+      winRate: (await page.locator('[data-kpi-value="win-rate"]').textContent()) ?? '',
+      profitFactor: (await page.locator('[data-kpi-value="profit-factor"]').textContent()) ?? '',
+      avgR: (await page.locator('[data-kpi-value="average-r"]').textContent()) ?? '',
+      payoff: (await page.locator('[data-kpi-value="payoff-ratio"]').textContent()) ?? '',
+    };
+    const chartBaseline = await readChartSeries('daily-cumulative-pnl');
+    expect(chartBaseline.length).toBeGreaterThan(0);
+    expect(Math.abs(chartBaseline[chartBaseline.length - 1] - netPnl)).toBeLessThan(0.01);
+
+    // % toggle: convertible KPI becomes percent-of-equity; chart converts; no refetch.
+    await page.getByRole('button', { name: '%', exact: true }).click();
+    await expect(page.getByRole('button', { name: '%', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await page.locator('[data-kpi-value="net-pnl"]').textContent()) ?? '').toMatch(/%$/);
+    const pctKpi = await page.locator('[data-kpi-value="net-pnl"]').textContent();
+    const expectedPct = ((netPnl / equity) * 100).toFixed(1);
+    expect(pctKpi).toBe(`${expectedPct}%`);
+    const pctChart = await readChartSeries('daily-cumulative-pnl');
+    expect(pctChart.length).toBeGreaterThan(0);
+    expect(Math.abs(pctChart[pctChart.length - 1] - netPnl / equity)).toBeLessThan(1e-6);
+    await expect.poll(async () => ({
+      winRate: (await page.locator('[data-kpi-value="win-rate"]').textContent()) ?? '',
+      profitFactor: (await page.locator('[data-kpi-value="profit-factor"]').textContent()) ?? '',
+      avgR: (await page.locator('[data-kpi-value="average-r"]').textContent()) ?? '',
+      payoff: (await page.locator('[data-kpi-value="payoff-ratio"]').textContent()) ?? '',
+    })).toEqual(fixedBaseline);
+    expect(analytics.analyticsRequests.length).toBe(reqBefore);
+
+    // R toggle: convertible KPI becomes R-multiple; chart converts; no refetch.
+    await page.getByRole('button', { name: 'R', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'R', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await page.locator('[data-kpi-value="net-pnl"]').textContent()) ?? '').toMatch(/R$/);
+    const rKpi = await page.locator('[data-kpi-value="net-pnl"]').textContent();
+    const expectedR = (netPnl / risk).toFixed(2);
+    expect(rKpi).toBe(`${expectedR}R`);
+    const rChart = await readChartSeries('daily-cumulative-pnl');
+    expect(rChart.length).toBeGreaterThan(0);
+    expect(Math.abs(rChart[rChart.length - 1] - netPnl / risk)).toBeLessThan(1e-6);
+    await expect.poll(async () => ({
+      winRate: (await page.locator('[data-kpi-value="win-rate"]').textContent()) ?? '',
+      profitFactor: (await page.locator('[data-kpi-value="profit-factor"]').textContent()) ?? '',
+      avgR: (await page.locator('[data-kpi-value="average-r"]').textContent()) ?? '',
+      payoff: (await page.locator('[data-kpi-value="payoff-ratio"]').textContent()) ?? '',
+    })).toEqual(fixedBaseline);
+    // No refetch on any unit toggle.
+    await page.waitForTimeout(700);
+    expect(analytics.analyticsRequests.length).toBe(reqBefore);
+    expect(analytics.analyticsRequests.every((u) => !u.includes('unit='))).toBeTruthy();
   });
 });
