@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, inArray, and } from 'drizzle-orm';
@@ -63,6 +64,7 @@ sqlite.exec(`
   DROP TABLE IF EXISTS trade_executions;
   DROP TABLE IF EXISTS trades;
   DROP TABLE IF EXISTS account_transactions;
+  DROP TABLE IF EXISTS financial_events;
   DROP TABLE IF EXISTS settings;
   DROP TABLE IF EXISTS accounts;
 
@@ -175,6 +177,18 @@ sqlite.exec(`
     balance_after REAL NOT NULL,
     date TEXT NOT NULL,
     notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+
+  CREATE TABLE IF NOT EXISTS financial_events (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL REFERENCES accounts(id),
+    event_type TEXT NOT NULL,
+    idempotency_key TEXT,
+    description TEXT,
+    payload TEXT,
+    effect TEXT,
+    posted_at TEXT NOT NULL,
     created_at TEXT DEFAULT (current_timestamp)
   );
 
@@ -303,6 +317,25 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
       return { status: 404, data: { error: 'Account not found' } };
     }
 
+    // Currency mutation guard (D4): base currency is fixed once the account has
+    // financial history (financial_events rows). Mirrors the real PUT handler.
+    if (body.currency !== undefined && body.currency !== existing.currency) {
+      const eventRow = sqlite
+        .prepare('SELECT COUNT(*) AS count FROM financial_events WHERE account_id = ?')
+        .get(id) as { count: number };
+      if (eventRow.count > 0) {
+        return {
+          status: 409,
+          data: {
+            error:
+              'Cannot change base currency: account has financial history. ' +
+              'Base currency is fixed once financial events are posted; ' +
+              'create a new account for a different base currency.',
+          },
+        };
+      }
+    }
+
     // Validate trading default fields (mirrors real PUT zod schema)
     if (body.maxRiskPerTradePct !== undefined && body.maxRiskPerTradePct !== null && (typeof body.maxRiskPerTradePct !== 'number' || (body.maxRiskPerTradePct as number) <= 0)) {
       return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { maxRiskPerTradePct: ['Number must be greater than 0'] } } } };
@@ -377,6 +410,7 @@ function cleanup() {
   sqlite.exec('DELETE FROM trade_executions;');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM account_transactions;');
+  sqlite.exec('DELETE FROM financial_events;');
   sqlite.exec('DELETE FROM settings;');
   sqlite.exec('DELETE FROM accounts;');
 }
@@ -436,6 +470,22 @@ function seedExecution(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return db.select().from(schema.tradeExecutions).where(eq(schema.tradeExecutions.id, id)).get() as Record<string, unknown>;
+}
+
+function seedFinancialEvent(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.financialEvents)
+    .values({
+      id,
+      accountId: overrides.accountId as string,
+      eventType: 'opening_balance',
+      postedAt: now,
+      createdAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.financialEvents).where(eq(schema.financialEvents.id, id)).get() as Record<string, unknown>;
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -800,6 +850,54 @@ console.log('\n26. PUT allows reactivation when inactive with no trades:');
   assertEqual(updated.isActive, true, 'account is reactivated');
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// NEW: Currency mutation guard (D4)
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 27. PUT: Blocks currency change when account has financial history ──
+
+console.log('\n27. PUT blocks currency change with financial history:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Currency Guard', currency: 'USD' });
+  seedFinancialEvent({ accountId: account.id as string, eventType: 'opening_balance' });
+  const result = doPutAccount(account.id as string, { currency: 'EUR' });
+
+  assert(result.status === 409, 'returns 409');
+  const data = result.data as { error: string };
+  assert(data.error.includes('base currency'), 'error message is descriptive and actionable');
+  const current = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
+  assertEqual(current.currency, 'USD', 'currency unchanged');
+}
+
+// ── 28. PUT: Allows currency change when no financial history ─────────
+
+console.log('\n28. PUT allows currency change without financial history:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Currency Free', currency: 'USD' });
+  const result = doPutAccount(account.id as string, { currency: 'EUR' });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.currency, 'EUR', 'currency is updated');
+}
+
+// ── 29. PUT: Same-currency no-op allowed even with financial history ──
+
+console.log('\n29. PUT allows same-currency update with financial history:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Currency Noop', currency: 'USD' });
+  seedFinancialEvent({ accountId: account.id as string, eventType: 'deposit' });
+  const result = doPutAccount(account.id as string, { currency: 'USD' });
+
+  assert(result.status === 200, 'returns 200 (no actual mutation)');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.currency, 'USD', 'currency unchanged');
+}
+
+
 // ── Summary ──────────────────────────────────────────────────────────
 
 const total = passed + failed;
@@ -807,7 +905,18 @@ console.log(`\n${'─'.repeat(40)}`);
 console.log(`Results: ${passed}/${total} passed`);
 if (failed > 0) {
   console.error(`         ${failed}/${total} FAILED\n`);
-  process.exit(1);
+  throw new Error(`${failed}/${total} assertions FAILED in account-by-id route test`);
 } else {
   console.log('         All tests passed!\n');
+}
+
+// Vitest integration: the standalone-runner assertions above execute at
+// module scope during collection, which is the repo pattern for both
+// `npx tsx <file>` (run-all-tests.ts) and vitest. Expose a minimal suite so
+// `npx vitest run <file>` reports a passing file instead of
+// "No test suite found in file". Guarded so the plain tsx path stays valid.
+if (process.env.VITEST) {
+  it('account-by-id standalone assertion runner completed without failures', () => {
+    expect(failed).toBe(0);
+  });
 }

@@ -196,6 +196,7 @@ export default defineConfig({
       'src/components/edit-trade-dialog.test.tsx',
       'src/components/plan-trade-form.test.tsx',
       'src/app/api/accounts/[id]/__tests__/route.defaults.test.ts',
+      'src/app/api/accounts/[id]/__tests__/route.test.ts',
       'src/lib/account-detail.test.ts',
       'src/lib/__fixtures__/account-detail-contracts.test.ts',
       'src/app/api/accounts/[id]/overview/__tests__/route.test.ts',

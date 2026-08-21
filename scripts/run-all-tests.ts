@@ -52,7 +52,6 @@ const TSX_TESTS: string[] = [
   'src/components/trade-detail/__tests__/correction-dialog.test.ts',
   'src/app/api/accounts/__tests__/route.test.ts',
   'src/app/api/accounts/__tests__/checks.test.ts',
-  'src/app/api/accounts/[id]/__tests__/route.test.ts',
   'src/app/api/accounts/[id]/__tests__/route.accounting-regression.test.ts',
   'src/app/api/accounts/[id]/transactions/__tests__/route.test.ts',
   'src/app/api/accounts/[id]/close/__tests__/route.test.ts',

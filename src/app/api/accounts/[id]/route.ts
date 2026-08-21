@@ -4,7 +4,7 @@ import { accounts, trades } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
-import { findAccountPerformance } from '@/db/accounting-repository';
+import { countAccountEvents, findAccountPerformance } from '@/db/accounting-repository';
 
 const updateAccountSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -87,6 +87,26 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const existing = db.select().from(accounts).where(eq(accounts.id, id)).get();
     if (!existing) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
+    }
+
+    // Currency mutation guard (D4): base currency is fixed once the account has
+    // financial history. The posting kernel hardcodes USD in toPostingRecord and
+    // ledger_postings.currency is USD NOT NULL, so changing the declared currency
+    // after events exist would silently diverge it from the ledger postings.
+    if (parsed.data.currency !== undefined && parsed.data.currency !== existing.currency) {
+      const sqlite = getSqliteHandle();
+      const eventCount = countAccountEvents(sqlite, id);
+      if (eventCount > 0) {
+        return NextResponse.json(
+          {
+            error:
+              'Cannot change base currency: account has financial history. ' +
+              'Base currency is fixed once financial events are posted; ' +
+              'create a new account for a different base currency.',
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const accountTrades = db.select({ status: trades.status }).from(trades).where(eq(trades.accountId, id)).all();
