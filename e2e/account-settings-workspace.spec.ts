@@ -25,6 +25,21 @@
 import { expect, test, type Page } from '@playwright/test';
 import { prepareAccountForTrading } from './helpers/trading-account';
 
+/**
+ * Wait one animation frame so React commits controlled-input state after a
+ * fill(). Without it, a fast Save click can read the stale pre-fill value from
+ * component state under dev-server load (observed in the combined
+ * chromium+firefox run), producing a PUT body with the old value.
+ */
+async function settleReactInput(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -446,6 +461,8 @@ test.describe('Account Settings Workspace', () => {
       // ── Edit the broker field ──────────────────────────────────────
       const brokerInput = page.locator('#settings-account-broker');
       await brokerInput.fill('IBKR Pro');
+      // Settle so React commits the new value before Save reads it.
+      await settleReactInput(page);
 
       // ── Save and wait for the PUT round trip ───────────────────────
       const putResponse = page.waitForResponse(
@@ -477,6 +494,8 @@ test.describe('Account Settings Workspace', () => {
 
       // Clear the field and save
       await brokerInput.fill('');
+      // Settle so React commits the cleared value before Save reads it.
+      await settleReactInput(page);
       const putResponse = page.waitForResponse(
         (res) =>
           res.url().includes(`/api/accounts/${brokerAccountId}`) &&
