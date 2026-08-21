@@ -1,10 +1,23 @@
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { KpiRow } from '../kpi-row';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
 import { PerformanceInstanceProvider } from '../performance-instance-context';
+
+// jsdom gaps for Radix Select (repo pattern — see performance-filter-bar.test.tsx).
+Element.prototype.scrollIntoView = () => {};
+
+/** Open a radix Select by combobox name and click the given option label. */
+async function chooseSelectOption(comboboxName: string, optionName: string | RegExp) {
+  fireEvent.click(screen.getByRole('combobox', { name: comboboxName }));
+  const option = await screen.findByRole('option', { name: optionName });
+  fireEvent.click(option);
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
 
 afterEach(() => cleanup());
 
@@ -89,10 +102,12 @@ describe('KpiRow', () => {
   it('resets a single widget to its registry default via the ⋯ menu', async () => {
     const user = userEvent.setup();
     renderKpiRow(true);
-    // Configure the Net P&L card to show Total Trades instead.
+    // Configure the Net P&L card to show Total Trades via the typed dialog.
     await user.click(screen.getByLabelText('Actions for Net P&L'));
     await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
-    await user.click(screen.getByText('Total Trades'));
+    // The typed Configure dialog opens with a Metric select (from the catalogue).
+    await chooseSelectOption('Metric', 'Total Trades');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
     expect(screen.getByText('Total Trades')).toBeDefined();
     // Per-widget Reset restores the registry default metric.
     await user.click(screen.getByLabelText('Actions for Total Trades'));

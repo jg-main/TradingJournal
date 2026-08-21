@@ -1,11 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { ChartGrid } from '../chart-grid';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
 import { PerformanceInstanceProvider } from '../performance-instance-context';
 import { getDefaultWidgetInstances } from '@/lib/performance-widget-registry';
+
+// jsdom gaps for Radix Select (repo pattern — see performance-filter-bar.test.tsx).
+Element.prototype.scrollIntoView = () => {};
+
+/** Open a radix Select by combobox name and click the given option label. */
+async function chooseSelectOption(comboboxName: string, optionName: string | RegExp) {
+  fireEvent.click(screen.getByRole('combobox', { name: comboboxName }));
+  const option = await screen.findByRole('option', { name: optionName });
+  fireEvent.click(option);
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
 
 // ECharts renders to canvas, which jsdom does not implement. The chart body is
 // not under test here — the editing chrome around each widget is.
@@ -135,6 +148,58 @@ describe('ChartGrid', () => {
     // Config cleared → the customized title is gone and the default returns.
     expect(screen.queryByText('Customized')).toBeNull();
     expect(screen.getByText('Daily Cumulative P&L')).toBeDefined();
+  });
+
+  it('opens the typed Configure dialog for a multi-series chart and saves series visibility', async () => {
+    const user = userEvent.setup();
+    renderChartGrid(true);
+    // Drawdown Curve declares visibleSeries (Amount $ / Percent %) in its
+    // registry configSchema → the dialog renders typed checkboxes.
+    await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(true);
+    await user.click(screen.getByRole('checkbox', { name: 'Percent (%)' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Reopen Configure → the persisted choice is reflected (via the store).
+    await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  });
+
+  it('persists chart config through the instance store across remounts (save/reload)', async () => {
+    const user = userEvent.setup();
+    const first = renderChartGrid(true);
+    await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Percent (%)' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    first.unmount();
+
+    // Reload: a fresh tree reads the persisted instances from localStorage.
+    renderChartGrid(true);
+    await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  });
+
+  it('opens the typed Configure dialog for performance-by-setup with a primary-series select', async () => {
+    const user = userEvent.setup();
+    renderChartGrid(true);
+    await user.click(screen.getByLabelText('Actions for Performance by Setup'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    await chooseSelectOption('Primary series', 'Win Rate');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Reopen → the saved primary series is selected (shown in the trigger).
+    await user.click(screen.getByLabelText('Actions for Performance by Setup'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    expect(screen.getByRole('combobox', { name: 'Primary series' }).textContent).toContain('Win Rate');
   });
 
   it('shows grid-level Customize controls only in edit mode', () => {

@@ -86,6 +86,19 @@ describe('performance-chart-options', () => {
       expect(option!.series).toHaveLength(2);
     });
 
+    it('respects visibleSeries filtering (dual series)', () => {
+      const option = drawdownCurveOption(
+        [
+          { date: '2024-01-01', drawdownAmount: 100, drawdownPct: 0.01 },
+          { date: '2024-01-02', drawdownAmount: 200, drawdownPct: 0.02 },
+        ],
+        palette,
+        ['drawdownAmount'],
+      );
+      expect((option!.series[0] as { data: number[] }).data).toHaveLength(2);
+      expect((option!.series[1] as { data: number[] }).data).toEqual([]);
+    });
+
     it('returns null for empty data', () => {
       expect(drawdownCurveOption([], palette)).toBeNull();
     });
@@ -190,8 +203,47 @@ describe('performance-chart-options', () => {
       expect((option!.yAxis as unknown[]).length).toBe(2);
     });
 
+    it('respects visibleSeries filtering', () => {
+      const option = monthlyPnlOption(
+        [
+          { month: '2024-01', netPnl: 100, winRate: 0.6 },
+          { month: '2024-02', netPnl: -50, winRate: 0.5 },
+        ],
+        palette,
+        ['netPnl'],
+      );
+      expect((option!.series[0] as { data: unknown[] }).data).toHaveLength(2);
+      expect((option!.series[1] as { data: unknown[] }).data).toEqual([]);
+    });
+
     it('returns null for empty data', () => {
       expect(monthlyPnlOption([], palette)).toBeNull();
+    });
+  });
+
+  describe('legend visibility (Configure-dialog driven)', () => {
+    it('keeps the dense default: no legend unless legendVisible', () => {
+      const option = dailyCumulativePnlOption([{ date: '2024-01-01', cumulativePnl: 100 }], palette);
+      expect(option!.legend).toBeUndefined();
+    });
+
+    it('renders the legend when legendVisible is set', () => {
+      const option = dailyCumulativePnlOption(
+        [{ date: '2024-01-01', cumulativePnl: 100 }],
+        palette,
+        ['cumulativePnl'],
+        { legendVisible: true },
+      );
+      expect((option!.legend as { show: boolean }).show).toBe(true);
+    });
+
+    it('honors legendVisible for the config-object builder (performance-by-setup)', () => {
+      const option = performanceBySetupOption(
+        [{ setup: 'Breakout', netPnl: 500, winRate: 0.6, avgR: 0.8, count: 10 }],
+        palette,
+        { legendVisible: true },
+      );
+      expect((option!.legend as { show: boolean }).show).toBe(true);
     });
   });
 });
