@@ -163,10 +163,15 @@ test.describe('/performance structure', () => {
   test('renders filter bar, KPI row, and chart grid', async ({ page }) => {
     await gotoPerformance(page);
 
-    // Global filter bar controls.
-    await expect(page.getByText('Accounts:')).toBeVisible();
-    await expect(page.getByText('Period:')).toBeVisible();
-    await expect(page.getByText('Unit:')).toBeVisible();
+    // Compact analytical filter bar (CT7): the redundant visible form labels
+    // are gone; every control keeps an explicit accessible name.
+    await expect(page.getByText('Accounts:', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Period:', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Unit:', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('Performance accounts')).toBeVisible();
+    await expect(page.getByLabel('Performance period')).toBeVisible();
+    await expect(page.getByLabel('Performance filters')).toBeVisible();
+    await expect(page.getByLabel('Performance unit')).toBeVisible();
 
     // KPI cards by title.
     for (const title of KPI_TITLES) {
@@ -1588,7 +1593,7 @@ function filterBarControls(page: Page) {
     { name: 'account-scope', loc: page.locator('#perf-account-scope') },
     { name: 'date-period', loc: page.locator('#perf-date-period') },
     { name: 'filters', loc: page.getByTestId('filters-trigger') },
-    { name: 'unit', loc: page.locator('[aria-labelledby="perf-unit-label"]') },
+    { name: 'unit', loc: page.locator('[aria-label="Performance unit"]') },
   ];
 }
 
@@ -1628,7 +1633,7 @@ async function walkChecklist(
 
   // 2. Page hierarchy: toolbar → filter bar → KPI rail → charts
   const toolbarBox = await page.getByRole('button', { name: /Customize/ }).boundingBox();
-  const filterLabel = await page.getByText('Accounts:', { exact: true }).boundingBox();
+  const filterLabel = await page.locator('#perf-account-scope').boundingBox();
   const kpiSection = await page.locator('section[aria-label="Performance KPI row"]').boundingBox();
   const chartsSection = await page.locator('section[aria-label="Performance charts"]').boundingBox();
   if (toolbarBox && filterLabel && kpiSection && chartsSection && toolbarBox.y < filterLabel.y && filterLabel.y < kpiSection.y && kpiSection.y < chartsSection.y) {

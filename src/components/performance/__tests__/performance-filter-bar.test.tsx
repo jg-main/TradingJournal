@@ -162,13 +162,17 @@ describe('PerformanceFilterBar', () => {
     };
   }
 
-  it('renders account scope, period, and unit controls', async () => {
+  it('renders the compact toolbar with accessible names and no visible form labels', async () => {
     renderBar();
-    expect(screen.getByText('Accounts:')).toBeDefined();
-    expect(screen.getByText('Period:')).toBeDefined();
-    expect(screen.getByText('Unit:')).toBeDefined();
-    expect(screen.getByRole('combobox', { name: 'Account scope' })).toBeDefined();
-    expect(screen.getByRole('combobox', { name: 'Date period' })).toBeDefined();
+    // CT7: the redundant visible form labels are gone…
+    expect(screen.queryByText('Accounts:')).toBeNull();
+    expect(screen.queryByText('Period:')).toBeNull();
+    expect(screen.queryByText('Unit:')).toBeNull();
+    // …and every control keeps an explicit accessible name (role + aria-label).
+    expect(screen.getByRole('combobox', { name: 'Performance accounts' })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: 'Performance period' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Performance filters' })).toBeDefined();
+    expect(screen.getByRole('group', { name: 'Performance unit' })).toBeDefined();
     // Default unit is currency ($ pressed).
     expect(screen.getByRole('button', { name: '$' }).getAttribute('aria-pressed')).toBe('true');
     await flushAsync();
@@ -177,7 +181,7 @@ describe('PerformanceFilterBar', () => {
   it('applies a relative preset to the shared date range', async () => {
     renderBar();
     await flushAsync();
-    await chooseSelectOption('Date period', '1 Month');
+    await chooseSelectOption('Performance period', '1 Month');
     expect(probe().preset).toBe('1M');
     // 1M preset computes a concrete from date (today minus one month).
     expect(probe().from).not.toBe('');
@@ -187,7 +191,7 @@ describe('PerformanceFilterBar', () => {
     renderBar();
     await flushAsync();
 
-    await chooseSelectOption('Date period', 'Custom');
+    await chooseSelectOption('Performance period', 'Custom');
     expect(screen.getByLabelText('Custom from date')).toBeDefined();
     expect(screen.getByLabelText('Custom to date')).toBeDefined();
 
@@ -225,7 +229,7 @@ describe('PerformanceFilterBar', () => {
     renderBar();
     await flushAsync();
 
-    await chooseSelectOption('Account scope', 'Single Account');
+    await chooseSelectOption('Performance accounts', 'Single Account');
     // Single mode auto-selects the first account.
     expect(probe().mode).toBe('single');
     expect(probe().accountIds).toEqual(['acc-usd']);
@@ -240,7 +244,7 @@ describe('PerformanceFilterBar', () => {
     renderBar();
     await flushAsync();
 
-    await chooseSelectOption('Account scope', 'Multiple Accounts');
+    await chooseSelectOption('Performance accounts', 'Multiple Accounts');
     const checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes).toHaveLength(2);
 
@@ -273,16 +277,16 @@ describe('PerformanceFilterBar', () => {
     await flushAsync();
 
     // Accounts: controls still render.
-    expect(screen.getByRole('combobox', { name: 'Account scope' })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: 'Performance accounts' })).toBeDefined();
 
     // Switching to single mode shows the degraded "unavailable" placeholder,
     // not a crash.
-    await chooseSelectOption('Account scope', 'Single Account');
+    await chooseSelectOption('Performance accounts', 'Single Account');
     expect(screen.getByTestId('account-single-select')).toBeDefined();
     expect(screen.getByText('Accounts unavailable')).toBeDefined();
 
     // Switching to multiple shows the inline error message.
-    await chooseSelectOption('Account scope', 'Multiple Accounts');
+    await chooseSelectOption('Performance accounts', 'Multiple Accounts');
     expect(screen.getByText('Network error')).toBeDefined();
   });
 
@@ -293,7 +297,7 @@ describe('PerformanceFilterBar', () => {
   describe('Filters popover (advanced dimensions)', () => {
     /** Open the Filters popover by clicking its trigger button. */
     async function openFilters() {
-      fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Performance filters' }));
       await act(async () => {
         await Promise.resolve();
         await Promise.resolve();

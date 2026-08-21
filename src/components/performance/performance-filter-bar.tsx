@@ -335,17 +335,15 @@ export function PerformanceFilterBar() {
   const accountsAvailable = !accountsLoading && !accountsError && accounts.length > 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-border bg-card">
-      {/* Account Scope */}
+    <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border bg-card">
+      {/* Account Scope — compact control; accessible name via aria-label
+          (the visible 'Accounts:' form label is gone, CT7). */}
       <div className="flex items-center gap-2">
-        <label htmlFor="perf-account-scope" className="text-sm font-medium text-muted-foreground">
-          Accounts:
-        </label>
         <Select
           value={filter.accountScope.mode}
           onValueChange={(v) => handleAccountModeChange(v as AccountScopeMode)}
         >
-          <SelectTrigger id="perf-account-scope" size="lg" aria-label="Account scope">
+          <SelectTrigger id="perf-account-scope" size="lg" aria-label="Performance accounts">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -408,13 +406,10 @@ export function PerformanceFilterBar() {
         )}
       </div>
 
-      {/* Date Range Presets */}
+      {/* Date Range Presets — compact control; accessible name via aria-label. */}
       <div className="flex items-center gap-2">
-        <label htmlFor="perf-date-period" className="text-sm font-medium text-muted-foreground">
-          Period:
-        </label>
         <Select value={filter.dateRange.preset} onValueChange={(v) => handlePresetChange(v as DatePreset)}>
-          <SelectTrigger id="perf-date-period" size="lg" aria-label="Date period">
+          <SelectTrigger id="perf-date-period" size="lg" aria-label="Performance period">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -461,7 +456,7 @@ export function PerformanceFilterBar() {
               type="button"
               variant="outline"
               size="lg"
-              aria-label="Filters"
+              aria-label="Performance filters"
               aria-haspopup="dialog"
               data-testid="filters-trigger"
               className="gap-1.5"
@@ -574,14 +569,12 @@ export function PerformanceFilterBar() {
         </Popover>
       </div>
 
-      {/* Performance Unit */}
+      {/* Performance Unit — segmented $/%/R; accessible name via aria-label
+          (the visible 'Unit:' form label is gone, CT7). */}
       <div className="flex items-center gap-2">
-        <span id="perf-unit-label" className="text-sm font-medium text-muted-foreground">
-          Unit:
-        </span>
         <div
           role="group"
-          aria-labelledby="perf-unit-label"
+          aria-label="Performance unit"
           className="flex h-(--density-control-h-lg) rounded-lg border border-border overflow-hidden"
         >
           {UNIT_OPTIONS.map((opt, index) => {
