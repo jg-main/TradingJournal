@@ -38,7 +38,7 @@ export function Sparkline({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className="block"
+      className="block shrink-0"
       aria-hidden
       data-testid="kpi-sparkline"
     >
@@ -89,7 +89,7 @@ export function Donut({ fraction, size = 40, strokeWidth = 5 }: DonutProps) {
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
-      className="block -rotate-90"
+      className="block -rotate-90 shrink-0"
       aria-hidden
       data-testid="kpi-donut"
     >
@@ -126,6 +126,12 @@ export interface MicroVizProps {
 /**
  * Renders the appropriate micro-visualization for a KPI card, or nothing
  * when data is absent. Guarded: only renders when data is meaningful.
+ *
+ * Containment contract: KpiCard hosts the visualization inside a fixed
+ * 40px reserved slot (h-10, overflow-hidden). Default sizes must stay within
+ * that slot — sparkline 96×28, donut 40×40 — so the micro-viz can never
+ * change card height. `shrink-0` on both SVGs prevents flex from squeezing
+ * or distorting them inside the slot.
  */
 export function MicroViz({ kind, values, fraction }: MicroVizProps) {
   if (kind === 'sparkline') {

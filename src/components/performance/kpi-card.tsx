@@ -83,13 +83,17 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
         : null;
 
   return (
-    <div className="border border-border rounded-lg p-3 bg-card flex flex-col justify-between min-h-[72px]">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-muted-foreground truncate" title={title}>
+    <div
+      data-kpi-card={widgetType}
+      className="flex h-kpi-card flex-col rounded-lg border border-border bg-card p-3"
+    >
+      {/* Header row: title + edit-mode controls — pinned to the shared top edge */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="truncate text-xs text-muted-foreground" title={title}>
           {title}
         </div>
         {editMode && (
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             {onConfigure && (
               <button
                 onClick={() => onConfigure(instanceId, config)}
@@ -120,7 +124,8 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
           </div>
         )}
       </div>
-      <div className="text-lg font-semibold tabular-nums mt-1" data-kpi-value={widgetType}>
+      {/* Primary value — fixed top block, aligned across all cards */}
+      <div className="mt-1 text-lg font-semibold leading-none tabular-nums" data-kpi-value={widgetType}>
         {isLoading && rawValue === null && !error ? (
           <div data-testid={`kpi-skeleton-${widgetType}`} aria-hidden="true">
             <Skeleton className="h-5 w-16" />
@@ -134,9 +139,16 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
           displayValue
         )}
       </div>
+      {/* Micro-viz — reserved fixed slot pinned to the card bottom. The slot is
+          fixed-size with overflow-hidden, so the visualization can never change
+          card height or escape the card bounds. */}
       {!editMode && microViz && (
-        <div className="mt-1 flex justify-end">
-          <MicroViz kind={microViz.kind} values={microViz.kind === 'sparkline' ? microViz.values : undefined} fraction={microViz.kind === 'donut' ? microViz.fraction : undefined} />
+        <div className="mt-auto flex h-10 shrink-0 items-end justify-end overflow-hidden" data-kpi-microviz-slot>
+          <MicroViz
+            kind={microViz.kind}
+            values={microViz.kind === 'sparkline' ? microViz.values : undefined}
+            fraction={microViz.kind === 'donut' ? microViz.fraction : undefined}
+          />
         </div>
       )}
     </div>

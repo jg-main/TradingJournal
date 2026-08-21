@@ -297,6 +297,15 @@ stacking). The density scale is theme-independent and defined once in `:root`:
   Tailwind `h-*` classes.
 - These are targets for the whole system, not per-component requirements.
 
+### Component dimensions
+
+Fixed, theme-independent surface heights for components whose geometry must
+not be content-driven (equal-height KPI rail cards):
+
+| Token | Value | Use |
+|---|---|---|
+| `--kpi-card-h` | `6.875rem` (110px) | Fixed KPI rail card height — the five-card default shares identical top/bottom edges; the microvisualization lives in a reserved fixed slot and can never change it. Consumed via the `h-kpi-card` Tailwind utility. |
+
 ---
 
 ## Radius and elevation

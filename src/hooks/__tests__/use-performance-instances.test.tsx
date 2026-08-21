@@ -19,14 +19,13 @@ describe('usePerformanceInstances', () => {
 
   it('initializes with the curated default KPI instances', () => {
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
-    expect(result.current.instances).toHaveLength(6);
+    expect(result.current.instances).toHaveLength(5);
     expect(result.current.instances.map((i) => i.widgetType)).toEqual([
       'net-pnl',
-      'gross-pnl',
-      'total-trades',
       'win-rate',
       'profit-factor',
       'average-r',
+      'payoff-ratio',
     ]);
     // Default instances carry their instance id as the layout key.
     for (const inst of result.current.instances) {
@@ -37,8 +36,8 @@ describe('usePerformanceInstances', () => {
   it('adds an instance with a unique id and its config', () => {
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
     act(() => result.current.addInstance('median-r', { metricId: 'median-r' }));
-    expect(result.current.instances).toHaveLength(7);
-    const added = result.current.instances[6];
+    expect(result.current.instances).toHaveLength(6);
+    const added = result.current.instances[5];
     expect(added.widgetType).toBe('median-r');
     expect(added.config.metricId).toBe('median-r');
     expect(added.instanceId).not.toBe(result.current.instances[0].instanceId);
@@ -49,22 +48,22 @@ describe('usePerformanceInstances', () => {
     const sourceId = result.current.instances[0].instanceId;
     act(() => result.current.updateInstanceConfig(sourceId, { titleOverride: 'A' }));
     act(() => result.current.duplicateInstance(sourceId));
-    expect(result.current.instances).toHaveLength(7);
-    const copy = result.current.instances[6];
+    expect(result.current.instances).toHaveLength(6);
+    const copy = result.current.instances[5];
     expect(copy.instanceId).not.toBe(sourceId);
     expect(copy.widgetType).toBe('net-pnl');
     expect(copy.config.titleOverride).toBe('A');
     // Mutating the original's config must not leak into the copy.
     act(() => result.current.updateInstanceConfig(sourceId, { titleOverride: 'B' }));
     expect(result.current.instances[0].config.titleOverride).toBe('B');
-    expect(result.current.instances[6].config.titleOverride).toBe('A');
+    expect(result.current.instances[5].config.titleOverride).toBe('A');
   });
 
   it('removes only the targeted instance', () => {
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
     const id = result.current.instances[1].instanceId;
     act(() => result.current.removeInstance(id));
-    expect(result.current.instances).toHaveLength(5);
+    expect(result.current.instances).toHaveLength(4);
     expect(result.current.instances.some((i) => i.instanceId === id)).toBe(false);
   });
 
@@ -90,12 +89,11 @@ describe('usePerformanceInstances', () => {
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
     act(() => result.current.reorderInstance(0, 2));
     expect(result.current.instances.map((i) => i.widgetType)).toEqual([
-      'gross-pnl',
-      'total-trades',
-      'net-pnl',
       'win-rate',
       'profit-factor',
+      'net-pnl',
       'average-r',
+      'payoff-ratio',
     ]);
     const snapshot = result.current.instances;
     act(() => result.current.reorderInstance(-1, 0));
@@ -109,14 +107,14 @@ describe('usePerformanceInstances', () => {
     act(() => result.current.removeInstance(result.current.instances[0].instanceId));
     act(() => result.current.addInstance('median-r', { metricId: 'median-r' }));
     act(() => result.current.resetToDefault());
-    expect(result.current.instances).toHaveLength(6);
+    expect(result.current.instances).toHaveLength(5);
     expect(result.current.instances[0].widgetType).toBe('net-pnl');
   });
 
   it('replaceInstances swaps the set and falls back to defaults on empty input', () => {
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
     act(() => result.current.replaceInstances([]));
-    expect(result.current.instances).toHaveLength(6);
+    expect(result.current.instances).toHaveLength(5);
     const id = result.current.instances[0].instanceId;
     act(() => result.current.replaceInstances([result.current.instances[0]]));
     expect(result.current.instances).toHaveLength(1);
@@ -130,27 +128,27 @@ describe('usePerformanceInstances', () => {
       widgetType: string;
       config: Record<string, unknown>;
     }>;
-    expect(saved).toHaveLength(7);
-    expect(saved[6].widgetType).toBe('max-drawdown');
+    expect(saved).toHaveLength(6);
+    expect(saved[5].widgetType).toBe('max-drawdown');
     first.unmount();
 
     // Simulated reload: a fresh hook reads the persisted instances back.
     const second = renderHook(() => usePerformanceInstances('kpi'));
-    expect(second.result.current.instances).toHaveLength(7);
-    expect(second.result.current.instances[6].widgetType).toBe('max-drawdown');
-    expect(second.result.current.instances[6].config.metricId).toBe('max-drawdown');
+    expect(second.result.current.instances).toHaveLength(6);
+    expect(second.result.current.instances[5].widgetType).toBe('max-drawdown');
+    expect(second.result.current.instances[5].config.metricId).toBe('max-drawdown');
   });
 
   it('falls back to defaults on corrupt localStorage data', () => {
     window.localStorage.setItem(STORAGE_KEY, '{not-valid-json');
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
-    expect(result.current.instances).toHaveLength(6);
+    expect(result.current.instances).toHaveLength(5);
     expect(result.current.instances[0].widgetType).toBe('net-pnl');
   });
 
   it('falls back to defaults when localStorage holds an empty array', () => {
     window.localStorage.setItem(STORAGE_KEY, '[]');
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
-    expect(result.current.instances).toHaveLength(6);
+    expect(result.current.instances).toHaveLength(5);
   });
 });
