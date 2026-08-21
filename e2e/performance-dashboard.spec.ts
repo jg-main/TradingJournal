@@ -1824,16 +1824,16 @@ test.describe('global unit propagation (CT2)', () => {
     const accounts = db.prepare('SELECT id FROM accounts ORDER BY created_at ASC LIMIT 1').all() as Array<{ id: string }>;
     const accountId = accounts[0]?.id;
     expect(accountId).toBeTruthy();
-    db.prepare(
+    // Two rollforward dates with declining equity so the derived drawdown is
+    // non-zero (the multi-account merge recomputes drawdown from the combined
+    // equity series). periodStartEquity = earliest equity = 10000; drawdown
+    // amount at the last date = 10000 - 9500 = 500.
+    const rfInsert = db.prepare(
       'INSERT OR REPLACE INTO account_rollforward (id, account_id, date, beginning_equity, deposits_withdrawals, realized_gross_pnl, fees, ending_equity, cumulative_pnl, high_water_mark, drawdown_amount, drawdown_pct, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, ?, 0, 0, ?, ?)'
-    ).run(
-      crypto.randomUUID(),
-      accountId,
-      '2026-01-31',
-      10000, 10000, 10000, 10000,
-      new Date().toISOString(),
-      new Date().toISOString(),
     );
+    const ts = new Date().toISOString();
+    rfInsert.run(crypto.randomUUID(), accountId, '2026-01-15', 10000, 10000, 10000, 10000, ts, ts);
+    rfInsert.run(crypto.randomUUID(), accountId, '2026-01-31', 9500, 9500, 9500, 9500, ts, ts);
     db.close();
 
     await gotoPerformance(page);
@@ -1898,6 +1898,23 @@ test.describe('global unit propagation (CT2)', () => {
     const rChart = await readChartSeries('daily-cumulative-pnl');
     expect(rChart.length).toBeGreaterThan(0);
     expect(Math.abs(rChart[rChart.length - 1] - netPnl / risk)).toBeLessThan(1e-6);
+
+    // CT2A: registry enforcement under global R — Drawdown Curve (supportedUnits
+    // [currency, percent]) must keep its amount in currency, and R-Multiple
+    // Distribution (fixed) must stay unchanged.
+    const ddSeries = await readChartSeries('drawdown-curve');
+    expect(ddSeries.length).toBeGreaterThan(0);
+    // The amount series stays currency: the largest drawdown point is the raw
+    // 500, NOT 500/risk = 2.5R.
+    const ddMax = Math.max(...ddSeries);
+    expect(ddMax).toBeCloseTo(500, 0);
+    expect(Math.abs(ddMax - 500 / risk)).toBeGreaterThan(0.01);
+    expect(Math.abs(ddSeries[0] - 500 / risk)).toBeGreaterThan(0.01);
+    const rDistSeries = await readChartSeries('r-distribution');
+    expect(rDistSeries.length).toBeGreaterThan(0);
+    // counts are never converted.
+    expect(rDistSeries.every((v) => Number.isInteger(v))).toBe(true);
+    await expect.poll(async () => (await page.locator('[data-kpi-value="net-pnl"]').textContent()) ?? '').toMatch(/R$/);
     await expect.poll(async () => ({
       winRate: (await page.locator('[data-kpi-value="win-rate"]').textContent()) ?? '',
       profitFactor: (await page.locator('[data-kpi-value="profit-factor"]').textContent()) ?? '',

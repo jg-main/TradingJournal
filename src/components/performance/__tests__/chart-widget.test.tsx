@@ -173,4 +173,76 @@ describe('ChartWidget', () => {
     });
     expect(screen.getByText('Failed to load analytics')).toBeDefined();
   });
+  // ── Corrective Task 2A: registry supportedUnits enforcement ──────────────
+
+  it('drawdown-curve amount stays currency under global R (registry enforces supportedUnits)', async () => {
+    lastOption = undefined;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        kpiMetrics: {},
+        charts: {
+          drawdownCurve: [
+            { date: '2024-01-01', drawdownAmount: 500, drawdownPct: 0.02 },
+            { date: '2024-01-02', drawdownAmount: 800, drawdownPct: 0.03 },
+          ],
+        },
+        metadata: {
+          accountCount: 1,
+          mixedCurrencies: false,
+          tradeCount: 2,
+          dateRange: { from: null, to: null },
+          distinctSymbols: [],
+          periodStartEquity: 10000,
+          totalInitialRisk: 200,
+        },
+      }),
+    } as Response);
+    render(
+      <PerformanceDashboardProvider initialFilter={{ unit: 'r' } as never}>
+        <ChartWidget widgetType="drawdown-curve" config={{}} />
+      </PerformanceDashboardProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('chart-option')).toBeDefined());
+    const option = lastOption as { series: Array<{ data: number[] }> };
+    // drawdown-curve supportedUnits = [currency, percent] → global R resolves
+    // to currency fallback; the amount series must NOT become 500/200 = 2.5R.
+    expect(option.series[0].data).toEqual([500, 800]);
+    // drawdownPct stays its native percentage.
+    expect(option.series[1].data).toEqual([0.02, 0.03]);
+  });
+
+  it('daily-cumulative-pnl fully converts under global R (supportedUnits includes r)', async () => {
+    lastOption = undefined;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        kpiMetrics: {},
+        charts: {
+          cumulativeDailyPnl: [
+            { date: '2024-01-01', cumulativePnl: 1000 },
+            { date: '2024-01-02', cumulativePnl: 2000 },
+          ],
+        },
+        metadata: {
+          accountCount: 1,
+          mixedCurrencies: false,
+          tradeCount: 2,
+          dateRange: { from: null, to: null },
+          distinctSymbols: [],
+          periodStartEquity: 10000,
+          totalInitialRisk: 200,
+        },
+      }),
+    } as Response);
+    render(
+      <PerformanceDashboardProvider initialFilter={{ unit: 'r' } as never}>
+        <ChartWidget widgetType="daily-cumulative-pnl" config={{}} />
+      </PerformanceDashboardProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('chart-option')).toBeDefined());
+    const option = lastOption as { series: Array<{ data: number[] }> };
+    // supportedUnits = [currency, percent, r] → global R applies: 1000/200 = 5.
+    expect(option.series[0].data).toEqual([5, 10]);
+  });
 });

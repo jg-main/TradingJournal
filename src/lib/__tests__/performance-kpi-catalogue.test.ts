@@ -6,6 +6,7 @@ import {
   currencyToR,
   applyUnit,
   kpiValueClass,
+  resolveSupportedUnit,
   type KpiMetricDefinition,
 } from '../performance-kpi-catalogue';
 import { PERFORMANCE_WIDGET_IDS } from '../performance-widget-registry';
@@ -199,5 +200,49 @@ describe('performance-kpi-catalogue', () => {
       expect(PERFORMANCE_KPI_CATALOGUE['win-rate'].valueSemantics).toBe('neutral');
       expect(PERFORMANCE_KPI_CATALOGUE['average-loss'].valueSemantics).toBe('inverse');
     });
+  });
+});
+// ── Corrective Task 2A: shared effective-unit resolution ────────────────────
+
+describe('resolveSupportedUnit (Corrective Task 2A)', () => {
+  it('fully convertible surface uses the selected unit', () => {
+    // Daily Cumulative P&L: supportedUnits = currency, percent, r
+    const units = ['currency', 'percent', 'r'] as const;
+    expect(resolveSupportedUnit(units, 'currency')).toBe('currency');
+    expect(resolveSupportedUnit(units, 'percent')).toBe('percent');
+    expect(resolveSupportedUnit(units, 'r')).toBe('r');
+  });
+
+  it('partially convertible surface falls back to currency for unsupported units', () => {
+    // Drawdown Curve: supportedUnits = currency, percent
+    const units = ['currency', 'percent'] as const;
+    expect(resolveSupportedUnit(units, 'currency')).toBe('currency');
+    expect(resolveSupportedUnit(units, 'percent')).toBe('percent');
+    // Global R is NOT declared → native currency fallback (Drawdown amount
+    // must never convert to R).
+    expect(resolveSupportedUnit(units, 'r')).toBe('currency');
+  });
+
+  it('fully fixed surface stays fixed under any global unit', () => {
+    // R-Multiple Distribution: supportedUnits = fixed
+    const units = ['fixed'] as const;
+    expect(resolveSupportedUnit(units, 'currency')).toBe('fixed');
+    expect(resolveSupportedUnit(units, 'percent')).toBe('fixed');
+    expect(resolveSupportedUnit(units, 'r')).toBe('fixed');
+  });
+
+  it('applyUnit follows the same resolution (charts and KPIs share one policy)', () => {
+    const ctx = { periodStartEquity: 10000, totalInitialRisk: 200 };
+    // Partially convertible KPI (max-drawdown: currency, percent): R falls back to currency.
+    const dd = getKpiMetricDefinition('max-drawdown');
+    expect(dd).not.toBeNull();
+    const ddResult = applyUnit(1000, dd!, 'r', ctx);
+    expect(ddResult.value).toBe(1000);
+    expect(ddResult.unit).toBe('currency');
+    // Fully fixed KPI (win-rate): never converts.
+    const wr = getKpiMetricDefinition('win-rate');
+    const wrResult = applyUnit(0.6, wr!, 'r', ctx);
+    expect(wrResult.unit).toBe('fixed');
+    expect(wrResult.value).toBe(0.6);
   });
 });

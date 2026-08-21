@@ -298,6 +298,33 @@ export function convertCurrencyValue(
 }
 
 /**
+ * Resolve the effective presentation unit for a surface (KPI metric or chart
+ * widget) given its declared supportedUnits and the global selected unit.
+ *
+ * Rule (single policy shared by KPIs and charts):
+ *  - fully fixed-semantic (`['fixed']`) → `fixed` (native semantics, never
+ *    converted, regardless of the global selector);
+ *  - the surface declares the selected global unit → use it;
+ *  - otherwise → `currency` fallback (the surface's native monetary
+ *    presentation) — same graceful fallback KPI applyUnit uses.
+ *
+ * The registry remains the source of truth: a chart whose supportedUnits is
+ * `['currency', 'percent']` never receives `r` (e.g. Drawdown Curve amount
+ * stays currency under global R).
+ */
+export function resolveSupportedUnit(
+  supportedUnits: readonly SupportedUnit[],
+  selectedUnit: SupportedUnit,
+): SupportedUnit {
+  // Fully fixed-semantic surfaces ignore the global unit selector entirely.
+  if (supportedUnits.length === 1 && supportedUnits[0] === 'fixed') return 'fixed';
+  // The surface must declare support for the requested unit.
+  if (supportedUnits.includes(selectedUnit)) return selectedUnit;
+  // Graceful fallback: keep the surface's native presentation.
+  return 'currency';
+}
+
+/**
  * Convert a currency value to a percentage of period-start equity.
  * Returns null when periodStartEquity is missing or non-positive.
  */
@@ -328,18 +355,14 @@ export function applyUnit(
 ): { value: number | null; unit: SupportedUnit } {
   if (value === null) return { value: null, unit };
 
-  // Fixed-semantic metrics ignore the global unit selector.
-  if (definition.supportedUnits.length === 1 && definition.supportedUnits[0] === 'fixed') {
-    return { value, unit: 'fixed' };
-  }
+  // Single shared policy: fixed-semantic metrics never convert; unsupported
+  // units fall back to the native presentation (currency).
+  const effectiveUnit = resolveSupportedUnit(definition.supportedUnits, unit);
 
-  // The metric must declare support for the requested unit.
-  if (!definition.supportedUnits.includes(unit)) {
-    // Graceful fallback: keep the metric's native presentation.
-    return { value, unit: 'currency' };
-  }
+  // Fixed-semantic metrics ignore the global unit selector.
+  if (effectiveUnit === 'fixed') return { value, unit: 'fixed' };
 
   // Shared scalar conversion: percent-of-equity / R-multiple (guards included).
-  const converted = convertCurrencyValue(value, unit, context);
-  return { value: converted, unit };
+  const converted = convertCurrencyValue(value, effectiveUnit, context);
+  return { value: converted, unit: effectiveUnit };
 }

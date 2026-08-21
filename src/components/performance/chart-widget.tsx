@@ -28,6 +28,7 @@ import {
   type ChartRenderConfig,
 } from '@/lib/performance-chart-options';
 import { PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
+import { resolveSupportedUnit } from '@/lib/performance-kpi-catalogue';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { EChartsOption } from 'echarts-for-react';
 import type { ChartPalette } from '@/lib/chart-palette';
@@ -202,17 +203,25 @@ export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
     if (!extractor || !analyticsData) return null;
     const charts = analyticsData.charts as Record<string, unknown>;
     const data = extractor.extract(charts);
+    // The registry is authoritative: resolve the effective presentation unit
+    // from the widget's declared supportedUnits + the global selector, so a
+    // chart never receives a unit it does not declare (e.g. Drawdown Curve
+    // amount stays currency under global R; R-Distribution stays fixed).
+    const effectiveUnit = resolveSupportedUnit(
+      definition?.supportedUnits ?? ['currency'],
+      filter.unit,
+    );
     // Global presentation unit + canonical denominators flow to the builder
     // through the shared render config, so convertible series use the same
     // $ / % / R contract as the KPI cards (no per-widget conversion formulas).
     const renderOptions: ChartRenderConfig = {
       legendVisible: Boolean(config.legendVisible),
-      unit: filter.unit,
+      unit: effectiveUnit,
       periodStartEquity: analyticsData.metadata.periodStartEquity ?? null,
       totalInitialRisk: analyticsData.metadata.totalInitialRisk ?? null,
     };
     return extractor.build(data, palette, config, renderOptions);
-  }, [extractor, analyticsData, palette, config, filter.unit]);
+  }, [extractor, analyticsData, palette, config, filter.unit, definition]);
 
   if (!extractor || !definition) {
     return (

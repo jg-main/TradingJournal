@@ -352,3 +352,35 @@ describe('performance-chart-options', () => {
     });
   });
 });
+  // ── Corrective Task 2A: registry supportedUnits enforcement ──────────────
+
+  describe('registry supportedUnits enforcement (Corrective Task 2A)', () => {
+    it('Drawdown Curve amount converts under percent but stays currency under R (partial support)', () => {
+      const data = [
+        { date: '2024-01-01', drawdownAmount: 500, drawdownPct: 0.02 },
+        { date: '2024-01-02', drawdownAmount: 800, drawdownPct: 0.03 },
+      ];
+      // currency (default): raw amounts.
+      const cur = drawdownCurveOption(data, palette);
+      expect(((cur!.series[0] as { data: number[] }).data)).toEqual([500, 800]);
+      // percent: amount / periodStartEquity.
+      const pct = drawdownCurveOption(data, palette, ['drawdownAmount', 'drawdownPct'], { unit: 'percent', periodStartEquity: 10000 });
+      expect(((pct!.series[0] as { data: number[] }).data)).toEqual([0.05, 0.08]);
+      // R: drawdown-curve does NOT declare R — ChartWidget resolves the
+      // effective unit to currency before calling the builder (registry is
+      // authoritative). When the builder receives unit:'currency' the amount
+      // series stays raw (never becomes R-multiples).
+      const r = drawdownCurveOption(data, palette, ['drawdownAmount', 'drawdownPct'], { unit: 'currency', totalInitialRisk: 200 });
+      expect(((r!.series[0] as { data: number[] }).data)).toEqual([500, 800]);
+      // drawdownPct series stays its native percentage in all cases.
+      expect(((r!.series[1] as { data: number[] }).data)).toEqual([0.02, 0.03]);
+    });
+
+    it('R-Multiple Distribution stays fixed (counts) under every global unit', () => {
+      const data = [{ label: '0 to 1R', count: 5 }, { label: '1 to 2R', count: 3 }];
+      for (const unit of ['currency', 'percent', 'r'] as const) {
+        const opt = rDistributionOption(data, palette, ['count'], { unit, periodStartEquity: 10000, totalInitialRisk: 200 });
+        expect(((opt!.series[0] as { data: number[] }).data)).toEqual([5, 3]);
+      }
+    });
+  });
