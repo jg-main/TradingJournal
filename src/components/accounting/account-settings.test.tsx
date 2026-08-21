@@ -170,6 +170,46 @@ describe('AccountSettings — populated state', () => {
       expect(screen.getByText('Inactive')).toBeTruthy();
     });
   });
+
+  it('renders the broker field with the account broker value', async () => {
+    mockFetchSuccess(ACCT_FULL);
+    render(<AccountSettings accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account Identity')).toBeTruthy();
+    });
+
+    const brokerInput = screen.getByLabelText('Broker') as HTMLInputElement;
+    expect(brokerInput.value).toBe('Interactive Brokers');
+  });
+
+  it('renders an empty broker field when broker is null', async () => {
+    mockFetchSuccess(ACCT_INACTIVE);
+    render(<AccountSettings accountId="acct-003" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account Identity')).toBeTruthy();
+    });
+
+    const brokerInput = screen.getByLabelText('Broker') as HTMLInputElement;
+    expect(brokerInput.value).toBe('');
+  });
+});
+
+describe('AccountSettings — currency display', () => {
+  it('shows base currency as a read-only field with a creation hint', async () => {
+    mockFetchSuccess(ACCT_FULL);
+    render(<AccountSettings accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account Identity')).toBeTruthy();
+    });
+
+    const currencyInput = screen.getByLabelText('Base Currency') as HTMLInputElement;
+    expect(currencyInput.value).toBe('USD');
+    expect(currencyInput.disabled).toBe(true);
+    expect(screen.getByText(/cannot be changed from settings/)).toBeTruthy();
+  });
 });
 
 describe('AccountSettings — NULL fallback display', () => {
@@ -300,6 +340,87 @@ describe('AccountSettings — edit and save flow', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Overridden');
     expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('3%');
+  });
+
+  it('edits broker and sends it in the PUT payload', async () => {
+    const fetchMock = vi.fn()
+      // Load: account + settings
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ACCT_FULL,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => GLOBAL_SETTINGS,
+      })
+      // Save: PUT succeeds and returns the persisted account.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...ACCT_FULL, broker: 'New Broker' }),
+      });
+    globalThis.fetch = fetchMock;
+
+    render(<AccountSettings accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Save')).toBeTruthy();
+    });
+
+    // Edit broker
+    const brokerInput = screen.getByLabelText('Broker') as HTMLInputElement;
+    fireEvent.change(brokerInput, { target: { value: 'New Broker' } });
+
+    // Click Save
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Settings saved successfully.')).toBeTruthy();
+    });
+
+    // Verify the PUT payload included broker
+    const putCall = fetchMock.mock.calls[2];
+    const body = JSON.parse((putCall[1] as RequestInit).body as string);
+    expect(body.broker).toBe('New Broker');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('clearing the broker field sends null in the PUT payload', async () => {
+    const fetchMock = vi.fn()
+      // Load: account + settings
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ACCT_FULL,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => GLOBAL_SETTINGS,
+      })
+      // Save: PUT succeeds and returns the persisted account with broker null.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...ACCT_FULL, broker: null }),
+      });
+    globalThis.fetch = fetchMock;
+
+    render(<AccountSettings accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Save')).toBeTruthy();
+    });
+
+    // Clear broker
+    const brokerInput = screen.getByLabelText('Broker') as HTMLInputElement;
+    fireEvent.change(brokerInput, { target: { value: '' } });
+
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Settings saved successfully.')).toBeTruthy();
+    });
+
+    const putCall = fetchMock.mock.calls[2];
+    const body = JSON.parse((putCall[1] as RequestInit).body as string);
+    expect(body.broker).toBeNull();
   });
 });
 

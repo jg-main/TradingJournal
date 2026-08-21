@@ -159,6 +159,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
 
   // ── Form state ──────────────────────────────────────────────────────
   const [name, setName] = useState('');
+  const [broker, setBroker] = useState('');
   const [maxRisk, setMaxRisk] = useState('');
   const [commission, setCommission] = useState('');
 
@@ -199,6 +200,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
 
       setAccount(acctData);
       setName(acctData.name);
+      setBroker(acctData.broker ?? '');
       setMaxRisk(acctData.maxRiskPerTradePct !== null ? String(acctData.maxRiskPerTradePct) : '');
       setCommission(acctData.defaultCommission !== null ? String(acctData.defaultCommission) : '');
       setClearMaxRisk(acctData.maxRiskPerTradePct === null);
@@ -390,6 +392,9 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
     try {
       const body: Record<string, unknown> = { name: name.trim() };
 
+      // Broker is a plain nullable field: empty input clears the reference.
+      body.broker = broker.trim() === '' ? null : broker.trim();
+
       // Only include nullable fields when they have a value or were explicitly cleared
       // to avoid sending unnecessary updates.
       if (clearMaxRisk) {
@@ -434,6 +439,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
       // Commit persisted state only from the successful validated response.
       setAccount(data);
       setName(data.name);
+      setBroker(data.broker ?? '');
       setMaxRisk(data.maxRiskPerTradePct !== null ? String(data.maxRiskPerTradePct) : '');
       setCommission(data.defaultCommission !== null ? String(data.defaultCommission) : '');
       setClearMaxRisk(data.maxRiskPerTradePct === null);
@@ -564,6 +570,45 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
                 {nameError}
               </p>
             )}
+          </div>
+
+          {/* Broker field */}
+          <div className="mb-5">
+            <label
+              htmlFor="settings-account-broker"
+              className="mb-1.5 block text-xs font-medium text-foreground"
+            >
+              Broker
+            </label>
+            <Input
+              id="settings-account-broker"
+              value={broker}
+              onChange={(e) => setBroker(e.target.value)}
+              placeholder="e.g. Interactive Brokers"
+              maxLength={200}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Optional. Saving an empty broker clears the stored reference.
+            </p>
+          </div>
+
+          {/* Base currency — read-only, set at creation (D4) */}
+          <div>
+            <label
+              htmlFor="settings-account-currency"
+              className="mb-1.5 block text-xs font-medium text-foreground"
+            >
+              Base Currency
+            </label>
+            <Input
+              id="settings-account-currency"
+              value={account.currency}
+              disabled
+              aria-describedby="settings-currency-hint"
+            />
+            <p id="settings-currency-hint" className="mt-1 text-xs text-muted-foreground">
+              Base currency is set when the account is created and cannot be changed from settings.
+            </p>
           </div>
         </div>
       </section>
