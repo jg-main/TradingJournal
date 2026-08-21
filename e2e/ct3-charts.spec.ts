@@ -67,7 +67,19 @@ async function seedAll(page: Page) {
   ];
   for (const t of trades) await seedTrade(page, t.direction === 'long' ? accountA.id : accountB.id, t);
 
+  // Give the seeded trades a positive holding duration: the execute endpoint
+  // sets closed_at = executedAt (days ago) while opened_at is the creation
+  // instant, which would otherwise exclude every point from the per-trade
+  // duration scatter (zero/negative durations are data defects). Restrict the
+  // update to this run's symbols so other fixtures in the shared DB are
+  // untouched. ISO timestamps computed in JS (SQLite datetime() emits naive
+  // local strings that would mis-parse against UTC closed_at).
   const db = new Database(process.env.DB_FILE_NAME as string);
+  const upd = db.prepare('UPDATE trades SET opened_at = ? WHERE symbol = ?');
+  for (const t of trades) {
+    const closed = new Date(t.executedAt);
+    upd.run(new Date(closed.getTime() - 2 * 60 * 60 * 1000).toISOString(), t.symbol);
+  }
   const acct = db.prepare('SELECT id FROM accounts ORDER BY created_at ASC LIMIT 1').all() as Array<{ id: string }>;
   const accountId = acct[0]?.id;
   const rf = db.prepare(
@@ -180,10 +192,13 @@ test.describe('CT3 chart presentation', () => {
     expect(ndTip).toContain('Net P&L');
     expect(ndTip).toContain('$4,995');
     expect(ndTip).toContain('Aug 21');
-    // Trade Duration tooltip includes count + win-rate context.
+    // Trade Duration (Corrective Task 3A): scatter tooltip heading is the
+    // trade symbol with individual trade context — never a duration bucket.
     const tdTip = (report['trade-duration-performance'] as { tooltipHtml: string }).tooltipHtml;
-    expect(tdTip).toContain('Trades');
-    expect(tdTip).toContain('Win rate');
+    expect(tdTip).toMatch(/^<b>[A-Za-z0-9]+<\/b>/); // symbol heading
+    expect(tdTip).toContain('Holding time');
+    expect(tdTip).toContain('Net P&L');
+    expect(tdTip).not.toContain('0-1 days');
     // Drawdown tooltip uses downside semantics (negative signs).
     const ddTip = (report['drawdown-curve'] as { tooltipHtml: string }).tooltipHtml;
     expect(ddTip).toContain('Drawdown %');

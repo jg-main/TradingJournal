@@ -259,6 +259,8 @@ export function computeCumulativeDailyPnl(
 
 /**
  * Compute trade duration performance (P&L grouped by holding-duration buckets).
+ * Retained for compatibility: the default Trade Duration widget uses the
+ * per-trade scatter dataset (computeTradeDurationPoints) instead.
  */
 export function computeTradeDurationPerformance(
   closedTrades: PerformanceTradeInput[],
@@ -300,6 +302,72 @@ export function computeTradeDurationPerformance(
     count: data.pnls.length,
     winRate: data.pnls.length > 0 ? computeWinRate(data.pnls, 'includeZeroAsLoss') : null,
   }));
+}
+
+/**
+ * One observation per eligible closed trade for the Trade Duration scatter.
+ * Only fields required for the analytical visualization are exposed — never
+ * full trade objects. holdingDurationMinutes is a continuous numeric duration
+ * (presentation formatting happens in the chart layer).
+ */
+export interface TradeDurationPoint {
+  tradeId: string;
+  symbol: string;
+  /** Continuous holding duration in minutes (canonical elapsed-time semantics). */
+  holdingDurationMinutes: number;
+  /** Canonical individual net realized P&L. */
+  netPnl: number;
+  /** Canonical individual R-multiple; null when initial-risk data is missing/invalid. */
+  rMultiple: number | null;
+  setupId: string | null;
+  /** Human-readable setup display name (resolved via the setup name map). */
+  setupName: string | null;
+  /** ISO close timestamp. */
+  closedAt: string;
+}
+
+/**
+ * Compute the per-trade duration scatter dataset: one observation per closed
+ * trade with a computable holding duration. Reuses the canonical elapsed-time
+ * semantics (closedAt − openedAt) and the shared metrics cache — no React-local
+ * P&L or R calculation, no per-trade database access.
+ *
+ * @param setupNameMap Optional setupId → display-name map (batched lookup done
+ *   by the caller); unmapped IDs resolve to null so a UUID never leaks into
+ *   user-facing labels.
+ */
+export function computeTradeDurationPoints(
+  closedTrades: PerformanceTradeInput[],
+  setupNameMap?: Record<string, string>,
+  cache?: TradeMetricsCache,
+): TradeDurationPoint[] {
+  const points: TradeDurationPoint[] = [];
+  for (const trade of closedTrades) {
+    // Only closed trades carry a deterministic holding period; open trades are
+    // excluded from the realized-outcome analysis (matches the aggregate scope).
+    if (trade.openedAt == null || trade.closedAt == null) continue;
+    const openedMs = new Date(trade.openedAt).getTime();
+    const closedMs = new Date(trade.closedAt).getTime();
+    if (!Number.isFinite(openedMs) || !Number.isFinite(closedMs)) continue;
+    const holdingDurationMinutes = (closedMs - openedMs) / (1000 * 60);
+    // Zero/negative durations are data defects, not observations.
+    if (holdingDurationMinutes <= 0) continue;
+
+    const metrics = metricsFor(trade, cache);
+    points.push({
+      tradeId: trade.id,
+      symbol: trade.symbol,
+      holdingDurationMinutes,
+      netPnl: metrics.realizedPnl.netRealizedPnl,
+      rMultiple: metrics.returnMetrics.rMultiple,
+      setupId: trade.setupId,
+      setupName: trade.setupId ? (setupNameMap?.[trade.setupId] ?? null) : null,
+      closedAt: trade.closedAt,
+    });
+  }
+  // Deterministic order: shortest holding first (ties by close time).
+  points.sort((a, b) => a.holdingDurationMinutes - b.holdingDurationMinutes || a.closedAt.localeCompare(b.closedAt));
+  return points;
 }
 
 /**

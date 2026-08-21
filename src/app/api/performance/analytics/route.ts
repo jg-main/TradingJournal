@@ -33,6 +33,8 @@ import {
   tradeRiskSnapshots,
   accountRollforward,
   accounts,
+  lookupValues,
+  setupDefinitions,
 } from '@/db/schema';
 import { eq, inArray, and, ne } from 'drizzle-orm';
 import { type ExecutionData, computeTradeMetrics } from '@/lib/trade-metrics';
@@ -54,6 +56,7 @@ import {
   computeDailyNetPnl,
   computeCumulativeDailyPnl,
   computeTradeDurationPerformance,
+  computeTradeDurationPoints,
   computePerformanceByDayOfWeek,
   computePerformanceByTimeOfDay,
   computeTradeMetricsCache,
@@ -428,6 +431,33 @@ export async function GET(request: NextRequest) {
       const key = trade.setupId ?? '__null__';
       setupNetPnlBySetup.set(key, (setupNetPnlBySetup.get(key) ?? 0) + metrics.realizedPnl.netRealizedPnl);
     }
+
+    // Setup display names: batched lookup (setupDefinitions.name for original
+    // case — the canonical display source, same rule as the assessment engine;
+    // lookupValues.value as fallback). Internal UUIDs must never surface as
+    // user-facing chart labels, so an unresolvable ID degrades to a readable
+    // fallback instead of the raw ID. Two batched queries regardless of trade
+    // count — no per-trade database access.
+    const uniqueSetupIds = [...new Set(perfTrades.map((t) => t.setupId).filter(Boolean))] as string[];
+    const setupNameMap: Record<string, string> = {};
+    if (uniqueSetupIds.length > 0) {
+      const setupLookupRows = batchInArray(uniqueSetupIds, (chunk) =>
+        db
+          .select()
+          .from(lookupValues)
+          .where(and(inArray(lookupValues.id, chunk), eq(lookupValues.type, 'setup')))
+          .all(),
+      );
+      const setupDefRows = batchInArray(uniqueSetupIds, (chunk) =>
+        db.select().from(setupDefinitions).where(inArray(setupDefinitions.id, chunk)).all(),
+      );
+      const lookupValueById = new Map(setupLookupRows.map((l) => [l.id, l.value]));
+      const defNameById = new Map(setupDefRows.map((d) => [d.id, d.name]));
+      for (const id of uniqueSetupIds) {
+        setupNameMap[id] = defNameById.get(id) ?? lookupValueById.get(id) ?? 'Unknown setup';
+      }
+    }
+
     const setupPerfTrades: SetupPerfTradeInput[] = perfTrades.map((t) => ({
       id: t.id,
       direction: t.direction,
@@ -436,11 +466,15 @@ export async function GET(request: NextRequest) {
       riskSnapshot: t.riskSnapshot,
       setupId: t.setupId,
     }));
-    const setupPerfResult = computeSetupPerformance(setupPerfTrades);
+    const setupPerfResult = computeSetupPerformance(setupPerfTrades, setupNameMap);
     const setupPerformance = setupPerfResult.setupPerformance.map((item) => ({
       ...item,
       netPnl: setupNetPnlBySetup.get(item.setupId ?? '__null__') ?? 0,
     }));
+
+    // Per-trade duration scatter dataset (one observation per eligible closed
+    // trade; individual canonical metrics; human-readable setup names).
+    const tradeDurationPoints = computeTradeDurationPoints(perfTrades, setupNameMap, metricsCache);
 
     // Total initial risk across selected-period closed trades — denominator
     // for R conversion of currency metrics (applyUnit / currencyToR).
@@ -464,6 +498,7 @@ export async function GET(request: NextRequest) {
         dailyNetPnl,
         cumulativeDailyPnl,
         tradeDurationPerformance,
+        tradeDurationPoints,
         performanceByDayOfWeek,
         performanceByTimeOfDay,
         equityCurve,

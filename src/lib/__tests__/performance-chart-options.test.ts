@@ -3,6 +3,7 @@ import {
   dailyCumulativePnlOption,
   netDailyPnlOption,
   tradeDurationOption,
+  tradeDurationScatterOption,
   drawdownCurveOption,
   rDistributionOption,
   performanceBySetupOption,
@@ -14,6 +15,7 @@ import {
   formatTooltipValue,
   formatDateLabel,
   formatDurationBucketLabel,
+  formatDurationMinutes,
   formatRBinLabel,
   rBinColor,
 } from '../performance-chart-options';
@@ -489,6 +491,179 @@ describe('performance-chart-options', () => {
         const data = [{ setup: 'Breakout', netPnl: 500, winRate: 0.6, avgR: 0.8, count: 10 }];
         const opt = performanceBySetupOption(data, palette, { metric: 'count' })!;
         expect((opt.yAxis as { minInterval?: number }).minInterval).toBe(1);
+      });
+    });
+
+    describe('formatDurationMinutes (Corrective Task 3A)', () => {
+      it('humanizes sub-hour, hourly and day/week durations', () => {
+        expect(formatDurationMinutes(4)).toBe('4m');
+        expect(formatDurationMinutes(54)).toBe('54m');
+        expect(formatDurationMinutes(104)).toBe('1h 44m');
+        expect(formatDurationMinutes(199)).toBe('3h 19m');
+        expect(formatDurationMinutes(360)).toBe('6h');
+        expect(formatDurationMinutes(1440)).toBe('1d');
+        expect(formatDurationMinutes(4320)).toBe('3d');
+        expect(formatDurationMinutes(10080)).toBe('1w');
+        expect(formatDurationMinutes(60)).toBe('1h');
+      });
+    });
+
+    describe('tradeDurationScatterOption (Corrective Task 3A)', () => {
+      const points = [
+        // Trade A: 30m hold, +$500, R +2
+        { tradeId: 't-a', symbol: 'AAA', holdingDurationMinutes: 30, netPnl: 500, rMultiple: 2, setupId: 's1', setupName: 'Breakout', closedAt: '2026-08-18T15:00:00Z' },
+        // Trade B: 90m hold, -$250, R -1
+        { tradeId: 't-b', symbol: 'BBB', holdingDurationMinutes: 90, netPnl: -250, rMultiple: -1, setupId: 's2', setupName: 'Pullback', closedAt: '2026-08-17T15:00:00Z' },
+        // Trade C: 240m hold, +$100, R unavailable
+        { tradeId: 't-c', symbol: 'CCC', holdingDurationMinutes: 240, netPnl: 100, rMultiple: null, setupId: null, setupName: null, closedAt: '2026-08-16T15:00:00Z' },
+      ];
+      const ctx = { periodStartEquity: 10000, totalInitialRisk: 1000 };
+
+      it('returns null for empty data', () => {
+        expect(tradeDurationScatterOption([], palette)).toBeNull();
+      });
+
+      it('X is continuous holding duration; Y is the individual outcome under $', () => {
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], ctx)!;
+        const xAxis = opt.xAxis as { type: string; name: string; minInterval?: number };
+        expect(xAxis.type).toBe('value');
+        expect(xAxis.name).toBe('Holding duration');
+        expect(xAxis.minInterval).toBe(1);
+        const data = (opt.series as Array<{ type: string; data: Array<{ value: [number, number] }> }>)[0];
+        expect(data.type).toBe('scatter');
+        expect(data.data.map((d) => d.value)).toEqual([[30, 500], [90, -250], [240, 100]]);
+        expect((opt.yAxis as { name: string }).name).toBe('Trade result');
+      });
+
+      it('X tick formatter humanizes durations', () => {
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], ctx)!;
+        const xAxis = opt.xAxis as { axisLabel: { formatter: (v: number) => string } };
+        expect(xAxis.axisLabel.formatter(104)).toBe('1h 44m');
+        expect(xAxis.axisLabel.formatter(4)).toBe('4m');
+      });
+
+      it('percent mode uses period-start equity (never return-on-capital)', () => {
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], { ...ctx, unit: 'percent' })!;
+        const data = (opt.series as Array<{ data: Array<{ value: [number, number] }> }>)[0];
+        expect(data.data.map((d) => d.value[1])).toEqual([0.05, -0.025, 0.01]);
+      });
+
+      it('R mode uses each trade canonical individual R — never aggregate totalInitialRisk', () => {
+        // aggregate risk = 1000 would make +500 → 0.5R and -250 → -0.25R if
+        // mis-derived; the individual R semantics must win (+2 / -1).
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], { ...ctx, unit: 'r' })!;
+        const data = (opt.series as Array<{ data: Array<{ value: [number, number] }> }>)[0];
+        expect(data.data.map((d) => d.value)).toEqual([[30, 2], [90, -1]]);
+        // The missing-R trade is omitted (never fabricated as 0R).
+        expect(data.data).toHaveLength(2);
+      });
+
+      it('points use semantic outcome colors (positive/negative/zero)', () => {
+        const zeroPoint = { tradeId: 't-z', symbol: 'ZZZ', holdingDurationMinutes: 60, netPnl: 0, rMultiple: 0, setupId: null, setupName: null, closedAt: '2026-08-15T15:00:00Z' };
+        const opt = tradeDurationScatterOption([...points, zeroPoint], palette, ['netPnl'], ctx)!;
+        const data = (opt.series as Array<{ data: Array<{ itemStyle: { color: string } }> }>)[0];
+        expect(data.data[0].itemStyle.color).toBe(palette.positive);
+        expect(data.data[1].itemStyle.color).toBe(palette.negative);
+        expect(data.data[2].itemStyle.color).toBe(palette.positive);
+        expect(data.data[3].itemStyle.color).toBe(palette.info); // scratch → neutral
+      });
+
+      it('renders a zero reference line and no labels/trend', () => {
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], ctx)!;
+        const series = (opt.series as Array<{ markLine?: { data: Array<{ yAxis?: number }> }; label?: { show?: boolean }; markPoint?: unknown; markArea?: unknown }>)[0];
+        expect(series.markLine?.data?.[0]?.yAxis).toBe(0);
+        expect(series.label?.show).toBe(false);
+        expect(series.markPoint).toBeUndefined();
+        // No regression/trend line: markLine carries only the zero baseline.
+        expect(series.markLine?.data).toHaveLength(1);
+      });
+
+      it('tooltip heading is the trade symbol with trade-specific context rows', () => {
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], ctx)!;
+        const tooltip = opt.tooltip as { trigger: string; formatter: (params: unknown) => string };
+        expect(tooltip.trigger).toBe('item');
+        const html = tooltip.formatter([{ dataIndex: 0, seriesName: 'Trade result' }]);
+        expect(html).toContain('<b>AAA</b>');
+        expect(html).toContain('Holding time');
+        expect(html).toContain('30m');
+        expect(html).toContain('Net P&L');
+        expect(html).toContain('+$500');
+        expect(html).toContain('R');
+        expect(html).toContain('+2R');
+        expect(html).toContain('Setup');
+        expect(html).toContain('Breakout');
+        expect(html).toContain('Closed');
+        expect(html).toContain('Aug 18');
+        // No UUIDs, no raw ISO timestamp, no duration bucket.
+        expect(html).not.toContain('t-a');
+        expect(html).not.toContain('2026-08-18T15:00:00Z');
+        expect(html).not.toContain('0-1 days');
+      });
+
+      it('missing-R trade tooltip omits the R row (never 0R)', () => {
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], ctx)!;
+        const tooltip = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = tooltip.formatter([{ dataIndex: 2, seriesName: 'Trade result' }]);
+        expect(html).toContain('<b>CCC</b>');
+        expect(html).toContain('+$100');
+        expect(html).not.toContain('>R</span>');
+        expect(html).not.toContain('0R');
+      });
+
+      it('negative trade tooltip carries negative semantics', () => {
+        const opt = tradeDurationScatterOption(points, palette, ['netPnl'], ctx)!;
+        const tooltip = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = tooltip.formatter([{ dataIndex: 1, seriesName: 'Trade result' }]);
+        expect(html).toContain('<b>BBB</b>');
+        expect(html).toContain('-$250');
+        expect(html).toContain('-1R');
+        expect(html).toContain('Pullback');
+        expect(html).toContain('Aug 17');
+      });
+    });
+
+    describe('tooltip heading contract (Corrective Task 3A)', () => {
+      /** Invoke a builder's tooltip formatter with synthetic axis params. */
+      const tooltipHtml = (opt: NonNullable<ReturnType<typeof dailyCumulativePnlOption>>, category: string) => {
+        const t = opt.tooltip as { formatter: (params: unknown) => string };
+        return t.formatter([{ dataIndex: 0, seriesName: 's', axisValueLabel: category, name: category }]);
+      };
+
+      it('date charts format the heading with the shared date formatter', () => {
+        const cum = dailyCumulativePnlOption([{ date: '2026-08-21', cumulativePnl: 7266 }], palette)!;
+        const html = tooltipHtml(cum, '2026-08-21');
+        expect(html).toContain('<b>Aug 21</b>');
+        expect(html).not.toContain('2026-08-21');
+
+        const net = netDailyPnlOption([{ date: '2026-08-21', netPnl: 719 }], palette)!;
+        expect(tooltipHtml(net, '2026-08-21')).toContain('<b>Aug 21</b>');
+
+        const dd = drawdownCurveOption([{ date: '2026-08-21', drawdownAmount: 2430, drawdownPct: 0.048 }], palette)!;
+        expect(tooltipHtml(dd, '2026-08-21')).toContain('<b>Aug 21</b>');
+      });
+
+      it('R distribution heading is the R bucket, not a date', () => {
+        const rdist = rDistributionOption([{ label: '1 to 2', count: 5 }], palette)!;
+        const html = tooltipHtml(rdist, '1 to 2');
+        expect(html).toContain('<b>1R to 2R</b>');
+        expect(html).toContain('Trades');
+      });
+
+      it('setup heading is the full setup display name — never date-formatted', () => {
+        const setup = performanceBySetupOption([{ setup: 'Episodic Pivot', netPnl: 4250, winRate: 0.615, avgR: 0.8, count: 10 }], palette, { metric: 'netPnl' })!;
+        const html = tooltipHtml(setup, 'Episodic Pi…');
+        // Full name comes from the data row even when the axis label truncates.
+        expect(html).toContain('<b>Episodic Pivot</b>');
+        expect(html).toContain('Net P&L');
+        // A setup-like category string is never passed through date formatting.
+        const wr = performanceBySetupOption([{ setup: '2026-08-21', netPnl: 0, winRate: 0.5, avgR: 0, count: 1 }], palette, { metric: 'winRate' })!;
+        expect(tooltipHtml(wr, '2026-08-21')).toContain('<b>2026-08-21</b>');
+      });
+
+      it('category strings are preserved verbatim (not date-formatted) on non-date charts', () => {
+        // Day-of-week chart: 'Monday' must not become a date.
+        const dow = performanceByDayOfWeekOption([{ day: 'Monday', netPnl: 100, count: 3, winRate: 0.6 }], palette)!;
+        expect(tooltipHtml(dow, 'Monday')).toContain('<b>Monday</b>');
       });
     });
   });

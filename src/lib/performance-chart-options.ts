@@ -109,6 +109,31 @@ export function formatDurationBucketLabel(bucket: string): string {
 }
 
 /**
+ * Human-readable continuous duration label from a minute count (scatter X
+ * axis ticks + tooltips). Tick placement follows the data range — this only
+ * formats whatever value ECharts lands on.
+ *
+ *   minutes < 60  → '4m', '54m'
+ *   < 24h         → '1h 44m', '3h 19m', '6h'
+ *   < 7d          → '1d', '3d'
+ *   ≥ 7d          → '1w', '2w'
+ */
+export function formatDurationMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes < 0) return '';
+  const totalMinutes = Math.round(minutes);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const remMinutes = totalMinutes % 60;
+  if (hours < 24) {
+    return remMinutes === 0 ? `${hours}h` : `${hours}h ${remMinutes}m`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  const weeks = Math.round(days / 7);
+  return `${weeks}w`;
+}
+
+/**
  * Compact R-bucket label for the axis: '<= -3' → '≤-3R', '-3 to -2' →
  * '-3R to -2R', '> 3' → '>3R'. The canonical bucket definition is untouched.
  */
@@ -219,25 +244,45 @@ export interface TooltipRow {
   color: string;
   /** Optional per-row formatter; defaults to the shared unit formatter. */
   formatter?: (value: number) => string;
+  /**
+   * Literal display text rendered verbatim (setup name, close date) — bypasses
+   * numeric value formatting entirely. When present, `value` is ignored.
+   */
+  text?: string;
 }
 
 export interface TooltipConfig {
   unit: ChartAxisUnit;
-  /** Format the axis/category heading (defaults to identity). */
-  heading?: (category: string) => string;
+  /**
+   * Heading semantic — the formatter must explicitly know whether the X-axis
+   * value represents a temporal category or a domain value so arbitrary
+   * strings are never accidentally passed through date formatting.
+   *
+   * - 'date':     format with the shared date formatter (Aug 21).
+   * - 'category': pass the raw domain value through (R bucket, setup name,
+   *               symbol, day, hour — never date-formatted).
+   * Default: 'category'.
+   */
+  headingType?: 'date' | 'category';
+  /** Optional heading transform applied after headingType semantics (e.g. R-bucket compaction). */
+  heading?: (category: string, dataIndex: number) => string;
   /** Build the rows from the axis-trigger params (defaults to one row per series). */
   rows?: (params: CallbackDataParams[], dataIndex: number) => TooltipRow[];
+  /** ECharts tooltip trigger. Item trigger suits scatter points; axis suits bars/lines. */
+  trigger?: 'axis' | 'item';
 }
 
 /**
- * Shared ECharts axis-trigger tooltip with unit-aware values and semantic
- * color markers. Theme-aware surface via CSS variables (ECharts renders the
- * tooltip as HTML, so design tokens resolve).
+ * Shared ECharts tooltip with unit-aware values and semantic color markers.
+ * Theme-aware surface via CSS variables (ECharts renders the tooltip as HTML,
+ * so design tokens resolve). The heading is explicitly typed: temporal charts
+ * pass 'date' (formatted via the shared date formatter), category charts pass
+ * their domain value untouched.
  */
 export function tooltip(config: TooltipConfig): EChartsOption['tooltip'] {
-  const { unit, heading, rows } = config;
+  const { unit, headingType = 'category', heading, rows, trigger = 'axis' } = config;
   return {
-    trigger: 'axis',
+    trigger,
     confine: true,
     backgroundColor: 'var(--color-popover)',
     borderColor: 'var(--color-border)',
@@ -251,7 +296,14 @@ export function tooltip(config: TooltipConfig): EChartsOption['tooltip'] {
       const dataIndex = list[0]?.dataIndex ?? 0;
       const category = String(list[0]?.axisValueLabel ?? list[0]?.name ?? '');
       const lines: string[] = [];
-      if (heading) lines.push(heading(category));
+      // Explicit heading policy: only 'date' goes through the date formatter;
+      // every other category value is preserved verbatim (R bucket, setup name,
+      // symbol, day, hour). A `heading` transform is applied on top (e.g.
+      // R-bucket compaction) and may return an empty string to suppress the
+      // heading entirely.
+      const base = headingType === 'date' ? formatDateLabel(category) : category;
+      const headingText = heading ? heading(base, dataIndex) : base;
+      if (headingText) lines.push(`<b>${headingText}</b>`);
       const rowList: TooltipRow[] = rows
         ? rows(list as CallbackDataParams[], dataIndex)
         : list.map((p) => ({
@@ -260,10 +312,15 @@ export function tooltip(config: TooltipConfig): EChartsOption['tooltip'] {
             color: typeof p.color === 'string' ? p.color : 'var(--color-primary)',
           }));
       for (const row of rowList) {
-        if (row.value === null || !Number.isFinite(row.value)) continue;
-        const valueLabel = row.formatter
-          ? row.formatter(row.value)
-          : formatTooltipValue(row.value, unit);
+        let valueLabel: string | null = null;
+        if (row.text !== undefined) {
+          valueLabel = row.text;
+        } else if (row.value !== null && Number.isFinite(row.value)) {
+          valueLabel = row.formatter
+            ? row.formatter(row.value)
+            : formatTooltipValue(row.value, unit);
+        }
+        if (valueLabel === null) continue;
         lines.push(
           `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${row.color};margin-right:6px"></span>${row.label}&nbsp;&nbsp;${valueLabel}`,
         );
@@ -334,6 +391,25 @@ export interface DurationBucketData {
   winRate: number | null;
 }
 
+/**
+ * One observation per eligible closed trade for the Trade Duration scatter.
+ * Mirrors the analytics-route dataset (TradeDurationPoint) with numeric
+ * continuous duration; presentation formatting lives in this layer.
+ */
+export interface TradeDurationPointData {
+  tradeId: string;
+  symbol: string;
+  /** Continuous holding duration in minutes (X). */
+  holdingDurationMinutes: number;
+  /** Canonical individual net realized P&L. */
+  netPnl: number;
+  /** Canonical individual R-multiple; null when initial risk is missing/invalid. */
+  rMultiple: number | null;
+  setupId: string | null;
+  setupName: string | null;
+  closedAt: string;
+}
+
 export interface DrawdownPoint {
   date: string;
   drawdownAmount: number;
@@ -397,7 +473,7 @@ export function dailyCumulativePnlOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'date',
       rows: (params, idx) => [{
         label: 'Cumulative P&L',
         value: seriesData[idx] ?? null,
@@ -449,7 +525,7 @@ export function netDailyPnlOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'date',
       rows: (params, idx) => {
         const v = bars[idx]?.value as number | null | undefined ?? null;
         // Explicit sign in P&L tooltips: +$719 / -$270.
@@ -503,7 +579,7 @@ export function tradeDurationOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'category',
       rows: (params, idx) => {
         const bucket = data[idx];
         const v = bars[idx]?.value as number | null | undefined ?? null;
@@ -545,6 +621,187 @@ export function tradeDurationOption(
   };
 }
 
+/**
+ * Trade Duration Performance — per-trade scatter plot (default visualization).
+ *
+ * Answers: is individual trade outcome related to how long the trade was held?
+ * One point = one closed trade. X = continuous holding duration (minutes),
+ * Y = the selected individual outcome under the global unit.
+ *
+ * Individual-trade unit semantics (explicit distinction from the aggregate
+ * conversion contract):
+ * - currency: canonical individual net realized P&L (netPnl).
+ * - percent:  individual net P&L / selected-period period-start equity (the
+ *   same approved % denominator used by aggregate Performance presentation —
+ *   never return-on-trade-capital or a price move).
+ * - r:        the trade's canonical individual R-multiple (returnMetrics.rMultiple)
+ *   — never aggregate P&L / selected-scope totalInitialRisk. Trades with
+ *   missing/invalid initial risk have rMultiple = null and are omitted from
+ *   the R series (missing risk must never read as a zero-result trade).
+ */
+export function tradeDurationScatterOption(
+  data: TradeDurationPointData[],
+  palette: ChartPalette,
+  visibleSeries: string[] = ['netPnl'],
+  options: ChartRenderConfig = {},
+): EChartsOption | null {
+  if (!data || data.length === 0) return null;
+  const unit = options.unit ?? 'currency';
+  void visibleSeries; // scatter always plots every eligible point
+
+  // Y = the selected individual outcome. R mode uses each trade's canonical
+  // individual R; null-R points are omitted (never fabricated as 0R).
+  const points: Array<{ value: [number, number]; itemStyle: { color: string } }> = [];
+  for (const d of data) {
+    let y: number | null;
+    if (unit === 'r') {
+      y = d.rMultiple;
+    } else if (unit === 'percent') {
+      const equity = options.periodStartEquity;
+      y = equity !== null && equity !== undefined && equity > 0 ? d.netPnl / equity : null;
+    } else {
+      y = d.netPnl;
+    }
+    if (y === null || !Number.isFinite(y)) continue;
+    points.push({
+      value: [d.holdingDurationMinutes, y],
+      itemStyle: { color: scatterPointColor(y, palette) },
+    });
+  }
+  if (points.length === 0) return null;
+
+  return {
+    tooltip: tooltip({
+      unit: 'currency',
+      trigger: 'item',
+      headingType: 'category',
+      // Heading = the trade symbol (never a date, never a duration bucket).
+      heading: (category, idx) => data[idx]?.symbol ?? category,
+      rows: (params, idx) => {
+        const point = data[idx];
+        if (!point) return [];
+        const rows: TooltipRow[] = [];
+        // Holding duration is always shown (shared humanized formatter).
+        rows.push({
+          label: 'Holding time',
+          value: point.holdingDurationMinutes,
+          color: palette.info,
+          formatter: (v) => formatDurationMinutes(v),
+        });
+        // The selected-unit result (what the point's Y represents).
+        const yRow = pointResultRow(point, unit, palette, options);
+        if (yRow) rows.push(yRow);
+        // Canonical dollar P&L stays visible as trade-level context under any
+        // global unit (explicit sign: +$420 / -$270).
+        rows.push({
+          label: 'Net P&L',
+          value: point.netPnl,
+          color: point.netPnl > 0 ? palette.positive : point.netPnl < 0 ? palette.negative : palette.info,
+          formatter: (v) => `${v > 0 ? '+' : ''}${formatTooltipValue(v, 'currency')}`,
+        });
+        // Canonical individual R shown where available.
+        if (point.rMultiple !== null && point.rMultiple !== undefined && Number.isFinite(point.rMultiple)) {
+          rows.push({
+            label: 'R',
+            value: point.rMultiple,
+            color: point.rMultiple > 0 ? palette.positive : point.rMultiple < 0 ? palette.negative : palette.info,
+            formatter: (v) => `${v > 0 ? '+' : ''}${formatTooltipValue(v, 'r')}`,
+          });
+        }
+        // Setup display name where available (full name, never a UUID).
+        if (point.setupName) {
+          rows.push({ label: 'Setup', value: null, color: palette.primary, text: point.setupName });
+        }
+        // Human-readable close date (not the raw ISO timestamp).
+        rows.push({
+          label: 'Closed',
+          value: null,
+          color: palette.axis,
+          text: formatDateLabel(point.closedAt),
+        });
+        return rows;
+      },
+    }),
+    grid: baseGrid(palette),
+    legend: legend(options),
+    xAxis: {
+      type: 'value',
+      name: 'Holding duration',
+      nameTextStyle: { color: palette.axis, fontSize: 10 },
+      minInterval: 1,
+      axisLabel: {
+        color: palette.axis,
+        fontSize: 10,
+        // Humanize tick labels; tick placement follows the dataset range.
+        formatter: (v: number) => formatDurationMinutes(v),
+      },
+      axisLine: { lineStyle: { color: palette.grid } },
+      axisTick: { show: false },
+      splitLine: { show: false },
+    },
+    yAxis: valueAxis('Trade result', unit, palette),
+    series: [
+      {
+        name: 'Trade result',
+        type: 'scatter',
+        data: points,
+        symbolSize: 7,
+        // Restrained: no per-point labels, no regression/trend line, no
+        // third-metric bubble sizing. Hover emphasis is ECharts' default.
+        label: { show: false },
+        emphasis: { focus: 'series', scale: 1.6 },
+        markLine: zeroMarkLine(palette),
+      },
+    ],
+  };
+}
+
+/**
+ * Semantic outcome color for an individual observation: positive P&L/R →
+ * positive, negative → negative, zero/scratch → neutral (info).
+ */
+function scatterPointColor(y: number, palette: ChartPalette): string {
+  if (y > 0) return palette.positive;
+  if (y < 0) return palette.negative;
+  return palette.info;
+}
+
+/**
+ * Tooltip row for the point's Y value under the selected unit. R mode uses
+ * the canonical individual R; percent mode adds the approved period-equity
+ * semantic as a labeled row; currency mode is covered by the always-visible
+ * Net P&L row and returns null (no duplicate).
+ */
+function pointResultRow(
+  point: TradeDurationPointData,
+  unit: ChartAxisUnit,
+  palette: ChartPalette,
+  options: ChartRenderConfig,
+): TooltipRow | null {
+  if (unit === 'currency') return null;
+  if (unit === 'percent') {
+    const equity = options.periodStartEquity;
+    if (equity === null || equity === undefined || equity <= 0) return null;
+    const pct = point.netPnl / equity;
+    return {
+      label: 'Trade result',
+      value: pct,
+      color: pct > 0 ? palette.positive : pct < 0 ? palette.negative : palette.info,
+      formatter: (v) => `${v > 0 ? '+' : ''}${Math.round(v * 10000) / 100}%`,
+    };
+  }
+  if (unit === 'r') {
+    if (point.rMultiple === null || !Number.isFinite(point.rMultiple)) return null;
+    return {
+      label: 'Trade result',
+      value: point.rMultiple,
+      color: point.rMultiple > 0 ? palette.positive : point.rMultiple < 0 ? palette.negative : palette.info,
+      formatter: (v) => `${v > 0 ? '+' : ''}${formatTooltipValue(v, 'r')}`,
+    };
+  }
+  return null;
+}
+
 /** Drawdown Curve — dual-axis area chart (amount | %). */
 export function drawdownCurveOption(
   data: DrawdownPoint[],
@@ -565,7 +822,7 @@ export function drawdownCurveOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'date',
       rows: (params, idx) => {
         const rows: TooltipRow[] = [];
         if (showAmount) {
@@ -648,7 +905,10 @@ export function rDistributionOption(
   return {
     tooltip: tooltip({
       unit: 'count',
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'category',
+      // The R bucket remains an R bucket in the heading (never date-formatted);
+      // formatRBinLabel is idempotent whether the axis value is raw or compacted.
+      heading: (category, idx) => formatRBinLabel(data[idx]?.label ?? category),
       rows: (params, idx) => [{
         label: 'Trades',
         value: values[idx] ?? null,
@@ -684,7 +944,6 @@ export function rDistributionOption(
 function setupMetricAxis(
   metric: string,
   unit: SupportedUnit,
-  palette: ChartPalette,
 ): { name: string; yUnit: ChartAxisUnit; formatter: (v: number) => string } {
   if (metric === 'winRate') {
     return {
@@ -717,7 +976,7 @@ export function performanceBySetupOption(
   const metric = config.metric ?? 'netPnl';
   const show = config.visibleSeries?.includes(metric) ?? true;
   const unit = config.unit ?? 'currency';
-  const axis = setupMetricAxis(metric, unit, palette);
+  const axis = setupMetricAxis(metric, unit);
 
   // Only the Net P&L metric is convertible under the global unit. Win Rate,
   // Average R, and Trade Count keep their fixed semantics — selecting global
@@ -732,7 +991,10 @@ export function performanceBySetupOption(
   return {
     tooltip: tooltip({
       unit: axis.yUnit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'category',
+      // Heading = full setup display name from the data row (the axis label may
+      // be truncated for long names; never a UUID, never date-formatted).
+      heading: (category, idx) => data[idx]?.setup ?? category,
       rows: (params, idx) => [{
         label: axis.name,
         value: values[idx] ?? null,
@@ -800,7 +1062,7 @@ export function performanceByDayOfWeekOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'category',
       rows: (params, idx) => [{
         label: 'Net P&L',
         value: bars[idx]?.value as number | null | undefined ?? null,
@@ -837,7 +1099,7 @@ export function performanceByTimeOfDayOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'category',
       rows: (params, idx) => [{
         label: 'Net P&L',
         value: bars[idx] ?? null,
@@ -881,8 +1143,8 @@ export function longVsShortOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
-      rows: (params, idx) => {
+      headingType: 'category',
+      rows: () => {
         const rows: TooltipRow[] = [];
         if (visibleSeries.includes('long') && long) rows.push({ label: 'Long', value: convertPnl(long.netPnl, options), color: palette.positive });
         if (visibleSeries.includes('short') && short) rows.push({ label: 'Short', value: convertPnl(short.netPnl, options), color: palette.negative });
@@ -932,7 +1194,7 @@ export function monthlyPnlOption(
   return {
     tooltip: tooltip({
       unit,
-      heading: (category) => `<b>${category}</b>`,
+      headingType: 'category',
       rows: (params, idx) => {
         const rows: TooltipRow[] = [];
         if (showNet) rows.push({ label: 'Net P&L', value: netBars[idx]?.value as number | null | undefined ?? null, color: (netBars[idx]?.value as number | null ?? 0) >= 0 ? palette.positive : palette.negative });

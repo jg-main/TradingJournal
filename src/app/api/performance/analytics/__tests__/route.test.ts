@@ -121,9 +121,50 @@ CREATE TABLE account_rollforward (
   created_at TEXT DEFAULT (current_timestamp),
   updated_at TEXT DEFAULT (current_timestamp)
 );
+CREATE TABLE lookup_values (
+  id TEXT PRIMARY KEY NOT NULL,
+  type TEXT NOT NULL,
+  value TEXT NOT NULL,
+  description TEXT,
+  sort_order INTEGER,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (current_timestamp),
+  updated_at TEXT DEFAULT (current_timestamp)
+);
+CREATE TABLE setup_definitions (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  how_to_play TEXT,
+  entry_rules TEXT,
+  exit_rules TEXT,
+  tags TEXT,
+  default_risk_pct REAL,
+  position_sizing_rules TEXT,
+  chart_patterns TEXT,
+  analysis_config TEXT,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (current_timestamp),
+  updated_at TEXT DEFAULT (current_timestamp)
+);
 `);
 
 vi.mock('@/db', () => ({ db }));
+
+// ── No-N+1 instrumentation ────────────────────────────────────────────────
+// Count SELECT statements issued against the setup lookup tables. The batched
+// setup-name resolution must touch lookup_values + setup_definitions exactly
+// once per request regardless of trade count — a per-trade lookup would
+// increment this with every trade. Drizzle issues SQL through the shared
+// in-memory connection, so counting at the prepare level is robust.
+let setupLookupQueryCount = 0;
+const rawPrepare = sqlite.prepare.bind(sqlite);
+sqlite.prepare = ((sql: string) => {
+  if (/lookup_values|setup_definitions/i.test(sql)) {
+    setupLookupQueryCount += 1;
+  }
+  return rawPrepare(sql);
+}) as typeof sqlite.prepare;
 
 async function loadRoute() {
   return import('../route');
@@ -201,6 +242,17 @@ function seedGrade(tradeId: string, totalScore: number | null) {
     .run();
 }
 
+/** Seed the canonical setup bridge: setupDefinitions.name (display case) +
+ *  lookupValues.value (lowercased, as resolveSetup stores it). */
+function seedSetup(id: string, name: string) {
+  db.insert(schema.setupDefinitions)
+    .values({ id, name, isActive: true })
+    .run();
+  db.insert(schema.lookupValues)
+    .values({ id, type: 'setup', value: name.toLowerCase(), isActive: true })
+    .run();
+}
+
 function seedRollforward(accountId: string, date: string, endingEquity: number, drawdownAmount = 0, drawdownPct = 0) {
   db.insert(schema.accountRollforward)
     .values({
@@ -219,6 +271,11 @@ function seedRollforward(accountId: string, date: string, endingEquity: number, 
 function seedAll() {
   seedAccount(ACC_USD, 'USD', 50000);
   seedAccount(ACC_EUR, 'EUR', 100000);
+
+  // Canonical setup bridge: display name in setup_definitions, lowercased
+  // lookup value in lookup_values (both keyed by the same setup UUID).
+  seedSetup('setup-breakout', 'Breakout');
+  seedSetup('setup-pullback', 'Pullback');
 
   // acc-usd trades
   seedTrade({
@@ -282,7 +339,7 @@ function seedAll() {
 }
 
 function cleanup() {
-  for (const table of ['account_rollforward', 'trade_grades', 'trade_risk_snapshots', 'trade_executions', 'trades', 'accounts']) {
+  for (const table of ['account_rollforward', 'trade_grades', 'trade_risk_snapshots', 'trade_executions', 'trades', 'accounts', 'lookup_values', 'setup_definitions']) {
     sqlite.exec(`DELETE FROM ${table};`);
   }
 }
@@ -331,8 +388,16 @@ describe('GET /api/performance/analytics', () => {
     expect(Array.isArray(body.charts.equityCurve)).toBe(true);
     expect(Array.isArray(body.charts.drawdownCurve)).toBe(true);
     expect(Array.isArray(body.charts.tradeDurationPerformance)).toBe(true);
+    expect(Array.isArray(body.charts.tradeDurationPoints)).toBe(true);
     expect(Array.isArray(body.charts.performanceByDayOfWeek)).toBe(true);
     expect(Array.isArray(body.charts.performanceByTimeOfDay)).toBe(true);
+
+    // Setup display names resolve through the canonical lookup bridge — the
+    // raw setup UUID must never surface as a user-facing label.
+    const setupNames = body.charts.setupPerformance.map((s: { setupName: string }) => s.setupName);
+    expect(setupNames).toContain('Breakout');
+    expect(setupNames).toContain('Pullback');
+    expect(setupNames.every((n: string) => !n.startsWith('setup-'))).toBe(true);
 
     // cumulative P&L ends at total net P&L
     const cumulative = body.charts.cumulativeDailyPnl;
@@ -483,5 +548,102 @@ describe('GET /api/performance/analytics', () => {
     expect(body.kpiMetrics.maxDrawdown).toBeNull();
     expect(body.charts.dailyNetPnl).toEqual([]);
     expect(body.charts.equityCurve).toEqual([]);
+  });
+
+  it('resolves setup display names through a batched lookup (no N+1) and degrades unresolvable IDs', async () => {
+    const { GET } = await loadRoute();
+
+    // Instrumented counter is per-module; reset before the request.
+    setupLookupQueryCount = 0;
+    const body = await (await GET(get(''))).json();
+
+    // Setup names come from the canonical lookup bridge, not the raw UUID.
+    const byName = new Map<string, { setupName: string; setupId: string | null; count: number }>(
+      body.charts.setupPerformance.map((s: { setupName: string; setupId: string | null; count: number }) => [s.setupName, s]),
+    );
+    expect(byName.get('Breakout')).toBeDefined();
+    expect(byName.get('Breakout')!.count).toBe(2);
+    expect(byName.get('Pullback')).toBeDefined();
+    expect(byName.get('Pullback')!.count).toBe(2);
+
+    // Exactly two batched setup queries (lookup_values + setup_definitions)
+    // regardless of the trade count — no per-trade database access.
+    expect(setupLookupQueryCount).toBe(2);
+
+    // Unresolvable setup ID degrades to a readable fallback, never the UUID.
+    seedTrade({
+      id: 't-orphan', accountId: ACC_USD, symbol: 'ORPH', direction: 'long', status: 'closed',
+      setupId: '00000000-0000-0000-0000-000000000000',
+      openedAt: '2024-02-10T10:00:00Z', closedAt: '2024-02-11T10:00:00Z',
+    });
+    seedExecution('t-orphan', 'buy', 10, 50, 1, '2024-02-10T10:00:00Z');
+    seedExecution('t-orphan', 'sell', 10, 60, 1, '2024-02-11T10:00:00Z');
+    const body2 = await (await GET(get(''))).json();
+    const orphan = body2.charts.setupPerformance.find((s: { setupId: string }) => s.setupId === '00000000-0000-0000-0000-000000000000');
+    expect(orphan).toBeDefined();
+    expect(orphan.setupName).toBe('Unknown setup');
+  });
+
+  it('exposes one trade-duration point per closed trade with individual canonical metrics', async () => {
+    const { GET } = await loadRoute();
+    const body = await (await GET(get('?accountScope=single&accountIds=acc-usd'))).json();
+
+    // acc-usd scope: boundary (Jan 28 → Feb 3), jan (Jan 5 → Jan 10), loss
+    // (Jan 10 → Jan 12). The open trade and the soft-deleted trade are excluded.
+    const points = body.charts.tradeDurationPoints as Array<{
+      tradeId: string;
+      symbol: string;
+      holdingDurationMinutes: number;
+      netPnl: number;
+      rMultiple: number | null;
+      setupId: string | null;
+      setupName: string | null;
+      closedAt: string;
+    }>;
+    expect(points).toHaveLength(3);
+
+    const bySymbol = new Map(points.map((p) => [p.symbol, p]));
+
+    // Trade A: AAPL, entered Jan 28 10:00Z → closed Feb 3 15:00Z = 6d5h = 8940m
+    const aapl = bySymbol.get('AAPL')!;
+    expect(aapl.tradeId).toBe(TRADE_BOUNDARY);
+    expect(aapl.holdingDurationMinutes).toBeCloseTo(8940, 5);
+    expect(aapl.netPnl).toBeCloseTo(1990, 5);
+    expect(aapl.rMultiple).toBeCloseTo(3.98, 5); // 1990 / 500
+    expect(aapl.setupName).toBe('Breakout');
+    expect(aapl.closedAt).toBe('2024-02-03T15:00:00Z');
+
+    // Trade B: MSFT, Jan 5 10:00Z → Jan 10 15:00Z = 5d5h = 7500m
+    const msft = bySymbol.get('MSFT')!;
+    expect(msft.tradeId).toBe(TRADE_JAN);
+    expect(msft.holdingDurationMinutes).toBeCloseTo(7500, 5);
+    expect(msft.netPnl).toBeCloseTo(490, 5);
+    expect(msft.rMultiple).toBeCloseTo(1.96, 5); // 490 / 250
+    expect(msft.setupName).toBe('Pullback');
+
+    // Trade C: NVDA short, Jan 10 09:00Z → Jan 12 14:00Z = 2d5h = 3180m, loss
+    const nvda = bySymbol.get('NVDA')!;
+    expect(nvda.tradeId).toBe(TRADE_LOSS);
+    expect(nvda.holdingDurationMinutes).toBeCloseTo(3180, 5);
+    expect(nvda.netPnl).toBeCloseTo(-510, 5);
+    expect(nvda.rMultiple).toBeCloseTo(-1.7, 5); // -510 / 300
+    expect(nvda.setupName).toBe('Breakout');
+
+    // Deterministic order: shortest holding first.
+    expect(points.map((p) => p.symbol)).toEqual(['NVDA', 'MSFT', 'AAPL']);
+
+    // A trade without a risk snapshot has rMultiple = null (not fabricated).
+    seedTrade({
+      id: 't-norisk', accountId: ACC_USD, symbol: 'NORISK', direction: 'long', status: 'closed',
+      openedAt: '2024-02-15T10:00:00Z', closedAt: '2024-02-16T11:00:00Z',
+    });
+    seedExecution('t-norisk', 'buy', 5, 100, 1, '2024-02-15T10:00:00Z');
+    seedExecution('t-norisk', 'sell', 5, 120, 1, '2024-02-16T11:00:00Z');
+    const body2 = await (await GET(get('?accountScope=single&accountIds=acc-usd'))).json();
+    const noRisk = (body2.charts.tradeDurationPoints as Array<{ symbol: string; rMultiple: number | null; setupName: string | null; setupId: string | null }>).find((p) => p.symbol === 'NORISK');
+    expect(noRisk).toBeDefined();
+    expect(noRisk!.rMultiple).toBeNull();
+    expect(noRisk!.setupId).toBeNull();
+    expect(noRisk!.setupName).toBeNull();
   });
 });

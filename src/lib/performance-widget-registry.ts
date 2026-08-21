@@ -310,7 +310,7 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
   [PERFORMANCE_WIDGET_IDS.TRADE_DURATION_PERFORMANCE]: {
     id: PERFORMANCE_WIDGET_IDS.TRADE_DURATION_PERFORMANCE,
     title: 'Trade Duration Performance',
-    description: 'P&L grouped by holding duration buckets',
+    description: 'Individual trade outcome vs holding duration (scatter)',
     category: 'chart',
     supportedUnits: ['currency', 'percent', 'r'],
     defaultLayout: { w: 4, h: 5, x: 8, y: 10 },

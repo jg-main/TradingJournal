@@ -7,7 +7,7 @@ import { useChartPalette } from '@/hooks/use-chart-palette';
 import {
   dailyCumulativePnlOption,
   netDailyPnlOption,
-  tradeDurationOption,
+  tradeDurationScatterOption,
   drawdownCurveOption,
   rDistributionOption,
   performanceBySetupOption,
@@ -17,7 +17,7 @@ import {
   monthlyPnlOption,
   type CumulativePnlPoint,
   type DailyPnlPoint,
-  type DurationBucketData,
+  type TradeDurationPointData,
   type DrawdownPoint,
   type RDistributionItem,
   type SetupPerfItem,
@@ -75,10 +75,13 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
     series: ['netPnl'],
   },
   'trade-duration-performance': {
-    extract: (c) => c.tradeDurationPerformance as DurationBucketData[],
+    // Default visualization: per-trade scatter (one observation per closed
+    // trade). The aggregated bucket dataset (tradeDurationPerformance) is
+    // retained in the analytics response for other consumers.
+    extract: (c) => c.tradeDurationPoints as TradeDurationPointData[],
     build: (data, palette, config, ro) =>
-      tradeDurationOption(
-        data as DurationBucketData[],
+      tradeDurationScatterOption(
+        data as TradeDurationPointData[],
         palette,
         (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
         ro,
@@ -281,14 +284,17 @@ export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
  * Test contract: serialize the first series' numeric values for browser
  * verification of the global unit conversion. Rounded to 6 decimals so the
  * value is stable against float noise while remaining exact for the $/%/R
- * assertions. Renders into a data attribute (invisible, no visual change).
+ * assertions. Scatter points ([x, y] pairs or { value: [x, y] }) serialize
+ * their Y (the outcome) so the contract stays meaningful for the Trade
+ * Duration scatter. Renders into a data attribute (invisible, no visual change).
  */
 function seriesValuesForTest(option: EChartsOption): number[] {
   const series = Array.isArray(option.series) ? option.series : [];
   const first = series[0] as { data?: unknown } | undefined;
   if (!first?.data || !Array.isArray(first.data)) return [];
   return first.data.map((d) => {
-    const v = typeof d === 'object' && d !== null ? (d as { value: number }).value : (d as number);
+    const raw = typeof d === 'object' && d !== null ? (d as { value: number | [number, number] }).value : (d as number);
+    const v = Array.isArray(raw) ? raw[1] : raw;
     return typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : NaN;
   });
 }

@@ -7,6 +7,7 @@ import {
   computeDayWinRate,
   computeMaxDrawdown,
   computeTradeDurationPerformance,
+  computeTradeDurationPoints,
   computePerformanceByDayOfWeek,
   computePerformanceByTimeOfDay,
   type PerformanceTradeInput,
@@ -181,5 +182,77 @@ describe('new kernel edge cases', () => {
     const lossMon = makeTrade({ id: 'd2', closedAt: '2024-01-08T16:00:00Z' }); // 1990 win (still positive)
     const winTue = makeTrade({ id: 'd3', closedAt: '2024-01-09T15:00:00Z' });
     expect(computeDayWinRate([winMon, lossMon, winTue])).toBeCloseTo(1, 5); // (1 + 1) / 2
+  });
+});
+
+describe('computeTradeDurationPoints (Corrective Task 3A)', () => {
+  it('emits one observation per eligible closed trade with individual canonical metrics', () => {
+    // Trade A: +$500 / R +2 (per the task contract scenario)
+    const tradeA = makeTrade({
+      id: 't-a', symbol: 'AAA', riskSnapshot: { initialRiskAmount: 250 },
+      openedAt: '2026-08-18T10:00:00Z', closedAt: '2026-08-18T10:30:00Z',
+      executions: [
+        { id: 'a1', action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: '2026-08-18T10:00:00Z' } as ExecutionData,
+        { id: 'a2', action: 'sell', quantity: 10, price: 150, fees: 0, executedAt: '2026-08-18T10:30:00Z' } as ExecutionData,
+      ],
+    });
+    // Trade B: -$250 / R -1
+    const tradeB = makeTrade({
+      id: 't-b', symbol: 'BBB', riskSnapshot: { initialRiskAmount: 250 },
+      openedAt: '2026-08-17T10:00:00Z', closedAt: '2026-08-17T11:30:00Z',
+      executions: [
+        { id: 'b1', action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: '2026-08-17T10:00:00Z' } as ExecutionData,
+        { id: 'b2', action: 'sell', quantity: 10, price: 75, fees: 0, executedAt: '2026-08-17T11:30:00Z' } as ExecutionData,
+      ],
+    });
+    // Trade C: +$100 / R unavailable
+    const tradeC = makeTrade({
+      id: 't-c', symbol: 'CCC', riskSnapshot: null,
+      openedAt: '2026-08-16T10:00:00Z', closedAt: '2026-08-16T14:00:00Z',
+      executions: [
+        { id: 'c1', action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: '2026-08-16T10:00:00Z' } as ExecutionData,
+        { id: 'c2', action: 'sell', quantity: 10, price: 110, fees: 0, executedAt: '2026-08-16T14:00:00Z' } as ExecutionData,
+      ],
+    });
+    // Open trade (no closedAt) must be excluded.
+    const open = makeTrade({ id: 't-open', status: 'open', closedAt: null });
+
+    const setupNameMap = { 'setup-uuid': 'Breakout' };
+    const points = computeTradeDurationPoints(
+      [open, tradeC, tradeA, tradeB],
+      setupNameMap,
+    );
+
+    expect(points).toHaveLength(3);
+    // Deterministic order: shortest holding first.
+    expect(points.map((p) => p.tradeId)).toEqual(['t-a', 't-b', 't-c']);
+
+    const a = points.find((p) => p.tradeId === 't-a')!;
+    expect(a.symbol).toBe('AAA');
+    expect(a.holdingDurationMinutes).toBe(30);
+    expect(a.netPnl).toBeCloseTo(500, 5);
+    expect(a.rMultiple).toBeCloseTo(2, 5);
+    expect(a.setupName).toBeNull();
+    expect(a.closedAt).toBe('2026-08-18T10:30:00Z');
+
+    const b = points.find((p) => p.tradeId === 't-b')!;
+    expect(b.holdingDurationMinutes).toBe(90);
+    expect(b.netPnl).toBeCloseTo(-250, 5);
+    expect(b.rMultiple).toBeCloseTo(-1, 5);
+
+    const c = points.find((p) => p.tradeId === 't-c')!;
+    expect(c.holdingDurationMinutes).toBe(240);
+    expect(c.netPnl).toBeCloseTo(100, 5);
+    expect(c.rMultiple).toBeNull();
+  });
+
+  it('resolves setup display names via the map and leaves unresolved IDs null', () => {
+    const trade = makeTrade({ id: 't-setup', setupId: 'setup-uuid', openedAt: '2026-08-01T10:00:00Z', closedAt: '2026-08-01T11:00:00Z' });
+    const points = computeTradeDurationPoints([trade], { 'setup-uuid': 'Breakout' });
+    expect(points[0].setupName).toBe('Breakout');
+    expect(points[0].setupId).toBe('setup-uuid');
+
+    const unknown = computeTradeDurationPoints([trade], {});
+    expect(unknown[0].setupName).toBeNull(); // never the raw ID
   });
 });
