@@ -242,6 +242,36 @@ describe('performance-view-types', () => {
       expect(validatePerformanceDashboardConfig(config, getValidWidgetTypes())).toBeNull();
     });
 
+    it('default chart instances form the dense 3-per-row R004 composition', () => {
+      const chartDefaults = getDefaultWidgetInstances('chart');
+      // Six default-visible charts, registry order (must-haves only).
+      expect(chartDefaults.map((i) => i.widgetType)).toEqual([
+        'daily-cumulative-pnl',
+        'net-daily-pnl',
+        'trade-duration-performance',
+        'drawdown-curve',
+        'r-distribution',
+        'performance-by-setup',
+      ]);
+      // All six are w:4 — three share each analytical row at 1440px+.
+      expect(chartDefaults.every((i) => i.layout.w === 4)).toBe(true);
+      // Row 1 (y 10): cumulative P&L, net daily P&L, trade duration at x 0/4/8.
+      const row1 = chartDefaults.slice(0, 3);
+      expect(row1.map((i) => i.layout.y)).toEqual([10, 10, 10]);
+      expect(row1.map((i) => i.layout.x)).toEqual([0, 4, 8]);
+      // Row 2 (next row): drawdown, R distribution, setup performance at x 0/4/8.
+      const row2 = chartDefaults.slice(3);
+      expect(row2.map((i) => i.layout.y)).toEqual([15, 15, 15]);
+      expect(row2.map((i) => i.layout.x)).toEqual([0, 4, 8]);
+      // Readability bounds: every default chart stays at minW 4 / minH 4 and
+      // cannot be resized back to full-width (12-col) stacking without intent.
+      for (const type of chartDefaults.map((i) => i.widgetType)) {
+        const def = PERFORMANCE_WIDGET_REGISTRY[type];
+        expect(def.minSize).toEqual({ w: 4, h: 4 });
+        expect(def.maxSize.w).toBeLessThanOrEqual(8);
+      }
+    });
+
     it('default KPI instances are exactly the curated five (R003)', () => {
       // Curated rail: Net P&L, Win Rate, Profit Factor, Average R, Payoff Ratio.
       // Gross P&L and Total Trades are registered but no longer default-visible.
