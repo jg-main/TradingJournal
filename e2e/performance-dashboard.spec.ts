@@ -870,3 +870,332 @@ test.describe('KPI reorder persistence (S03 R003)', () => {
     await expect(page.locator('button', { hasText: 'Performance Default' })).toBeVisible();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// S04 (R004): dense responsive chart grid + drag/resize persistence
+//
+// Proves at 1440px that the six default-visible analytical charts form the
+// dense R004 composition (three per row, no full-width stacking, no horizontal
+// document overflow), that the first analytical row keeps 2-3 charts at
+// 1280px and 1024px, and that Customize-mode drag and resize genuinely
+// interact AND persist through Save → reload on a user-owned dashboard (the
+// immutable system default skips server-side persistence, so the round-trip
+// is proven on a user dashboard exactly like the S03 KPI reorder test).
+// ────────────────────────────────────────────────────────────────────────────
+
+interface ChartBox {
+  title: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Locate a chart widget's RGL grid item by its rendered title text. */
+function chartItem(page: Page, title: string) {
+  return page.locator('section[aria-label="Performance charts"] .react-grid-item').filter({ hasText: title });
+}
+
+/** Wait until every default chart widget has mounted inside the RGL grid. */
+async function waitForChartGrid(page: Page) {
+  for (const title of CHART_TITLES) {
+    await expect(page.getByText(title, { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  }
+}
+
+/** Read the six chart grid-item bounding boxes keyed by title. */
+async function readChartBoxes(page: Page): Promise<ChartBox[]> {
+  const boxes: ChartBox[] = [];
+  for (const title of CHART_TITLES) {
+    const box = await chartItem(page, title).boundingBox();
+    if (!box) throw new Error(`No bounding box for chart "${title}"`);
+    boxes.push({ title, x: box.x, y: box.y, width: box.width, height: box.height });
+  }
+  return boxes;
+}
+
+/** Charts sharing the first analytical row: tops within 1px of the minimum. */
+function firstAnalyticalRow(boxes: ChartBox[]): ChartBox[] {
+  const minTop = Math.min(...boxes.map((b) => b.y));
+  return boxes.filter((b) => Math.abs(b.y - minTop) <= 1);
+}
+
+/** Horizontal document overflow in px (≤ 1 tolerates subpixel rounding). */
+function docOverflowX(page: Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+}
+
+/** Grid pixel width (RGL container), used to prove w:4 = ~1/3, never full-width. */
+function chartGridWidth(page: Page): Promise<number> {
+  return page
+    .locator('section[aria-label="Performance charts"] .react-grid-layout')
+    .evaluate((el) => el.clientWidth);
+}
+
+/** Create a user dashboard (system default is immutable → server persistence). */
+async function createUserDashboard(page: Page, name: string) {
+  await page.locator('button', { hasText: 'Performance Default' }).click();
+  await page.getByText('+ New Dashboard').click();
+  await page.getByPlaceholder('Dashboard name').fill(name);
+  const createResp = page.waitForResponse(
+    (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'OK', exact: true }).click();
+  await createResp;
+  await expect(page.locator('button', { hasText: name })).toBeVisible();
+}
+
+/** Click Save, wait for the server write, then reload and wait for the shell. */
+async function saveAndReload(page: Page) {
+  const saveResp = page.waitForResponse(
+    (resp) => resp.url().includes('/api/dashboard/views') && resp.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Save' }).click();
+  await saveResp;
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Customize/ })).toBeVisible({ timeout: 15_000 });
+}
+
+/** Delete the user dashboard via the switcher (confirm dialog auto-accepted). */
+async function deleteUserDashboard(page: Page, name: string) {
+  await page.locator('button', { hasText: name }).click();
+  await page.getByRole('button', { name: /Delete/ }).click();
+  await expect(page.locator('button', { hasText: 'Performance Default' })).toBeVisible();
+}
+
+test.describe('dense chart grid (S04 R004)', () => {
+  test.describe('at 1440px', () => {
+    test.use({ viewport: { width: 1440, height: 900 } });
+
+    test('three charts share the first analytical row with no full-width stacking or horizontal overflow', async ({ page }) => {
+      await gotoPerformance(page);
+      await waitForChartGrid(page);
+
+      const boxes = await readChartBoxes(page);
+      expect(boxes).toHaveLength(6);
+
+      // Uniform h:5 geometry across the six default charts (equal row heights).
+      const heights = boxes.map((b) => b.height);
+      expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
+
+      // Dense R004 composition: row 1 = Cumulative / NetDaily / TradeDuration.
+      const row1 = firstAnalyticalRow(boxes);
+      expect(row1).toHaveLength(3);
+      expect([...row1.map((b) => b.title)].sort()).toEqual(
+        ['Daily Cumulative P&L', 'Net Daily P&L', 'Trade Duration Performance'].sort(),
+      );
+
+      // Row 2 holds the remaining three at the next row edge (also 3 per row).
+      const row1Titles = new Set(row1.map((b) => b.title));
+      const row2Top = Math.min(...boxes.filter((b) => !row1Titles.has(b.title)).map((b) => b.y));
+      const row2 = boxes.filter((b) => Math.abs(b.y - row2Top) <= 1);
+      expect(row2).toHaveLength(3);
+
+      // w:4 cells ≈ 1/3 of the grid — prove none is full- or half-width stacked.
+      const gridWidth = await chartGridWidth(page);
+      for (const b of boxes) {
+        expect(b.width / gridWidth).toBeGreaterThan(0.28);
+        expect(b.width / gridWidth).toBeLessThan(0.45);
+      }
+
+      // No horizontal document overflow (R004 must-have).
+      expect(await docOverflowX(page)).toBeLessThanOrEqual(1);
+    });
+  });
+
+  test.describe('responsive first row at 1280px and 1024px', () => {
+    for (const vp of [
+      { width: 1280, height: 900 },
+      { width: 1024, height: 900 },
+    ]) {
+      test(`at ${vp.width}px the first analytical row holds 2-3 charts with no overflow`, async ({ page }) => {
+        await page.setViewportSize(vp);
+        await gotoPerformance(page);
+        await waitForChartGrid(page);
+
+        const boxes = await readChartBoxes(page);
+        const row1 = firstAnalyticalRow(boxes);
+        expect(row1.length).toBeGreaterThanOrEqual(2); // never a lone chart unless forced
+        expect(row1.length).toBeLessThanOrEqual(3); // dense ceiling
+
+        const gridWidth = await chartGridWidth(page);
+        for (const b of boxes) {
+          expect(b.width / gridWidth).toBeLessThan(0.45); // no full-width stacking
+        }
+        expect(await docOverflowX(page)).toBeLessThanOrEqual(1);
+      });
+    }
+  });
+});
+
+test.describe('chart drag/resize persistence (S04 R004)', () => {
+  // Tall viewport so the whole chart grid (including row-2 resize grips) is
+  // on screen for real mouse interaction.
+  test.use({ viewport: { width: 1440, height: 1000 } });
+
+  /** Grid-unit column/row of a chart item — immune to container-width pixel drift. */
+  async function chartSlot(page: Page, title: string): Promise<{ col: number; row: number }> {
+    const grid = page.locator('section[aria-label="Performance charts"] .react-grid-layout');
+    const gridBox = await grid.boundingBox();
+    const box = await chartItem(page, title).boundingBox();
+    if (!gridBox || !box) throw new Error(`missing boxes for ${title}`);
+    const gridWidth = await grid.evaluate((el) => el.clientWidth);
+    const colWidth = (gridWidth - 110) / 12; // margin[0] × 11
+    return {
+      col: Math.round((box.x - gridBox.x - 10) / (colWidth + 10)),
+      row: Math.round((box.y - gridBox.y - 10) / 50), // rowHeight 40 + margin 10
+    };
+  }
+
+  test('Customize drag → Save → reload restores the dragged chart position', async ({ page }) => {
+    page.on('dialog', (dialog) => dialog.accept());
+    const dashName = `S04 Drag ${TS}`;
+
+    await gotoPerformance(page);
+    await waitForChartGrid(page);
+    await createUserDashboard(page, dashName);
+
+    // Enter Customize: every chart gains a drag handle (6 widgets).
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+    await expect(page.locator('section[aria-label="Performance charts"] .drag-handle')).toHaveCount(6);
+
+    const rdist = chartItem(page, 'R-Multiple Distribution');
+    const netDaily = chartItem(page, 'Net Daily P&L');
+
+    // Baseline: R-Multiple Distribution sits BELOW Net Daily P&L (row 2 vs row 1).
+    const beforeRDist = await rdist.boundingBox();
+    const beforeNetDaily = await netDaily.boundingBox();
+    if (!beforeRDist || !beforeNetDaily) throw new Error('missing baseline chart boxes');
+    expect(beforeRDist.y).toBeGreaterThan(beforeNetDaily.y + 100);
+
+    // Drag R-Multiple Distribution's handle up 250px (5 rows × 50px): it swaps
+    // into row 1 and Net Daily P&L is pushed down to row 2 (order-stable
+    // vertical compaction makes the swap persist). Grab the strip's left edge,
+    // clear of the duplicate/remove buttons on the right.
+    const handle = rdist.locator('.drag-handle');
+    await handle.scrollIntoViewIfNeeded();
+    const hb = await handle.boundingBox();
+    if (!hb) throw new Error('missing drag handle box');
+    const grabX = hb.x + 20;
+    const grabY = hb.y + hb.height / 2;
+    await page.mouse.move(grabX, grabY);
+    await page.mouse.down();
+    await page.mouse.move(grabX, grabY - 250, { steps: 12 });
+    await page.mouse.up();
+
+    // The swap commits on drop; wait out the 200ms grid transition, then read.
+    await expect.poll(async () => {
+      const r = await rdist.boundingBox();
+      const n = await netDaily.boundingBox();
+      return r && n ? r.y - n.y : 0;
+    }).toBeLessThan(-100);
+
+    const afterRDist = await rdist.boundingBox();
+    const afterNetDaily = await netDaily.boundingBox();
+    if (!afterRDist || !afterNetDaily) throw new Error('missing post-drag chart boxes');
+    expect(afterRDist.y).toBeLessThan(afterNetDaily.y - 100); // swap completed
+    const afterSlot = await chartSlot(page, 'R-Multiple Distribution');
+    expect(afterSlot).toEqual({ col: 4, row: 0 }); // row 1 middle — the swapped slot (RGL packs y10 → row 0)
+
+    // Save → reload → re-enter Customize so grid y-offsets match the pre-save
+    // edit session, then assert the dragged geometry is restored. Grid-unit
+    // slots are compared exactly (pixel-independent); pixel x may drift by
+    // sub-column amounts when the container width changes by a scrollbar, so
+    // it uses a colWidth-aware tolerance that still distinguishes columns.
+    await saveAndReload(page);
+    await expect(page.locator('button', { hasText: dashName })).toBeVisible();
+    await waitForChartGrid(page);
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+
+    await expect.poll(async () => {
+      const r = await rdist.boundingBox();
+      const n = await netDaily.boundingBox();
+      return r && n ? r.y - n.y : 0;
+    }).toBeLessThan(-100);
+
+    const restoredR = await rdist.boundingBox();
+    const restoredN = await netDaily.boundingBox();
+    if (!restoredR || !restoredN) throw new Error('missing restored chart boxes');
+    // Same grid slot after reload (geometry restored).
+    expect(await chartSlot(page, 'R-Multiple Distribution')).toEqual(afterSlot);
+    // Pixel positions restored within colWidth-aware tolerance.
+    const gridWidth = await chartGridWidth(page);
+    const colWidth = (gridWidth - 110) / 12;
+    expect(Math.abs(restoredR.x - afterRDist.x)).toBeLessThanOrEqual(colWidth * 0.35);
+    expect(Math.abs(restoredR.y - afterRDist.y)).toBeLessThanOrEqual(3);
+    // And still different from the pre-drag baseline (moved up / pushed down).
+    expect(restoredR.y).toBeLessThan(beforeRDist.y - 100);
+    expect(restoredN.y).toBeGreaterThan(beforeNetDaily.y + 100);
+
+    // Cleanup: exit edit mode, delete the user dashboard.
+    await page.getByRole('button', { name: 'Done' }).click();
+    await deleteUserDashboard(page, dashName);
+  });
+
+  test('Customize resize → Save → reload restores the resized chart geometry', async ({ page }) => {
+    page.on('dialog', (dialog) => dialog.accept());
+    const dashName = `S04 Resize ${TS}`;
+
+    await gotoPerformance(page);
+    await waitForChartGrid(page);
+    await createUserDashboard(page, dashName);
+
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+
+    const drawdown = chartItem(page, 'Drawdown Curve');
+    const before = await drawdown.boundingBox();
+    if (!before) throw new Error('missing baseline box');
+
+    // Resize via the SE grip: drag straight down 150px → h grows 5 → 8 rows
+    // (Drawdown is row-2 col-1 with nothing below, so the growth overlaps no
+    // neighbor; maxH 8 is the registry ceiling and is not exceeded).
+    const grip = drawdown.locator('[aria-label="Resize widget"]');
+    await expect(grip).toBeVisible();
+    await grip.scrollIntoViewIfNeeded();
+    const gb = await grip.boundingBox();
+    if (!gb) throw new Error('missing resize grip box');
+    const gripX = gb.x + gb.width / 2;
+    const gripY = gb.y + gb.height / 2;
+    await page.mouse.move(gripX, gripY);
+    await page.mouse.down();
+    await page.mouse.move(gripX, gripY + 150, { steps: 10 });
+    await page.mouse.up();
+
+    // Height grows by ~150px (3 rows); width stays put (pure SE downward drag).
+    await expect
+      .poll(async () => (await drawdown.boundingBox())?.height ?? -1)
+      .toBeGreaterThan(before.height + 80);
+    const after = await drawdown.boundingBox();
+    if (!after) throw new Error('missing post-resize box');
+    expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(3);
+    expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(3);
+    expect(after.height).toBeGreaterThan(before.height + 80);
+
+    // Save → reload → re-enter Customize so grid y-offsets match the pre-save
+    // edit session, then assert the resized geometry is restored. Height/width
+    // are mode-independent and compared tightly; the widget must also stay in
+    // its original grid column and row.
+    await saveAndReload(page);
+    await expect(page.locator('button', { hasText: dashName })).toBeVisible();
+    await waitForChartGrid(page);
+    await page.getByRole('button', { name: 'Customize' }).click();
+    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+
+    await expect
+      .poll(async () => (await drawdown.boundingBox())?.height ?? -1)
+      .toBeGreaterThan(before.height + 80);
+    const restored = await drawdown.boundingBox();
+    if (!restored) throw new Error('missing restored box');
+    expect(Math.abs(restored.height - after.height)).toBeLessThanOrEqual(3);
+    expect(Math.abs(restored.x - after.x)).toBeLessThanOrEqual(3);
+    expect(Math.abs(restored.y - after.y)).toBeLessThanOrEqual(3);
+    expect(await chartSlot(page, 'Drawdown Curve')).toEqual({ col: 0, row: 5 });
+
+    // Cleanup: exit edit mode, delete the user dashboard.
+    await page.getByRole('button', { name: 'Done' }).click();
+    await deleteUserDashboard(page, dashName);
+  });
+});
