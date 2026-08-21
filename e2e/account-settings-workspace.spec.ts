@@ -11,10 +11,19 @@
  * 7. Unknown account 404 error state on the settings tab
  * 8. Console/request diagnostics
  *
+ * S05 lifecycle refinements covered here:
+ * 9. Broker editing persistence through the UI (fill + save + reload)
+ * 10. Base currency rendered as a read-only disabled field
+ * 11. Currency mutation guard: 409 when the account has financial history
+ * 12. Close-route open-trade guard: 409 (API + UI error surface)
+ * 13. Default-account clearing when the default is deactivated (PUT + close)
+ * 14. Consumer fallback to an active account when no default is set
+ *
  * Precondition: Next.js dev-server running on port 3000.
  */
 
 import { expect, test, type Page } from '@playwright/test';
+import { prepareAccountForTrading } from './helpers/trading-account';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -391,6 +400,293 @@ test.describe('Account Settings Workspace', () => {
       // The layout handles the not-found state with error message and back link
       await expect(page.getByText('Account not found.')).toBeVisible();
       await expect(page.getByRole('link', { name: /back to accounts/i })).toBeVisible();
+    });
+  });
+
+  test.describe('S05: Broker editing and read-only currency display', () => {
+    let brokerAccountId: string;
+
+    test.beforeAll(async ({ browser }) => {
+      const page = await browser.newPage();
+      const ts = Date.now();
+      const account = await createAccount(page, `Broker Edit E2E ${ts}`);
+      brokerAccountId = account.id;
+      await setAccountRiskParams(page, brokerAccountId);
+      await activateAccount(page, brokerAccountId);
+      await page.close();
+    });
+
+    test('renders broker value and base currency as a read-only disabled field', async ({ page }) => {
+      await page.goto(`/settings/accounts/${brokerAccountId}/settings`);
+      await page.waitForResponse(
+        (res) => res.url().includes(`/api/accounts/${brokerAccountId}`) && res.status() === 200,
+      );
+
+      // ── Broker field shows the value from account creation ─────────
+      const brokerInput = page.locator('#settings-account-broker');
+      await expect(brokerInput).toBeVisible();
+      await expect(brokerInput).toHaveValue('E2E Broker');
+
+      // ── Base currency: read-only disabled input with creation hint ──
+      const currencyInput = page.locator('#settings-account-currency');
+      await expect(currencyInput).toBeVisible();
+      await expect(currencyInput).toBeDisabled();
+      await expect(currencyInput).toHaveValue('USD');
+      await expect(
+        page.getByText(/Base currency is set when the account is created/i),
+      ).toBeVisible();
+    });
+
+    test('edits the broker through the UI and persists after reload', async ({ page }) => {
+      await page.goto(`/settings/accounts/${brokerAccountId}/settings`);
+      await page.waitForResponse(
+        (res) => res.url().includes(`/api/accounts/${brokerAccountId}`) && res.status() === 200,
+      );
+
+      // ── Edit the broker field ──────────────────────────────────────
+      const brokerInput = page.locator('#settings-account-broker');
+      await brokerInput.fill('IBKR Pro');
+
+      // ── Save and wait for the PUT round trip ───────────────────────
+      const putResponse = page.waitForResponse(
+        (res) =>
+          res.url().includes(`/api/accounts/${brokerAccountId}`) &&
+          res.request().method() === 'PUT' &&
+          res.status() === 200,
+      );
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await putResponse;
+      await expect(page.getByText('Settings saved successfully.')).toBeVisible();
+
+      // ── Reload: broker persists through the real API ───────────────
+      await page.reload();
+      await page.waitForResponse(
+        (res) => res.url().includes(`/api/accounts/${brokerAccountId}`) && res.status() === 200,
+      );
+      await expect(page.locator('#settings-account-broker')).toHaveValue('IBKR Pro');
+    });
+
+    test('clearing the broker field saves null (removes the reference)', async ({ page }) => {
+      await page.goto(`/settings/accounts/${brokerAccountId}/settings`);
+      await page.waitForResponse(
+        (res) => res.url().includes(`/api/accounts/${brokerAccountId}`) && res.status() === 200,
+      );
+
+      const brokerInput = page.locator('#settings-account-broker');
+      await expect(brokerInput).toHaveValue('IBKR Pro');
+
+      // Clear the field and save
+      await brokerInput.fill('');
+      const putResponse = page.waitForResponse(
+        (res) =>
+          res.url().includes(`/api/accounts/${brokerAccountId}`) &&
+          res.request().method() === 'PUT' &&
+          res.status() === 200,
+      );
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await putResponse;
+
+      // Server stores null
+      const account = await (await page.request.get(`/api/accounts/${brokerAccountId}`)).json();
+      expect(account.broker).toBeNull();
+    });
+  });
+
+  test.describe('S05: Currency mutation guard', () => {
+    let guardedAccountId: string;
+
+    test.beforeAll(async ({ browser }) => {
+      const page = await browser.newPage();
+      const ts = Date.now();
+      const account = await createAccount(page, `Currency Guard E2E ${ts}`);
+      guardedAccountId = account.id;
+      await setAccountRiskParams(page, guardedAccountId);
+      // Deposit creates financial history (financial_events row)
+      await postDeposit(page, guardedAccountId, '10000.00', 'Creates financial history');
+      await activateAccount(page, guardedAccountId);
+      await page.close();
+    });
+
+    test('blocks currency changes with 409 when the account has financial history', async ({ page }) => {
+      // Attempt to change the base currency of an account with financial events
+      const response = await page.request.put(`/api/accounts/${guardedAccountId}`, {
+        data: { currency: 'EUR' },
+      });
+      expect(response.status()).toBe(409);
+
+      const body = await response.json();
+      expect(body.error).toContain('Cannot change base currency');
+      expect(body.error).toContain('financial history');
+
+      // The declared currency is unchanged
+      const account = await (await page.request.get(`/api/accounts/${guardedAccountId}`)).json();
+      expect(account.currency).toBe('USD');
+    });
+  });
+
+  test.describe('S05: Close-route open-trade guard', () => {
+    let openTradeAccountId: string;
+
+    test.beforeAll(async ({ browser }) => {
+      const page = await browser.newPage();
+      const ts = Date.now();
+      const account = await createAccount(page, `Open Trade Guard E2E ${ts}`);
+      openTradeAccountId = account.id;
+      // Full trading setup: risk params + opening cash + activation
+      await prepareAccountForTrading(page.request, openTradeAccountId);
+
+      // A planned trade is a non-closed status → counts as open for the guard
+      const tradeRes = await page.request.post('/api/trades', {
+        data: { symbol: 'GUARD', direction: 'long', accountId: openTradeAccountId },
+      });
+      expect(tradeRes.status()).toBe(201);
+      await page.close();
+    });
+
+    test('API: close returns 409 with a descriptive error and leaves the account active', async ({ page }) => {
+      const response = await page.request.post(`/api/accounts/${openTradeAccountId}/close`);
+      expect(response.status()).toBe(409);
+
+      const body = await response.json();
+      expect(body.error).toContain('Cannot close account with open trades');
+
+      // Account remains active — no mutation occurred
+      const account = await (await page.request.get(`/api/accounts/${openTradeAccountId}`)).json();
+      expect(account.isActive).toBe(true);
+    });
+
+    test('UI: close dialog surfaces the guard error and keeps the account active', async ({ page }) => {
+      await page.goto(`/settings/accounts/${openTradeAccountId}/settings`);
+      await page.waitForResponse(
+        (res) => res.url().includes(`/api/accounts/${openTradeAccountId}`) && res.status() === 200,
+      );
+
+      // ── Open the close dialog and confirm ──────────────────────────
+      await page.getByRole('button', { name: /close account/i }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+
+      // Register the 409 listener before the confirm click
+      const closeResponse = page.waitForResponse(
+        (res) =>
+          res.url().includes(`/api/accounts/${openTradeAccountId}/close`) &&
+          res.status() === 409,
+      );
+      await dialog.getByRole('button', { name: /confirm close/i }).click();
+      await closeResponse;
+
+      // ── Wait for the guard error banner (proves the 409 handler ran
+      // and re-enabled the dialog buttons) before dismissing ──────────
+      await expect(page.getByText(/Cannot close account with open trades/i)).toBeVisible();
+
+      // ── Dismiss the dialog (the guard blocked closure) ─────────────
+      await dialog.getByRole('button', { name: /cancel/i }).click();
+      await expect(dialog).not.toBeVisible();
+
+      // ── Error banner still shows the actionable guard message ──────
+      await expect(page.getByText(/Cannot close account with open trades/i)).toBeVisible();
+
+      // ── Account is still active with the Close Account button ───────
+      await expect(page.getByText('Active', { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: /close account/i })).toBeVisible();
+    });
+  });
+
+  test.describe('S05: Default-account clearing on deactivation', () => {
+    let defaultAccountId: string;
+    let fallbackAccountId: string;
+
+    test.beforeAll(async ({ browser }) => {
+      const page = await browser.newPage();
+      const ts = Date.now();
+      const defaultAccount = await createAccount(page, `Default Acct E2E ${ts}`);
+      defaultAccountId = defaultAccount.id;
+      await setAccountRiskParams(page, defaultAccountId);
+      await activateAccount(page, defaultAccountId);
+
+      // A fully-prepared fallback account (active, funded) for consumer fallback
+      const fallbackAccount = await createAccount(page, `Fallback Acct E2E ${ts}`);
+      fallbackAccountId = fallbackAccount.id;
+      await prepareAccountForTrading(page.request, fallbackAccountId);
+
+      // Make the first account the settings default
+      const settingsRes = await page.request.put('/api/settings', {
+        data: { defaultAccountId: defaultAccountId },
+      });
+      expect([200, 201]).toContain(settingsRes.status());
+      await page.close();
+    });
+
+    test('deactivating the default account via PUT clears settings.defaultAccountId', async ({ page }) => {
+      // Confirm the default reference is set
+      const before = await (await page.request.get('/api/settings')).json();
+      expect(before.defaultAccountId).toBe(defaultAccountId);
+
+      // Deactivate via PUT {isActive: false}
+      const deactivate = await page.request.put(`/api/accounts/${defaultAccountId}`, {
+        data: { isActive: false },
+      });
+      expect(deactivate.status()).toBe(200);
+
+      // Default reference is cleared (silent — consumers fall back to first active)
+      const after = await (await page.request.get('/api/settings')).json();
+      expect(after.defaultAccountId).toBeNull();
+    });
+
+    test('deactivating a non-default account preserves the default reference', async ({ page }) => {
+      // Set the fallback account as the default first
+      const setDefault = await page.request.put('/api/settings', {
+        data: { defaultAccountId: fallbackAccountId },
+      });
+      expect([200, 201]).toContain(setDefault.status());
+
+      // The original default account is inactive from the previous test; reactivate it
+      const reactivate = await page.request.put(`/api/accounts/${defaultAccountId}`, {
+        data: { isActive: true },
+      });
+      expect(reactivate.status()).toBe(200);
+
+      // Deactivate the non-default account
+      const deactivate = await page.request.put(`/api/accounts/${defaultAccountId}`, {
+        data: { isActive: false },
+      });
+      expect(deactivate.status()).toBe(200);
+
+      // The default reference survives — only the default's own deactivation clears it
+      const settings = await (await page.request.get('/api/settings')).json();
+      expect(settings.defaultAccountId).toBe(fallbackAccountId);
+    });
+
+    test('closing the default account via the close route clears settings.defaultAccountId', async ({ page }) => {
+      // Set the fallback account as default, then close it
+      const setDefault = await page.request.put('/api/settings', {
+        data: { defaultAccountId: fallbackAccountId },
+      });
+      expect([200, 201]).toContain(setDefault.status());
+
+      const closeRes = await page.request.post(`/api/accounts/${fallbackAccountId}/close`);
+      expect(closeRes.status()).toBe(200);
+
+      // Close-path deactivation also clears the stale reference
+      const settings = await (await page.request.get('/api/settings')).json();
+      expect(settings.defaultAccountId).toBeNull();
+    });
+
+    test('consumer fallback: a trade without accountId resolves to an active account when default is null', async ({ page }) => {
+      // defaultAccountId is null at this point (cleared by the close-route test)
+      const settings = await (await page.request.get('/api/settings')).json();
+      expect(settings.defaultAccountId).toBeNull();
+
+      // Create a trade with no explicit accountId
+      const tradeRes = await page.request.post('/api/trades', {
+        data: { symbol: 'FALLBACK', direction: 'long' },
+      });
+      expect(tradeRes.status()).toBe(201);
+      const trade = await tradeRes.json();
+
+      // It must have landed on an ACTIVE account (not the closed default)
+      const account = await (await page.request.get(`/api/accounts/${trade.accountId}`)).json();
+      expect(account.isActive).toBe(true);
     });
   });
 });

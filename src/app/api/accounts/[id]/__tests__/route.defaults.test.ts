@@ -29,6 +29,18 @@ sqlite.exec(`
     account_id TEXT,
     status TEXT NOT NULL
   );
+
+  CREATE TABLE financial_events (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    idempotency_key TEXT,
+    description TEXT,
+    payload TEXT,
+    effect TEXT,
+    posted_at TEXT NOT NULL,
+    created_at TEXT
+  );
 `);
 
 vi.mock('@/db', () => ({
@@ -39,8 +51,9 @@ vi.mock('@/db', () => ({
 const { PUT } = await import('../route');
 
 type AccountDefaults = {
-  maxRiskPerTradePct: number | null;
-  defaultCommission: number | null;
+  maxRiskPerTradePct?: number | null;
+  defaultCommission?: number | null;
+  currency?: string;
 };
 
 function seedAccount(defaults: AccountDefaults = {
@@ -52,8 +65,9 @@ function seedAccount(defaults: AccountDefaults = {
     .values({
       id,
       name: 'Handler test account',
-      currency: 'USD',
-      ...defaults,
+      maxRiskPerTradePct: defaults.maxRiskPerTradePct ?? null,
+      defaultCommission: defaults.defaultCommission ?? null,
+      currency: defaults.currency ?? 'USD',
     })
     .run();
   return id;
@@ -82,7 +96,7 @@ function persistedDefaults(id: string): AccountDefaults {
 
 describe('PUT /api/accounts/[id] account defaults', () => {
   beforeEach(() => {
-    sqlite.exec('DELETE FROM trades; DELETE FROM accounts;');
+    sqlite.exec('DELETE FROM financial_events; DELETE FROM trades; DELETE FROM accounts;');
   });
 
   afterAll(() => {
@@ -167,5 +181,53 @@ describe('PUT /api/accounts/[id] account defaults', () => {
       details: expect.any(Object),
     });
     expect(persistedDefaults(id)).toEqual(original);
+  });
+
+  function seedFinancialEvent(accountId: string, eventType = 'opening_balance') {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO financial_events (id, account_id, event_type, posted_at, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(id, accountId, eventType, now, now);
+    return id;
+  }
+
+  it('blocks a currency change through the real handler when financial history exists', async () => {
+    const id = seedAccount({ currency: 'USD' });
+    seedFinancialEvent(id);
+
+    const result = await putDefaults(id, { currency: 'EUR' });
+
+    expect(result.response.status).toBe(409);
+    expect(result.body.error).toContain('base currency');
+    expect(result.body.error).toContain('financial history');
+
+    const row = db.select({ currency: schema.accounts.currency })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.id, id))
+      .get();
+    expect(row?.currency).toBe('USD');
+  });
+
+  it('allows a currency change through the real handler when no financial history exists', async () => {
+    const id = seedAccount({ currency: 'USD' });
+
+    const result = await putDefaults(id, { currency: 'EUR' });
+
+    expect(result.response.status).toBe(200);
+    expect(result.body).toMatchObject({ id, currency: 'EUR' });
+  });
+
+  it('treats a same-currency update as a no-op even with financial history', async () => {
+    const id = seedAccount({ currency: 'USD' });
+    seedFinancialEvent(id);
+
+    const result = await putDefaults(id, { currency: 'USD' });
+
+    expect(result.response.status).toBe(200);
+    expect(result.body).toMatchObject({ id, currency: 'USD' });
   });
 });
