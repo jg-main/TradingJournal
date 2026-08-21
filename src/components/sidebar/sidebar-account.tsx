@@ -1,6 +1,6 @@
 'use client';
 
-import { Building2, Check } from 'lucide-react';
+import { Building2, Check, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAccount } from '@/lib/account-context';
 import {
@@ -35,7 +35,7 @@ function accountLabel(name: string, broker: string | null): string {
  * Collapsed: icon button opening a dropdown, with tooltip label.
  */
 export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
-  const { accounts, loading, error, accountId, setAccountId } = useAccount();
+  const { accounts, loading, error, accountId, setAccountId, refresh } = useAccount();
 
   if (loading) {
     return (
@@ -55,12 +55,16 @@ export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
     if (collapsed) {
       return (
         <div className="flex justify-center border-b border-sidebar-border p-2">
-          <div
-            className="flex size-9 items-center justify-center rounded-lg text-destructive"
-            title={`Accounts unavailable: ${error}`}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className="flex size-9 items-center justify-center rounded-lg text-destructive transition-colors hover:bg-sidebar-accent"
+            title={`Accounts unavailable: ${error} — click to retry`}
+            aria-label="Retry loading accounts"
+            data-testid="sidebar-account-error-retry"
           >
             <Building2 className="size-4" />
-          </div>
+          </button>
         </div>
       );
     }
@@ -69,6 +73,14 @@ export function SidebarAccount({ collapsed = false }: SidebarAccountProps) {
         <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
           {error}
         </p>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <RefreshCw className="size-3" />
+          Retry loading accounts
+        </button>
       </div>
     );
   }

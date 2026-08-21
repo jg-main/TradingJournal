@@ -3,7 +3,7 @@
  *
  * Covers: default first-active-account resolution, persisted-id restore,
  * invalid persisted id fallback, setAccountId persistence, fetch error state,
- * and single-fetch behavior.
+ * single-fetch behavior, and the refresh() re-fetch contract (S02/T01).
  *
  * Run: npx vitest run src/lib/account-context.test.tsx
  */
@@ -42,7 +42,7 @@ async function flushFetch() {
 
 /** Probe component that exposes context values to assertions. */
 function Probe() {
-  const { accounts, loading, error, accountId, setAccountId } = useAccount();
+  const { accounts, loading, error, accountId, setAccountId, refresh } = useAccount();
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
@@ -50,6 +50,7 @@ function Probe() {
       <span data-testid="account-id">{accountId}</span>
       <span data-testid="count">{accounts.length}</span>
       <button data-testid="select-acc-2" onClick={() => setAccountId('acc-2')} />
+      <button data-testid="refresh" onClick={() => void refresh()} />
     </div>
   );
 }
@@ -145,5 +146,86 @@ describe('AccountProvider', () => {
 
     expect(screen.getByTestId('account-id').textContent).toBe('');
     expect(screen.getByTestId('count').textContent).toBe('0');
+  });
+
+  // ── refresh() contract (S02/T01) ──────────────────────────────────
+
+  it('refresh re-fetches accounts and updates the list', async () => {
+    mockFetchAccounts(mockAccounts);
+    renderProvider();
+    await flushFetch();
+
+    expect(screen.getByTestId('count').textContent).toBe('3');
+    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+
+    // A new account appears after refresh (e.g. created via the Add Account dialog).
+    mockFetchAccounts([
+      ...mockAccounts,
+      { id: 'acc-new', name: 'New', broker: null, currency: 'USD', isActive: false },
+    ]);
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flushFetch();
+
+    expect(screen.getByTestId('count').textContent).toBe('4');
+    // Selection is preserved across refresh.
+    expect(screen.getByTestId('account-id').textContent).toBe('acc-1');
+  });
+
+  it('refresh keeps the current selection when the account still exists', async () => {
+    mockFetchAccounts(mockAccounts);
+    renderProvider();
+    await flushFetch();
+
+    act(() => {
+      screen.getByTestId('select-acc-2').click();
+    });
+    expect(screen.getByTestId('account-id').textContent).toBe('acc-2');
+
+    mockFetchAccounts(mockAccounts);
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flushFetch();
+
+    expect(screen.getByTestId('account-id').textContent).toBe('acc-2');
+  });
+
+  it('refresh falls back to the first active account when the selection vanished', async () => {
+    mockFetchAccounts(mockAccounts);
+    renderProvider();
+    await flushFetch();
+
+    act(() => {
+      screen.getByTestId('select-acc-2').click();
+    });
+    expect(screen.getByTestId('account-id').textContent).toBe('acc-2');
+
+    // acc-2 disappears on refresh → fall back to the first active account.
+    mockFetchAccounts(mockAccounts.filter((a) => a.id !== 'acc-2'));
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flushFetch();
+
+    expect(screen.getByTestId('account-id').textContent).toBe('acc-1');
+  });
+
+  it('refresh surfaces failures through the error state for retry', async () => {
+    mockFetchAccounts(mockAccounts);
+    renderProvider();
+    await flushFetch();
+
+    vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500 } as Response);
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flushFetch();
+
+    expect(screen.getByTestId('error').textContent).toBe('Failed to load accounts');
+    // The previously loaded list remains usable.
+    expect(screen.getByTestId('count').textContent).toBe('3');
+    expect(screen.getByTestId('account-id').textContent).toBe('acc-1');
   });
 });

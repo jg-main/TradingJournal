@@ -33,6 +33,13 @@ interface AccountContextValue {
   accountId: string;
   /** Select an account; persisted to localStorage. */
   setAccountId: (id: string) => void;
+  /**
+   * Re-fetch /api/accounts and re-resolve the selected account. Keeps the
+   * current selection when it still exists, otherwise falls back to the
+   * persisted id, then the first active account. Failures surface through
+   * the error state so consumers can offer a retry. Resolves when done.
+   */
+  refresh: () => Promise<void>;
 }
 
 const AccountContext = createContext<AccountContextValue>({
@@ -41,6 +48,7 @@ const AccountContext = createContext<AccountContextValue>({
   error: null,
   accountId: '',
   setAccountId: () => {},
+  refresh: async () => {},
 });
 
 const STORAGE_KEY = 'app:account';
@@ -63,10 +71,11 @@ function isActive(account: Account): boolean {
 /**
  * Single owner of global account selection (M007/D037).
  *
- * Fetches /api/accounts once per session mount, resolves the selected
- * account from localStorage (falling back to the first active account),
- * and persists every selection change. Consumers read via useAccount();
- * no page or widget should fetch /api/accounts independently.
+ * Fetches /api/accounts on mount, resolves the selected account from
+ * localStorage (falling back to the first active account), and persists
+ * every selection change. `refresh()` re-fetches after account creation
+ * or other external changes. Consumers read via useAccount(); no page or
+ * widget should fetch /api/accounts independently.
  */
 export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -74,35 +83,36 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [accountId, setAccountIdState] = useState<string>('');
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadAccounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/accounts');
+      if (!res.ok) throw new Error('Failed to load accounts');
+      const data = (await res.json()) as Account[];
+      setAccounts(data);
+      setError(null);
 
-    fetch('/api/accounts')
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to load accounts');
-        return res.json() as Promise<Account[]>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setAccounts(data);
-        setLoading(false);
-
-        const persisted = readPersistedAccountId();
+      // Keep the current selection when it still exists; otherwise fall
+      // back to the persisted id, then the first active account.
+      setAccountIdState((current) => {
+        const persisted = current || readPersistedAccountId();
         const fallback = data.find(isActive)?.id ?? data[0]?.id ?? '';
-        const resolved =
-          persisted && data.some((a) => a.id === persisted) ? persisted : fallback;
-        setAccountIdState(resolved);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load accounts');
-        setLoading(false);
+        return persisted && data.some((a) => a.id === persisted)
+          ? persisted
+          : fallback;
       });
-
-    return () => {
-      cancelled = true;
-    };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load accounts');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  // Initial fetch once per session mount. The async loader updates
+  // loading/error state after the request resolves.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadAccounts();
+  }, [loadAccounts]);
 
   const setAccountId = useCallback((id: string) => {
     setAccountIdState(id);
@@ -113,9 +123,13 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    await loadAccounts();
+  }, [loadAccounts]);
+
   const value = useMemo<AccountContextValue>(
-    () => ({ accounts, loading, error, accountId, setAccountId }),
-    [accounts, loading, error, accountId, setAccountId],
+    () => ({ accounts, loading, error, accountId, setAccountId, refresh }),
+    [accounts, loading, error, accountId, setAccountId, refresh],
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

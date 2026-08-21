@@ -181,6 +181,7 @@ export default defineConfig({
       'src/components/performance/__tests__/kpi-micro-viz.test.tsx',
       'src/components/performance/__tests__/performance-filter-bar.test.tsx',
       'src/components/accounting/account-correction-form.test.tsx',
+      'src/components/accounting/add-account-dialog.test.tsx',
       'src/components/accounting/account-overview.test.tsx',
       'src/components/accounting/account-ledger.test.tsx',
       'src/components/accounting/account-positions.test.tsx',

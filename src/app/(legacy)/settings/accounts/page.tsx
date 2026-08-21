@@ -8,6 +8,8 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import DynamicTable from '@/components/dynamic-table';
 import { EmptyState } from '@/components/empty-state';
+import { AddAccountDialog, type CreatedAccount } from '@/components/accounting/add-account-dialog';
+import { useAccount } from '@/lib/account-context';
 
 interface Account {
   id: string;
@@ -29,9 +31,9 @@ export default function AccountsPage() {
   const [defaultAccountDraft, setDefaultAccountDraft] = useState('');
   const [defaultSettingsStatus, setDefaultSettingsStatus] = useState<'ready' | 'unavailable'>('unavailable');
   const [savingDefault, setSavingDefault] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
-  const [form, setForm] = useState({ name: '', broker: '', currency: 'USD' });
+  const { refresh, setAccountId } = useAccount();
 
   const fetchAccounts = async () => {
     try {
@@ -85,44 +87,19 @@ export default function AccountsPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchAccounts(); }, []);
 
-  const resetForm = () => {
-    setForm({ name: '', broker: '', currency: 'USD' });
-    setShowForm(false);
-    setMessage(null);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage(null);
-
-    if (!form.name.trim()) {
-      setMessage({ type: 'error', text: 'Account name is required.' });
-      return;
-    }
-
+  const handleAccountCreated = async (account: CreatedAccount, warning?: string) => {
+    setMessage({ type: warning ? 'error' : 'success', text: warning ?? `Account "${account.name}" created.` });
+    // Refresh the shared account list and select the new account so the
+    // sidebar and workspace see it immediately, then transition into the
+    // new account workspace. Refresh errors surface through the
+    // AccountProvider error state (with a retry option in the sidebar).
     try {
-      const res = await fetch('/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          broker: form.broker.trim() || null,
-          currency: form.currency,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        setMessage({ type: 'error', text: err.details ? JSON.stringify(err.details) : err.error });
-        return;
-      }
-
-      setMessage({ type: 'success', text: 'Account created.' });
-      resetForm();
-      fetchAccounts();
+      await refresh();
     } catch {
-      setMessage({ type: 'error', text: 'Failed to save account.' });
+      // loadAccounts absorbs failures; nothing to do here.
     }
+    setAccountId(account.id);
+    router.push(`/settings/accounts/${account.id}`);
   };
 
   const handleDefaultAccountSave = async () => {
@@ -248,14 +225,12 @@ export default function AccountsPage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Accounts</h1>
-        {!showForm && (
-          <button
-            onClick={() => { resetForm(); setShowForm(true); }}
-            className="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Landmark className="size-4" />+ Add Account
-          </button>
-        )}
+        <button
+          onClick={() => setDialogOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Landmark className="size-4" />+ Add Account
+        </button>
       </div>
 
       {/* Messages */}
@@ -329,70 +304,14 @@ export default function AccountsPage() {
         </div>
       </section>
 
-      {/* Create account form */}
-      {showForm && (
-        <form onSubmit={handleSubmit} className="mb-8 rounded-lg border bg-card p-6">
-          <h2 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            New Account
-          </h2>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="name" className="mb-1 block text-sm font-medium text-foreground">
-                Name *
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="e.g. Main Brokerage"
-              />
-            </div>
-            <div>
-              <label htmlFor="broker" className="mb-1 block text-sm font-medium text-foreground">
-                Broker
-              </label>
-              <input
-                id="broker"
-                type="text"
-                value={form.broker}
-                onChange={(e) => setForm((f) => ({ ...f, broker: e.target.value }))}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="e.g. Interactive Brokers"
-              />
-            </div>
-            <div>
-              <label htmlFor="currency" className="mb-1 block text-sm font-medium text-foreground">
-                Currency
-              </label>
-              <input
-                id="currency"
-                type="text"
-                maxLength={3}
-                value={form.currency}
-                onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <button
-              type="submit"
-              className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90"
-            >
-              Create
-            </button>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-md border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
+      {/* Add account dialog — creates the account, optionally sets it as the
+          default, refreshes shared account state, and navigates into the new
+          account workspace. */}
+      <AddAccountDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onCreated={handleAccountCreated}
+      />
 
       {/* Table */}
       {accounts.length === 0 ? (
