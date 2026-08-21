@@ -198,9 +198,9 @@ test.describe('CT3 chart presentation', () => {
     expect(ddTip).toContain('-');
     // Date X-axis formatter (abbreviated month) on the daily charts.
     expect((report['net-daily-pnl'] as { xFormatter: boolean[] }).xFormatter[0]).toBe(true);
-    // Dual drawdown axes: amount (unit-aware) + %.
-    expect((report['drawdown-curve'] as { yAxisNames: string[] }).yAxisNames).toContain('Drawdown');
-    expect((report['drawdown-curve'] as { yAxisNames: string[] }).yAxisNames).toContain('Drawdown %');
+    // Drawdown (CT5): a single downside Y axis named 'Drawdown' — the dual
+    // amount/% axis model is gone; both measures remain in the tooltip.
+    expect((report['drawdown-curve'] as { yAxisNames: string[] }).yAxisNames).toEqual(['Drawdown']);
     // Integer Trades axis on R-Distribution.
     expect((report['r-distribution'] as { minInterval: (number | null)[] }).minInterval).toContain(1);
     // Metric-dependent Setup axis names.

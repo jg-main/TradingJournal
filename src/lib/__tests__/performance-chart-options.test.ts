@@ -83,7 +83,7 @@ describe('performance-chart-options', () => {
   });
 
   describe('drawdownCurveOption', () => {
-    it('builds dual series', () => {
+    it('builds a single downside series (no dual-axis model)', () => {
       const option = drawdownCurveOption(
         [
           { date: '2024-01-01', drawdownAmount: 100, drawdownPct: 0.01 },
@@ -91,20 +91,12 @@ describe('performance-chart-options', () => {
         ],
         palette,
       );
-      expect(option!.series).toHaveLength(2);
-    });
-
-    it('respects visibleSeries filtering (dual series)', () => {
-      const option = drawdownCurveOption(
-        [
-          { date: '2024-01-01', drawdownAmount: 100, drawdownPct: 0.01 },
-          { date: '2024-01-02', drawdownAmount: 200, drawdownPct: 0.02 },
-        ],
-        palette,
-        ['drawdownAmount'],
-      );
-      expect((option!.series[0] as { data: number[] }).data).toHaveLength(2);
-      expect((option!.series[1] as { data: number[] }).data).toEqual([]);
+      expect(option!.series).toHaveLength(1);
+      // Single value Y axis; no yAxisIndex 1 anywhere.
+      expect(Array.isArray(option!.yAxis)).toBe(false);
+      expect((option!.series[0] as { yAxisIndex?: number }).yAxisIndex).toBeUndefined();
+      // Downside domain: zero is the natural upper bound.
+      expect((option!.yAxis as { max?: number }).max).toBe(0);
     });
 
     it('returns null for empty data', () => {
@@ -370,25 +362,28 @@ describe('performance-chart-options', () => {
   // ── Corrective Task 2A: registry supportedUnits enforcement ──────────────
 
   describe('registry supportedUnits enforcement (Corrective Task 2A)', () => {
-    it('Drawdown Curve amount converts under percent but stays currency under R (partial support)', () => {
+    it('Drawdown Curve shows one unit-driven downside series; R falls back to currency', () => {
       const data = [
         { date: '2024-01-01', drawdownAmount: 500, drawdownPct: 0.02 },
         { date: '2024-01-02', drawdownAmount: 800, drawdownPct: 0.03 },
       ];
-      // currency (default): raw amounts.
+      // currency (default): negated canonical amounts — presentation maps the
+      // positive magnitude to a negative downside series.
       const cur = drawdownCurveOption(data, palette);
-      expect(((cur!.series[0] as { data: number[] }).data)).toEqual([500, 800]);
-      // percent: amount / periodStartEquity.
-      const pct = drawdownCurveOption(data, palette, ['drawdownAmount', 'drawdownPct'], { unit: 'percent', periodStartEquity: 10000 });
-      expect(((pct!.series[0] as { data: number[] }).data)).toEqual([0.05, 0.08]);
+      expect(((cur!.series[0] as { data: number[] }).data)).toEqual([-500, -800]);
+      // percent: negated canonical drawdownPct (never re-derived from amount).
+      const pct = drawdownCurveOption(data, palette, ['drawdownAmount'], { unit: 'percent', periodStartEquity: 10000 });
+      expect(((pct!.series[0] as { data: number[] }).data)).toEqual([-0.02, -0.03]);
       // R: drawdown-curve does NOT declare R — ChartWidget resolves the
       // effective unit to currency before calling the builder (registry is
-      // authoritative). When the builder receives unit:'currency' the amount
-      // series stays raw (never becomes R-multiples).
-      const r = drawdownCurveOption(data, palette, ['drawdownAmount', 'drawdownPct'], { unit: 'currency', totalInitialRisk: 200 });
-      expect(((r!.series[0] as { data: number[] }).data)).toEqual([500, 800]);
-      // drawdownPct series stays its native percentage in all cases.
-      expect(((r!.series[1] as { data: number[] }).data)).toEqual([0.02, 0.03]);
+      // authoritative). The builder also guards: unit R → currency. No
+      // aggregate-risk division ever occurs.
+      const r = drawdownCurveOption(data, palette, ['drawdownAmount'], { unit: 'r', totalInitialRisk: 200 });
+      expect(((r!.series[0] as { data: number[] }).data)).toEqual([-500, -800]);
+      // Single series only in every mode.
+      expect(cur!.series).toHaveLength(1);
+      expect(pct!.series).toHaveLength(1);
+      expect(r!.series).toHaveLength(1);
     });
 
     it('R-Multiple Distribution stays fixed (counts) under every global unit', () => {
@@ -827,6 +822,109 @@ describe('performance-chart-options', () => {
         expect(html).toContain('12');
         expect(html).toContain('58.3%');
         expect(html).toContain('+1.24R');
+      });
+    });
+
+    describe('drawdownCurveOption downside area (Corrective Task 5)', () => {
+      const seq = [
+        { date: '2026-08-01', drawdownAmount: 0, drawdownPct: 0 },
+        { date: '2026-08-05', drawdownAmount: 500, drawdownPct: 0.05 },
+        { date: '2026-08-10', drawdownAmount: 800, drawdownPct: 0.08 },
+        { date: '2026-08-15', drawdownAmount: 200, drawdownPct: 0.02 },
+        { date: '2026-08-20', drawdownAmount: 0, drawdownPct: 0 },
+      ];
+      const extract = (opt: NonNullable<ReturnType<typeof drawdownCurveOption>>) =>
+        (opt.series[0] as { data: number[] }).data;
+      const before = JSON.stringify(seq);
+
+      it('plots negated currency magnitudes below zero (canonical input untouched)', () => {
+        const opt = drawdownCurveOption(seq, palette)!;
+        expect(extract(opt)).toEqual([0, -500, -800, -200, 0]);
+        expect(JSON.stringify(seq)).toBe(before);
+      });
+
+      it('plots negated canonical percentages under percent mode (never re-derived from amount)', () => {
+        const opt = drawdownCurveOption(seq, palette, ['drawdownAmount'], { unit: 'percent' })!;
+        expect(extract(opt)).toEqual([0, -0.05, -0.08, -0.02, 0]);
+      });
+
+      it('percent axis formatter displays -5% / -8% (never -0.05%)', () => {
+        const opt = drawdownCurveOption(seq, palette, ['drawdownAmount'], { unit: 'percent' })!;
+        const fmt = (opt.yAxis as { axisLabel: { formatter: (v: number) => string } }).axisLabel.formatter;
+        expect(fmt(-0.05)).toBe('-5%');
+        expect(fmt(-0.08)).toBe('-8%');
+        expect(fmt(0)).toBe('0%');
+      });
+
+      it('global R resolves to currency: no R-labelled drawdown, no aggregate-risk division', () => {
+        const opt = drawdownCurveOption(seq, palette, ['drawdownAmount'], { unit: 'r', totalInitialRisk: 200 })!;
+        expect(extract(opt)).toEqual([0, -500, -800, -200, 0]);
+      });
+
+      it('renders exactly one visible series and one Y axis (no yAxisIndex 1, no dual axes)', () => {
+        const opt = drawdownCurveOption(seq, palette)!;
+        expect(opt.series).toHaveLength(1);
+        expect(Array.isArray(opt.yAxis)).toBe(false);
+        expect((opt.series[0] as { yAxisIndex?: number }).yAxisIndex).toBeUndefined();
+        const pct = drawdownCurveOption(seq, palette, ['drawdownAmount'], { unit: 'percent' })!;
+        expect(pct.series).toHaveLength(1);
+        expect(Array.isArray(pct.yAxis)).toBe(false);
+      });
+
+      it('anchors the domain at zero (max 0) with an adaptive lower bound', () => {
+        const opt = drawdownCurveOption(seq, palette)!;
+        expect((opt.yAxis as { max?: number }).max).toBe(0);
+        expect((opt.yAxis as { min?: number }).min).toBeUndefined(); // not hardcoded
+        // No artificial positive region: the series never exceeds zero.
+        expect(extract(opt).every((v) => v <= 0)).toBe(true);
+      });
+
+      it('currency tooltip shows amount first then percentage (negative signs)', () => {
+        const point = { date: '2026-08-21', drawdownAmount: 2430, drawdownPct: 0.048 };
+        const opt = drawdownCurveOption([point], palette)!;
+        const t = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = t.formatter([{ dataIndex: 0, seriesName: 'Drawdown', axisValueLabel: '2026-08-21', name: '2026-08-21' }]);
+        expect(html).toContain('<b>Aug 21</b>');
+        expect(html).toContain('Drawdown');
+        expect(html).toContain('-$2,430');
+        expect(html).toContain('Drawdown %');
+        expect(html).toContain('-4.8%');
+        expect(html.indexOf('Drawdown&nbsp;&nbsp;')).toBeLessThan(html.indexOf('Drawdown %&nbsp;&nbsp;'));
+      });
+
+      it('percent tooltip shows percentage first then amount', () => {
+        const point = { date: '2026-08-21', drawdownAmount: 2430, drawdownPct: 0.048 };
+        const opt = drawdownCurveOption([point], palette, ['drawdownAmount'], { unit: 'percent' })!;
+        const t = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = t.formatter([{ dataIndex: 0, seriesName: 'Drawdown %', axisValueLabel: '2026-08-21', name: '2026-08-21' }]);
+        expect(html).toContain('<b>Aug 21</b>');
+        expect(html).toContain('Drawdown %');
+        expect(html).toContain('-4.8%');
+        expect(html).toContain('Drawdown');
+        expect(html).toContain('-$2,430');
+        expect(html.indexOf('Drawdown %&nbsp;&nbsp;')).toBeLessThan(html.indexOf('Drawdown&nbsp;&nbsp;'));
+      });
+
+      it('distinguishes no data from a valid all-zero drawdown series', () => {
+        // No rollforward points → empty state (builder returns null).
+        expect(drawdownCurveOption([], palette)).toBeNull();
+        // Valid points with every drawdown value zero → a real flat zero series.
+        const flat = [
+          { date: '2026-08-01', drawdownAmount: 0, drawdownPct: 0 },
+          { date: '2026-08-02', drawdownAmount: 0, drawdownPct: 0 },
+        ];
+        const opt = drawdownCurveOption(flat, palette)!;
+        expect(opt).not.toBeNull();
+        expect(extract(opt)).toEqual([0, 0]);
+      });
+
+      it('keeps the date heading and a prominent zero baseline', () => {
+        const opt = drawdownCurveOption(seq, palette)!;
+        const t = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = t.formatter([{ dataIndex: 1, seriesName: 'Drawdown', axisValueLabel: '2026-08-05', name: '2026-08-05' }]);
+        expect(html).toContain('<b>Aug 05</b>');
+        const mark = (opt.series[0] as { markLine?: { data: Array<{ yAxis?: number }> } }).markLine;
+        expect(mark?.data?.[0]?.yAxis).toBe(0);
       });
     });
   });

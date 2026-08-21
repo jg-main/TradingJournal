@@ -1312,24 +1312,23 @@ test.describe('widget actions menu (S05 R005)', () => {
     await page.getByRole('button', { name: 'Customize' }).click();
     await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
 
-    // ── Configure a chart: typed series visibility + title override ──────
+    // ── Configure a chart: title override (single-series contract) ──────
     await page.getByRole('button', { name: 'Actions for Drawdown Curve', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Configure' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: 'Configure Drawdown Curve' })).toBeVisible();
-    // Typed fields from the registry configSchema: series multi-select,
-    // legend boolean, title text — no unrestricted visualization builder.
-    await expect(dialog.getByRole('checkbox', { name: 'Amount ($)' })).toBeChecked();
-    await expect(dialog.getByRole('checkbox', { name: 'Percent (%)' })).toBeChecked();
+    // Drawdown is a single downside series driven by the global unit selector
+    // (CT5) — no dual-series visibility multi-select remains; the typed dialog
+    // offers the shared legend boolean and title text.
+    await expect(dialog.getByRole('checkbox', { name: 'Amount ($)' })).toHaveCount(0);
+    await expect(dialog.getByRole('checkbox', { name: 'Percent (%)' })).toHaveCount(0);
     await expect(dialog.getByRole('checkbox', { name: 'Show legend' })).not.toBeChecked();
-    await dialog.getByRole('checkbox', { name: 'Percent (%)' }).uncheck();
     await dialog.getByLabel('Title').fill('My Drawdown Curve');
     await dialog.getByRole('button', { name: 'Save' }).click();
 
     // The widget re-renders with the override and the instance model holds it.
     await expect(page.getByText('My Drawdown Curve', { exact: true })).toBeVisible();
     await expect.poll(() => readStoredInstanceConfig(page, 'chart', 'drawdown-curve')).toEqual({
-      visibleSeries: ['drawdownAmount'],
       titleOverride: 'My Drawdown Curve',
     });
 
@@ -1904,15 +1903,16 @@ test.describe('global unit propagation (CT2)', () => {
     // Distribution (fixed) must stay unchanged.
     const ddSeries = await readChartSeries('drawdown-curve');
     expect(ddSeries.length).toBeGreaterThan(0);
-    // The amount series stays in currency: no drawdown point equals amount/risk
-    // (R conversion). The absolute magnitude is fixture-dependent (the derived
-    // drawdown is a function of the rollforward series and account scope), so
-    // the assertion targets the conversion invariant, not a hardcoded value.
-    const ddMax = Math.max(...ddSeries);
-    expect(ddMax).toBeGreaterThan(0);
-    expect(Math.abs(ddMax - ddMax / risk)).toBeGreaterThan(0.01);
-    // Non-zero drawdown points stay currency (0 points are the series peak and
-    // are trivially invariant).
+    // CT5 downside semantics: the plotted series is the negated currency
+    // amount (≤ 0, 0 = at high-water mark). No drawdown point equals
+    // amount/risk (R conversion). The magnitude is fixture-dependent (derived
+    // from the combined rollforward series and account scope), so the
+    // assertion targets the conversion invariant, not a hardcoded value.
+    const ddMin = Math.min(...ddSeries);
+    expect(ddMin).toBeLessThan(0);
+    expect(Math.abs(ddMin - ddMin / risk)).toBeGreaterThan(0.01);
+    // Non-zero drawdown points stay currency (0 points are the recovery/peak
+    // observations and are trivially invariant).
     expect(ddSeries.filter((v) => v !== 0).every((v) => Math.abs(v - v / risk) > 0.01)).toBe(true);
     const rDistSeries = await readChartSeries('r-distribution');
     expect(rDistSeries.length).toBeGreaterThan(0);

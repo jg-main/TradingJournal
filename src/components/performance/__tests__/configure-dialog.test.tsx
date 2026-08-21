@@ -61,14 +61,15 @@ describe('ConfigureDialog', () => {
   });
 
   it('renders typed chart fields: visible series checkboxes, legend toggle, title', () => {
-    renderDialog({ widgetType: 'drawdown-curve', widgetTitle: 'Drawdown Curve' });
-    expect(screen.getByRole('checkbox', { name: 'Amount ($)' })).toBeDefined();
-    expect(screen.getByRole('checkbox', { name: 'Percent (%)' })).toBeDefined();
+    // monthly-pnl still declares a visible-series multi-select (Net P&L / Win
+    // Rate); Drawdown is a single downside series driven by the unit selector.
+    renderDialog({ widgetType: 'monthly-pnl', widgetTitle: 'Monthly P&L' });
+    expect(screen.getByRole('checkbox', { name: 'Net P&L' })).toBeDefined();
+    expect(screen.getByRole('checkbox', { name: 'Win Rate' })).toBeDefined();
     expect(screen.getByRole('checkbox', { name: 'Show legend' })).toBeDefined();
     expect(screen.getByRole('textbox', { name: 'Title' })).toBeDefined();
-    // Both series are on by default (registry schema default).
-    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Net P&L' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Win Rate' }) as HTMLInputElement).checked).toBe(true);
   });
 
   it('renders the primary-series select for performance-by-setup', () => {
@@ -78,13 +79,13 @@ describe('ConfigureDialog', () => {
 
   it('prefills the draft from the saved config', () => {
     renderDialog({
-      widgetType: 'drawdown-curve',
-      widgetTitle: 'Drawdown Curve',
-      config: { titleOverride: 'My Drawdown', visibleSeries: ['drawdownAmount'] },
+      widgetType: 'monthly-pnl',
+      widgetTitle: 'Monthly P&L',
+      config: { titleOverride: 'My Monthly', visibleSeries: ['netPnl'] },
     });
-    expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('My Drawdown');
-    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('My Monthly');
+    expect((screen.getByRole('checkbox', { name: 'Net P&L' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'Win Rate' }) as HTMLInputElement).checked).toBe(false);
   });
 
   it('saves a typed title override and closes', async () => {
@@ -98,10 +99,20 @@ describe('ConfigureDialog', () => {
 
   it('saves series visibility toggles', async () => {
     const user = userEvent.setup();
-    const { onSave } = renderDialog({ widgetType: 'drawdown-curve', widgetTitle: 'Drawdown Curve' });
-    await user.click(screen.getByRole('checkbox', { name: 'Percent (%)' }));
+    const { onSave } = renderDialog({ widgetType: 'monthly-pnl', widgetTitle: 'Monthly P&L' });
+    await user.click(screen.getByRole('checkbox', { name: 'Win Rate' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(onSave).toHaveBeenCalledWith({ visibleSeries: ['drawdownAmount'] });
+    expect(onSave).toHaveBeenCalledWith({ visibleSeries: ['netPnl'] });
+  });
+
+  it('drawdown renders only shared chart fields (single downside series contract)', () => {
+    renderDialog({ widgetType: 'drawdown-curve', widgetTitle: 'Drawdown Curve' });
+    // No dual-series visibility multi-select remains (CT5): the plotted
+    // measure is driven by the global unit selector.
+    expect(screen.queryByRole('checkbox', { name: 'Amount ($)' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Percent (%)' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Show legend' })).toBeDefined();
+    expect(screen.getByRole('textbox', { name: 'Title' })).toBeDefined();
   });
 
   it('saves the legend toggle', async () => {
@@ -148,17 +159,23 @@ describe('ConfigureDialog', () => {
 
 describe('applySchemaDefaults', () => {
   it('fills missing fields from schema defaults', () => {
-    const schema = getWidgetConfigSchema('drawdown-curve');
+    // monthly-pnl keeps the visible-series multi-select; drawdown-curve no
+    // longer declares one (single downside series — CT5).
+    const schema = getWidgetConfigSchema('monthly-pnl');
     const draft = applySchemaDefaults(schema, {});
-    expect(draft.visibleSeries).toEqual(['drawdownAmount', 'drawdownPct']);
+    expect(draft.visibleSeries).toEqual(['netPnl', 'winRate']);
     expect(draft.legendVisible).toBe(false);
     expect(draft.titleOverride).toBe('');
+
+    const ddSchema = getWidgetConfigSchema('drawdown-curve');
+    const ddDraft = applySchemaDefaults(ddSchema, {});
+    expect(ddDraft.visibleSeries).toBeUndefined();
   });
 
   it('keeps existing config values', () => {
-    const schema = getWidgetConfigSchema('drawdown-curve');
-    const draft = applySchemaDefaults(schema, { visibleSeries: ['drawdownPct'], legendVisible: true });
-    expect(draft.visibleSeries).toEqual(['drawdownPct']);
+    const schema = getWidgetConfigSchema('monthly-pnl');
+    const draft = applySchemaDefaults(schema, { visibleSeries: ['netPnl'], legendVisible: true });
+    expect(draft.visibleSeries).toEqual(['netPnl']);
     expect(draft.legendVisible).toBe(true);
   });
 });

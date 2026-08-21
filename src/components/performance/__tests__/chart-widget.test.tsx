@@ -121,9 +121,10 @@ describe('ChartWidget', () => {
       series: Array<{ data: unknown[] }>;
       legend?: { show: boolean };
     };
-    // Visible-series config hides the Percent series; legend toggle shows.
+    // Drawdown is a single downside series (CT5): the legacy visibleSeries
+    // config no longer controls a second series; the legend toggle still shows.
+    expect(option.series).toHaveLength(1);
     expect(option.series[0].data).toHaveLength(2);
-    expect(option.series[1].data).toEqual([]);
     expect(option.legend?.show).toBe(true);
   });
 
@@ -154,8 +155,9 @@ describe('ChartWidget', () => {
     );
     await waitFor(() => expect(screen.getByTestId('chart-option')).toBeDefined());
     const option = lastOption as { series: Array<{ data: unknown[] }> };
+    // Single downside series by default.
+    expect(option.series).toHaveLength(1);
     expect(option.series[0].data).toHaveLength(1);
-    expect(option.series[1].data).toHaveLength(1);
     // Dense default: no legend.
     expect((lastOption as { legend?: { show: boolean } }).legend?.show).toBeUndefined();
   });
@@ -206,10 +208,10 @@ describe('ChartWidget', () => {
     await waitFor(() => expect(screen.getByTestId('chart-option')).toBeDefined());
     const option = lastOption as { series: Array<{ data: number[] }> };
     // drawdown-curve supportedUnits = [currency, percent] → global R resolves
-    // to currency fallback; the amount series must NOT become 500/200 = 2.5R.
-    expect(option.series[0].data).toEqual([500, 800]);
-    // drawdownPct stays its native percentage.
-    expect(option.series[1].data).toEqual([0.02, 0.03]);
+    // to currency fallback (CT5): the single downside series stays negated
+    // currency amounts — never 500/200 = 2.5R.
+    expect(option.series).toHaveLength(1);
+    expect(option.series[0].data).toEqual([-500, -800]);
   });
 
   it('daily-cumulative-pnl fully converts under global R (supportedUnits includes r)', async () => {

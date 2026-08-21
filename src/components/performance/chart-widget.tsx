@@ -94,10 +94,10 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
       drawdownCurveOption(
         data as DrawdownPoint[],
         palette,
-        (config.visibleSeries as string[] | undefined) ?? ['drawdownAmount', 'drawdownPct'],
+        ['drawdownAmount'],
         ro,
       ),
-    series: ['drawdownAmount', 'drawdownPct'],
+    series: ['drawdownAmount'],
   },
   'r-distribution': {
     extract: (c) => c.rDistribution as RDistributionItem[],

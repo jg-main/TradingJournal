@@ -325,18 +325,9 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     description: 'Equity drawdown over time',
     category: 'chart',
     supportedUnits: ['currency', 'percent'],
-    configSchema: {
-      visibleSeries: {
-        kind: 'multi-select',
-        key: 'visibleSeries',
-        label: 'Visible series',
-        default: ['drawdownAmount', 'drawdownPct'],
-        options: [
-          { value: 'drawdownAmount', label: 'Amount ($)' },
-          { value: 'drawdownPct', label: 'Percent (%)' },
-        ],
-      },
-    },
+    // No visible-series config: the single plotted measure is driven by the
+    // global unit selector (currency → amount, percent → pct; R falls back to
+    // currency). Both measures remain available in the tooltip.
     defaultLayout: { w: 4, h: 5, x: 0, y: 15 },
     minSize: { w: 4, h: 4 },
     maxSize: { w: 8, h: 8 },

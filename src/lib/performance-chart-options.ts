@@ -806,90 +806,101 @@ function pointResultRow(
   return null;
 }
 
-/** Drawdown Curve — dual-axis area chart (amount | %). */
+/**
+ * Drawdown Curve — single downside area chart below zero (Corrective Task 5).
+ *
+ * Answers: how deep was the portfolio below its prior high-water mark, and
+ * how did that drawdown evolve and recover through time? One line/area series
+ * plotted below zero reads directly: 0 = at high-water mark / fully recovered,
+ * below 0 = currently in drawdown.
+ *
+ * The visible measure is driven by the effective unit (registry supportedUnits
+ * = [currency, percent]; global R falls back to currency per the Task 2A
+ * resolver — the builder also guards so direct calls stay self-consistent):
+ *   currency → -drawdownAmount (canonical positive magnitude → negative)
+ *   percent  → -drawdownPct    (canonical positive fraction → negative)
+ * Both measures are still exposed in the tooltip (selected measure first),
+ * but only one series and one Y axis are rendered — no dual-axis model.
+ *
+ * Canonical data is never mutated: the shared analytics response keeps
+ * positive drawdown magnitudes; negation happens only in this presentation
+ * layer.
+ */
 export function drawdownCurveOption(
   data: DrawdownPoint[],
   palette: ChartPalette,
-  visibleSeries: string[] = ['drawdownAmount', 'drawdownPct'],
+  _visibleSeries: string[] = ['drawdownAmount'],
+  // visibleSeries is retained for signature compatibility with the shared
+  // widget contract; the plotted measure is driven solely by the effective
+  // unit (single downside series — no dual-axis visibility toggling).
   options: ChartRenderConfig = {},
 ): EChartsOption | null {
+  void _visibleSeries; // retained for the shared widget signature; unit-driven
   if (!data || data.length === 0) return null;
   const unit = options.unit ?? 'currency';
-  const showAmount = visibleSeries.includes('drawdownAmount');
-  const showPct = visibleSeries.includes('drawdownPct');
-  // drawdownAmount is a currency magnitude (convertible under % per the
-  // registry declaration; global R falls back to currency — Task 2A);
-  // drawdownPct is already a native percentage of peak equity and stays
-  // fixed-semantic. The two units get distinct Y axes so they are never
-  // plotted on one anonymous scale.
-  const amountSeries = showAmount ? data.map((d) => convertPnl(d.drawdownAmount, options)) : [];
+  const effUnit: 'currency' | 'percent' = unit === 'percent' ? 'percent' : 'currency';
+  const isPercent = effUnit === 'percent';
+  // Canonical positive magnitudes → presentation-negative downside series.
+  // -0 is normalized to 0 so a zero-drawdown observation renders as exactly 0.
+  const seriesData = data.map((d) => {
+    const v = isPercent ? -d.drawdownPct : -d.drawdownAmount;
+    return v === 0 ? 0 : v;
+  });
   return {
     tooltip: tooltip({
-      unit,
+      unit: effUnit,
       headingType: 'date',
       rows: (params, idx) => {
+        const point = data[idx];
+        if (!point) return [];
         const rows: TooltipRow[] = [];
-        if (showAmount) {
-          const v = amountSeries[idx] ?? null;
-          rows.push({
-            label: 'Drawdown',
-            value: v,
-            color: palette.warning,
-            // Downside semantics: drawdown magnitude presented as negative.
-            formatter: (value) => `-${formatTooltipValue(value, unit)}`,
-          });
-        }
-        if (showPct) {
-          rows.push({
-            label: 'Drawdown %',
-            value: data[idx]?.drawdownPct ?? null,
-            color: palette.negative,
-            formatter: (value) => `-${Math.round(value * 1000) / 10}%`,
-          });
-        }
+        // Downside semantics: magnitude presented as negative. The selected
+        // (visible) measure appears first; the other remains as context.
+        const amountRow: TooltipRow = {
+          label: 'Drawdown',
+          value: -point.drawdownAmount,
+          color: palette.warning,
+          formatter: (v) => `-${formatTooltipValue(Math.abs(v), 'currency')}`,
+        };
+        const pctRow: TooltipRow = {
+          label: 'Drawdown %',
+          value: -point.drawdownPct,
+          color: palette.negative,
+          formatter: (v) => `${Math.round(v * 1000) / 10}%`,
+        };
+        rows.push(isPercent ? pctRow : amountRow);
+        rows.push(isPercent ? amountRow : pctRow);
         return rows;
       },
     }),
-    grid: baseGrid(palette, 52),
+    grid: baseGrid(palette),
     legend: legend(options),
     xAxis: {
       ...(categoryAxis(data.map((d) => d.date), palette, (v) => formatDateLabel(v), 'Date') as object),
       data: data.map((d) => d.date),
     } as EChartsOption['xAxis'],
-    yAxis: [
-      valueAxis('Drawdown', unit, palette),
-      {
-        type: 'value',
-        name: 'Drawdown %',
-        nameTextStyle: { color: palette.axis, fontSize: 10 },
-        axisLabel: {
-          color: palette.axis,
-          fontSize: 10,
-          formatter: (v: number) => `${Math.round(v * 1000) / 10}%`,
-        },
-        splitLine: { show: false },
-      },
-    ],
+    // Single value Y axis. Zero is the natural upper bound — positive
+    // drawdown has no semantic meaning — so the domain is anchored at max 0
+    // and the lower bound adapts to the observed depth (no arbitrary minimum).
+    yAxis: {
+      ...valueAxis('Drawdown', effUnit, palette),
+      max: 0,
+    },
     series: [
       {
-        name: 'Drawdown',
+        name: isPercent ? 'Drawdown %' : 'Drawdown',
         type: 'line',
-        yAxisIndex: 0,
-        data: amountSeries,
+        data: seriesData,
         showSymbol: false,
-        lineStyle: { color: palette.warning, width: 2 },
-        itemStyle: { color: palette.warning },
-        areaStyle: showAmount ? { color: palette.warning, opacity: 0.1 } : undefined,
-      },
-      {
-        name: 'Drawdown %',
-        type: 'line',
-        yAxisIndex: 1,
-        data: showPct ? data.map((d) => d.drawdownPct) : [],
-        showSymbol: false,
+        // Restrained monotone smoothing: recovery points stay faithful (the
+        // series visibly touches zero when drawdown fully recovers).
+        smooth: 0.3,
         lineStyle: { color: palette.negative, width: 2 },
         itemStyle: { color: palette.negative },
-        areaStyle: showPct ? { color: palette.negative, opacity: 0.08 } : undefined,
+        areaStyle: { color: palette.negative, opacity: 0.12 },
+        // The high-water-mark baseline: more prominent than grid lines but
+        // restrained; coincides with the max:0 boundary.
+        markLine: zeroMarkLine(palette),
       },
     ],
   };

@@ -153,20 +153,29 @@ describe('ChartGrid', () => {
   it('opens the typed Configure dialog for a multi-series chart and saves series visibility', async () => {
     const user = userEvent.setup();
     renderChartGrid(true);
-    // Drawdown Curve declares visibleSeries (Amount $ / Percent %) in its
-    // registry configSchema → the dialog renders typed checkboxes.
-    await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
+    // Performance by Setup declares a primary-series select in its registry
+    // configSchema → the dialog renders the typed select and saves it.
+    await user.click(screen.getByLabelText('Actions for Performance by Setup'));
     await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
-    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(true);
-    await user.click(screen.getByRole('checkbox', { name: 'Percent (%)' }));
+    await chooseSelectOption('Primary series', 'Win Rate');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     // Reopen Configure → the persisted choice is reflected (via the store).
+    await user.click(screen.getByLabelText('Actions for Performance by Setup'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    expect(screen.getByRole('combobox', { name: 'Primary series' })).toBeDefined();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  });
+
+  it('drawdown Configure offers only shared fields (single downside series contract)', async () => {
+    const user = userEvent.setup();
+    renderChartGrid(true);
     await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
     await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
-    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(false);
+    // CT5: no Amount/Percent visibility multi-select — legend + title only.
+    expect(screen.queryByRole('checkbox', { name: 'Amount ($)' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Percent (%)' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Show legend' })).toBeDefined();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
   });
 
@@ -175,7 +184,7 @@ describe('ChartGrid', () => {
     const first = renderChartGrid(true);
     await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
     await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Percent (%)' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show legend' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
     first.unmount();
 
@@ -183,8 +192,7 @@ describe('ChartGrid', () => {
     renderChartGrid(true);
     await user.click(screen.getByLabelText('Actions for Drawdown Curve'));
     await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
-    expect((screen.getByRole('checkbox', { name: 'Amount ($)' }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole('checkbox', { name: 'Percent (%)' }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole('checkbox', { name: 'Show legend' }) as HTMLInputElement).checked).toBe(true);
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
   });
 

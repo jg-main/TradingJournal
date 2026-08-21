@@ -47,11 +47,10 @@ describe('getWidgetConfigSchema', () => {
   });
 
   it('declares visible-series multi-selects for multi-series chart widgets', () => {
+    // Drawdown Curve is now a single downside series driven by the global
+    // unit — it no longer declares a dual-series visibility multi-select.
     const drawdown = getWidgetConfigSchema('drawdown-curve');
-    expect(drawdown.visibleSeries.kind).toBe('multi-select');
-    if (drawdown.visibleSeries.kind !== 'multi-select') return;
-    expect(drawdown.visibleSeries.default).toEqual(['drawdownAmount', 'drawdownPct']);
-    expect(drawdown.visibleSeries.options.map((o) => o.label)).toEqual(['Amount ($)', 'Percent (%)']);
+    expect(drawdown.visibleSeries).toBeUndefined();
 
     const monthly = getWidgetConfigSchema('monthly-pnl');
     expect(monthly.visibleSeries.kind).toBe('multi-select');
