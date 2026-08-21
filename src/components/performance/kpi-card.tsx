@@ -2,10 +2,11 @@
 
 import React from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
-import { getKpiMetricDefinition, applyUnit } from '@/lib/performance-kpi-catalogue';
+import { getKpiMetricDefinition, applyUnit, kpiValueClass } from '@/lib/performance-kpi-catalogue';
 import { MicroViz } from './kpi-micro-viz';
 import { WidgetActionsMenu } from './widget-actions-menu';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import type { WidgetConfig, PerformanceUnit } from '@/lib/performance-view-types';
 
 // ── Formatting Helpers ──────────────────────────────────────────────────────
@@ -74,6 +75,16 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
   const title = config.titleOverride || definition?.title || widgetType;
   const displayValue = formatValue(converted.value, definition?.formatKind ?? 'currency', converted.unit);
 
+  // P&L direction carried by the value itself → semantic class (tokens.md
+  // financial conventions: text-positive / text-negative / muted for zero).
+  const valueClass = definition
+    ? kpiValueClass(definition.valueSemantics, converted.value)
+    : '';
+
+  // Missing ≠ zero (tokens.md): an empty period (no trades in scope) renders
+  // em dashes, never a fabricated $0 from a zero sum over zero trades.
+  const hasTrades = (analyticsData?.metadata.tradeCount ?? 0) > 0;
+
   // Micro-visualization: sparkline for Net P&L (cumulative trend), donut for Win Rate.
   const charts = analyticsData?.charts as Record<string, unknown> | undefined;
   const cumulative = charts?.cumulativeDailyPnl as Array<{ cumulativePnl: number }> | undefined;
@@ -105,7 +116,10 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
         )}
       </div>
       {/* Primary value — fixed top block, aligned across all cards */}
-      <div className="mt-1 text-lg font-semibold leading-none tabular-nums" data-kpi-value={widgetType}>
+      <div
+        className={cn('mt-1 text-lg font-semibold leading-none tabular-nums', valueClass)}
+        data-kpi-value={widgetType}
+      >
         {isLoading && rawValue === null && !error ? (
           <div data-testid={`kpi-skeleton-${widgetType}`} aria-hidden="true">
             <Skeleton className="h-5 w-16" />
@@ -115,6 +129,8 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
           <span className="text-xs font-normal text-destructive" title={error} data-testid={`kpi-error-${widgetType}`}>
             Error loading
           </span>
+        ) : rawValue === null || !hasTrades ? (
+          '—'
         ) : (
           displayValue
         )}

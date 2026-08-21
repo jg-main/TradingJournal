@@ -58,7 +58,7 @@ export function PerformanceToolbar({
       {!editMode && (
         <button
           onClick={onToggleEditMode}
-          className="text-sm rounded-md border border-border px-3 py-1.5 hover:bg-muted"
+          className="inline-flex items-center justify-center text-sm rounded-md border border-border px-3 h-(--density-control-h-lg) hover:bg-muted"
         >
           Customize
         </button>
@@ -67,7 +67,7 @@ export function PerformanceToolbar({
       {editMode && (
         <button
           onClick={onToggleEditMode}
-          className="text-sm rounded-md bg-primary text-primary-foreground px-3 py-1.5 hover:bg-primary/90"
+          className="inline-flex items-center justify-center text-sm rounded-md bg-primary text-primary-foreground px-3 h-(--density-control-h-lg) hover:bg-primary/90"
         >
           Done
         </button>

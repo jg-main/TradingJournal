@@ -5,6 +5,7 @@ import {
   currencyToPercent,
   currencyToR,
   applyUnit,
+  kpiValueClass,
   type KpiMetricDefinition,
 } from '../performance-kpi-catalogue';
 import { PERFORMANCE_WIDGET_IDS } from '../performance-widget-registry';
@@ -98,6 +99,7 @@ describe('performance-kpi-catalogue', () => {
       formatKind: 'currency',
       accessor: () => null,
       supportedUnits: ['currency', 'percent', 'r'],
+      valueSemantics: 'signed',
     };
 
     const fixedDef: KpiMetricDefinition = {
@@ -106,6 +108,7 @@ describe('performance-kpi-catalogue', () => {
       formatKind: 'ratio',
       accessor: () => null,
       supportedUnits: ['fixed'],
+      valueSemantics: 'threshold',
     };
 
     const ctx = { periodStartEquity: 10000, totalInitialRisk: 500 };
@@ -149,8 +152,52 @@ describe('performance-kpi-catalogue', () => {
       expect(getKpiMetricDefinition('net-pnl')).not.toBeNull();
     });
 
+    it('assigns every metric a valueSemantics', () => {
+      for (const def of Object.values(PERFORMANCE_KPI_CATALOGUE)) {
+        expect(['signed', 'inverse', 'threshold', 'neutral']).toContain(def.valueSemantics);
+      }
+    });
+
     it('returns null for unknown metric', () => {
       expect(getKpiMetricDefinition('unknown-metric')).toBeNull();
+    });
+  });
+
+  describe('kpiValueClass', () => {
+    it('signed semantics: positive → positive, negative → negative, zero → muted', () => {
+      expect(kpiValueClass('signed', 100)).toBe('text-positive');
+      expect(kpiValueClass('signed', -100)).toBe('text-negative');
+      expect(kpiValueClass('signed', 0)).toBe('text-muted-foreground');
+    });
+
+    it('inverse semantics: a positive magnitude is a loss state', () => {
+      expect(kpiValueClass('inverse', 5000)).toBe('text-negative');
+      expect(kpiValueClass('inverse', 0)).toBe('text-muted-foreground');
+    });
+
+    it('threshold semantics: 1.0 edge (profit factor / payoff ratio)', () => {
+      expect(kpiValueClass('threshold', 1.8)).toBe('text-positive');
+      expect(kpiValueClass('threshold', 0.77)).toBe('text-negative');
+      expect(kpiValueClass('threshold', 1)).toBe('text-muted-foreground');
+    });
+
+    it('neutral semantics keep the default foreground (empty class)', () => {
+      expect(kpiValueClass('neutral', 0.385)).toBe('');
+    });
+
+    it('null value always resolves muted (missing ≠ zero)', () => {
+      expect(kpiValueClass('signed', null)).toBe('text-muted-foreground');
+      expect(kpiValueClass('threshold', null)).toBe('text-muted-foreground');
+      expect(kpiValueClass('neutral', null)).toBe('text-muted-foreground');
+    });
+
+    it('headline metrics carry the intended semantics', () => {
+      expect(PERFORMANCE_KPI_CATALOGUE['net-pnl'].valueSemantics).toBe('signed');
+      expect(PERFORMANCE_KPI_CATALOGUE['average-r'].valueSemantics).toBe('signed');
+      expect(PERFORMANCE_KPI_CATALOGUE['profit-factor'].valueSemantics).toBe('threshold');
+      expect(PERFORMANCE_KPI_CATALOGUE['current-drawdown'].valueSemantics).toBe('inverse');
+      expect(PERFORMANCE_KPI_CATALOGUE['win-rate'].valueSemantics).toBe('neutral');
+      expect(PERFORMANCE_KPI_CATALOGUE['average-loss'].valueSemantics).toBe('inverse');
     });
   });
 });

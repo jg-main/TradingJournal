@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { PerformanceDashboardEnvelope } from '@/lib/performance-view-types';
 
 export interface DashboardSwitcherProps {
@@ -81,12 +82,12 @@ export function DashboardSwitcher({
     <div className="relative inline-block">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="text-sm rounded-md border border-border px-3 py-1.5 hover:bg-muted flex items-center gap-2"
+        className="inline-flex items-center justify-center text-sm rounded-md border border-border px-3 h-(--density-control-h-lg) hover:bg-muted gap-2"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
         <span className="font-medium">{activeDashboard?.name ?? 'Dashboards'}</span>
-        <span aria-hidden>▾</span>
+        <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
       </button>
 
       {open && (
@@ -173,7 +174,7 @@ export function DashboardSwitcher({
       {editMode && (
         <button
           onClick={onSave}
-          className="ml-2 text-sm rounded-md bg-primary text-primary-foreground px-3 py-1.5 hover:bg-primary/90"
+          className="ml-2 inline-flex items-center justify-center text-sm rounded-md bg-primary text-primary-foreground px-3 h-(--density-control-h-lg) hover:bg-primary/90"
         >
           Save
         </button>

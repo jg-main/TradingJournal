@@ -582,7 +582,7 @@ export function PerformanceFilterBar() {
         <div
           role="group"
           aria-labelledby="perf-unit-label"
-          className="flex rounded-lg border border-border overflow-hidden"
+          className="flex h-(--density-control-h-lg) rounded-lg border border-border overflow-hidden"
         >
           {UNIT_OPTIONS.map((opt, index) => {
             const active = filter.unit === opt.value;
@@ -590,11 +590,10 @@ export function PerformanceFilterBar() {
               <Button
                 key={opt.value}
                 type="button"
-                size="lg"
                 variant={active ? 'default' : 'outline'}
                 aria-pressed={active}
                 className={cn(
-                  'rounded-none px-3',
+                  'h-full rounded-none px-3',
                   index > 0 ? 'border-0 border-l border-border' : 'border-0',
                 )}
                 onClick={() => handleUnitChange(opt.value)}

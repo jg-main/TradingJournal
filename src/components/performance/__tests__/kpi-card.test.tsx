@@ -120,7 +120,7 @@ describe('KpiCard', () => {
     expect(onReset).toHaveBeenCalledWith('inst-1');
     await user.click(screen.getByLabelText('Actions for T'));
     await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
-    expect(onConfigure).toHaveBeenCalledWith('inst-1', { titleOverride: 'T' });
+    expect(onConfigure).toHaveBeenCalledWith('inst-1');
   });
 
   it('renders a widget-level error state when the analytics fetch fails', async () => {
@@ -153,7 +153,7 @@ describe('KpiCard conversion and data states', () => {
     metadata: {
       accountCount: 1,
       mixedCurrencies: false,
-      tradeCount: 0,
+      tradeCount: 10,
       dateRange: { from: null, to: null },
       ...metadata,
     },
@@ -254,6 +254,56 @@ describe('KpiCard conversion and data states', () => {
     expect(screen.getByText('$1,000')).toBeDefined();
     expect(screen.queryByTestId('kpi-skeleton-net-pnl')).toBeNull();
   });
+
+  it('renders an em dash for a zero-trade period instead of a fabricated $0', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 0, winRate: 0.5 }, { tradeCount: 0 })));
+    renderCard('net-pnl');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    // Missing ≠ zero: no trades in scope never fabricates a $0 headline.
+    expect(screen.getByText('—')).toBeDefined();
+    expect(screen.queryByText('$0')).toBeNull();
+  });
+
+  it('colors a negative P&L value with text-negative', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: -1000 })));
+    const { container } = renderCard('net-pnl');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(screen.getByText('-$1,000')).toBeDefined();
+    expect(container.querySelector('[data-kpi-value="net-pnl"]')?.className).toContain('text-negative');
+  });
+
+  it('colors a positive P&L value with text-positive', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 })));
+    const { container } = renderCard('net-pnl');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(container.querySelector('[data-kpi-value="net-pnl"]')?.className).toContain('text-positive');
+  });
+
+  it('keeps neutral metrics (win rate) in the default foreground', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ winRate: 0.6 })));
+    const { container } = renderCard('win-rate');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    const cls = container.querySelector('[data-kpi-value="win-rate"]')?.className ?? '';
+    expect(cls).not.toContain('text-positive');
+    expect(cls).not.toContain('text-negative');
+    expect(screen.getByText('60.0%')).toBeDefined();
+  });
 });
 
 // ── Equal-geometry and microviz-containment coverage (R003, S03/T2) ────────
@@ -274,7 +324,7 @@ describe('KpiCard equal geometry and microviz containment', () => {
     metadata: {
       accountCount: 1,
       mixedCurrencies: false,
-      tradeCount: 0,
+      tradeCount: 10,
       dateRange: { from: null, to: null },
       ...metadata,
     },
