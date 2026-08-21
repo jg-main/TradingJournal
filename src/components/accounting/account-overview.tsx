@@ -9,6 +9,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Plus,
   Receipt,
   BarChart3,
   ExternalLink,
@@ -16,7 +17,9 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useAccount, ACCOUNT_CHANGED_EVENT } from '@/lib/account-context';
+import { Button } from '@/components/ui/button';
 import { AccountInitialization } from './account-initialization';
+import { FinancialTransactionComposer } from './financial-transaction-composer';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -198,6 +201,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
   const { refresh } = useAccount();
 
   const fetchOverview = useCallback(async () => {
@@ -225,13 +229,17 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   }, [fetchOverview]);
 
   /**
-   * Called after the account is initialized ("Start with zero" activates it):
-   * refresh shared account state (AccountProvider re-resolves selection),
-   * reload the overview so the initialization state is replaced by the live
-   * overview, and notify the detail layout header (via ACCOUNT_CHANGED_EVENT)
-   * so the active/inactive badge updates without a navigation.
+   * Shared post-change handoff for every event flow that mutates account
+   * state: refresh shared account state (AccountProvider re-resolves the
+   * selection), reload the overview so the mutation is immediately visible
+   * (initialization state → live overview, or a new event in Recent Events),
+   * and notify the detail layout header (via ACCOUNT_CHANGED_EVENT) so the
+   * active/inactive badge updates without a navigation.
+   *
+   * Wired to AccountInitialization.onInitialized (activation) and to the
+   * FinancialTransactionComposer.onPosted handoff (transaction posting).
    */
-  const handleInitialized = useCallback(async () => {
+  const handleAccountStateChanged = useCallback(async () => {
     await Promise.all([refresh(), fetchOverview()]);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -288,7 +296,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
         accountId={data.accountId}
         accountName={data.name ?? 'your account'}
         currency={data.currency ?? 'USD'}
-        onInitialized={handleInitialized}
+        onInitialized={handleAccountStateChanged}
       />
     );
   }
@@ -510,14 +518,25 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
               </span>
             )}
           </h2>
-          {eventsTotal > 0 && (
-            <Link
-              href={`/settings/accounts/${accountId}/ledger`}
-              className="text-xs font-medium text-muted-foreground underline hover:text-foreground"
+          <div className="flex items-center gap-3">
+            {eventsTotal > 0 && (
+              <Link
+                href={`/settings/accounts/${accountId}/ledger`}
+                className="text-xs font-medium text-muted-foreground underline hover:text-foreground"
+              >
+                View all →
+              </Link>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setComposerOpen(true)}
+              aria-haspopup="dialog"
             >
-              View all →
-            </Link>
-          )}
+              <Plus className="size-3.5" aria-hidden="true" />
+              Add Transaction
+            </Button>
+          </div>
         </div>
 
         {/* Empty State */}
@@ -606,6 +625,15 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
           </div>
         )}
       </div>
+
+      {/* ── Financial Transaction Composer (S03/T02 entry point) ─────── */}
+      <FinancialTransactionComposer
+        accountId={data.accountId}
+        currency={data.currency ?? 'USD'}
+        open={composerOpen}
+        onOpenChange={setComposerOpen}
+        onPosted={handleAccountStateChanged}
+      />
     </div>
   );
 }

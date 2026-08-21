@@ -14,12 +14,40 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import AccountOverview from './account-overview';
+import { ACCOUNT_CHANGED_EVENT } from '@/lib/account-context';
+
+// ── Account-context mock (S03/T02) ─────────────────────────────────────
+// Provide a controllable AccountProvider.refresh so the success handoff
+// (refresh + overview refetch + ACCOUNT_CHANGED_EVENT) is directly
+// observable. All other context fields keep their real shapes, and
+// AccountInitialization does not consume useAccount, so the existing draft
+// tests are unaffected.
+
+const mockRefresh = vi.hoisted(() => vi.fn(async () => {}));
+
+vi.mock('@/lib/account-context', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/account-context')>();
+  return {
+    ...actual,
+    useAccount: () => ({
+      accounts: [],
+      loading: false,
+      error: null,
+      accountId: 'acct-001',
+      setAccountId: vi.fn(),
+      refresh: mockRefresh,
+    }),
+  };
+});
 
 // ── Fixtures ───────────────────────────────────────────────────────────
 
 /** Fully populated overview with all sections. */
 const FIXTURE_POPULATED = {
   accountId: 'acct-001',
+  isActive: true,
+  name: 'Main Brokerage',
+  currency: 'USD',
   snapshot: {
     netCash: '50000.00',
     nav: '150000.00',
@@ -94,9 +122,35 @@ const FIXTURE_POPULATED = {
   eventsTotal: 4,
 };
 
-/** Empty account — no projection, positions, or events. */
+/** Empty but ACTIVE account — no projection, positions, or events. */
 const FIXTURE_EMPTY = {
   accountId: 'acct-empty',
+  isActive: true,
+  name: 'Empty Account',
+  currency: 'USD',
+  snapshot: {
+    netCash: null,
+    nav: null,
+    markedPositions: null,
+    realizedPnl: null,
+    unrealizedPnl: null,
+    totalPnl: null,
+    realizedFees: null,
+    grossExposure: null,
+    netExposure: null,
+  },
+  positions: [],
+  positionsTotal: 0,
+  events: [],
+  eventsTotal: 0,
+};
+
+/** Draft account — inactive with no events, positions, or projection. */
+const FIXTURE_DRAFT = {
+  accountId: 'acct-draft',
+  isActive: false,
+  name: 'New Brokerage',
+  currency: 'USD',
   snapshot: {
     netCash: null,
     nav: null,
@@ -117,6 +171,9 @@ const FIXTURE_EMPTY = {
 /** Account with a single position that has no valuation mark (missing price). */
 const FIXTURE_MISSING_PRICE = {
   accountId: 'acct-missing',
+  isActive: true,
+  name: 'Main Brokerage',
+  currency: 'USD',
   snapshot: {
     netCash: '10000.00',
     nav: '25000.00',
@@ -162,6 +219,7 @@ const UNMOCKED_FETCH = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = UNMOCKED_FETCH;
+  mockRefresh.mockClear();
   cleanup();
 });
 
@@ -322,6 +380,46 @@ describe('AccountOverview — empty state', () => {
 
 });
 
+describe('AccountOverview — draft account initialization', () => {
+  it('renders the initialization state for an inactive account with no events', async () => {
+    mockFetchSuccess(FIXTURE_DRAFT);
+    render(<AccountOverview accountId="acct-draft" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Set up New Brokerage')).toBeTruthy();
+    });
+
+    expect(screen.getByText('Add opening balance')).toBeTruthy();
+    expect(screen.getByText('Start with zero')).toBeTruthy();
+    // The plain empty-overview messages are replaced by the guided state.
+    expect(screen.queryByText('No events yet.')).toBeNull();
+    expect(screen.queryByText('No open positions.')).toBeNull();
+  });
+
+  it('does not show initialization for an inactive account that already has events', async () => {
+    mockFetchSuccess({ ...FIXTURE_POPULATED, isActive: false });
+    render(<AccountOverview accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('Start with zero')).toBeNull();
+    expect(screen.queryByText('Add opening balance')).toBeNull();
+  });
+
+  it('does not show initialization for an active account with no events', async () => {
+    mockFetchSuccess(FIXTURE_EMPTY);
+    render(<AccountOverview accountId="acct-empty" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No events yet.')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('Start with zero')).toBeNull();
+  });
+});
+
 describe('AccountOverview — missing-price positions', () => {
   it('renders "Missing" badge for unmarked positions', async () => {
     mockFetchSuccess(FIXTURE_MISSING_PRICE);
@@ -410,5 +508,175 @@ describe('AccountOverview — error state', () => {
     await waitFor(() => {
       expect(screen.getByText('$150,000.00')).toBeTruthy();
     });
+  });
+});
+
+describe('AccountOverview — Add Transaction entry point (S03/T02)', () => {
+  it('renders an Add Transaction button on a populated overview', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountOverview accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+
+    const addButton = screen.getByRole('button', { name: 'Add Transaction' });
+    expect(addButton).toBeTruthy();
+    expect(addButton.getAttribute('aria-haspopup')).toBe('dialog');
+  });
+
+  it('renders the entry point on an active empty account (no events yet)', async () => {
+    mockFetchSuccess(FIXTURE_EMPTY);
+    render(<AccountOverview accountId="acct-empty" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No events yet.')).toBeTruthy();
+    });
+
+    expect(screen.getByRole('button', { name: 'Add Transaction' })).toBeTruthy();
+  });
+
+  it('does not render the entry point in the draft initialization state', async () => {
+    mockFetchSuccess(FIXTURE_DRAFT);
+    render(<AccountOverview accountId="acct-draft" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Set up New Brokerage')).toBeTruthy();
+    });
+
+    expect(screen.queryByRole('button', { name: 'Add Transaction' })).toBeNull();
+  });
+
+  it('opens the composer dialog with the curated 7-type event selector', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountOverview accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Transaction' }));
+
+    // Dialog is open with its title and description.
+    expect(screen.getByRole('heading', { name: 'Add Transaction' })).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Post a cash-flow event to the account ledger. Each event creates a balanced double-entry posting and updates account cash.',
+      ),
+    ).toBeTruthy();
+
+    // Exactly the 7 R014-curated types; opening_balance/transfer/stock_split
+    // are not offered from this surface.
+    const select = screen.getByLabelText('Event Type') as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => o.value);
+    expect(options).toEqual([
+      'deposit',
+      'withdrawal',
+      'dividend',
+      'interest',
+      'fee',
+      'tax',
+      'manual_adjustment',
+    ]);
+    expect(options).not.toContain('opening_balance');
+    expect(options).not.toContain('transfer');
+    expect(options).not.toContain('stock_split');
+  });
+
+  it('posts a deposit through the canonical route and refreshes account state on success', async () => {
+    const updatedEvents = [
+      {
+        id: 'evt-005',
+        eventType: 'deposit',
+        description: 'Cash transfer from bank',
+        postedAt: '2026-08-21T12:00:00.000Z',
+        status: { hasEntry: true, isBalanced: true, postingCount: 2 },
+      },
+      ...FIXTURE_POPULATED.events,
+    ];
+
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => FIXTURE_POPULATED });
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) }); // POST financial-events
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ...FIXTURE_POPULATED, events: updatedEvents, eventsTotal: 5 }),
+    }); // overview refetch after handoff
+
+    const changedSpy = vi.fn();
+    window.addEventListener(ACCOUNT_CHANGED_EVENT, changedSpy);
+
+    render(<AccountOverview accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Transaction' }));
+    fireEvent.change(screen.getByLabelText('Amount (USD)'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: /Post Transaction/ }));
+
+    // Perceivable success state, then the handoff: refresh + refetch + event.
+    await waitFor(() => {
+      expect(screen.getByText('Deposit posted')).toBeTruthy();
+    });
+    await waitFor(
+      () => {
+        expect(mockRefresh).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 2000 },
+    );
+    expect(changedSpy).toHaveBeenCalledTimes(1);
+
+    // POST went through the canonical route with the deposit body.
+    const postCall = fetchMock.mock.calls[1];
+    expect(postCall[0]).toBe('/api/accounts/acct-001/financial-events');
+    expect((postCall[1] as RequestInit).method).toBe('POST');
+    expect(JSON.parse((postCall[1] as RequestInit).body as string)).toEqual({
+      eventType: 'deposit',
+      amount: '1000.00',
+      postedAt: expect.any(String),
+    });
+
+    // Dialog closed after the handoff, and the overview refetch made the new
+    // event visible in Recent Events.
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Add Transaction' })).toBeNull();
+    });
+    expect(screen.getByText('Cash transfer from bank')).toBeTruthy();
+
+    window.removeEventListener(ACCOUNT_CHANGED_EVENT, changedSpy);
+  });
+
+  it('surfaces a 500 API error in a role=alert banner without losing the overview', async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => FIXTURE_POPULATED });
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: 'Posting failed' }),
+    }); // POST financial-events rejected
+
+    render(<AccountOverview accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Transaction' }));
+    fireEvent.change(screen.getByLabelText('Amount (USD)'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: /Post Transaction/ }));
+
+    await waitFor(() => {
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).toContain('Posting failed');
+    });
+
+    // The composer stays open for retry, the overview is untouched, and the
+    // success handoff (refresh) must NOT fire on a failed post.
+    expect(screen.getByRole('heading', { name: 'Add Transaction' })).toBeTruthy();
+    expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    expect(mockRefresh).not.toHaveBeenCalled();
   });
 });
