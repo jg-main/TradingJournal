@@ -89,6 +89,11 @@ sqlite.exec(`
     default_commission REAL,
     journal_start_date TEXT,
     currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -372,6 +377,14 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
       .where(eq(schema.accounts.id, id))
       .run();
 
+    // Default-account coherence (D6): deactivating the settings default
+    // clears the stale reference so resolution falls back to first active.
+    if (body.isActive === false) {
+      sqlite.prepare(
+        'UPDATE settings SET default_account_id = NULL, updated_at = ? WHERE default_account_id = ?',
+      ).run(new Date().toISOString(), id);
+    }
+
     const row = db.select().from(schema.accounts).where(eq(schema.accounts.id, id)).get();
     return { status: 200, data: row };
   } catch (error) {
@@ -486,6 +499,18 @@ function seedFinancialEvent(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return db.select().from(schema.financialEvents).where(eq(schema.financialEvents.id, id)).get() as Record<string, unknown>;
+}
+
+function seedSettings(defaultAccountId: string | null) {
+  const now = new Date().toISOString();
+  db.insert(schema.settings)
+    .values({
+      id: 'settings-default',
+      defaultAccountId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -895,6 +920,56 @@ console.log('\n29. PUT allows same-currency update with financial history:');
   assert(result.status === 200, 'returns 200 (no actual mutation)');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.currency, 'USD', 'currency unchanged');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// NEW: Default-account clearing on deactivation (D6)
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 30. PUT: Deactivating the default account clears defaultAccountId ──
+
+console.log('\n30. PUT deactivating the default account clears defaultAccountId:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Default Deactivate', isActive: true });
+  seedSettings(account.id as string);
+  const result = doPutAccount(account.id as string, { isActive: false });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.isActive, false, 'account deactivated');
+  const settingsRow = db.select().from(schema.settings).where(eq(schema.settings.id, 'settings-default')).get() as Record<string, unknown>;
+  assertEqual(settingsRow.defaultAccountId, null, 'defaultAccountId cleared');
+}
+
+// ── 31. PUT: Deactivating a non-default account preserves default ──
+
+console.log('\n31. PUT deactivating a non-default account preserves defaultAccountId:');
+{
+  cleanup();
+  const other = seedAccount({ name: 'Other Acct', isActive: true });
+  seedAccount({ name: 'Default Acct', id: 'default-account', isActive: true });
+  seedSettings('default-account');
+  const result = doPutAccount(other.id as string, { isActive: false });
+
+  assert(result.status === 200, 'returns 200');
+  const settingsRow = db.select().from(schema.settings).where(eq(schema.settings.id, 'settings-default')).get() as Record<string, unknown>;
+  assertEqual(settingsRow.defaultAccountId, 'default-account', 'defaultAccountId preserved');
+}
+
+// ── 32. PUT: Guard-blocked deactivation preserves default reference ──
+
+console.log('\n32. PUT guard-blocked deactivation preserves defaultAccountId:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Blocked Default', isActive: true });
+  seedSettings(account.id as string);
+  seedTrade({ accountId: account.id as string, status: 'open' });
+  const result = doPutAccount(account.id as string, { isActive: false });
+
+  assert(result.status === 409, 'returns 409 (open-trade guard)');
+  const settingsRow = db.select().from(schema.settings).where(eq(schema.settings.id, 'settings-default')).get() as Record<string, unknown>;
+  assertEqual(settingsRow.defaultAccountId, account.id as string, 'defaultAccountId preserved when deactivation blocked');
 }
 
 

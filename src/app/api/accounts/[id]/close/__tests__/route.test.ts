@@ -8,12 +8,14 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import { computeTradeMetrics, type ExecutionData } from '@/lib/trade-metrics';
+import { canDeactivateAccount } from '@/lib/account-lifecycle';
 
 let passed = 0;
 let failed = 0;
@@ -79,6 +81,7 @@ sqlite.exec(`
   DROP TABLE IF EXISTS trade_executions;
   DROP TABLE IF EXISTS trades;
   DROP TABLE IF EXISTS account_transactions;
+  DROP TABLE IF EXISTS settings;
   DROP TABLE IF EXISTS accounts;
 
   CREATE TABLE accounts (
@@ -90,6 +93,23 @@ sqlite.exec(`
     max_risk_per_trade_pct REAL,
     default_commission REAL,
     starting_balance REAL,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    id TEXT PRIMARY KEY NOT NULL,
+    default_account_id TEXT REFERENCES accounts(id),
+    starting_account_value REAL,
+    max_risk_per_trade_pct REAL,
+    default_commission REAL,
+    journal_start_date TEXT,
+    currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT DEFAULT '02:00',
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -193,6 +213,20 @@ function doCloseAccount(id: string): { status: number; data: unknown } {
     }
     if (account.isActive === false) {
       return { status: 400, data: { error: 'Account is already inactive' } };
+    }
+
+    // Open-trade guard (D5): mirrors real close route — closing deactivates
+    // the account, so open positions must be wound down first.
+    const accountTrades = db.select({ status: schema.trades.status }).from(schema.trades).where(eq(schema.trades.accountId, id)).all();
+    if (!canDeactivateAccount(accountTrades)) {
+      return {
+        status: 409,
+        data: {
+          error:
+            'Cannot close account with open trades. ' +
+            'Close or cancel all open positions before closing the account.',
+        },
+      };
     }
 
     const startingBalance = (account.startingBalance as number) ?? 0;
@@ -370,6 +404,12 @@ function doCloseAccount(id: string): { status: number; data: unknown } {
       'UPDATE accounts SET is_active = 0, updated_at = ? WHERE id = ?',
     ).run(new Date().toISOString(), id);
 
+    // Default-account coherence (D6): clear stale default reference when the
+    // closed account was the settings default.
+    sqlite.prepare(
+      'UPDATE settings SET default_account_id = NULL, updated_at = ? WHERE default_account_id = ?',
+    ).run(new Date().toISOString(), id);
+
     return {
       status: 200,
       data: {
@@ -399,7 +439,20 @@ function cleanup() {
   sqlite.exec('DELETE FROM trade_executions;');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM account_transactions;');
+  sqlite.exec('DELETE FROM settings;');
   sqlite.exec('DELETE FROM accounts;');
+}
+
+function seedSettings(defaultAccountId: string | null) {
+  const now = new Date().toISOString();
+  db.insert(schema.settings)
+    .values({
+      id: 'settings-default',
+      defaultAccountId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
 }
 
 function seedAccount(overrides: Record<string, unknown> = {}) {
@@ -522,17 +575,71 @@ console.log('\nQ7.3 POST returns closure summary for account with no trades:');
 
 // ── Q7-4: POST with only open trades (no closed) ───────────────────
 
-console.log('\nQ7.4 POST with only open trades (no closed):');
+console.log('\nQ7.4 POST rejects account with open trades (D5):');
 {
   cleanup();
   const account = seedAccount({ id: 'test-account-id', name: 'Open Only', startingBalance: 10000 });
   seedTrade({ accountId: 'test-account-id', status: 'open', symbol: 'AAPL' });
   const result = doCloseAccount(account.id as string);
+  assert(result.status === 409, 'returns 409 (open-trade guard)');
+  const err = (result.data as { error: string }).error;
+  assert(err.includes('open trades'), 'error message is descriptive');
+  const updated = db.select().from(schema.accounts).where(eq(schema.accounts.id, 'test-account-id')).get() as Record<string, unknown>;
+  assertEqual(updated.isActive, true, 'account remains active');
+}
+
+// ── Q7-5: POST rejects account with planned (non-closed) trades ────
+
+console.log('\nQ7.5 POST rejects account with planned trades (D5):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', name: 'Planned Only', startingBalance: 10000 });
+  seedTrade({ accountId: 'test-account-id', status: 'planned', symbol: 'AAPL' });
+  const result = doCloseAccount('test-account-id');
+  assert(result.status === 409, 'returns 409 (planned trades are non-closed)');
+  const updated = db.select().from(schema.accounts).where(eq(schema.accounts.id, 'test-account-id')).get() as Record<string, unknown>;
+  assertEqual(updated.isActive, true, 'account remains active');
+}
+
+// ── D6-1: POST clears settings.defaultAccountId when closing default ──
+
+console.log('\nD6.1 POST clears default account reference when closing the default:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', name: 'Default Close', startingBalance: 1000 });
+  seedSettings('test-account-id');
+  const result = doCloseAccount('test-account-id');
   assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  const kpis = (data as { kpis: { tradeCount: number } }).kpis;
-  assertEqual(kpis.tradeCount, 0, 'tradeCount is 0 (open trades excluded)');
-  assertEqual(data.realizedPnl, 0, 'realizedPnl is 0 (no closed trades)');
+  const settingsRow = db.select().from(schema.settings).where(eq(schema.settings.id, 'settings-default')).get() as Record<string, unknown>;
+  assertEqual(settingsRow.defaultAccountId, null, 'defaultAccountId cleared');
+}
+
+// ── D6-2: POST preserves settings.defaultAccountId for non-default close ──
+
+console.log('\nD6.2 POST preserves default account when closing a non-default account:');
+{
+  cleanup();
+  seedAccount({ id: 'default-account', name: 'Default Acct', startingBalance: 1000 });
+  const closing = seedAccount({ id: 'closing-account', name: 'Closing Acct', startingBalance: 2000 });
+  seedSettings('default-account');
+  const result = doCloseAccount(closing.id as string);
+  assert(result.status === 200, 'returns 200');
+  const settingsRow = db.select().from(schema.settings).where(eq(schema.settings.id, 'settings-default')).get() as Record<string, unknown>;
+  assertEqual(settingsRow.defaultAccountId, 'default-account', 'defaultAccountId preserved');
+}
+
+// ── D6-3: Guard blocks closure AND preserves default reference ─────
+
+console.log('\nD6.3 POST guard leaves default reference intact when closure blocked:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', name: 'Blocked Default', startingBalance: 1000 });
+  seedSettings('test-account-id');
+  seedTrade({ accountId: 'test-account-id', status: 'open', symbol: 'AAPL' });
+  const result = doCloseAccount('test-account-id');
+  assert(result.status === 409, 'returns 409 (open-trade guard)');
+  const settingsRow = db.select().from(schema.settings).where(eq(schema.settings.id, 'settings-default')).get() as Record<string, unknown>;
+  assertEqual(settingsRow.defaultAccountId, 'test-account-id', 'defaultAccountId preserved when closure blocked');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -774,7 +881,18 @@ console.log(`\n${'─'.repeat(40)}`);
 console.log(`Results: ${passed}/${total} passed`);
 if (failed > 0) {
   console.error(`         ${failed}/${total} FAILED\n`);
-  process.exit(1);
+  throw new Error(`${failed}/${total} assertions FAILED in account-close route test`);
 } else {
   console.log('         All tests passed!\n');
+}
+
+// Vitest integration: the standalone-runner assertions above execute at
+// module scope during collection, which is the repo pattern for both
+// `npx tsx <file>` (run-all-tests.ts) and vitest. Expose a minimal suite so
+// `npx vitest run <file>` reports a passing file instead of
+// "No test suite found in file". Guarded so the plain tsx path stays valid.
+if (process.env.VITEST) {
+  it('account-close standalone assertion runner completed without failures', () => {
+    expect(failed).toBe(0);
+  });
 }

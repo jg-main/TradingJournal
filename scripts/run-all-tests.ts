@@ -54,7 +54,6 @@ const TSX_TESTS: string[] = [
   'src/app/api/accounts/__tests__/checks.test.ts',
   'src/app/api/accounts/[id]/__tests__/route.accounting-regression.test.ts',
   'src/app/api/accounts/[id]/transactions/__tests__/route.test.ts',
-  'src/app/api/accounts/[id]/close/__tests__/route.test.ts',
   'scripts/__tests__/m020-evidence-isolation.test.ts',
 ];
 

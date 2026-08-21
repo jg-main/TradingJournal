@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { accounts, trades } from '@/db/schema';
+import { accounts, settings, trades } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
@@ -129,6 +129,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       .set({ ...parsed.data, updatedAt: new Date().toISOString() })
       .where(eq(accounts.id, id))
       .run();
+
+    // Default-account coherence (D6): deactivating the settings default account
+    // leaves a stale reference that consumers silently fall back from. Clear it
+    // so resolution moves to the first active account. No-op when this account
+    // is not the configured default.
+    if (parsed.data.isActive === false) {
+      db.update(settings)
+        .set({ defaultAccountId: null, updatedAt: new Date().toISOString() })
+        .where(eq(settings.defaultAccountId, id))
+        .run();
+    }
 
     const row = db.select().from(accounts).where(eq(accounts.id, id)).get();
     return NextResponse.json(row);

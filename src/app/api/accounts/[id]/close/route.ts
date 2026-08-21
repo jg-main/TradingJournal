@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { accounts, accountTransactions, tradeExecutions, trades, tradeRiskSnapshots, tradeGrades } from '@/db/schema';
+import { accounts, accountTransactions, settings, tradeExecutions, trades, tradeRiskSnapshots, tradeGrades } from '@/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { type ExecutionData } from '@/lib/trade-metrics';
 import { computeAccountKPIs, computeAccountBalance, computeDatesActive } from '@/lib/account-summary';
 import { findAccountPerformance } from '@/db/accounting-repository';
+import { canDeactivateAccount } from '@/lib/account-lifecycle';
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function POST(_request: NextRequest, { params }: RouteParams) {
@@ -18,6 +19,22 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     }
     if (!account.isActive) {
       return NextResponse.json({ error: 'Account is already inactive' }, { status: 400 });
+    }
+
+    // 1b. Open-trade guard (D5): closing deactivates the account, so it must
+    // carry the same safety rule as PUT {isActive:false}. An account with open
+    // positions must wind those down before closure — otherwise the account
+    // would be deactivated while still carrying live market exposure.
+    const accountTrades = db.select({ status: trades.status }).from(trades).where(eq(trades.accountId, id)).all();
+    if (!canDeactivateAccount(accountTrades)) {
+      return NextResponse.json(
+        {
+          error:
+            'Cannot close account with open trades. ' +
+            'Close or cancel all open positions before closing the account.',
+        },
+        { status: 409 },
+      );
     }
 
     // 2. Fetch account base fields
@@ -122,6 +139,15 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     db.update(accounts)
       .set({ isActive: false, updatedAt: new Date().toISOString() })
       .where(eq(accounts.id, id))
+      .run();
+
+    // 8b. Default-account coherence (D6): closing the settings default account
+    // leaves a stale reference that consumers silently fall back from. Clear it
+    // so resolution moves to the first active account. No-op when this account
+    // is not the configured default.
+    db.update(settings)
+      .set({ defaultAccountId: null, updatedAt: new Date().toISOString() })
+      .where(eq(settings.defaultAccountId, id))
       .run();
 
     // 9. Return closure summary JSON with accounting-derived metrics
