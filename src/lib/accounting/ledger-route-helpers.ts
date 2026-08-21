@@ -14,6 +14,7 @@
 import Database from 'better-sqlite3';
 import type { CorrectionGroupInput } from './ledger';
 import type { CorrectionLineageRow } from '../../db/accounting-repository';
+import { listFinancialEventCorrectionsByAccount } from '../../db/accounting-repository';
 
 /**
  * Resolve a single correction lineage row to a CorrectionGroupInput with
@@ -183,4 +184,33 @@ export function resolveCorrectionGroupsForAccount(
   }
 
   return results;
+}
+
+/**
+ * Resolve all financial event correction lineage rows for an account to a
+ * list of CorrectionGroupInput values.
+ *
+ * Unlike execution corrections, financial event corrections store the
+ * financial event IDs directly on the lineage row — no payload matching is
+ * required. Each row maps 1:1 to a CorrectionGroupInput that the ledger
+ * projection consumes directly.
+ *
+ * @param sqlite    - Raw SQLite handle.
+ * @param accountId - The account ID.
+ * @returns Array of CorrectionGroupInput (never null — rows are fully resolved).
+ */
+export function resolveFinancialEventCorrectionGroupsForAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): CorrectionGroupInput[] {
+  const corrections = listFinancialEventCorrectionsByAccount(sqlite, accountId);
+
+  return corrections.map((correction) => ({
+    correctionId: correction.id,
+    originalEventId: correction.original_event_id,
+    reversalEventId: correction.reversal_event_id,
+    replacementEventId: correction.replacement_event_id,
+    reason: correction.reason,
+    correctedAt: correction.corrected_at,
+  }));
 }

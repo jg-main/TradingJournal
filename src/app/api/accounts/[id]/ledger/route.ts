@@ -20,7 +20,7 @@ import { getSqliteHandle } from '@/db';
 import { listAccountEvents, accountExists, findPostingsByEntryId } from '@/db/accounting-repository';
 import { buildLedgerProjection } from '@/lib/accounting/ledger';
 import type { LedgerEventInput, LedgerEntryInput, LedgerPostingInput } from '@/lib/accounting/ledger';
-import { resolveCorrectionGroupsForAccount } from '@/lib/accounting/ledger-route-helpers';
+import { resolveCorrectionGroupsForAccount, resolveFinancialEventCorrectionGroupsForAccount } from '@/lib/accounting/ledger-route-helpers';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -165,8 +165,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       };
     });
 
-    // 7. Resolve correction groups from execution IDs to event IDs
-    const correctionGroups = resolveCorrectionGroupsForAccount(sqlite, accountId);
+    // 7. Resolve correction groups from execution IDs to event IDs,
+    //    plus financial event correction groups (already event IDs).
+    const executionCorrectionGroups = resolveCorrectionGroupsForAccount(sqlite, accountId);
+    const financialEventCorrectionGroups = resolveFinancialEventCorrectionGroupsForAccount(sqlite, accountId);
+    const correctionGroups = [...executionCorrectionGroups, ...financialEventCorrectionGroups];
 
     // 8. Build the ledger projection
     const ledgerResponse = buildLedgerProjection(

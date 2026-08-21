@@ -27,10 +27,11 @@ import { join } from 'node:path';
 import { postEventWithEffect } from '@/lib/accounting/event-posting';
 import { postExecutionFill } from '@/lib/accounting/execution-posting';
 import { correctExecution } from '@/lib/accounting/correction';
+import { correctFinancialEvent } from '@/lib/accounting/financial-event-correction';
 import { listAccountEvents, accountExists } from '@/db/accounting-repository';
 import { buildLedgerProjection } from '@/lib/accounting/ledger';
 import type { LedgerProjectionResponse } from '@/lib/accounting/ledger';
-import { resolveCorrectionGroupsForAccount } from '@/lib/accounting/ledger-route-helpers';
+import { resolveCorrectionGroupsForAccount, resolveFinancialEventCorrectionGroupsForAccount } from '@/lib/accounting/ledger-route-helpers';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -219,8 +220,10 @@ function doGetLedger(
       created_at: row.created_at,
     }));
 
-    // 6. Resolve correction groups
-    const correctionGroups = resolveCorrectionGroupsForAccount(sqlite, accountId);
+    // 6. Resolve correction groups (execution + financial event)
+    const executionCorrectionGroups = resolveCorrectionGroupsForAccount(sqlite, accountId);
+    const financialEventCorrectionGroups = resolveFinancialEventCorrectionGroupsForAccount(sqlite, accountId);
+    const correctionGroups = [...executionCorrectionGroups, ...financialEventCorrectionGroups];
 
     // 7. Build ledger projection
     const ledgerResponse = buildLedgerProjection(
@@ -635,6 +638,68 @@ describe('GET /api/accounts/:id/ledger — trade execution and correction groupi
       // If resolution succeeds, the original event ID is in correctionConstituentEventIds
       // and thus excluded from primary list.
       expect(originalTradeDesc.length).toBe(0);
+    }
+  });
+});
+
+// ── Financial Event Correction Grouping ────────────────────────────────
+
+describe('GET /api/accounts/:id/ledger — financial event correction grouping', () => {
+  let originalEventId: string;
+  let depositEventId: string;
+
+  it('posts cash events via postEventWithEffect', () => {
+    const deposit = postEventWithEffect(ctx.sqlite, ctx.accountId, {
+      eventType: 'deposit',
+      amount: '5000.00',
+      description: 'Capital injection',
+      postedAt: '2026-07-16T09:00:00.000Z',
+    });
+    originalEventId = deposit.event.id;
+    depositEventId = originalEventId;
+  });
+
+  it('corrects the deposit and verifies the correction group appears in the ledger', () => {
+    const correctionResult = correctFinancialEvent(ctx.sqlite, {
+      accountId: ctx.accountId,
+      originalEventId: originalEventId,
+      amount: '5500.00',
+      reason: 'Deposit was understated by 500',
+      postedAt: '2026-07-16T10:00:00.000Z',
+    });
+
+    expect(correctionResult.correction.originalEventId).toBe(originalEventId);
+
+    const ledgerResult = doGetLedger(ctx.sqlite, ctx.accountId);
+    expect(ledgerResult.status).toBe(200);
+
+    if (ledgerResult.status === 200) {
+      // Exactly one correction group for this account's financial event
+      const correctionRows = ledgerResult.body.events.filter(
+        (e) => e.correctionGroup !== null,
+      );
+      expect(correctionRows.length).toBeGreaterThanOrEqual(1);
+
+      const finCorrRow = correctionRows.find(
+        (e) => e.correctionGroup!.originalEventId === originalEventId,
+      );
+      expect(finCorrRow).toBeDefined();
+
+      // The group carries the reason and links all three event IDs
+      expect(finCorrRow!.correctionGroup!.reason).toBe('Deposit was understated by 500');
+      expect(finCorrRow!.correctionGroup!.reversalEventId).toBeTypeOf('string');
+      expect(finCorrRow!.correctionGroup!.replacementEventId).toBeTypeOf('string');
+      expect(finCorrRow!.correctionGroup!.reversalEventId).not.toBe(originalEventId);
+      expect(finCorrRow!.correctionGroup!.replacementEventId).not.toBe(originalEventId);
+
+      // The display row uses the replacement event's data (cash impact 5500)
+      expect(finCorrRow!.cashImpact).toBe('5500.00');
+
+      // The original deposit must NOT appear in the primary list
+      const primaryDeposits = ledgerResult.body.events.filter(
+        (e) => e.correctionGroup === null && e.eventType === 'deposit',
+      );
+      expect(primaryDeposits.find((e) => e.eventId === depositEventId)).toBeUndefined();
     }
   });
 });

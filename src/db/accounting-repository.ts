@@ -1644,3 +1644,134 @@ export function listCorrectionsByAccount(
     )
     .all(accountId, limit, offset) as CorrectionLineageRow[];
 }
+
+// ── Financial Event Correction Lineage ───────────────────────────────────
+
+export interface FinancialEventCorrectionLineageRow {
+  id: string;
+  account_id: string;
+  original_event_id: string;
+  reversal_event_id: string;
+  replacement_event_id: string;
+  idempotency_key: string | null;
+  reason: string;
+  corrected_at: string;
+  created_at: string;
+}
+
+/**
+ * Insert a financial event correction lineage row.  Returns the inserted row.
+ */
+export function insertFinancialEventCorrectionLineage(
+  sqlite: Database.Database,
+  values: {
+    id?: string;
+    accountId: string;
+    originalEventId: string;
+    reversalEventId: string;
+    replacementEventId: string;
+    idempotencyKey?: string | null;
+    reason: string;
+    correctedAt: string;
+  },
+): FinancialEventCorrectionLineageRow {
+  const id = values.id ?? randomUUID();
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT INTO financial_event_correction_lineage
+       (id, account_id, original_event_id, reversal_event_id,
+        replacement_event_id, idempotency_key, reason, corrected_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      values.accountId,
+      values.originalEventId,
+      values.reversalEventId,
+      values.replacementEventId,
+      values.idempotencyKey ?? null,
+      values.reason,
+      values.correctedAt,
+    );
+  return {
+    id,
+    account_id: values.accountId,
+    original_event_id: values.originalEventId,
+    reversal_event_id: values.reversalEventId,
+    replacement_event_id: values.replacementEventId,
+    idempotency_key: values.idempotencyKey ?? null,
+    reason: values.reason,
+    corrected_at: values.correctedAt,
+    created_at: now,
+  };
+}
+
+/**
+ * Find a financial event correction by the original event ID.
+ * Returns the row or undefined.
+ */
+export function findFinancialEventCorrectionByOriginalEvent(
+  sqlite: Database.Database,
+  originalEventId: string,
+): FinancialEventCorrectionLineageRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_event_id, reversal_event_id,
+              replacement_event_id, idempotency_key, reason, corrected_at, created_at
+       FROM financial_event_correction_lineage WHERE original_event_id = ?`,
+    )
+    .get(originalEventId) as FinancialEventCorrectionLineageRow | undefined;
+}
+
+/**
+ * Find a financial event correction by its idempotency key.
+ * Returns the row or undefined.
+ */
+export function findFinancialEventCorrectionByIdempotencyKey(
+  sqlite: Database.Database,
+  idempotencyKey: string,
+): FinancialEventCorrectionLineageRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_event_id, reversal_event_id,
+              replacement_event_id, idempotency_key, reason, corrected_at, created_at
+       FROM financial_event_correction_lineage WHERE idempotency_key = ?`,
+    )
+    .get(idempotencyKey) as FinancialEventCorrectionLineageRow | undefined;
+}
+
+/**
+ * Find a financial event correction by reversal or replacement event ID.
+ * Returns the row or undefined.
+ */
+export function findFinancialEventCorrectionByRelatedEvent(
+  sqlite: Database.Database,
+  eventId: string,
+): FinancialEventCorrectionLineageRow | undefined {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_event_id, reversal_event_id,
+              replacement_event_id, idempotency_key, reason, corrected_at, created_at
+       FROM financial_event_correction_lineage
+       WHERE reversal_event_id = ? OR replacement_event_id = ?`,
+    )
+    .get(eventId, eventId) as FinancialEventCorrectionLineageRow | undefined;
+}
+
+/**
+ * List financial event corrections for an account, newest first.
+ */
+export function listFinancialEventCorrectionsByAccount(
+  sqlite: Database.Database,
+  accountId: string,
+): FinancialEventCorrectionLineageRow[] {
+  return sqlite
+    .prepare(
+      `SELECT id, account_id, original_event_id, reversal_event_id,
+              replacement_event_id, idempotency_key, reason, corrected_at, created_at
+       FROM financial_event_correction_lineage WHERE account_id = ?
+       ORDER BY corrected_at DESC, id ASC`,
+    )
+    .all(accountId) as FinancialEventCorrectionLineageRow[];
+}

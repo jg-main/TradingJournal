@@ -201,6 +201,63 @@ export class DuplicateCorrectionIdempotencyError extends AccountingError {
   }
 }
 
+/**
+ * Thrown when a referenced financial event does not exist or does not
+ * belong to the target account.
+ */
+export class FinancialEventNotFoundError extends AccountingError {
+  public readonly eventId: string;
+
+  constructor(eventId: string) {
+    super(
+      'FINANCIAL_EVENT_NOT_FOUND',
+      `Financial event "${eventId}" not found`,
+    );
+    this.name = 'FinancialEventNotFoundError';
+    this.eventId = eventId;
+    Object.setPrototypeOf(this, FinancialEventNotFoundError.prototype);
+  }
+}
+
+/**
+ * Thrown when attempting to correct a financial event that has already
+ * been corrected.
+ */
+export class EventAlreadyCorrectedError extends AccountingError {
+  public readonly eventId: string;
+  public readonly correctionId: string;
+
+  constructor(eventId: string, correctionId: string) {
+    super(
+      'EVENT_ALREADY_CORRECTED',
+      `Financial event "${eventId}" has already been corrected via correction "${correctionId}"`,
+    );
+    this.name = 'EventAlreadyCorrectedError';
+    this.eventId = eventId;
+    this.correctionId = correctionId;
+    Object.setPrototypeOf(this, EventAlreadyCorrectedError.prototype);
+  }
+}
+
+/**
+ * Thrown when attempting to correct a financial event that is not
+ * eligible for correction — a non-cash event type, a reversal, or a
+ * replacement constituent of an existing correction.
+ */
+export class EventNotCorrectableError extends AccountingError {
+  public readonly eventId: string;
+
+  constructor(eventId: string, reason: string) {
+    super(
+      'EVENT_NOT_CORRECTABLE',
+      `Financial event "${eventId}" cannot be corrected: ${reason}`,
+    );
+    this.name = 'EventNotCorrectableError';
+    this.eventId = eventId;
+    Object.setPrototypeOf(this, EventNotCorrectableError.prototype);
+  }
+}
+
 // ── Account Errors ──────────────────────────────────────────────────────
 
 /**

@@ -192,6 +192,38 @@ export const postFinancialEventSchema = z.discriminatedUnion('eventType', [
 
 export type PostFinancialEventRequest = z.infer<typeof postFinancialEventSchema>;
 
+// ── Financial Event Correction Schemas ──────────────────────────────────
+
+/**
+ * Schema for POST /api/accounts/:id/financial-events/:eventId/correct
+ *
+ * Corrects a posted financial event through the immutable
+ * reversal-and-replacement pattern. The original event is never modified;
+ * a reversal event cancels its cash effect and a replacement event carries
+ * the corrected values, linked by a correction lineage record.
+ *
+ * Fields:
+ * - amount: Replacement amount (canonical decimal). Signed for
+ *   manual_adjustment (positive = inflow, negative = outflow); must be
+ *   positive for all other correctable types.
+ * - description: Optional replacement description (max 500 chars).
+ * - reason: Required human-readable reason for the correction.
+ * - idempotencyKey: Optional UUID for idempotent correction.
+ * - postedAt: Optional ISO-8601 timestamp (defaults to server time).
+ */
+export const financialEventCorrectionInputSchema = z.object({
+  amount: canonicalDecimalSchema.refine(
+    (v) => v !== '0.00',
+    { message: 'Correction amount must be non-zero' },
+  ),
+  description: descriptionSchema,
+  reason: z.string().min(1, 'Correction reason is required').max(1000),
+  idempotencyKey: optionalUuidSchema,
+  postedAt: z.string().datetime().optional(),
+});
+
+export type FinancialEventCorrectionInput = z.infer<typeof financialEventCorrectionInputSchema>;
+
 // ── Response Schemas ─────────────────────────────────────────────────────
 
 /**
@@ -235,6 +267,35 @@ const eventResponseSchema = z.object({
   postedAt: z.string(),
   createdAt: z.string(),
 });
+
+/**
+ * Schema for a financial event in correction API responses.
+ * Reuses the event response shape (already includes eventType).
+ */
+export const correctionFinancialEventResponseSchema = eventResponseSchema;
+
+export type CorrectionFinancialEventResponse = z.infer<typeof correctionFinancialEventResponseSchema>;
+
+/**
+ * Schema for the full financial event correction response.
+ */
+export const financialEventCorrectionResponseSchema = z.object({
+  success: z.literal(true),
+  correction: z.object({
+    id: z.string(),
+    accountId: z.string(),
+    originalEventId: z.string(),
+    reversalEventId: z.string(),
+    replacementEventId: z.string(),
+    reason: z.string(),
+    correctedAt: z.string(),
+  }),
+  originalEvent: correctionFinancialEventResponseSchema,
+  reversalEvent: correctionFinancialEventResponseSchema,
+  replacementEvent: correctionFinancialEventResponseSchema,
+});
+
+export type FinancialEventCorrectionResponse = z.infer<typeof financialEventCorrectionResponseSchema>;
 
 /**
  * Schema for the full financial event response.
