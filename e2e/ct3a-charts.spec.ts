@@ -54,13 +54,6 @@ async function seedAccount(page: Page, name: string, currency: string) {
   return account;
 }
 
-/** Create a setup lookup value. */
-async function seedSetup(page: Page, value: string) {
-  const resp = await page.request.post('/api/lookups', { data: { type: 'setup', value } });
-  expect(resp.status()).toBe(201);
-  return (await resp.json()) as { id: string };
-}
-
 /** Create + fully exit a trade with a deterministic setup and direction. */
 async function seedTrade(page: Page, accountId: string, spec: SeededTradeSpec) {
   const tradeResp = await page.request.post('/api/trades', {
@@ -168,9 +161,6 @@ test.describe('CT3A chart labels, tooltip semantics & chart-type contract', () =
     // ── Seed deterministic data ──────────────────────────────────────────
     const tag = `${TS}${Math.random().toString(36).slice(2, 6)}`;
     const account = await seedAccount(page, `CT3A-${tag}`, 'USD');
-    const setupBreakout = await seedSetup(page, `Breakout ${tag}`);
-    const setupPullback = await seedSetup(page, `Pullback ${tag}`);
-    const setupPivot = await seedSetup(page, `Episodic Pivot ${tag}`);
 
     // Setup display names are resolved through the canonical lookup bridge:
     // resolveSetup auto-creates setup_definitions.name (original case) +
@@ -206,8 +196,9 @@ test.describe('CT3A chart labels, tooltip semantics & chart-type contract', () =
 
     // ── 1. Performance by Setup: human-readable names ────────────────────
     const setupOpt = await optionOf(page, 'performance-by-setup');
-    const setupX = (Array.isArray(setupOpt.xAxis) ? setupOpt.xAxis : setupOpt.xAxis ? [setupOpt.xAxis] : [])[0];
-    const categories = (setupX.data as string[]) ?? [];
+    // Horizontal orientation (CT4): the Setup categories live on the yAxis.
+    const setupY = (Array.isArray(setupOpt.yAxis) ? setupOpt.yAxis : setupOpt.yAxis ? [setupOpt.yAxis] : [])[0];
+    const categories = (setupY.data as string[]) ?? [];
     // The axis displays the human-readable setup names — never the raw setup
     // UUIDs the trades reference internally.
     expect(categories).toContain('Breakout');

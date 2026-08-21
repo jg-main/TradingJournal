@@ -91,14 +91,6 @@ async function seedAll(page: Page) {
   db.close();
 }
 
-/** Read the built ECharts option from a widget's rendered data contract. */
-async function readOption(page: Page, widgetType: string) {
-  return page.evaluate((wt) => {
-    const el = document.querySelector(`[data-widget-type="${wt}"] .dashboard-chart div[style]`);
-    return el ? (el as HTMLElement).getAttribute('_echarts_instance_') : null;
-  }, widgetType);
-}
-
 test.describe('CT3 chart presentation', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
 
@@ -162,6 +154,7 @@ test.describe('CT3 chart presentation', () => {
           hasCanvas: !!canvas,
           canvasW: canvas?.width ?? 0,
           yAxisNames: y.map((a) => a?.name ?? ''),
+          xNames: x.map((a) => a?.name ?? ''),
           yFormatter: y.map((a) => (typeof a?.axisLabel?.formatter === 'function')),
           xFormatter: x.map((a) => (typeof a?.axisLabel?.formatter === 'function')),
           xName: x.map((a) => a?.name ?? ''),
@@ -211,7 +204,7 @@ test.describe('CT3 chart presentation', () => {
     // Integer Trades axis on R-Distribution.
     expect((report['r-distribution'] as { minInterval: (number | null)[] }).minInterval).toContain(1);
     // Metric-dependent Setup axis names.
-    expect((report['performance-by-setup'] as { yAxisNames: string[] }).yAxisNames[0]).toBe('Net P&L');
+    expect((report['performance-by-setup'] as { xNames: string[] }).xNames[0]).toBe('Net P&L');
 
     expect(existsSync('/tmp/ct3-netdaily-tooltip-1440-dark.png')).toBe(true);
     expect(existsSync('/tmp/ct3-full-1440-dark.png')).toBe(true);

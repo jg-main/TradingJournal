@@ -222,14 +222,18 @@ function valueAxis(
   };
 }
 
-/** A clear but restrained zero baseline, distinct from ordinary grid lines. */
-function zeroMarkLine(palette: ChartPalette): NonNullable<EChartsOption['series']>[number]['markLine'] {
+/** A clear but restrained zero baseline, distinct from ordinary grid lines.
+ *  Pass 'xAxis' for a vertical zero line on horizontal (value-x) charts. */
+function zeroMarkLine(
+  palette: ChartPalette,
+  axis: 'xAxis' | 'yAxis' = 'yAxis',
+): NonNullable<EChartsOption['series']>[number]['markLine'] {
   return {
     silent: true,
     symbol: 'none',
     lineStyle: { color: palette.reference, width: 1, type: 'solid', opacity: 0.8 },
     label: { show: false },
-    data: [{ yAxis: 0 }],
+    data: [{ [axis]: 0 }],
   };
 }
 
@@ -966,7 +970,27 @@ function setupMetricAxis(
   };
 }
 
-/** Performance by Setup — bar chart with selectable metric. */
+/**
+ * Performance by Setup — horizontal ranked bar chart (Corrective Task 4).
+ *
+ * Analytical question: which setups perform better or worse under the
+ * selected metric? Horizontal bars make ranking visually obvious, keep long
+ * setup names readable on the category axis, and compare signed values around
+ * a clear vertical zero reference.
+ *
+ * Ranking is presentation-level only: the shared analytics response is never
+ * mutated — a sorted presentation copy drives the option. The widget supports
+ * Net P&L / Win Rate / Average R / Trade Count through the existing Configure
+ * metric field; the value axis stays metric-dependent.
+ *
+ * Metric-specific presentation:
+ * - netPnl:  'Net P&L' value axis with the effective $/%/R unit; bars colored
+ *            positive/negative/neutral by sign; vertical zero reference line.
+ * - winRate: 'Win Rate' % axis (0%…100%), fixed-semantic (never converted);
+ *            neutral/info bar treatment — a rate is not signed P&L.
+ * - avgR:    'Average R' native R axis; bars colored by sign; zero reference.
+ * - count:   'Trades' integer axis (minInterval 1); neutral/info treatment.
+ */
 export function performanceBySetupOption(
   data: SetupPerfItem[],
   palette: ChartPalette,
@@ -978,68 +1002,195 @@ export function performanceBySetupOption(
   const unit = config.unit ?? 'currency';
   const axis = setupMetricAxis(metric, unit);
 
+  // Ranked presentation copy: highest metric value at the top. Nulls (missing
+  // win rate / average R) sort to the bottom so they never read as zero.
+  const sortKey = (d: SetupPerfItem): number => {
+    if (metric === 'winRate') return d.winRate ?? -Infinity;
+    if (metric === 'avgR') return d.avgR ?? -Infinity;
+    if (metric === 'count') return d.count;
+    return d.netPnl;
+  };
+  const sorted = [...data].sort((a, b) => sortKey(b) - sortKey(a));
+
   // Only the Net P&L metric is convertible under the global unit. Win Rate,
   // Average R, and Trade Count keep their fixed semantics — selecting global
   // R must never transform Win Rate into an R-like number.
-  const values = data.map((d) => {
+  const values = sorted.map((d) => {
     if (metric === 'winRate') return d.winRate ?? null;
     if (metric === 'avgR') return d.avgR ?? null;
     if (metric === 'count') return d.count;
     return convertPnl(d.netPnl, config);
   });
+  // Bars with per-row semantic color (signed metrics) or neutral treatment
+  // (rates and counts are never painted as profit/loss).
+  const bars = show
+    ? values.map((v) => ({
+        value: v,
+        itemStyle: { color: setupBarColor(metric, v, palette) },
+      }))
+    : [];
 
   return {
     tooltip: tooltip({
       unit: axis.yUnit,
       headingType: 'category',
-      // Heading = full setup display name from the data row (the axis label may
-      // be truncated for long names; never a UUID, never date-formatted).
-      heading: (category, idx) => data[idx]?.setup ?? category,
-      rows: (params, idx) => [{
-        label: axis.name,
-        value: values[idx] ?? null,
-        color: palette.primary,
-        formatter: axis.yUnit === 'percent'
-          ? (v) => `${Math.round(v * 1000) / 10}%`
-          : undefined,
-      }],
+      // Heading = full setup display name from the data row (the category
+      // axis label may truncate for long names; never a UUID, never a date).
+      heading: (category, idx) => sorted[idx]?.setup ?? category,
+      rows: (params, idx) => setupTooltipRows(sorted[idx], metric, axis.yUnit, palette, values[idx] ?? null),
     }),
     grid: baseGrid(palette),
     legend: legend(config),
-    xAxis: {
-      ...(categoryAxis(
-        data.map((d) => d.setup),
-        palette,
-        (v) => (v.length > 12 ? `${v.slice(0, 12)}…` : v),
-        'Setup',
-        0,
-      ) as object),
-      data: data.map((d) => d.setup),
-    } as EChartsOption['xAxis'],
+    // Horizontal orientation: the category (Setup) axis becomes yAxis; the
+    // metric value axis becomes xAxis. inverse:true puts the highest-ranked
+    // setup (first in the sorted array) at the top.
     yAxis: {
-      ...valueAxis(axis.name, axis.yUnit, palette),
+      type: 'category',
+      name: 'Setup',
+      nameTextStyle: { color: palette.axis, fontSize: 10 },
+      inverse: true,
+      axisLabel: {
+        color: palette.axis,
+        fontSize: 10,
+        // Full names preferred; long names truncate with an ellipsis and stay
+        // readable via the tooltip. containLabel reserves left-side space.
+        width: 150,
+        overflow: 'truncate',
+        ellipsis: '…',
+      },
+      axisLine: { lineStyle: { color: palette.grid } },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      data: sorted.map((d) => d.setup),
+    },
+    xAxis: {
+      type: 'value',
+      name: axis.name,
+      nameTextStyle: { color: palette.axis, fontSize: 10 },
       axisLabel: {
         color: palette.axis,
         fontSize: 10,
         formatter: axis.formatter,
       },
+      splitLine: { lineStyle: { color: palette.grid, opacity: 0.45 } },
       ...(axis.yUnit === 'count' ? { minInterval: 1 } : {}),
     },
     series: [
       {
         name: axis.name,
         type: 'bar',
-        data: show ? values : [],
-        itemStyle: {
-          color: (value: unknown) => {
-            const v = typeof value === 'number' ? value : (value as { value: number }).value;
-            return (v ?? 0) >= 0 ? palette.positive : palette.negative;
-          },
-        },
-        markLine: metric === 'netPnl' ? zeroMarkLine(palette) : undefined,
+        data: bars,
+        // Vertical zero reference for signed metrics; rates/counts have no
+        // meaningful zero baseline (their axis starts at zero naturally).
+        markLine:
+          metric === 'netPnl' || metric === 'avgR' ? zeroMarkLine(palette, 'xAxis') : undefined,
       },
     ],
   };
+}
+
+/**
+ * Semantic bar color per metric: signed metrics (Net P&L, Average R) use
+ * positive/negative/neutral polarity; rates (Win Rate) and counts (Trades)
+ * use a neutral/info treatment — they are not signed P&L and must never be
+ * painted green merely because their values exceed zero.
+ */
+function setupBarColor(
+  metric: string,
+  value: number | null,
+  palette: ChartPalette,
+): string {
+  if (metric !== 'netPnl' && metric !== 'avgR') return palette.info;
+  if (value === null || !Number.isFinite(value)) return palette.info;
+  if (value > 0) return palette.positive;
+  if (value < 0) return palette.negative;
+  return palette.info;
+}
+
+/**
+ * Tooltip rows for a setup under the selected metric: the primary configured
+ * metric first, then the canonical supporting fields already present in the
+ * setup-performance dataset (Trades, Win Rate, Net P&L, Average R) — never
+ * fabricated values, never a backend expansion.
+ */
+function setupTooltipRows(
+  item: SetupPerfItem | undefined,
+  metric: string,
+  yUnit: ChartAxisUnit,
+  palette: ChartPalette,
+  primaryValue: number | null,
+): TooltipRow[] {
+  if (!item) return [];
+  const rows: TooltipRow[] = [];
+  const signed = (v: number): string => (v > 0 ? '+' : '') + formatTooltipValue(v, 'currency');
+  const signedR = (v: number): string => (v > 0 ? '+' : '') + formatTooltipValue(v, 'r');
+
+  // Primary configured metric first.
+  if (metric === 'netPnl') {
+    rows.push({
+      label: 'Net P&L',
+      value: primaryValue,
+      color: (primaryValue ?? 0) > 0 ? palette.positive : (primaryValue ?? 0) < 0 ? palette.negative : palette.info,
+      formatter: (v) => (v > 0 ? '+' : '') + formatTooltipValue(v, yUnit),
+    });
+  } else if (metric === 'winRate') {
+    rows.push({
+      label: 'Win Rate',
+      value: item.winRate,
+      color: palette.primary,
+      formatter: (v) => `${Math.round(v * 1000) / 10}%`,
+    });
+  } else if (metric === 'avgR') {
+    rows.push({
+      label: 'Average R',
+      value: item.avgR,
+      color: (item.avgR ?? 0) > 0 ? palette.positive : (item.avgR ?? 0) < 0 ? palette.negative : palette.info,
+      formatter: signedR,
+    });
+  } else {
+    rows.push({
+      label: 'Trades',
+      value: item.count,
+      color: palette.info,
+      formatter: (v) => String(Math.round(v)),
+    });
+  }
+
+  // Supporting canonical fields (skip the primary metric itself).
+  if (metric !== 'count') {
+    rows.push({
+      label: 'Trades',
+      value: item.count,
+      color: palette.info,
+      formatter: (v) => String(Math.round(v)),
+    });
+  }
+  if (metric !== 'winRate' && item.winRate !== null && item.winRate !== undefined) {
+    rows.push({
+      label: 'Win Rate',
+      value: item.winRate,
+      color: palette.primary,
+      formatter: (v) => `${Math.round(v * 1000) / 10}%`,
+    });
+  }
+  if (metric !== 'netPnl') {
+    rows.push({
+      label: 'Net P&L',
+      value: item.netPnl,
+      color: item.netPnl > 0 ? palette.positive : item.netPnl < 0 ? palette.negative : palette.info,
+      formatter: signed,
+    });
+  }
+  if (metric !== 'avgR' && item.avgR !== null && item.avgR !== undefined) {
+    rows.push({
+      label: 'Average R',
+      value: item.avgR,
+      color: (item.avgR ?? 0) > 0 ? palette.positive : (item.avgR ?? 0) < 0 ? palette.negative : palette.info,
+      formatter: signedR,
+    });
+  }
+
+  return rows;
 }
 
 /** Performance by Day of Week — bar chart. */

@@ -130,15 +130,17 @@ describe('performance-chart-options', () => {
       { setup: 'Breakout', netPnl: 500, winRate: 0.6, avgR: 0.8, count: 10 },
       { setup: 'Pullback', netPnl: -200, winRate: 0.4, avgR: -0.3, count: 8 },
     ];
+    const values = (opt: NonNullable<ReturnType<typeof performanceBySetupOption>>) =>
+      (opt.series[0] as { data: Array<{ value: number }> }).data.map((b) => b.value);
 
     it('defaults to netPnl metric', () => {
       const option = performanceBySetupOption(data, palette);
-      expect((option!.series[0] as { data: number[] }).data).toEqual([500, -200]);
+      expect(values(option!)).toEqual([500, -200]);
     });
 
     it('selects winRate metric', () => {
       const option = performanceBySetupOption(data, palette, { metric: 'winRate' });
-      expect((option!.series[0] as { data: Array<number | null> }).data).toEqual([0.6, 0.4]);
+      expect(values(option!)).toEqual([0.6, 0.4]);
     });
 
     it('returns null for empty data', () => {
@@ -329,18 +331,20 @@ describe('performance-chart-options', () => {
 
     it('Performance by Setup converts only the Net P&L metric; Win Rate / Avg R / Count stay fixed', () => {
       const data = [{ setup: 'Breakout', netPnl: 1000, winRate: 0.6, avgR: 0.8, count: 10 }];
+      const values = (opt: NonNullable<ReturnType<typeof performanceBySetupOption>>) =>
+        (opt.series[0] as { data: Array<{ value: number }> }).data.map((b) => b.value);
       // netPnl metric converts under R
       const net = performanceBySetupOption(data, palette, { metric: 'netPnl', unit: 'r', totalInitialRisk: 200 });
-      expect((net!.series[0] as { data: number[] }).data).toEqual([5]);
+      expect(values(net!)).toEqual([5]);
       // winRate stays its native percentage fraction under global R
       const wr = performanceBySetupOption(data, palette, { metric: 'winRate', unit: 'r', totalInitialRisk: 200 });
-      expect((wr!.series[0] as { data: number[] }).data).toEqual([0.6]);
+      expect(values(wr!)).toEqual([0.6]);
       // avgR stays R
       const ar = performanceBySetupOption(data, palette, { metric: 'avgR', unit: 'r', totalInitialRisk: 200 });
-      expect((ar!.series[0] as { data: number[] }).data).toEqual([0.8]);
+      expect(values(ar!)).toEqual([0.8]);
       // count stays count
       const cnt = performanceBySetupOption(data, palette, { metric: 'count', unit: 'r', totalInitialRisk: 200 });
-      expect((cnt!.series[0] as { data: number[] }).data).toEqual([10]);
+      expect(values(cnt!)).toEqual([10]);
     });
 
     it('R-Multiple Distribution semantics are fixed (counts) under any unit', () => {
@@ -477,20 +481,21 @@ describe('performance-chart-options', () => {
     describe('metric-dependent setup axis', () => {
       it('renders the correct axis name and semantics for each Setup metric', () => {
         const data = [{ setup: 'Breakout', netPnl: 500, winRate: 0.6, avgR: 0.8, count: 10 }];
+        // Horizontal orientation: the metric value axis is now xAxis.
         const net = performanceBySetupOption(data, palette, { metric: 'netPnl' })!;
-        expect((net.yAxis as { name: string }).name).toBe('Net P&L');
+        expect((net.xAxis as { name: string }).name).toBe('Net P&L');
         const wr = performanceBySetupOption(data, palette, { metric: 'winRate' })!;
-        expect((wr.yAxis as { name: string }).name).toBe('Win Rate');
+        expect((wr.xAxis as { name: string }).name).toBe('Win Rate');
         const ar = performanceBySetupOption(data, palette, { metric: 'avgR' })!;
-        expect((ar.yAxis as { name: string }).name).toBe('Average R');
+        expect((ar.xAxis as { name: string }).name).toBe('Average R');
         const cnt = performanceBySetupOption(data, palette, { metric: 'count' })!;
-        expect((cnt.yAxis as { name: string }).name).toBe('Trades');
+        expect((cnt.xAxis as { name: string }).name).toBe('Trades');
       });
 
       it('uses integer minInterval for the Trades setup axis', () => {
         const data = [{ setup: 'Breakout', netPnl: 500, winRate: 0.6, avgR: 0.8, count: 10 }];
         const opt = performanceBySetupOption(data, palette, { metric: 'count' })!;
-        expect((opt.yAxis as { minInterval?: number }).minInterval).toBe(1);
+        expect((opt.xAxis as { minInterval?: number }).minInterval).toBe(1);
       });
     });
 
@@ -664,6 +669,164 @@ describe('performance-chart-options', () => {
         // Day-of-week chart: 'Monday' must not become a date.
         const dow = performanceByDayOfWeekOption([{ day: 'Monday', netPnl: 100, count: 3, winRate: 0.6 }], palette)!;
         expect(tooltipHtml(dow, 'Monday')).toContain('<b>Monday</b>');
+      });
+    });
+
+    describe('performanceBySetupOption horizontal ranking (Corrective Task 4)', () => {
+      // Deliberately out of order so sorting is proven (never input order).
+      const data = [
+        { setup: 'Pullback', netPnl: -500, winRate: 0.4, avgR: -0.5, count: 8 },
+        { setup: 'Episodic', netPnl: 1500, winRate: 0.7, avgR: 1.1, count: 5 },
+        { setup: 'Breakout', netPnl: 3000, winRate: 0.9, avgR: 1.8, count: 12 },
+      ];
+      const cats = (opt: NonNullable<ReturnType<typeof performanceBySetupOption>>) =>
+        (opt.yAxis as { data: string[] }).data;
+      const values = (opt: NonNullable<ReturnType<typeof performanceBySetupOption>>) =>
+        (opt.series[0] as { data: Array<{ value: number }> }).data.map((b) => b.value);
+      const colors = (opt: NonNullable<ReturnType<typeof performanceBySetupOption>>) =>
+        (opt.series[0] as { data: Array<{ itemStyle: { color: string } }> }).data.map((b) => b.itemStyle.color);
+
+      it('uses horizontal categorical bars: yAxis category + xAxis value', () => {
+        const opt = performanceBySetupOption(data, palette)!;
+        expect((opt.yAxis as { type: string }).type).toBe('category');
+        expect((opt.xAxis as { type: string }).type).toBe('value');
+        // Highest-ranked setup at the top (first category + inverse axis).
+        expect((opt.yAxis as { inverse?: boolean }).inverse).toBe(true);
+        expect(cats(opt)).toEqual(['Breakout', 'Episodic', 'Pullback']);
+      });
+
+      it('ranks highest metric value first for every metric (never input order)', () => {
+        const net = performanceBySetupOption(data, palette)!;
+        expect(cats(net)).toEqual(['Breakout', 'Episodic', 'Pullback']);
+        expect(values(net)).toEqual([3000, 1500, -500]);
+
+        const wr = performanceBySetupOption(data, palette, { metric: 'winRate' })!;
+        expect(cats(wr)).toEqual(['Breakout', 'Episodic', 'Pullback']);
+        expect(values(wr)).toEqual([0.9, 0.7, 0.4]);
+
+        const ar = performanceBySetupOption(data, palette, { metric: 'avgR' })!;
+        expect(cats(ar)).toEqual(['Breakout', 'Episodic', 'Pullback']);
+        expect(values(ar)).toEqual([1.8, 1.1, -0.5]);
+
+        const cnt = performanceBySetupOption(data, palette, { metric: 'count' })!;
+        expect(cats(cnt)).toEqual(['Breakout', 'Pullback', 'Episodic']);
+        expect(values(cnt)).toEqual([12, 8, 5]);
+      });
+
+      it('sorts missing values to the bottom without fabricating zeros', () => {
+        const sparse = [
+          { setup: 'A', netPnl: 100, winRate: null, avgR: null, count: 2 },
+          { setup: 'B', netPnl: 50, winRate: 0.5, avgR: 0.4, count: 3 },
+        ];
+        const wr = performanceBySetupOption(sparse, palette, { metric: 'winRate' })!;
+        expect(cats(wr)).toEqual(['B', 'A']);
+        const ar = performanceBySetupOption(sparse, palette, { metric: 'avgR' })!;
+        expect(cats(ar)).toEqual(['B', 'A']);
+      });
+
+      it('does not mutate the shared analytics data', () => {
+        const before = JSON.stringify(data);
+        performanceBySetupOption(data, palette, { metric: 'count' });
+        performanceBySetupOption(data, palette, { metric: 'netPnl' });
+        expect(JSON.stringify(data)).toBe(before);
+      });
+
+      it('colors signed metrics by polarity and rates/counts neutrally', () => {
+        const net = performanceBySetupOption(data, palette)!;
+        expect(colors(net)).toEqual([palette.positive, palette.positive, palette.negative]);
+
+        const ar = performanceBySetupOption(data, palette, { metric: 'avgR' })!;
+        expect(colors(ar)).toEqual([palette.positive, palette.positive, palette.negative]);
+
+        // Win Rate is a rate, not signed P&L — never green just because > 0.
+        const wr = performanceBySetupOption(data, palette, { metric: 'winRate' })!;
+        expect(colors(wr)).toEqual([palette.info, palette.info, palette.info]);
+
+        const cnt = performanceBySetupOption(data, palette, { metric: 'count' })!;
+        expect(colors(cnt)).toEqual([palette.info, palette.info, palette.info]);
+      });
+
+      it('zero Net P&L uses neutral coloring', () => {
+        const zero = [{ setup: 'Scratch', netPnl: 0, winRate: 0.5, avgR: 0, count: 1 }];
+        const opt = performanceBySetupOption(zero, palette)!;
+        expect(colors(opt)).toEqual([palette.info]);
+      });
+
+      it('adds a vertical zero reference line for signed metrics only', () => {
+        const net = performanceBySetupOption(data, palette)!;
+        const netMark = (net.series[0] as { markLine?: { data: Array<{ xAxis?: number }> } }).markLine;
+        expect(netMark?.data?.[0]?.xAxis).toBe(0);
+
+        const ar = performanceBySetupOption(data, palette, { metric: 'avgR' })!;
+        const arMark = (ar.series[0] as { markLine?: { data: Array<{ xAxis?: number }> } }).markLine;
+        expect(arMark?.data?.[0]?.xAxis).toBe(0);
+
+        const wr = performanceBySetupOption(data, palette, { metric: 'winRate' })!;
+        expect((wr.series[0] as { markLine?: unknown }).markLine).toBeUndefined();
+
+        const cnt = performanceBySetupOption(data, palette, { metric: 'count' })!;
+        expect((cnt.series[0] as { markLine?: unknown }).markLine).toBeUndefined();
+      });
+
+      it('metric-aware value axis formatters ($/%/R, %, R, integer Trades)', () => {
+        const fmt = (opt: NonNullable<ReturnType<typeof performanceBySetupOption>>) =>
+          (opt.xAxis as { axisLabel: { formatter: (v: number) => string } }).axisLabel.formatter;
+        const net = performanceBySetupOption(data, palette)!;
+        expect(fmt(net)(2500)).toBe('$2.5k');
+        const netPct = performanceBySetupOption(data, palette, { metric: 'netPnl', unit: 'percent', periodStartEquity: 100000 })!;
+        expect(fmt(netPct)(0.025)).toBe('2.5%');
+        const netR = performanceBySetupOption(data, palette, { metric: 'netPnl', unit: 'r', totalInitialRisk: 1000 })!;
+        expect(fmt(netR)(1.5)).toBe('1.5R');
+        const wr = performanceBySetupOption(data, palette, { metric: 'winRate' })!;
+        expect(fmt(wr)(0.5)).toBe('50%');
+        const ar = performanceBySetupOption(data, palette, { metric: 'avgR' })!;
+        expect(fmt(ar)(-1.25)).toBe('-1.25R');
+        const cnt = performanceBySetupOption(data, palette, { metric: 'count' })!;
+        expect(fmt(cnt)(7.5)).toBe('8'); // integer ticks only
+      });
+
+      it('tooltip heading is the full setup name with primary metric first + supporting fields', () => {
+        const opt = performanceBySetupOption(data, palette)!;
+        const t = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = t.formatter([{ dataIndex: 0, seriesName: 'Net P&L', axisValueLabel: 'Breakout', name: 'Breakout' }]);
+        expect(html).toContain('<b>Breakout</b>');
+        expect(html).toContain('Net P&L');
+        expect(html).toContain('+$3,000');
+        expect(html).toContain('Trades');
+        expect(html).toContain('12');
+        expect(html).toContain('Win Rate');
+        expect(html).toContain('90%');
+        expect(html).toContain('Average R');
+        expect(html).toContain('+1.8R');
+        // Primary metric appears before supporting rows.
+        expect(html.indexOf('Net P&L')).toBeLessThan(html.indexOf('Trades'));
+        // No UUIDs, no date heading.
+        expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
+        expect(html).not.toContain('<b>Aug ');
+      });
+
+      it('tooltip primary metric changes with the configured metric', () => {
+        const opt = performanceBySetupOption(data, palette, { metric: 'winRate' })!;
+        const t = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = t.formatter([{ dataIndex: 0, seriesName: 'Win Rate', axisValueLabel: 'Breakout', name: 'Breakout' }]);
+        expect(html).toContain('<b>Breakout</b>');
+        expect(html).toContain('Win Rate');
+        expect(html).toContain('90%');
+        expect(html).toContain('Net P&L');
+        expect(html).toContain('+$3,000'); // canonical $ supporting context
+        expect(html.indexOf('Win Rate')).toBeLessThan(html.indexOf('Trades'));
+      });
+
+      it('long setup names stay full in the tooltip despite axis truncation', () => {
+        const long = [{ setup: 'Qullamaggie Breakout', netPnl: 4250, winRate: 0.583, avgR: 1.24, count: 12 }];
+        const opt = performanceBySetupOption(long, palette)!;
+        const t = opt.tooltip as { formatter: (params: unknown) => string };
+        const html = t.formatter([{ dataIndex: 0, seriesName: 'Net P&L', axisValueLabel: 'Qullamaggie…', name: 'Qullamaggie…' }]);
+        expect(html).toContain('<b>Qullamaggie Breakout</b>');
+        expect(html).toContain('+$4,250');
+        expect(html).toContain('12');
+        expect(html).toContain('58.3%');
+        expect(html).toContain('+1.24R');
       });
     });
   });
