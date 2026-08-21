@@ -14,8 +14,12 @@ import {
   ArrowRight,
   Layers,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import FinancialEventCorrectionDialog, {
+  isCorrectableFinancialEventType,
+} from './financial-event-correction-dialog';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -97,6 +101,39 @@ const FILTER_ORDER = ['all', 'opening_balance', 'cash', 'trade', 'fee_tax', 'adj
 interface AccountLedgerProps {
   /** Account ID used to fetch the ledger endpoint. */
   accountId: string;
+}
+
+// ── Correction Eligibility Helpers ────────────────────────────────────────
+
+/**
+ * True when a ledger row can be corrected from the ledger.
+ *
+ * Requires an eligible cash event type, no existing correction group
+ * (originals/reversals are hidden from the primary list, but replacements
+ * render as group rows and are guarded here), and a posted, balanced
+ * event with a recorded cash impact. The API remains the final authority
+ * and returns EVENT_NOT_CORRECTABLE / EVENT_ALREADY_CORRECTED for any
+ * row that slips past these guards.
+ */
+function isEventCorrectable(evt: LedgerRowDisplay): boolean {
+  return (
+    isCorrectableFinancialEventType(evt.eventType) &&
+    evt.correctionGroup === null &&
+    evt.status.hasEntry &&
+    evt.status.isBalanced &&
+    evt.cashImpact !== null
+  );
+}
+
+/**
+ * Pre-fill amount for the correction dialog, derived from the ledger's
+ * signed cash impact. Signed for manual_adjustment; absolute value for
+ * all other correctable types (their canonical form is always positive).
+ */
+function correctionPrefillAmount(evt: LedgerRowDisplay): string {
+  if (evt.cashImpact === null) return '';
+  if (evt.eventType === 'manual_adjustment') return evt.cashImpact;
+  return evt.cashImpact.startsWith('-') ? evt.cashImpact.slice(1) : evt.cashImpact;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -343,6 +380,7 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
   const [page, setPage] = useState(1);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [fetchKey, setFetchKey] = useState(0);
+  const [correctionEvent, setCorrectionEvent] = useState<LedgerRowDisplay | null>(null);
 
   const pageLimit = 25;
 
@@ -442,6 +480,22 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
       }
       return next;
     });
+  }, []);
+
+  // ── Correction dialog handlers ────────────────────────────────────
+
+  const openCorrection = useCallback((evt: LedgerRowDisplay) => {
+    setCorrectionEvent(evt);
+  }, []);
+
+  const handleCorrectionDialogClose = useCallback(() => {
+    setCorrectionEvent(null);
+  }, []);
+
+  const handleCorrectionComplete = useCallback(() => {
+    // The ledger stream changed (reversal + replacement posted); refetch.
+    setCorrectionEvent(null);
+    setFetchKey((k) => k + 1);
   }, []);
 
   // ── Loading State ──────────────────────────────────────────────────
@@ -663,8 +717,20 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
                             </span>
                           </div>
 
-                          {/* Right spacer */}
-                          <div className="w-4 shrink-0" />
+                          {/* Correct action — eligible financial events only */}
+                          <div className="w-16 shrink-0 px-1 text-right">
+                            {isEventCorrectable(evt) && (
+                              <button
+                                onClick={() => openCorrection(evt)}
+                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                                title="Correct this financial event"
+                                aria-label={`Correct ${evt.eventType} event ${evt.description ?? ''}`.trim()}
+                              >
+                                <Pencil className="size-3" aria-hidden="true" />
+                                <span className="sr-only sm:not-sr-only">Correct</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Expanded detail section */}
@@ -685,6 +751,23 @@ export default function AccountLedger({ accountId }: AccountLedgerProps) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Correction Dialog ──────────────────────────────────────── */}
+      {correctionEvent && (
+        <FinancialEventCorrectionDialog
+          accountId={accountId}
+          event={{
+            id: correctionEvent.eventId,
+            eventType: correctionEvent.eventType,
+            description: correctionEvent.description,
+            postedAt: correctionEvent.postedAt,
+            amount: correctionPrefillAmount(correctionEvent),
+          }}
+          open
+          onOpenChange={handleCorrectionDialogClose}
+          onCorrectionComplete={handleCorrectionComplete}
+        />
       )}
 
       {/* ── Pagination Controls ───────────────────────────────────────── */}

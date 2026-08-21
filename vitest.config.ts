@@ -183,6 +183,7 @@ export default defineConfig({
       'src/components/performance/__tests__/kpi-micro-viz.test.tsx',
       'src/components/performance/__tests__/performance-filter-bar.test.tsx',
       'src/components/accounting/account-correction-form.test.tsx',
+      'src/components/accounting/financial-event-correction-dialog.test.tsx',
       'src/components/accounting/add-account-dialog.test.tsx',
       'src/components/accounting/account-initialization.test.tsx',
       'src/components/accounting/opening-balance-form.test.tsx',

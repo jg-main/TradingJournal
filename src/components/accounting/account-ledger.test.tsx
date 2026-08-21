@@ -20,6 +20,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-library/react';
 import AccountLedger from './account-ledger';
+import { TooltipProvider } from '@/components/ui/tooltip';
+
+/**
+ * Render the ledger inside the shared TooltipProvider, mirroring the app
+ * shell (MEM001). Required because the correction dialog renders a
+ * Radix-based HelpTooltip.
+ */
+function renderLedger(accountId: string) {
+  return render(
+    <TooltipProvider>
+      <AccountLedger accountId={accountId} />
+    </TooltipProvider>,
+  );
+}
 
 // ── Fixtures ───────────────────────────────────────────────────────────
 
@@ -903,5 +917,243 @@ describe('AccountLedger — results info', () => {
     await waitFor(() => {
       expect(screen.getByText('1 event (filtered)')).toBeTruthy();
     });
+  });
+});
+
+describe('AccountLedger — correction actions', () => {
+  it('renders Correct action only for eligible posted financial events', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    renderLedger('acct-001');
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial deposit')).toBeTruthy();
+    });
+
+    // Eligible: deposit + fee. Not eligible: opening_balance, trade_execution,
+    // and the correction-group row (replacement constituent).
+    const correctButtons = screen.getAllByRole('button', { name: /^Correct / });
+    expect(correctButtons.length).toBe(2);
+    const labels = correctButtons.map((b) => b.getAttribute('aria-label') ?? '');
+    expect(labels.some((l) => l.includes('deposit'))).toBe(true);
+    expect(labels.some((l) => l.includes('fee'))).toBe(true);
+  });
+
+  it('does not render Correct for correction-group rows or non-eligible types', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    renderLedger('acct-001');
+
+    await waitFor(() => {
+      expect(screen.getByText('Corrected: Buy 50 AAPL @ 150.00')).toBeTruthy();
+    });
+
+    // The correction-group row (trade_execution with correctionGroup) must not
+    // expose a Correct action — the replacement is already part of a lineage.
+    const corrGroupBtn = screen
+      .getAllByRole('button', { name: /^Correct / })
+      .find((b) => b.closest('tr')?.textContent?.includes('Corrected: Buy 50'));
+    expect(corrGroupBtn).toBeUndefined();
+
+    // The plain trade_execution and opening_balance rows must not either.
+    const correctButtons = screen.getAllByRole('button', { name: /^Correct / });
+    expect(
+      correctButtons.every((b) => {
+        const label = b.getAttribute('aria-label') ?? '';
+        return label.includes('deposit') || label.includes('fee');
+      }),
+    ).toBe(true);
+  });
+
+  it('opens the correction dialog with pre-filled amount when Correct is clicked', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    renderLedger('acct-001');
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial deposit')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Correct deposit event/ }));
+    });
+
+    // Dialog opens with the deposit's amount pre-filled (absolute value of cashImpact)
+    await waitFor(() => {
+      expect(screen.getByText('Correct Financial Event')).toBeTruthy();
+    });
+    const amountInput = screen.getByRole('textbox', { name: /amount/i }) as HTMLInputElement;
+    expect(amountInput.value).toBe('50000.00');
+  });
+
+  it('closes the correction dialog on Cancel', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    renderLedger('acct-001');
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial deposit')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Correct deposit event/ }));
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Correct Financial Event')).toBeTruthy();
+    });
+
+    const cancelBtn = screen.getByText('Cancel').closest('button');
+    expect(cancelBtn).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(cancelBtn!);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Correct Financial Event')).toBeNull();
+    });
+  });
+
+  it('does not render Correct for unposted events', async () => {
+    mockFetchSuccess(FIXTURE_UNPOSTED);
+    renderLedger('acct-unposted');
+
+    await waitFor(() => {
+      expect(screen.getByText('Pending deposit')).toBeTruthy();
+    });
+
+    expect(screen.queryAllByRole('button', { name: /^Correct / }).length).toBe(0);
+  });
+
+  it('pre-fills the signed amount for manual_adjustment rows', async () => {
+    const fixture = {
+      events: [
+        {
+          eventId: 'evt-manual-001',
+          eventType: 'manual_adjustment',
+          postedAt: '2026-02-10T09:00:00.000Z',
+          description: 'Manual adjustment',
+          category: 'Adjustment',
+          cashImpact: '-150.00',
+          status: { hasEntry: true, isBalanced: true, postingCount: 2 },
+          postings: {
+            debit: { id: 'p-debit-m1', side: 'debit', amount: '150.00', amountMicros: 150000000, currency: 'USD', sequence: 0 },
+            credit: { id: 'p-credit-m1', side: 'credit', amount: '150.00', amountMicros: 150000000, currency: 'USD', sequence: 1 },
+          },
+          idempotencyKey: null,
+          correctionGroup: null,
+        },
+      ],
+      total: 1,
+      page: 1,
+      limit: 25,
+      totalPages: 1,
+    };
+
+    mockFetchSuccess(fixture);
+    renderLedger('acct-manual');
+
+    await waitFor(() => {
+      expect(screen.getByText('Manual adjustment')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Correct manual_adjustment event/ }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Correct Financial Event')).toBeTruthy();
+    });
+    const amountInput = screen.getByRole('textbox', { name: /amount/i }) as HTMLInputElement;
+    expect(amountInput.value).toBe('-150.00');
+  });
+
+  it('refetches the ledger after a correction completes', async () => {
+    // Intercept only the dialog's 2000ms success auto-close timer.
+    let successCb: (() => void) | null = null;
+    const originalSetTimeout = globalThis.setTimeout;
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    setTimeoutSpy.mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (timeout === 2000) {
+        successCb = handler as () => void;
+        return 123 as unknown as ReturnType<typeof setTimeout>;
+      }
+      return originalSetTimeout(handler, timeout, ...args);
+    }) as typeof setTimeout);
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => FIXTURE_POPULATED })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          correction: {
+            id: 'corr-0001',
+            accountId: 'acct-001',
+            originalEventId: 'evt-dep-001',
+            reversalEventId: 'rev-0001',
+            replacementEventId: 'rep-0001',
+            reason: 'Wrong amount entered',
+            correctedAt: '2026-03-16T10:00:00.000Z',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => FIXTURE_POPULATED });
+
+    globalThis.fetch = fetchMock;
+    renderLedger('acct-001');
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial deposit')).toBeTruthy();
+    });
+
+    // Open the dialog and complete the correction flow
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Correct deposit event/ }));
+    });
+    const reasonInput = screen.getByRole('textbox', { name: /reason/i });
+    await act(async () => {
+      fireEvent.change(reasonInput, { target: { value: 'Wrong amount entered' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Review Correction').closest('button')!);
+    });
+    await waitFor(() => {
+      // "Confirm Correction" appears as both the confirm heading and the
+      // submit button — use getAllByText.
+      expect(screen.getAllByText('Confirm Correction').length).toBeGreaterThanOrEqual(1);
+    });
+    await act(async () => {
+      const confirmBtn = screen
+        .getAllByText('Confirm Correction')
+        .map((el) => el.closest('button'))
+        .find((b) => b);
+      fireEvent.click(confirmBtn!);
+    });
+
+    // The correction POST fires against the correct endpoint
+    await waitFor(() => {
+      const postCalls = fetchMock.mock.calls.filter(
+        (call: unknown[]) => (call[0] as string).includes('/correct'),
+      );
+      expect(postCalls.length).toBe(1);
+      expect(postCalls[0][0]).toBe(
+        '/api/accounts/acct-001/financial-events/evt-dep-001/correct',
+      );
+    });
+
+    // Success auto-close triggers the ledger refetch
+    await act(async () => {
+      successCb?.();
+    });
+
+    await waitFor(() => {
+      const ledgerGets = fetchMock.mock.calls.filter(
+        (call: unknown[]) => (call[0] as string).includes('/ledger'),
+      );
+      expect(ledgerGets.length).toBe(2);
+    });
+
+    setTimeoutSpy.mockRestore();
   });
 });
