@@ -41,6 +41,81 @@ function formatDurationValue(value: number): string {
   return `${value.toFixed(1)}d`;
 }
 
+// ── Per-metric supporting data extraction ───────────────────────────────────
+
+interface KpiSupportingData {
+  /** Sparkline values (Net P&L): cumulative daily P&L trend. */
+  sparklineValues?: number[];
+  /** Donut fraction (Win Rate). */
+  donutFraction?: number;
+  /** Profit-vs-loss split magnitudes (Profit Factor, Payoff Ratio). */
+  pnlSplit?: { positive: number; negative: number };
+  positiveLabel?: string;
+  negativeLabel?: string;
+  positiveValue?: string;
+  negativeValue?: string;
+  showCaptions?: boolean;
+}
+
+/**
+ * Resolve the supporting micro-visualization data for a KPI card from the
+ * canonical analytics payload. Each metric only renders a visualization when
+ * the underlying canonical data is present and meaningful — no fabricated
+ * or decorative graphics. Formatting stays with the presentation layer; the
+ * magnitudes themselves are canonical (grossPnl, avgWin/avgLoss).
+ */
+function resolveSupportingData(
+  widgetType: string,
+  kpiMetrics: Record<string, unknown>,
+  charts: Record<string, unknown> | undefined,
+): KpiSupportingData | null {
+  switch (widgetType) {
+    case 'net-pnl': {
+      const cumulative = charts?.cumulativeDailyPnl as Array<{ cumulativePnl: number }> | undefined;
+      const values = cumulative?.map((d) => d.cumulativePnl).filter((v): v is number => typeof v === 'number');
+      return values && values.length > 1 ? { sparklineValues: values } : null;
+    }
+    case 'win-rate': {
+      const winRate = kpiMetrics.winRate;
+      return typeof winRate === 'number' && Number.isFinite(winRate)
+        ? { donutFraction: Math.max(0, Math.min(1, winRate)) }
+        : null;
+    }
+    case 'profit-factor': {
+      // Canonical gross profit/loss magnitudes (grossPnl { grossProfit, grossLoss }).
+      const grossPnl = kpiMetrics.grossPnl as { grossProfit?: number; grossLoss?: number } | null | undefined;
+      const grossProfit = typeof grossPnl?.grossProfit === 'number' ? grossPnl.grossProfit : null;
+      const grossLoss = typeof grossPnl?.grossLoss === 'number' ? grossPnl.grossLoss : null;
+      if (grossProfit === null || grossLoss === null || grossProfit <= 0 || grossLoss <= 0) return null;
+      return {
+        pnlSplit: { positive: grossProfit, negative: grossLoss },
+        positiveLabel: 'Profit',
+        negativeLabel: 'Loss',
+        positiveValue: formatCurrencyValue(grossProfit),
+        negativeValue: formatCurrencyValue(grossLoss),
+        showCaptions: true,
+      };
+    }
+    case 'payoff-ratio': {
+      // Canonical average win/loss magnitudes (avgWin / avgLoss, positive).
+      const avgWin = typeof kpiMetrics.avgWin === 'number' ? kpiMetrics.avgWin : null;
+      const avgLoss = typeof kpiMetrics.avgLoss === 'number' ? kpiMetrics.avgLoss : null;
+      if (avgWin === null || avgLoss === null || avgWin <= 0 || avgLoss <= 0) return null;
+      return {
+        pnlSplit: { positive: avgWin, negative: avgLoss },
+        positiveLabel: 'Avg Win',
+        negativeLabel: 'Avg Loss',
+        positiveValue: formatCurrencyValue(avgWin),
+        negativeValue: `-${formatCurrencyValue(avgLoss)}`,
+        showCaptions: true,
+      };
+    }
+    default:
+      // Average R and other value-first metrics: no supporting visualization.
+      return null;
+  }
+}
+
 // ── KPI Card Component ──────────────────────────────────────────────────────
 
 export interface KpiCardProps {
@@ -58,14 +133,15 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
   const { analyticsData, filter, isLoading, error } = usePerformanceDashboard();
 
   const definition = getKpiMetricDefinition(widgetType);
-  const rawValue = definition ? definition.accessor((analyticsData?.kpiMetrics ?? {}) as Record<string, unknown>) : null;
+  const kpiMetrics = (analyticsData?.kpiMetrics ?? {}) as Record<string, unknown>;
+  const rawValue = definition ? definition.accessor(kpiMetrics) : null;
 
   // Determine period-start equity for % conversion (sum of starting balances).
   const metadata = analyticsData?.metadata as { periodStartEquity?: number | null } | undefined;
   const periodStartEquity = metadata?.periodStartEquity ?? null;
 
   // Determine total initial risk for R conversion (from risk snapshots via kpi metrics)
-  const totalInitialRisk = computeTotalInitialRisk(analyticsData?.kpiMetrics);
+  const totalInitialRisk = computeTotalInitialRisk(kpiMetrics);
 
   const unit: PerformanceUnit = config.unit ?? filter.unit;
   const converted = definition
@@ -85,15 +161,33 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
   // em dashes, never a fabricated $0 from a zero sum over zero trades.
   const hasTrades = (analyticsData?.metadata.tradeCount ?? 0) > 0;
 
-  // Micro-visualization: sparkline for Net P&L (cumulative trend), donut for Win Rate.
+  // Supporting micro-visualization (canonical data only; null when absent).
   const charts = analyticsData?.charts as Record<string, unknown> | undefined;
-  const cumulative = charts?.cumulativeDailyPnl as Array<{ cumulativePnl: number }> | undefined;
-  const microViz =
-    widgetType === 'net-pnl' && cumulative && cumulative.length > 1
-      ? { kind: 'sparkline' as const, values: cumulative.map((d) => d.cumulativePnl) }
-      : widgetType === 'win-rate' && rawValue !== null
-        ? { kind: 'donut' as const, fraction: Math.max(0, Math.min(1, rawValue)) }
-        : null;
+  const support = resolveSupportingData(widgetType, kpiMetrics, charts);
+
+  const microViz = support
+    ? support.sparklineValues
+      ? ({ kind: 'sparkline' as const, values: support.sparklineValues })
+      : support.donutFraction !== undefined
+        ? ({ kind: 'donut' as const, fraction: support.donutFraction })
+        : support.pnlSplit
+          ? ({
+              kind: 'pnl-split' as const,
+              positive: support.pnlSplit.positive,
+              negative: support.pnlSplit.negative,
+              positiveLabel: support.positiveLabel,
+              negativeLabel: support.negativeLabel,
+              positiveValue: support.positiveValue,
+              negativeValue: support.negativeValue,
+              showCaptions: support.showCaptions,
+            })
+          : null
+    : null;
+
+  // Microviz slot height: right-side sparkline/donut sit in a taller slot than
+  // the pnl-split bar. The slot is still fixed and overflow-clipped, so the
+  // visualization can never change card height or escape bounds.
+  const slotIsSplit = microViz?.kind === 'pnl-split';
 
   return (
     <div
@@ -115,18 +209,18 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
           />
         )}
       </div>
-      {/* Primary value — fixed top block, aligned across all cards */}
+      {/* Primary value — dominant metric, aligned across all cards */}
       <div
-        className={cn('mt-1 text-lg font-semibold leading-none tabular-nums', valueClass)}
+        className={`mt-1 text-kpi font-semibold leading-none tabular-nums ${valueClass}`}
         data-kpi-value={widgetType}
       >
         {isLoading && rawValue === null && !error ? (
           <div data-testid={`kpi-skeleton-${widgetType}`} aria-hidden="true">
-            <Skeleton className="h-5 w-16" />
+            <Skeleton className="h-7 w-20" />
             <span className="sr-only">Loading</span>
           </div>
         ) : error && !analyticsData ? (
-          <span className="text-xs font-normal text-destructive" title={error} data-testid={`kpi-error-${widgetType}`}>
+          <span className="text-sm font-normal text-destructive" title={error} data-testid={`kpi-error-${widgetType}`}>
             Error loading
           </span>
         ) : rawValue === null || !hasTrades ? (
@@ -139,12 +233,33 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
           fixed-size with overflow-hidden, so the visualization can never change
           card height or escape the card bounds. */}
       {!editMode && microViz && (
-        <div className="mt-auto flex h-10 shrink-0 items-end justify-end overflow-hidden" data-kpi-microviz-slot>
-          <MicroViz
-            kind={microViz.kind}
-            values={microViz.kind === 'sparkline' ? microViz.values : undefined}
-            fraction={microViz.kind === 'donut' ? microViz.fraction : undefined}
-          />
+        <div
+          className={cn(
+            'mt-auto flex shrink-0 items-end overflow-hidden',
+            slotIsSplit ? 'w-full justify-stretch pt-1' : 'h-14 justify-end',
+          )}
+          data-kpi-microviz-slot
+        >
+          {slotIsSplit ? (
+            <div className="w-full">
+              <MicroViz
+                kind="pnl-split"
+                positive={microViz.positive}
+                negative={microViz.negative}
+                positiveLabel={microViz.positiveLabel}
+                negativeLabel={microViz.negativeLabel}
+                positiveValue={microViz.positiveValue}
+                negativeValue={microViz.negativeValue}
+                showCaptions={microViz.showCaptions}
+              />
+            </div>
+          ) : (
+            <MicroViz
+              kind={microViz.kind}
+              values={microViz.kind === 'sparkline' ? microViz.values : undefined}
+              fraction={microViz.kind === 'donut' ? microViz.fraction : undefined}
+            />
+          )}
         </div>
       )}
     </div>
@@ -158,9 +273,8 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
  * Currently the analytics API does not surface total initial risk;
  * R conversion falls back to null (R-multiple guard) when unavailable.
  */
-function computeTotalInitialRisk(kpiMetrics: unknown): number | null {
-  const k = kpiMetrics as Record<string, unknown> | null | undefined;
-  const v = k?.totalInitialRisk;
+function computeTotalInitialRisk(kpiMetrics: Record<string, unknown>): number | null {
+  const v = kpiMetrics.totalInitialRisk;
   return typeof v === 'number' && v > 0 ? v : null;
 }
 

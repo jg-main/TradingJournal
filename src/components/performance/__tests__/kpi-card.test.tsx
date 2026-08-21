@@ -306,6 +306,194 @@ describe('KpiCard conversion and data states', () => {
   });
 });
 
+// ── Refined presentation coverage (Corrective Task 1, R006) ────────────────
+
+describe('KpiCard refined presentation', () => {
+  const originalFetch = globalThis.fetch;
+
+  const okResponse = (body: unknown): Response =>
+    ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+
+  const analyticsWith = (
+    kpiMetrics: Record<string, unknown>,
+    metadata: Record<string, unknown> = {},
+    charts: Record<string, unknown> = {},
+  ) => ({
+    kpiMetrics,
+    charts,
+    metadata: {
+      accountCount: 1,
+      mixedCurrencies: false,
+      tradeCount: 10,
+      dateRange: { from: null, to: null },
+      ...metadata,
+    },
+  });
+
+  const sparklineCharts = {
+    cumulativeDailyPnl: [
+      { cumulativePnl: 100 },
+      { cumulativePnl: 200 },
+      { cumulativePnl: 300 },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    globalThis.fetch = originalFetch;
+  });
+
+  async function loadData() {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+  }
+
+  it('primary values use the stronger typography contract (28px semibold tabular)', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 })));
+    const { container } = renderCard('net-pnl');
+    await loadData();
+    const value = container.querySelector('[data-kpi-value="net-pnl"]') as HTMLElement;
+    expect(value).not.toBeNull();
+    // The primary value consumes the dedicated KPI size token (28px) with
+    // semibold weight and tabular numerals so it reads as the dominant metric.
+    expect(value.className).toContain('text-kpi');
+    expect(value.className).toContain('font-semibold');
+    expect(value.className).toContain('tabular-nums');
+    // Labels stay restrained (12px muted).
+    const card = container.querySelector('[data-kpi-card="net-pnl"]') as HTMLElement;
+    const label = within(card).getByText('Net P&L');
+    expect(label.className).toContain('text-xs');
+    expect(label.className).toContain('text-muted-foreground');
+  });
+
+  it('Net P&L renders the sparkline when cumulative data exists (larger viz)', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 }, {}, sparklineCharts)));
+    const { container } = renderCard('net-pnl');
+    await loadData();
+    const sparkline = container.querySelector('[data-testid="kpi-sparkline"]');
+    expect(sparkline).not.toBeNull();
+    // The sparkline is materially larger than the old tiny line (140x40).
+    expect(sparkline?.getAttribute('width')).toBe('140');
+    expect(sparkline?.getAttribute('height')).toBe('40');
+  });
+
+  it('Win Rate renders the donut when win rate data exists (larger viz)', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ winRate: 0.6 })));
+    const { container } = renderCard('win-rate');
+    await loadData();
+    const donut = container.querySelector('[data-testid="kpi-donut"]');
+    expect(donut).not.toBeNull();
+    expect(donut?.getAttribute('width')).toBe('56');
+  });
+
+  it('Profit Factor renders the profit-vs-loss split bar from canonical grossPnl data', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({
+        profitFactor: 1.5,
+        grossPnl: { grossProfit: 1500, grossLoss: 1000, grossPnl: 500 },
+      })));
+    const { container } = renderCard('profit-factor');
+    await loadData();
+    expect(container.querySelector('[data-testid="kpi-pnl-split-bar"]')).not.toBeNull();
+  });
+
+  it('Profit Factor omits the split bar when grossPnl canonical data is absent', async () => {
+    // profitFactor present but no grossPnl → value-first card, no fabricated viz.
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ profitFactor: 1.5 })));
+    const { container } = renderCard('profit-factor');
+    await loadData();
+    expect(container.querySelector('[data-testid="kpi-pnl-split-bar"]')).toBeNull();
+    expect(container.querySelector('[data-kpi-microviz-slot]')).toBeNull();
+  });
+
+  it('Payoff Ratio renders the win/loss relationship bar only when avgWin/avgLoss exist', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({
+        payoffRatio: 1.84,
+        avgWin: 363,
+        avgLoss: 263,
+      })));
+    const { container } = renderCard('payoff-ratio');
+    await loadData();
+    const bar = container.querySelector('[data-testid="kpi-pnl-split-bar"]');
+    expect(bar).not.toBeNull();
+    // Captions carry the Avg Win / Avg Loss relationship.
+    expect(screen.getByText('Avg Win')).toBeDefined();
+    expect(screen.getByText('Avg Loss')).toBeDefined();
+    expect(screen.getByText('$363')).toBeDefined();
+    expect(screen.getByText('-$263')).toBeDefined();
+  });
+
+  it('Payoff Ratio stays value-first when avgWin/avgLoss are missing', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ payoffRatio: 1.84 })));
+    const { container } = renderCard('payoff-ratio');
+    await loadData();
+    expect(container.querySelector('[data-testid="kpi-pnl-split-bar"]')).toBeNull();
+    expect(container.querySelector('[data-kpi-microviz-slot]')).toBeNull();
+  });
+
+  it('empty/no-trade state remains an em dash, not a fabricated zero', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 0, winRate: 0.5 }, { tradeCount: 0 })));
+    const { container } = renderCard('net-pnl');
+    await loadData();
+    expect(container.querySelector('[data-kpi-value="net-pnl"]')?.textContent).toBe('—');
+    // No microviz without trades — no fabricated visuals either.
+    expect(container.querySelector('[data-kpi-microviz-slot]')).toBeNull();
+  });
+
+  it('Customize mode does not change card geometry (fixed height, no layout jump)', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000 }, {}, sparklineCharts)));
+    const normal = renderCard('net-pnl');
+    await loadData();
+    const normalCard = normal.container.querySelector('[data-kpi-card="net-pnl"]') as HTMLElement;
+
+    const edit = render(
+      <PerformanceDashboardProvider>
+        <KpiCard
+          instanceId="inst-1"
+          widgetType="net-pnl"
+          config={{}}
+          editMode
+          onConfigure={() => {}}
+          onDuplicate={() => {}}
+          onRemove={() => {}}
+          onReset={() => {}}
+        />
+      </PerformanceDashboardProvider>,
+    );
+    const editCard = edit.container.querySelector('[data-kpi-card="net-pnl"]') as HTMLElement;
+    // Identical card shell class in both modes: entering Customize never
+    // changes card height or adds/removes height-affecting classes.
+    expect(editCard.className).toBe(normalCard.className);
+    expect(editCard.className).toContain('h-kpi-card');
+    // Customize hides the microviz but keeps the fixed-height shell.
+    expect(edit.container.querySelector('[data-kpi-microviz-slot]')).toBeNull();
+  });
+});
+
 // ── Equal-geometry and microviz-containment coverage (R003, S03/T2) ────────
 
 describe('KpiCard equal geometry and microviz containment', () => {
@@ -397,7 +585,7 @@ describe('KpiCard equal geometry and microviz containment', () => {
     expect(slot).not.toBeNull();
     // Reserved fixed slot: exact height, shrink-proof, overflow-clipped, so
     // the visualization can never change the card height or escape bounds.
-    expect(slot.className).toContain('h-10');
+    expect(slot.className).toContain('h-14');
     expect(slot.className).toContain('overflow-hidden');
     expect(slot.className).toContain('shrink-0');
     // The slot is a direct child of the card (contained within card bounds).
@@ -416,22 +604,22 @@ describe('KpiCard equal geometry and microviz containment', () => {
     const card = container.querySelector('[data-kpi-card="win-rate"]') as HTMLElement;
     const slot = container.querySelector('[data-kpi-microviz-slot]') as HTMLElement;
     expect(slot).not.toBeNull();
-    expect(slot.className).toContain('h-10');
+    expect(slot.className).toContain('h-14');
     expect(container.querySelector('[data-testid="kpi-donut"]')).not.toBeNull();
     expect(slot.parentElement).toBe(card);
   });
 
   it('keeps the same fixed-height class whether or not a microviz is present', async () => {
-    // Net P&L with sparkline data vs Profit Factor without any microviz.
+    // Net P&L with sparkline data vs Average R which never has a microviz.
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000, totalInitialRisk: 200, profitFactor: 1.5 }, {}, sparklineCharts)));
+      .mockResolvedValue(okResponse(analyticsWith({ netPnl: 1000, totalInitialRisk: 200, avgR: 0.5 }, {}, sparklineCharts)));
     const withViz = renderCard('net-pnl');
-    const withoutViz = renderCard('profit-factor');
+    const withoutViz = renderCard('average-r');
     await loadData();
 
     const cardWithViz = withViz.container.querySelector('[data-kpi-card="net-pnl"]') as HTMLElement;
-    const cardWithoutViz = withoutViz.container.querySelector('[data-kpi-card="profit-factor"]') as HTMLElement;
+    const cardWithoutViz = withoutViz.container.querySelector('[data-kpi-card="average-r"]') as HTMLElement;
     // Both cards carry the identical fixed-height token class: the microviz
     // adds no height-affecting class, so geometry stays equal across cards.
     expect(cardWithViz.className).toContain('h-kpi-card');

@@ -731,8 +731,9 @@ test.describe('filter propagation (T3)', () => {
 //
 // Proves at 1440px that the five curated default KPI cards share one row with
 // equal geometry (same top/bottom edges, height delta ≤ 2px, each inside the
-// 108-112px window) and that microvisualizations stay inside the card bounds
-// without changing card height. Then proves the customize persistence contract:
+// 124-132px window, Corrective Task 1) and that microvisualizations stay inside
+// the card bounds without changing card height. Then proves the customize
+// persistence contract:
 // Customize → reorder two cards via the visible arrow controls → Save → reload
 // → the saved order is restored (user-owned dashboards persist; the immutable
 // system default is the restore baseline).
@@ -753,8 +754,9 @@ test.describe('KPI rail equal geometry (S03 R003)', () => {
     await gotoPerformance(page);
     await waitForAnalytics(page);
 
-    // Microviz slots require analytics data: sparkline (Net P&L) + donut (Win Rate).
-    await expect(page.locator('[data-kpi-microviz-slot]')).toHaveCount(2, { timeout: 60_000 });
+    // Microviz slots require analytics data: sparkline (Net P&L), donut (Win Rate),
+    // split bar (Profit Factor), split bar (Payoff Ratio). Average R stays value-first.
+    await expect(page.locator('[data-kpi-microviz-slot]')).toHaveCount(4, { timeout: 60_000 });
 
     const cards = page.locator('[data-kpi-card]');
     await expect(cards).toHaveCount(5);
@@ -773,10 +775,10 @@ test.describe('KPI rail equal geometry (S03 R003)', () => {
     const bottoms = geometry.map((g) => g.bottom);
     const heights = geometry.map((g) => g.height);
 
-    // Every card sits inside the 108-112px window.
+    // Every card sits inside the 124-132px window (Corrective Task 1 geometry).
     for (const h of heights) {
-      expect(h).toBeGreaterThanOrEqual(108);
-      expect(h).toBeLessThanOrEqual(112);
+      expect(h).toBeGreaterThanOrEqual(124);
+      expect(h).toBeLessThanOrEqual(132);
     }
     // Shared top and bottom edges (delta ≤ 1px guards subpixel rounding).
     expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(1);
@@ -785,9 +787,9 @@ test.describe('KPI rail equal geometry (S03 R003)', () => {
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
 
     // Microviz does not change card height: a card WITH a slot (net-pnl) has the
-    // same height as a card WITHOUT (profit-factor).
+    // same height as a card WITHOUT (average-r is value-first).
     const withViz = geometry.find((g) => g.id === 'net-pnl');
-    const withoutViz = geometry.find((g) => g.id === 'profit-factor');
+    const withoutViz = geometry.find((g) => g.id === 'average-r');
     expect(withViz).toBeDefined();
     expect(withoutViz).toBeDefined();
     if (!withViz || !withoutViz) throw new Error('geometry missing expected cards');
@@ -808,7 +810,7 @@ test.describe('KPI rail equal geometry (S03 R003)', () => {
         );
       }),
     );
-    expect(containment).toHaveLength(2);
+    expect(containment).toHaveLength(4);
     expect(containment.every((inside) => inside)).toBe(true);
   });
 });
@@ -1563,7 +1565,7 @@ async function walkChecklist(
     kpiRows.every((row) => {
       const tops = row.map((c) => c.top);
       const bottoms = row.map((c) => c.bottom);
-      return Math.max(...tops) - Math.min(...tops) <= 1 && Math.max(...bottoms) - Math.min(...bottoms) <= 1 && row.every((c) => c.height >= 108 && c.height <= 112);
+      return Math.max(...tops) - Math.min(...tops) <= 1 && Math.max(...bottoms) - Math.min(...bottoms) <= 1 && row.every((c) => c.height >= 124 && c.height <= 132);
     });
   if (kpiGeometryOk) {
     rec('KPI equal-height geometry', 'PASS', `cards=5 rows=${kpiRows.length} heights=${cardGeo.map((c) => Math.round(c.height)).join('/')}`);

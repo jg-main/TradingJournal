@@ -248,6 +248,7 @@ identifiers, technical values, and selected dense numeric contexts.
 | `--font-size-xl` | 1.25rem (20px) | Page titles |
 | `--font-size-2xl` | 1.5rem (24px) | Panel / product headings |
 | `--font-size-3xl` | 2rem (32px) | Numeric KPIs |
+| `--font-size-kpi` | 1.75rem (28px) | KPI rail primary value — the five-card default uses this size for its dominant metric. Consumed via the `text-kpi` Tailwind utility (`@theme inline` maps `--text-kpi: var(--font-size-kpi)`). |
 
 **Hierarchy treatments.** Reusable treatments: application/product name
 (`--font-size-2xl`, `--font-heading`), page title (`--font-size-xl`), page
@@ -304,7 +305,7 @@ not be content-driven (equal-height KPI rail cards):
 
 | Token | Value | Use |
 |---|---|---|
-| `--kpi-card-h` | `6.875rem` (110px) | Fixed KPI rail card height — the five-card default shares identical top/bottom edges; the microvisualization lives in a reserved fixed slot and can never change it. Consumed via the `h-kpi-card` Tailwind utility. |
+| `--kpi-card-h` | `8rem` (128px) | Fixed KPI rail card height — the five-card default shares identical top/bottom edges; the microvisualization lives in a reserved fixed slot and can never change it. Consumed via the `h-kpi-card` Tailwind utility. |
 
 ---
 

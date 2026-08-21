@@ -9,25 +9,35 @@ export interface SparklineProps {
   values: number[];
   width?: number;
   height?: number;
+  strokeWidth?: number;
+  /** Render a soft area fill under the line (same semantic color, low opacity). */
+  areaFill?: boolean;
   positiveColor?: string;
   negativeColor?: string;
 }
 
 /**
- * Tiny inline SVG sparkline for KPI cards.
+ * Inline SVG sparkline for KPI cards.
  * Uses currentColor-compatible stroke via CSS var lookup at runtime by
- * passing semantic colors as props (resolved from chart palette).
+ * passing semantic colors as props (resolved from chart palette). The line is
+ * sized to contribute to the card (default 140×40) and colored by the
+ * cumulative trend (last ≥ first → positive, else negative).
  */
 export function Sparkline({
   values,
-  width = 96,
-  height = 28,
+  width = 140,
+  height = 40,
+  strokeWidth = 2.5,
+  areaFill = true,
   positiveColor = 'var(--color-positive)',
   negativeColor = 'var(--color-negative)',
 }: SparklineProps) {
-  const path = useMemo(() => buildSparklinePath(values, width, height), [values, width, height]);
+  const { line, area } = useMemo(
+    () => buildSparklinePaths(values, width, height),
+    [values, width, height],
+  );
 
-  if (!path) return null;
+  if (!line) return null;
 
   const last = values[values.length - 1];
   const first = values[0];
@@ -42,17 +52,31 @@ export function Sparkline({
       aria-hidden
       data-testid="kpi-sparkline"
     >
-      <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      {areaFill && area && (
+        <path d={area} fill={color} fillOpacity={0.12} stroke="none" />
+      )}
+      <path
+        d={line}
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
-function buildSparklinePath(values: number[], width: number, height: number): string | null {
-  if (!values || values.length < 2) return null;
+function buildSparklinePaths(
+  values: number[],
+  width: number,
+  height: number,
+): { line: string | null; area: string | null } {
+  if (!values || values.length < 2) return { line: null, area: null };
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
-  const pad = 2;
+  const pad = 3;
 
   const points = values.map((v, i) => {
     const x = (i / (values.length - 1)) * (width - pad * 2) + pad;
@@ -60,7 +84,9 @@ function buildSparklinePath(values: number[], width: number, height: number): st
     return [x, y] as const;
   });
 
-  return points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const line = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const area = `${line} L${points[points.length - 1][0].toFixed(1)},${height} L${points[0][0].toFixed(1)},${height} Z`;
+  return { line, area };
 }
 
 // ── Donut (win-rate gauge) ──────────────────────────────────────────────────
@@ -73,10 +99,11 @@ export interface DonutProps {
 }
 
 /**
- * Small donut showing a fraction (e.g., win rate).
- * Renders an arc; color shifts by performance (>=0.5 positive else negative).
+ * Donut showing a fraction (e.g., win rate). Sized to contribute to the card
+ * (default 56×56). Renders an arc; color shifts by performance (>=0.5 positive
+ * else negative).
  */
-export function Donut({ fraction, size = 40, strokeWidth = 5 }: DonutProps) {
+export function Donut({ fraction, size = 56, strokeWidth = 7 }: DonutProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(1, fraction));
@@ -115,12 +142,87 @@ export function Donut({ fraction, size = 40, strokeWidth = 5 }: DonutProps) {
   );
 }
 
+// ── Profit-vs-loss split bar (profit factor / payoff ratio) ─────────────────
+
+export interface PnlSplitBarProps {
+  /** Positive magnitude (e.g., gross profit or average win). */
+  positive: number;
+  /** Negative magnitude (e.g., gross loss or average loss). */
+  negative: number;
+  positiveLabel?: string;
+  negativeLabel?: string;
+  positiveValue?: string;
+  negativeValue?: string;
+  /** Render the caption row (labels + values) below the bar. */
+  showCaptions?: boolean;
+}
+
+/**
+ * Horizontal split bar showing the proportional relationship between a
+ * positive magnitude (profit) and a negative magnitude (loss) using the
+ * semantic financial colors. Widths are proportional to the two magnitudes;
+ * a center divider marks the boundary. Used by Profit Factor (gross profit vs
+ * gross loss) and Payoff Ratio (average win vs average loss). When captions
+ * are enabled, tiny labels/values render beneath the bar.
+ *
+ * Guard: renders nothing when both magnitudes are non-positive.
+ */
+export function PnlSplitBar({
+  positive,
+  negative,
+  positiveLabel,
+  negativeLabel,
+  positiveValue,
+  negativeValue,
+  showCaptions = false,
+}: PnlSplitBarProps) {
+  const total = positive + negative;
+  if (total <= 0 || positive <= 0 || negative <= 0) return null;
+
+  const posPct = (positive / total) * 100;
+  const negPct = 100 - posPct;
+
+  return (
+    <div className="w-full" data-testid="kpi-pnl-split-bar">
+      <div
+        className="flex h-2 w-full overflow-hidden rounded-full"
+        role="img"
+        aria-label={`Profit ${posPct.toFixed(0)}% vs loss ${negPct.toFixed(0)}%`}
+      >
+        <div className="h-full bg-positive" style={{ width: `${posPct}%` }} />
+        <div className="h-full bg-negative" style={{ width: `${negPct}%` }} />
+      </div>
+      {showCaptions && (positiveLabel || negativeLabel) && (
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs leading-none text-muted-foreground tabular-nums">
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="size-1.5 shrink-0 rounded-full bg-positive" aria-hidden />
+            <span className="truncate">{positiveLabel}</span>
+            {positiveValue !== undefined && <span className="truncate text-positive">{positiveValue}</span>}
+          </span>
+          <span className="flex min-w-0 items-center gap-1">
+            {negativeValue !== undefined && <span className="truncate text-negative">{negativeValue}</span>}
+            <span className="truncate">{negativeLabel}</span>
+            <span className="size-1.5 shrink-0 rounded-full bg-negative" aria-hidden />
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Combined micro-viz selector ─────────────────────────────────────────────
 
 export interface MicroVizProps {
-  kind: 'sparkline' | 'donut';
+  kind: 'sparkline' | 'donut' | 'pnl-split';
   values?: number[];
   fraction?: number;
+  positive?: number;
+  negative?: number;
+  positiveLabel?: string;
+  negativeLabel?: string;
+  positiveValue?: string;
+  negativeValue?: string;
+  showCaptions?: boolean;
 }
 
 /**
@@ -128,12 +230,22 @@ export interface MicroVizProps {
  * when data is absent. Guarded: only renders when data is meaningful.
  *
  * Containment contract: KpiCard hosts the visualization inside a fixed
- * 40px reserved slot (h-10, overflow-hidden). Default sizes must stay within
- * that slot — sparkline 96×28, donut 40×40 — so the micro-viz can never
- * change card height. `shrink-0` on both SVGs prevents flex from squeezing
- * or distorting them inside the slot.
+ * reserved slot (overflow-hidden) so the micro-viz can never change card
+ * height. `shrink-0` on the SVGs prevents flex from squeezing or distorting
+ * them inside the slot.
  */
-export function MicroViz({ kind, values, fraction }: MicroVizProps) {
+export function MicroViz({
+  kind,
+  values,
+  fraction,
+  positive,
+  negative,
+  positiveLabel,
+  negativeLabel,
+  positiveValue,
+  negativeValue,
+  showCaptions,
+}: MicroVizProps) {
   if (kind === 'sparkline') {
     if (!values || values.length < 2) return null;
     return <Sparkline values={values} />;
@@ -141,6 +253,20 @@ export function MicroViz({ kind, values, fraction }: MicroVizProps) {
   if (kind === 'donut') {
     if (typeof fraction !== 'number' || Number.isNaN(fraction)) return null;
     return <Donut fraction={fraction} />;
+  }
+  if (kind === 'pnl-split') {
+    if (typeof positive !== 'number' || typeof negative !== 'number') return null;
+    return (
+      <PnlSplitBar
+        positive={positive}
+        negative={negative}
+        positiveLabel={positiveLabel}
+        negativeLabel={negativeLabel}
+        positiveValue={positiveValue}
+        negativeValue={negativeValue}
+        showCaptions={showCaptions}
+      />
+    );
   }
   return null;
 }

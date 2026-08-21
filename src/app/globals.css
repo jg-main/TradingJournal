@@ -105,6 +105,9 @@
 
   /* KPI rail card fixed height → h-kpi-card utility (fixed equal geometry) */
   --spacing-kpi-card: var(--kpi-card-h);
+
+  /* KPI rail primary value size → text-kpi utility (28px, Corrective Task 1) */
+  --text-kpi: var(--font-size-kpi);
 }
 
 /* ── Light theme ────────────────────────────────────────────────────────── */
@@ -180,6 +183,7 @@
   --font-size-xl: 1.25rem; /* 20px — page titles */
   --font-size-2xl: 1.5rem; /* 24px — panel / product headings */
   --font-size-3xl: 2rem; /* 32px — numeric KPIs */
+  --font-size-kpi: 1.75rem; /* 28px — KPI rail primary value */
 
   /* 8. Density — control heights, rows, spacing */
   --density-control-h-xs: 1.5rem; /* 24px — micro controls */
@@ -196,7 +200,7 @@
   --density-space-6: 2rem; /* 32px */
 
   /* 9. Component dimensions — fixed surface heights (theme-independent) */
-  --kpi-card-h: 6.875rem; /* 110px — KPI rail card; fixed so the five-card rail shares identical geometry */
+  --kpi-card-h: 8rem; /* 128px — KPI rail card; fixed so the five-card rail shares identical geometry */
 }
 
 /* ── Dark theme — intentionally designed graphite, not inversion ────────── */
