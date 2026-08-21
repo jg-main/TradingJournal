@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { KpiCard } from '../kpi-card';
 import { PerformanceDashboardProvider, usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
@@ -38,7 +39,7 @@ describe('KpiCard', () => {
     expect(screen.getByText('Total Trades')).toBeDefined();
   });
 
-  it('renders edit mode controls when editMode is on', () => {
+  it('renders the ⋯ actions menu trigger in edit mode (scattered ⚙/+/× replaced)', () => {
     render(
       <PerformanceDashboardProvider>
         <KpiCard
@@ -49,19 +50,77 @@ describe('KpiCard', () => {
           onConfigure={() => {}}
           onDuplicate={() => {}}
           onRemove={() => {}}
+          onReset={() => {}}
         />
       </PerformanceDashboardProvider>,
     );
-    expect(screen.getByLabelText('Configure Net P&L')).toBeDefined();
-    expect(screen.getByLabelText('Duplicate Net P&L')).toBeDefined();
-    expect(screen.getByLabelText('Remove Net P&L')).toBeDefined();
-  });
-
-  it('does not render edit controls in normal mode', () => {
-    renderCard('net-pnl');
+    expect(screen.getByLabelText('Actions for Net P&L')).toBeDefined();
+    // The scattered per-action buttons are gone.
     expect(screen.queryByLabelText('Configure Net P&L')).toBeNull();
     expect(screen.queryByLabelText('Duplicate Net P&L')).toBeNull();
     expect(screen.queryByLabelText('Remove Net P&L')).toBeNull();
+  });
+
+  it('does not render the actions menu trigger in normal mode', () => {
+    renderCard('net-pnl');
+    expect(screen.queryByLabelText('Actions for Net P&L')).toBeNull();
+  });
+
+  it('opens the actions menu with Configure, Duplicate, Remove, and Reset', async () => {
+    const user = userEvent.setup();
+    render(
+      <PerformanceDashboardProvider>
+        <KpiCard
+          instanceId="inst-1"
+          widgetType="net-pnl"
+          config={{}}
+          editMode
+          onConfigure={() => {}}
+          onDuplicate={() => {}}
+          onRemove={() => {}}
+          onReset={() => {}}
+        />
+      </PerformanceDashboardProvider>,
+    );
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    expect(screen.getByRole('menuitem', { name: 'Configure' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Duplicate' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Remove' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Reset' })).toBeDefined();
+  });
+
+  it('invokes the matching handler when a menu item is selected', async () => {
+    const user = userEvent.setup();
+    const onConfigure = vi.fn();
+    const onDuplicate = vi.fn();
+    const onRemove = vi.fn();
+    const onReset = vi.fn();
+    render(
+      <PerformanceDashboardProvider>
+        <KpiCard
+          instanceId="inst-1"
+          widgetType="net-pnl"
+          config={{ titleOverride: 'T' }}
+          editMode
+          onConfigure={onConfigure}
+          onDuplicate={onDuplicate}
+          onRemove={onRemove}
+          onReset={onReset}
+        />
+      </PerformanceDashboardProvider>,
+    );
+    await user.click(screen.getByLabelText('Actions for T'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Duplicate' }));
+    expect(onDuplicate).toHaveBeenCalledWith('inst-1');
+    await user.click(screen.getByLabelText('Actions for T'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Remove' }));
+    expect(onRemove).toHaveBeenCalledWith('inst-1');
+    await user.click(screen.getByLabelText('Actions for T'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Reset' }));
+    expect(onReset).toHaveBeenCalledWith('inst-1');
+    await user.click(screen.getByLabelText('Actions for T'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    expect(onConfigure).toHaveBeenCalledWith('inst-1', { titleOverride: 'T' });
   });
 
   it('renders a widget-level error state when the analytics fetch fails', async () => {
@@ -343,17 +402,14 @@ describe('KpiCard equal geometry and microviz containment', () => {
           onConfigure={() => {}}
           onDuplicate={() => {}}
           onRemove={() => {}}
+          onReset={() => {}}
         />
       </PerformanceDashboardProvider>,
     );
     const card = container.querySelector('[data-kpi-card="net-pnl"]') as HTMLElement;
     expect(card).not.toBeNull();
-    // Configure/duplicate/remove live inside the card root (the header row),
-    // not in an external overlay — they stay within the card geometry.
-    // within() uses text matching (the & in the label is unreliable in
-    // jsdom CSS attribute selectors), and scopes the query to the card root.
-    expect(within(card).getByLabelText('Configure Net P&L')).toBeDefined();
-    expect(within(card).getByLabelText('Duplicate Net P&L')).toBeDefined();
-    expect(within(card).getByLabelText('Remove Net P&L')).toBeDefined();
+    // The ⋯ actions trigger lives inside the card root (the header row), not
+    // in an external overlay — it stays within the card geometry.
+    expect(within(card).getByLabelText('Actions for Net P&L')).toBeDefined();
   });
 });

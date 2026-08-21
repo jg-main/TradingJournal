@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 import { DashboardChart } from '@/components/dashboard-chart';
 import { useChartPalette } from '@/hooks/use-chart-palette';
@@ -34,11 +34,8 @@ import type { ChartPalette } from '@/lib/chart-palette';
 // ── Widget → data slice + builder mapping ──────────────────────────────────
 
 export interface ChartWidgetProps {
-  instanceId: string;
   widgetType: string;
   config: Record<string, unknown>;
-  onConfigChange?: (instanceId: string, config: Record<string, unknown>) => void;
-  editMode?: boolean;
 }
 
 interface ChartDataExtractors {
@@ -132,10 +129,9 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export function ChartWidget({ instanceId, widgetType, config, onConfigChange, editMode }: ChartWidgetProps) {
+export function ChartWidget({ widgetType, config }: ChartWidgetProps) {
   const { analyticsData, isLoading, error } = usePerformanceDashboard();
   const palette = useChartPalette();
-  const [showSeriesMenu, setShowSeriesMenu] = useState(false);
 
   const extractor = CHART_EXTRACTORS[widgetType];
   const definition = PERFORMANCE_WIDGET_REGISTRY[widgetType];
@@ -159,39 +155,7 @@ export function ChartWidget({ instanceId, widgetType, config, onConfigChange, ed
     <div className="border border-border rounded-lg bg-card p-3 h-full flex flex-col">
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-sm font-medium truncate">{typeof config.titleOverride === 'string' ? config.titleOverride : definition.title}</h4>
-        {editMode && (
-          <button
-            onClick={() => setShowSeriesMenu((v) => !v)}
-            className="text-xs px-1.5 py-0.5 rounded border border-border hover:bg-muted"
-            aria-label={`Series visibility for ${definition.title}`}
-          >
-            {showSeriesMenu ? 'Hide series' : 'Series'}
-          </button>
-        )}
       </div>
-
-      {showSeriesMenu && editMode && (
-        <div className="mb-2 flex flex-wrap gap-2 text-xs">
-          {extractor.series.map((s) => {
-            const visible = (config.visibleSeries as string[] | undefined) ?? extractor.series;
-            const isVisible = visible.includes(s);
-            return (
-              <label key={s} className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isVisible}
-                  onChange={() => {
-                    const current = (config.visibleSeries as string[] | undefined) ?? extractor.series;
-                    const next = isVisible ? current.filter((x) => x !== s) : [...current, s];
-                    onConfigChange?.(instanceId, { ...config, visibleSeries: next });
-                  }}
-                />
-                {s}
-              </label>
-            );
-          })}
-        </div>
-      )}
 
       <div className="flex-1 min-h-0">
         {error && !analyticsData ? (

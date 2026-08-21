@@ -22,6 +22,7 @@ export function KpiRow({ editMode }: KpiRowProps) {
     duplicateInstance,
     updateInstanceConfig,
     reorderInstance,
+    resetInstance,
     resetToDefault,
   } = usePerformanceInstanceContext().kpi;
 
@@ -35,6 +36,11 @@ export function KpiRow({ editMode }: KpiRowProps) {
   const handleMetricSelect = (instanceId: string, metricId: string) => {
     updateInstanceConfig(instanceId, { metricId });
     setConfiguringId(null);
+  };
+
+  // Per-widget Reset: restore the widget's registry default config/layout.
+  const handleReset = (instanceId: string) => {
+    resetInstance(instanceId);
   };
 
   const handleMoveUp = (index: number) => {
@@ -62,6 +68,7 @@ export function KpiRow({ editMode }: KpiRowProps) {
               onConfigure={handleConfigure}
               onDuplicate={duplicateInstance}
               onRemove={removeInstance}
+              onReset={handleReset}
             />
             {editMode && (
               <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 flex gap-1">

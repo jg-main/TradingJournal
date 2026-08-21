@@ -6,8 +6,8 @@ import 'react-grid-layout/css/styles.css';
 import { GripVertical } from 'lucide-react';
 import { usePerformanceInstanceContext } from './performance-instance-context';
 import { ChartWidget } from './chart-widget';
+import { WidgetActionsMenu } from './widget-actions-menu';
 import { PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
-import type { WidgetConfig } from '@/lib/performance-view-types';
 
 export interface ChartGridProps {
   editMode?: boolean;
@@ -58,8 +58,8 @@ export function ChartGrid({ editMode }: ChartGridProps) {
     addInstance,
     removeInstance,
     duplicateInstance,
-    updateInstanceConfig,
     updateInstanceLayout,
+    resetInstance,
     resetToDefault,
   } = usePerformanceInstanceContext().chart;
 
@@ -127,35 +127,25 @@ export function ChartGrid({ editMode }: ChartGridProps) {
                   >
                     <GripVertical className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Drag to move</span>
-                    <span className="ml-auto flex items-center gap-1">
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={() => duplicateInstance(instance.instanceId)}
-                        className="rounded border border-border bg-background px-1 py-0.5 text-[10px] hover:bg-muted"
-                        aria-label={`Duplicate ${widgetTitle}`}
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={() => removeInstance(instance.instanceId)}
-                        className="rounded border border-border bg-background px-1 py-0.5 text-[10px] text-destructive hover:bg-destructive/10"
-                        aria-label={`Remove ${widgetTitle}`}
-                      >
-                        ×
-                      </button>
+                    <span className="ml-auto">
+                      <WidgetActionsMenu
+                        widgetTitle={widgetTitle}
+                        // Configure opens the typed widget settings dialog;
+                        // wired to the shared ConfigureDialog in T2. The menu
+                        // contract (Configure/Duplicate/Remove/Reset) is stable
+                        // from T1 so the ⋯ menu is consistent across widgets.
+                        onConfigure={() => undefined}
+                        onDuplicate={() => duplicateInstance(instance.instanceId)}
+                        onRemove={() => removeInstance(instance.instanceId)}
+                        onReset={() => resetInstance(instance.instanceId)}
+                      />
                     </span>
                   </div>
                 )}
                 <div className={editMode ? 'min-h-0 flex-1' : 'h-full'}>
                   <ChartWidget
-                    instanceId={instance.instanceId}
                     widgetType={instance.widgetType}
                     config={instance.config}
-                    editMode={editMode}
-                    onConfigChange={(id, cfg) => updateInstanceConfig(id, cfg as WidgetConfig)}
                   />
                 </div>
               </div>

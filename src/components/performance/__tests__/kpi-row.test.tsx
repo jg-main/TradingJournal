@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { KpiRow } from '../kpi-row';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
@@ -55,32 +56,49 @@ describe('KpiRow', () => {
     expect(screen.getByText('Median R')).toBeDefined();
   });
 
-  it('duplicates a KPI card creating a second instance', () => {
+  it('duplicates a KPI card creating a second instance via the ⋯ menu', async () => {
+    const user = userEvent.setup();
     renderKpiRow(true);
-    const duplicateButtons = screen.getAllByLabelText('Duplicate Net P&L');
-    expect(duplicateButtons.length).toBeGreaterThan(0);
-    fireEvent.click(duplicateButtons[0]);
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Duplicate' }));
     // Two Net P&L cards now
     expect(screen.getAllByText('Net P&L').length).toBe(2);
   });
 
-  it('removes a KPI card', () => {
+  it('removes a KPI card via the ⋯ menu', async () => {
+    const user = userEvent.setup();
     renderKpiRow(true);
     const before = screen.getAllByText('Net P&L').length;
-    const removeButtons = screen.getAllByLabelText('Remove Net P&L');
-    fireEvent.click(removeButtons[0]);
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Remove' }));
     // queryAllByText so removing the final card (0 matches) is a valid assertion.
     expect(screen.queryAllByText('Net P&L').length).toBe(before - 1);
   });
 
-  it('resets to default instances', () => {
+  it('resets to default instances', async () => {
+    const user = userEvent.setup();
     renderKpiRow(true);
-    // Remove a card, then reset
-    fireEvent.click(screen.getAllByLabelText('Remove Net P&L')[0]);
-    const afterRemove = screen.queryAllByText('Net P&L').length;
-    expect(afterRemove).toBeLessThan(screen.getAllByText('Win Rate').length + 1);
-    fireEvent.click(screen.getByText('Reset'));
+    // Remove a card via its ⋯ menu, then use the grid-level Reset button.
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Remove' }));
+    expect(screen.queryByText('Net P&L')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
     expect(screen.getAllByText('Net P&L').length).toBeGreaterThan(0);
+  });
+
+  it('resets a single widget to its registry default via the ⋯ menu', async () => {
+    const user = userEvent.setup();
+    renderKpiRow(true);
+    // Configure the Net P&L card to show Total Trades instead.
+    await user.click(screen.getByLabelText('Actions for Net P&L'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Configure' }));
+    await user.click(screen.getByText('Total Trades'));
+    expect(screen.getByText('Total Trades')).toBeDefined();
+    // Per-widget Reset restores the registry default metric.
+    await user.click(screen.getByLabelText('Actions for Total Trades'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Reset' }));
+    expect(screen.queryByText('Total Trades')).toBeNull();
+    expect(screen.getByText('Net P&L')).toBeDefined();
   });
 
   it('reorders KPI cards with the move controls', () => {

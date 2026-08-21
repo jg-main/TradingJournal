@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { WidgetInstance, WidgetConfig } from '@/lib/performance-view-types';
-import { getDefaultWidgetInstances } from '@/lib/performance-widget-registry';
+import { getDefaultWidgetInstances, PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -14,6 +14,7 @@ export interface PerformanceInstanceStore {
   updateInstanceConfig: (instanceId: string, config: WidgetConfig) => void;
   updateInstanceLayout: (instanceId: string, layout: WidgetInstance['layout']) => void;
   reorderInstance: (fromIndex: number, toIndex: number) => void;
+  resetInstance: (instanceId: string) => void;
   resetToDefault: () => void;
   replaceInstances: (instances: WidgetInstance[]) => void;
 }
@@ -102,6 +103,36 @@ export function usePerformanceInstances(category: 'kpi' | 'chart'): PerformanceI
     });
   }, []);
 
+  /**
+   * Restore one widget instance to its registry defaults: config cleared
+   * (registry fallbacks apply) and layout reset to the registry defaultLayout
+   * with the instance's own min/max bounds. Used by the ⋯ menu's Reset action.
+   */
+  const resetInstance = useCallback((instanceId: string) => {
+    setInstances((prev) =>
+      prev.map((i) => {
+        if (i.instanceId !== instanceId) return i;
+        const def = PERFORMANCE_WIDGET_REGISTRY[i.widgetType];
+        if (!def) return { ...i, config: {} };
+        return {
+          ...i,
+          config: {},
+          layout: {
+            i: i.instanceId,
+            x: def.defaultLayout.x,
+            y: def.defaultLayout.y,
+            w: def.defaultLayout.w,
+            h: def.defaultLayout.h,
+            minW: def.minSize.w,
+            minH: def.minSize.h,
+            maxW: def.maxSize.w,
+            maxH: def.maxSize.h,
+          },
+        };
+      }),
+    );
+  }, []);
+
   const resetToDefault = useCallback(() => {
     setInstances(toInstances(getDefaultWidgetInstances(category)));
   }, [category]);
@@ -118,6 +149,7 @@ export function usePerformanceInstances(category: 'kpi' | 'chart'): PerformanceI
     updateInstanceConfig,
     updateInstanceLayout,
     reorderInstance,
+    resetInstance,
     resetToDefault,
     replaceInstances,
   };

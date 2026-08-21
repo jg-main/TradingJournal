@@ -4,6 +4,7 @@ import React from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 import { getKpiMetricDefinition, applyUnit } from '@/lib/performance-kpi-catalogue';
 import { MicroViz } from './kpi-micro-viz';
+import { WidgetActionsMenu } from './widget-actions-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { WidgetConfig, PerformanceUnit } from '@/lib/performance-view-types';
 
@@ -48,10 +49,11 @@ export interface KpiCardProps {
   onConfigure?: (instanceId: string, config: WidgetConfig) => void;
   onDuplicate?: (instanceId: string) => void;
   onRemove?: (instanceId: string) => void;
+  onReset?: (instanceId: string) => void;
   editMode?: boolean;
 }
 
-export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplicate, onRemove, editMode }: KpiCardProps) {
+export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplicate, onRemove, onReset, editMode }: KpiCardProps) {
   const { analyticsData, filter, isLoading, error } = usePerformanceDashboard();
 
   const definition = getKpiMetricDefinition(widgetType);
@@ -87,41 +89,19 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
       data-kpi-card={widgetType}
       className="flex h-kpi-card flex-col rounded-lg border border-border bg-card p-3"
     >
-      {/* Header row: title + edit-mode controls — pinned to the shared top edge */}
+      {/* Header row: title + ⋯ actions menu (edit mode) — pinned to the shared top edge */}
       <div className="flex items-center justify-between gap-2">
         <div className="truncate text-xs text-muted-foreground" title={title}>
           {title}
         </div>
         {editMode && (
-          <div className="flex shrink-0 items-center gap-1">
-            {onConfigure && (
-              <button
-                onClick={() => onConfigure(instanceId, config)}
-                className="text-xs px-1.5 py-0.5 rounded border border-border hover:bg-muted"
-                aria-label={`Configure ${title}`}
-              >
-                ⚙
-              </button>
-            )}
-            {onDuplicate && (
-              <button
-                onClick={() => onDuplicate(instanceId)}
-                className="text-xs px-1.5 py-0.5 rounded border border-border hover:bg-muted"
-                aria-label={`Duplicate ${title}`}
-              >
-                +
-              </button>
-            )}
-            {onRemove && (
-              <button
-                onClick={() => onRemove(instanceId)}
-                className="text-xs px-1.5 py-0.5 rounded border border-border hover:bg-destructive/10 text-destructive"
-                aria-label={`Remove ${title}`}
-              >
-                ×
-              </button>
-            )}
-          </div>
+          <WidgetActionsMenu
+            widgetTitle={title}
+            onConfigure={onConfigure ? () => onConfigure(instanceId, config) : undefined}
+            onDuplicate={onDuplicate ? () => onDuplicate(instanceId) : undefined}
+            onRemove={onRemove ? () => onRemove(instanceId) : undefined}
+            onReset={onReset ? () => onReset(instanceId) : undefined}
+          />
         )}
       </div>
       {/* Primary value — fixed top block, aligned across all cards */}

@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { ChartGrid } from '../chart-grid';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
 import { PerformanceInstanceProvider } from '../performance-instance-context';
+import { getDefaultWidgetInstances } from '@/lib/performance-widget-registry';
 
 // ECharts renders to canvas, which jsdom does not implement. The chart body is
 // not under test here — the editing chrome around each widget is.
@@ -48,11 +50,10 @@ describe('ChartGrid', () => {
 
   it('keeps normal mode free of editing chrome', () => {
     const { container } = renderChartGrid();
-    // No drag handles, resize grips, or per-widget action buttons.
+    // No drag handles, resize grips, or per-widget ⋯ actions triggers.
     expect(screen.queryByLabelText(/Drag .* to move/)).toBeNull();
     expect(screen.queryByLabelText('Resize widget')).toBeNull();
-    expect(screen.queryByLabelText(/Duplicate/)).toBeNull();
-    expect(screen.queryByLabelText(/Remove/)).toBeNull();
+    expect(screen.queryByLabelText(/Actions for/)).toBeNull();
     // No edit frame (dashed accent border + tint), no drag-handle class.
     expect(container.querySelector('.chart-edit-frame')).toBeNull();
     expect(container.querySelector('.drag-handle')).toBeNull();
@@ -61,12 +62,11 @@ describe('ChartGrid', () => {
     expect(screen.queryByText('Reset')).toBeNull();
   });
 
-  it('shows one drag handle, resize grip, and action buttons per widget in edit mode', () => {
+  it('shows one drag handle, resize grip, and ⋯ actions menu per widget in edit mode', () => {
     renderChartGrid(true);
     expect(screen.getAllByLabelText(/Drag .* to move/)).toHaveLength(DEFAULT_CHART_COUNT);
     expect(screen.getAllByLabelText('Resize widget')).toHaveLength(DEFAULT_CHART_COUNT);
-    expect(screen.getAllByLabelText(/Duplicate/)).toHaveLength(DEFAULT_CHART_COUNT);
-    expect(screen.getAllByLabelText(/Remove/)).toHaveLength(DEFAULT_CHART_COUNT);
+    expect(screen.getAllByLabelText(/Actions for/)).toHaveLength(DEFAULT_CHART_COUNT);
     // The drag affordance carries an explicit visible label.
     expect(screen.getAllByText('Drag to move')).toHaveLength(DEFAULT_CHART_COUNT);
   });
@@ -89,17 +89,52 @@ describe('ChartGrid', () => {
     expect(body!.querySelector('h4')).not.toBeNull();
   });
 
-  it('removes a chart widget via the edit-mode remove button', () => {
+  it('removes a chart widget via the ⋯ actions menu', async () => {
+    const user = userEvent.setup();
     renderChartGrid(true);
-    fireEvent.click(screen.getAllByLabelText(/Remove/)[0]);
-    expect(screen.getAllByLabelText(/Remove/)).toHaveLength(DEFAULT_CHART_COUNT - 1);
+    await user.click(screen.getAllByLabelText(/Actions for/)[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Remove' }));
+    expect(screen.getAllByLabelText(/Actions for/)).toHaveLength(DEFAULT_CHART_COUNT - 1);
     expect(screen.getAllByLabelText(/Drag .* to move/)).toHaveLength(DEFAULT_CHART_COUNT - 1);
   });
 
-  it('duplicates a chart widget via the edit-mode duplicate button', () => {
+  it('duplicates a chart widget via the ⋯ actions menu', async () => {
+    const user = userEvent.setup();
     renderChartGrid(true);
-    fireEvent.click(screen.getAllByLabelText(/Duplicate/)[0]);
-    expect(screen.getAllByLabelText(/Duplicate/)).toHaveLength(DEFAULT_CHART_COUNT + 1);
+    await user.click(screen.getAllByLabelText(/Actions for/)[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Duplicate' }));
+    expect(screen.getAllByLabelText(/Actions for/)).toHaveLength(DEFAULT_CHART_COUNT + 1);
+  });
+
+  it('opens the ⋯ actions menu with Configure, Duplicate, Remove, and Reset', async () => {
+    const user = userEvent.setup();
+    renderChartGrid(true);
+    await user.click(screen.getAllByLabelText(/Actions for/)[0]);
+    expect(screen.getByRole('menuitem', { name: 'Configure' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Duplicate' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Remove' })).toBeDefined();
+    expect(screen.getByRole('menuitem', { name: 'Reset' })).toBeDefined();
+  });
+
+  it('resets a single chart widget to its registry default config via the ⋯ menu', async () => {
+    const user = userEvent.setup();
+    // Seed the default chart instances with the first one customized.
+    const seeded = getDefaultWidgetInstances('chart').map((d, index) => ({
+      instanceId: d.instanceId,
+      widgetType: d.widgetType,
+      config: index === 0 ? { titleOverride: 'Customized' } : {},
+      layout: { i: d.instanceId, x: d.layout.x, y: d.layout.y, w: d.layout.w, h: d.layout.h, minW: 2, minH: 2 },
+    }));
+    window.localStorage.setItem('performance:chart-instances:v1', JSON.stringify(seeded));
+    renderChartGrid(true);
+    // The customized title renders once.
+    expect(screen.getAllByText('Customized')).toHaveLength(1);
+    // Reset the first widget (its ⋯ trigger label uses the registry title).
+    await user.click(screen.getAllByLabelText(/Actions for/)[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Reset' }));
+    // Config cleared → the customized title is gone and the default returns.
+    expect(screen.queryByText('Customized')).toBeNull();
+    expect(screen.getByText('Daily Cumulative P&L')).toBeDefined();
   });
 
   it('shows grid-level Customize controls only in edit mode', () => {

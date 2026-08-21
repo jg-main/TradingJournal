@@ -111,6 +111,46 @@ describe('usePerformanceInstances', () => {
     expect(result.current.instances[0].widgetType).toBe('net-pnl');
   });
 
+  it('resetInstance clears config and restores the registry default layout for one widget', () => {
+    const { result } = renderHook(() => usePerformanceInstances('chart'));
+    const target = result.current.instances[0];
+    // Mutate config and layout away from registry defaults.
+    act(() => result.current.updateInstanceConfig(target.instanceId, { titleOverride: 'X', metric: 'winRate' }));
+    act(() => result.current.updateInstanceLayout(target.instanceId, { x: 9, y: 9, w: 2, h: 1, i: target.instanceId }));
+
+    act(() => result.current.resetInstance(target.instanceId));
+    const reset = result.current.instances.find((i) => i.instanceId === target.instanceId);
+    expect(reset).toBeDefined();
+    // Config restored to the empty registry default.
+    expect(reset!.config).toEqual({});
+    // Layout restored to the registry defaultLayout with min/max bounds.
+    expect(reset!.layout).toMatchObject({
+      x: 0,
+      y: 10,
+      w: 4,
+      h: 5,
+      minW: 4,
+      minH: 4,
+      maxW: 8,
+      maxH: 10,
+    });
+    expect(reset!.layout.i).toBe(target.instanceId);
+    // Other instances are untouched.
+    expect(result.current.instances[1].config).toEqual({});
+    expect(result.current.instances).toHaveLength(6);
+  });
+
+  it('resetInstance on an unknown widget type only clears config', () => {
+    const { result } = renderHook(() => usePerformanceInstances('kpi'));
+    const target = result.current.instances[0];
+    act(() => result.current.updateInstanceConfig(target.instanceId, { titleOverride: 'X' }));
+    // Force an unknown type via a direct state-like mutation through replace.
+    const unknown = { ...target, widgetType: 'no-such-widget' as string };
+    act(() => result.current.replaceInstances([unknown]));
+    act(() => result.current.resetInstance(unknown.instanceId));
+    expect(result.current.instances[0].config).toEqual({});
+  });
+
   it('replaceInstances swaps the set and falls back to defaults on empty input', () => {
     const { result } = renderHook(() => usePerformanceInstances('kpi'));
     act(() => result.current.replaceInstances([]));

@@ -19,7 +19,7 @@ describe('ChartWidget', () => {
   it('renders an unknown widget type message for unregistered types', () => {
     render(
       <PerformanceDashboardProvider>
-        <ChartWidget instanceId="i1" widgetType="not-a-chart" config={{}} />
+        <ChartWidget widgetType="not-a-chart" config={{}} />
       </PerformanceDashboardProvider>,
     );
     expect(screen.getByText(/Unknown widget type/)).toBeDefined();
@@ -32,7 +32,7 @@ describe('ChartWidget', () => {
     vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise<Response>(() => {}));
     render(
       <PerformanceDashboardProvider>
-        <ChartWidget instanceId="i1" widgetType="daily-cumulative-pnl" config={{}} />
+        <ChartWidget widgetType="daily-cumulative-pnl" config={{}} />
       </PerformanceDashboardProvider>,
     );
     expect(screen.getByText('Daily Cumulative P&L')).toBeDefined();
@@ -46,7 +46,7 @@ describe('ChartWidget', () => {
   it('renders chart title from registry', () => {
     render(
       <PerformanceDashboardProvider>
-        <ChartWidget instanceId="i1" widgetType="net-daily-pnl" config={{}} />
+        <ChartWidget widgetType="net-daily-pnl" config={{}} />
       </PerformanceDashboardProvider>,
     );
     expect(screen.getByText('Net Daily P&L')).toBeDefined();
@@ -55,34 +55,39 @@ describe('ChartWidget', () => {
   it('renders title override', () => {
     render(
       <PerformanceDashboardProvider>
-        <ChartWidget instanceId="i1" widgetType="net-daily-pnl" config={{ titleOverride: 'My Daily P&L' }} />
+        <ChartWidget widgetType="net-daily-pnl" config={{ titleOverride: 'My Daily P&L' }} />
       </PerformanceDashboardProvider>,
     );
     expect(screen.getByText('My Daily P&L')).toBeDefined();
   });
 
-  it('shows series toggle only in edit mode', () => {
+  it('keeps the widget header clean in both modes (series toggle moved under Configure)', () => {
+    // The scattered Series toggle is removed from the chart header (R005); it
+    // moves under the ⋯ menu's Configure action in T2. Neither mode shows it.
     const { unmount } = render(
       <PerformanceDashboardProvider>
-        <ChartWidget instanceId="i1" widgetType="drawdown-curve" config={{}} />
+        <ChartWidget widgetType="drawdown-curve" config={{}} />
       </PerformanceDashboardProvider>,
     );
     expect(screen.queryByLabelText('Series visibility for Drawdown Curve')).toBeNull();
+    // The header keeps the title only.
+    expect(screen.getByText('Drawdown Curve')).toBeDefined();
     unmount();
 
     render(
       <PerformanceDashboardProvider>
-        <ChartWidget instanceId="i1" widgetType="drawdown-curve" config={{}} editMode />
+        <ChartWidget widgetType="drawdown-curve" config={{}} />
       </PerformanceDashboardProvider>,
     );
-    expect(screen.getByLabelText('Series visibility for Drawdown Curve')).toBeDefined();
+    expect(screen.queryByLabelText('Series visibility for Drawdown Curve')).toBeNull();
+    expect(screen.getByText('Drawdown Curve')).toBeDefined();
   });
 
   it('renders a widget-level error state when the analytics fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
     render(
       <PerformanceDashboardProvider>
-        <ChartWidget instanceId="i1" widgetType="daily-cumulative-pnl" config={{}} />
+        <ChartWidget widgetType="daily-cumulative-pnl" config={{}} />
       </PerformanceDashboardProvider>,
     );
     // Debounced fetch fails → chart shows its own error slot, not a crash.
