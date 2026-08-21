@@ -53,6 +53,13 @@ const AccountContext = createContext<AccountContextValue>({
 
 const STORAGE_KEY = 'app:account';
 
+/**
+ * Window event dispatched after account identity-affecting changes (creation,
+ * activation) so consumers that cache account identity — e.g. the account
+ * detail layout header — can re-fetch without a full navigation.
+ */
+export const ACCOUNT_CHANGED_EVENT = 'account:changed';
+
 function readPersistedAccountId(): string {
   if (typeof window === 'undefined') return '';
   try {

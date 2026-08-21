@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { useAccount, ACCOUNT_CHANGED_EVENT } from '@/lib/account-context';
+import { AccountInitialization } from './account-initialization';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -59,6 +61,12 @@ interface EventRow {
 
 interface OverviewResponse {
   accountId: string;
+  /** Whether the account is active (draft accounts start inactive). */
+  isActive: boolean;
+  /** Account display name, for the initialization headline. */
+  name: string | null;
+  /** Base currency, shown when recording an opening balance. */
+  currency: string | null;
   snapshot: OverviewSnapshot;
   positions: PositionRow[];
   positionsTotal: number;
@@ -190,6 +198,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { refresh } = useAccount();
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
@@ -214,6 +223,22 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchOverview();
   }, [fetchOverview]);
+
+  /**
+   * Called after the account is initialized ("Start with zero" activates it):
+   * refresh shared account state (AccountProvider re-resolves selection),
+   * reload the overview so the initialization state is replaced by the live
+   * overview, and notify the detail layout header (via ACCOUNT_CHANGED_EVENT)
+   * so the active/inactive badge updates without a navigation.
+   */
+  const handleInitialized = useCallback(async () => {
+    await Promise.all([refresh(), fetchOverview()]);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent(ACCOUNT_CHANGED_EVENT, { detail: { accountId } }),
+      );
+    }
+  }, [refresh, fetchOverview, accountId]);
 
   // ── Loading State ──────────────────────────────────────────────────
   if (loading) {
@@ -253,6 +278,20 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   }
 
   const { snapshot, positions, positionsTotal, events, eventsTotal } = data;
+
+  // ── Draft account (inactive, no financial events, no positions) ──────
+  // Show the guided initialization state instead of the empty overview so
+  // new accounts present the "Add opening balance" / "Start with zero" paths.
+  if (!data.isActive && eventsTotal === 0 && positionsTotal === 0) {
+    return (
+      <AccountInitialization
+        accountId={data.accountId}
+        accountName={data.name ?? 'your account'}
+        currency={data.currency ?? 'USD'}
+        onInitialized={handleInitialized}
+      />
+    );
+  }
 
   // ── Render ─────────────────────────────────────────────────────────
   return (

@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useCallback, useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { AccountDetailHeader } from '@/components/accounting/account-detail-header';
 import { AccountDetailNav } from '@/components/accounting/account-detail-nav';
+import { ACCOUNT_CHANGED_EVENT } from '@/lib/account-context';
 
 /**
  * Minimal account identity used by the layout shell.
@@ -41,41 +42,49 @@ export default function AccountDetailLayout({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadAccount = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/accounts/${id}`);
 
-    async function loadAccount() {
-      try {
-        const res = await fetch(`/api/accounts/${id}`);
-
-        if (!res.ok) {
-          if (!cancelled) setError('Account not found.');
-          return;
-        }
-
-        const data = await res.json();
-        if (!cancelled) {
-          setAccount({
-            id: data.id,
-            name: data.name,
-            broker: data.broker ?? null,
-            currency: data.currency,
-            isActive: data.isActive,
-          });
-        }
-      } catch {
-        if (!cancelled) setError('Failed to load account.');
-      } finally {
-        if (!cancelled) setLoading(false);
+      if (!res.ok) {
+        setError('Account not found.');
+        return;
       }
+
+      const data = await res.json();
+      setAccount({
+        id: data.id,
+        name: data.name,
+        broker: data.broker ?? null,
+        currency: data.currency,
+        isActive: data.isActive,
+      });
+    } catch {
+      setError('Failed to load account.');
+    } finally {
+      setLoading(false);
     }
-
-    void loadAccount();
-
-    return () => {
-      cancelled = true;
-    };
   }, [id]);
+
+  // Initial identity fetch on mount. The async loader updates loading/error
+  // state after the request resolves.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadAccount();
+  }, [loadAccount]);
+
+  // Re-fetch identity when the account is initialized in place (e.g. "Start
+  // with zero" activates the account) so the header status badge stays
+  // accurate without a navigation.
+  useEffect(() => {
+    function handleAccountChanged(event: Event) {
+      const detail = (event as CustomEvent<{ accountId?: string }>).detail;
+      if (detail?.accountId && detail.accountId !== id) return;
+      void loadAccount();
+    }
+    window.addEventListener(ACCOUNT_CHANGED_EVENT, handleAccountChanged);
+    return () => window.removeEventListener(ACCOUNT_CHANGED_EVENT, handleAccountChanged);
+  }, [id, loadAccount]);
 
   // ── Loading state ──────────────────────────────────────────────────
   if (loading) {

@@ -35,7 +35,7 @@ import {
   deriveBannerState,
   mapPositionRow,
 } from '@/lib/account-detail';
-import type { AccountPerformanceRow, ValuationMarkRow, AccountPositionRow } from '@/db/accounting-repository';
+import type { ValuationMarkRow } from '@/db/accounting-repository';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -76,6 +76,19 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         { status: 404 },
       );
     }
+
+    // 1b. Account identity (name, currency, active state). The workspace
+    //     needs these to render the empty-account initialization state and
+    //     to show the correct overview for a draft (inactive, no events)
+    //     account without a second fetch.
+    const accountRow = sqlite
+      .prepare(
+        `SELECT name, broker, currency, is_active AS isActive
+         FROM accounts WHERE id = ?`,
+      )
+      .get(accountId) as
+      | { name: string; broker: string | null; currency: string | null; isActive: number }
+      | undefined;
 
     // ── 2. Overview Snapshot ──────────────────────────────────────────
     const projection = findAccountPerformance(sqlite, accountId);
@@ -256,6 +269,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(
       {
         accountId,
+        isActive: Boolean(accountRow?.isActive),
+        name: accountRow?.name ?? null,
+        currency: accountRow?.currency ?? null,
         snapshot,
         reconciliation,
         positions: openPositions,
