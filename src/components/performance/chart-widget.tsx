@@ -47,27 +47,57 @@ interface ChartDataExtractors {
 const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
   'daily-cumulative-pnl': {
     extract: (c) => c.cumulativeDailyPnl as CumulativePnlPoint[],
-    build: (data, palette, _config) => dailyCumulativePnlOption(data as CumulativePnlPoint[], palette, ['cumulativePnl']),
+    build: (data, palette, config) =>
+      dailyCumulativePnlOption(
+        data as CumulativePnlPoint[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['cumulativePnl'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['cumulativePnl'],
   },
   'net-daily-pnl': {
     extract: (c) => c.dailyNetPnl as DailyPnlPoint[],
-    build: (data, palette, _config) => netDailyPnlOption(data as DailyPnlPoint[], palette, ['netPnl']),
+    build: (data, palette, config) =>
+      netDailyPnlOption(
+        data as DailyPnlPoint[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['netPnl'],
   },
   'trade-duration-performance': {
     extract: (c) => c.tradeDurationPerformance as DurationBucketData[],
-    build: (data, palette, _config) => tradeDurationOption(data as DurationBucketData[], palette, ['netPnl']),
+    build: (data, palette, config) =>
+      tradeDurationOption(
+        data as DurationBucketData[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['netPnl'],
   },
   'drawdown-curve': {
     extract: (c) => c.drawdownCurve as DrawdownPoint[],
-    build: (data, palette, _config) => drawdownCurveOption(data as DrawdownPoint[], palette, ['drawdownAmount', 'drawdownPct']),
+    build: (data, palette, config) =>
+      drawdownCurveOption(
+        data as DrawdownPoint[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['drawdownAmount', 'drawdownPct'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['drawdownAmount', 'drawdownPct'],
   },
   'r-distribution': {
     extract: (c) => c.rDistribution as RDistributionItem[],
-    build: (data, palette, _config) => rDistributionOption(data as RDistributionItem[], palette, ['count']),
+    build: (data, palette, config) =>
+      rDistributionOption(
+        data as RDistributionItem[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['count'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['count'],
   },
   'performance-by-setup': {
@@ -89,20 +119,34 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
         netPnl: r.netPnl ?? 0,
       }));
     },
-    build: (data, palette, config) => performanceBySetupOption(data as SetupPerfItem[], palette, {
-      metric: (config.metric as string) ?? 'netPnl',
-      visibleSeries: (config.visibleSeries as string[]) ?? ['netPnl'],
-    }),
+    build: (data, palette, config) =>
+      performanceBySetupOption(data as SetupPerfItem[], palette, {
+        metric: (config.metric as string | undefined) ?? undefined,
+        visibleSeries: (config.visibleSeries as string[] | undefined) ?? undefined,
+        legendVisible: Boolean(config.legendVisible),
+      }),
     series: ['netPnl', 'winRate', 'avgR', 'count'],
   },
   'performance-by-day-of-week': {
     extract: (c) => c.performanceByDayOfWeek as DayOfWeekData[],
-    build: (data, palette, _config) => performanceByDayOfWeekOption(data as DayOfWeekData[], palette, ['netPnl']),
+    build: (data, palette, config) =>
+      performanceByDayOfWeekOption(
+        data as DayOfWeekData[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['netPnl'],
   },
   'performance-by-time-of-day': {
     extract: (c) => c.performanceByTimeOfDay as TimeOfDayData[],
-    build: (data, palette, _config) => performanceByTimeOfDayOption(data as TimeOfDayData[], palette, ['netPnl']),
+    build: (data, palette, config) =>
+      performanceByTimeOfDayOption(
+        data as TimeOfDayData[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['netPnl'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['netPnl'],
   },
   'long-vs-short': {
@@ -117,12 +161,24 @@ const CHART_EXTRACTORS: Record<string, ChartDataExtractors> = {
         { direction: 'short' as const, netPnl: raw.short?.netPnl ?? 0, count: raw.short?.tradeCount ?? 0, winRate: raw.short?.winRate ?? null },
       ];
     },
-    build: (data, palette, _config) => longVsShortOption(data as LongVsShortItem[], palette, ['long', 'short']),
+    build: (data, palette, config) =>
+      longVsShortOption(
+        data as LongVsShortItem[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['long', 'short'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['long', 'short'],
   },
   'monthly-pnl': {
     extract: (c) => c.monthlyPerformance as MonthlyPerfItem[],
-    build: (data, palette, _config) => monthlyPnlOption(data as MonthlyPerfItem[], palette, ['netPnl', 'winRate']),
+    build: (data, palette, config) =>
+      monthlyPnlOption(
+        data as MonthlyPerfItem[],
+        palette,
+        (config.visibleSeries as string[] | undefined) ?? ['netPnl', 'winRate'],
+        { legendVisible: Boolean(config.legendVisible) },
+      ),
     series: ['netPnl', 'winRate'],
   },
 };

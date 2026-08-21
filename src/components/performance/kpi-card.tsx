@@ -46,7 +46,7 @@ export interface KpiCardProps {
   instanceId: string;
   widgetType: string;
   config: WidgetConfig;
-  onConfigure?: (instanceId: string, config: WidgetConfig) => void;
+  onConfigure?: (instanceId: string) => void;
   onDuplicate?: (instanceId: string) => void;
   onRemove?: (instanceId: string) => void;
   onReset?: (instanceId: string) => void;
@@ -66,7 +66,7 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
   // Determine total initial risk for R conversion (from risk snapshots via kpi metrics)
   const totalInitialRisk = computeTotalInitialRisk(analyticsData?.kpiMetrics);
 
-  const unit: PerformanceUnit = filter.unit;
+  const unit: PerformanceUnit = config.unit ?? filter.unit;
   const converted = definition
     ? applyUnit(rawValue, definition, unit, { periodStartEquity, totalInitialRisk })
     : { value: null, unit: 'currency' as PerformanceUnit };
@@ -97,7 +97,7 @@ export function KpiCard({ instanceId, widgetType, config, onConfigure, onDuplica
         {editMode && (
           <WidgetActionsMenu
             widgetTitle={title}
-            onConfigure={onConfigure ? () => onConfigure(instanceId, config) : undefined}
+            onConfigure={onConfigure ? () => onConfigure(instanceId) : undefined}
             onDuplicate={onDuplicate ? () => onDuplicate(instanceId) : undefined}
             onRemove={onRemove ? () => onRemove(instanceId) : undefined}
             onReset={onReset ? () => onReset(instanceId) : undefined}

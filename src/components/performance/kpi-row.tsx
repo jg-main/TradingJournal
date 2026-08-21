@@ -2,8 +2,10 @@
 
 import React, { useState } from 'react';
 import { KpiCard } from './kpi-card';
+import { ConfigureDialog } from './configure-dialog';
 import { usePerformanceInstanceContext } from './performance-instance-context';
 import { PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
+import { PERFORMANCE_KPI_CATALOGUE } from '@/lib/performance-kpi-catalogue';
 import type { WidgetConfig } from '@/lib/performance-view-types';
 
 export interface KpiRowProps {
@@ -29,12 +31,29 @@ export function KpiRow({ editMode }: KpiRowProps) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
 
-  const handleConfigure = (instanceId: string, _config: WidgetConfig) => {
+  const configuringInstance = configuringId
+    ? instances.find((i) => i.instanceId === configuringId)
+    : undefined;
+
+  // The dialog title follows the card's effective metric (metricId → catalogue).
+  const configuringTitle = (() => {
+    if (!configuringInstance) return '';
+    const inst = configuringInstance;
+    const metricId = (inst.config.metricId as string | undefined) ?? inst.widgetType;
+    return (
+      PERFORMANCE_KPI_CATALOGUE[metricId]?.title ??
+      PERFORMANCE_WIDGET_REGISTRY[inst.widgetType]?.title ??
+      metricId
+    );
+  })();
+
+  const handleConfigure = (instanceId: string) => {
     setConfiguringId(instanceId);
   };
 
-  const handleMetricSelect = (instanceId: string, metricId: string) => {
-    updateInstanceConfig(instanceId, { metricId });
+  const handleConfigureSave = (next: WidgetConfig) => {
+    if (!configuringId) return;
+    updateInstanceConfig(configuringId, next);
     setConfiguringId(null);
   };
 
@@ -136,27 +155,20 @@ export function KpiRow({ editMode }: KpiRowProps) {
         </div>
       )}
 
-      {/* Configure metric dialog */}
-      {configuringId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={() => setConfiguringId(null)}>
-          <div className="bg-card border border-border rounded-lg p-4 w-80" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-medium mb-3">Select Metric</h3>
-            <div className="space-y-1 max-h-64 overflow-auto">
-              {Object.values(PERFORMANCE_WIDGET_REGISTRY)
-                .filter((w) => w.category === 'kpi')
-                .map((w) => (
-                  <button
-                    key={w.id}
-                    onClick={() => handleMetricSelect(configuringId, w.id)}
-                    className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted"
-                  >
-                    {w.title}
-                  </button>
-                ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Configure dialog — shared typed settings surface for KPI cards.
+          KPI instances are metric cards: the dialog exposes metric selection
+          from the KPI catalogue, title override, and a per-widget unit
+          override where the metric supports convertible units. */}
+      <ConfigureDialog
+        open={configuringId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfiguringId(null);
+        }}
+        widgetTitle={configuringTitle}
+        widgetType={configuringInstance?.widgetType ?? ''}
+        config={configuringInstance?.config ?? {}}
+        onSave={handleConfigureSave}
+      />
     </div>
   );
 }

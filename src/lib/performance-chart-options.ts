@@ -40,6 +40,23 @@ function tooltip(): EChartsOption['tooltip'] {
   return { trigger: 'axis' };
 }
 
+/**
+ * Per-widget chart rendering options surfaced by the Configure dialog.
+ * Visible series are passed positionally (legacy contract); legend visibility
+ * travels via this options object.
+ */
+export interface ChartRenderConfig {
+  /** Render the ECharts legend (dense workstation default: hidden). */
+  legendVisible?: boolean;
+}
+
+/** Legend configuration — absent (undefined) when the dense default applies. */
+function legend(options: ChartRenderConfig = {}): EChartsOption['legend'] {
+  return options.legendVisible
+    ? { show: true, top: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 10 } }
+    : undefined;
+}
+
 // ── Chart data input types ──────────────────────────────────────────────────
 
 export interface DailyPnlPoint {
@@ -111,12 +128,14 @@ export function dailyCumulativePnlOption(
   data: CumulativePnlPoint[],
   palette: ChartPalette,
   visibleSeries: string[] = ['cumulativePnl'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.length === 0) return null;
   const show = visibleSeries.includes('cumulativePnl');
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.date) } as EChartsOption['xAxis'],
     yAxis: valueAxis(),
     series: [
@@ -139,12 +158,14 @@ export function netDailyPnlOption(
   data: DailyPnlPoint[],
   palette: ChartPalette,
   visibleSeries: string[] = ['netPnl'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.length === 0) return null;
   const show = visibleSeries.includes('netPnl');
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.date) } as EChartsOption['xAxis'],
     yAxis: valueAxis(),
     series: [
@@ -167,12 +188,14 @@ export function tradeDurationOption(
   data: DurationBucketData[],
   palette: ChartPalette,
   visibleSeries: string[] = ['netPnl'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.some((d) => d.count > 0) === false) return null;
   const show = visibleSeries.includes('netPnl');
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.bucket) } as EChartsOption['xAxis'],
     yAxis: valueAxis(),
     series: [
@@ -194,7 +217,8 @@ export function tradeDurationOption(
 export function drawdownCurveOption(
   data: DrawdownPoint[],
   palette: ChartPalette,
-  visibleSeries: string[] = ['drawdownAmount'],
+  visibleSeries: string[] = ['drawdownAmount', 'drawdownPct'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.length === 0) return null;
   const showAmount = visibleSeries.includes('drawdownAmount');
@@ -202,6 +226,7 @@ export function drawdownCurveOption(
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.date) } as EChartsOption['xAxis'],
     yAxis: valueAxis(),
     series: [
@@ -232,12 +257,14 @@ export function rDistributionOption(
   data: RDistributionItem[],
   palette: ChartPalette,
   visibleSeries: string[] = ['count'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.every((d) => d.count === 0)) return null;
   const show = visibleSeries.includes('count');
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.label) } as EChartsOption['xAxis'],
     yAxis: valueAxis('Trades'),
     series: [
@@ -255,7 +282,7 @@ export function rDistributionOption(
 export function performanceBySetupOption(
   data: SetupPerfItem[],
   palette: ChartPalette,
-  config: { metric?: string; visibleSeries?: string[] } = {},
+  config: { metric?: string; visibleSeries?: string[] } & ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.every((d) => d.count === 0)) return null;
   const metric = config.metric ?? 'netPnl';
@@ -271,6 +298,7 @@ export function performanceBySetupOption(
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(config),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.setup) } as EChartsOption['xAxis'],
     yAxis: valueAxis(metric === 'winRate' ? 'Win Rate' : undefined),
     series: [
@@ -289,12 +317,14 @@ export function performanceByDayOfWeekOption(
   data: DayOfWeekData[],
   palette: ChartPalette,
   visibleSeries: string[] = ['netPnl'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.every((d) => d.count === 0)) return null;
   const show = visibleSeries.includes('netPnl');
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.day) } as EChartsOption['xAxis'],
     yAxis: valueAxis(),
     series: [
@@ -317,12 +347,14 @@ export function performanceByTimeOfDayOption(
   data: TimeOfDayData[],
   palette: ChartPalette,
   visibleSeries: string[] = ['netPnl'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.every((d) => d.netPnl === 0)) return null;
   const show = visibleSeries.includes('netPnl');
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.hour) } as EChartsOption['xAxis'],
     yAxis: valueAxis(),
     series: [
@@ -341,6 +373,7 @@ export function longVsShortOption(
   data: LongVsShortItem[],
   palette: ChartPalette,
   visibleSeries: string[] = ['long', 'short'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.every((d) => d.count === 0)) return null;
   const long = data.find((d) => d.direction === 'long');
@@ -349,6 +382,7 @@ export function longVsShortOption(
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: ['Net P&L'] } as EChartsOption['xAxis'],
     yAxis: valueAxis(),
     series: [
@@ -373,6 +407,7 @@ export function monthlyPnlOption(
   data: MonthlyPerfItem[],
   palette: ChartPalette,
   visibleSeries: string[] = ['netPnl', 'winRate'],
+  options: ChartRenderConfig = {},
 ): EChartsOption | null {
   if (!data || data.length === 0) return null;
   const showNet = visibleSeries.includes('netPnl');
@@ -380,6 +415,7 @@ export function monthlyPnlOption(
   return {
     tooltip: tooltip(),
     grid: baseGrid(),
+    legend: legend(options),
     xAxis: { ...(axisLabel() as object), data: data.map((d) => d.month) } as EChartsOption['xAxis'],
     yAxis: [
       valueAxis(),

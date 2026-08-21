@@ -10,7 +10,8 @@
  * Pattern: mirrors widget-registry.ts but with instance model and supportedUnits.
  */
 
-import type { PerformanceWidgetDefinition } from './performance-view-types';
+import type { PerformanceWidgetDefinition, PerformanceUnit, SupportedUnit, WidgetConfig, WidgetConfigSchema } from './performance-view-types';
+import { PERFORMANCE_KPI_CATALOGUE } from './performance-kpi-catalogue';
 
 // ── Widget IDs ──────────────────────────────────────────────────────────────
 
@@ -324,6 +325,18 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     description: 'Equity drawdown over time',
     category: 'chart',
     supportedUnits: ['currency', 'percent'],
+    configSchema: {
+      visibleSeries: {
+        kind: 'multi-select',
+        key: 'visibleSeries',
+        label: 'Visible series',
+        default: ['drawdownAmount', 'drawdownPct'],
+        options: [
+          { value: 'drawdownAmount', label: 'Amount ($)' },
+          { value: 'drawdownPct', label: 'Percent (%)' },
+        ],
+      },
+    },
     defaultLayout: { w: 4, h: 5, x: 0, y: 15 },
     minSize: { w: 4, h: 4 },
     maxSize: { w: 8, h: 8 },
@@ -349,7 +362,18 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     category: 'chart',
     supportedUnits: ['currency', 'percent', 'r'],
     configSchema: {
-      metric: { type: 'string', default: 'netPnl', options: ['netPnl', 'winRate', 'avgR', 'count'] },
+      metric: {
+        kind: 'select',
+        key: 'metric',
+        label: 'Primary series',
+        default: 'netPnl',
+        options: [
+          { value: 'netPnl', label: 'Net P&L' },
+          { value: 'winRate', label: 'Win Rate' },
+          { value: 'avgR', label: 'Average R' },
+          { value: 'count', label: 'Trade Count' },
+        ],
+      },
     },
     defaultLayout: { w: 4, h: 5, x: 8, y: 15 },
     minSize: { w: 4, h: 4 },
@@ -389,6 +413,18 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     description: 'Performance comparison by direction',
     category: 'chart',
     supportedUnits: ['currency', 'percent', 'r'],
+    configSchema: {
+      visibleSeries: {
+        kind: 'multi-select',
+        key: 'visibleSeries',
+        label: 'Direction series',
+        default: ['long', 'short'],
+        options: [
+          { value: 'long', label: 'Long' },
+          { value: 'short', label: 'Short' },
+        ],
+      },
+    },
     defaultLayout: { w: 6, h: 5, x: 0, y: 36 },
     minSize: { w: 4, h: 4 },
     maxSize: { w: 8, h: 8 },
@@ -401,6 +437,18 @@ export const PERFORMANCE_WIDGET_REGISTRY: Record<string, PerformanceWidgetDefini
     description: 'Net P&L by month',
     category: 'chart',
     supportedUnits: ['currency', 'percent', 'r'],
+    configSchema: {
+      visibleSeries: {
+        kind: 'multi-select',
+        key: 'visibleSeries',
+        label: 'Visible series',
+        default: ['netPnl', 'winRate'],
+        options: [
+          { value: 'netPnl', label: 'Net P&L' },
+          { value: 'winRate', label: 'Win Rate' },
+        ],
+      },
+    },
     defaultLayout: { w: 6, h: 5, x: 6, y: 36 },
     minSize: { w: 4, h: 4 },
     maxSize: { w: 8, h: 8 },
@@ -458,4 +506,120 @@ export function getDefaultWidgetInstances(category?: PerformanceWidgetDefinition
       h: widget.defaultLayout.h,
     },
   }));
+}
+
+// ── Config Schema Resolution (drives the typed Configure dialog) ─────────────
+
+/**
+ * Sentinel value for the KPI unit select's "follow the global unit" option.
+ * Radix Select forbids empty-string item values, so the sentinel is a non-empty
+ * token that buildConfigFromDraft treats as "no per-widget override".
+ */
+export const GLOBAL_UNIT_SENTINEL = '__global__' as const;
+
+const UNIT_LABELS: Record<string, string> = {
+  currency: 'Currency ($)',
+  percent: 'Percent of equity',
+  r: 'R-multiples',
+};
+
+/**
+ * Resolve the effective typed configuration schema for a widget type.
+ *
+ * KPI widgets derive their fields from the KPI catalogue (metric select, title
+ * override) plus a per-widget unit override only when the effective metric
+ * supports more than one convertible unit. Chart widgets merge their
+ * registry-declared configSchema with the shared chart fields (legend
+ * visibility, title override). The registry stays the single source of truth
+ * for widget capabilities — the Configure dialog renders exactly the fields
+ * this returns, nothing more.
+ */
+export function getWidgetConfigSchema(
+  widgetType: string,
+  currentConfig?: WidgetConfig,
+): WidgetConfigSchema {
+  const definition = PERFORMANCE_WIDGET_REGISTRY[widgetType];
+  if (!definition) return {};
+
+  if (definition.category === 'kpi') {
+    const metricId = (currentConfig?.metricId as string | undefined) ?? widgetType;
+    const metric = PERFORMANCE_KPI_CATALOGUE[metricId];
+    const convertibleUnits = (metric?.supportedUnits ?? []).filter(
+      (u): u is 'currency' | 'percent' | 'r' => u !== 'fixed',
+    );
+
+    const schema: WidgetConfigSchema = {
+      metricId: {
+        kind: 'select',
+        key: 'metricId',
+        label: 'Metric',
+        default: widgetType,
+        options: Object.values(PERFORMANCE_KPI_CATALOGUE).map((m) => ({
+          value: m.id,
+          label: m.title,
+        })),
+      },
+      titleOverride: {
+        kind: 'text',
+        key: 'titleOverride',
+        label: 'Title',
+        default: '',
+        placeholder: 'Default title',
+      },
+    };
+
+    // Unit-relevant option: a per-widget unit override is only meaningful when
+    // the effective metric can be presented in more than one unit.
+    if (convertibleUnits.length > 1) {
+      schema.unit = {
+        kind: 'select',
+        key: 'unit',
+        label: 'Unit',
+        default: GLOBAL_UNIT_SENTINEL,
+        options: [
+          { value: GLOBAL_UNIT_SENTINEL, label: 'Follow global unit' },
+          ...convertibleUnits.map((u) => ({ value: u, label: UNIT_LABELS[u] ?? u })),
+        ],
+      };
+    }
+
+    return schema;
+  }
+
+  // Chart widgets: registry-declared configSchema fields + shared chart fields.
+  return {
+    ...(definition.configSchema ?? {}),
+    legendVisible: {
+      kind: 'boolean',
+      key: 'legendVisible',
+      label: 'Show legend',
+      default: false,
+    },
+    titleOverride: {
+      kind: 'text',
+      key: 'titleOverride',
+      label: 'Title',
+      default: '',
+      placeholder: 'Default title',
+    },
+  };
+}
+
+/**
+ * Drop config fields the effective KPI metric cannot honor. When a KPI card's
+ * selected metric changes, its unit override may no longer be supported (Win
+ * Rate is fixed-% while Net P&L supports $/%/R) — remove it so the per-widget
+ * unit never silently mismatches the metric's semantics.
+ */
+export function sanitizeKpiConfig(config: WidgetConfig, widgetType: string): WidgetConfig {
+  const metricId = (config.metricId as string | undefined) ?? widgetType;
+  const metric = PERFORMANCE_KPI_CATALOGUE[metricId];
+  if (!metric) return config;
+  const unit = config.unit as PerformanceUnit | undefined;
+  if (unit && !metric.supportedUnits.includes(unit as SupportedUnit)) {
+    const next: WidgetConfig = { ...config };
+    delete next.unit;
+    return next;
+  }
+  return config;
 }

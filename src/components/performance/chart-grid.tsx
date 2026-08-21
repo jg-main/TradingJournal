@@ -6,6 +6,7 @@ import 'react-grid-layout/css/styles.css';
 import { GripVertical } from 'lucide-react';
 import { usePerformanceInstanceContext } from './performance-instance-context';
 import { ChartWidget } from './chart-widget';
+import { ConfigureDialog } from './configure-dialog';
 import { WidgetActionsMenu } from './widget-actions-menu';
 import { PERFORMANCE_WIDGET_REGISTRY } from '@/lib/performance-widget-registry';
 
@@ -58,12 +59,30 @@ export function ChartGrid({ editMode }: ChartGridProps) {
     addInstance,
     removeInstance,
     duplicateInstance,
+    updateInstanceConfig,
     updateInstanceLayout,
     resetInstance,
     resetToDefault,
   } = usePerformanceInstanceContext().chart;
 
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [configuringId, setConfiguringId] = useState<string | null>(null);
+
+  const configuringInstance = configuringId
+    ? instances.find((i) => i.instanceId === configuringId)
+    : undefined;
+  const configuringTitle = (() => {
+    if (!configuringInstance) return '';
+    const inst = configuringInstance;
+    const definition = PERFORMANCE_WIDGET_REGISTRY[inst.widgetType];
+    return (
+      (typeof inst.config.titleOverride === 'string' && inst.config.titleOverride.trim()
+        ? inst.config.titleOverride.trim()
+        : null) ??
+      definition?.title ??
+      inst.widgetType
+    );
+  })();
 
   // Per-item constraints come from the registry definition (authoritative for
   // widget readability — R004) with the instance layout as fallback. This
@@ -130,11 +149,10 @@ export function ChartGrid({ editMode }: ChartGridProps) {
                     <span className="ml-auto">
                       <WidgetActionsMenu
                         widgetTitle={widgetTitle}
-                        // Configure opens the typed widget settings dialog;
-                        // wired to the shared ConfigureDialog in T2. The menu
-                        // contract (Configure/Duplicate/Remove/Reset) is stable
-                        // from T1 so the ⋯ menu is consistent across widgets.
-                        onConfigure={() => undefined}
+                        // Configure opens the typed widget settings dialog
+                        // (shared ConfigureDialog driven by the registry
+                        // configSchema).
+                        onConfigure={() => setConfiguringId(instance.instanceId)}
                         onDuplicate={() => duplicateInstance(instance.instanceId)}
                         onRemove={() => removeInstance(instance.instanceId)}
                         onReset={() => resetInstance(instance.instanceId)}
@@ -194,6 +212,25 @@ export function ChartGrid({ editMode }: ChartGridProps) {
           </div>
         </div>
       )}
+
+      {/* Configure dialog — shared typed settings surface for chart widgets:
+          visible series, primary series (performance-by-setup), legend
+          visibility, and title override, all driven by the registry
+          configSchema. Changes persist via updateInstanceConfig. */}
+      <ConfigureDialog
+        open={configuringId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfiguringId(null);
+        }}
+        widgetTitle={configuringTitle}
+        widgetType={configuringInstance?.widgetType ?? ''}
+        config={configuringInstance?.config ?? {}}
+        onSave={(next) => {
+          if (!configuringId) return;
+          updateInstanceConfig(configuringId, next);
+          setConfiguringId(null);
+        }}
+      />
     </div>
   );
 }

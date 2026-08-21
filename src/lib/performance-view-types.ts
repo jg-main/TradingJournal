@@ -55,11 +55,47 @@ export type PerformanceWidgetCategory = 'kpi' | 'chart' | 'analytical';
 
 export type SupportedUnit = 'currency' | 'percent' | 'r' | 'fixed';
 
-export interface WidgetConfigSchema {
-  // Extensible configuration schema
-  // Specific widgets define their own config shapes
-  [key: string]: unknown;
-}
+/**
+ * One declared field in a widget's configuration schema. The Configure dialog
+ * renders exactly the fields a widget declares — no unrestricted visualization
+ * builder. Each kind maps to a typed control: select / multi-select / text /
+ * boolean.
+ */
+export type WidgetConfigFieldSchema =
+  | {
+      kind: 'select';
+      key: string;
+      label: string;
+      default?: string;
+      options: Array<{ value: string; label: string }>;
+    }
+  | {
+      kind: 'multi-select';
+      key: string;
+      label: string;
+      default?: string[];
+      options: Array<{ value: string; label: string }>;
+    }
+  | {
+      kind: 'text';
+      key: string;
+      label: string;
+      default?: string;
+      placeholder?: string;
+    }
+  | {
+      kind: 'boolean';
+      key: string;
+      label: string;
+      default?: boolean;
+    };
+
+/**
+ * Typed configuration schema keyed by config field. Declared per widget in the
+ * registry (chart widgets) or derived from the KPI catalogue + supportedUnits
+ * (KPI widgets) via getWidgetConfigSchema().
+ */
+export type WidgetConfigSchema = Record<string, WidgetConfigFieldSchema>;
 
 export interface PerformanceWidgetDefinition {
   id: string;
@@ -80,11 +116,14 @@ export interface PerformanceWidgetDefinition {
 export interface WidgetConfig {
   // KPI widget config
   metricId?: string; // Which metric to display (for KPI widgets)
-  
+  unit?: PerformanceUnit; // Per-widget unit override; defaults to the global filter unit
+
   // Chart widget config
   visibleSeries?: string[]; // Which series to show (for chart widgets)
-  selectedMetric?: string; // Which metric to chart (for configurable charts)
-  
+  selectedMetric?: string; // Legacy alias for `metric`; kept for persisted-config compat
+  metric?: string; // Primary series/metric for configurable charts (e.g. performance-by-setup)
+  legendVisible?: boolean; // Whether the chart legend renders (dense default: hidden)
+
   // Generic config
   titleOverride?: string; // Custom title override
   [key: string]: unknown;
