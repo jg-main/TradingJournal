@@ -39,8 +39,11 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
     expect(execData.trade.status).toBe('closed');
 
     // Navigate to trade detail page
+    // First navigation cold-compiles the trade-detail chunk + API routes in
+    // dev; measured up to ~8s from goto to h1, so give the first render a
+    // generous window (the product renders correctly — see diag evidence).
     await page.goto(`/trades/${trade.id}`);
-    await expect(page.locator('h1')).toContainText('PERF-C');
+    await expect(page.locator('h1')).toContainText('PERF-C', { timeout: 15_000 });
 
     const card = page.locator('[data-slot="card"]').filter({
       has: page.getByText('Total Fees', { exact: true }),
@@ -100,7 +103,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
 
     // Navigate to trade detail page
     await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
-    await expect(page.locator('h1')).toContainText('PERF-O');
+    await expect(page.locator('h1')).toContainText('PERF-O', { timeout: 15_000 });
 
     const card = page.locator('[data-slot="card"]').filter({
       has: page.getByText('Total Fees', { exact: true }),
@@ -141,7 +144,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
 
     // Navigate to trade detail page
     await page.goto(`/trades/${trade.id}`);
-    await expect(page.locator('h1')).toContainText('PERF-P');
+    await expect(page.locator('h1')).toContainText('PERF-P', { timeout: 15_000 });
 
     // Performance metrics are not rendered for planned trades.
     await expect(page.getByText('Total Fees', { exact: true })).toHaveCount(0);
@@ -184,7 +187,7 @@ test.describe('M020 Per-Trade Performance Metrics', () => {
 
     // Navigate to trade detail page
     await page.goto(`/trades/${trade.id}`);
-    await expect(page.locator('h1')).toContainText('PERF-L');
+    await expect(page.locator('h1')).toContainText('PERF-L', { timeout: 15_000 });
 
     const card = page.locator('[data-slot="card"]').filter({
       has: page.getByText('Total Fees', { exact: true }),

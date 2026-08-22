@@ -161,6 +161,25 @@ async function selectApplicationAccount(page: Page) {
   await expect(page.getByTestId('ws-external-account')).toHaveText(accountName);
 }
 
+/**
+ * Select the Process Review system template via the view switcher. M018
+ * removed Review Metrics from the curated default; its dedicated saved view
+ * is where the review panel renders (pattern from workstation-shell.spec.ts
+ * — the Radix dropdown is modal, so close an open menu via Escape first).
+ */
+async function selectProcessReviewView(page: Page) {
+  const trigger = page.getByTestId('ws-view-switcher-trigger');
+  const content = page.getByTestId('ws-view-switcher-content');
+  if (await content.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(content).toHaveCount(0);
+  }
+  await trigger.click();
+  await expect(content).toBeVisible({ timeout: 3_000 });
+  await page.getByTestId('ws-view-item-ws-system-process-review').click();
+  await expect(content).toHaveCount(0);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -292,7 +311,11 @@ test.describe('M006 Data Freshness Pipeline', () => {
     const risk = page.getByTestId('ws-panel-risk');
     await expect(risk).toBeVisible();
 
-    // Process Review panel renders
+    // M018 contract: Review Metrics is not part of the curated default —
+    // it renders in its dedicated Process Review saved view. Assert the
+    // panel stays out of the default, then verify it renders there.
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
+    await selectProcessReviewView(page);
     const processReview = page.getByTestId('ws-panel-process-review');
     await expect(processReview).toBeVisible();
 
