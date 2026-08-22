@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
-import { eq, and, desc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
+import { eq, and, asc, desc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
@@ -723,12 +723,41 @@ export async function POST(request: NextRequest) {
       if (setting?.defaultAccountId) {
         accountId = setting.defaultAccountId;
       } else {
-        const firstActive = db
-          .select()
-          .from(accounts)
-          .where(eq(accounts.isActive, true))
-          .get();
-        accountId = firstActive?.id;
+        // S06/T04: when no default is configured, prefer the first active
+        // account that is ALSO trading-ready (risk params + commission +
+        // opening cash posted). Shared databases can contain active accounts
+        // that were never prepared for trading — resolving the raw first
+        // active account would 409 the readiness guard below even when
+        // trading-ready accounts exist. Fall through to the first active
+        // account only when none are ready, so the actionable 409 guidance is
+        // preserved for the genuinely-unprepared case. Ordering matches the
+        // dashboard v2 first-active contract (ORDER BY created_at ASC).
+        const readyActive = getSqliteHandle()
+          .prepare(
+            `SELECT a.id FROM accounts a
+             WHERE a.is_active = 1
+               AND a.max_risk_per_trade_pct IS NOT NULL
+               AND a.default_commission IS NOT NULL
+               AND EXISTS (
+                 SELECT 1 FROM financial_events fe
+                 WHERE fe.account_id = a.id
+                   AND fe.event_type IN ('opening_balance', 'deposit')
+               )
+             ORDER BY a.created_at ASC
+             LIMIT 1`,
+          )
+          .get() as { id: string } | undefined;
+        accountId = readyActive?.id;
+        if (!accountId) {
+          const firstActive = db
+            .select()
+            .from(accounts)
+            .where(eq(accounts.isActive, true))
+            .orderBy(asc(accounts.createdAt))
+            .limit(1)
+            .get();
+          accountId = firstActive?.id;
+        }
       }
     }
 

@@ -405,6 +405,55 @@ function resolveAccountIdContract(sqlite: Database.Database): string | undefined
 }
 
 /**
+ * The trade-creation account-resolution contract from POST /api/trades
+ * (S06/T04): body.accountId → settings.default_account_id → first active
+ * account that is ALSO trading-ready (risk params + commission + opening
+ * cash posted) → first active account. Mirrors the exact SQL in
+ * src/app/api/trades/route.ts — that SQL is the durable contract.
+ *
+ * The readiness preference keeps a shared database full of
+ * active-but-unprepared accounts from 409ing the trade-creation readiness
+ * guard even when trading-ready accounts exist (the consumer-fallback E2E
+ * gap S06/T03 discovered); the final first-active fallback preserves the
+ * actionable 409 guidance for the genuinely-unprepared case.
+ */
+function resolveTradeCreationFallbackContract(sqlite: Database.Database): string | undefined {
+  const setting = sqlite
+    .prepare('SELECT default_account_id FROM settings LIMIT 1')
+    .get() as { default_account_id: string | null } | undefined;
+
+  if (setting?.default_account_id) {
+    return setting.default_account_id;
+  }
+
+  const readyActive = sqlite
+    .prepare(
+      `SELECT a.id FROM accounts a
+       WHERE a.is_active = 1
+         AND a.max_risk_per_trade_pct IS NOT NULL
+         AND a.default_commission IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM financial_events fe
+           WHERE fe.account_id = a.id
+             AND fe.event_type IN ('opening_balance', 'deposit')
+         )
+       ORDER BY a.created_at ASC
+       LIMIT 1`,
+    )
+    .get() as { id: string } | undefined;
+
+  if (readyActive?.id) {
+    return readyActive.id;
+  }
+
+  const firstActive = sqlite
+    .prepare('SELECT id FROM accounts WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1')
+    .get() as { id: string } | undefined;
+
+  return firstActive?.id ?? undefined;
+}
+
+/**
  * D6 deactivation coherence from the close and PUT handlers: deactivating
  * the settings default clears the stale reference so resolution moves to
  * the first active account.
@@ -492,6 +541,106 @@ describe('cross-cutting integrity — default-account fallback', () => {
     insertAccount.run(b, 'B', 'Broker', 'USD', now, now);
 
     expect(resolveAccountIdContract(fresh)).toBe(a);
+    fresh.close();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Surface 2b — Trade-creation account fallback prefers trading-ready (S06/T04)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('cross-cutting integrity — trade-creation account fallback', () => {
+  let sqlite: Database.Database;
+  let earlierActiveNotReadyId: string;
+  let laterTradingReadyId: string;
+
+  beforeAll(() => {
+    sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    applyAllMigrations(sqlite);
+
+    // An earlier active account that is NOT trading-ready (no risk params,
+    // no opening cash) — the exact contamination that broke the consumer
+    // fallback E2E test in a shared database.
+    earlierActiveNotReadyId = randomUUID();
+    laterTradingReadyId = randomUUID();
+    const insertAccount = sqlite.prepare(
+      `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?)`,
+    );
+    insertAccount.run(
+      earlierActiveNotReadyId,
+      'Earlier Active Not Ready',
+      'Broker',
+      'USD',
+      '2026-05-01T00:00:00.000Z',
+      '2026-05-01T00:00:00.000Z',
+    );
+    // A later account that IS fully trading-ready (risk params + opening cash).
+    insertAccount.run(
+      laterTradingReadyId,
+      'Later Trading Ready',
+      'Broker',
+      'USD',
+      '2026-05-02T00:00:00.000Z',
+      '2026-05-02T00:00:00.000Z',
+    );
+    sqlite
+      .prepare(
+        `UPDATE accounts SET max_risk_per_trade_pct = 2.0, default_commission = 1.0
+         WHERE id = ?`,
+      )
+      .run(laterTradingReadyId);
+    sqlite
+      .prepare(
+        `INSERT INTO financial_events (id, account_id, event_type, posted_at)
+         VALUES (?, ?, 'opening_balance', ?)`,
+      )
+      .run(randomUUID(), laterTradingReadyId, '2026-05-02T12:00:00.000Z');
+  });
+
+  afterAll(() => {
+    sqlite.close();
+  });
+
+  it('prefers the first trading-ready active account over an earlier unprepared active account', () => {
+    // The earlier account has the lower rowid AND the earlier created_at, yet
+    // resolution must skip it because it can never pass the trade-creation
+    // readiness guard — the shared-DB contamination scenario from the
+    // consumer-fallback E2E test.
+    expect(resolveTradeCreationFallbackContract(sqlite)).toBe(laterTradingReadyId);
+  });
+
+  it('honors the configured default even when it is not the first ready account', () => {
+    sqlite
+      .prepare(
+        `INSERT INTO settings (id, default_account_id, created_at, updated_at)
+         VALUES ('default', ?, ?, ?)`,
+      )
+      .run(earlierActiveNotReadyId, new Date().toISOString(), new Date().toISOString());
+
+    // An explicit default wins — the readiness guard (not resolution) is the
+    // layer that surfaces the actionable 409 for a misconfigured default.
+    expect(resolveTradeCreationFallbackContract(sqlite)).toBe(earlierActiveNotReadyId);
+  });
+
+  it('falls back to the first active account when none are trading-ready (409 guidance path)', () => {
+    const fresh = new Database(':memory:');
+    fresh.pragma('foreign_keys = ON');
+    applyAllMigrations(fresh);
+    const a = randomUUID();
+    const b = randomUUID();
+    const insertAccount = fresh.prepare(
+      `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?)`,
+    );
+    insertAccount.run(a, 'A', 'Broker', 'USD', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+    insertAccount.run(b, 'B', 'Broker', 'USD', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z');
+
+    // Neither account has risk params or opening cash → no ready account;
+    // resolution falls back to the first active account, which the route's
+    // readiness guard would then 409 on with actionable guidance.
+    expect(resolveTradeCreationFallbackContract(fresh)).toBe(a);
     fresh.close();
   });
 });
