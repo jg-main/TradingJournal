@@ -137,6 +137,7 @@ export default defineConfig({
       'src/lib/accounting/__tests__/dashboard-snapshot-contract.test.ts',
       'src/lib/accounting/__tests__/freshness-policy.test.ts',
       'src/lib/accounting/__tests__/cross-system-integrity.test.ts',
+      'src/lib/accounting/__tests__/cross-cutting-integrity.test.ts',
       'src/app/api/dashboard/v2/__tests__/route.test.ts',
       'src/app/api/performance/analytics/__tests__/route.test.ts',
       'src/app/settings/workspace/__tests__/page.test.tsx',
