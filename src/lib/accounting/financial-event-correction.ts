@@ -15,15 +15,20 @@
  * 4. Check the event hasn't already been corrected
  * 5. Check correction idempotency key (if provided)
  * 6. Validate replacement amount sign semantics for the event type
- * 7. In a transaction:
+ * 7. In ONE outer transaction (A5 — atomic with the projection):
  *    a. Post a reversal financial event (same event type, opposite cash
  *       effect direction, correctionType:"reversal" payload marker)
  *    b. Post a replacement financial event (corrected values,
  *       correctionType:"replacement" payload marker)
  *    c. Create a financial_event_correction_lineage record with the
  *       required reason
- * 8. Rebuild the account performance/NAV projection
- * 9. Return the correction lineage and the three linked events
+ *    d. Rebuild the account-performance projection INSIDE the transaction
+ *       and REQUIRE success — a failed projection write throws
+ *       FinancialEventCorrectionProjectionError and rolls back the reversal,
+ *       replacement, lineage, and their ledger rows (no corrected ledger
+ *       with a stale NAV).
+ * 8. Return the correction lineage, the three linked events, and the
+ *    successful projection result.
  */
 
 import Database from 'better-sqlite3';
@@ -38,6 +43,7 @@ import {
   EventNotCorrectableError,
   DuplicateCorrectionIdempotencyError,
   InvalidAmountError,
+  FinancialEventCorrectionProjectionError,
 } from './errors';
 import {
   accountExists,
@@ -134,6 +140,14 @@ export interface CorrectFinancialEventResult {
   originalEvent: CorrectionFinancialEvent;
   reversalEvent: CorrectionFinancialEvent;
   replacementEvent: CorrectionFinancialEvent;
+  /**
+   * The successful account-performance projection rebuilt INSIDE the
+   * correction transaction (A5). The service contract guarantees
+   * `performance.success === true` — a failed rebuild throws
+   * {@link FinancialEventCorrectionProjectionError} and rolls back the whole
+   * correction.
+   */
+  performance: import('../performance/performance-rebuild').PerformanceRebuildResult;
 }
 
 // ── Row Conversion ──────────────────────────────────────────────────────
@@ -428,7 +442,12 @@ export function correctFinancialEvent(
   const reversalPostedAt = new Date(baseDateMs).toISOString();
   const replacementPostedAt = new Date(baseDateMs + 1).toISOString();
 
-  // ── 8. Execute correction atomically ────────────────────────────────
+  // ── 8. Execute correction atomically (A5): reversal + replacement +
+  //        lineage + canonical projection rebuild inside ONE outer
+  //        transaction. The projection observes the uncommitted reversal /
+  //        replacement stream through the same connection, and its persisted
+  //        output participates in the same transaction — a failed projection
+  //        write rolls back every correction artifact.
   const transaction = sqlite.transaction(() => {
     const correctedAt = new Date().toISOString();
 
@@ -473,17 +492,30 @@ export function correctFinancialEvent(
       correctedAt,
     });
 
-    return { correction, reversalPosting, replacementPosting };
+    // ── 8d. Rebuild the canonical account-performance projection INSIDE the
+    //        transaction, through the same connection, so it observes the
+    //        uncommitted reversal/replacement stream. `rebuildAccountPerformance`
+    //        catches its own internal errors and returns `{ success: false }`
+    //        rather than throwing, so the success flag must be checked
+    //        explicitly — a failed projection write must roll back the whole
+    //        correction (no corrected ledger with a stale NAV).
+    const performance = rebuildAccountPerformance(sqlite, accountId);
+    if (!performance.success) {
+      throw new FinancialEventCorrectionProjectionError(
+        accountId,
+        originalEvent.id,
+        performance.error,
+      );
+    }
+
+    return { correction, reversalPosting, replacementPosting, performance };
   });
 
-  const { correction, reversalPosting, replacementPosting } = transaction();
+  const { correction, reversalPosting, replacementPosting, performance } = transaction();
 
-  // ── 9. Rebuild the account performance/NAV projection ───────────────
-  // The correction net-changes cash: original effect + reversal + replacement.
-  // Rebuild so persisted NAV/performance reflects the corrected stream.
-  rebuildAccountPerformance(sqlite, accountId);
-
-  // ── 10. Read back persisted rows for the response ───────────────────
+  // ── 9. Read back persisted rows for the response ───────────────────
+  // (The projection rebuild happened inside the transaction — exactly one
+  // required rebuild per correction, no post-commit rebuild.)
   const persistedOriginal = findEventById(sqlite, originalEventId)!;
   const persistedReversal = findEventById(sqlite, reversalPosting.event.id)!;
   const persistedReplacement = findEventById(sqlite, replacementPosting.event.id)!;
@@ -501,6 +533,7 @@ export function correctFinancialEvent(
     originalEvent: rowToCorrectionEvent(persistedOriginal),
     reversalEvent: rowToCorrectionEvent(persistedReversal),
     replacementEvent: rowToCorrectionEvent(persistedReplacement),
+    performance,
   };
 }
 

@@ -390,3 +390,39 @@ export class AccountClosureProjectionError extends AccountingError {
     Object.setPrototypeOf(this, AccountClosureProjectionError.prototype);
   }
 }
+
+/**
+ * Thrown when the canonical account-performance projection cannot be rebuilt
+ * during a financial-event correction.
+ *
+ * The correction service rebuilds the projection INSIDE the authoritative
+ * correction transaction and explicitly enforces
+ * `PerformanceRebuildResult.success` — a failed projection write throws this
+ * error inside the transaction, rolling back the reversal event, replacement
+ * event, correction lineage, and their ledger entries/postings. No successful
+ * correction response may leave the projection stale.
+ *
+ * Mapped to HTTP 500 by the correction route (an unexpected server-side
+ * persistence failure — never a user-domain conflict like
+ * EVENT_ALREADY_CORRECTED / EVENT_NOT_CORRECTABLE / 4xx). The transaction is
+ * already rolled back, so the request is safely retryable and the correction
+ * idempotency key is not consumed.
+ */
+export class FinancialEventCorrectionProjectionError extends AccountingError {
+  public readonly accountId: string;
+  public readonly originalEventId: string;
+  public readonly rebuildError?: string;
+
+  constructor(accountId: string, originalEventId: string, rebuildError?: string) {
+    super(
+      'FINANCIAL_EVENT_CORRECTION_PROJECTION_FAILED',
+      `Correction of event "${originalEventId}" for account "${accountId}" rolled back: account-performance projection could not be persisted` +
+        (rebuildError ? ` (${rebuildError})` : ''),
+    );
+    this.name = 'FinancialEventCorrectionProjectionError';
+    this.accountId = accountId;
+    this.originalEventId = originalEventId;
+    this.rebuildError = rebuildError;
+    Object.setPrototypeOf(this, FinancialEventCorrectionProjectionError.prototype);
+  }
+}

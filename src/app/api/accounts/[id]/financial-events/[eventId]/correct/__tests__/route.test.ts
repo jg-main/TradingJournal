@@ -41,6 +41,7 @@ import {
   DuplicateCorrectionIdempotencyError,
   InvalidAmountError,
   InvalidMicrosBoundsError,
+  FinancialEventCorrectionProjectionError,
 } from '@/lib/accounting/errors';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -235,6 +236,11 @@ function simulateRoutePost(
         originalEvent: result.originalEvent,
         reversalEvent: result.reversalEvent,
         replacementEvent: result.replacementEvent,
+        performance: {
+          success: result.performance.success,
+          nav: result.performance.nav,
+          rebuildCount: result.performance.rebuildCount,
+        },
       },
     };
   } catch (error) {
@@ -252,6 +258,16 @@ function simulateRoutePost(
     }
     if (error instanceof FinancialEventNotFoundError || error instanceof AccountNotFoundError) {
       return { status: 404, body: { error: 'Account or financial event not found', details: error.message } };
+    }
+    if (error instanceof FinancialEventCorrectionProjectionError) {
+      return {
+        status: 500,
+        body: {
+          error: 'Failed to correct financial event',
+          code: error.code,
+          details: error.message,
+        },
+      };
     }
     return { status: 500, body: { error: 'Failed to correct financial event', details: error instanceof Error ? error.message : String(error) } };
   }
@@ -527,5 +543,52 @@ describe('POST /api/accounts/:id/financial-events/:eventId/correct', () => {
       reason: 'Second correction',
     });
     expect(second.status).toBe(409);
+  });
+  // ── A5: projection failure at the route boundary ──────────────────────
+  it('projection failure → 500 with rollback; retry succeeds (A5)', () => {
+    const { sqlite } = ctx;
+
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+    const depositId = postDeposit(sqlite, accountId, '2500.00');
+
+    // Establish a valid prior projection (NAV 12,500) so we can prove it survives.
+    rebuildAccountPerformance(sqlite, accountId);
+    const before = findAccountPerformance(sqlite, accountId);
+    expect(before?.nav).toBe('12500.00');
+
+    sqlite.exec(`
+      CREATE TRIGGER a5_route_projection_fail BEFORE UPDATE ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced correction projection failure'); END;
+    `);
+
+    const failed = simulateRoutePost(sqlite, accountId, depositId, {
+      amount: '2000.00',
+      reason: 'A5 route rollback test',
+    });
+    expect(failed.status).toBe(500);
+    expect((failed.body as { error: string }).error).toBe('Failed to correct financial event');
+    expect((failed.body as { code?: string }).code).toBe('FINANCIAL_EVENT_CORRECTION_PROJECTION_FAILED');
+    sqlite.exec('DROP TRIGGER a5_route_projection_fail');
+
+    // Rolled back: original still effective, no lineage, projection preserved.
+    const original = findEventById(sqlite, depositId)!;
+    expect(JSON.parse(original.effect ?? '{}').amount).toBe('2500.00');
+    const lineageCount = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM financial_event_correction_lineage WHERE account_id = ?')
+      .get(accountId) as { c: number };
+    expect(lineageCount.c).toBe(0);
+    const after = findAccountPerformance(sqlite, accountId);
+    expect(after?.nav).toBe('12500.00');
+
+    // Retry succeeds: coherent corrected projection (12,000).
+    const retry = simulateRoutePost(sqlite, accountId, depositId, {
+      amount: '2000.00',
+      reason: 'A5 route retry',
+    });
+    expect(retry.status).toBe(200);
+    const body = retry.body as { performance: { success: boolean; nav: string } };
+    expect(body.performance.success).toBe(true);
+    expect(body.performance.nav).toBe('12000.00');
   });
 });

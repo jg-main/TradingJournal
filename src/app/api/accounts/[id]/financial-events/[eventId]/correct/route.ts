@@ -40,6 +40,7 @@ import {
   DuplicateCorrectionIdempotencyError,
   InvalidAmountError,
   InvalidMicrosBoundsError,
+  FinancialEventCorrectionProjectionError,
 } from '@/lib/accounting/errors';
 
 type RouteParams = { params: Promise<{ id: string; eventId: string }> };
@@ -126,7 +127,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       postedAt,
     });
 
-    // 5. Build the response
+    // 5. Build the response. The service rebuilt the projection INSIDE the
+    //    correction transaction and enforced success, so a 200 guarantees the
+    //    corrected ledger AND a coherent projection. A small projection
+    //    summary is included as typed evidence.
     return NextResponse.json(
       {
         success: true,
@@ -134,6 +138,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         originalEvent: result.originalEvent,
         reversalEvent: result.reversalEvent,
         replacementEvent: result.replacementEvent,
+        performance: {
+          success: result.performance.success,
+          nav: result.performance.nav,
+          rebuildCount: result.performance.rebuildCount,
+        },
       },
       { status: 200 },
     );
@@ -189,6 +198,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           details: error.message,
         },
         { status: 404 },
+      );
+    }
+
+    // Projection persistence failure (A5): a server-side persistence failure —
+    // never 409/422/400 (not a user-domain conflict). The correction
+    // transaction has already rolled back, so the request is retryable.
+    if (error instanceof FinancialEventCorrectionProjectionError) {
+      return NextResponse.json(
+        {
+          error: 'Failed to correct financial event',
+          code: error.code,
+          details: error.message,
+        },
+        { status: 500 },
       );
     }
 

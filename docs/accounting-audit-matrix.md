@@ -318,6 +318,24 @@ endpoint, no reversal service. Ledger immutability is enforced at the DB layer b
 ever be append-style reversal + replacement, never in-place mutation. S04 extends
 the execution pattern to eligible financial events.
 
+**Updated by A4/A5:** financial-event correction (deposits, withdrawals,
+dividends, interest, fees, taxes, manual adjustments, AND opening_balance)
+uses the generic reversal-and-replacement service
+(`src/lib/accounting/financial-event-correction.ts`), linked through
+`financial_event_correction_lineage`. Since A5, correction is an ATOMIC domain
+operation: the reversal event + replacement event + correction lineage + the
+canonical account-performance projection rebuild all commit inside ONE outer
+SQLite transaction, and `PerformanceRebuildResult.success` is explicitly
+enforced — a failed projection write throws
+`FinancialEventCorrectionProjectionError` (HTTP 500 at the route) and rolls
+back every correction artifact (reversal, replacement, lineage, their ledger
+entries/postings), preserving the prior valid projection. A successful HTTP
+response therefore guarantees projection coherence (no corrected ledger with a
+stale NAV). The correction idempotency key is not consumed by a failed
+transaction and retries succeed. This guarantee applies to financial-event
+correction; execution correction (`correctExecution`) has separate FIFO /
+position / trade-state semantics and has NOT been verified to share it.
+
 - **Evidence:** `src/lib/accounting/correction.ts`,
   `src/lib/accounting/correction-contracts.ts`,
   `src/app/api/accounts/[id]/executions/[executionId]/correct/route.ts`,

@@ -48,6 +48,7 @@ import {
   DuplicateCorrectionIdempotencyError,
   FinancialEventNotFoundError,
   InvalidAmountError,
+  FinancialEventCorrectionProjectionError,
 } from '@/lib/accounting/errors';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -771,5 +772,243 @@ describe('correctFinancialEvent — opening balance (A4)', () => {
         reason: 'Legacy correction attempt',
       }),
     ).toThrow(/no recorded cash effect to reverse/);
+  });
+});
+
+// ── A5: correction is atomic with the performance projection ────────────
+
+describe('correctFinancialEvent — atomic projection (A5)', () => {
+  let ctx: TestContext;
+
+  beforeAll(() => {
+    ctx = createTestDatabase();
+  });
+
+  afterAll(() => {
+    destroyTestDatabase();
+  });
+
+  /** Create a pristine draft, initialize (opening balance), and post a deposit. */
+  function seedOpeningAndDeposit(
+    sqlite: Database.Database,
+    opening: string,
+    deposit: string,
+  ): { accountId: string; depositEventId: string } {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+      )
+      .run(accountId, `A5 Account ${accountId.slice(0, 6)}`, 'Broker', now, now);
+    initializeAccount(sqlite, { accountId, mode: 'opening_balance', amount: opening });
+    const depositResult = postEventWithEffect(sqlite, accountId, {
+      eventType: 'deposit',
+      amount: deposit,
+    });
+    return { accountId, depositEventId: depositResult.event.id };
+  }
+
+  function countRows(sqlite: Database.Database): {
+    events: number;
+    entries: number;
+    postings: number;
+    lineage: number;
+  } {
+    const events = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM financial_events')
+      .get() as { c: number };
+    const entries = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM ledger_entries')
+      .get() as { c: number };
+    const postings = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM ledger_postings')
+      .get() as { c: number };
+    const lineage = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM financial_event_correction_lineage')
+      .get() as { c: number };
+    return { events: events.c, entries: entries.c, postings: postings.c, lineage: lineage.c };
+  }
+
+  it('26: successful correction returns a coherent projection (10k + 2.5k -> 2k = 12k)', () => {
+    const { sqlite } = ctx;
+    const { accountId, depositEventId } = seedOpeningAndDeposit(sqlite, '10000.00', '2500.00');
+
+    const result = correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: depositEventId,
+      amount: '2000.00',
+      reason: 'Broker statement correction',
+    });
+
+    expect(result.performance.success).toBe(true);
+    expect(result.performance.nav).toBe('12000.00');
+
+    // Persisted: original unchanged, reversal + replacement + lineage exist.
+    const original = findEventById(sqlite, depositEventId)!;
+    expect(original.event_type).toBe('deposit');
+    expect(JSON.parse(original.effect ?? '{}').amount).toBe('2500.00');
+    expect(findEventById(sqlite, result.reversalEvent.id)).toBeDefined();
+    expect(findEventById(sqlite, result.replacementEvent.id)).toBeDefined();
+    expect(findFinancialEventCorrectionByOriginalEvent(sqlite, depositEventId)).toBeDefined();
+
+    // Canonical projection reflects the corrected stream immediately.
+    rebuildAccountPerformance(sqlite, accountId);
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection?.net_cash).toBe('12000.00');
+    expect(projection?.nav).toBe('12000.00');
+  });
+
+  it('27: forced projection failure rolls back the entire correction and preserves the prior projection', () => {
+    const { sqlite } = ctx;
+    const { accountId, depositEventId } = seedOpeningAndDeposit(sqlite, '10000.00', '2500.00');
+
+    // Establish a valid prior projection: NAV = 12,500 (opening 10k + deposit 2.5k).
+    rebuildAccountPerformance(sqlite, accountId);
+    const before = findAccountPerformance(sqlite, accountId);
+    expect(before?.nav).toBe('12500.00');
+
+    const rowsBefore = countRows(sqlite);
+    sqlite.exec(`
+      CREATE TRIGGER a5_t27_force_projection_fail BEFORE UPDATE ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced correction projection failure'); END;
+    `);
+
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: depositEventId,
+        amount: '2000.00',
+        reason: 'This correction should roll back',
+      }),
+    ).toThrow(FinancialEventCorrectionProjectionError);
+    sqlite.exec('DROP TRIGGER a5_t27_force_projection_fail');
+
+    // ZERO new correction artifacts.
+    const rowsAfter = countRows(sqlite);
+    expect(rowsAfter.events).toBe(rowsBefore.events);
+    expect(rowsAfter.entries).toBe(rowsBefore.entries);
+    expect(rowsAfter.postings).toBe(rowsBefore.postings);
+    expect(rowsAfter.lineage).toBe(rowsBefore.lineage);
+
+    // Original unchanged and still correctable; prior projection preserved.
+    const original = findEventById(sqlite, depositEventId)!;
+    expect(JSON.parse(original.effect ?? '{}').amount).toBe('2500.00');
+    expect(findFinancialEventCorrectionByOriginalEvent(sqlite, depositEventId)).toBeUndefined();
+    const after = findAccountPerformance(sqlite, accountId);
+    expect(after?.nav).toBe('12500.00');
+
+    // Retry with a healthy projection succeeds exactly once.
+    const retry = correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: depositEventId,
+      amount: '2000.00',
+      reason: 'Retry after projection failure',
+    });
+    expect(retry.performance.success).toBe(true);
+    expect(retry.performance.nav).toBe('12000.00');
+    expect(findFinancialEventCorrectionByOriginalEvent(sqlite, depositEventId)).toBeDefined();
+  });
+
+  it('28: opening-balance correction failure keeps 10k effective; retry yields 9k', () => {
+    const { sqlite } = ctx;
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+      )
+      .run(accountId, `A5 Opening ${accountId.slice(0, 6)}`, 'Broker', now, now);
+    initializeAccount(sqlite, { accountId, mode: 'opening_balance', amount: '10000.00' });
+    const openingEventId = listAccountEvents(sqlite, accountId)[0].id;
+
+    sqlite.exec(`
+      CREATE TRIGGER a5_t28_force_projection_fail BEFORE UPDATE ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced correction projection failure'); END;
+    `);
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: openingEventId,
+        amount: '9000.00',
+        reason: 'Should roll back',
+      }),
+    ).toThrow(FinancialEventCorrectionProjectionError);
+    sqlite.exec('DROP TRIGGER a5_t28_force_projection_fail');
+
+    // Rejected: effective opening remains 10,000, account active, original correctable.
+    const activity = computeAccountCashImpact(sqlite, accountId);
+    expect(activity.netCashImpact).toBe('10000.00');
+    const accountRow = sqlite
+      .prepare('SELECT is_active FROM accounts WHERE id = ?')
+      .get(accountId) as { is_active: number };
+    expect(accountRow.is_active).toBe(1);
+    expect(findFinancialEventCorrectionByOriginalEvent(sqlite, openingEventId)).toBeUndefined();
+
+    // Retry succeeds: effective opening 9,000, NAV 9,000.
+    const retry = correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: openingEventId,
+      amount: '9000.00',
+      reason: 'Retry after projection failure',
+    });
+    expect(retry.performance.success).toBe(true);
+    expect(retry.performance.nav).toBe('9000.00');
+    rebuildAccountPerformance(sqlite, accountId);
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection?.net_cash).toBe('9000.00');
+    expect(projection?.nav).toBe('9000.00');
+  });
+
+  it('29: a failed correction does not consume the idempotency key; retry with the SAME key succeeds', () => {
+    const { sqlite } = ctx;
+    const { accountId, depositEventId } = seedOpeningAndDeposit(sqlite, '10000.00', '2500.00');
+    const idempotencyKey = randomUUID();
+
+    sqlite.exec(`
+      CREATE TRIGGER a5_t29_force_projection_fail BEFORE UPDATE ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced correction projection failure'); END;
+    `);
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: depositEventId,
+        amount: '2000.00',
+        reason: 'Idempotent retry scenario',
+        idempotencyKey,
+      }),
+    ).toThrow(FinancialEventCorrectionProjectionError);
+    sqlite.exec('DROP TRIGGER a5_t29_force_projection_fail');
+
+    // No lineage row consumed the key.
+    const row = sqlite
+      .prepare('SELECT id FROM financial_event_correction_lineage WHERE idempotency_key = ?')
+      .get(idempotencyKey);
+    expect(row).toBeUndefined();
+
+    // Retry with the SAME key succeeds exactly once.
+    const retry = correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: depositEventId,
+      amount: '2000.00',
+      reason: 'Idempotent retry scenario',
+      idempotencyKey,
+    });
+    expect(retry.performance.success).toBe(true);
+
+    // Repeating the same correction is rejected (already corrected).
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: depositEventId,
+        amount: '1500.00',
+        reason: 'Third attempt',
+      }),
+    ).toThrow(EventAlreadyCorrectedError);
   });
 });

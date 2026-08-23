@@ -480,4 +480,27 @@ describe('POST /api/accounts/:id/close — canonical closure summary', () => {
     expect(d.netReturn).toBe(0);
     expect(isActive(sqlite, accountId)).toBe(0);
   });
+  it('24: deposit correction flows into the canonical closure (10k + 2.5k -> 2k = 12k)', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite, 'A5 Closure Regression');
+
+    init(sqlite, accountId, '10000.00');
+    const depositId = postEvent(sqlite, accountId, 'deposit', '2500.00');
+    correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: depositId,
+      amount: '2000.00',
+      reason: 'Broker statement correction',
+    });
+
+    const result = doCloseAccount(sqlite, accountId);
+    expect(result.status).toBe(200);
+    const d = result.data;
+    expect(d.openingBalance).toBe(10_000);
+    expect(d.depositsTotal).toBe(2_000);
+    expect(d.finalBalance).toBe(12_000);
+    expect(d.realizedPnl).toBe(0);
+    expect(d.netReturn).toBe(0);
+    expect(isActive(sqlite, accountId)).toBe(0);
+  });
 });
