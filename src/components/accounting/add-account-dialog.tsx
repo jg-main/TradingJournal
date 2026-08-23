@@ -12,14 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { DEFAULT_ACCOUNT_CURRENCY, UNSUPPORTED_CURRENCY_GUIDANCE } from '@/lib/accounting/currency-contract';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -46,27 +40,6 @@ interface AddAccountDialogProps {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-
-const COMMON_CURRENCIES = [
-  'USD',
-  'EUR',
-  'GBP',
-  'CHF',
-  'JPY',
-  'CAD',
-  'AUD',
-  'NZD',
-  'SEK',
-  'NOK',
-  'DKK',
-  'SGD',
-  'HKD',
-  'MXN',
-  'BRL',
-  'PLN',
-  'TRY',
-  'INR',
-];
 
 /**
  * Extract a human-readable message from an API error body. API routes in
@@ -118,7 +91,6 @@ function AddAccountForm({
 }: Pick<AddAccountDialogProps, 'onOpenChange' | 'onCreated'>) {
   const [name, setName] = useState('');
   const [broker, setBroker] = useState('');
-  const [currency, setCurrency] = useState('USD');
   const [makeDefault, setMakeDefault] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +114,10 @@ function AddAccountForm({
         body: JSON.stringify({
           name: name.trim(),
           broker: broker.trim() || null,
-          currency,
+          // USD-only contract: the dialog offers no currency choices and
+          // always creates USD accounts. The API also defaults to USD, so
+          // omitting the field is the canonical request.
+          currency: DEFAULT_ACCOUNT_CURRENCY,
         }),
       });
 
@@ -243,7 +218,7 @@ function AddAccountForm({
           />
         </div>
 
-        {/* Base currency */}
+        {/* Base currency — USD only (product contract) */}
         <div>
           <label
             id="add-account-currency-label"
@@ -251,22 +226,15 @@ function AddAccountForm({
           >
             Base currency
           </label>
-          <Select value={currency} onValueChange={setCurrency} disabled={submitting}>
-            <SelectTrigger
-              className="w-full"
-              aria-label="Base currency"
-              aria-labelledby="add-account-currency-label"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {COMMON_CURRENCIES.map((code) => (
-                <SelectItem key={code} value={code}>
-                  {code}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex h-9 w-full items-center rounded-md border border-border bg-muted/40 px-3 text-sm text-foreground">
+            {DEFAULT_ACCOUNT_CURRENCY}
+          </div>
+          <p
+            id="add-account-currency-help"
+            className="mt-1 text-xs text-muted-foreground"
+          >
+            {UNSUPPORTED_CURRENCY_GUIDANCE}
+          </p>
         </div>
 
         {/* Make default */}

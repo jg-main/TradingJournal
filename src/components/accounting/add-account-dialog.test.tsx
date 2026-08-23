@@ -1,15 +1,11 @@
 /**
- * Tests for the AddAccountDialog component (S02/T01).
+ * Tests for the AddAccountDialog component (S02/T01, A1).
  *
  * Covers: dialog rendering, client-side name validation, account creation
- * through POST /api/accounts (payload shape), API error surfacing (400/500),
- * the optional "Make this my default account" settings update, loading state,
- * and the onCreated handoff that drives navigation.
- *
- * The currency field is a radix Select, so it follows the repository pattern:
- * open the combobox trigger, then click the option rendered in the portal
- * (see performance-filter-bar.test.tsx). jsdom lacks scrollIntoView, which
- * Radix Select calls on open — stubbed below.
+ * through POST /api/accounts (payload shape), the USD-only base-currency
+ * read-only field (no currency selector), API error surfacing (400/500),
+ * the optional "Make this my default account" settings update, loading
+ * state, and the onCreated handoff that drives navigation.
  *
  * Run: npx vitest run src/components/accounting/add-account-dialog.test.tsx
  */
@@ -83,14 +79,6 @@ async function flushAsync() {
   });
 }
 
-/** Open the currency Select and pick an option (radix portal pattern). */
-async function chooseCurrency(code: string) {
-  fireEvent.click(screen.getByRole('combobox', { name: 'Base currency' }));
-  const option = await screen.findByRole('option', { name: code });
-  fireEvent.click(option);
-  await flushAsync();
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -116,9 +104,14 @@ describe('AddAccountDialog', () => {
     ).toBeTruthy();
     expect(screen.getByLabelText('Account name')).toBeTruthy();
     expect(screen.getByLabelText('Broker')).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Base currency' })).toBeTruthy();
-    // Default currency shown in the trigger.
-    expect(screen.getByRole('combobox', { name: 'Base currency' }).textContent).toContain('USD');
+    // Base currency is a read-only USD field (USD-only contract, A1): no
+    // multi-currency selector is presented.
+    expect(screen.getByText('Base currency')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'Base currency' })).toBeNull();
+    expect(screen.getByText('USD')).toBeTruthy();
+    expect(
+      screen.getByText(/currently supports USD account accounting only/),
+    ).toBeTruthy();
     expect(
       screen.getByRole('checkbox', { name: /Make this my default account/ }),
     ).toBeTruthy();
@@ -211,21 +204,20 @@ describe('AddAccountDialog', () => {
     });
   });
 
-  it('submits the selected currency from the Select', async () => {
+  it('always creates a USD account (USD-only contract, no currency choices)', async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      createdResponse({ ...CREATED_ACCOUNT, currency: 'EUR' }),
+      createdResponse(CREATED_ACCOUNT),
     );
     renderDialog();
 
-    changeInput('Account name', 'EUR Account');
-    await chooseCurrency('EUR');
+    changeInput('Account name', 'USD Account');
     clickButton('Create Account');
     await flushAsync();
 
     const body = JSON.parse(
       (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
     );
-    expect(body.currency).toBe('EUR');
+    expect(body.currency).toBe('USD');
   });
 
   // ── Default account option ─────────────────────────────────────────

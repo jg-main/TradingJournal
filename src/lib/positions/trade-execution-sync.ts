@@ -19,6 +19,7 @@
 import Database from 'better-sqlite3';
 import { normalizeDecimal } from '../accounting/decimal';
 import { ensureExecutionFinancialEvent } from '../accounting/execution-posting';
+import { assertSupportedAccountCurrency } from '../accounting/posting';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { rebuildPositions } from './rebuild';
 import type { RebuildResult } from './types';
@@ -97,6 +98,12 @@ export function syncTradeExecution(
   symbol: string,
 ): AccountingExecutionRow {
   const idempotencyKey = tradeExecutionIdempotencyKey(tradeExecution.id);
+
+  // ── Enforce the USD-only account currency contract ──────────────────
+  // Legacy trade-execution mirroring must not create new ledger activity for
+  // a non-USD account. Throws before any instrument/execution-row mutation,
+  // so a rejected sync leaves no partial state.
+  assertSupportedAccountCurrency(sqlite, accountId);
 
   // ── Check idempotency ──────────────────────────────────────────────
   const existing = findAccountingExecutionByIdempotencyKey(sqlite, idempotencyKey);

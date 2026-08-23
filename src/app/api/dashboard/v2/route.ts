@@ -68,10 +68,13 @@ function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | 
     return setting.default_account_id;
   }
 
-  // Fall back to first active account
+  // Fall back to first active account whose base currency is supported
+  // (USD-only contract). A legacy non-USD account is never auto-selected as
+  // the effective account for current-state workflows; it remains readable
+  // only when explicitly requested via accountId.
   const firstActive = sqlite
     .prepare(
-      'SELECT id FROM accounts WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1',
+      "SELECT id FROM accounts WHERE is_active = 1 AND currency = 'USD' ORDER BY created_at ASC LIMIT 1",
     )
     .get() as { id: string } | undefined;
 

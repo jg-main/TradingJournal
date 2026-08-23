@@ -526,16 +526,17 @@ test.describe('Account Settings Workspace', () => {
       await page.close();
     });
 
-    test('blocks currency changes with 409 when the account has financial history', async ({ page }) => {
-      // Attempt to change the base currency of an account with financial events
+    test('rejects currency mutation to EUR with 400 (USD-only contract)', async ({ page }) => {
+      // Attempt to change the base currency of an account to a non-USD value.
+      // The USD-only contract rejects this at validation (400) — even with
+      // financial history, and even without it — never silently coerced.
       const response = await page.request.put(`/api/accounts/${guardedAccountId}`, {
         data: { currency: 'EUR' },
       });
-      expect(response.status()).toBe(409);
+      expect(response.status()).toBe(400);
 
       const body = await response.json();
-      expect(body.error).toContain('Cannot change base currency');
-      expect(body.error).toContain('financial history');
+      expect(body.error).toBe('Validation failed');
 
       // The declared currency is unchanged
       const account = await (await page.request.get(`/api/accounts/${guardedAccountId}`)).json();

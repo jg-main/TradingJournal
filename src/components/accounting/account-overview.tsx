@@ -13,6 +13,7 @@ import {
   Receipt,
   BarChart3,
   ExternalLink,
+  TriangleAlert,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -20,6 +21,7 @@ import { useAccount, ACCOUNT_CHANGED_EVENT } from '@/lib/account-context';
 import { Button } from '@/components/ui/button';
 import { AccountInitialization } from './account-initialization';
 import { FinancialTransactionComposer } from './financial-transaction-composer';
+import { isSupportedAccountCurrency } from '@/lib/accounting/currency-contract';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -286,6 +288,48 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   }
 
   const { snapshot, positions, positionsTotal, events, eventsTotal } = data;
+  const accountCurrency = data.currency ?? 'USD';
+  const currencySupported = isSupportedAccountCurrency(accountCurrency);
+
+  // ── Legacy non-USD account (USD-only contract) ────────────────────
+  // Preserve historical readability, but block ALL new financially
+  // meaningful activity: no opening-balance initialization and no
+  // transaction composer. The UI must never present an Amount (EUR) field
+  // that would produce USD ledger postings.
+  if (!currencySupported) {
+    return (
+      <div className="rounded-lg border border-warning/40 bg-warning/5 p-6">
+        <div className="flex items-start gap-2">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              {accountCurrency} account — not currently supported for new activity
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              This account was created with base currency {accountCurrency}. TradingJournal
+              currently supports USD account accounting only. Existing {accountCurrency} records
+              remain readable, but you cannot post opening balances, transactions, or executions
+              until multi-currency accounting is supported.
+            </p>
+          </div>
+        </div>
+
+        {/* Historical data remains readable below */}
+        <div className="mt-5">
+          {eventsTotal === 0 && positionsTotal === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              This account has no recorded financial history.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Historical overview and ledger data for this account remain accessible on their
+              respective tabs.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ── Draft account (inactive, no financial events, no positions) ──────
   // Show the guided initialization state instead of the empty overview so
@@ -295,7 +339,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
       <AccountInitialization
         accountId={data.accountId}
         accountName={data.name ?? 'your account'}
-        currency={data.currency ?? 'USD'}
+        currency={accountCurrency}
         onInitialized={handleAccountStateChanged}
       />
     );

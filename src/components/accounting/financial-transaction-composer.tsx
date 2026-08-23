@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { extractApiErrorMessage } from '@/lib/error-utils';
 import { cn } from '@/lib/utils';
+import { isSupportedAccountCurrency, UNSUPPORTED_CURRENCY_GUIDANCE } from '@/lib/accounting/currency-contract';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -180,6 +181,7 @@ export function FinancialTransactionComposer({
   onOpenChange,
   onPosted,
 }: FinancialTransactionComposerProps) {
+  const currencySupported = isSupportedAccountCurrency(currency);
   const [eventType, setEventType] = useState<ComposerEventType>('deposit');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -291,6 +293,16 @@ export function FinancialTransactionComposer({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // USD-only contract: never submit a transaction for an unsupported
+    // currency account. The domain/API guard is authoritative regardless;
+    // this keeps the workflow blocked before the user completes the form.
+    if (!currencySupported) {
+      setError(
+        `Unsupported account currency "${currency}". ${UNSUPPORTED_CURRENCY_GUIDANCE}`,
+      );
+      return;
+    }
 
     if (!validate()) return;
 

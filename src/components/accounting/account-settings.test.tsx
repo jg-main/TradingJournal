@@ -210,6 +210,24 @@ describe('AccountSettings — currency display', () => {
     expect(currencyInput.disabled).toBe(true);
     expect(screen.getByText(/cannot be changed from settings/)).toBeTruthy();
   });
+
+  it('marks a legacy non-USD currency as unsupported while preserving its value', async () => {
+    mockFetchSuccess({ ...ACCT_FULL, currency: 'EUR' });
+    render(<AccountSettings accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Account Identity')).toBeTruthy();
+    });
+
+    // The persisted EUR value is preserved (never relabeled as USD)…
+    const currencyInput = screen.getByLabelText('Base Currency') as HTMLInputElement;
+    expect(currencyInput.value).toBe('EUR');
+    // …and clearly marked unsupported with the support-boundary guidance.
+    expect(screen.getByText('Unsupported')).toBeTruthy();
+    expect(
+      screen.getByText(/currently supports USD account accounting only/),
+    ).toBeTruthy();
+  });
 });
 
 describe('AccountSettings — NULL fallback display', () => {

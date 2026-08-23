@@ -33,6 +33,7 @@ import {
   InvalidMicrosBoundsError,
   AccountNotFoundError,
   DuplicateIdempotencyKeyError,
+  UnsupportedAccountCurrencyError,
 } from '@/lib/accounting/errors';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -195,6 +196,18 @@ function doPostFinancialEvent(
       return {
         status: 404,
         body: { error: 'Account not found', details: (error as Error).message },
+      };
+    }
+    if (error instanceof UnsupportedAccountCurrencyError) {
+      return {
+        status: 400,
+        body: {
+          error: (error as Error).message,
+          details: {
+            accountId: error.accountId,
+            currency: error.currency,
+          },
+        },
       };
     }
     if (error instanceof DuplicateIdempotencyKeyError) {
@@ -995,5 +1008,83 @@ describe('Ledger integrity', () => {
     ).total;
 
     expect(debitTotal).toBe(creditTotal);
+  });
+});
+
+// ── Legacy non-USD account (USD-only contract) ─────────────────────────
+
+describe('legacy non-USD account (USD-only contract)', () => {
+  let eurAccountId: string;
+
+  beforeAll(() => {
+    // Insert a legacy EUR account directly — pre-dates the USD-only contract
+    // and must be preserved as-is (never rewritten), but must block all new
+    // financially meaningful activity.
+    eurAccountId = randomUUID();
+    const now = new Date().toISOString();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(eurAccountId, 'Legacy EUR Account', 'Broker', 'EUR', now, now);
+  });
+
+  it('rejects a deposit with a clear unsupported-currency error', () => {
+    const result = doPostFinancialEvent(ctx.sqlite, eurAccountId, {
+      eventType: 'deposit',
+      amount: '100.00',
+      description: 'Should be blocked',
+    });
+
+    expect(result.status).toBe(400);
+    expect(result.body.error).toContain('Unsupported account currency');
+    expect(result.body.error).toContain('USD');
+    expect(result.body.details).toMatchObject({
+      accountId: eurAccountId,
+      currency: 'EUR',
+    });
+  });
+
+  it('rejects every financially meaningful event type with zero ledger mutation', () => {
+    const eventsBefore = (
+      ctx.sqlite.prepare('SELECT count(*) AS count FROM financial_events WHERE account_id = ?').get(eurAccountId) as { count: number }
+    ).count;
+    const postingsBefore = (
+      ctx.sqlite.prepare('SELECT count(*) AS count FROM ledger_postings').get() as { count: number }
+    ).count;
+
+    for (const eventType of ['deposit', 'withdrawal', 'dividend', 'interest', 'fee', 'tax', 'manual_adjustment', 'opening_balance']) {
+      const result = doPostFinancialEvent(ctx.sqlite, eurAccountId, {
+        eventType,
+        amount: '10.00',
+      });
+      expect(result.status).toBe(400);
+      expect(result.body.error).toContain('Unsupported account currency');
+    }
+
+    const eventsAfter = (
+      ctx.sqlite.prepare('SELECT count(*) AS count FROM financial_events WHERE account_id = ?').get(eurAccountId) as { count: number }
+    ).count;
+    const postingsAfter = (
+      ctx.sqlite.prepare('SELECT count(*) AS count FROM ledger_postings').get() as { count: number }
+    ).count;
+    expect(eventsAfter).toBe(eventsBefore);
+    expect(postingsAfter).toBe(postingsBefore);
+  });
+
+  it('does not consume the idempotency key on rejection', () => {
+    const idempotencyKey = randomUUID();
+    const result = doPostFinancialEvent(ctx.sqlite, eurAccountId, {
+      eventType: 'deposit',
+      amount: '50.00',
+      idempotencyKey,
+    });
+    expect(result.status).toBe(400);
+
+    const row = ctx.sqlite
+      .prepare('SELECT id FROM financial_events WHERE idempotency_key = ?')
+      .get(idempotencyKey);
+    expect(row).toBeUndefined();
   });
 });

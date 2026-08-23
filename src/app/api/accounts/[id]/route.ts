@@ -5,11 +5,15 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { canDeactivateAccount, canDeleteAccount, canReactivateAccount } from '@/lib/account-lifecycle';
 import { countAccountEvents, findAccountPerformance } from '@/db/accounting-repository';
+import { accountCurrencySchema, isSupportedAccountCurrency } from '@/lib/accounting/currency-contract';
 
 const updateAccountSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   broker: z.string().max(200).nullable().optional(),
-  currency: z.string().min(1).max(3).optional(),
+  // USD-only contract: only 'USD' is a valid currency value. Mutating to a
+  // non-USD currency (EUR/GBP/etc.) is rejected even when the account has no
+  // financial history — the product supports USD accounts only.
+  currency: accountCurrencySchema.optional(),
   isActive: z.boolean().optional(),
   maxRiskPerTradePct: z.number().positive().nullable().optional(),
   defaultCommission: z.number().min(0).nullable().optional(),
@@ -89,23 +93,52 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }
 
-    // Currency mutation guard (D4): base currency is fixed once the account has
-    // financial history. The posting kernel hardcodes USD in toPostingRecord and
-    // ledger_postings.currency is USD NOT NULL, so changing the declared currency
-    // after events exist would silently diverge it from the ledger postings.
-    if (parsed.data.currency !== undefined && parsed.data.currency !== existing.currency) {
+    // ── Base-currency contract (USD-only) ──────────────────────────────
+    // The update schema already restricts currency to 'USD', so a request
+    // carrying EUR/GBP/etc. fails validation with 400 before reaching here.
+    // Two additional rules keep the contract airtight:
+    //
+    // 1. A legacy account persisted with a non-USD currency must NEVER be
+    //    silently rewritten to USD (or anything else) — that would reinterpret
+    //    historical rows. If the caller explicitly supplies a currency for
+    //    such an account, reject it.
+    // 2. A USD account with financial history keeps the existing guard: base
+    //    currency is fixed once events exist (posting kernel hardcodes USD in
+    //    ledger postings, so changing the declared currency would diverge it
+    //    from the ledger).
+    if (parsed.data.currency !== undefined) {
       const sqlite = getSqliteHandle();
-      const eventCount = countAccountEvents(sqlite, id);
-      if (eventCount > 0) {
+      const persistedCurrency = existing.currency ?? 'USD';
+
+      // Legacy non-USD rows are immutable: never rewrite them.
+      if (!isSupportedAccountCurrency(persistedCurrency)) {
         return NextResponse.json(
           {
             error:
-              'Cannot change base currency: account has financial history. ' +
-              'Base currency is fixed once financial events are posted; ' +
-              'create a new account for a different base currency.',
+              `Unsupported account currency "${persistedCurrency}". ` +
+              'This installation currently supports USD account accounting only. ' +
+              'Existing non-USD accounts are preserved and remain readable; ' +
+              'their currency cannot be changed.',
           },
-          { status: 409 },
+          { status: 400 },
         );
+      }
+
+      // USD → USD is a no-op. Guard the pre-existing mutation rule for any
+      // future supported-currency expansion.
+      if (parsed.data.currency !== persistedCurrency) {
+        const eventCount = countAccountEvents(sqlite, id);
+        if (eventCount > 0) {
+          return NextResponse.json(
+            {
+              error:
+                'Cannot change base currency: account has financial history. ' +
+                'Base currency is fixed once financial events are posted; ' +
+                'create a new account for a different base currency.',
+            },
+            { status: 409 },
+          );
+        }
       }
     }
 

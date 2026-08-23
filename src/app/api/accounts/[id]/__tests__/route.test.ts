@@ -313,8 +313,11 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
     if (body.broker !== undefined && body.broker !== null && (typeof body.broker !== 'string' || (body.broker as string).length > 200)) {
       return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { broker: ['String must contain at most 200 character(s)'] } } } };
     }
-    if (body.currency !== undefined && (typeof body.currency !== 'string' || body.currency.length < 1 || body.currency.length > 3)) {
-      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { currency: ['String must contain at most 3 character(s)'] } } } };
+    // USD-only contract (A1): canonical schema is `z.literal('USD').optional()`.
+    // Only 'USD' passes validation; EUR/GBP/etc. → 400 (never silently
+    // coerced, never allowed to mutate a USD account to another currency).
+    if (body.currency !== undefined && body.currency !== 'USD') {
+      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { currency: [`Invalid enum value. Expected 'USD', received '${String(body.currency)}'`] } } } };
     }
 
     const existing = db.select().from(schema.accounts).where(eq(schema.accounts.id, id)).get();
@@ -322,22 +325,38 @@ function doPutAccount(id: string, body: Record<string, unknown>): { status: numb
       return { status: 404, data: { error: 'Account not found' } };
     }
 
-    // Currency mutation guard (D4): base currency is fixed once the account has
-    // financial history (financial_events rows). Mirrors the real PUT handler.
-    if (body.currency !== undefined && body.currency !== existing.currency) {
-      const eventRow = sqlite
-        .prepare('SELECT COUNT(*) AS count FROM financial_events WHERE account_id = ?')
-        .get(id) as { count: number };
-      if (eventRow.count > 0) {
+    // Currency mutation guard (A1 + D4): a legacy non-USD account is never
+    // rewritten; a USD account's base currency is fixed once financial
+    // history exists. Mirrors the real PUT handler.
+    if (body.currency !== undefined) {
+      const persistedCurrency = (existing as { currency?: string | null }).currency ?? 'USD';
+      if (persistedCurrency !== 'USD') {
         return {
-          status: 409,
+          status: 400,
           data: {
             error:
-              'Cannot change base currency: account has financial history. ' +
-              'Base currency is fixed once financial events are posted; ' +
-              'create a new account for a different base currency.',
+              `Unsupported account currency "${persistedCurrency}". ` +
+              'This installation currently supports USD account accounting only. ' +
+              'Existing non-USD accounts are preserved and remain readable; ' +
+              'their currency cannot be changed.',
           },
         };
+      }
+      if (body.currency !== persistedCurrency) {
+        const eventRow = sqlite
+          .prepare('SELECT COUNT(*) AS count FROM financial_events WHERE account_id = ?')
+          .get(id) as { count: number };
+        if (eventRow.count > 0) {
+          return {
+            status: 409,
+            data: {
+              error:
+                'Cannot change base currency: account has financial history. ' +
+                'Base currency is fixed once financial events are posted; ' +
+                'create a new account for a different base currency.',
+            },
+          };
+        }
       }
     }
 
@@ -547,17 +566,45 @@ console.log('\n2. PUT updates account broker:');
   assertEqual(data.broker, 'TD Ameritrade', 'broker is updated');
 }
 
-// ── 3. PUT: Update account currency ─────────────────────────────────
+// ── 3. PUT: Update account currency (USD-only contract) ────────────────
 
-console.log('\n3. PUT updates account currency:');
+console.log('\n3. PUT rejects currency mutation to EUR (USD-only contract):');
 {
   cleanup();
-  const account = seedAccount({ name: 'Currency Test' });
+  const account = seedAccount({ name: 'Currency Test', currency: 'USD' });
   const result = doPutAccount(account.id as string, { currency: 'EUR' });
 
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as Record<string, unknown>;
+  assert(data.error === 'Validation failed', 'error is Validation failed');
+  // The persisted account currency must remain unchanged.
+  const row = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get();
+  assertEqual((row as { currency: string }).currency, 'USD', 'currency remains USD');
+}
+
+// ── 3a. PUT: currency USD → USD is a no-op (allowed) ───────────────────
+
+console.log('\n3a. PUT with currency USD is a no-op:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'USD No-op', currency: 'USD' });
+  const result = doPutAccount(account.id as string, { currency: 'USD', name: 'Renamed' });
   assert(result.status === 200, 'returns 200');
   const data = result.data as Record<string, unknown>;
-  assertEqual(data.currency, 'EUR', 'currency is updated');
+  assertEqual(data.currency, 'USD', 'currency stays USD');
+  assertEqual(data.name, 'Renamed', 'name update applied');
+}
+
+// ── 3b. PUT: legacy EUR account cannot be rewritten to USD ──────────────
+
+console.log('\n3b. PUT refuses to rewrite a legacy EUR account to USD:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Legacy EUR', currency: 'EUR' });
+  const result = doPutAccount(account.id as string, { currency: 'USD' });
+  assert(result.status === 400, 'returns 400');
+  const row = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get();
+  assertEqual((row as { currency: string }).currency, 'EUR', 'legacy EUR currency preserved');
 }
 
 // ── 4. PUT: Update isActive ─────────────────────────────────────────
@@ -881,31 +928,33 @@ console.log('\n26. PUT allows reactivation when inactive with no trades:');
 
 // ── 27. PUT: Blocks currency change when account has financial history ──
 
-console.log('\n27. PUT blocks currency change with financial history:');
+console.log('\n27. PUT rejects EUR even with financial history (USD-only contract):');
 {
   cleanup();
   const account = seedAccount({ name: 'Currency Guard', currency: 'USD' });
   seedFinancialEvent({ accountId: account.id as string, eventType: 'opening_balance' });
   const result = doPutAccount(account.id as string, { currency: 'EUR' });
 
-  assert(result.status === 409, 'returns 409');
+  assert(result.status === 400, 'returns 400 (unsupported currency, before history check)');
   const data = result.data as { error: string };
-  assert(data.error.includes('base currency'), 'error message is descriptive and actionable');
+  assert(data.error === 'Validation failed', 'error is Validation failed');
   const current = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
   assertEqual(current.currency, 'USD', 'currency unchanged');
 }
 
-// ── 28. PUT: Allows currency change when no financial history ─────────
+// ── 28. PUT: USD → EUR rejected even without financial history ────────
 
-console.log('\n28. PUT allows currency change without financial history:');
+console.log('\n28. PUT rejects USD → EUR without financial history (USD-only contract):');
 {
   cleanup();
   const account = seedAccount({ name: 'Currency Free', currency: 'USD' });
   const result = doPutAccount(account.id as string, { currency: 'EUR' });
 
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.currency, 'EUR', 'currency is updated');
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as { error: string };
+  assert(data.error === 'Validation failed', 'error is Validation failed');
+  const current = db.select().from(schema.accounts).where(eq(schema.accounts.id, account.id as string)).get() as Record<string, unknown>;
+  assertEqual(current.currency, 'USD', 'currency remains USD (no EUR mutation workaround)');
 }
 
 // ── 29. PUT: Same-currency no-op allowed even with financial history ──

@@ -298,15 +298,15 @@ test.describe('Account settings lifecycle verification', () => {
   });
 
   test('guardrails: currency mutation and close-route open-trade guards return descriptive errors', async ({ page }) => {
-    // The lifecycle account has financial history (deposit above), so a
-    // currency change must be rejected with a descriptive 409.
+    // The lifecycle account has financial history (deposit above), but the
+    // USD-only contract rejects a non-USD currency value at validation (400)
+    // regardless of history — never silently coerced.
     const currencyRes = await page.request.put(`/api/accounts/${lifecycleAccountId}`, {
       data: { currency: 'EUR' },
     });
-    expect(currencyRes.status()).toBe(409);
+    expect(currencyRes.status()).toBe(400);
     const currencyBody = await currencyRes.json();
-    expect(currencyBody.error).toContain('Cannot change base currency');
-    expect(currencyBody.error).toContain('financial history');
+    expect(currencyBody.error).toBe('Validation failed');
 
     // Deactivate first (no open trades), then verify the close guard message
     // shape on a fresh account with an open trade is covered by the workspace

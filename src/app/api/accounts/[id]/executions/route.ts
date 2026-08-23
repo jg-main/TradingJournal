@@ -46,6 +46,7 @@ import {
   AccountNotFoundError,
   DuplicateExecutionIdempotencyError,
   FifoAllocationRejectedError,
+  UnsupportedAccountCurrencyError,
 } from '@/lib/accounting/errors';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -309,6 +310,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           details: error.message,
         },
         { status: 404 },
+      );
+    }
+
+    if (error instanceof UnsupportedAccountCurrencyError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          details: {
+            accountId: error.accountId,
+            currency: error.currency,
+          },
+        },
+        { status: 400 },
       );
     }
 

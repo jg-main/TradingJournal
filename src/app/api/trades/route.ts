@@ -736,6 +736,7 @@ export async function POST(request: NextRequest) {
           .prepare(
             `SELECT a.id FROM accounts a
              WHERE a.is_active = 1
+               AND a.currency = 'USD'
                AND a.max_risk_per_trade_pct IS NOT NULL
                AND a.default_commission IS NOT NULL
                AND EXISTS (
@@ -749,10 +750,15 @@ export async function POST(request: NextRequest) {
           .get() as { id: string } | undefined;
         accountId = readyActive?.id;
         if (!accountId) {
+          // Trading-ready resolution found no USD account; fall through to the
+          // first active USD account so the readiness guard below can produce
+          // actionable guidance. A legacy non-USD account is never auto-
+          // selected as the effective account for new financially meaningful
+          // workflows.
           const firstActive = db
             .select()
             .from(accounts)
-            .where(eq(accounts.isActive, true))
+            .where(and(eq(accounts.isActive, true), eq(accounts.currency, 'USD')))
             .orderBy(asc(accounts.createdAt))
             .limit(1)
             .get();

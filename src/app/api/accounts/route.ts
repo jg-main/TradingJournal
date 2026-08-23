@@ -3,11 +3,14 @@ import { db } from '@/db';
 import { accounts } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
+import { accountCurrencySchema, DEFAULT_ACCOUNT_CURRENCY } from '@/lib/accounting/currency-contract';
 
 const createAccountSchema = z.object({
   name: z.string().min(1, 'Name is required').max(200),
   broker: z.string().max(200).nullable().optional(),
-  currency: z.string().min(1).max(3).default('USD'),
+  // USD-only contract: accepts only 'USD' (defaulting to USD when omitted).
+  // Non-USD requests (e.g. EUR/GBP) fail validation — never silently coerced.
+  currency: accountCurrencySchema,
 });
 
 export async function GET() {

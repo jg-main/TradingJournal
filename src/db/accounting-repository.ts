@@ -92,6 +92,21 @@ export function accountExists(
   return row !== undefined;
 }
 
+/**
+ * Read an account's persisted base currency, or null when the account
+ * does not exist. Used by the posting-kernel currency guard so every
+ * financially meaningful path shares one authoritative read.
+ */
+export function accountBaseCurrency(
+  sqlite: Database.Database,
+  accountId: string,
+): string | null {
+  const row = sqlite
+    .prepare('SELECT currency FROM accounts WHERE id = ?')
+    .get(accountId) as { currency: string | null } | undefined;
+  return row?.currency ?? null;
+}
+
 // ── Sequence Generation ─────────────────────────────────────────────────
 
 /**

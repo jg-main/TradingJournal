@@ -368,7 +368,7 @@ async function seedTrade(page: Page, accountId: string, spec: SeededTradeSpec) {
  *  T1  A  long  alpha  win   2026-03-15  +95  1.90R
  *  T2  A  short alpha  loss  2026-04-20  -55  -0.55R
  *  T3  A  long  beta   win   PREV-11-10  +190 1.90R  (outside YTD)
- *  T4  B  long  alpha  loss  2026-05-05  -55  -2.20R  (account B / EUR)
+ *  T4  B  long  alpha  loss  2026-05-05  -55  -2.20R  (account B / USD)
  *  T5  A  long  beta   loss  2026-06-10  -55  -2.75R
  *  T6  A  long  alpha  loss  2026-07-01  -55  -2.75R
  *
@@ -388,7 +388,7 @@ async function seedPropagationFixture(page: Page, tag = `${Date.now().toString(3
   const betaName = `beta setup ${tag}`;
   const setupAlpha = await seedSetup(page, alphaName);
   const setupBeta = await seedSetup(page, betaName);
-  const accountB = await seedAccount(page, `PropB-${tag}`, 'EUR');
+  const accountB = await seedAccount(page, `PropB-${tag}`, 'USD');
   const accountA = await seedAccount(page, `PropA-${tag}`, 'USD');
 
   const trades: SeededTradeSpec[] = [
@@ -703,10 +703,11 @@ test.describe('filter propagation (T3)', () => {
     await expect(page.locator('[data-kpi-value="payoff-ratio"]')).toHaveText(/\d+/);
   });
 
-  test('mixed-currency warning surfaces for multi-currency selections', async ({ page }) => {
+  test('no mixed-currency warning surfaces when all accounts are USD (USD-only contract)', async ({ page }) => {
     const analytics = observeAnalytics(page);
-    // Account B (EUR) created first, account A (USD) second → A is accounts[0].
-    await seedAccount(page, `MixB-${PROP}`, 'EUR');
+    // USD-only contract (A1): the API rejects non-USD creation, so every
+    // account is USD and the mixed-currency warning must never appear.
+    await seedAccount(page, `MixB-${PROP}`, 'USD');
     await seedAccount(page, `MixA-${PROP}`, 'USD');
     await gotoPerformance(page);
     await waitForInitialAnalytics(page, analytics);
@@ -721,12 +722,11 @@ test.describe('filter propagation (T3)', () => {
     await expect(multi).toBeVisible();
     await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
 
-    // Tick the EUR account → two currencies → warning appears.
+    // Selecting both USD accounts still never shows the warning.
     await multi.getByRole('checkbox', { name: `MixB-${PROP}` }).check();
-    await expect(page.getByTestId('mixed-currency-warning')).toBeVisible();
-    await expect(page.getByTestId('mixed-currency-warning')).toHaveText(/USD only/);
+    await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
 
-    // Untick it → back to a single currency → warning disappears.
+    // Untick → single currency, still no warning.
     await multi.getByRole('checkbox', { name: `MixB-${PROP}` }).uncheck();
     await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
   });

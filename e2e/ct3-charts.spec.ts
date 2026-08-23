@@ -53,7 +53,7 @@ async function seedAll(page: Page) {
   const beta = `Beta ${tag}`;
   await seedSetup(page, alpha);
   await seedSetup(page, beta);
-  const accountB = await seedAccount(page, `CT3B-${tag}`, 'EUR');
+  const accountB = await seedAccount(page, `CT3B-${tag}`, 'USD');
   const accountA = await seedAccount(page, `CT3A-${tag}`, 'USD');
   const day = (offset: number) => { const d = new Date(); d.setDate(d.getDate() - offset); return d.toISOString(); };
   const trades = [

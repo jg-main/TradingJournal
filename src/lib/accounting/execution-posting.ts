@@ -18,13 +18,12 @@ import Database from 'better-sqlite3';
 import { toMicros, fromMicros } from './decimal';
 import type { CanonicalDecimal } from './types';
 import type { FinancialEventWithPostings } from './types';
-import { postFinancialEvent } from './posting';
+import { postFinancialEvent, assertSupportedAccountCurrency } from './posting';
 import {
   AccountNotFoundError,
   DuplicateExecutionIdempotencyError,
 } from './errors';
 import {
-  accountExists,
   findEventByIdempotencyKey,
   findOrCreateInstrument,
   findAccountingExecutionByIdempotencyKey,
@@ -233,10 +232,11 @@ export function postExecutionFill(
   const postedAt = rawPostedAt ?? new Date().toISOString();
   const fees = rawFees ?? '0.00';
 
-  // ── 1. Validate account exists ───────────────────────────────────────
-  if (!accountExists(sqlite, accountId)) {
-    throw new AccountNotFoundError(accountId);
-  }
+  // ── 1. Validate account exists and its base currency is supported (USD-
+  // ─────    only contract). Runs BEFORE any mutation — instrument creation,
+  // ─────    execution-row insert, and ledger posting all depend on it — so a
+  // ─────    rejected execution leaves no partial state.
+  assertSupportedAccountCurrency(sqlite, accountId);
 
   // ── 2. Resolve or create instrument ──────────────────────────────────
   const instrument = findOrCreateInstrument(sqlite, symbol);

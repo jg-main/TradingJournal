@@ -195,15 +195,14 @@ describe('PUT /api/accounts/[id] account defaults', () => {
     return id;
   }
 
-  it('blocks a currency change through the real handler when financial history exists', async () => {
+  it('rejects a currency change to EUR even with financial history (USD-only contract)', async () => {
     const id = seedAccount({ currency: 'USD' });
     seedFinancialEvent(id);
 
     const result = await putDefaults(id, { currency: 'EUR' });
 
-    expect(result.response.status).toBe(409);
-    expect(result.body.error).toContain('base currency');
-    expect(result.body.error).toContain('financial history');
+    expect(result.response.status).toBe(400);
+    expect(result.body.error).toBe('Validation failed');
 
     const row = db.select({ currency: schema.accounts.currency })
       .from(schema.accounts)
@@ -212,16 +211,22 @@ describe('PUT /api/accounts/[id] account defaults', () => {
     expect(row?.currency).toBe('USD');
   });
 
-  it('allows a currency change through the real handler when no financial history exists', async () => {
+  it('rejects a currency change to EUR with no financial history (USD-only contract)', async () => {
     const id = seedAccount({ currency: 'USD' });
 
     const result = await putDefaults(id, { currency: 'EUR' });
 
-    expect(result.response.status).toBe(200);
-    expect(result.body).toMatchObject({ id, currency: 'EUR' });
+    expect(result.response.status).toBe(400);
+    expect(result.body.error).toBe('Validation failed');
+
+    const row = db.select({ currency: schema.accounts.currency })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.id, id))
+      .get();
+    expect(row?.currency).toBe('USD');
   });
 
-  it('treats a same-currency update as a no-op even with financial history', async () => {
+  it('treats a same-currency USD update as a no-op even with financial history', async () => {
     const id = seedAccount({ currency: 'USD' });
     seedFinancialEvent(id);
 

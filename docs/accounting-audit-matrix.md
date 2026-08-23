@@ -41,6 +41,13 @@ npx vitest run src/lib/accounting src/lib/positions src/lib/performance
 
 ## 2. Audit Matrix
 
+**Current product accounting currency: USD only.**
+Non-USD account support is deferred until an explicit multi-currency
+accounting/FX milestone. `accounts.currency`, `ledger_postings.currency`,
+and the posting kernel all operate in USD; account creation/update accept
+only USD, and the posting kernel blocks new financially meaningful activity
+on legacy non-USD accounts (which remain preserved and historically readable).
+
 Legend: **Current State** = what exists today (verified). **Reuse** = what later
 slices should consume as-is. **Refine** = small, safe evolution. **Missing** = gap
 that a planned slice must fill (or an explicit decision defers). **Deferred** = out
@@ -180,11 +187,11 @@ of scope for M006 unless an approved change rescopes it.
 
 | Column | Content |
 |---|---|
-| **Current State** | `accounts.currency` defaults `USD`; `ledger_postings.currency` defaults `USD` NOT NULL; posting kernel hardcodes `'USD'` in `toPostingRecord`; no multi-currency logic exists anywhere in the accounting libs. `PUT /api/accounts/[id]` accepts a currency change (min 1 / max 3 chars) with **no guard**; `settings.currency` exists separately. |
-| **Reuse** | USD-only kernel as-is. |
-| **Refine** | S05: enforce safe base-currency behavior per D4. |
-| **Missing** | Currency-change guard; multi-currency posting. |
-| **Deferred** | Multi-currency ledger (requires an approved domain change). |
+| **Current State** | **USD-only account currency contract (enforced, A1).** `accounts.currency` defaults `USD`; `ledger_postings.currency` is `USD` NOT NULL; posting kernel hardcodes `'USD'` in `toPostingRecord`. The shared contract lives in `src/lib/accounting/currency-contract.ts` (`SUPPORTED_ACCOUNT_CURRENCIES = ['USD']`, `DEFAULT_ACCOUNT_CURRENCY = 'USD'`, `accountCurrencySchema`). Account creation (`POST /api/accounts`) and update (`PUT /api/accounts/[id]`) validate currency through `accountCurrencySchema` (literal USD, default USD); non-USD → 400 Validation failed, never silently coerced. The posting kernel enforces the boundary centrally via `assertSupportedAccountCurrency` in `postFinancialEvent`/`postOpeningBalance` (called before any ledger mutation, so rejection leaves zero partial rows), and the execution path enforces it in `postExecutionFill` and `syncTradeExecution` before any execution-row/instrument/ledger write. Financial-event and execution API routes map `UnsupportedAccountCurrencyError` to a clear 400. Legacy non-USD accounts are preserved as-is and remain historically readable; they block ALL new financially meaningful activity (opening balance, events, executions) and are never auto-selected as the effective account by the trade-creation or dashboard-v2 resolution chains. |
+| **Reuse** | USD-only kernel as-is; the centralized contract is the single source consumed by UI and API. |
+| **Refine** | S05+ guardrails: currency mutation to a non-USD value is rejected even without financial history; legacy non-USD rows are never rewritten. |
+| **Missing** | Multi-currency posting (explicitly deferred). |
+| **Deferred** | Multi-currency accounting / FX (requires an approved domain change and an explicit milestone). |
 
 ### A15 — Deactivation
 
@@ -271,24 +278,41 @@ the execution pattern to eligible financial events.
 
 ### D4 — Currency mutation rules
 
-**Determination:** The ledger is **USD-only at the posting layer**: the posting
-kernel hardcodes `'USD'` in `toPostingRecord`, `ledger_postings.currency` is
-`USD` NOT NULL, and no multi-currency logic exists in the accounting libs. The
-account-level `currency` field is currently editable via PUT with **no guard**,
-but changing it does **not** re-express existing ledger postings — a silent
-divergence risk. **Rule for M006:** (a) accounts with any ledger/financial
-history (financial events, executions, positions, performance) must be blocked
-from currency mutation (S05 implements the guard); (b) brand-new accounts with no
-history may set their base currency at creation; (c) multi-currency posting
-remains out of scope until an approved domain change.
+**Determination (updated by A1):** The product contract is **USD-only** for
+accounts. The ledger is USD-only at the posting layer: the posting kernel
+hardcodes `'USD'` in `toPostingRecord`, `ledger_postings.currency` is `USD`
+NOT NULL, and no multi-currency logic exists in the accounting libs. The
+account-level `currency` field is enforced through the centralized
+`accountCurrencySchema` (`z.literal('USD').default('USD')`): account creation
+and update accept only USD (non-USD → 400 Validation failed, never silently
+coerced), and the posting kernel blocks all new financially meaningful
+activity on legacy non-USD accounts via `assertSupportedAccountCurrency`.
+**Rules:** (a) any account with ledger/financial history (financial events,
+executions, positions, performance) cannot change base currency; (b) even a
+brand-new account cannot be created or mutated to a non-USD currency — the
+USD-only contract is unconditional; (c) legacy non-USD accounts are preserved
+as-is and remain historically readable, but block new activity and are never
+auto-selected as the effective account by consumer fallback chains; (d)
+multi-currency posting / FX remains out of scope until an approved domain
+change.
 
-- **Evidence:** `src/lib/accounting/posting.ts` (`toPostingRecord`),
+- **Evidence:** `src/lib/accounting/currency-contract.ts` (centralized
+  contract), `src/lib/accounting/posting.ts` (`toPostingRecord`,
+  `assertSupportedAccountCurrency`), `src/lib/accounting/execution-posting.ts`
+  and `src/lib/positions/trade-execution-sync.ts` (execution guard),
   `src/db/schema.ts` (`ledger_postings.currency`),
-  `src/app/api/accounts/[id]/route.ts` (currency in updateAccountSchema).
-- **Test coverage:** `src/lib/accounting/posting.test.ts` (currency asserted on
-  posting records); audit `scripts/audit-s01-backend.mjs` facts
-  (`postingKernel` currency check).
-- **Consumed by:** S02 (base currency at creation), S05 (mutation guard).
+  `src/app/api/accounts/route.ts` and `src/app/api/accounts/[id]/route.ts`
+  (accountCurrencySchema in create/update).
+- **Test coverage:** `src/lib/accounting/__tests__/usd-currency-contract.test.ts`
+  (posting kernel + execution path + atomicity),
+  `src/app/api/accounts/__tests__/route.test.ts` (create USD-only),
+  `src/app/api/accounts/[id]/__tests__/route.test.ts` and
+  `route.defaults.test.ts` (update USD-only),
+  `src/app/api/accounts/[id]/financial-events/__tests__/route.test.ts` and
+  `executions/__tests__/route.test.ts` (legacy non-USD rejection), plus
+  `e2e/usd-currency-contract.spec.ts` (browser verification).
+- **Consumed by:** S02 (base currency at creation), S05 (mutation guard), A1
+  (USD-only enforcement).
 
 ### D5 — Deactivation rules
 
@@ -404,7 +428,8 @@ are the designated extension point for a future domain change.
 3. **Opening balance is a financial event**, not an account field.
 4. **`trade_execution` is internal-only**; `transfer` is defined-but-unposted.
 5. **Posting currency is USD** at the ledger layer; account-currency mutation is
-   unsafe once history exists (D4).
+   rejected (USD-only contract, A1) — non-USD accounts are preserved and
+   readable but block all new financially meaningful activity.
 6. **Server default chain** (explicit → `settings.defaultAccountId` → first
    active) and **client selection** (`app:account` → first active) must never
    resolve to an inactive account.

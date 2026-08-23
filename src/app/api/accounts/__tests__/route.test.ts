@@ -98,10 +98,15 @@ function doPostAccount(body: Record<string, unknown>): { status: number; data: u
       return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { broker: ['String must contain at most 200 character(s)'] } } } };
     }
 
-    const currency = (body.currency as string) || 'USD';
-    if (currency.length < 1 || currency.length > 3) {
-      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { currency: ['String must contain at most 3 character(s)'] } } } };
+    // USD-only contract (A1): the canonical schema is
+    // `z.literal('USD').default('USD')`. Only 'USD' is accepted; any other
+    // value (EUR/GBP/etc.) fails validation with 400 — never silently
+    // coerced. Omitting currency defaults to USD.
+    const currencyRaw = body.currency === undefined ? 'USD' : (body.currency as string);
+    if (typeof currencyRaw !== 'string' || currencyRaw !== 'USD') {
+      return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { currency: [`Invalid enum value. Expected 'USD', received '${String(currencyRaw)}'`] } } } };
     }
+    const currency = currencyRaw;
 
     const isActive = body.isActive !== undefined ? !!body.isActive : true;
 
@@ -259,6 +264,31 @@ console.log('\n8. POST handles currency default:');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.currency, 'USD', 'currency defaults to USD');
 }
+
+// ── 8a. POST: explicit USD accepted ─────────────────────────────────
+
+console.log('\n8a. POST accepts explicit USD:');
+{
+  cleanup();
+  const result = doPostAccount({ name: 'USD Account', currency: 'USD' });
+  assert(result.status === 201, 'returns 201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.currency, 'USD', 'currency is USD');
+}
+
+// ── 8b. POST: non-USD currencies rejected (USD-only contract) ────────
+
+console.log('\n8b. POST rejects EUR/GBP (USD-only contract):');
+for (const bad of ['EUR', 'GBP', 'CHF', 'JPY']) {
+  cleanup();
+  const result = doPostAccount({ name: `Bad ${bad}`, currency: bad });
+  assert(result.status === 400, `rejects ${bad} with 400`);
+  const data = result.data as { error?: string };
+  assert(data.error === 'Validation failed', `error message for ${bad} is Validation failed`);
+}
+// The rejected creates must not have persisted any rows.
+const afterRejects = db.select().from(schema.accounts).all();
+assert(afterRejects.length === 0, 'no account rows persisted for rejected currencies');
 
 // ── 9. POST: Custom isActive false ─────────────────────────────────
 

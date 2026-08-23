@@ -45,21 +45,24 @@ async function openAddAccountDialog(page: Page) {
 }
 
 /**
- * Drive the real Add Account dialog: fill name/broker, optionally pick a
- * base currency and the make-default checkbox, submit, and wait for the
- * navigation into the new account workspace. Returns the new account id.
+ * Drive the real Add Account dialog: fill name/broker, optionally tick the
+ * make-default checkbox, submit, and wait for the navigation into the new
+ * account workspace. Returns the new account id.
+ *
+ * USD-only contract (A1): the dialog offers no base-currency choices — it
+ * renders a read-only USD field. A non-USD currency request is rejected by
+ * the API with 400 and is NOT representable in the UI.
  */
 async function createAccountViaDialog(
   page: Page,
-  opts: { name: string; broker?: string; currency?: string; makeDefault?: boolean },
+  opts: { name: string; broker?: string; makeDefault?: boolean },
 ): Promise<string> {
   const dialog = await openAddAccountDialog(page);
   await dialog.getByLabel('Account name').fill(opts.name);
   if (opts.broker) await dialog.getByLabel('Broker').fill(opts.broker);
-  if (opts.currency && opts.currency !== 'USD') {
-    await dialog.getByLabel('Base currency').click();
-    await page.getByRole('option', { name: opts.currency, exact: true }).click();
-  }
+  // Base currency is a read-only USD field — no selector to drive.
+  await expect(dialog.getByText('Base currency')).toBeVisible();
+  await expect(dialog.getByText('USD', { exact: true })).toBeVisible();
   if (opts.makeDefault) {
     await dialog.getByRole('checkbox', { name: /Make this my default account/ }).check();
   }
@@ -158,17 +161,17 @@ test.describe('Account creation and initialization', () => {
     });
 
     const accountName = `Opening Balance ${Date.now()}`;
-    const id = await createAccountViaDialog(page, { name: accountName, broker: 'E2E Broker', currency: 'EUR' });
+    const id = await createAccountViaDialog(page, { name: accountName, broker: 'E2E Broker' });
 
-    // Workspace shows the initialization state and the chosen base currency.
+    // Workspace shows the initialization state and the USD base currency.
     await expectInitializationState(page, accountName);
-    await expect(page.getByText('EUR', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('USD', { exact: true }).first()).toBeVisible();
 
     // Opening-balance panel posts a financial event — never an account property.
     await page.getByRole('button', { name: /Add opening balance/ }).click();
     const panel = page.getByRole('region', { name: 'Opening balance' });
     await expect(panel).toBeVisible();
-    await panel.getByLabel('Amount (EUR)').fill('10000.00');
+    await panel.getByLabel('Amount (USD)').fill('10000.00');
     await panel.getByLabel('Description (optional)').fill('Cash from previous broker');
 
     // The success banner is a transient state (POST_SUCCESS_DELAY_MS = 450ms)

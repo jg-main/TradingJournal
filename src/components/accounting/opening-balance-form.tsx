@@ -5,6 +5,7 @@ import { AlertCircle, Banknote, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { extractApiErrorMessage } from '@/lib/error-utils';
+import { isSupportedAccountCurrency, UNSUPPORTED_CURRENCY_GUIDANCE } from '@/lib/accounting/currency-contract';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -85,6 +86,17 @@ export function OpeningBalanceForm({
     setSubmitting(true);
     setError(null);
     setAmountError(null);
+
+    // USD-only contract: never post an opening balance for an unsupported
+    // currency account. The domain/API guard is authoritative regardless;
+    // this keeps the UI from labeling a USD posting as another currency.
+    if (!isSupportedAccountCurrency(currency)) {
+      setError(
+        `Unsupported account currency "${currency}". ${UNSUPPORTED_CURRENCY_GUIDANCE}`,
+      );
+      setSubmitting(false);
+      return;
+    }
 
     // Client-side validation: the API requires a positive canonical decimal
     // ("100.00"), so reject empty, zero/negative, and >2-decimal input here

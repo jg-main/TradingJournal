@@ -220,7 +220,9 @@ test.describe('Account lifecycle UAT (S07/T01)', () => {
     const brokerInput = dialog.getByLabel('Broker');
     await expect(nameInput).toBeVisible();
     await expect(brokerInput).toBeVisible();
-    await expect(dialog.getByLabel('Base currency')).toBeVisible();
+    // Base currency is a read-only USD field (USD-only contract, A1).
+    await expect(dialog.getByText('Base currency')).toBeVisible();
+    await expect(dialog.getByText('USD', { exact: true })).toBeVisible();
 
     // Focus state: autoFocus lands on the account-name field.
     await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe('add-account-name');

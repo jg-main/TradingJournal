@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { resolveAccountDefault, type EffectiveAccountDefault } from '@/lib/account-defaults';
+import { isSupportedAccountCurrency, UNSUPPORTED_CURRENCY_GUIDANCE } from '@/lib/accounting/currency-contract';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -600,15 +601,39 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
             >
               Base Currency
             </label>
-            <Input
-              id="settings-account-currency"
-              value={account.currency}
-              disabled
-              aria-describedby="settings-currency-hint"
-            />
-            <p id="settings-currency-hint" className="mt-1 text-xs text-muted-foreground">
-              Base currency is set when the account is created and cannot be changed from settings.
-            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                id="settings-account-currency"
+                value={account.currency}
+                disabled
+                aria-describedby={
+                  isSupportedAccountCurrency(account.currency)
+                    ? 'settings-currency-hint'
+                    : 'settings-currency-unsupported'
+                }
+                className={isSupportedAccountCurrency(account.currency) ? '' : 'border-warning/60 text-warning'}
+              />
+              {!isSupportedAccountCurrency(account.currency) && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-warning">
+                  <AlertTriangle className="size-3.5" aria-hidden="true" />
+                  Unsupported
+                </span>
+              )}
+            </div>
+            {isSupportedAccountCurrency(account.currency) ? (
+              <p id="settings-currency-hint" className="mt-1 text-xs text-muted-foreground">
+                Base currency is set when the account is created and cannot be changed from settings.
+              </p>
+            ) : (
+              <p
+                id="settings-currency-unsupported"
+                className="mt-1 flex items-start gap-1.5 text-xs text-warning"
+              >
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                {account.currency} accounts are preserved and remain readable, but this installation
+                currently supports USD account accounting only. {UNSUPPORTED_CURRENCY_GUIDANCE}
+              </p>
+            )}
           </div>
         </div>
       </section>

@@ -48,6 +48,7 @@ import {
   AccountNotFoundError,
   DuplicateExecutionIdempotencyError,
   InvalidAmountError,
+  UnsupportedAccountCurrencyError,
 } from '@/lib/accounting/errors';
 import type { PositionState, FifoLot, FifoExecutionInput, ExecutionAction } from '@/lib/positions/types';
 import type { CanonicalDecimal } from '@/lib/accounting/types';
@@ -601,5 +602,80 @@ describe('POST /api/accounts/[id]/executions — service composition', () => {
       });
       expect(firstExecs).toHaveLength(0);
     });
+  });
+});
+
+// ── Legacy non-USD account (USD-only contract) ─────────────────────────
+
+describe('legacy non-USD account — execution posting guard', () => {
+  let ctx2: TestContext;
+  let eurAccountId: string;
+
+  beforeAll(() => {
+    ctx2 = createTestDatabase();
+    eurAccountId = randomUUID();
+    const now = new Date().toISOString();
+    ctx2.sqlite
+      .prepare(
+        `INSERT OR IGNORE INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(eurAccountId, 'Legacy EUR Account', null, 'EUR', now, now);
+  });
+
+  afterAll(() => {
+    destroyTestDatabase(ctx2);
+  });
+
+  it('rejects an execution for a legacy EUR account before any ledger mutation', () => {
+    const executionsBefore = (
+      ctx2.sqlite.prepare('SELECT count(*) AS count FROM accounting_executions WHERE account_id = ?').get(eurAccountId) as { count: number }
+    ).count;
+    const eventsBefore = (
+      ctx2.sqlite.prepare('SELECT count(*) AS count FROM financial_events WHERE account_id = ?').get(eurAccountId) as { count: number }
+    ).count;
+    const postingsBefore = (
+      ctx2.sqlite.prepare('SELECT count(*) AS count FROM ledger_postings').get() as { count: number }
+    ).count;
+
+    expect(() =>
+      postExecutionFill(ctx2.sqlite, {
+        accountId: eurAccountId,
+        symbol: 'MSFT',
+        action: 'buy',
+        quantity: '5.00',
+        price: '200.00',
+        fees: '0.00',
+      }),
+    ).toThrow(UnsupportedAccountCurrencyError);
+
+    // No execution row, no financial event, no ledger postings.
+    const executionsAfter = (
+      ctx2.sqlite.prepare('SELECT count(*) AS count FROM accounting_executions WHERE account_id = ?').get(eurAccountId) as { count: number }
+    ).count;
+    const eventsAfter = (
+      ctx2.sqlite.prepare('SELECT count(*) AS count FROM financial_events WHERE account_id = ?').get(eurAccountId) as { count: number }
+    ).count;
+    const postingsAfter = (
+      ctx2.sqlite.prepare('SELECT count(*) AS count FROM ledger_postings').get() as { count: number }
+    ).count;
+    expect(executionsAfter).toBe(executionsBefore);
+    expect(eventsAfter).toBe(eventsBefore);
+    expect(postingsAfter).toBe(postingsBefore);
+  });
+
+  it('does not consume the execution idempotency key on rejection', () => {
+    const key = `eur-exec-${randomUUID()}`;
+    expect(() =>
+      postExecutionFill(ctx2.sqlite, {
+        accountId: eurAccountId,
+        symbol: 'NVDA',
+        action: 'buy',
+        quantity: '1.00',
+        price: '500.00',
+        idempotencyKey: key,
+      }),
+    ).toThrow(UnsupportedAccountCurrencyError);
+    expect(findAccountingExecutionByIdempotencyKey(ctx2.sqlite, key)).toBeUndefined();
   });
 });

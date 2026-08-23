@@ -276,3 +276,29 @@ export class AccountNotFoundError extends AccountingError {
     Object.setPrototypeOf(this, AccountNotFoundError.prototype);
   }
 }
+
+/**
+ * Thrown when a financially meaningful posting targets an account whose
+ * base currency is not supported by this installation (USD-only contract).
+ *
+ * Raised by the shared posting-kernel guard below the UI/API layer so a
+ * caller cannot bypass the restriction by invoking a posting service
+ * directly. Existing non-USD accounts remain historically readable; only
+ * NEW financial activity is blocked. No values are rewritten or converted.
+ */
+export class UnsupportedAccountCurrencyError extends AccountingError {
+  public readonly accountId: string;
+  public readonly currency: string;
+
+  constructor(accountId: string, currency: string, guidance?: string) {
+    super(
+      'UNSUPPORTED_ACCOUNT_CURRENCY',
+      `Unsupported account currency "${currency}" for account "${accountId}". ` +
+        (guidance ?? 'This installation currently supports USD account accounting only.'),
+    );
+    this.name = 'UnsupportedAccountCurrencyError';
+    this.accountId = accountId;
+    this.currency = currency;
+    Object.setPrototypeOf(this, UnsupportedAccountCurrencyError.prototype);
+  }
+}

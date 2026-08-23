@@ -23,15 +23,18 @@ import {
   InvalidMicrosBoundsError,
   DuplicateIdempotencyKeyError,
   AccountNotFoundError,
+  UnsupportedAccountCurrencyError,
 } from './errors';
 import {
   accountExists,
+  accountBaseCurrency,
   findEventByIdempotencyKey,
   insertFinancialEvent,
   insertLedgerEntry,
   insertLedgerPosting,
   getNextSequence,
 } from '../../db/accounting-repository';
+import { isSupportedAccountCurrency, UNSUPPORTED_CURRENCY_GUIDANCE } from './currency-contract';
 
 // ── Public Input Types ──────────────────────────────────────────────────
 
@@ -46,6 +49,35 @@ export interface PostOpeningBalanceInput {
   description?: string;
   /** ISO-8601 timestamp. Defaults to current UTC time. */
   postedAt?: string;
+}
+
+// ── Supported-Currency Guard ────────────────────────────────────────────
+
+/**
+ * Shared financial-integrity guard: verify the target account's base
+ * currency is supported before any ledger mutation.
+ *
+ * The USD-only contract lives here, below the UI/API layer, so a caller
+ * cannot bypass it by invoking a posting service directly. Throws
+ * {@link UnsupportedAccountCurrencyError} for legacy non-USD accounts
+ * BEFORE any event/entry/posting row is written, keeping atomicity
+ * guarantees intact (no partial financial state on rejection).
+ */
+export function assertSupportedAccountCurrency(
+  sqlite: Database.Database,
+  accountId: string,
+): void {
+  if (!accountExists(sqlite, accountId)) {
+    throw new AccountNotFoundError(accountId);
+  }
+  const currency = accountBaseCurrency(sqlite, accountId);
+  if (!isSupportedAccountCurrency(currency)) {
+    throw new UnsupportedAccountCurrencyError(
+      accountId,
+      currency ?? 'UNKNOWN',
+      UNSUPPORTED_CURRENCY_GUIDANCE,
+    );
+  }
 }
 
 // ── Validation Helpers (pure) ───────────────────────────────────────────
@@ -253,10 +285,10 @@ export function postFinancialEvent(
     }
   }
 
-  // 3. Verify account exists
-  if (!accountExists(sqlite, accountId)) {
-    throw new AccountNotFoundError(accountId);
-  }
+  // 3. Verify account exists and its base currency is supported (USD-only
+  //    contract). Throws before any ledger mutation so rejection leaves no
+  //    partial event/entry/posting state.
+  assertSupportedAccountCurrency(sqlite, accountId);
 
   // 4. Begin transaction
   const transaction = sqlite.transaction(() => {
@@ -384,10 +416,10 @@ export function postOpeningBalance(
     }
   }
 
-  // 3. Verify account exists
-  if (!accountExists(sqlite, accountId)) {
-    throw new AccountNotFoundError(accountId);
-  }
+  // 3. Verify account exists and its base currency is supported (USD-only
+  //    contract). Throws before any ledger mutation so rejection leaves no
+  //    partial event/entry/posting state.
+  assertSupportedAccountCurrency(sqlite, accountId);
 
   // 4. Begin transaction
   const transaction = sqlite.transaction(() => {
