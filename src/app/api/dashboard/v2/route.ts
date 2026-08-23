@@ -17,6 +17,7 @@ import { getSqliteHandle } from '@/db';
 import { ALL_DASHBOARD_V2_FIELDS, computeDashboardV2 } from '@/lib/accounting/dashboard-v2';
 import type { DashboardV2Field } from '@/lib/accounting/dashboard-v2';
 import { accountExists } from '@/db/accounting-repository';
+import { isAccountEligibleAsDefault } from '@/lib/accounting/default-account-guard';
 
 // ── Query Schema ────────────────────────────────────────────────────────
 
@@ -59,12 +60,15 @@ const dashboardV2QuerySchema = z.object({
  * Returns the account ID or null if no account can be resolved.
  */
 function resolveAccountId(sqlite: ReturnType<typeof getSqliteHandle>): string | undefined {
-  // Try settings.defaultAccountId
+  // Try settings.defaultAccountId — A8: only usable when it references an
+  // existing ACTIVE supported-currency account; a stale historical default
+  // is ignored and falls through to the eligible-account chain (settings are
+  // not mutated during a read).
   const setting = sqlite
     .prepare('SELECT default_account_id FROM settings LIMIT 1')
     .get() as { default_account_id: string | null } | undefined;
 
-  if (setting?.default_account_id) {
+  if (setting?.default_account_id && isAccountEligibleAsDefault(sqlite, setting.default_account_id)) {
     return setting.default_account_id;
   }
 

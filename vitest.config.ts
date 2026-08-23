@@ -33,6 +33,7 @@ export default defineConfig({
       'src/components/workstation/review-write-sheet.test.tsx',
       'src/lib/workstation-live-adapter.test.ts',
       'src/lib/account-defaults.test.ts',
+      'src/app/api/settings/__tests__/route.default-eligibility.test.ts',
       'src/lib/readiness.test.ts',
       'src/lib/restore.test.ts',
       'src/lib/__tests__/error-utils.test.ts',

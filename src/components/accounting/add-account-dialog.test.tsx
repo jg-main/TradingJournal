@@ -4,7 +4,7 @@
  * Covers: dialog rendering, client-side name validation, account creation
  * through POST /api/accounts (payload shape), the USD-only base-currency
  * read-only field (no currency selector), API error surfacing (400/500),
- * the optional "Make this my default account" settings update, loading
+ * creation (no default-account setting — A8), loading
  * state, and the onCreated handoff that drives navigation.
  *
  * Run: npx vitest run src/components/accounting/add-account-dialog.test.tsx
@@ -112,9 +112,12 @@ describe('AddAccountDialog', () => {
     expect(
       screen.getByText(/currently supports USD account accounting only/),
     ).toBeTruthy();
+    // A8: account creation NEVER offers "Make this my default account" — new
+    // accounts begin as Draft (inactive) and are not eligible until
+    // initialized; default selection happens from Account Settings.
     expect(
-      screen.getByRole('checkbox', { name: /Make this my default account/ }),
-    ).toBeTruthy();
+      screen.queryByRole('checkbox', { name: /Make this my default account/ }),
+    ).toBeNull();
     expect(screen.getByRole('button', { name: 'Create Account' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
   });
@@ -181,7 +184,7 @@ describe('AddAccountDialog', () => {
     });
 
     expect(mockOnOpenChange).toHaveBeenCalledWith(false);
-    expect(mockOnCreated).toHaveBeenCalledWith(CREATED_ACCOUNT, undefined);
+    expect(mockOnCreated).toHaveBeenCalledWith(CREATED_ACCOUNT);
   });
 
   it('sends null broker when the broker field is empty', async () => {
@@ -222,67 +225,23 @@ describe('AddAccountDialog', () => {
 
   // ── Default account option ─────────────────────────────────────────
 
-  it('saves the new account as default when the checkbox is checked', async () => {
+  it('never touches /api/settings during creation (A8: drafts are not eligible)', async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       createdResponse(CREATED_ACCOUNT),
     );
     const { mockOnCreated } = renderDialog();
 
     changeInput('Account name', 'Main Brokerage');
-    fireEvent.click(screen.getByRole('checkbox', { name: /Make this my default account/ }));
     clickButton('Create Account');
     await flushAsync();
 
-    // POST /api/accounts, then PUT /api/settings with the created id.
+    // Exactly one request: POST /api/accounts. No default-account setting is
+    // attempted — the new account is a Draft and default selection happens
+    // later from Account Settings once the account is active.
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/settings',
-      expect.objectContaining({
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-    const settingsBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(settingsBody).toEqual({ defaultAccountId: 'acc-new-123' });
-    expect(mockOnCreated).toHaveBeenCalledWith(CREATED_ACCOUNT, undefined);
-  });
-
-  it('does not touch /api/settings when the checkbox is unchecked', async () => {
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      createdResponse(CREATED_ACCOUNT),
-    );
-    renderDialog();
-
-    changeInput('Account name', 'Main Brokerage');
-    clickButton('Create Account');
-    await flushAsync();
-
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith('/api/accounts', expect.anything());
-  });
-
-  it('hands a warning to onCreated when the default save fails', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(createdResponse(CREATED_ACCOUNT))
-      .mockResolvedValueOnce(
-        errorResponse(500, { error: 'Failed to update settings' }),
-      );
-    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(fetchMock);
-    const { mockOnCreated } = renderDialog();
-
-    changeInput('Account name', 'Main Brokerage');
-    fireEvent.click(screen.getByRole('checkbox', { name: /Make this my default account/ }));
-    clickButton('Create Account');
-    await flushAsync();
-
-    expect(mockOnCreated).toHaveBeenCalledWith(
-      CREATED_ACCOUNT,
-      expect.stringContaining('could not set it as the default'),
-    );
-    // The account still flows through despite the settings failure.
-    expect(mockOnCreated.mock.calls[0][1]).toContain('Failed to update settings');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/accounts', expect.anything());
+    expect(mockOnCreated).toHaveBeenCalledWith(CREATED_ACCOUNT);
   });
 
   // ── Error states ───────────────────────────────────────────────────

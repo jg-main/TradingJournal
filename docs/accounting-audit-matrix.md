@@ -445,6 +445,21 @@ client selection and server default may differ per session but must never resolv
 to an inactive account; the trades/dashboard fallback chain (explicit → default →
 first active) is the canonical server-side contract and must not regress.
 
+**Updated by A8:** `settings.defaultAccountId` must reference an existing,
+ACTIVE, supported-currency (USD) account — enforced server-side on
+`PUT /api/settings` via `assertAccountEligibleAsDefault`
+(`src/lib/accounting/default-account-guard.ts`): missing → 404 Default account
+not found; draft/deactivated → 409 ACCOUNT_INACTIVE; legacy non-USD → 400
+UnsupportedAccountCurrencyError. `defaultAccountId: null` still clears. Add
+Account NO LONGER offers “Make this my default account” (new accounts begin
+Draft and are not eligible); default selection happens from Account Settings
+(Make Default, only for active supported accounts; guidance for inactive /
+unsupported). Automatic account resolution (trades, dashboard v2) treats a
+stale historical invalid default as unusable and falls through to the
+eligible-account chain (settings are never mutated during a read); explicit
+`accountId` selection is never silently replaced. Full Trading Workflow
+readiness is NOT part of default eligibility.
+
 - **Evidence:** `src/app/api/settings/route.ts` (PUT schema),
   `src/app/api/trades/route.ts` (resolution),
   `src/app/api/dashboard/v2/route.ts` (`resolveAccountId`),

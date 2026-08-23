@@ -710,5 +710,59 @@ test.describe('Account Settings Workspace', () => {
       const account = await (await page.request.get(`/api/accounts/${trade.accountId}`)).json();
       expect(account.isActive).toBe(true);
     });
+
+    test('A8: a stale invalid saved default falls through to the eligible account', async ({ page }) => {
+      // Seed: inactive account A (stale saved default) + active usable account B.
+      const ts = Date.now();
+      const staleRes = await page.request.post('/api/accounts', {
+        data: { name: `Stale Default A ${ts}`, broker: 'E2E', currency: 'USD' },
+      });
+      expect(staleRes.status()).toBe(201);
+      const staleAccount = (await staleRes.json()) as { id: string };
+
+      const usableRes = await page.request.post('/api/accounts', {
+        data: { name: `Usable B ${ts}`, broker: 'E2E', currency: 'USD' },
+      });
+      expect(usableRes.status()).toBe(201);
+      const usableAccount = (await usableRes.json()) as { id: string };
+      await prepareAccountForTrading(page.request, usableAccount.id);
+
+      // Set the stale (inactive draft) account as the saved default directly.
+      const setDefault = await page.request.put('/api/settings', {
+        data: { defaultAccountId: staleAccount.id },
+      });
+      // A8 server-side validation rejects persisting an inactive default.
+      expect(setDefault.status()).toBe(409);
+
+      // Simulate a legacy database that predates A8: write the stale default
+      // directly into settings (the read-side fallback must handle it).
+      await page.request.put('/api/settings', {
+        data: { defaultAccountId: staleAccount.id },
+      }).catch(() => {});
+      // Direct DB write to force the historical-invalid state (API rejects it).
+      const fs = await import('node:fs');
+      const dbPath = process.env.DB_FILE_NAME as string;
+      const Database = (await import('better-sqlite3')).default;
+      const sqlite = new Database(dbPath);
+      sqlite
+        .prepare('UPDATE settings SET default_account_id = ? WHERE id = (SELECT id FROM settings LIMIT 1)')
+        .run(staleAccount.id);
+      sqlite.close();
+
+      // Automatic resolution must ignore the stale default and use B.
+      const tradeRes = await page.request.post('/api/trades', {
+        data: { symbol: `STALE${String(ts).slice(-3)}`, direction: 'long' },
+      });
+      expect(tradeRes.status()).toBe(201);
+      const trade = await tradeRes.json();
+      expect(trade.accountId).toBe(usableAccount.id);
+
+      // Explicit selection of the inactive account is NOT silently replaced.
+      const explicitRes = await page.request.post('/api/trades', {
+        data: { symbol: `EXP${String(ts).slice(-3)}`, direction: 'long', accountId: staleAccount.id },
+      });
+      expect(explicitRes.status()).toBe(409);
+      expect((await explicitRes.json()).error).toContain('Account setup incomplete');
+    });
   });
 });

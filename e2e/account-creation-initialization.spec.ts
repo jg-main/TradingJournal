@@ -6,8 +6,9 @@
  *
  * 1. Add Account dialog → create → AccountProvider refresh → navigation into
  *    the new account workspace with the guided initialization state.
- * 2. Optional "Make this my default account" persists the default and marks
- *    the row on the accounts list.
+ * 2. Add Account never offers "Make this my default account" (A8: new
+ *    accounts begin Draft and are not eligible; default selection happens
+ *    later from Account Settings).
  * 3. "Add opening balance" path posts an opening_balance financial event
  *    (never an account property), shows the success state, and transitions
  *    into the live overview (NAV/Net Cash, events table, active header).
@@ -45,9 +46,12 @@ async function openAddAccountDialog(page: Page) {
 }
 
 /**
- * Drive the real Add Account dialog: fill name/broker, optionally tick the
- * make-default checkbox, submit, and wait for the navigation into the new
- * account workspace. Returns the new account id.
+ * Drive the real Add Account dialog: fill name/broker, submit, and wait for
+ * the navigation into the new account workspace. Returns the new account id.
+ *
+ * A8: the dialog offers NO "Make this my default account" checkbox — new
+ * accounts begin Draft (inactive) and are not eligible to be the default
+ * until initialized; default selection happens later from Account Settings.
  *
  * USD-only contract (A1): the dialog offers no base-currency choices — it
  * renders a read-only USD field. A non-USD currency request is rejected by
@@ -55,7 +59,7 @@ async function openAddAccountDialog(page: Page) {
  */
 async function createAccountViaDialog(
   page: Page,
-  opts: { name: string; broker?: string; makeDefault?: boolean },
+  opts: { name: string; broker?: string },
 ): Promise<string> {
   const dialog = await openAddAccountDialog(page);
   await dialog.getByLabel('Account name').fill(opts.name);
@@ -63,9 +67,6 @@ async function createAccountViaDialog(
   // Base currency is a read-only USD field — no selector to drive.
   await expect(dialog.getByText('Base currency')).toBeVisible();
   await expect(dialog.getByText('USD', { exact: true })).toBeVisible();
-  if (opts.makeDefault) {
-    await dialog.getByRole('checkbox', { name: /Make this my default account/ }).check();
-  }
   await dialog.getByRole('button', { name: 'Create Account' }).click();
   await expect(page).toHaveURL(/\/settings\/accounts\/[0-9a-f-]+$/);
   const match = page.url().match(/\/settings\/accounts\/([0-9a-f-]+)$/);
@@ -131,22 +132,35 @@ test.describe('Account creation and initialization', () => {
     expect(account.broker).toBe(broker);
   });
 
-  test('sets the new account as the saved default when requested', async ({ page }) => {
+  test('add account never offers the default checkbox and never changes the saved default (A8)', async ({ page }) => {
     await hideDevOverlay(page);
-    const accountName = `Default Journey ${Date.now()}`;
-    const id = await createAccountViaDialog(page, { name: accountName, broker: 'E2E Broker', makeDefault: true });
 
-    // The settings row now points at the new account.
-    const settingsRes = await page.request.get('/api/settings');
-    expect(settingsRes.ok()).toBeTruthy();
-    const settings = await settingsRes.json();
-    expect(settings.defaultAccountId).toBe(id);
+    // Capture the pre-existing default (if any) before creating the account.
+    const beforeRes = await page.request.get('/api/settings');
+    const beforeSettings = beforeRes.ok()
+      ? ((await beforeRes.json()) as { defaultAccountId: string | null })
+      : null;
+    const beforeDefault = beforeSettings?.defaultAccountId ?? null;
 
-    // The accounts list marks the row as Default and selects it.
-    await page.goto('/settings/accounts');
-    const row = page.getByRole('row').filter({ hasText: accountName });
-    await expect(row.getByText('Default', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Account used by default')).toHaveValue(id);
+    const accountName = `No Default Journey ${Date.now()}`;
+    const dialog = await openAddAccountDialog(page);
+    await dialog.getByLabel('Account name').fill(accountName);
+    // A8: no default checkbox exists in the Add Account dialog.
+    await expect(
+      dialog.getByRole('checkbox', { name: /Make this my default account/ }),
+    ).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Create Account' }).click();
+    await expect(page).toHaveURL(/\/settings\/accounts\/[0-9a-f-]+$/);
+    const id = page.url().match(/\/settings\/accounts\/([0-9a-f-]+)$/)![1];
+
+    // The account is a Draft and the saved default is unchanged.
+    const account = await (await page.request.get(`/api/accounts/${id}`)).json();
+    expect(account.isActive).toBe(false);
+    const afterRes = await page.request.get('/api/settings');
+    const afterSettings = afterRes.ok()
+      ? ((await afterRes.json()) as { defaultAccountId: string | null })
+      : null;
+    expect(afterSettings?.defaultAccountId ?? null).toBe(beforeDefault);
   });
 
   test('records an opening balance as a financial event and transitions to the live overview', async ({ page }) => {

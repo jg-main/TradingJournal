@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { settings, appProfile } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { startScheduler, stopScheduler, reschedule, cronTimeToUTCExpression } from '@/lib/scheduler';
 import { runBackupJob } from '@/lib/backup-job';
+import { assertAccountEligibleAsDefault } from '@/lib/accounting/default-account-guard';
+import {
+  AccountNotFoundError,
+  AccountInactiveError,
+  UnsupportedAccountCurrencyError,
+} from '@/lib/accounting/errors';
 
 const settingsSchema = z.object({
   startingAccountValue: z.number().positive('Must be positive').optional(),
@@ -52,6 +58,50 @@ export async function PUT(request: NextRequest) {
 
     const existing = db.select().from(settings).limit(1).get();
     const now = new Date().toISOString();
+
+    // A8 default-account lifecycle validation: when the request carries a
+    // non-null defaultAccountId, the referenced account must exist, be
+    // ACTIVE, and use a supported currency (USD). null clears the default.
+    // The API remains authoritative — direct requests cannot persist an
+    // invalid default. Validation happens before any settings mutation.
+    if (parsed.data.defaultAccountId !== undefined && parsed.data.defaultAccountId !== null) {
+      try {
+        assertAccountEligibleAsDefault(getSqliteHandle(), parsed.data.defaultAccountId);
+      } catch (error) {
+        if (error instanceof AccountNotFoundError) {
+          return NextResponse.json(
+            {
+              error: 'Default account not found',
+              details: error.message,
+            },
+            { status: 404 },
+          );
+        }
+        if (error instanceof AccountInactiveError) {
+          return NextResponse.json(
+            {
+              error: 'Account is inactive',
+              code: error.code,
+              details: error.message,
+            },
+            { status: 409 },
+          );
+        }
+        if (error instanceof UnsupportedAccountCurrencyError) {
+          return NextResponse.json(
+            {
+              error: error.message,
+              details: {
+                accountId: error.accountId,
+                currency: error.currency,
+              },
+            },
+            { status: 400 },
+          );
+        }
+        throw error;
+      }
+    }
 
     if (!existing) {
       const id = crypto.randomUUID();

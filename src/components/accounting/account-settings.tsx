@@ -10,6 +10,7 @@ import {
   TriangleAlert,
   RotateCcw,
   Trash2,
+  Star,
 } from 'lucide-react';
 import { resolveAccountDefault, type EffectiveAccountDefault } from '@/lib/account-defaults';
 import { isSupportedAccountCurrency, UNSUPPORTED_CURRENCY_GUIDANCE } from '@/lib/accounting/currency-contract';
@@ -41,6 +42,7 @@ interface AccountData {
 interface GlobalSettings {
   maxRiskPerTradePct?: number | null;
   defaultCommission?: number | null;
+  defaultAccountId?: string | null;
 }
 
 interface ClosureSummary {
@@ -222,6 +224,9 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
             if (isNullableFiniteNumber(candidate.defaultCommission)) {
               settingsData.defaultCommission = candidate.defaultCommission;
             }
+            if (typeof candidate.defaultAccountId === 'string' || candidate.defaultAccountId === null) {
+              settingsData.defaultAccountId = candidate.defaultAccountId as string | null | undefined;
+            }
             setGlobalSettings(settingsData);
           }
         } catch {
@@ -285,7 +290,7 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [closureSummary, setClosureSummary] = useState<ClosureSummary | null>(null);
-  const [actionPending, setActionPending] = useState<'deactivate' | 'reactivate' | 'delete' | null>(null);
+  const [actionPending, setActionPending] = useState<'deactivate' | 'reactivate' | 'delete' | 'make-default' | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -344,6 +349,42 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
       await fetchData();
     } catch {
       setMessage({ type: 'error', text: 'Failed to reactivate account.' });
+    } finally {
+      setActionPending(null);
+    }
+  };
+
+  /**
+   * A8: make this account the saved default. Only an ACTIVE supported-
+   * currency account may be set as the default (server-enforced via
+   * assertAccountEligibleAsDefault); the button is only offered when
+   * eligible. After success, refetch so the persisted default status derives
+   * from the server setting.
+   */
+  const handleMakeDefault = async () => {
+    setActionPending('make-default');
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultAccountId: accountId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const errMsg =
+          typeof data?.error === 'string'
+            ? data.error
+            : typeof data?.details === 'string'
+              ? data.details
+              : 'Failed to set this account as the default.';
+        setMessage({ type: 'error', text: errMsg });
+        return;
+      }
+      setMessage({ type: 'success', text: 'This account is now the default.' });
+      void fetchData();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to set this account as the default.' });
     } finally {
       setActionPending(null);
     }
@@ -768,6 +809,69 @@ export default function AccountSettings({ accountId }: AccountSettingsProps) {
           Discard changes
         </Button>
       </div>
+
+      {/* ── Default Account (A8) ────────────────────────────────────── */}
+      <hr className="my-8 border-border" />
+
+      <section aria-labelledby="settings-default-heading">
+        <h2
+          id="settings-default-heading"
+          className="flex items-center gap-2 text-sm font-semibold tracking-wider text-muted-foreground uppercase"
+        >
+          <Star className="size-4" />
+          Default Account
+        </h2>
+
+        <div className="mt-4 rounded-lg border border-border bg-card p-6">
+          {account.currency !== 'USD' ? (
+            // Legacy unsupported-currency account (A1): historically readable,
+            // never offered as default.
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              This account uses {account.currency}, which is not currently supported for
+              new activity or as the saved default. {UNSUPPORTED_CURRENCY_GUIDANCE}
+            </p>
+          ) : globalSettings?.defaultAccountId === account.id ? (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Default Account</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  New trades use this account unless you choose another one.
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-positive/10 px-2.5 py-1 text-xs font-medium text-positive">
+                <Star className="size-3" aria-hidden="true" />
+                Default
+              </span>
+            </div>
+          ) : !account.isActive ? (
+            // Draft or deactivated account: not eligible; explain the path.
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {account.maxRiskPerTradePct === null &&
+              account.defaultCommission === null ? (
+                <>Initialize this account (add an opening balance or start with zero) before making it the default.</>
+              ) : (
+                <>Reactivate this account before making it the default.</>
+              )}
+            </p>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Make this the default account</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  New trades use this account unless you choose another one.
+                </p>
+              </div>
+              <Button
+                onClick={handleMakeDefault}
+                disabled={actionPending === 'make-default'}
+              >
+                <Star className="size-4" />
+                Make Default
+              </Button>
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* ── Lifecycle Controls ───────────────────────────────────────── */}
       <hr className="my-8 border-border" />

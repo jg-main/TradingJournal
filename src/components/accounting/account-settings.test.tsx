@@ -225,8 +225,8 @@ describe('AccountSettings — currency display', () => {
     // …and clearly marked unsupported with the support-boundary guidance.
     expect(screen.getByText('Unsupported')).toBeTruthy();
     expect(
-      screen.getByText(/currently supports USD account accounting only/),
-    ).toBeTruthy();
+      screen.getAllByText(/currently supports USD account accounting only/).length,
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -803,5 +803,87 @@ describe('AccountSettings — truthful effective defaults', () => {
     await screen.findByText('Failed to save settings.');
     expect(riskInput.value).toBe('6');
     expect(screen.getByLabelText('Effective max risk per trade').textContent).toContain('Inherited');
+  });
+});
+
+// ── A8: Default Account section ─────────────────────────────────────────
+
+describe('AccountSettings — Default Account (A8)', () => {
+  const ACCT_ACTIVE = {
+    id: 'acct-def',
+    name: 'Defaultable',
+    broker: null,
+    currency: 'USD',
+    isActive: true,
+    maxRiskPerTradePct: null,
+    defaultCommission: null,
+    startingBalance: null,
+  };
+
+  it('offers Make Default for an active supported account and persists it', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ACCT_ACTIVE })
+      .mockResolvedValueOnce({ ok: true, json: async () => GLOBAL_SETTINGS })
+      // PUT /api/settings (make default) → success
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ defaultAccountId: ACCT_ACTIVE.id }),
+      })
+      // refetch: account + settings (now with the default)
+      .mockResolvedValueOnce({ ok: true, json: async () => ACCT_ACTIVE })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...GLOBAL_SETTINGS, defaultAccountId: ACCT_ACTIVE.id }),
+      });
+    globalThis.fetch = fetchMock;
+
+    render(<AccountSettings accountId={ACCT_ACTIVE.id} />);
+    await waitFor(() => {
+      expect(screen.getByText('Default Account')).toBeTruthy();
+    });
+
+    const makeDefault = screen.getByRole('button', { name: /Make Default/ });
+    expect(makeDefault).toBeTruthy();
+
+    fireEvent.click(makeDefault);
+    await waitFor(() => {
+      expect(screen.getByText('Default', { exact: true })).toBeTruthy();
+    });
+
+    // The persisted default is derived from the server setting (refetch).
+    const putCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        url === '/api/settings' && (init as RequestInit | undefined)?.method === 'PUT',
+    );
+    expect(putCall).toBeTruthy();
+    const body = JSON.parse((putCall![1] as RequestInit).body as string);
+    expect(body).toEqual({ defaultAccountId: ACCT_ACTIVE.id });
+  });
+
+  it('shows a Default badge when this account is already the saved default', async () => {
+    mockFetchSuccess(ACCT_ACTIVE, {
+      ...GLOBAL_SETTINGS,
+      defaultAccountId: ACCT_ACTIVE.id,
+    });
+    render(<AccountSettings accountId={ACCT_ACTIVE.id} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Default', { exact: true })).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: /Make Default/ })).toBeNull();
+  });
+
+  it('shows initialization/reactivation guidance for inactive accounts (no Make Default)', async () => {
+    mockFetchSuccess(ACCT_INACTIVE, { ...GLOBAL_SETTINGS, defaultAccountId: null });
+    render(<AccountSettings accountId={ACCT_INACTIVE.id} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Default Account')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: /Make Default/ })).toBeNull();
+    // ACCT_INACTIVE has risk params → historical deactivated guidance.
+    expect(
+      screen.getByText(/Reactivate this account before making it the default/),
+    ).toBeTruthy();
   });
 });

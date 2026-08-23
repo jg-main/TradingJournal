@@ -9,6 +9,7 @@ import { resolveSetup } from '@/lib/setup-resolver';
 import { computePlannedRiskAmount } from '@/lib/planned-risk';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput, TradeListMetrics } from '@/lib/trade-metrics';
+import { isAccountEligibleAsDefault } from '@/lib/accounting/default-account-guard';
 
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
@@ -721,8 +722,18 @@ export async function POST(request: NextRequest) {
     if (!accountId) {
       const setting = db.select().from(settings).get();
       if (setting?.defaultAccountId) {
-        accountId = setting.defaultAccountId;
-      } else {
+        // A8: a saved default is usable only when it references an existing
+        // ACTIVE supported-currency account. A stale historical default
+        // (missing / draft / deactivated / legacy non-USD) is ignored and
+        // falls through to the eligible-account chain below — it must not
+        // poison automatic resolution or 409 the readiness guard. Settings
+        // are NOT mutated during resolution.
+        const sqlite = getSqliteHandle();
+        if (isAccountEligibleAsDefault(sqlite, setting.defaultAccountId)) {
+          accountId = setting.defaultAccountId;
+        }
+      }
+      if (!accountId) {
         // S06/T04: when no default is configured, prefer the first active
         // account that is ALSO trading-ready (risk params + commission +
         // opening cash posted). Shared databases can contain active accounts

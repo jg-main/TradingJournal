@@ -85,12 +85,13 @@ test.describe('USD-only account currency contract', () => {
       dialog.getByText(/currently supports USD account accounting only/),
     ).toBeVisible();
 
-    // The form otherwise keeps Name, Broker, and the make-default option.
+    // The form otherwise keeps Name and Broker. A8: NO make-default checkbox
+    // — new accounts begin Draft and are not eligible until initialized.
     await expect(dialog.getByLabel('Account name')).toBeVisible();
     await expect(dialog.getByLabel('Broker')).toBeVisible();
     await expect(
       dialog.getByRole('checkbox', { name: /Make this my default account/ }),
-    ).toBeVisible();
+    ).toHaveCount(0);
 
     await dialog.getByRole('button', { name: 'Cancel' }).click();
   });

@@ -91,7 +91,6 @@ function AddAccountForm({
 }: Pick<AddAccountDialogProps, 'onOpenChange' | 'onCreated'>) {
   const [name, setName] = useState('');
   const [broker, setBroker] = useState('');
-  const [makeDefault, setMakeDefault] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -133,23 +132,12 @@ function AddAccountForm({
         return;
       }
 
-      // Optional: make the new account the saved default. A failure here is
-      // non-fatal — the account exists, so surface a warning and continue.
-      let warning: string | undefined;
-      if (makeDefault) {
-        const settingsRes = await fetch('/api/settings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ defaultAccountId: data.id }),
-        });
-        if (!settingsRes.ok) {
-          const settingsData: unknown = await settingsRes.json().catch(() => null);
-          warning = `Account created, but could not set it as the default: ${extractApiError(settingsData, 'Settings update failed.')}`;
-        }
-      }
-
+      // A8: account creation NEVER sets the saved default — new accounts begin
+      // as Draft (inactive), which is not eligible to be the default. Default
+      // selection happens later, from Account Settings, once the account is
+      // initialized (active) and uses a supported currency.
       onOpenChange(false);
-      onCreated(data, warning);
+      onCreated(data);
     } catch {
       setError('Failed to create account. Please try again.');
     } finally {
@@ -237,24 +225,6 @@ function AddAccountForm({
           </p>
         </div>
 
-        {/* Make default */}
-        <label className="flex cursor-pointer items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 rounded border-border accent-foreground"
-            checked={makeDefault}
-            onChange={(e) => setMakeDefault(e.target.checked)}
-            disabled={submitting}
-          />
-          <span>
-            <span className="font-medium text-foreground">
-              Make this my default account
-            </span>
-            <span className="block text-xs text-muted-foreground">
-              New trades use this account unless you choose another one.
-            </span>
-          </span>
-        </label>
       </div>
 
       {/* Error banner */}
