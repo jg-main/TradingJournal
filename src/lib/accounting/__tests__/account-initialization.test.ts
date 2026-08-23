@@ -19,11 +19,11 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { initializeAccount, assertPristineDraft } from '../account-initialization';
-import { rebuildAccountPerformance } from '../../performance/performance-rebuild';
 import {
   AccountAlreadyInitializedError,
   DuplicateIdempotencyKeyError,
   UnsupportedAccountCurrencyError,
+  AccountInitializationProjectionError,
 } from '../errors';
 import { findAccountPerformance, listAccountEvents } from '../../../db/accounting-repository';
 
@@ -180,9 +180,12 @@ describe('opening-balance initialization', () => {
     expect(ledger.entries).toBe(1);
     expect(ledger.postings).toBe(2);
 
-    // Canonical projection: cash = NAV = 10000, P&L = 0.
-    rebuildAccountPerformance(sqlite, accountId);
+    // Canonical projection: rebuilt INSIDE the initialization transaction and
+    // exposed on the result — cash = NAV = 10000, P&L = 0 (A2.1).
+    expect(result.performance.success).toBe(true);
+    expect(result.performance.nav).toBe('10000.00');
     const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection).toBeDefined();
     expect(projection?.net_cash).toBe('10000.00');
     expect(projection?.nav).toBe('10000.00');
     expect(projection?.realized_pnl).toBe('0.00');
@@ -276,6 +279,15 @@ describe('start-with-zero initialization', () => {
     const ledger = countLedgerRows(sqlite, accountId);
     expect(ledger.entries).toBe(0);
     expect(ledger.postings).toBe(0);
+
+    // Canonical projection rebuilt inside the transaction: zero cash/NAV
+    // (A2.1). The result proves the rebuild succeeded.
+    expect(result.performance.success).toBe(true);
+    expect(result.performance.nav).toBe('0.00');
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection).toBeDefined();
+    expect(projection?.net_cash).toBe('0.00');
+    expect(projection?.nav).toBe('0.00');
   });
 
   it('rejects start-with-zero on an already-initialized account', () => {
@@ -396,5 +408,124 @@ describe('pristine-draft eligibility guard', () => {
     expect(() => assertPristineDraft(sqlite, accountId)).toThrow(
       AccountAlreadyInitializedError,
     );
+  });
+});
+
+// ── A2.1: projection rebuild is part of the initialization transaction ──
+
+describe('projection rebuild inside the initialization transaction (A2.1)', () => {
+  it('C: projection failure rolls back the opening-balance initialization entirely', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite);
+
+    // Force the account-performance projection write to fail inside the
+    // transaction (scoped to this account so other fixtures are unaffected).
+    sqlite.exec(`
+      CREATE TRIGGER a21_force_projection_fail BEFORE INSERT ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced projection failure'); END;
+    `);
+
+    expect(() =>
+      initializeAccount(sqlite, { accountId, mode: 'opening_balance', amount: '10000.00' }),
+    ).toThrow(AccountInitializationProjectionError);
+    sqlite.exec('DROP TRIGGER a21_force_projection_fail');
+
+    // Nothing committed: account inactive, zero events, zero ledger rows, no
+    // projection row. No funded-but-unprojected account may remain.
+    expect(accountRow(sqlite, accountId).is_active).toBe(0);
+    expect(countFinancialEvents(sqlite, accountId)).toBe(0);
+    const ledger = countLedgerRows(sqlite, accountId);
+    expect(ledger.entries).toBe(0);
+    expect(ledger.postings).toBe(0);
+    expect(findAccountPerformance(sqlite, accountId)).toBeUndefined();
+  });
+
+  it('D: projection failure rolls back a zero-mode initialization', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite);
+
+    sqlite.exec(`
+      CREATE TRIGGER a21_force_projection_fail BEFORE INSERT ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced projection failure'); END;
+    `);
+
+    expect(() => initializeAccount(sqlite, { accountId, mode: 'zero' })).toThrow(
+      AccountInitializationProjectionError,
+    );
+    sqlite.exec('DROP TRIGGER a21_force_projection_fail');
+
+    // Account remains inactive; no projection row and no events.
+    expect(accountRow(sqlite, accountId).is_active).toBe(0);
+    expect(countFinancialEvents(sqlite, accountId)).toBe(0);
+    expect(findAccountPerformance(sqlite, accountId)).toBeUndefined();
+  });
+
+  it('E: retry succeeds after a failed rebuild rolls back', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite);
+
+    sqlite.exec(`
+      CREATE TRIGGER a21_force_projection_fail BEFORE INSERT ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced projection failure'); END;
+    `);
+    expect(() =>
+      initializeAccount(sqlite, { accountId, mode: 'opening_balance', amount: '10000.00' }),
+    ).toThrow(AccountInitializationProjectionError);
+    sqlite.exec('DROP TRIGGER a21_force_projection_fail');
+
+    // Retry with the projection healthy: succeeds with exactly one opening
+    // balance and a coherent projection.
+    const result = initializeAccount(sqlite, {
+      accountId,
+      mode: 'opening_balance',
+      amount: '10000.00',
+    });
+    expect(result.isActive).toBe(true);
+    expect(result.performance.success).toBe(true);
+    expect(countFinancialEvents(sqlite, accountId)).toBe(1);
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection?.net_cash).toBe('10000.00');
+    expect(projection?.nav).toBe('10000.00');
+  });
+
+  it('F: a failed initialization does not consume the idempotency key', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite);
+    const idempotencyKey = randomUUID();
+
+    sqlite.exec(`
+      CREATE TRIGGER a21_force_projection_fail BEFORE INSERT ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced projection failure'); END;
+    `);
+    expect(() =>
+      initializeAccount(sqlite, {
+        accountId,
+        mode: 'opening_balance',
+        amount: '5000.00',
+        idempotencyKey,
+      }),
+    ).toThrow(AccountInitializationProjectionError);
+    sqlite.exec('DROP TRIGGER a21_force_projection_fail');
+
+    // The key was not consumed (the event row rolled back)…
+    const row = sqlite
+      .prepare('SELECT id FROM financial_events WHERE idempotency_key = ?')
+      .get(idempotencyKey);
+    expect(row).toBeUndefined();
+
+    // …and a retry with the SAME key succeeds exactly once.
+    const result = initializeAccount(sqlite, {
+      accountId,
+      mode: 'opening_balance',
+      amount: '5000.00',
+      idempotencyKey,
+    });
+    expect(result.performance.success).toBe(true);
+    expect(countFinancialEvents(sqlite, accountId)).toBe(1);
+    expect(accountRow(sqlite, accountId).is_active).toBe(1);
   });
 });

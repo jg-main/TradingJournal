@@ -1,22 +1,30 @@
 /**
- * Account initialization service (A2).
+ * Account initialization service (A2, A2.1).
  *
  * Makes "record the opening balance" and "start with zero" complete account
  * initialization as ONE authoritative server-side transaction:
  *
- *   opening balance posting (if any) + account activation
+ *   opening balance posting (if any) + account activation + performance projection
  *
  * executed inside a single SQLite transaction, so the product invariant
  * holds on every path:
  *
- *   Opening-balance path → active = true, opening_balance event exists once
- *   Start-with-zero path  → active = true, opening_balance count = 0
+ *   Opening-balance path → active = true, opening_balance event exists once,
+ *                          projection rebuilt (netCash = NAV = opening balance)
+ *   Start-with-zero path  → active = true, opening_balance count = 0,
+ *                          projection rebuilt (netCash = NAV = 0)
  *
  * There is no successful initialization that ends with financial history AND
- * a draft account. The opening balance remains an immutable financial event
- * (never an editable account property); this service reuses the posting
- * kernel for the event/entry/posting pair and only adds the activation
- * UPDATE inside the same transaction boundary.
+ * a draft account, and there is no successful initialization whose canonical
+ * performance projection failed to persist: `rebuildAccountPerformance()` is
+ * invoked INSIDE the transaction and its `success` result is enforced — a
+ * failed projection write rolls back the opening balance + activation too
+ * (no funded-but-unprojected account can result from a failed request).
+ *
+ * The opening balance remains an immutable financial event (never an
+ * editable account property); this service reuses the posting kernel for the
+ * event/entry/posting pair and the canonical performance rebuild for the
+ * projection, adding only the activation UPDATE inside the same boundary.
  *
  * Eligibility is restricted to pristine new drafts:
  *   - account must be inactive (a deactivated historical account is NOT
@@ -32,11 +40,14 @@
 import Database from 'better-sqlite3';
 import { postFinancialEvent } from './posting';
 import { toMicros } from './decimal';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
+import type { PerformanceRebuildResult } from '../performance/performance-rebuild';
 import type { FinancialEventWithPostings, CanonicalDecimal } from './types';
 import {
   AccountNotFoundError,
   AccountAlreadyInitializedError,
   DuplicateIdempotencyKeyError,
+  AccountInitializationProjectionError,
 } from './errors';
 import {
   accountExists,
@@ -74,6 +85,13 @@ export interface InitializeAccountResult {
    * null for mode 'zero' (no financial event is fabricated).
    */
   openingBalance: FinancialEventWithPostings | null;
+  /**
+   * The successful account-performance projection produced inside the
+   * initialization transaction. The service cannot return success with
+   * `performance.success === false` — a failed rebuild throws
+   * {@link AccountInitializationProjectionError} and rolls everything back.
+   */
+  performance: PerformanceRebuildResult;
 }
 
 // ── Pristine-Draft Eligibility Guard ────────────────────────────────────
@@ -158,17 +176,25 @@ export function assertPristineDraft(
  *    - mode 'opening_balance': post the immutable opening-balance event
  *      (financial event + ledger entry + balanced postings) via the posting
  *      kernel — better-sqlite3 nests this as a savepoint within the outer
- *      transaction, so a later activation failure rolls it back too;
+ *      transaction, so a later failure rolls it back too;
  *    - mode 'zero': no event is created;
- *    - activation UPDATE (is_active = 1) inside the same transaction.
+ *    - activation UPDATE (is_active = 1) inside the same transaction;
+ *    - rebuild the canonical account-performance projection through the SAME
+ *      connection (it observes the uncommitted financial state) and REQUIRE
+ *      `performance.success === true`. A failed projection write throws
+ *      {@link AccountInitializationProjectionError} inside the transaction,
+ *      rolling back the activation and the opening balance as well.
  *
- * Either the account ends active WITH its opening balance, or neither change
- * persists — there is no persisted "funded but inactive" state.
+ * Either the account ends active with its opening balance and a coherent
+ * projection, or none of those changes persist — there is no persisted
+ * "funded but inactive" and no "active but unprojected" state.
  *
  * @throws {AccountNotFoundError}          Account does not exist.
  * @throws {UnsupportedAccountCurrencyError} Legacy non-USD account (USD-only contract).
  * @throws {AccountAlreadyInitializedError}  Not a pristine draft (active, or has history).
  * @throws {DuplicateIdempotencyKeyError}    Idempotency key already used.
+ * @throws {AccountInitializationProjectionError} Performance projection could not be
+ *                                                persisted — transaction rolled back.
  * @throws {InvalidAmountError | InvalidMicrosBoundsError} Bad opening-balance amount.
  */
 export function initializeAccount(
@@ -191,7 +217,8 @@ export function initializeAccount(
     }
   }
 
-  // 4. Single authoritative transaction: posting (if any) + activation.
+  // 4. Single authoritative transaction: posting (if any) + activation +
+  //    projection rebuild, all-or-nothing.
   const transaction = sqlite.transaction(() => {
     let openingBalance: FinancialEventWithPostings | null = null;
     if (mode === 'opening_balance') {
@@ -200,7 +227,8 @@ export function initializeAccount(
       // opening_balance (payload {amount}, effect {kind:'cash',direction:
       // 'increase'}) so the ledger/activity projections derive cash impact
       // identically. better-sqlite3 nests this as a savepoint within the
-      // outer transaction, so a later activation failure rolls it back too.
+      // outer transaction, so a later activation/rebuild failure rolls it
+      // back too.
       openingBalance = postFinancialEvent(sqlite, {
         accountId,
         eventType: 'opening_balance',
@@ -226,12 +254,26 @@ export function initializeAccount(
       .prepare('UPDATE accounts SET is_active = 1, updated_at = ? WHERE id = ?')
       .run(new Date().toISOString(), accountId);
 
-    return { openingBalance };
+    // Rebuild the canonical projection INSIDE the transaction, through the
+    // same connection, so it observes the uncommitted event/activation state.
+    // `rebuildAccountPerformance` catches its own internal errors and returns
+    // `{ success: false }` rather than throwing, so the success flag must be
+    // checked explicitly — a failed projection write must roll back the whole
+    // initialization.
+    const performance = rebuildAccountPerformance(sqlite, accountId);
+    if (!performance.success) {
+      throw new AccountInitializationProjectionError(
+        accountId,
+        performance.error,
+      );
+    }
+
+    return { openingBalance, performance };
   });
 
-  const { openingBalance } = transaction();
+  const { openingBalance, performance } = transaction();
 
-  return { isActive: true, openingBalance };
+  return { isActive: true, openingBalance, performance };
 }
 
 // ── Response Helpers ────────────────────────────────────────────────────

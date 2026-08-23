@@ -328,3 +328,34 @@ export class AccountAlreadyInitializedError extends AccountingError {
     Object.setPrototypeOf(this, AccountAlreadyInitializedError.prototype);
   }
 }
+
+/**
+ * Thrown when the canonical account-performance projection cannot be
+ * persisted during account initialization.
+ *
+ * `rebuildAccountPerformance()` returns `{ success: false, error }` rather
+ * than throwing for normal rebuild failures, so the initialization service
+ * inspects the result explicitly and raises this error INSIDE the
+ * initialization transaction — forcing a full rollback of the opening
+ * balance + activation + projection. No funded-but-unprojected account may
+ * ever result from a failed initialization.
+ *
+ * Mapped to HTTP 500 by the initialization route (an unexpected server-side
+ * initialization failure — never 409, which is a lifecycle conflict).
+ */
+export class AccountInitializationProjectionError extends AccountingError {
+  public readonly accountId: string;
+  public readonly rebuildError?: string;
+
+  constructor(accountId: string, rebuildError?: string) {
+    super(
+      'ACCOUNT_INITIALIZATION_PROJECTION_FAILED',
+      `Account "${accountId}" initialization rolled back: account-performance projection could not be persisted` +
+        (rebuildError ? ` (${rebuildError})` : ''),
+    );
+    this.name = 'AccountInitializationProjectionError';
+    this.accountId = accountId;
+    this.rebuildError = rebuildError;
+    Object.setPrototypeOf(this, AccountInitializationProjectionError.prototype);
+  }
+}

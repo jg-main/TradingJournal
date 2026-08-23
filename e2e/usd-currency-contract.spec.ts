@@ -129,7 +129,9 @@ test.describe('USD-only account currency contract', () => {
     await page.goto(`/settings/accounts/${legacyEurAccountId}`);
 
     // The actual EUR identity remains visible (never relabeled as USD)…
-    await expect(page.getByText('Legacy EUR Account')).toBeVisible();
+    // Scoped to the heading: the sidebar selector can also show the name when
+    // this fixture is the provider's selected account.
+    await expect(page.getByRole('heading', { name: 'Legacy EUR Account' })).toBeVisible();
     // …and the unsupported-currency warning is shown.
     await expect(
       page.getByText(/EUR account — not currently supported for new activity/i),

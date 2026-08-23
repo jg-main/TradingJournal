@@ -27,7 +27,6 @@ import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { initializeAccountRequestSchema } from '@/lib/accounting/api-contracts';
 import { initializeAccount } from '@/lib/accounting/account-initialization';
-import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import { findAccountPerformance, listAccountEvents } from '@/db/accounting-repository';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -130,9 +129,9 @@ function doInitialize(
       postedAt: requestData.mode === 'opening_balance' ? requestData.postedAt : undefined,
     });
 
-    // Mirrors the route: projection rebuild AFTER the committed transaction.
-    rebuildAccountPerformance(sqlite, accountId);
-
+    // Mirrors the route: the service rebuilds the projection INSIDE the
+    // initialization transaction and enforces its success — no post-commit
+    // rebuild here (exactly one required rebuild per initialization).
     const account = sqlite
       .prepare('SELECT id, is_active AS isActive, currency FROM accounts WHERE id = ?')
       .get(accountId) as Record<string, unknown>;
@@ -141,6 +140,11 @@ function doInitialize(
       status: 201,
       body: {
         account,
+        performance: {
+          success: result.performance.success,
+          nav: result.performance.nav,
+          rebuildCount: result.performance.rebuildCount,
+        },
         event: result.openingBalance
           ? { id: result.openingBalance.event.id, eventType: result.openingBalance.event.eventType }
           : null,
@@ -175,6 +179,9 @@ function doInitialize(
     }
     if (err.message.includes('idempotency key')) {
       return { status: 409, body: { error: 'Duplicate idempotency key', details: err.message } };
+    }
+    if (err.message.includes('projection could not be persisted')) {
+      return { status: 500, body: { error: 'Failed to initialize account', details: err.message } };
     }
     return { status: 500, body: { error: 'Failed to initialize account', details: err.message } };
   }
@@ -402,5 +409,74 @@ describe('atomic rollback at the route boundary', () => {
     expect(entries.c).toBe(0);
     expect(postings.c).toBe(0);
     expect(isActive(sqlite, accountId)).toBe(0);
+  });
+});
+
+// ── A2.1: projection failure at the route boundary ──────────────────────
+
+describe('projection failure at the route boundary (A2.1)', () => {
+  it('forced projection failure → 500, nothing persisted, account draft', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite);
+
+    sqlite.exec(`
+      CREATE TRIGGER a21_route_force_projection_fail BEFORE INSERT ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced projection failure'); END;
+    `);
+
+    const result = doInitialize(sqlite, accountId, { mode: 'opening_balance', amount: '10000.00' });
+    expect(result.status).toBe(500);
+    expect(result.body.error).toBe('Failed to initialize account');
+    expect((result.body.details as string)).toContain('projection could not be persisted');
+    sqlite.exec('DROP TRIGGER a21_route_force_projection_fail');
+
+    // Rolled back: account inactive, zero events, zero ledger mutation, no
+    // projection row.
+    expect(isActive(sqlite, accountId)).toBe(0);
+    expect(eventCount(sqlite, accountId)).toBe(0);
+    const entries = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM ledger_entries WHERE account_id = ?')
+      .get(accountId) as { c: number };
+    const postings = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM ledger_postings WHERE account_id = ?')
+      .get(accountId) as { c: number };
+    expect(entries.c).toBe(0);
+    expect(postings.c).toBe(0);
+    expect(findAccountPerformance(sqlite, accountId)).toBeUndefined();
+  });
+
+  it('forced projection failure on zero mode → 500, account remains inactive', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite);
+
+    sqlite.exec(`
+      CREATE TRIGGER a21_route_force_projection_fail BEFORE INSERT ON account_performance
+      WHEN NEW.account_id = '${accountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced projection failure'); END;
+    `);
+
+    const result = doInitialize(sqlite, accountId, { mode: 'zero' });
+    expect(result.status).toBe(500);
+    sqlite.exec('DROP TRIGGER a21_route_force_projection_fail');
+
+    expect(isActive(sqlite, accountId)).toBe(0);
+    expect(eventCount(sqlite, accountId)).toBe(0);
+    expect(findAccountPerformance(sqlite, accountId)).toBeUndefined();
+  });
+
+  it('successful opening-balance initialization returns a coherent projection summary', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = createDraft(sqlite);
+
+    const result = doInitialize(sqlite, accountId, { mode: 'opening_balance', amount: '10000.00' });
+
+    expect(result.status).toBe(201);
+    expect((result.body.performance as { success: boolean; nav: string }).success).toBe(true);
+    expect((result.body.performance as { nav: string }).nav).toBe('10000.00');
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection?.net_cash).toBe('10000.00');
+    expect(projection?.nav).toBe('10000.00');
+    expect(projection?.total_pnl).toBe('0.00');
   });
 });

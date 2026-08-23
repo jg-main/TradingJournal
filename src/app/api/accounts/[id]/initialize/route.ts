@@ -27,7 +27,6 @@ import { accounts } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { initializeAccountRequestSchema } from '@/lib/accounting/api-contracts';
 import { initializeAccount, toInitializationEventRecord } from '@/lib/accounting/account-initialization';
-import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import {
   InvalidAmountError,
   InvalidMicrosBoundsError,
@@ -35,6 +34,7 @@ import {
   AccountAlreadyInitializedError,
   DuplicateIdempotencyKeyError,
   UnsupportedAccountCurrencyError,
+  AccountInitializationProjectionError,
 } from '@/lib/accounting/errors';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -84,7 +84,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // 2. Raw SQLite handle for the transactional initialization service.
     const sqlite = getSqliteHandle();
 
-    // 3. Run the initialization transaction (posting + activation).
+    // 3. Run the initialization transaction (posting + activation +
+    //    performance projection, all-or-nothing). The service rebuilds the
+    //    projection INSIDE the transaction and enforces its success, so a
+    //    201 here guarantees the account is active AND its projection
+    //    (NAV/Cash) was persisted coherently. No post-commit rebuild is
+    //    needed — exactly one required rebuild per successful initialization.
     const result = initializeAccount(sqlite, {
       accountId,
       mode: requestData.mode,
@@ -94,25 +99,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       postedAt: requestData.mode === 'opening_balance' ? requestData.postedAt : undefined,
     });
 
-    // 4. Keep the persisted NAV projection read-your-writes consistent with
-    //    the immutable event and its cash effect (mirrors the financial-event
-    //    route). Runs AFTER the transaction committed, so a rebuild failure
-    //    never rolls back the initialized account.
-    rebuildAccountPerformance(sqlite, accountId);
-
-    // 5. Read the authoritative account row (drizzle, boolean-mapped).
+    // 4. Read the authoritative account row (drizzle, boolean-mapped).
     const accountRow = db.select().from(accounts).where(eq(accounts.id, accountId)).get();
 
-    // 6. Coherent initialized response.
+    // 5. Coherent initialized response. The performance summary proves the
+    //    projection succeeded; NAV is the canonical post-initialization value.
     return NextResponse.json(
       {
         account: accountRow ?? null,
+        performance: {
+          success: true,
+          nav: result.performance.nav,
+          rebuildCount: result.performance.rebuildCount,
+        },
         ...toInitializationEventRecord(result.openingBalance),
       },
       { status: 201 },
     );
   } catch (error) {
-    // 7. Map domain errors to HTTP error responses.
+    // 6. Map domain errors to HTTP error responses.
     if (error instanceof InvalidAmountError || error instanceof InvalidMicrosBoundsError) {
       return NextResponse.json(
         {
@@ -166,7 +171,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 8. Unexpected errors.
+    // Projection persistence failure: an unexpected server-side initialization
+    // failure — never 409 (that is a lifecycle conflict). The transaction has
+    // already rolled back, so the request is safely retryable.
+    if (error instanceof AccountInitializationProjectionError) {
+      return NextResponse.json(
+        {
+          error: 'Failed to initialize account',
+          details: error.message,
+        },
+        { status: 500 },
+      );
+    }
+
+    // 7. Unexpected errors.
     return NextResponse.json(
       {
         error: 'Failed to initialize account',
