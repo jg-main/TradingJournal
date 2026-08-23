@@ -8,8 +8,9 @@
  * corrected-state presentation with expandable lineage.
  *
  * Coverage:
- * 1. Ledger eligibility — Correct action on an eligible deposit row, and no
- *    Correct action on an ineligible opening_balance row.
+ * 1. Ledger eligibility — Correct action on eligible deposit and opening
+ *    balance rows (opening_balance is correctable since A4), and no Correct
+ *    action on ineligible rows.
  * 2. Dialog validation — pre-filled amount/description, required reason
  *    enforced client-side, confirm-step comparison, back/cancel navigation.
  * 3. Full user flow — open dialog, enter replacement values + reason, review,
@@ -37,7 +38,7 @@ let accountId: string;
 let uiDepositEventId: string;
 /** Second deposit used for the idempotency-key guard via the API. */
 let guardDepositEventId: string;
-/** Ineligible control event (opening_balance). */
+/** Baseline control event (opening_balance — correctable since A4). */
 let openingEventId: string;
 /** Captured from the UI correction POST response. */
 let uiReversalEventId: string;
@@ -202,7 +203,7 @@ test.describe('Financial Event Correction workflow', () => {
   // Ledger eligibility — Correct action on eligible rows only
   // ───────────────────────────────────────────────────────────────────────
 
-  test('ledger shows Correct on the eligible deposit row but not on opening_balance', async ({
+  test('ledger shows Correct on eligible deposit and opening_balance rows', async ({
     page,
   }) => {
     const consoleErrors = captureConsoleErrors(page);
@@ -216,9 +217,10 @@ test.describe('Financial Event Correction workflow', () => {
     const depositRow = page.locator('tr', { hasText: UI_DEPOSIT_DESCRIPTION });
     await expect(depositRow.getByLabel(/^Correct deposit event/)).toBeVisible();
 
-    // Ineligible opening_balance row must NOT render a Correct action.
+    // The original opening_balance row is correctable since A4 (its
+    // replacement must stay a positive amount).
     const openingRow = page.locator('tr', { hasText: OPENING_DESCRIPTION });
-    await expect(openingRow.getByLabel(/^Correct opening_balance event/)).toHaveCount(0);
+    await expect(openingRow.getByLabel(/^Correct opening_balance event/)).toBeVisible();
 
     // Cash impacts render for the deposit rows.
     await expect(depositRow.getByText('$5,000.00')).toBeVisible();
@@ -394,14 +396,34 @@ test.describe('Financial Event Correction workflow', () => {
     const alreadyBody = (await alreadyRes.json()) as { error: string; code?: string };
     expect(alreadyBody.code).toBe('EVENT_ALREADY_CORRECTED');
 
-    // 2. Correcting an ineligible event type → 422.
-    const ineligibleRes = await correctFinancialEventApi(request, accountId, openingEventId, {
+    // 2. Correcting an ineligible event type (stock_split) → 422.
+    const splitRes = await request.post(`/api/accounts/${accountId}/financial-events`, {
+      data: {
+        eventType: 'stock_split',
+        symbol: 'AAPL',
+        ratio: '4:1',
+        oldShares: 400,
+        newShares: 100,
+        description: 'Ineligible control split',
+      },
+    });
+    expect(splitRes.status()).toBe(201);
+    const splitBody = (await splitRes.json()) as { event: { id: string } };
+    const ineligibleRes = await correctFinancialEventApi(request, accountId, splitBody.event.id, {
       amount: '20000.00',
       reason: 'E2E ineligible attempt',
     });
     expect(ineligibleRes.status()).toBe(422);
     const ineligibleBody = (await ineligibleRes.json()) as { error: string; code?: string };
     expect(ineligibleBody.code).toBe('EVENT_NOT_CORRECTABLE');
+
+    // 2b. Opening balance is correctable since A4 — a first correction of the
+    //     original opening balance succeeds (reversal + replacement).
+    const openingCorrection = await correctFinancialEventApi(request, accountId, openingEventId, {
+      amount: '11000.00',
+      reason: 'E2E opening balance correction',
+    });
+    expect(openingCorrection.status()).toBe(200);
 
     // 3. First correction with an idempotency key succeeds.
     const firstIdemRes = await correctFinancialEventApi(request, accountId, guardDepositEventId, {
@@ -478,12 +500,13 @@ test.describe('Financial Event Correction workflow', () => {
     expect(primaryEventIds).not.toContain(uiReplacementEventId);
     expect(primaryEventIds).not.toContain(guardDepositEventId);
 
-    // Netting: opening 10000 + corrected deposit 7500 + corrected guard 1200.
+    // Netting: opening corrected to 11000 (A4, via the earlier API test) +
+    // corrected deposit 7500 + corrected guard 1200 = 19700.
     const totalCash = ledger.events.reduce(
       (acc, e) => acc + parseFloat(e.cashImpact ?? '0'),
       0,
     );
-    expect(totalCash).toBe(18_700);
+    expect(totalCash).toBe(19_700);
 
     // No duplicates: every event id appears at most once.
     const uniqueIds = new Set(primaryEventIds);

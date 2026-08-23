@@ -271,6 +271,23 @@ financial-event route rejects `opening_balance` with 409. A successful
 initialization ends in exactly one of: (a) active account with exactly one
 `opening_balance` event; (b) active account with zero events (`mode: 'zero'`).
 There is no successful path ending in financial history + draft.
+**Updated by A4:** an incorrect opening balance may be corrected only through
+the immutable reversal + replacement flow (`POST
+/api/accounts/[id]/financial-events/:eventId/correct`), which is the ONLY
+post-initialization opening-balance mutation path. The original event remains
+unchanged; a reversal (opposite cash-effect direction) and a replacement
+(positive amount, `effect.direction = increase`) are posted and linked through
+`financial_event_correction_lineage`. Correction does not reinitialize,
+deactivate, reactivate, or touch `accounts.startingBalance` — the account stays
+active. Replacement opening balances must be POSITIVE (0 / negative rejected).
+`rebuildOpeningCash` is correction-aware: current canonical opening-balance
+events net through their recorded cash-effect direction (increase
+`+amountMicros`, reversal `-amountMicros`), with a debit-posting fallback
+(positive) for legacy rows lacking effect metadata — a $10,000 opening
+corrected to $9,000 nets to $9,000 (not the naive $29,000 debit sum). Legacy
+opening-balance events without effect metadata remain readable via the
+fallback but cannot be corrected (no economic effect to reverse — clear domain
+error, documented legacy limitation).
 
 - **Evidence:** `src/lib/accounting/account-initialization.ts`
   (`initializeAccount`, `assertPristineDraft`),

@@ -27,7 +27,10 @@ import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { postEventWithEffect } from '@/lib/accounting/event-posting';
+import { initializeAccount } from '@/lib/accounting/account-initialization';
 import { correctFinancialEvent } from '@/lib/accounting/financial-event-correction';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
+import { findAccountPerformance } from '@/db/accounting-repository';
 import { financialEventCorrectionInputSchema } from '@/lib/accounting/api-contracts';
 import { accountExists, findEventById } from '@/db/accounting-repository';
 import {
@@ -132,6 +135,33 @@ function postDeposit(
     description,
   });
   return result.event.id;
+}
+
+/** Create a pristine draft account and initialize it (canonical A2 flow). */
+function createInitializedAccount(sqlite: Database.Database, amount: string): string {
+  const accountId = randomUUID();
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+    )
+    .run(accountId, `A4 Route ${accountId.slice(0, 6)}`, 'Broker', now, now);
+  initializeAccount(sqlite, { accountId, mode: 'opening_balance', amount });
+  return accountId;
+}
+
+/** First opening_balance event id for an account. */
+function listOpeningEvent(sqlite: Database.Database, accountId: string): string {
+  const row = sqlite
+    .prepare(
+      `SELECT id FROM financial_events
+       WHERE account_id = ? AND event_type = 'opening_balance'
+       ORDER BY posted_at ASC LIMIT 1`,
+    )
+    .get(accountId) as { id: string } | undefined;
+  if (!row) throw new Error('no opening_balance event');
+  return row.id;
 }
 
 function simulateRoutePost(
@@ -400,15 +430,19 @@ describe('POST /api/accounts/:id/financial-events/:eventId/correct', () => {
   it('returns 422 with EVENT_NOT_CORRECTABLE for a non-eligible event type', () => {
     const { sqlite, accountId } = ctx;
 
-    const opening = postEventWithEffect(sqlite, accountId, {
-      eventType: 'opening_balance',
-      amount: '4000.00',
-      description: 'Opening balance',
+    // opening_balance is correctable since A4; stock_split remains ineligible.
+    const split = postEventWithEffect(sqlite, accountId, {
+      eventType: 'stock_split',
+      symbol: 'AAPL',
+      ratio: '4:1',
+      oldShares: 400,
+      newShares: 100,
+      description: 'Stock split',
     });
 
-    const response = simulateRoutePost(sqlite, accountId, opening.event.id, {
+    const response = simulateRoutePost(sqlite, accountId, split.event.id, {
       amount: '5000.00',
-      reason: 'Cannot correct opening balance',
+      reason: 'Cannot correct stock split',
     });
 
     expect(response.status).toBe(422);
@@ -451,5 +485,47 @@ describe('POST /api/accounts/:id/financial-events/:eventId/correct', () => {
     const effect = JSON.parse(replacement.effect) as { direction: string; amount: string };
     expect(effect.direction).toBe('increase');
     expect(effect.amount).toBe('75.00');
+  });
+
+  // ── A4: opening-balance correction through the existing endpoint ──────
+  it('corrects an opening balance via the correction endpoint (10k -> 9k)', () => {
+    const { sqlite } = ctx;
+
+    // Canonical initialization creates the original opening balance (with
+    // effect metadata) and activates the account.
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+
+    const original = findEventById(sqlite, listOpeningEvent(sqlite, accountId));
+    expect(original).toBeDefined();
+    expect(original!.event_type).toBe('opening_balance');
+
+    const result = simulateRoutePost(sqlite, accountId, original!.id, {
+      amount: '9000.00',
+      reason: 'Broker opening statement correction',
+    });
+
+    // 200 with full lineage.
+    expect(result.status).toBe(200);
+    const body = result.body as { correction: { reason: string }; originalEvent: { effect: string | null }; reversalEvent: { effect: string | null }; replacementEvent: { effect: string | null } };
+    expect(body.correction.reason).toBe('Broker opening statement correction');
+    expect(JSON.parse(body.originalEvent.effect ?? '{}').direction).toBe('increase');
+    expect(JSON.parse(body.reversalEvent.effect ?? '{}').direction).toBe('decrease');
+    expect(JSON.parse(body.replacementEvent.effect ?? '{}').direction).toBe('increase');
+
+    // Canonical projection: cash = NAV = 9,000, P&L = 0 (not profit/loss).
+    rebuildAccountPerformance(sqlite, accountId);
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection?.net_cash).toBe('9000.00');
+    expect(projection?.nav).toBe('9000.00');
+    expect(projection?.realized_pnl).toBe('0.00');
+    expect(projection?.total_pnl).toBe('0.00');
+
+    // The original event is unchanged; a second correction is rejected.
+    expect(original!.effect).toBe(body.originalEvent.effect);
+    const second = simulateRoutePost(sqlite, accountId, original!.id, {
+      amount: '8000.00',
+      reason: 'Second correction',
+    });
+    expect(second.status).toBe(409);
   });
 });

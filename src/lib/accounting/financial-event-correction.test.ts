@@ -29,7 +29,11 @@ import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { postEventWithEffect } from '@/lib/accounting/event-posting';
+import { postFinancialEvent } from '@/lib/accounting/posting';
 import { correctFinancialEvent } from '@/lib/accounting/financial-event-correction';
+import { initializeAccount } from '@/lib/accounting/account-initialization';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
+import { findAccountPerformance } from '@/db/accounting-repository';
 import { computeAccountCashImpact } from '@/lib/accounting/activity';
 import {
   findFinancialEventCorrectionByOriginalEvent,
@@ -363,23 +367,8 @@ describe('correctFinancialEvent', () => {
   it('throws EventNotCorrectableError for non-eligible event types', () => {
     const { sqlite, accountId } = ctx;
 
-    // opening_balance is not eligible
-    const opening = postEventWithEffect(sqlite, accountId, {
-      eventType: 'opening_balance',
-      amount: '3000.00',
-      description: 'Opening balance',
-    });
-
-    expect(() =>
-      correctFinancialEvent(sqlite, {
-        accountId,
-        originalEventId: opening.event.id,
-        amount: '4000.00',
-        reason: 'Trying to correct opening balance',
-      }),
-    ).toThrow(EventNotCorrectableError);
-
-    // stock_split is not eligible
+    // opening_balance is now correctable (A4) — see the opening-balance
+    // correction describe block below. stock_split remains ineligible.
     const split = postEventWithEffect(sqlite, accountId, {
       eventType: 'stock_split',
       symbol: 'AAPL',
@@ -544,5 +533,243 @@ describe('correctFinancialEvent', () => {
     const replacementPayload = parsePayload(result.replacementEvent.payload);
     expect(replacementPayload.description).toBe('Corrected deposit amount');
     expect(replacementPayload.reason).toBe('User provided a description');
+  });
+});
+
+// ── A4: opening-balance correction (immutable reversal + replacement) ──
+
+/** Create a pristine draft account and initialize it (canonical A2 flow). */
+function createInitializedAccount(sqlite: Database.Database, amount: string): string {
+  const accountId = randomUUID();
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+    )
+    .run(accountId, `A4 Account ${accountId.slice(0, 6)}`, 'Broker', now, now);
+  initializeAccount(sqlite, { accountId, mode: 'opening_balance', amount });
+  return accountId;
+}
+
+describe('correctFinancialEvent — opening balance (A4)', () => {
+  let ctx: TestContext;
+
+  beforeAll(() => {
+    ctx = createTestDatabase();
+  });
+
+  afterAll(() => {
+    destroyTestDatabase();
+  });
+
+  it('corrects an opening balance via reversal + replacement and keeps the account active', () => {
+    const { sqlite } = ctx;
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+
+    const originalEvent = findEventById(sqlite, listAccountEvents(sqlite, accountId)[0].id);
+    expect(originalEvent).toBeDefined();
+    expect(originalEvent!.event_type).toBe('opening_balance');
+
+    const result = correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: originalEvent!.id,
+      amount: '9000.00',
+      reason: 'Broker opening statement correction',
+    });
+
+    // 1. Original unchanged; reversal + replacement + lineage exist.
+    const originalAfter = findEventById(sqlite, originalEvent!.id);
+    expect(originalAfter).toBeDefined();
+    expect(originalAfter!.effect).toBe(originalEvent!.effect);
+    const reversal = findEventById(sqlite, result.reversalEvent.id);
+    const replacement = findEventById(sqlite, result.replacementEvent.id);
+    expect(reversal).toBeDefined();
+    expect(replacement).toBeDefined();
+
+    // 2. Effect directions: original increase, reversal decrease, replacement increase.
+    expect(parseEffect(originalAfter!.effect).direction).toBe('increase');
+    expect(parseEffect(originalAfter!.effect).amount).toBe('10000.00');
+    expect(parseEffect(reversal!.effect).direction).toBe('decrease');
+    expect(parseEffect(reversal!.effect).amount).toBe('10000.00');
+    expect(parseEffect(replacement!.effect).direction).toBe('increase');
+    expect(parseEffect(replacement!.effect).amount).toBe('9000.00');
+
+    // 3. Correction lineage recorded.
+    const lineage = findFinancialEventCorrectionByOriginalEvent(sqlite, originalEvent!.id);
+    expect(lineage).toBeDefined();
+    expect(lineage!.reversal_event_id).toBe(result.reversalEvent.id);
+    expect(lineage!.replacement_event_id).toBe(result.replacementEvent.id);
+    expect(lineage!.reason).toBe('Broker opening statement correction');
+
+    // 4. Effective opening projection = 9,000 (correction-aware, not 29,000).
+    const activity = computeAccountCashImpact(sqlite, accountId);
+    expect(activity.netCashImpact).toBe('9000.00');
+
+    // 5. Account remains active (historical correction, not initialization).
+    const accountRow = sqlite
+      .prepare('SELECT is_active FROM accounts WHERE id = ?')
+      .get(accountId) as { is_active: number };
+    expect(accountRow.is_active).toBe(1);
+
+    // 6. Canonical performance: cash = NAV = 9,000, P&L = 0 (capital change
+    //    is not investment profit/loss).
+    rebuildAccountPerformance(sqlite, accountId);
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection?.net_cash).toBe('9000.00');
+    expect(projection?.nav).toBe('9000.00');
+    expect(projection?.realized_pnl).toBe('0.00');
+    expect(projection?.total_pnl).toBe('0.00');
+  });
+
+  it('later deposits/withdrawals roll forward correctly after an opening correction', () => {
+    const { sqlite } = ctx;
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+
+    postEventWithEffect(sqlite, accountId, { eventType: 'deposit', amount: '2000.00' });
+    postEventWithEffect(sqlite, accountId, { eventType: 'withdrawal', amount: '500.00' });
+
+    const originalEvent = findEventById(sqlite, listAccountEvents(sqlite, accountId)[0].id);
+    correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: originalEvent!.id,
+      amount: '9000.00',
+      reason: 'Broker opening statement correction',
+    });
+
+    // No double counting: opening (9000) + deposit (2000) - withdrawal (500).
+    const activity = computeAccountCashImpact(sqlite, accountId);
+    expect(activity.netCashImpact).toBe('10500.00');
+
+    rebuildAccountPerformance(sqlite, accountId);
+    const projection = findAccountPerformance(sqlite, accountId);
+    expect(projection?.net_cash).toBe('10500.00');
+    expect(projection?.nav).toBe('10500.00');
+    expect(projection?.realized_pnl).toBe('0.00');
+  });
+
+  it('rejects zero and negative replacement opening balances', () => {
+    const { sqlite } = ctx;
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+    const originalEvent = findEventById(sqlite, listAccountEvents(sqlite, accountId)[0].id);
+
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: originalEvent!.id,
+        amount: '0.00',
+        reason: 'Zero baseline',
+      }),
+    ).toThrow(InvalidAmountError);
+
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: originalEvent!.id,
+        amount: '-1000.00',
+        reason: 'Negative baseline',
+      }),
+    ).toThrow(InvalidAmountError);
+  });
+
+  it('rejects a second correction of the same original opening balance', () => {
+    const { sqlite } = ctx;
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+    const originalEvent = findEventById(sqlite, listAccountEvents(sqlite, accountId)[0].id);
+
+    correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: originalEvent!.id,
+      amount: '9000.00',
+      reason: 'First correction',
+    });
+
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: originalEvent!.id,
+        amount: '8000.00',
+        reason: 'Second correction',
+      }),
+    ).toThrow(EventAlreadyCorrectedError);
+  });
+
+  it('rejects correcting the reversal or replacement constituents', () => {
+    const { sqlite } = ctx;
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+    const originalEvent = findEventById(sqlite, listAccountEvents(sqlite, accountId)[0].id);
+
+    const result = correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: originalEvent!.id,
+      amount: '9000.00',
+      reason: 'Broker opening statement correction',
+    });
+
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: result.reversalEvent.id,
+        amount: '8000.00',
+        reason: 'Trying to correct the reversal',
+      }),
+    ).toThrow(EventNotCorrectableError);
+
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: result.replacementEvent.id,
+        amount: '8000.00',
+        reason: 'Trying to correct the replacement',
+      }),
+    ).toThrow(EventNotCorrectableError);
+  });
+
+  it('rejects cross-account correction of an opening balance', () => {
+    const { sqlite } = ctx;
+    const accountId = createInitializedAccount(sqlite, '10000.00');
+    const originalEvent = findEventById(sqlite, listAccountEvents(sqlite, accountId)[0].id);
+
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId: ctx.secondAccountId,
+        originalEventId: originalEvent!.id,
+        amount: '9000.00',
+        reason: 'Cross-account',
+      }),
+    ).toThrow(FinancialEventNotFoundError);
+  });
+
+  it('blocks correction of a legacy opening balance without effect metadata', () => {
+    const { sqlite } = ctx;
+    // Legacy row: opening_balance event with NO effect JSON (pre-canonical).
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(accountId, 'Legacy Opening', 'Broker', now, now);
+
+    const legacy = postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '8000.00',
+    });
+    // postFinancialEvent writes no payload/effect by default; assert the
+    // legacy fixture truly lacks effect metadata.
+    expect(legacy.event.effect).toBeNull();
+
+    // Correction must NOT guess an economic effect — blocked with a clear
+    // domain error; the projection stays readable via the debit fallback.
+    expect(() =>
+      correctFinancialEvent(sqlite, {
+        accountId,
+        originalEventId: legacy.event.id,
+        amount: '9000.00',
+        reason: 'Legacy correction attempt',
+      }),
+    ).toThrow(/no recorded cash effect to reverse/);
   });
 });

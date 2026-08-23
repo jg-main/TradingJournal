@@ -16,7 +16,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { postOpeningBalance } from './posting';
+import { postOpeningBalance, postFinancialEvent } from './posting';
 import {
   rebuildOpeningCash,
   rebuildNetPosition,
@@ -406,5 +406,96 @@ describe('ledger immutability (migration triggers)', () => {
     for (const row of amounts) {
       expect(row.amount).not.toBe('1.00');
     }
+  });
+});
+
+// ── A4: correction-aware opening cash ────────────────────────────────────
+
+describe('rebuildOpeningCash — correction-aware (A4)', () => {
+  let ctx: TestContext;
+
+  beforeAll(() => {
+    ctx = createTestDatabase();
+  });
+
+  afterAll(() => {
+    destroyTestDatabase(ctx.sqlite);
+  });
+
+  /** Fresh account for each scenario. */
+  function freshAccount(sqlite: Database.Database): string {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+      )
+      .run(id, `A4 Rebuild ${id.slice(0, 6)}`, 'Broker', now, now);
+    return id;
+  }
+
+  /** Post an opening_balance event with explicit canonical effect metadata. */
+  function postOpeningWithEffect(
+    sqlite: Database.Database,
+    accountId: string,
+    amount: string,
+    direction: 'increase' | 'decrease',
+  ): string {
+    const micros = Number(amount) * 1_000_000;
+    const result = postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount,
+      payload: JSON.stringify({ amount }),
+      effect: JSON.stringify({ kind: 'cash', direction, amount, amountMicros: micros }),
+    });
+    return result.event.id;
+  }
+
+  it('22a: a single canonical opening with an increase effect counts positively', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = freshAccount(sqlite);
+    postOpeningWithEffect(sqlite, accountId, '10000.00', 'increase');
+
+    const projection = rebuildOpeningCash(sqlite, accountId);
+    expect(projection.totalOpeningCash).toBe('10000.00');
+    expect(projection.totalOpeningCashMicros).toBe(10_000_000_000);
+    expect(projection.events[0].direction).toBe('increase');
+    expect(projection.events[0].signedAmountMicros).toBe(10_000_000_000);
+  });
+
+  it('22b: correction lineage nets to the replacement value (10k - 10k + 9k = 9k)', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = freshAccount(sqlite);
+    postOpeningWithEffect(sqlite, accountId, '10000.00', 'increase'); // original
+    postOpeningWithEffect(sqlite, accountId, '10000.00', 'decrease'); // reversal
+    postOpeningWithEffect(sqlite, accountId, '9000.00', 'increase');  // replacement
+
+    const projection = rebuildOpeningCash(sqlite, accountId);
+    // Naive debit sum would be 29,000; correction-aware net is 9,000.
+    expect(projection.totalOpeningCash).toBe('9000.00');
+    expect(projection.totalOpeningCashMicros).toBe(9_000_000_000);
+    expect(projection.events).toHaveLength(3);
+    expect(projection.events.map((e) => e.direction)).toEqual([
+      'increase',
+      'decrease',
+      'increase',
+    ]);
+    // The reversal must never be exposed as a positive contribution.
+    expect(projection.events[1].signedAmountMicros).toBe(-10_000_000_000);
+    expect(projection.events[1].signedAmount).toBe('-10000.00');
+  });
+
+  it('22c: legacy opening event without effect falls back to the debit posting', () => {
+    const sqlite = ctx.sqlite;
+    const accountId = freshAccount(sqlite);
+    // postOpeningBalance writes no payload/effect (legacy kernel path).
+    postOpeningBalance(sqlite, { accountId, amount: '8000.00' });
+
+    const projection = rebuildOpeningCash(sqlite, accountId);
+    expect(projection.totalOpeningCash).toBe('8000.00');
+    expect(projection.events[0].direction).toBe('increase');
+    expect(projection.events[0].signedAmountMicros).toBe(8_000_000_000);
   });
 });

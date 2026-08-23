@@ -33,6 +33,17 @@ export interface CashContributingEvent {
   postedAt: string;
   /** Stable sequence number (from ledger_postings). */
   sequence: number;
+  /**
+   * Signed economic direction of this event's contribution (A4):
+   * 'increase' for a positive baseline contribution, 'decrease' for an
+   * opening-balance reversal (correction lineage). Always 'increase' for
+   * legacy events that fall back to the debit-posting amount.
+   */
+  direction: 'increase' | 'decrease';
+  /** Signed contribution as a canonical decimal (negative for reversals). */
+  signedAmount: CanonicalDecimal;
+  /** Signed contribution in integer micros (negative for reversals). */
+  signedAmountMicros: number;
 }
 
 /**
@@ -60,6 +71,7 @@ interface EventRow {
   event_id: string;
   event_type: string;
   posted_at: string;
+  effect: string | null;
 }
 
 interface PostingRow {
@@ -74,13 +86,23 @@ interface PostingRow {
 // ── Rebuild ─────────────────────────────────────────────────────────────
 
 /**
- * Reconstruct the opening-cash projection for an account from its
- * immutable ledger postings.
+ * Reconstruct the opening-cash projection for an account from its immutable
+ * opening-balance events.
  *
- * Computes total opening cash by aggregating all debit-side postings
- * from opening-balance events for the account.  The result is
- * deterministic — same data always yields the same total and event
- * list (sorted by sequence).
+ * Correction-aware (A4): current canonical opening-balance events are netted
+ * through their recorded cash effect direction — an increase contributes
+ * +amountMicros and an opening-balance reversal (correction lineage)
+ * contributes -amountMicros, so
+ *
+ *   original +10,000 / reversal -10,000 / replacement +9,000
+ *
+ * nets to 9,000 instead of the naive 29,000 debit sum. Events that lack a
+ * usable canonical cash effect (historical/migrated rows) fall back to the
+ * existing debit-posting amount as positive opening capital — legacy
+ * compatibility only; immutable historical rows are never rewritten.
+ *
+ * The result is deterministic — same data always yields the same total and
+ * event list (sorted by sequence).
  *
  * @param sqlite    - Raw better-sqlite3 Database handle.
  * @param accountId - The account to rebuild the projection for.
@@ -93,7 +115,7 @@ export function rebuildOpeningCash(
   // 1. Fetch all opening_balance financial events for this account, ordered by posted_at
   const eventRows = sqlite
     .prepare(
-      `SELECT fe.id AS event_id, fe.event_type, fe.posted_at
+      `SELECT fe.id AS event_id, fe.event_type, fe.posted_at, fe.effect
        FROM financial_events fe
        WHERE fe.account_id = ? AND fe.event_type = 'opening_balance'
        ORDER BY fe.posted_at ASC, fe.id ASC`,
@@ -110,12 +132,25 @@ export function rebuildOpeningCash(
     };
   }
 
-  // 2. For each event, find the associated debit posting
+  // 2. For each event, derive its SIGNED economic contribution (A4):
+  //    canonical cash effect direction when present, otherwise the legacy
+  //    debit-posting amount treated as positive opening capital.
   const events: CashContributingEvent[] = [];
   let totalMicros = 0;
 
   for (const eventRow of eventRows) {
-    // Find the matching ledger entry
+    const direction = readOpeningCashDirection(eventRow.effect);
+    let signedMicros: number | null = null;
+
+    if (direction !== null) {
+      const effectMicros = readOpeningCashEffectMicros(eventRow.effect);
+      if (effectMicros !== null) {
+        signedMicros = direction === 'increase' ? effectMicros : -effectMicros;
+      }
+    }
+
+    // Find the matching ledger entry (needed for the legacy fallback amount
+    // and for the stable sequence ordering).
     const entry = sqlite
       .prepare(
         `SELECT le.id AS entry_id
@@ -141,7 +176,13 @@ export function rebuildOpeningCash(
 
     if (!debitPosting) continue;
 
-    totalMicros += debitPosting.amount_micros;
+    // Legacy compatibility fallback: no usable canonical cash effect → treat
+    // the historical debit-posting amount as positive opening capital.
+    const signedMicrosFinal =
+      signedMicros ?? debitPosting.amount_micros;
+    const effectiveDirection: 'increase' | 'decrease' =
+      signedMicros !== null ? direction! : 'increase';
+    totalMicros += signedMicrosFinal;
 
     events.push({
       eventId: eventRow.event_id,
@@ -150,6 +191,9 @@ export function rebuildOpeningCash(
       amountMicros: debitPosting.amount_micros,
       postedAt: eventRow.posted_at,
       sequence: debitPosting.sequence,
+      direction: effectiveDirection,
+      signedAmount: fromMicros(signedMicrosFinal),
+      signedAmountMicros: signedMicrosFinal,
     });
   }
 
@@ -163,6 +207,48 @@ export function rebuildOpeningCash(
     events: events.sort((a, b) => a.sequence - b.sequence),
     rebuiltAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Read the canonical cash-effect direction of an opening_balance event, or
+ * null when the event lacks a usable cash effect (legacy rows).
+ */
+function readOpeningCashDirection(effectJson: string | null): 'increase' | 'decrease' | null {
+  if (!effectJson) return null;
+  try {
+    const effect = JSON.parse(effectJson) as {
+      kind?: string;
+      direction?: string;
+      amountMicros?: unknown;
+    };
+    if (
+      effect.kind !== 'cash'
+      || (effect.direction !== 'increase' && effect.direction !== 'decrease')
+      || typeof effect.amountMicros !== 'number'
+    ) {
+      return null;
+    }
+    return effect.direction;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the canonical cash-effect micros of an opening_balance event, or null
+ * when the event lacks a usable cash effect (legacy rows).
+ */
+function readOpeningCashEffectMicros(effectJson: string | null): number | null {
+  if (!effectJson) return null;
+  try {
+    const effect = JSON.parse(effectJson) as { kind?: string; amountMicros?: unknown };
+    if (effect.kind !== 'cash' || typeof effect.amountMicros !== 'number') {
+      return null;
+    }
+    return effect.amountMicros;
+  } catch {
+    return null;
+  }
 }
 
 // ── Activities ────────────────────────────────────────────────────────

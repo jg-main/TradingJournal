@@ -27,10 +27,11 @@ import { HelpTooltip } from '@/components/help-tooltip';
  * Financial event types that may be corrected from the ledger.
  *
  * Mirrors the service-side `CORRECTABLE_EVENT_TYPES` in
- * `src/lib/accounting/financial-event-correction.ts`. opening_balance,
- * stock_split, trade_execution, adjustment, and transfer are excluded —
- * they carry no independent reversible cash effect or define the account
- * baseline.
+ * `src/lib/accounting/financial-event-correction.ts`. stock_split,
+ * trade_execution, adjustment, and transfer are excluded — they carry no
+ * independent reversible cash effect. opening_balance is correctable (A4)
+ * through the immutable reversal + replacement flow; its replacement must
+ * stay a positive canonical amount.
  */
 export const CORRECTABLE_FINANCIAL_EVENT_TYPES = [
   'deposit',
@@ -40,6 +41,7 @@ export const CORRECTABLE_FINANCIAL_EVENT_TYPES = [
   'fee',
   'tax',
   'manual_adjustment',
+  'opening_balance',
 ] as const;
 
 /** True when an event type is eligible for financial-event correction. */
@@ -57,6 +59,7 @@ export function financialEventTypeLabel(eventType: string): string {
     fee: 'Fee',
     tax: 'Tax',
     manual_adjustment: 'Manual Adjustment',
+    opening_balance: 'Opening Balance',
   };
   return labels[eventType] ?? eventType;
 }

@@ -929,11 +929,12 @@ describe('AccountLedger — correction actions', () => {
       expect(screen.getByText('Initial deposit')).toBeTruthy();
     });
 
-    // Eligible: deposit + fee. Not eligible: opening_balance, trade_execution,
-    // and the correction-group row (replacement constituent).
+    // Eligible since A4: opening_balance, deposit, fee. Not eligible:
+    // trade_execution and the correction-group row (replacement constituent).
     const correctButtons = screen.getAllByRole('button', { name: /^Correct / });
-    expect(correctButtons.length).toBe(2);
+    expect(correctButtons.length).toBe(3);
     const labels = correctButtons.map((b) => b.getAttribute('aria-label') ?? '');
+    expect(labels.some((l) => l.includes('opening_balance'))).toBe(true);
     expect(labels.some((l) => l.includes('deposit'))).toBe(true);
     expect(labels.some((l) => l.includes('fee'))).toBe(true);
   });
@@ -953,12 +954,17 @@ describe('AccountLedger — correction actions', () => {
       .find((b) => b.closest('tr')?.textContent?.includes('Corrected: Buy 50'));
     expect(corrGroupBtn).toBeUndefined();
 
-    // The plain trade_execution and opening_balance rows must not either.
+    // The plain trade_execution row must not either. opening_balance IS
+    // correctable since A4 (its original row exposes Correct).
     const correctButtons = screen.getAllByRole('button', { name: /^Correct / });
     expect(
       correctButtons.every((b) => {
         const label = b.getAttribute('aria-label') ?? '';
-        return label.includes('deposit') || label.includes('fee');
+        return (
+          label.includes('deposit') ||
+          label.includes('fee') ||
+          label.includes('opening_balance')
+        );
       }),
     ).toBe(true);
   });

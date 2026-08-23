@@ -54,9 +54,14 @@ import type { FinancialEventRow } from '../../db/accounting-repository';
 /**
  * Event types that may be corrected through the reversal-and-replacement
  * pattern. All are cash-flow events with a reversible economic effect.
- * opening_balance, trade_execution, stock_split, adjustment, and transfer
- * are excluded — they either carry no independent cash effect (stock_split)
- * or define the account baseline (opening_balance).
+ * stock_split, trade_execution, adjustment, and transfer are excluded —
+ * they carry no independent cash effect (stock_split) or are not cash
+ * events. opening_balance was historically excluded as the account
+ * baseline, but is now correctable (A4) through the same immutable
+ * reversal + replacement flow: the reversal cancels the baseline
+ * contribution and the replacement restates it. Replacement values must
+ * stay positive (a $0/negative baseline is not representable — correcting
+ * to zero is a distinct semantic case, not supported).
  */
 export const CORRECTABLE_EVENT_TYPES: readonly EventType[] = [
   'deposit',
@@ -66,12 +71,13 @@ export const CORRECTABLE_EVENT_TYPES: readonly EventType[] = [
   'fee',
   'tax',
   'manual_adjustment',
+  'opening_balance',
 ] as const;
 
 const CORRECTABLE_SET = new Set<string>(CORRECTABLE_EVENT_TYPES);
 
 /** Cash-event types whose effect direction is "increase". */
-const CASH_INCREASE_TYPES = new Set<string>(['deposit', 'dividend', 'interest']);
+const CASH_INCREASE_TYPES = new Set<string>(['deposit', 'dividend', 'interest', 'opening_balance']);
 
 /** Cash-event types whose effect direction is "decrease". */
 const CASH_DECREASE_TYPES = new Set<string>(['withdrawal', 'fee', 'tax']);

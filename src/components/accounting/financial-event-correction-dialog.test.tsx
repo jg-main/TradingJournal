@@ -417,7 +417,7 @@ describe('FinancialEventCorrectionDialog', () => {
       json: async () => ({
         error: 'Financial event not correctable',
         code: 'EVENT_NOT_CORRECTABLE',
-        details: 'Financial event "evt-0001" cannot be corrected: event type "opening_balance" is not eligible for correction',
+        details: 'Financial event "evt-0001" cannot be corrected: event type "stock_split" is not eligible for correction',
       }),
     });
 
