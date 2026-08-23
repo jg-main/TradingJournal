@@ -27,6 +27,7 @@ import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { postEventWithEffect } from '@/lib/accounting/event-posting';
 import { initializeAccount } from '@/lib/accounting/account-initialization';
+import { findAccountPerformance } from '@/db/accounting-repository';
 import { postFinancialEventSchema } from '@/lib/accounting/api-contracts';
 import { listAccountEvents, countAccountEvents } from '@/db/accounting-repository';
 import {
@@ -36,6 +37,7 @@ import {
   DuplicateIdempotencyKeyError,
   UnsupportedAccountCurrencyError,
   AccountInactiveError,
+  FinancialEventPostingProjectionError,
 } from '@/lib/accounting/errors';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -149,10 +151,15 @@ function doPostFinancialEvent(
     // 4. Post via event-posting service (supports all event types)
     const result = postEventWithEffect(sqlite, accountId, parsed.data);
 
-    // 4. Return success response with payload/effect
+    // 4. Return success response with payload/effect + A7 projection evidence
     return {
       status: 201,
       body: {
+        performance: {
+          success: result.performance.success,
+          nav: result.performance.nav,
+          rebuildCount: result.performance.rebuildCount,
+        },
         event: {
           id: result.event.id,
           accountId: result.event.accountId,
@@ -237,6 +244,16 @@ function doPostFinancialEvent(
       return {
         status: 409,
         body: { error: 'Duplicate idempotency key', details: (error as Error).message },
+      };
+    }
+    if (error instanceof FinancialEventPostingProjectionError) {
+      return {
+        status: 500,
+        body: {
+          error: 'Failed to post financial event',
+          code: error.code,
+          details: (error as Error).message,
+        },
       };
     }
     return {
@@ -1215,5 +1232,65 @@ describe('A6: inactive accounts reject new financial activity', () => {
       amount: '100.00',
     });
     expect(accepted.status).toBe(201);
+  });
+});
+
+// ── A7: normal posting is atomic with the performance projection ────────
+
+describe('A7: projection failure at the normal posting boundary', () => {
+  let a7AccountId: string;
+
+  beforeAll(() => {
+    const sqlite = ctx.sqlite;
+    const now = new Date().toISOString();
+    a7AccountId = randomUUID();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+      )
+      .run(a7AccountId, 'A7 Route', 'Broker', now, now);
+    initializeAccount(sqlite, { accountId: a7AccountId, mode: 'opening_balance', amount: '10000.00' });
+  });
+
+  it('30: forced projection failure -> 500 with rollback; retry -> 201 with coherent projection', () => {
+    const sqlite = ctx.sqlite;
+    expect(findAccountPerformance(sqlite, a7AccountId)?.nav).toBe('10000.00');
+
+    sqlite.exec(`
+      CREATE TRIGGER a7_route_projection_fail BEFORE UPDATE ON account_performance
+      WHEN NEW.account_id = '${a7AccountId}'
+      BEGIN SELECT RAISE(ABORT, 'forced posting projection failure'); END;
+    `);
+
+    const failed = doPostFinancialEvent(sqlite, a7AccountId, {
+      eventType: 'deposit',
+      amount: '2000.00',
+    });
+    expect(failed.status).toBe(500);
+    expect(failed.body.error).toBe('Failed to post financial event');
+    expect(failed.body.code).toBe('FINANCIAL_EVENT_POSTING_PROJECTION_FAILED');
+    sqlite.exec('DROP TRIGGER a7_route_projection_fail');
+
+    // Rolled back: no deposit event, no ledger mutation, prior projection intact.
+    const depositCount = sqlite
+      .prepare("SELECT COUNT(*) AS c FROM financial_events WHERE account_id = ? AND event_type = 'deposit'")
+      .get(a7AccountId) as { c: number };
+    expect(depositCount.c).toBe(0);
+    const postings = sqlite
+      .prepare('SELECT COUNT(*) AS c FROM ledger_postings WHERE account_id = ?')
+      .get(a7AccountId) as { c: number };
+    expect(postings.c).toBe(2); // only the opening balance pair
+    expect(findAccountPerformance(sqlite, a7AccountId)?.nav).toBe('10000.00');
+
+    // Retry succeeds with a coherent projection (12,000).
+    const retry = doPostFinancialEvent(sqlite, a7AccountId, {
+      eventType: 'deposit',
+      amount: '2000.00',
+    });
+    expect(retry.status).toBe(201);
+    expect((retry.body as { performance: { success: boolean; nav: string } }).performance.success).toBe(true);
+    expect((retry.body as { performance: { nav: string } }).performance.nav).toBe('12000.00');
+    expect(findAccountPerformance(sqlite, a7AccountId)?.nav).toBe('12000.00');
   });
 });

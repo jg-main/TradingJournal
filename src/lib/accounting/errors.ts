@@ -456,3 +456,39 @@ export class FinancialEventCorrectionProjectionError extends AccountingError {
     Object.setPrototypeOf(this, FinancialEventCorrectionProjectionError.prototype);
   }
 }
+
+/**
+ * Thrown when the canonical account-performance projection cannot be rebuilt
+ * during NORMAL financial-event origination.
+ *
+ * The normal posting service (`postEventWithEffect`) rebuilds the projection
+ * INSIDE the authoritative posting transaction and explicitly enforces
+ * `PerformanceRebuildResult.success` — a failed projection write throws this
+ * error inside the transaction, rolling back the financial event, ledger
+ * entry, and debit/credit postings. No successful normal posting response
+ * may leave the ledger newer than the projection.
+ *
+ * Mapped to HTTP 500 by the financial-events route (an unexpected server-side
+ * persistence failure — never a user-domain conflict like ACCOUNT_INACTIVE /
+ * UNSUPPORTED_ACCOUNT_CURRENCY / INVALID_AMOUNT /
+ * DUPLICATE_IDEMPOTENCY_KEY). The transaction is already rolled back, so the
+ * request is safely retryable and the idempotency key is not consumed.
+ */
+export class FinancialEventPostingProjectionError extends AccountingError {
+  public readonly accountId: string;
+  public readonly eventType: string;
+  public readonly rebuildError?: string;
+
+  constructor(accountId: string, eventType: string, rebuildError?: string) {
+    super(
+      'FINANCIAL_EVENT_POSTING_PROJECTION_FAILED',
+      `Posting ${eventType} for account "${accountId}" rolled back: account-performance projection could not be persisted` +
+        (rebuildError ? ` (${rebuildError})` : ''),
+    );
+    this.name = 'FinancialEventPostingProjectionError';
+    this.accountId = accountId;
+    this.eventType = eventType;
+    this.rebuildError = rebuildError;
+    Object.setPrototypeOf(this, FinancialEventPostingProjectionError.prototype);
+  }
+}

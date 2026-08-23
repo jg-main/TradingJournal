@@ -215,6 +215,18 @@ of scope for M006 unless an approved change rescopes it.
 | **Missing** | None for the new-activity boundary. Trade-workflow execution paths (`syncTradeExecution`) are the Trading Workflow milestone's surface and were intentionally not refactored. |
 | **Deferred** | Trade-workflow lifecycle enforcement (next milestone). |
 
+| **Deferred** | Trade-workflow lifecycle enforcement (next milestone). |
+
+### A18 — Normal financial-event posting is atomic with the projection (A7)
+
+| Column | Content |
+|---|---|
+| **Current State** | **Enforced (A7).** Normal financial-event origination (`postEventWithEffect` in `src/lib/accounting/event-posting.ts`) is ONE authoritative transaction: lifecycle guard (`assertAccountAcceptsNewActivity`, A6) → payload/effect construction → `postFinancialEvent` (nested savepoint) → `rebuildAccountPerformance` INSIDE the same outer transaction with `PerformanceRebuildResult.success` explicitly enforced. A failed projection write throws `FinancialEventPostingProjectionError` (code `FINANCIAL_EVENT_POSTING_PROJECTION_FAILED`, HTTP 500) and rolls back the event, its ledger entry, and debit/credit postings; the prior projection snapshot and the idempotency key survive, and retries succeed exactly once. The service return contract carries `performance` (success guaranteed); the financial-events route no longer rebuilds after commit (exactly one required rebuild per successful post) and maps the error to 500 with the code + detail (never 400/409/422). The low-level kernel `postFinancialEvent` remains a reusable posting primitive — initialization (A2.1), correction (A5), and execution accounting own their own boundaries. The three account-side financial mutation boundaries (initialization, normal posting, correction) now all guarantee: successful HTTP response ⇒ canonical projection coherent. Execution/FIFO atomicity is intentionally deferred to the Trading Workflow milestone. |
+| **Reuse** | Posting kernel, `assertAccountAcceptsNewActivity`, `rebuildAccountPerformance`, idempotency convention, `FinancialEventPostingProjectionError` (typed, follows A2.1/A5 conventions). |
+| **Refine** | None needed. |
+| **Missing** | None for the normal-posting boundary. |
+| **Deferred** | Execution/FIFO posting atomicity (Trading Workflow). |
+
 ### A16 — Account initialization lifecycle (opening balance completes initialization)
 
 | Column | Content |

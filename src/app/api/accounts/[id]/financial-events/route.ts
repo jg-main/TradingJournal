@@ -18,7 +18,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSqliteHandle } from '@/db';
 import { postEventWithEffect } from '@/lib/accounting/event-posting';
-import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import { postFinancialEventSchema } from '@/lib/accounting/api-contracts';
 import { listAccountEvents, countAccountEvents } from '@/db/accounting-repository';
 import {
@@ -28,6 +27,7 @@ import {
   DuplicateIdempotencyKeyError,
   UnsupportedAccountCurrencyError,
   AccountInactiveError,
+  FinancialEventPostingProjectionError,
 } from '@/lib/accounting/errors';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -106,12 +106,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // 3. Get the raw SQLite handle for transactional posting
     const sqlite = getSqliteHandle();
 
-    // 3. Post the event through the event-posting service
+    // 3. Post the event through the event-posting service (A7). The service
+    //    runs the immutable posting AND the canonical projection rebuild
+    //    inside ONE transaction and enforces projection success, so a 201
+    //    here guarantees the Ledger AND the Account Overview (NAV/Cash) are
+    //    coherent. No post-commit rebuild — exactly one required rebuild per
+    //    successful normal event.
     const result = postEventWithEffect(sqlite, accountId, eventRequest);
-
-    // Keep the persisted NAV projection read-your-writes consistent with the
-    // immutable event and its cash effect.
-    rebuildAccountPerformance(sqlite, accountId);
 
     // 4. Transform domain records to JSON response shape
     return NextResponse.json(
@@ -159,6 +160,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             createdAt: result.postings.credit.createdAt,
           },
         },
+        // A7 typed evidence: the canonical projection was rebuilt successfully
+        // inside the posting transaction.
+        performance: {
+          success: result.performance.success,
+          nav: result.performance.nav,
+          rebuildCount: result.performance.rebuildCount,
+        },
       },
       { status: 201 },
     );
@@ -205,6 +213,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           details: error.message,
         },
         { status: 409 },
+      );
+    }
+
+    // Projection persistence failure (A7): an unexpected server-side
+    // persistence failure — never 400/409/422 (not user input / lifecycle
+    // conflict). The posting transaction has already rolled back, so the
+    // request is retryable and the idempotency key is unconsumed.
+    if (error instanceof FinancialEventPostingProjectionError) {
+      return NextResponse.json(
+        {
+          error: 'Failed to post financial event',
+          code: error.code,
+          details: error.message,
+        },
+        { status: 500 },
       );
     }
 

@@ -127,9 +127,10 @@ function parseEventRequest(body: Record<string, unknown>) {
 function postCashEvent(
   ctx: TestContext,
   body: Record<string, unknown>,
-): { eventId: string } {
-  const result = postEventWithEffect(ctx.sqlite, ctx.accountId, parseEventRequest(body));
-  return { eventId: result.event.id };
+): ReturnType<typeof postEventWithEffect> {
+  // A7: the post itself rebuilds the projection inside the posting
+  // transaction; the returned performance proves it succeeded.
+  return postEventWithEffect(ctx.sqlite, ctx.accountId, parseEventRequest(body));
 }
 
 /**
@@ -482,13 +483,14 @@ describe('cross-system integrity — full cash-event lifecycle', () => {
     for (let i = 0; i < LIFECYCLE.length; i++) {
       const step = LIFECYCLE[i];
 
-      const { eventId } = postCashEvent(ctx, step.body);
-      expect(eventId).toBeTruthy();
+      const result = postCashEvent(ctx, step.body);
+      expect(result.event.id).toBeTruthy();
 
-      const rebuild = rebuildProjection(ctx);
-      expect(rebuild.success, `${step.label}: performance rebuild succeeds`).toBe(true);
-      expect(rebuild.nav, `${step.label}: rebuild NAV`).toBe(step.cash);
-      expect(rebuild.warnings, `${step.label}: rebuild warnings array`).toBeInstanceOf(Array);
+      // A7: the post committed the event AND the projection rebuild in one
+      // transaction, so the returned performance is the authoritative
+      // projection for this step (no separate rebuild call).
+      expect(result.performance.success, `${step.label}: performance rebuild succeeds`).toBe(true);
+      expect(result.performance.nav, `${step.label}: rebuild NAV`).toBe(step.cash);
 
       assertProjectionsConsistent(ctx, step.label, {
         cash: step.cash,

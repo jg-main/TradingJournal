@@ -16,7 +16,9 @@ import Database from 'better-sqlite3';
 import type { PostFinancialEventRequest } from './api-contracts';
 import { postFinancialEvent } from './posting';
 import { toMicros } from './decimal';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { assertAccountAcceptsNewActivity } from './activity-guard';
+import { FinancialEventPostingProjectionError } from './errors';
 import type { FinancialEventWithPostings, EventType } from './types';
 
 // ── Event Type Classifications ──────────────────────────────────────────
@@ -147,56 +149,95 @@ export function getPostingAmount(event: PostFinancialEventRequest): string {
 // ── Event Posting Service ───────────────────────────────────────────────
 
 /**
+ * Result of a normal financial-event posting: the posting aggregate plus the
+ * successful account-performance projection rebuilt INSIDE the same
+ * transaction (A7). The service contract guarantees `performance.success ===
+ * true` — a failed rebuild throws
+ * {@link FinancialEventPostingProjectionError} and rolls back the whole
+ * posting.
+ */
+export interface PostEventWithEffectResult extends FinancialEventWithPostings {
+  performance: import('../performance/performance-rebuild').PerformanceRebuildResult;
+}
+
+/**
  * Post a financial event of any supported type through the posting kernel.
  *
- * NEW-ACTIVITY lifecycle guard (A6): the account must be ACTIVE. This
- * service is the normal financial-event origination boundary — inactive
- * (draft or deactivated) accounts are historically readable but cannot
- * originate new financial transactions. The low-level posting kernel is NOT
- * guarded here because it is legitimately reused by account initialization
- * (pristine inactive drafts) and financial-event correction (historical
- * records on inactive accounts); those paths call the kernel directly.
+ * NORMAL-ACTIVITY boundary (A6 + A7): this service owns lifecycle validation,
+ * event payload/effect construction, the immutable posting, AND the canonical
+ * account-performance projection as ONE authoritative transaction:
  *
- * 1. Computes event-specific canonical payload and economic effect.
- * 2. Extracts the posting amount (absolute value for cash events, "0.00" for stock_split).
- * 3. Delegates to the generalized posting kernel which atomically creates
- *    the financial event (with payload/effect), ledger entry, and balanced
- *    debit/credit posting pair in a single SQLite transaction.
- * 4. Reuses existing idempotency, sequence, rollback, micros-bound, and
- *    immutability protections from the posting kernel.
+ *   assertAccountAcceptsNewActivity(...)          (before any mutation)
+ *   BEGIN
+ *     postFinancialEvent(...)   (nested savepoint via the low-level kernel)
+ *     rebuildAccountPerformance(...)              (observes uncommitted event)
+ *     if (!performance.success) throw FinancialEventPostingProjectionError
+ *   COMMIT
+ *
+ * A successful post therefore guarantees read-your-writes consistency for the
+ * Ledger AND Account Overview (Net Cash / NAV / performance readers). A
+ * failed projection write rolls back the event, its ledger entry/postings,
+ * and leaves the idempotency key unused.
+ *
+ * The low-level kernel `postFinancialEvent` is deliberately NOT given this
+ * responsibility — it stays reusable by account initialization and
+ * financial-event correction, which own their own transactional boundaries.
  *
  * @param sqlite    - Raw better-sqlite3 Database handle for transactional posting.
- * @param accountId - Target account ID (must exist in accounts table).
+ * @param accountId - Target account ID (must exist and be active).
  * @param event     - Validated event request (from postFinancialEventSchema).
- * @returns The fully hydrated FinancialEventWithPostings aggregate.
- * @throws {InvalidAmountError}         If the amount is not valid.
- * @throws {InvalidMicrosBoundsError}   If micros exceeds safe integer bounds.
- * @throws {AccountNotFoundError}       If the account does not exist.
- * @throws {DuplicateIdempotencyKeyError} If the idempotency key is already used.
+ * @returns The posting aggregate plus the successful performance rebuild.
+ * @throws {AccountInactiveError}                 Inactive (draft/deactivated) account.
+ * @throws {InvalidAmountError}                   If the amount is not valid.
+ * @throws {InvalidMicrosBoundsError}             If micros exceeds safe integer bounds.
+ * @throws {AccountNotFoundError}                 If the account does not exist.
+ * @throws {DuplicateIdempotencyKeyError}         If the idempotency key is already used.
+ * @throws {FinancialEventPostingProjectionError} If the projection rebuild fails (rolled back).
  */
 export function postEventWithEffect(
   sqlite: Database.Database,
   accountId: string,
   event: PostFinancialEventRequest,
-): FinancialEventWithPostings {
+): PostEventWithEffectResult {
   // A6 lifecycle guard: NEW financial activity requires an ACTIVE account.
-  // Runs before payload/effect computation or any posting so a rejected
-  // request creates zero event/entry/posting rows and consumes no
-  // idempotency key.
+  // Runs before any posting/rebuild so a rejected request creates zero rows
+  // and consumes no idempotency key.
   assertAccountAcceptsNewActivity(sqlite, accountId);
 
   const payload = computePayload(event);
   const effect = computeEffect(event);
   const postingAmount = getPostingAmount(event);
 
-  return postFinancialEvent(sqlite, {
-    accountId,
-    eventType: event.eventType,
-    amount: postingAmount,
-    idempotencyKey: 'idempotencyKey' in event ? (event as { idempotencyKey?: string }).idempotencyKey : undefined,
-    description: 'description' in event ? (event as { description?: string }).description : undefined,
-    payload: JSON.stringify(payload),
-    effect: JSON.stringify(effect),
-    postedAt: 'postedAt' in event ? (event as { postedAt?: string }).postedAt : undefined,
+  // A7: ONE authoritative transaction — immutable posting + projection
+  // rebuild. better-sqlite3 nests postFinancialEvent's inner transaction as a
+  // savepoint, so a projection failure rolls the posting back too.
+  const transaction = sqlite.transaction(() => {
+    const posting = postFinancialEvent(sqlite, {
+      accountId,
+      eventType: event.eventType,
+      amount: postingAmount,
+      idempotencyKey: 'idempotencyKey' in event ? (event as { idempotencyKey?: string }).idempotencyKey : undefined,
+      description: 'description' in event ? (event as { description?: string }).description : undefined,
+      payload: JSON.stringify(payload),
+      effect: JSON.stringify(effect),
+      postedAt: 'postedAt' in event ? (event as { postedAt?: string }).postedAt : undefined,
+    });
+
+    // Rebuild through the same connection so the projection observes the
+    // uncommitted new event. rebuildAccountPerformance catches internal
+    // errors and returns { success: false }, so the flag must be enforced
+    // explicitly — a failed projection write must roll back the posting.
+    const performance = rebuildAccountPerformance(sqlite, accountId);
+    if (!performance.success) {
+      throw new FinancialEventPostingProjectionError(
+        accountId,
+        event.eventType,
+        performance.error,
+      );
+    }
+
+    return { ...posting, performance };
   });
+
+  return transaction();
 }

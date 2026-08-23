@@ -122,9 +122,12 @@ function parseEventRequest(body: Record<string, unknown>) {
   return parsed.data;
 }
 
-function postCashEvent(ctx: TestContext, body: Record<string, unknown>): { eventId: string } {
-  const result = postEventWithEffect(ctx.sqlite, ctx.accountId, parseEventRequest(body));
-  return { eventId: result.event.id };
+function postCashEvent(
+  ctx: TestContext,
+  body: Record<string, unknown>,
+): ReturnType<typeof postEventWithEffect> {
+  // A7: the post itself rebuilds the projection inside the posting transaction.
+  return postEventWithEffect(ctx.sqlite, ctx.accountId, parseEventRequest(body));
 }
 
 function rebuildProjection(ctx: TestContext) {
@@ -294,17 +297,16 @@ describe('cross-cutting integrity — backdated cash events', () => {
 
   it('keeps projections consistent after a backdated withdrawal dips below the HWM', () => {
     // Backdated withdrawal dated 03-03 (posted after everything) reduces NAV
-    // below the 13500.00 HWM → drawdown must appear.
-    postCashEvent(ctx, {
+    // below the 13500.00 HWM → drawdown must appear. A7: the post itself
+    // rebuilds the projection inside the posting transaction.
+    const result = postCashEvent(ctx, {
       eventType: 'withdrawal',
       amount: '500.00',
       description: 'Backdated withdrawal',
       postedAt: '2026-03-03T14:00:00.000Z',
     });
-
-    const rebuild = rebuildProjection(ctx);
-    expect(rebuild.success).toBe(true);
-    expect(rebuild.nav).toBe('13000.00');
+    expect(result.performance.success).toBe(true);
+    expect(result.performance.nav).toBe('13000.00');
 
     const ledger = composeLedgerProjection(ctx);
     expect(ledger.events.map((e) => e.postedAt)).toEqual([
