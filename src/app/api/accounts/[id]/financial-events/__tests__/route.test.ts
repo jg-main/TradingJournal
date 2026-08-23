@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { postEventWithEffect } from '@/lib/accounting/event-posting';
+import { initializeAccount } from '@/lib/accounting/account-initialization';
 import { postFinancialEventSchema } from '@/lib/accounting/api-contracts';
 import { listAccountEvents, countAccountEvents } from '@/db/accounting-repository';
 import {
@@ -34,6 +35,7 @@ import {
   AccountNotFoundError,
   DuplicateIdempotencyKeyError,
   UnsupportedAccountCurrencyError,
+  AccountInactiveError,
 } from '@/lib/accounting/errors';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -218,6 +220,16 @@ function doPostFinancialEvent(
             accountId: error.accountId,
             currency: error.currency,
           },
+        },
+      };
+    }
+    if (error instanceof AccountInactiveError) {
+      return {
+        status: 409,
+        body: {
+          error: 'Account is inactive',
+          code: error.code,
+          details: (error as Error).message,
         },
       };
     }
@@ -1094,5 +1106,114 @@ describe('legacy non-USD account (USD-only contract)', () => {
       .prepare('SELECT id FROM financial_events WHERE idempotency_key = ?')
       .get(idempotencyKey);
     expect(row).toBeUndefined();
+  });
+});
+
+// ── A6: inactive accounts are read-only for new financial activity ──────
+
+describe('A6: inactive accounts reject new financial activity', () => {
+  let deactivatedId: string;
+  let draftId: string;
+
+  beforeAll(() => {
+    const sqlite = ctx.sqlite;
+    const now = new Date().toISOString();
+    // Historical deactivated account: initialized + deposit, then deactivated.
+    deactivatedId = randomUUID();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 1, ?, ?)`,
+      )
+      .run(deactivatedId, 'Deactivated A6', 'Broker', now, now);
+    const init = postEventWithEffect(sqlite, deactivatedId, {
+      eventType: 'opening_balance',
+      amount: '10000.00',
+    });
+    expect(init.event.id).toBeTruthy();
+    postEventWithEffect(sqlite, deactivatedId, { eventType: 'deposit', amount: '2000.00' });
+    sqlite
+      .prepare('UPDATE accounts SET is_active = 0, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), deactivatedId);
+
+    // Pristine draft account (never initialized).
+    draftId = randomUUID();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+      )
+      .run(draftId, 'Draft A6', 'Broker', now, now);
+  });
+
+  it('17: deactivated account -> 409 ACCOUNT_INACTIVE with zero mutation', () => {
+    const eventsBefore = (
+      ctx.sqlite.prepare('SELECT COUNT(*) AS c FROM financial_events WHERE account_id = ?').get(deactivatedId) as { c: number }
+    ).c;
+    const postingsBefore = (
+      ctx.sqlite.prepare('SELECT COUNT(*) AS c FROM ledger_postings').get() as { c: number }
+    ).c;
+
+    const result = doPostFinancialEvent(ctx.sqlite, deactivatedId, {
+      eventType: 'deposit',
+      amount: '500.00',
+    });
+
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('Account is inactive');
+    expect(result.body.code).toBe('ACCOUNT_INACTIVE');
+
+    // Zero new rows; projection unchanged.
+    const eventsAfter = (
+      ctx.sqlite.prepare('SELECT COUNT(*) AS c FROM financial_events WHERE account_id = ?').get(deactivatedId) as { c: number }
+    ).c;
+    const postingsAfter = (
+      ctx.sqlite.prepare('SELECT COUNT(*) AS c FROM ledger_postings').get() as { c: number }
+    ).c;
+    expect(eventsAfter).toBe(eventsBefore);
+    expect(postingsAfter).toBe(postingsBefore);
+  });
+
+  it('18: rejected request does not consume the idempotency key; reactivation makes it reusable', () => {
+    const idempotencyKey = randomUUID();
+    const rejected = doPostFinancialEvent(ctx.sqlite, deactivatedId, {
+      eventType: 'deposit',
+      amount: '300.00',
+      idempotencyKey,
+    });
+    expect(rejected.status).toBe(409);
+
+    // Reactivate, then retry the SAME request with the SAME key.
+    ctx.sqlite
+      .prepare('UPDATE accounts SET is_active = 1, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), deactivatedId);
+    const retry = doPostFinancialEvent(ctx.sqlite, deactivatedId, {
+      eventType: 'deposit',
+      amount: '300.00',
+      idempotencyKey,
+    });
+    expect(retry.status).toBe(201);
+    // Deactivate again for the remaining tests.
+    ctx.sqlite
+      .prepare('UPDATE accounts SET is_active = 0, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), deactivatedId);
+  });
+
+  it('19: pristine draft -> 409 until initialized; initialization is the only transition', () => {
+    const rejected = doPostFinancialEvent(ctx.sqlite, draftId, {
+      eventType: 'deposit',
+      amount: '100.00',
+    });
+    expect(rejected.status).toBe(409);
+    expect(rejected.body.code).toBe('ACCOUNT_INACTIVE');
+
+    // Initialization transitions the draft to active.
+    initializeAccount(ctx.sqlite, { accountId: draftId, mode: 'opening_balance', amount: '10000.00' });
+
+    const accepted = doPostFinancialEvent(ctx.sqlite, draftId, {
+      eventType: 'deposit',
+      amount: '100.00',
+    });
+    expect(accepted.status).toBe(201);
   });
 });

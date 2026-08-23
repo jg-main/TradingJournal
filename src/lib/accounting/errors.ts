@@ -304,6 +304,36 @@ export class UnsupportedAccountCurrencyError extends AccountingError {
 }
 
 /**
+ * Thrown when NEW financial or execution activity targets an inactive
+ * account (draft or deactivated).
+ *
+ * Inactive accounts remain historically readable but are read-only for new
+ * activity; reactivation is the explicit boundary that restores permission.
+ * Raised by the new-activity domain guard
+ * (`assertAccountAcceptsNewActivity`) at origination service boundaries —
+ * NOT inside the low-level posting kernel, which is legitimately reused by
+ * account initialization (pristine inactive drafts) and financial-event
+ * correction (historical records on inactive accounts).
+ *
+ * Mapped to HTTP 409 by the financial-event and execution routes (the
+ * request is structurally valid but conflicts with the current account
+ * lifecycle state).
+ */
+export class AccountInactiveError extends AccountingError {
+  public readonly accountId: string;
+
+  constructor(accountId: string) {
+    super(
+      'ACCOUNT_INACTIVE',
+      `Account "${accountId}" is inactive. Reactivate the account before posting new activity.`,
+    );
+    this.name = 'AccountInactiveError';
+    this.accountId = accountId;
+    Object.setPrototypeOf(this, AccountInactiveError.prototype);
+  }
+}
+
+/**
  * Thrown when opening-balance initialization targets an account that is not
  * a pristine new draft (already active, or already carries financial history
  * / executions / positions / trades).

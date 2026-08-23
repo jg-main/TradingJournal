@@ -650,3 +650,32 @@ describe('FinancialTransactionComposer — error handling', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+// ── A6: defensive lifecycle guard (inactive account) ────────────────────
+
+describe('FinancialTransactionComposer — inactive account guard (A6)', () => {
+  it('blocks submission with a clear message when isActive is false', async () => {
+    globalThis.fetch = vi.fn();
+    renderComposer({ isActive: false });
+
+    fillAndSubmit('500.00');
+
+    // No API call is made; the defensive guard blocks submission.
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(
+        screen.getByText(/This account is inactive\. Reactivate it from Settings to post new transactions\./),
+      ).toBeTruthy();
+    });
+  });
+
+  it('submits normally when isActive is true (default)', async () => {
+    mockFetchResponse(true, { event: { id: 'evt-1' } });
+    renderComposer();
+
+    fillAndSubmit('100.00');
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalled();
+    });
+  });
+});

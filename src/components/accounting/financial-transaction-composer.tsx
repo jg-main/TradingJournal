@@ -85,6 +85,13 @@ interface FinancialTransactionComposerProps {
    * the header badge — the same handoff path used by other event flows.
    */
   onPosted?: () => void;
+  /**
+   * A6 defensive lifecycle guard: when false, submission is blocked with a
+   * clear message. Inactive accounts are historically readable but cannot
+   * originate new financial transactions; the server/domain guard is
+   * authoritative regardless of this flag.
+   */
+  isActive?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -180,6 +187,7 @@ export function FinancialTransactionComposer({
   open,
   onOpenChange,
   onPosted,
+  isActive = true,
 }: FinancialTransactionComposerProps) {
   const currencySupported = isSupportedAccountCurrency(currency);
   const [eventType, setEventType] = useState<ComposerEventType>('deposit');
@@ -293,6 +301,17 @@ export function FinancialTransactionComposer({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // A6 defensive lifecycle guard: an inactive account cannot originate new
+    // financial transactions. The server/domain guard is authoritative; this
+    // keeps the workflow blocked with a clear explanation if the composer is
+    // ever invoked for an inactive account through another UI path.
+    if (isActive === false) {
+      setError(
+        'This account is inactive. Reactivate it from Settings to post new transactions.',
+      );
+      return;
+    }
 
     // USD-only contract: never submit a transaction for an unsupported
     // currency account. The domain/API guard is authoritative regardless;

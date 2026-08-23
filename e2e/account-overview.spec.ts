@@ -89,8 +89,8 @@ test.describe('Account Overview Workspace', () => {
 
     // Set risk params, post deposit, then activate - required setup for active account
     await setAccountRiskParams(page, account.id);
-    await postDeposit(page, account.id, '10000.00', 'E2E test deposit');
     await activateAccount(page, account.id);
+    await postDeposit(page, account.id, '10000.00', 'E2E test deposit');
 
     // Navigate to the account detail page (Overview default tab)
     await page.goto(`/settings/accounts/${account.id}`);

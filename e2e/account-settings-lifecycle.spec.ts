@@ -109,14 +109,14 @@ test.describe('Account settings lifecycle verification', () => {
     const lifecycleAccount = await createAccount(page, `Lifecycle Settings E2E ${ts}`);
     lifecycleAccountId = lifecycleAccount.id;
     await setAccountRiskParams(page, lifecycleAccountId);
-    await postDeposit(page, lifecycleAccountId, '10000.00');
     await activateAccount(page, lifecycleAccountId);
+    await postDeposit(page, lifecycleAccountId, '10000.00');
 
     const fallbackAccount = await createAccount(page, `Fallback Settings E2E ${ts}`);
     fallbackAccountId = fallbackAccount.id;
     await setAccountRiskParams(page, fallbackAccountId);
-    await postDeposit(page, fallbackAccountId, '10000.00');
     await activateAccount(page, fallbackAccountId);
+    await postDeposit(page, fallbackAccountId, '10000.00');
 
     await page.close();
   });

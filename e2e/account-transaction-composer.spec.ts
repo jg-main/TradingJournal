@@ -57,14 +57,16 @@ async function createAccount(page: Page, name: string): Promise<{ id: string; na
  * entry point (mirrors the product's setup path).
  */
 async function fundAndActivate(page: Page, accountId: string, amount = '10000.00') {
-  const depositResponse = await page.request.post(`/api/accounts/${accountId}/financial-events`, {
-    data: { eventType: 'deposit', amount, description: 'E2E setup deposit' },
-  });
-  expect(depositResponse.status()).toBe(201);
+  // A6 lifecycle: activate the draft BEFORE posting the deposit (inactive
+  // accounts cannot originate new financial activity).
   const activateResponse = await page.request.put(`/api/accounts/${accountId}`, {
     data: { isActive: true },
   });
   expect(activateResponse.status()).toBe(200);
+  const depositResponse = await page.request.post(`/api/accounts/${accountId}/financial-events`, {
+    data: { eventType: 'deposit', amount, description: 'E2E setup deposit' },
+  });
+  expect(depositResponse.status()).toBe(201);
 }
 
 /**

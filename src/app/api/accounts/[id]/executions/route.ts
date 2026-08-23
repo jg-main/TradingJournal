@@ -47,7 +47,9 @@ import {
   DuplicateExecutionIdempotencyError,
   FifoAllocationRejectedError,
   UnsupportedAccountCurrencyError,
+  AccountInactiveError,
 } from '@/lib/accounting/errors';
+import { assertAccountAcceptsNewActivity } from '@/lib/accounting/activity-guard';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -139,6 +141,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
         { status: 404 },
       );
+    }
+
+    // 2b. A6 lifecycle guard: NEW execution origination requires an ACTIVE
+    //     account. MUST run before findOrCreateInstrument below so a rejected
+    //     execution does not even create an otherwise-unused instrument row.
+    try {
+      assertAccountAcceptsNewActivity(sqlite, accountId);
+    } catch (error) {
+      if (error instanceof AccountInactiveError) {
+        return NextResponse.json(
+          {
+            error: 'Account is inactive',
+            code: error.code,
+            details: error.message,
+          },
+          { status: 409 },
+        );
+      }
+      throw error;
     }
 
     // 3. Pre-flight idempotency check

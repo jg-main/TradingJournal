@@ -290,6 +290,10 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   const { snapshot, positions, positionsTotal, events, eventsTotal } = data;
   const accountCurrency = data.currency ?? 'USD';
   const currencySupported = isSupportedAccountCurrency(accountCurrency);
+  // A6: a non-draft inactive account is HISTORICAL — historically readable but
+  // read-only for new activity (no Add Transaction / composer). The draft case
+  // (no history) returned the initialization state above.
+  const readOnly = !data.isActive;
 
   // ── Legacy non-USD account (USD-only contract) ────────────────────
   // Preserve historical readability, but block ALL new financially
@@ -348,6 +352,23 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <div>
+      {/* A6: historical inactive account — read-only for new activity. */}
+      {readOnly && (
+        <div className="mb-5 flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <div className="text-xs leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">Inactive account.</span>{' '}
+            Historical data remains available below. Reactivate this account from{' '}
+            <Link
+              href={`/settings/accounts/${data.accountId}/settings`}
+              className="font-medium underline hover:text-foreground"
+            >
+              Settings
+            </Link>{' '}
+            to post new transactions or executions.
+          </div>
+        </div>
+      )}
       {/* ── 1. Primary Metrics (NAV, Cash, Market Value, Open Positions) ── */}
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {/* NAV */}
@@ -571,15 +592,17 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
                 View all →
               </Link>
             )}
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setComposerOpen(true)}
-              aria-haspopup="dialog"
-            >
-              <Plus className="size-3.5" aria-hidden="true" />
-              Add Transaction
-            </Button>
+            {!readOnly && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setComposerOpen(true)}
+                aria-haspopup="dialog"
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                Add Transaction
+              </Button>
+            )}
           </div>
         </div>
 
@@ -670,14 +693,18 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
         )}
       </div>
 
-      {/* ── Financial Transaction Composer (S03/T02 entry point) ─────── */}
-      <FinancialTransactionComposer
-        accountId={data.accountId}
-        currency={data.currency ?? 'USD'}
-        open={composerOpen}
-        onOpenChange={setComposerOpen}
-        onPosted={handleAccountStateChanged}
-      />
+      {/* ── Financial Transaction Composer (S03/T02 entry point) ───────
+             Not mounted for historical inactive accounts (A6); the server/
+             domain guard is authoritative regardless. */}
+      {!readOnly && (
+        <FinancialTransactionComposer
+          accountId={data.accountId}
+          currency={data.currency ?? 'USD'}
+          open={composerOpen}
+          onOpenChange={setComposerOpen}
+          onPosted={handleAccountStateChanged}
+        />
+      )}
     </div>
   );
 }

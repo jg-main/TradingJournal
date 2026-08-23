@@ -203,6 +203,18 @@ of scope for M006 unless an approved change rescopes it.
 | **Missing** | Open-trade guard on the close route (divergence from the PUT path); clearing/validating `settings.defaultAccountId` on deactivation. |
 | **Deferred** | None. |
 
+| **Deferred** | None. |
+
+### A17 — Inactive accounts are read-only for new activity (A6)
+
+| Column | Content |
+|---|---|
+| **Current State** | **Enforced (A6).** The account lifecycle invariant: inactive accounts remain historically readable but cannot originate NEW financial or execution activity; reactivation is the explicit boundary that restores permission. Shared guard `assertAccountAcceptsNewActivity(sqlite, accountId)` in `src/lib/accounting/activity-guard.ts` (missing account → `AccountNotFoundError`; inactive → `AccountInactiveError`, code `ACCOUNT_INACTIVE`, HTTP 409) is placed on NEW-ACTIVITY domain entry points — `postEventWithEffect` (normal financial-event origination) and `postExecutionFill` + the executions route pre-flight (before `findOrCreateInstrument`, so a rejected execution never creates an unused instrument row). The low-level posting kernel is NOT guarded: account initialization (`initializeAccount` / `assertPristineDraft`) legitimately operates on pristine inactive drafts, and financial-event correction operates on historical records of inactive accounts without reactivating them. Draft accounts can only initialize (Add opening balance / Start with zero); normal deposits/withdrawals/etc. on a draft → 409. Rejected requests consume no idempotency keys (event or execution). UI: the Account Overview renders historical inactive accounts read-only (no Add Transaction, no composer, compact guidance with a Settings link to reactivate); the transaction composer has a defensive `isActive` guard. |
+| **Reuse** | Existing isActive architecture, lifecycle guards, close/reactivate flows, `assertSupportedAccountCurrency` (A1). |
+| **Refine** | None needed. |
+| **Missing** | None for the new-activity boundary. Trade-workflow execution paths (`syncTradeExecution`) are the Trading Workflow milestone's surface and were intentionally not refactored. |
+| **Deferred** | Trade-workflow lifecycle enforcement (next milestone). |
+
 ### A16 — Account initialization lifecycle (opening balance completes initialization)
 
 | Column | Content |

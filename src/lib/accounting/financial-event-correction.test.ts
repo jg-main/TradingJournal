@@ -49,6 +49,7 @@ import {
   FinancialEventNotFoundError,
   InvalidAmountError,
   FinancialEventCorrectionProjectionError,
+  AccountInactiveError,
 } from '@/lib/accounting/errors';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -630,7 +631,10 @@ describe('correctFinancialEvent — opening balance (A4)', () => {
     postEventWithEffect(sqlite, accountId, { eventType: 'deposit', amount: '2000.00' });
     postEventWithEffect(sqlite, accountId, { eventType: 'withdrawal', amount: '500.00' });
 
-    const originalEvent = findEventById(sqlite, listAccountEvents(sqlite, accountId)[0].id);
+    const originalEvent = findEventById(
+      sqlite,
+      listAccountEvents(sqlite, accountId).find((e) => e.event_type === 'opening_balance')!.id,
+    );
     correctFinancialEvent(sqlite, {
       accountId,
       originalEventId: originalEvent!.id,
@@ -1010,5 +1014,62 @@ describe('correctFinancialEvent — atomic projection (A5)', () => {
         reason: 'Third attempt',
       }),
     ).toThrow(EventAlreadyCorrectedError);
+  });
+});
+
+// ── A6: historical correction on inactive accounts ──────────────────────
+
+describe('A6: historical correction on inactive accounts', () => {
+  let ctx: TestContext;
+
+  beforeAll(() => {
+    ctx = createTestDatabase();
+  });
+
+  afterAll(() => {
+    destroyTestDatabase();
+  });
+
+  it('22: corrects a historical deposit on a deactivated account, stays inactive, blocks new activity', () => {
+    const { sqlite } = ctx;
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+      )
+      .run(accountId, `A6 Historical ${accountId.slice(0, 6)}`, 'Broker', now, now);
+    // Initialize (active) then post a deposit, then deactivate.
+    initializeAccount(sqlite, { accountId, mode: 'opening_balance', amount: '10000.00' });
+    const depositResult = postEventWithEffect(sqlite, accountId, {
+      eventType: 'deposit',
+      amount: '2500.00',
+    });
+    // Find the deposit by type (posted_at/uuid ties are non-deterministic).
+    sqlite
+      .prepare('UPDATE accounts SET is_active = 0, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), accountId);
+
+    // Historical correction succeeds on the inactive account (reversal +
+    // replacement + lineage + projection, without reactivating).
+    const result = correctFinancialEvent(sqlite, {
+      accountId,
+      originalEventId: depositResult.event.id,
+      amount: '2000.00',
+      reason: 'Historical deposit correction after close',
+    });
+    expect(result.performance.success).toBe(true);
+    expect(result.performance.nav).toBe('12000.00');
+
+    const accountRow = sqlite
+      .prepare('SELECT is_active FROM accounts WHERE id = ?')
+      .get(accountId) as { is_active: number };
+    expect(accountRow.is_active).toBe(0);
+
+    // New activity is still blocked on the inactive account.
+    expect(() =>
+      postEventWithEffect(sqlite, accountId, { eventType: 'deposit', amount: '500.00' }),
+    ).toThrow(AccountInactiveError);
   });
 });

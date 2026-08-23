@@ -27,6 +27,7 @@ import {
   AccountNotFoundError,
   DuplicateIdempotencyKeyError,
   UnsupportedAccountCurrencyError,
+  AccountInactiveError,
 } from '@/lib/accounting/errors';
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -193,6 +194,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
         { status: 400 },
+      );
+    }
+
+    if (error instanceof AccountInactiveError) {
+      return NextResponse.json(
+        {
+          error: 'Account is inactive',
+          code: error.code,
+          details: error.message,
+        },
+        { status: 409 },
       );
     }
 

@@ -208,11 +208,12 @@ test.describe('Account Cutover Integration', () => {
     // 2. Set risk params (required for trade creation and activation)
     await setAccountRiskParams(page, account.id);
 
-    // 3. Post deposit (required for account to have opening cash)
-    await postDeposit(page, account.id, '50000.00', 'E2E cutover deposit');
-
-    // 4. Activate account
+    // 3. Activate the account first (A6 lifecycle: inactive accounts cannot
+    //    originate new financial activity), then post the deposit.
     await activateAccount(page, account.id);
+
+    // 4. Post deposit (required for account to have opening cash)
+    await postDeposit(page, account.id, '50000.00', 'E2E cutover deposit');
 
     // 5. Create a trade
     const trade = await createTrade(page, account.id, 'AAPL', 'long');

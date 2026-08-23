@@ -680,3 +680,34 @@ describe('AccountOverview — Add Transaction entry point (S03/T02)', () => {
     expect(mockRefresh).not.toHaveBeenCalled();
   });
 });
+
+// ── A6: historical inactive account is read-only for new activity ───────
+
+describe('AccountOverview — historical inactive account (A6)', () => {
+  const FIXTURE_HISTORICAL_INACTIVE = {
+    ...FIXTURE_POPULATED,
+    accountId: 'acct-historical',
+    isActive: false,
+  };
+
+  it('renders historical data read-only: no Add Transaction, guidance to reactivate', async () => {
+    mockFetchSuccess(FIXTURE_HISTORICAL_INACTIVE);
+    render(<AccountOverview accountId="acct-historical" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+
+    // Historical data remains visible.
+    expect(screen.getByText('Recent Events')).toBeTruthy();
+    expect(screen.getByText('Initial deposit')).toBeTruthy();
+
+    // No Add Transaction action and no composer for an inactive account.
+    expect(screen.queryByRole('button', { name: 'Add Transaction' })).toBeNull();
+
+    // Compact read-only guidance with a Settings link to reactivate.
+    expect(screen.getByText(/Inactive account\./)).toBeTruthy();
+    const settingsLink = screen.getByRole('link', { name: /Settings/i });
+    expect(settingsLink.getAttribute('href')).toBe('/settings/accounts/acct-historical/settings');
+  });
+});

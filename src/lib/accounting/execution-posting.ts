@@ -19,6 +19,7 @@ import { toMicros, fromMicros } from './decimal';
 import type { CanonicalDecimal } from './types';
 import type { FinancialEventWithPostings } from './types';
 import { postFinancialEvent, assertSupportedAccountCurrency } from './posting';
+import { assertAccountAcceptsNewActivity } from './activity-guard';
 import {
   AccountNotFoundError,
   DuplicateExecutionIdempotencyError,
@@ -231,6 +232,14 @@ export function postExecutionFill(
 
   const postedAt = rawPostedAt ?? new Date().toISOString();
   const fees = rawFees ?? '0.00';
+
+  // ── 0. A6 lifecycle guard: NEW execution origination requires an ACTIVE
+  //        account. Runs before any instrument/execution-row/financial-event/
+  //        ledger mutation so a rejected execution creates nothing and
+  //        consumes no idempotency key. This service is exclusively the
+  //        new-execution boundary (execution correction uses the posting
+  //        kernel directly and remains available for historical records).
+  assertAccountAcceptsNewActivity(sqlite, accountId);
 
   // ── 1. Validate account exists and its base currency is supported (USD-
   // ─────    only contract). Runs BEFORE any mutation — instrument creation,

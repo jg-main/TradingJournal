@@ -49,6 +49,7 @@ import {
   DuplicateExecutionIdempotencyError,
   InvalidAmountError,
   UnsupportedAccountCurrencyError,
+  AccountInactiveError,
 } from '@/lib/accounting/errors';
 import type { PositionState, FifoLot, FifoExecutionInput, ExecutionAction } from '@/lib/positions/types';
 import type { CanonicalDecimal } from '@/lib/accounting/types';
@@ -677,5 +678,98 @@ describe('legacy non-USD account — execution posting guard', () => {
       }),
     ).toThrow(UnsupportedAccountCurrencyError);
     expect(findAccountingExecutionByIdempotencyKey(ctx2.sqlite, key)).toBeUndefined();
+  });
+  // ── A6: inactive accounts are read-only for new executions ────────────
+  describe('A6 lifecycle guard (inactive accounts)', () => {
+    let inactiveId: string;
+
+    beforeAll(() => {
+      const sqlite = ctx2.sqlite;
+      const now = new Date().toISOString();
+      inactiveId = randomUUID();
+      sqlite
+        .prepare(
+          `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, 'USD', 0, ?, ?)`,
+        )
+        .run(inactiveId, 'Deactivated A6 Exec', null, now, now);
+    });
+
+    it('20: inactive account -> AccountInactiveError with zero mutation (no instrument row)', () => {
+      const sqlite = ctx2.sqlite;
+      const instrumentsBefore = (
+        sqlite.prepare('SELECT COUNT(*) AS c FROM instruments').get() as { c: number }
+      ).c;
+      const executionsBefore = (
+        sqlite.prepare('SELECT COUNT(*) AS c FROM accounting_executions').get() as { c: number }
+      ).c;
+      const eventsBefore = (
+        sqlite.prepare('SELECT COUNT(*) AS c FROM financial_events').get() as { c: number }
+      ).c;
+
+      expect(() =>
+        postExecutionFill(sqlite, {
+          accountId: inactiveId,
+          symbol: 'AAPL',
+          action: 'buy',
+          quantity: '10.00',
+          price: '100.00',
+          fees: '0.00',
+        }),
+      ).toThrow(AccountInactiveError);
+
+      const instrumentsAfter = (
+        sqlite.prepare('SELECT COUNT(*) AS c FROM instruments').get() as { c: number }
+      ).c;
+      const executionsAfter = (
+        sqlite.prepare('SELECT COUNT(*) AS c FROM accounting_executions').get() as { c: number }
+      ).c;
+      const eventsAfter = (
+        sqlite.prepare('SELECT COUNT(*) AS c FROM financial_events').get() as { c: number }
+      ).c;
+      expect(instrumentsAfter).toBe(instrumentsBefore);
+      expect(executionsAfter).toBe(executionsBefore);
+      expect(eventsAfter).toBe(eventsBefore);
+    });
+
+    it('21: rejected request does not consume the execution idempotency key; reactivation retry succeeds', () => {
+      const sqlite = ctx2.sqlite;
+      const idempotencyKey = randomUUID();
+
+      expect(() =>
+        postExecutionFill(sqlite, {
+          accountId: inactiveId,
+          symbol: 'MSFT',
+          action: 'buy',
+          quantity: '5.00',
+          price: '200.00',
+          fees: '0.00',
+          idempotencyKey,
+        }),
+      ).toThrow(AccountInactiveError);
+
+      // The key was not consumed.
+      expect(findAccountingExecutionByIdempotencyKey(sqlite, idempotencyKey)).toBeUndefined();
+
+      // Reactivate, retry the SAME request with the SAME key.
+      sqlite
+        .prepare('UPDATE accounts SET is_active = 1, updated_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), inactiveId);
+      const fill = postExecutionFill(sqlite, {
+        accountId: inactiveId,
+        symbol: 'MSFT',
+        action: 'buy',
+        quantity: '5.00',
+        price: '200.00',
+        fees: '0.00',
+        idempotencyKey,
+      });
+      expect(fill.execution).toBeDefined();
+      expect(findAccountingExecutionByIdempotencyKey(sqlite, idempotencyKey)).toBeDefined();
+      // Deactivate again for hygiene.
+      sqlite
+        .prepare('UPDATE accounts SET is_active = 0, updated_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), inactiveId);
+    });
   });
 });

@@ -16,6 +16,7 @@ import Database from 'better-sqlite3';
 import type { PostFinancialEventRequest } from './api-contracts';
 import { postFinancialEvent } from './posting';
 import { toMicros } from './decimal';
+import { assertAccountAcceptsNewActivity } from './activity-guard';
 import type { FinancialEventWithPostings, EventType } from './types';
 
 // ── Event Type Classifications ──────────────────────────────────────────
@@ -148,6 +149,14 @@ export function getPostingAmount(event: PostFinancialEventRequest): string {
 /**
  * Post a financial event of any supported type through the posting kernel.
  *
+ * NEW-ACTIVITY lifecycle guard (A6): the account must be ACTIVE. This
+ * service is the normal financial-event origination boundary — inactive
+ * (draft or deactivated) accounts are historically readable but cannot
+ * originate new financial transactions. The low-level posting kernel is NOT
+ * guarded here because it is legitimately reused by account initialization
+ * (pristine inactive drafts) and financial-event correction (historical
+ * records on inactive accounts); those paths call the kernel directly.
+ *
  * 1. Computes event-specific canonical payload and economic effect.
  * 2. Extracts the posting amount (absolute value for cash events, "0.00" for stock_split).
  * 3. Delegates to the generalized posting kernel which atomically creates
@@ -170,6 +179,12 @@ export function postEventWithEffect(
   accountId: string,
   event: PostFinancialEventRequest,
 ): FinancialEventWithPostings {
+  // A6 lifecycle guard: NEW financial activity requires an ACTIVE account.
+  // Runs before payload/effect computation or any posting so a rejected
+  // request creates zero event/entry/posting rows and consumes no
+  // idempotency key.
+  assertAccountAcceptsNewActivity(sqlite, accountId);
+
   const payload = computePayload(event);
   const effect = computeEffect(event);
   const postingAmount = getPostingAmount(event);

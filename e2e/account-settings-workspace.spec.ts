@@ -128,8 +128,8 @@ test.describe('Account Settings Workspace', () => {
       const account = await createAccount(page, accountName);
       accountId = account.id;
       await setAccountRiskParams(page, accountId);
-      await postDeposit(page, accountId, '10000.00', 'E2E test deposit');
       await activateAccount(page, accountId);
+      await postDeposit(page, accountId, '10000.00', 'E2E test deposit');
       await page.close();
     });
 
@@ -280,8 +280,8 @@ test.describe('Account Settings Workspace', () => {
       const account = await createAccount(page, lifecycleAccountName);
       lifecycleAccountId = account.id;
       await setAccountRiskParams(page, lifecycleAccountId);
-      await postDeposit(page, lifecycleAccountId, '50000.00', 'Initial funding');
       await activateAccount(page, lifecycleAccountId);
+      await postDeposit(page, lifecycleAccountId, '50000.00', 'Initial funding');
       await page.close();
     });
 
@@ -520,9 +520,11 @@ test.describe('Account Settings Workspace', () => {
       const account = await createAccount(page, `Currency Guard E2E ${ts}`);
       guardedAccountId = account.id;
       await setAccountRiskParams(page, guardedAccountId);
-      // Deposit creates financial history (financial_events row)
-      await postDeposit(page, guardedAccountId, '10000.00', 'Creates financial history');
+      // A6 lifecycle: activate BEFORE the deposit (inactive accounts cannot
+      // originate new financial activity); the deposit creates financial
+      // history (financial_events row) used by the currency-mutation guard.
       await activateAccount(page, guardedAccountId);
+      await postDeposit(page, guardedAccountId, '10000.00', 'Creates financial history');
       await page.close();
     });
 
