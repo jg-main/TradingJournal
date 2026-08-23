@@ -125,11 +125,11 @@ describe('OpeningBalanceForm — amount validation', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/api/accounts/acct-new/financial-events',
+      '/api/accounts/acct-new/initialize',
       expect.objectContaining({ method: 'POST' }),
     );
     expect(lastPostBody()).toEqual({
-      eventType: 'opening_balance',
+      mode: 'opening_balance',
       amount: '5000.00',
       description: 'Initial cash',
       postedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
@@ -151,14 +151,14 @@ describe('OpeningBalanceForm — submission', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/api/accounts/acct-new/financial-events',
+      '/api/accounts/acct-new/initialize',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       }),
     );
     expect(lastPostBody()).toEqual({
-      eventType: 'opening_balance',
+      mode: 'opening_balance',
       amount: '1234.50',
       description: 'Cash from previous broker',
       // datetime-local is local time; the form converts it to the equivalent UTC ISO.
@@ -176,7 +176,7 @@ describe('OpeningBalanceForm — submission', () => {
     });
 
     expect(lastPostBody()).toEqual({
-      eventType: 'opening_balance',
+      mode: 'opening_balance',
       amount: '250.25',
     });
   });

@@ -176,15 +176,15 @@ test.describe('Account creation and initialization', () => {
 
     // The success banner is a transient state (POST_SUCCESS_DELAY_MS = 450ms)
     // shown right after the POST lands, then the view hands off to the live
-    // overview. Wait for the POST response first so a cold-compiled route
-    // handler in the first browser project can't push the banner past a fixed
-    // assertion timeout, and poll for the banner so it is caught whenever it
-    // appears within its short window.
-    const postResponse = page.waitForResponse(
-      (r) => r.url().includes(`/api/accounts/${id}/financial-events`) && r.request().method() === 'POST',
+    // overview. Wait for the initialize POST response first so a cold-compiled
+    // route handler in the first browser project can't push the banner past a
+    // fixed assertion timeout, and poll for the banner so it is caught whenever
+    // it appears within its short window.
+    const initResponse = page.waitForResponse(
+      (r) => r.url().includes(`/api/accounts/${id}/initialize`) && r.request().method() === 'POST',
     );
     await panel.getByRole('button', { name: 'Record Opening Balance' }).click();
-    expect((await postResponse).status()).toBe(201);
+    expect((await initResponse).status()).toBe(201);
     await expect
       .poll(() => page.getByText('Opening balance recorded').count(), { timeout: 5_000, intervals: [50] })
       .toBeGreaterThan(0);
@@ -198,10 +198,9 @@ test.describe('Account creation and initialization', () => {
     // The event surfaces in Recent Events as an Opening entry.
     await expect(page.getByText('Opening', { exact: true })).toBeVisible();
 
-    // Posting an opening balance is a financial event, not an activation: the
-    // account remains a draft (inactive) and the header badge stays until the
-    // account is activated through the lifecycle path.
-    await expect(page.getByText('Inactive', { exact: true })).toBeVisible();
+    // Recording the opening balance COMPLETES initialization (A2): the account
+    // is active — the Inactive badge disappears immediately.
+    await expect(page.getByText('Inactive', { exact: true })).toHaveCount(0);
 
     // Persisted as a balanced double-entry posting.
     const eventsRes = await page.request.get(`/api/accounts/${id}/financial-events`);
@@ -220,7 +219,7 @@ test.describe('Account creation and initialization', () => {
 
     const accountRes = await page.request.get(`/api/accounts/${id}`);
     const account = await accountRes.json();
-    expect(account.isActive).toBe(false);
+    expect(account.isActive).toBe(true);
 
     const unexpectedPageErrors = pageErrors.filter(
       (error) => !error.includes('[turbopack]') && !error.includes('Failed to load chunk'),
@@ -310,24 +309,25 @@ test.describe('Account creation and initialization', () => {
     await page.goto(`/settings/accounts/${account.id}`);
     await expectInitializationState(page, accountName);
 
-    // Simulate a transient activation API failure.
-    await page.route(`**/api/accounts/${account.id}`, async (route) => {
-      if (route.request().method() === 'PUT') {
+    // Simulate a transient initialization API failure (A2: Start with zero
+    // posts { mode: 'zero' } to the initialize endpoint).
+    await page.route(`**/api/accounts/${account.id}/initialize`, async (route) => {
+      if (route.request().method() === 'POST') {
         await route.fulfill({
           status: 503,
           contentType: 'application/json',
-          body: JSON.stringify({ error: 'Account activation unavailable' }),
+          body: JSON.stringify({ error: 'Account initialization unavailable' }),
         });
         return;
       }
       await route.fallback();
     });
     await page.getByRole('button', { name: /Start with zero/ }).click();
-    await expect(page.getByRole('alert').filter({ hasText: 'Account activation unavailable' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Account initialization unavailable' })).toBeVisible();
     // Both paths remain available for a retry.
     await expect(page.getByRole('button', { name: /Add opening balance/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Start with zero/ })).toBeVisible();
-    await page.unroute(`**/api/accounts/${account.id}`);
+    await page.unroute(`**/api/accounts/${account.id}/initialize`);
 
     // Retry succeeds and activates the account.
     await page.getByRole('button', { name: /Start with zero/ }).click();
@@ -366,7 +366,7 @@ test.describe('Account creation and initialization', () => {
     await expect(panel.getByText('Enter a positive amount with up to 2 decimal places.')).toBeVisible();
 
     // API validation failure surfaces the server field error.
-    await page.route(`**/api/accounts/${account.id}/financial-events`, async (route) => {
+    await page.route(`**/api/accounts/${account.id}/initialize`, async (route) => {
       if (route.request().method() === 'POST') {
         await route.fulfill({
           status: 400,
@@ -383,13 +383,14 @@ test.describe('Account creation and initialization', () => {
     await amount.fill('5000');
     await submit.click();
     await expect(panel.getByRole('alert').filter({ hasText: 'Amount must be a positive number' })).toBeVisible();
-    await page.unroute(`**/api/accounts/${account.id}/financial-events`);
+    await page.unroute(`**/api/accounts/${account.id}/initialize`);
 
     // Retry succeeds and hands off into the live overview. The success banner
-    // is transient (POST_SUCCESS_DELAY_MS = 450ms) — wait for the POST response
-    // and poll for the banner rather than racing its short visibility window.
+    // is transient (POST_SUCCESS_DELAY_MS = 450ms) — wait for the initialize
+    // POST response and poll for the banner rather than racing its short
+    // visibility window.
     const retryResponse = page.waitForResponse(
-      (r) => r.url().includes(`/api/accounts/${account.id}/financial-events`) && r.request().method() === 'POST',
+      (r) => r.url().includes(`/api/accounts/${account.id}/initialize`) && r.request().method() === 'POST',
     );
     await submit.click();
     expect((await retryResponse).status()).toBe(201);

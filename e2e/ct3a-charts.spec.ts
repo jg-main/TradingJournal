@@ -45,12 +45,10 @@ async function seedAccount(page: Page, name: string, currency: string) {
     data: { maxRiskPerTradePct: 2, defaultCommission: 1 },
   });
   expect(riskResp.ok()).toBeTruthy();
-  const cashResp = await page.request.post(`/api/accounts/${account.id}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '50000.00' },
+  const initResp = await page.request.post(`/api/accounts/${account.id}/initialize`, {
+    data: { mode: 'opening_balance', amount: '50000.00' },
   });
-  expect(cashResp.ok()).toBeTruthy();
-  const activateResp = await page.request.put(`/api/accounts/${account.id}`, { data: { isActive: true } });
-  expect(activateResp.ok()).toBeTruthy();
+  expect(initResp.ok()).toBeTruthy();
   return account;
 }
 

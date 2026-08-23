@@ -133,7 +133,18 @@ function doPostFinancialEvent(
       };
     }
 
-    // 3. Post via event-posting service (supports all event types)
+    // 3. Opening balances are initialization-only (A2): the generic route
+    //    rejects them with 409 before any posting.
+    if (parsed.data.eventType === 'opening_balance') {
+      return {
+        status: 409,
+        body: {
+          error: 'Opening balance must be recorded through account initialization',
+        },
+      };
+    }
+
+    // 4. Post via event-posting service (supports all event types)
     const result = postEventWithEffect(sqlite, accountId, parsed.data);
 
     // 4. Return success response with payload/effect
@@ -414,23 +425,20 @@ describe('postFinancialEventSchema (validation)', () => {
 // ── POST event type tests ───────────────────────────────────────────────
 
 describe('POST /api/accounts/:id/financial-events — event types', () => {
-  it('posts opening_balance (backward compat with payload/effect)', () => {
+  it('rejects opening_balance with 409 — initialization-only event (A2)', () => {
     const result = doPostFinancialEvent(ctx.sqlite, ctx.accountId, {
       eventType: 'opening_balance',
       amount: '10000.00',
       description: 'Initial balance',
     });
-    expect(result.status).toBe(201);
-    const ev = result.body.event as Record<string, unknown>;
-    expect(ev.eventType).toBe('opening_balance');
-    // postEventWithEffect now computes payload/effect for all event types
-    expect(typeof ev.payload).toBe('string');
-    const payload = JSON.parse(ev.payload as string);
-    expect(payload.amount).toBe('10000.00');
-    expect(typeof ev.effect).toBe('string');
-    const effect = JSON.parse(ev.effect as string);
-    expect(effect.kind).toBe('cash');
-    expect(effect.direction).toBe('increase');
+    expect(result.status).toBe(409);
+    expect(result.body.error).toContain('Opening balance must be recorded');
+
+    // No event/entry/posting was created by the rejected request.
+    const count = ctx.sqlite
+      .prepare('SELECT count(*) AS count FROM financial_events WHERE account_id = ?')
+      .get(ctx.accountId) as { count: number };
+    expect(count.count).toBe(0);
   });
 
   it('posts deposit with payload and effect', () => {
@@ -1054,7 +1062,7 @@ describe('legacy non-USD account (USD-only contract)', () => {
       ctx.sqlite.prepare('SELECT count(*) AS count FROM ledger_postings').get() as { count: number }
     ).count;
 
-    for (const eventType of ['deposit', 'withdrawal', 'dividend', 'interest', 'fee', 'tax', 'manual_adjustment', 'opening_balance']) {
+    for (const eventType of ['deposit', 'withdrawal', 'dividend', 'interest', 'fee', 'tax', 'manual_adjustment']) {
       const result = doPostFinancialEvent(ctx.sqlite, eurAccountId, {
         eventType,
         amount: '10.00',

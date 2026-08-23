@@ -33,24 +33,19 @@ async function seedAnalyticsData(page: Page) {
   expect(createResp.status()).toBe(201);
   const account = (await createResp.json()) as { id: string; name: string };
 
-  // Account lifecycle: risk params → opening cash → activate.
+  // Account lifecycle: risk params → initialize (opening cash + activation in
+  // one server-side transaction, A2).
   const riskResp = await page.request.put(`/api/accounts/${account.id}`, {
     data: { maxRiskPerTradePct: 2, defaultCommission: 1 },
   });
   if (!riskResp.ok()) console.log('[seed-risk-failed]', riskResp.status(), await riskResp.text());
   expect(riskResp.ok()).toBeTruthy();
 
-  const cashResp = await page.request.post(`/api/accounts/${account.id}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '50000.00' },
+  const initResp = await page.request.post(`/api/accounts/${account.id}/initialize`, {
+    data: { mode: 'opening_balance', amount: '50000.00' },
   });
-  if (!cashResp.ok()) console.log('[seed-cash-failed]', cashResp.status(), await cashResp.text());
-  expect(cashResp.ok()).toBeTruthy();
-
-  const activateResp = await page.request.put(`/api/accounts/${account.id}`, {
-    data: { isActive: true },
-  });
-  if (!activateResp.ok()) console.log('[seed-activate-failed]', activateResp.status(), await activateResp.text());
-  expect(activateResp.ok()).toBeTruthy();
+  if (!initResp.ok()) console.log('[seed-init-failed]', initResp.status(), await initResp.text());
+  expect(initResp.ok()).toBeTruthy();
 
   // Create and fully exit a trade → status 'closed'.
   const tradeRes = await page.request.post('/api/trades', {
@@ -312,15 +307,10 @@ async function seedAccount(page: Page, name: string, currency: string) {
   });
   expect(riskResp.ok()).toBeTruthy();
 
-  const cashResp = await page.request.post(`/api/accounts/${account.id}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '50000.00' },
+  const initResp = await page.request.post(`/api/accounts/${account.id}/initialize`, {
+    data: { mode: 'opening_balance', amount: '50000.00' },
   });
-  expect(cashResp.ok()).toBeTruthy();
-
-  const activateResp = await page.request.put(`/api/accounts/${account.id}`, {
-    data: { isActive: true },
-  });
-  expect(activateResp.ok()).toBeTruthy();
+  expect(initResp.ok()).toBeTruthy();
 
   return account;
 }

@@ -68,15 +68,12 @@ async function setupAccount(page: Page, name: string) {
   });
   expect(configResp.ok()).toBeTruthy();
 
-  const activateResp = await page.request.put(`/api/accounts/${account.id}`, {
-    data: { isActive: true },
+  // Initialize the account: opening balance + activation in one server-side
+  // transaction (A2).
+  const initResp = await page.request.post(`/api/accounts/${account.id}/initialize`, {
+    data: { mode: 'opening_balance', amount: '50000.00' },
   });
-  expect(activateResp.ok()).toBeTruthy();
-
-  const cashResp = await page.request.post(`/api/accounts/${account.id}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '50000.00' },
-  });
-  expect(cashResp.status(), 'opening balance should post').toBe(201);
+  expect(initResp.status(), 'initialization should succeed').toBe(201);
 
   // Deterministic equity for the portfolio-heat denominator. The trades route
   // reads settings by the fixed id 'default', while PUT /api/settings creates a

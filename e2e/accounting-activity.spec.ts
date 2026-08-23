@@ -21,6 +21,17 @@ async function postEvent(
   accountId: string,
   data: Record<string, unknown>,
 ) {
+  // Opening balances are initialization-only (A2): the generic financial-event
+  // route rejects them with 409, so they go through the initialize endpoint,
+  // which posts the event AND activates the account in one transaction.
+  if (data.eventType === 'opening_balance') {
+    const { eventType: _eventType, ...initData } = data;
+    const response = await request.post(`/api/accounts/${accountId}/initialize`, {
+      data: { mode: 'opening_balance', ...initData },
+    });
+    expect(response.status()).toBe(201);
+    return response;
+  }
   const response = await request.post(`/api/accounts/${accountId}/financial-events`, { data });
   expect(response.status()).toBe(201);
   return response;

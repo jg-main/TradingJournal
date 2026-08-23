@@ -58,15 +58,17 @@ function apiErrorMessage(data: unknown, fallback: string): string {
 // ── Component ────────────────────────────────────────────────────────────
 
 /**
- * Opening balance form (S02/T03).
+ * Opening balance form (S02/T03, A2).
  *
  * Collects the amount (required, positive, up to 2 decimal places) plus an
- * optional description and date, then posts an `opening_balance` financial
- * event via POST /api/accounts/:id/financial-events. The opening balance is
- * a financial event — never an editable account property. On success the
- * form shows a confirmation and hands off through `onInitialized` so the
- * caller refreshes AccountProvider, the overview workspace, and the header
- * badge — the exact refresh pipeline used by "Start with zero".
+ * optional description and date, then completes account initialization via
+ * POST /api/accounts/:id/initialize with { mode: 'opening_balance' }. The
+ * server posts the immutable opening_balance financial event AND activates
+ * the account in one authoritative transaction — success means the whole
+ * initialization is coherent. The opening balance is a financial event —
+ * never an editable account property. On success the form shows a
+ * confirmation and hands off through `onInitialized` so the caller
+ * refreshes AccountProvider, the overview workspace, and the header badge.
  */
 export function OpeningBalanceForm({
   accountId,
@@ -114,7 +116,7 @@ export function OpeningBalanceForm({
     }
 
     const body: Record<string, unknown> = {
-      eventType: 'opening_balance',
+      mode: 'opening_balance',
       amount: parseFloat(trimmedAmount).toFixed(2),
     };
     const trimmedDescription = description.trim();
@@ -123,7 +125,9 @@ export function OpeningBalanceForm({
     if (postedAt) body.postedAt = new Date(postedAt).toISOString();
 
     try {
-      const res = await fetch(`/api/accounts/${accountId}/financial-events`, {
+      // Initialization endpoint: posts the opening balance AND activates the
+      // account in one server-side transaction (A2).
+      const res = await fetch(`/api/accounts/${accountId}/initialize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

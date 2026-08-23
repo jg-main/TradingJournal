@@ -42,10 +42,9 @@ test('captures the refined KPI rail at 1440px dark with populated data', async (
     data: { maxRiskPerTradePct: 2, defaultCommission: 1 },
   });
   expect(riskRes.ok()).toBeTruthy();
-  await page.request.post(`/api/accounts/${account.id}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '100000.00' },
+  await page.request.post(`/api/accounts/${account.id}/initialize`, {
+    data: { mode: 'opening_balance', amount: '100000.00' },
   });
-  await page.request.put(`/api/accounts/${account.id}`, { data: { isActive: true } });
 
   // Spread the executedAt dates across days so the cumulative P&L sparkline
   // has multiple points (a single-day set renders one point → sparkline skips).

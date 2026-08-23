@@ -203,6 +203,16 @@ of scope for M006 unless an approved change rescopes it.
 | **Missing** | Open-trade guard on the close route (divergence from the PUT path); clearing/validating `settings.defaultAccountId` on deactivation. |
 | **Deferred** | None. |
 
+### A16 — Account initialization lifecycle (opening balance completes initialization)
+
+| Column | Content |
+|---|---|
+| **Current State** | **Initialization is one authoritative server-side transaction (enforced, A2).** `POST /api/accounts/[id]/initialize` completes new-account initialization with `mode: 'opening_balance'` (posts the immutable `opening_balance` financial event + ledger entry + balanced postings AND activates the account inside a single SQLite transaction) or `mode: 'zero'` (activation only, no fabricated event). The service lives in `src/lib/accounting/account-initialization.ts` (`initializeAccount` + `assertPristineDraft`); the posting reuses the canonical posting kernel with the same payload/effect the generic event route produces, so ledger/activity cash-impact projections are identical. Eligibility is restricted to pristine drafts (inactive, no financial events, no executions, no positions, no trades) — a second initialization returns 409 `Account already initialized`, and deactivated historical accounts are never accidentally reactivated through this path (the established lifecycle PUT reactivation remains the sanctioned path). The generic `POST /api/accounts/[id]/financial-events` route rejects `eventType: 'opening_balance'` with 409 so the UI cannot bypass initialization semantics. Idempotency keys are honored (replays never duplicate state; a failed attempt does not consume the key). After commit, the route rebuilds the account performance projection so NAV/Cash are immediately coherent. |
+| **Reuse** | Posting kernel, `assertSupportedAccountCurrency` (A1), `rebuildAccountPerformance`, idempotency convention, financial-event schema primitives. |
+| **Refine** | None needed for this lifecycle boundary; keep both initialization modes behind the initialize endpoint. |
+| **Missing** | Correction support for an incorrectly-entered opening balance (the reversal → replacement workflow exists for correctable event types; opening_balance is intentionally excluded from `CORRECTABLE_EVENT_TYPES` today — see D4/A11). When that is extended, corrections must not deactivate or reinitialize the account. |
+| **Deferred** | Multi-currency initialization (with FX milestone). |
+
 ---
 
 ## 3. Explicit Determinations
@@ -244,11 +254,25 @@ postings (`rebuildOpeningCash`). The trades route requires an
 `opening_balance` or `deposit` event before trading is allowed (409 “Account
 setup incomplete” otherwise).
 
-- **Evidence:** `src/lib/accounting/api-contracts.ts` (openingBalanceSchema),
-  `src/app/api/accounts/[id]/route.ts` (updateAccountSchema),
-  `src/app/api/trades/route.ts` (`has_cash` check),
+**Updated by A2:** the opening balance is recorded **only** through account
+initialization (`POST /api/accounts/[id]/initialize`, mode `opening_balance`),
+which posts the event AND activates the account in one transaction. The generic
+financial-event route rejects `opening_balance` with 409. A successful
+initialization ends in exactly one of: (a) active account with exactly one
+`opening_balance` event; (b) active account with zero events (`mode: 'zero'`).
+There is no successful path ending in financial history + draft.
+
+- **Evidence:** `src/lib/accounting/account-initialization.ts`
+  (`initializeAccount`, `assertPristineDraft`),
+  `src/app/api/accounts/[id]/initialize/route.ts`,
+  `src/app/api/accounts/[id]/financial-events/route.ts` (409 guard),
+  `src/lib/accounting/api-contracts.ts` (openingBalanceSchema,
+  initializeAccountRequestSchema), `src/app/api/accounts/[id]/route.ts`
+  (updateAccountSchema), `src/app/api/trades/route.ts` (`has_cash` check),
   `src/lib/accounting/rebuild.ts` (`rebuildOpeningCash`).
-- **Test coverage:** `src/lib/accounting/rebuild.test.ts`,
+- **Test coverage:** `src/lib/accounting/__tests__/account-initialization.test.ts`,
+  `src/app/api/accounts/[id]/initialize/__tests__/route.test.ts`,
+  `src/lib/accounting/rebuild.test.ts`,
   `src/lib/accounting/__tests__/opening-balance-flow.test.ts`,
   `src/lib/accounting/posting.test.ts`.
 - **Consumed by:** S02 (Add opening balance path), S03 (Opening Balance entry

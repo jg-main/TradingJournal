@@ -302,3 +302,29 @@ export class UnsupportedAccountCurrencyError extends AccountingError {
     Object.setPrototypeOf(this, UnsupportedAccountCurrencyError.prototype);
   }
 }
+
+/**
+ * Thrown when opening-balance initialization targets an account that is not
+ * a pristine new draft (already active, or already carries financial history
+ * / executions / positions / trades).
+ *
+ * Raised by the initialization service below the UI/API layer so the
+ * opening balance + activation boundary is always server/domain controlled.
+ * Prevents a second opening balance and prevents accidentally reactivating
+ * a deactivated historical account.
+ */
+export class AccountAlreadyInitializedError extends AccountingError {
+  public readonly accountId: string;
+  public readonly reason: string;
+
+  constructor(accountId: string, reason: string) {
+    super(
+      'ACCOUNT_ALREADY_INITIALIZED',
+      `Account "${accountId}" is already initialized: ${reason}`,
+    );
+    this.name = 'AccountAlreadyInitializedError';
+    this.accountId = accountId;
+    this.reason = reason;
+    Object.setPrototypeOf(this, AccountAlreadyInitializedError.prototype);
+  }
+}

@@ -44,9 +44,10 @@ async function createAccountViaApi(request: APIRequestContext): Promise<string> 
 }
 
 async function postOpeningBalanceViaApi(request: APIRequestContext, id: string) {
-  const res = await request.post(`/api/accounts/${id}/financial-events`, {
+  // Initialization endpoint (A2): opening balance + activation in one transaction.
+  const res = await request.post(`/api/accounts/${id}/initialize`, {
     data: {
-      eventType: 'opening_balance',
+      mode: 'opening_balance',
       amount: '100000.00',
       description: 'E2E opening balance for correction flow',
     },

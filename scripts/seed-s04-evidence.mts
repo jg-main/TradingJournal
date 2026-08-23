@@ -61,11 +61,11 @@ console.log('account:', accountId);
 // prepareAccountForTrading equivalent
 await api(`/api/accounts/${accountId}`, { method: 'PUT', body: JSON.stringify({ maxRiskPerTradePct: 2, defaultCommission: 1 }) });
 await api(`/api/accounts/${accountId}`, { method: 'PUT', body: JSON.stringify({ isActive: true }) });
-const fe = await api(`/api/accounts/${accountId}/financial-events`, {
+const fe = await api(`/api/accounts/${accountId}/initialize`, {
   method: 'POST',
-  body: JSON.stringify({ eventType: 'opening_balance', amount: '50000.00' }),
+  body: JSON.stringify({ mode: 'opening_balance', amount: '50000.00' }),
 });
-console.log('financial event:', fe.status ?? 'ok');
+console.log('initialize:', fe.status ?? 'ok');
 
 // A fresh evidence database has no account checklist definitions. Create the
 // prerequisite locally instead of relying on an ID from a user journal.

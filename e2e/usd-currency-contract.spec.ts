@@ -166,6 +166,30 @@ test.describe('USD-only account currency contract', () => {
     expect(ledger.total).toBe(0);
   });
 
+  test('opening balance is initialization-only: the generic route rejects it with 409 (A2)', async ({ page }) => {
+    // Even for a pristine USD account, opening_balance cannot be posted through
+    // the generic financial-event route — it must go through /initialize, which
+    // posts the event AND activates the account in one transaction.
+    const create = await page.request.post('/api/accounts', {
+      data: { name: `USD Init Guard ${Date.now()}`, broker: 'E2E', currency: 'USD' },
+    });
+    expect(create.status()).toBe(201);
+    const account = (await create.json()) as { id: string };
+
+    const res = await page.request.post(`/api/accounts/${account.id}/financial-events`, {
+      data: { eventType: 'opening_balance', amount: '100.00' },
+    });
+    expect(res.status()).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('Opening balance must be recorded');
+
+    // Nothing was created and the account is still a draft.
+    const events = await (await page.request.get(`/api/accounts/${account.id}/financial-events`)).json() as { total: number };
+    expect(events.total).toBe(0);
+    const accountAfter = (await (await page.request.get(`/api/accounts/${account.id}`)).json()) as { isActive: boolean };
+    expect(accountAfter.isActive).toBe(false);
+  });
+
   test('executions API rejects posting to a legacy EUR account', async ({ page }) => {
     const res = await page.request.post(
       `/api/accounts/${legacyEurAccountId}/executions`,

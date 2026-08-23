@@ -41,9 +41,11 @@ async function createAccountViaApi(request: APIRequestContext): Promise<string> 
 }
 
 async function postOpeningBalanceViaApi(request: APIRequestContext, id: string) {
-  const response = await request.post(`/api/accounts/${id}/financial-events`, {
+  // Initialization endpoint (A2): posts the opening balance AND activates the
+  // account in one server-side transaction.
+  const response = await request.post(`/api/accounts/${id}/initialize`, {
     data: {
-      eventType: 'opening_balance',
+      mode: 'opening_balance',
       amount: '50000.00',
       description: 'E2E opening balance for Dashboard V2 flow',
     },
@@ -167,8 +169,9 @@ test.describe('Accounting Dashboard V2 — integrated lifecycle', () => {
 
     await page.goto(`/settings/accounts/${accountId}`);
 
-    // The account name should be visible
-    await expect(page.getByText('Dashboard V2 E2E')).toBeVisible();
+    // The account name is visible in the workspace heading (the sidebar
+    // selector also shows it now the account is active, so scope to the heading).
+    await expect(page.getByRole('heading', { name: /Dashboard V2 E2E/ })).toBeVisible();
     await expect(page.getByText('Net Asset Value')).toBeVisible();
     await expect(page.getByText('Net Cash')).toBeVisible();
     await expect(page.getByText('No open positions.')).toBeVisible();

@@ -19,7 +19,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Accounting Ledger — opening balance flow', () => {
-  test('posts opening balance, validates balanced response, rejects duplicates', async ({ page }) => {
+  test('initializes an account, validates balanced response, rejects duplicates', async ({ page }) => {
     // 1. Create an account for the test
     const accRes = await page.request.post('/api/accounts', {
       data: {
@@ -34,20 +34,24 @@ test.describe('Accounting Ledger — opening balance flow', () => {
     expect(account.id).toBeDefined();
     const accountId: string = account.id;
 
-    // 2. Post opening balance through the real endpoint
-    const eventRes = await page.request.post(`/api/accounts/${accountId}/financial-events`, {
+    // 2. Initialize through the initialization endpoint: the opening balance
+    //    is posted AND the account is activated in one transaction (A2).
+    const initRes = await page.request.post(`/api/accounts/${accountId}/initialize`, {
       data: {
-        eventType: 'opening_balance',
+        mode: 'opening_balance',
         amount: '5000.00',
         description: 'E2E opening balance test',
       },
     });
-    expect(eventRes.status()).toBe(201);
+    expect(initRes.status()).toBe(201);
 
-    const body = await eventRes.json();
+    const body = await initRes.json();
     expect(body.event).toBeDefined();
     expect(body.entry).toBeDefined();
     expect(body.postings).toBeDefined();
+
+    // The account is active immediately after initialization.
+    expect(body.account.isActive).toBe(true);
 
     // 3. Validate the event shape
     expect(body.event.accountId).toBe(accountId);
@@ -73,35 +77,34 @@ test.describe('Accounting Ledger — opening balance flow', () => {
     expect(debit.ledgerEntryId).toBe(body.entry.id);
     expect(credit.ledgerEntryId).toBe(body.entry.id);
 
-    // 5. Duplicate idempotency key rejection
-    const idempotencyKey = crypto.randomUUID();
-    const dupRes1 = await page.request.post(`/api/accounts/${accountId}/financial-events`, {
+    // 5. Duplicate initialization is rejected — the opening balance can never
+    //    be initialized twice (no opening_balance #2).
+    const secondInit = await page.request.post(`/api/accounts/${accountId}/initialize`, {
+      data: {
+        mode: 'opening_balance',
+        amount: '9999.00',
+      },
+    });
+    expect(secondInit.status()).toBe(409);
+    const dupBody = await secondInit.json();
+    expect(dupBody.error).toBe('Account already initialized');
+
+    // The generic financial-event route rejects opening_balance outright
+    // (initialization-only event).
+    const genericRoute = await page.request.post(`/api/accounts/${accountId}/financial-events`, {
       data: {
         eventType: 'opening_balance',
         amount: '3000.00',
-        idempotencyKey,
       },
     });
-    expect(dupRes1.status()).toBe(201);
-
-    // Same key → must be 409
-    const dupRes2 = await page.request.post(`/api/accounts/${accountId}/financial-events`, {
-      data: {
-        eventType: 'opening_balance',
-        amount: '9999.00',
-        idempotencyKey,
-      },
-    });
-    expect(dupRes2.status()).toBe(409);
-
-    const dupBody = await dupRes2.json();
-    expect(dupBody.error).toBe('Duplicate idempotency key');
+    expect(genericRoute.status()).toBe(409);
+    expect((await genericRoute.json()).error).toContain('Opening balance must be recorded');
 
     // 6. Non-existent account returns 404
     const fakeId = crypto.randomUUID();
-    const notFoundRes = await page.request.post(`/api/accounts/${fakeId}/financial-events`, {
+    const notFoundRes = await page.request.post(`/api/accounts/${fakeId}/initialize`, {
       data: {
-        eventType: 'opening_balance',
+        mode: 'opening_balance',
         amount: '100.00',
       },
     });

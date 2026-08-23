@@ -83,7 +83,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const eventRequest = parsed.data;
 
-    // 2. Get the raw SQLite handle for transactional posting
+    // 2. Opening balances are an initialization-only event (A2). The generic
+    //    financial-event route must not create or duplicate an opening
+    //    balance — that would leave a funded-but-inactive account (event
+    //    without activation) or a second opening balance on an active one.
+    //    The initialization boundary lives in POST /api/accounts/:id/initialize,
+    //    which posts the opening balance AND activates the account in one
+    //    authoritative server-side transaction.
+    if (eventRequest.eventType === 'opening_balance') {
+      return NextResponse.json(
+        {
+          error: 'Opening balance must be recorded through account initialization',
+          details:
+            'POST /api/accounts/:id/initialize with { mode: "opening_balance", amount } — ' +
+            'the generic financial-event route cannot create or duplicate an opening balance.',
+        },
+        { status: 409 },
+      );
+    }
+
+    // 3. Get the raw SQLite handle for transactional posting
     const sqlite = getSqliteHandle();
 
     // 3. Post the event through the event-posting service

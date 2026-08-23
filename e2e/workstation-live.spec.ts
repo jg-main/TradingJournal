@@ -55,18 +55,17 @@ async function createLiveAccount(
     data: { maxRiskPerTradePct: 2, defaultCommission: 1 },
   });
   expect(configResp.status()).toBe(200);
-  const activateResp = await request.put(`/api/accounts/${account.id}`, {
-    data: { isActive: true },
-  });
-  expect(activateResp.status()).toBe(200);
+  // Activation happens inside postOpeningBalance (initialize) — the opening
+  // balance + activation are one server-side transaction (A2).
 
   return { id: account.id, name };
 }
 
 async function postOpeningBalance(request: APIRequestContext, id: string) {
-  const res = await request.post(`/api/accounts/${id}/financial-events`, {
+  // Initialization endpoint (A2): opening balance + activation in one transaction.
+  const res = await request.post(`/api/accounts/${id}/initialize`, {
     data: {
-      eventType: 'opening_balance',
+      mode: 'opening_balance',
       amount: '100000.00',
       description: 'E2E opening balance for live mode',
     },

@@ -329,8 +329,8 @@ test.beforeAll(async ({ request }) => {
   const account = (await create.json()) as { id: string };
   accountId = account.id;
 
-  const opening = await request.post(`/api/accounts/${accountId}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '10000.00', description: OPENING_DESCRIPTION },
+  const opening = await request.post(`/api/accounts/${accountId}/initialize`, {
+    data: { mode: 'opening_balance', amount: '10000.00', description: OPENING_DESCRIPTION },
   });
   expect(opening.status()).toBe(201);
 
@@ -343,9 +343,6 @@ test.beforeAll(async ({ request }) => {
     data: { eventType: 'withdrawal', amount: '250.00', description: WITHDRAWAL_DESCRIPTION },
   });
   expect(withdrawal.status()).toBe(201);
-
-  const activate = await request.put(`/api/accounts/${accountId}`, { data: { isActive: true } });
-  expect(activate.status()).toBe(200);
 });
 
 // ════════════════════════════════════════════════════════════════════════

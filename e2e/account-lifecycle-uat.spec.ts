@@ -297,7 +297,7 @@ test.describe('Account lifecycle UAT (S07/T01)', () => {
 
     const postResponse = page.waitForResponse(
       (res) =>
-        res.url().includes(`/api/accounts/${accountId}/financial-events`) &&
+        res.url().includes(`/api/accounts/${accountId}/initialize`) &&
         res.request().method() === 'POST',
     );
     await page.keyboard.press('Enter');
@@ -311,8 +311,9 @@ test.describe('Account lifecycle UAT (S07/T01)', () => {
     await expect(page.getByText('Net Cash')).toBeVisible();
     await expect(page.getByText('$10,000.00')).toHaveCount(2);
 
-    // Posting an opening balance is a financial event, not an activation.
-    await expect(page.getByText('Inactive', { exact: true })).toBeVisible();
+    // Recording the opening balance COMPLETES initialization (A2): the account
+    // is active — the Inactive badge disappears immediately.
+    await expect(page.getByText('Inactive', { exact: true })).toHaveCount(0);
 
     // Balanced double-entry posting persisted.
     const eventsRes = await page.request.get(`/api/accounts/${accountId}/financial-events`);
@@ -329,7 +330,7 @@ test.describe('Account lifecycle UAT (S07/T01)', () => {
   });
 
   // ── 3. Activate ───────────────────────────────────────────────────────
-  test('activate: settings lifecycle action activates the initialized account', async ({ page }) => {
+  test('activate: opening-balance initialization left the account active (A2)', async ({ page }) => {
     const consoleErrors = captureConsoleErrors(page);
     const failedRequests = captureFailedRequests(page);
     await hideDevOverlay(page);
@@ -337,21 +338,12 @@ test.describe('Account lifecycle UAT (S07/T01)', () => {
     await page.goto(`/settings/accounts/${accountId}/settings`);
     await expect(page.getByText('Account Identity')).toBeVisible();
 
-    // The opening-balance path leaves the account a draft: inactive status
-    // with the Reactivate lifecycle action available.
-    await expect(page.getByText('Inactive', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Reactivate Account' })).toBeVisible();
-
-    // Keyboard-only activation: Tab to the lifecycle action and Enter.
-    await tabToFocus(page, page.getByRole('button', { name: 'Reactivate Account' }));
-    await page.keyboard.press('Enter');
-
-    // The reactivation PUT lands and the settings status flips to Active.
-    // Note: the transient "Account reactivated." success banner is cleared by
-    // the follow-up fetchData() in the same batched render, so it is never
-    // user-visible; the durable signals are the Active status, the Close
-    // Account lifecycle action (active-only), and the persisted API state.
-    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+    // Recording the opening balance COMPLETES initialization (A2): the account
+    // is already Active — no manual Reactivate step is needed, and the active
+    // lifecycle actions (Close Account) are available.
+    await expect(page.getByText('Inactive', { exact: true }).first()).toHaveCount(0);
+    await expect(page.getByText('Active', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /Reactivate Account/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Close Account' })).toBeVisible();
 
     // Persisted through the API.

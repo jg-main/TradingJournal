@@ -52,17 +52,12 @@ async function setupAccount(page: import('@playwright/test').Page, name: string)
   });
   expect(configResp.status()).toBe(200);
 
-  // Activate the account
-  const activateResp = await page.request.put(`/api/accounts/${account.id}`, {
-    data: { isActive: true },
+  // Initialize the account: opening balance + activation in one server-side
+  // transaction (A2) — the trade creation API requires an active, funded account.
+  const initResp = await page.request.post(`/api/accounts/${account.id}/initialize`, {
+    data: { mode: 'opening_balance', amount: '50000.00' },
   });
-  expect(activateResp.status()).toBe(200);
-
-  // Post opening balance (the trade creation API requires a financial event)
-  const cashResp = await page.request.post(`/api/accounts/${account.id}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '50000.00' },
-  });
-  expect(cashResp.status()).toBe(201);
+  expect(initResp.status()).toBe(201);
 
   return account;
 }

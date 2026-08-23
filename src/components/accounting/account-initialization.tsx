@@ -76,15 +76,16 @@ function PathCard({ icon, title, description, onClick, disabled, busy }: PathCar
 // ── Component ───────────────────────────────────────────────────────────
 
 /**
- * Empty-account initialization state (S02/T02).
+ * Empty-account initialization state (S02/T02, A2).
  *
  * Rendered by AccountOverview for draft accounts (inactive with no financial
- * events and no positions). Presents two paths:
+ * events and no positions). Presents two paths, both routed through the
+ * initialization endpoint so the lifecycle boundary is server controlled:
  * - "Add opening balance" — hands off to the opening-balance panel with
- *   OpeningBalanceForm, which posts an `opening_balance` financial event and
- *   reports success through `onInitialized`.
- * - "Start with zero" — activates the account via PUT /api/accounts/:id with
- *   `{ isActive: true }`, then reports success through `onInitialized`.
+ *   OpeningBalanceForm, which POSTs /api/accounts/:id/initialize with
+ *   { mode: 'opening_balance' } (event + activation in one transaction).
+ * - "Start with zero" — POSTs /api/accounts/:id/initialize with
+ *   { mode: 'zero' } (activation only, no fabricated event).
  *
  * Loading, error (API message with retry), and success states are all
  * handled here; the opening balance itself is a financial event, never an
@@ -104,10 +105,13 @@ export function AccountInitialization({
     setActivating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/accounts/${accountId}`, {
-        method: 'PUT',
+      // Route through the initialization endpoint so activation is part of
+      // the server-controlled lifecycle boundary (A2). Mode 'zero' activates
+      // the account without fabricating a financial event.
+      const res = await fetch(`/api/accounts/${accountId}/initialize`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: true }),
+        body: JSON.stringify({ mode: 'zero' }),
       });
       const data: unknown = await res.json().catch(() => null);
 

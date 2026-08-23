@@ -12,16 +12,16 @@ import type { CanonicalDecimal } from './types';
 
 // ── Shared helpers ──────────────────────────────────────────────────────
 
-const canonicalDecimalSchema = z
+export const canonicalDecimalSchema = z
   .string()
   .regex(
     /^-?\d+\.\d{2}$/,
     'Must be a canonical decimal (e.g. "100.00")',
   );
 
-const optionalUuidSchema = z.string().uuid('Must be a valid UUID').optional();
+export const optionalUuidSchema = z.string().uuid('Must be a valid UUID').optional();
 
-const descriptionSchema = z.string().max(500).optional();
+export const descriptionSchema = z.string().max(500).optional();
 
 // ── Event-type-specific payload schemas ──────────────────────────────────
 
@@ -191,6 +191,34 @@ export const postFinancialEventSchema = z.discriminatedUnion('eventType', [
 ]);
 
 export type PostFinancialEventRequest = z.infer<typeof postFinancialEventSchema>;
+
+// ── Account Initialization Schemas (A2) ────────────────────────────────
+
+/**
+ * Schema for POST /api/accounts/:id/initialize.
+ *
+ * Completes new-account initialization in one server-side transaction.
+ * mode 'opening_balance' records the initial capital as an immutable
+ * opening_balance financial event AND activates the account; mode 'zero'
+ * activates with a zero balance and no financial event.
+ */
+export const initializeAccountRequestSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('opening_balance'),
+    amount: canonicalDecimalSchema.refine(
+      (v) => !v.startsWith('-'),
+      { message: 'Opening balance amount must be positive' },
+    ),
+    idempotencyKey: optionalUuidSchema,
+    description: descriptionSchema,
+    postedAt: z.string().datetime().optional(),
+  }),
+  z.object({
+    mode: z.literal('zero'),
+  }),
+]);
+
+export type InitializeAccountRequest = z.infer<typeof initializeAccountRequestSchema>;
 
 // ── Financial Event Correction Schemas ──────────────────────────────────
 

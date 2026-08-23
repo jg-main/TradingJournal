@@ -7,8 +7,7 @@ test('verifies the refined KPI presentation metrics in dark mode', async ({ page
   expect(res.status()).toBe(201);
   const account = (await res.json()) as { id: string };
   await page.request.put(`/api/accounts/${account.id}`, { data: { maxRiskPerTradePct: 2, defaultCommission: 1 } });
-  await page.request.post(`/api/accounts/${account.id}/financial-events`, { data: { eventType: 'opening_balance', amount: '100000.00' } });
-  await page.request.put(`/api/accounts/${account.id}`, { data: { isActive: true } });
+  await page.request.post(`/api/accounts/${account.id}/initialize`, { data: { mode: 'opening_balance', amount: '100000.00' } });
 
   const now = new Date();
   const day = (offset: number) => { const d = new Date(now); d.setDate(d.getDate() - offset); return d.toISOString(); };

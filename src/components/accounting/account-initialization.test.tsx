@@ -66,11 +66,16 @@ describe('AccountInitialization — paths', () => {
 });
 
 describe('AccountInitialization — start with zero', () => {
-  it('activates the account via PUT and calls onInitialized on success', async () => {
+  it('activates the account via initialize (mode zero) and calls onInitialized on success', async () => {
     mockFetchResponse(true, {
-      id: 'acct-new',
-      name: 'Main Brokerage',
-      isActive: true,
+      account: {
+        id: 'acct-new',
+        name: 'Main Brokerage',
+        isActive: true,
+      },
+      event: null,
+      entry: null,
+      postings: null,
     });
     const { onInitialized } = renderInitialization();
 
@@ -81,11 +86,11 @@ describe('AccountInitialization — start with zero', () => {
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/api/accounts/acct-new',
+      '/api/accounts/acct-new/initialize',
       expect.objectContaining({
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: true }),
+        body: JSON.stringify({ mode: 'zero' }),
       }),
     );
   });
@@ -110,7 +115,7 @@ describe('AccountInitialization — start with zero', () => {
     fetchMock.mockResolvedValueOnce({
       ok: false,
       status: 409,
-      json: async () => ({ error: 'Cannot reactivate account with open trades' }),
+      json: async () => ({ error: 'Account already initialized' }),
     });
 
     const { onInitialized } = renderInitialization();
@@ -118,13 +123,13 @@ describe('AccountInitialization — start with zero', () => {
     fireEvent.click(screen.getByText('Start with zero'));
 
     await waitFor(() => {
-      expect(screen.getByText('Cannot reactivate account with open trades')).toBeTruthy();
+      expect(screen.getByText('Account already initialized')).toBeTruthy();
     });
 
     // Retry: the path button is still available and the request succeeds.
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ id: 'acct-new', isActive: true }),
+      json: async () => ({ account: { id: 'acct-new', isActive: true }, event: null, entry: null, postings: null }),
     });
 
     fireEvent.click(screen.getByText('Start with zero'));
@@ -139,7 +144,7 @@ describe('AccountInitialization — start with zero', () => {
       error: 'Validation failed',
       details: {
         fieldErrors: {
-          isActive: ['Invalid value'],
+          mode: ['Invalid discriminator value'],
         },
       },
     });
@@ -148,7 +153,7 @@ describe('AccountInitialization — start with zero', () => {
     fireEvent.click(screen.getByText('Start with zero'));
 
     await waitFor(() => {
-      expect(screen.getByText('Invalid value')).toBeTruthy();
+      expect(screen.getByText('Invalid discriminator value')).toBeTruthy();
     });
   });
 

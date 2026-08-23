@@ -9,8 +9,13 @@ type TradingAccount = {
  * Complete the account lifecycle required by the trade API.
  *
  * Account creation intentionally produces a Draft account. Tests that create
- * trades must configure risk defaults, fund the account, and activate it just
- * as the product workflow does.
+ * trades must configure risk defaults and then initialize the account just as
+ * the product workflow does — POST /api/accounts/:id/initialize with mode
+ * 'opening_balance' completes initialization in one server-side transaction:
+ * it posts the immutable opening_balance financial event AND activates the
+ * account (A2). The legacy two-step activate-then-fund pattern is gone: an
+ * opening balance can no longer be posted through the generic
+ * financial-events route (409).
  */
 export async function prepareAccountForTrading(
   request: APIRequestContext,
@@ -21,15 +26,10 @@ export async function prepareAccountForTrading(
   });
   expect(configResponse.status()).toBe(200);
 
-  const activationResponse = await request.put(`/api/accounts/${accountId}`, {
-    data: { isActive: true },
+  const initResponse = await request.post(`/api/accounts/${accountId}/initialize`, {
+    data: { mode: 'opening_balance', amount: '50000.00' },
   });
-  expect(activationResponse.status()).toBe(200);
-
-  const cashResponse = await request.post(`/api/accounts/${accountId}/financial-events`, {
-    data: { eventType: 'opening_balance', amount: '50000.00' },
-  });
-  expect(cashResponse.status()).toBe(201);
+  expect(initResponse.status()).toBe(201);
 }
 
 export async function createTradingAccount(
