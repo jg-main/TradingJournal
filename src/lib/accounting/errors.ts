@@ -359,3 +359,34 @@ export class AccountInitializationProjectionError extends AccountingError {
     Object.setPrototypeOf(this, AccountInitializationProjectionError.prototype);
   }
 }
+
+/**
+ * Thrown when the canonical account-performance projection cannot be rebuilt
+ * during account closure.
+ *
+ * The close workflow requires a FRESH canonical projection before it may
+ * deactivate the account. `rebuildAccountPerformance()` returns
+ * `{ success: false }` for normal rebuild failures, so the closure service
+ * inspects the result explicitly and raises this error BEFORE any lifecycle
+ * mutation — the account remains active, the default-account reference is
+ * untouched, and the close is safely retryable.
+ *
+ * Mapped to HTTP 500 by the close route (an unexpected server-side failure;
+ * never a lifecycle conflict).
+ */
+export class AccountClosureProjectionError extends AccountingError {
+  public readonly accountId: string;
+  public readonly rebuildError?: string;
+
+  constructor(accountId: string, rebuildError?: string) {
+    super(
+      'ACCOUNT_CLOSURE_PROJECTION_FAILED',
+      `Account "${accountId}" cannot be closed: account-performance projection could not be rebuilt` +
+        (rebuildError ? ` (${rebuildError})` : ''),
+    );
+    this.name = 'AccountClosureProjectionError';
+    this.accountId = accountId;
+    this.rebuildError = rebuildError;
+    Object.setPrototypeOf(this, AccountClosureProjectionError.prototype);
+  }
+}

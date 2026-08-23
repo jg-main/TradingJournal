@@ -213,6 +213,16 @@ of scope for M006 unless an approved change rescopes it.
 | **Missing** | Correction support for an incorrectly-entered opening balance (the reversal → replacement workflow exists for correctable event types; opening_balance is intentionally excluded from `CORRECTABLE_EVENT_TYPES` today — see D4/A11). When that is extended, corrections must not deactivate or reinitialize the account. |
 | **Deferred** | Multi-currency initialization (with FX milestone). |
 
+### A17 — Canonical account closure (A3)
+
+| Column | Content |
+|---|---|
+| **Current State** | **Close uses only canonical sources (enforced, A3).** `POST /api/accounts/[id]/close` derives opening capital, deposits, withdrawals, and activity dates from `financial_events` + canonical effects (`computeAccountActivity` + `deriveAccountClosureCapital` in `src/lib/accounting/account-closure.ts`), and final balance / realized P&L from a FRESH required `account_performance` rebuild (`computeAccountClosureFinancials` enforces `success === true`; failure → 500 with the account still active and retryable). Deposit/withdrawal totals are correction-aware by construction (effect-direction netting in integer micros: reversal/replacement events net out, dividends/interest/fees/taxes/trades are never classified as deposits). `netReturn = realizedPnl / (effectiveOpeningBalance + effectiveDeposits) * 100` (simple realized return on contributed capital; null when the denominator ≤ 0). `datesActive.from` = earliest of account createdAt and canonical event timestamps; `to` = the single captured `closedAt`. Legacy inputs (`accounts.startingBalance`, `accountTransactions`, `computeAccountBalance`, `computeDatesActive`) are NOT used; contradictory legacy rows have zero influence. Open-trade guard (409) and default-account clearing (D6) are preserved. The response keeps the compatible shape (`startingBalance` retained and now meaning the effective canonical opening balance; `openingBalance` added for clarity). |
+| **Reuse** | `computeAccountActivity`, posting-kernel effect metadata, `rebuildAccountPerformance`, `findAccountPerformance`, canonical decimal/micros helpers, `computeAccountKPIs`. |
+| **Refine** | None needed. |
+| **Missing** | None for the closure path. |
+| **Deferred** | Legacy `account_transactions` schema retirement (separate concern; current closure does not depend on it). |
+
 ---
 
 ## 3. Explicit Determinations
