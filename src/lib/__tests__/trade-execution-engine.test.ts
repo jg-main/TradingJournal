@@ -17,6 +17,9 @@
  *   account.startingBalance → settings.startingAccountValue.
  * - Deleted trade rejection.
  * - Action-direction validation.
+ * - S04: backdated fill deterministic ordering — insertion-order invariance,
+ *   FIFO matching over backdated timestamps, status derivation from
+ *   executedAt, and atomic rejection of stream-invalid backdates.
  *
  * Run: npx vitest run src/lib/__tests__/trade-execution-engine.test.ts
  */
@@ -653,5 +656,390 @@ describe('S04 quantity guards', () => {
       executeTradeFill(fill(tradeId, { action: 'sell', quantity: 10 }), context),
     ).toThrow(OverCloseError);
     expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(0);
+  });
+});
+
+// ── S04: backdated fill deterministic ordering ─────────────────────────
+//
+// Requirement §28: "Backdated fills are supported. Canonical ordering must be
+// deterministic. At minimum use executedAt, then stable tie-breaker such as
+// createdAt, id/sequence. No state should depend on insertion order alone."
+//
+// The metrics layer sorts entries/exits by (executedAt, id) and the FIFO
+// rebuild replays accounting_executions in (posted_at ASC, id ASC) order — the
+// engine maps executedAt → posted_at, so both layers follow the fill's
+// timestamp, never the insertion order. These tests prove that invariant by
+// driving the same fill sets through the canonical engine in different orders.
+
+interface S04FifoLotRow {
+  remaining_quantity: string;
+  entry_price: string;
+  opened_at: string;
+}
+
+interface S04PositionRow {
+  quantity: string;
+  realized_gross_pnl: string;
+  realized_net_pnl: string;
+}
+
+interface S04MatchRow {
+  match_quantity: string;
+  match_price: string;
+  realized_gross_pnl: string;
+  sequence: number;
+  lot_entry_price: string;
+}
+
+describe('S04 backdated fills order deterministically', () => {
+  // Fixed backdated timestamps, oldest → newest.
+  const T0 = '2026-08-20T09:00:00.000Z';
+  const T1 = '2026-08-20T10:00:00.000Z';
+  const T11 = '2026-08-20T11:00:00.000Z';
+  const T12 = '2026-08-20T12:00:00.000Z';
+  const T13 = '2026-08-20T13:00:00.000Z';
+
+  interface TradeSnapshot {
+    metrics: {
+      entryQuantity: number;
+      exitQuantity: number;
+      openQuantity: number;
+      status: string;
+      openedAt: string | null;
+      closedAt: string | null;
+      grossRealizedPnl: number;
+      netRealizedPnl: number;
+    };
+    position: { quantity: string; realizedGrossPnl: string; realizedNetPnl: string } | null;
+    lots: Array<{ remaining: string; entry: string; openedAt: string }>;
+    matches: Array<{ qty: string; price: string; gross: string; lotEntry: string }>;
+  }
+
+  /** Snapshot every derived surface for a trade so two seeds can be compared. */
+  function snapshotTradeState(accountId: string, tradeId: string): TradeSnapshot {
+    const metrics = metricsForTrade(tradeId);
+    const position = sqlite
+      .prepare(
+        `SELECT quantity, realized_gross_pnl, realized_net_pnl
+         FROM account_positions WHERE account_id = ?`,
+      )
+      .get(accountId) as S04PositionRow | undefined;
+    const lots = sqlite
+      .prepare(
+        `SELECT remaining_quantity, entry_price, opened_at
+         FROM fifo_lots WHERE account_id = ? ORDER BY opened_at ASC, id ASC`,
+      )
+      .all(accountId) as S04FifoLotRow[];
+    const matches = sqlite
+      .prepare(
+        `SELECT lm.match_quantity, lm.match_price, lm.realized_gross_pnl,
+                lm.sequence, fl.entry_price AS lot_entry_price
+         FROM lot_matches lm
+         JOIN fifo_lots fl ON fl.id = lm.lot_id
+         JOIN accounting_executions ae ON ae.id = lm.closing_execution_id
+         WHERE ae.account_id = ?
+         ORDER BY lm.sequence ASC`,
+      )
+      .all(accountId) as S04MatchRow[];
+    return {
+      metrics: {
+        entryQuantity: metrics.size.entryQuantity,
+        exitQuantity: metrics.size.exitQuantity,
+        openQuantity: metrics.size.openQuantity,
+        status: metrics.position.status,
+        openedAt: metrics.position.openedAt,
+        closedAt: metrics.position.closedAt,
+        grossRealizedPnl: metrics.realizedPnl.grossRealizedPnl,
+        netRealizedPnl: metrics.realizedPnl.netRealizedPnl,
+      },
+      position: position
+        ? {
+            quantity: position.quantity,
+            realizedGrossPnl: position.realized_gross_pnl,
+            realizedNetPnl: position.realized_net_pnl,
+          }
+        : null,
+      lots: lots.map((l) => ({ remaining: l.remaining_quantity, entry: l.entry_price, openedAt: l.opened_at })),
+      matches: matches.map((m) => ({
+        qty: m.match_quantity,
+        price: m.match_price,
+        gross: m.realized_gross_pnl,
+        lotEntry: m.lot_entry_price,
+      })),
+    };
+  }
+
+  it('produces identical metrics and FIFO state when 3 backdated entries are inserted in reverse order', () => {
+    // Same fill set, two insertion orders, two fresh accounts. All three fills
+    // are opening actions, so every insertion prefix is valid under the T02
+    // quantity guards (a close cannot be inserted first — that is by design).
+    const fillsChrono: Array<Partial<ExecuteTradeFillInput>> = [
+      { action: 'buy', quantity: 100, price: 100, executedAt: T1 }, // A (earliest)
+      { action: 'buy', quantity: 50, price: 100, executedAt: T11 }, // B
+      { action: 'buy', quantity: 25, price: 100, executedAt: T12 }, // C (latest)
+    ];
+    const fillsReverse = [...fillsChrono].reverse(); // inserted C, B, A
+
+    const acctChrono = seedAccount();
+    seedSettings();
+    const tradeChrono = seedTrade(acctChrono, { plannedStop: 95 });
+    for (const f of fillsChrono) executeTradeFill(fill(tradeChrono, f), context);
+
+    const acctReverse = seedAccount();
+    const tradeReverse = seedTrade(acctReverse, { plannedStop: 95 });
+    for (const f of fillsReverse) executeTradeFill(fill(tradeReverse, f), context);
+
+    const chronoState = snapshotTradeState(acctChrono, tradeChrono);
+    const reverseState = snapshotTradeState(acctReverse, tradeReverse);
+
+    expect(reverseState).toEqual(chronoState);
+    // openedAt follows the earliest executedAt (fill A), not the first-inserted fill.
+    expect(chronoState.metrics.openedAt).toBe(T1);
+    expect(chronoState.metrics.entryQuantity).toBe(175);
+    expect(chronoState.metrics.exitQuantity).toBe(0);
+    expect(chronoState.metrics.openQuantity).toBe(175);
+    expect(chronoState.metrics.status).toBe('open');
+    expect(chronoState.position?.quantity).toBe('175.00');
+  });
+
+  it('produces identical metrics and FIFO P&L when a close is inserted before a backdated add', () => {
+    const entry: Partial<ExecuteTradeFillInput> = { action: 'buy', quantity: 100, price: 100, executedAt: T1 };
+    const add: Partial<ExecuteTradeFillInput> = { action: 'add', quantity: 50, price: 105, executedAt: T12 };
+    const close: Partial<ExecuteTradeFillInput> = { action: 'sell', quantity: 30, price: 110, executedAt: T13 };
+
+    const acctA = seedAccount();
+    seedSettings();
+    const tradeA = seedTrade(acctA, { plannedStop: 95 });
+    // Order 1: chronological entry → add → close.
+    for (const f of [entry, add, close]) executeTradeFill(fill(tradeA, f), context);
+
+    const acctB = seedAccount();
+    const tradeB = seedTrade(acctB, { plannedStop: 95 });
+    // Order 2: entry → close → backdated add (the add lands between entry and close).
+    for (const f of [entry, close, add]) executeTradeFill(fill(tradeB, f), context);
+
+    const stateA = snapshotTradeState(acctA, tradeA);
+    const stateB = snapshotTradeState(acctB, tradeB);
+
+    expect(stateB).toEqual(stateA);
+    expect(stateA.metrics.entryQuantity).toBe(150);
+    expect(stateA.metrics.exitQuantity).toBe(30);
+    expect(stateA.metrics.openQuantity).toBe(120);
+    expect(stateA.metrics.grossRealizedPnl).toBe(300); // 30 × (110 − 100)
+    expect(stateA.metrics.status).toBe('open');
+    expect(stateA.position?.quantity).toBe('120.00');
+    expect(stateA.position?.realizedGrossPnl).toBe('300.00');
+    expect(stateA.lots).toEqual([
+      { remaining: '70.00', entry: '100.00', openedAt: T1 },
+      { remaining: '50.00', entry: '105.00', openedAt: T12 },
+    ]);
+    expect(stateA.matches).toEqual([
+      { qty: '30.00', price: '110.00', gross: '300.00', lotEntry: '100.00' },
+    ]);
+  });
+
+  it('matches a backdated partial close against the earliest FIFO lot with correct P&L', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 49 });
+
+    executeTradeFill(fill(tradeId, { quantity: 100, price: 50, executedAt: T1 }), context); // entry 100 @ 50
+    executeTradeFill(
+      fill(tradeId, { action: 'add', quantity: 50, price: 55, executedAt: T12, idempotencyKey: randomUUID() }),
+      context,
+    ); // add 50 @ 55
+    // Backdated partial close: executedAt sits between the entry (T1) and the add (T12).
+    executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 40, price: 54, executedAt: T11, idempotencyKey: randomUUID() }),
+      context,
+    );
+
+    const metrics = metricsForTrade(tradeId);
+    expect(metrics.size.entryQuantity).toBe(150);
+    expect(metrics.size.exitQuantity).toBe(40);
+    expect(metrics.size.openQuantity).toBe(110);
+    expect(metrics.realizedPnl.grossRealizedPnl).toBe(160); // 40 × (54 − 50)
+    expect(metrics.realizedPnl.netRealizedPnl).toBe(160);
+    expect(metrics.position.status).toBe('open');
+
+    const position = sqlite
+      .prepare(
+        `SELECT quantity, realized_gross_pnl, realized_net_pnl, average_cost
+         FROM account_positions WHERE account_id = ?`,
+      )
+      .get(accountId) as {
+      quantity: string;
+      realized_gross_pnl: string;
+      realized_net_pnl: string;
+      average_cost: string;
+    };
+    expect(position.quantity).toBe('110.00');
+    expect(position.realized_gross_pnl).toBe('160.00');
+    expect(position.realized_net_pnl).toBe('160.00');
+    expect(position.average_cost).toBe('52.27'); // (60×50 + 50×55) / 110
+
+    const lots = sqlite
+      .prepare(
+        `SELECT remaining_quantity, entry_price, opened_at
+         FROM fifo_lots WHERE account_id = ? ORDER BY opened_at ASC, id ASC`,
+      )
+      .all(accountId) as S04FifoLotRow[];
+    expect(lots).toEqual([
+      { remaining_quantity: '60.00', entry_price: '50.00', opened_at: T1 },
+      { remaining_quantity: '50.00', entry_price: '55.00', opened_at: T12 },
+    ]);
+
+    // The close must match the T1 lot (entry price 50) — FIFO by timestamp, not
+    // by insertion order — and the add lot (55) must be untouched.
+    const matches = sqlite
+      .prepare(
+        `SELECT lm.match_quantity, lm.match_price, lm.realized_gross_pnl,
+                lm.sequence, fl.entry_price AS lot_entry_price
+         FROM lot_matches lm
+         JOIN fifo_lots fl ON fl.id = lm.lot_id
+         JOIN accounting_executions ae ON ae.id = lm.closing_execution_id
+         WHERE ae.account_id = ? AND ae.action = 'sell'`,
+      )
+      .all(accountId) as S04MatchRow[];
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toEqual({
+      match_quantity: '40.00',
+      match_price: '54.00',
+      realized_gross_pnl: '160.00',
+      sequence: 1,
+      lot_entry_price: '50.00',
+    });
+  });
+
+  it('derives openedAt from the earliest backdated entry, not the first-inserted fill', () => {
+    const acctA = seedAccount();
+    seedSettings();
+    const tradeA = seedTrade(acctA, { plannedStop: 95 });
+
+    // Seed A: later-timestamp entry first, then a backdated earlier entry.
+    executeTradeFill(fill(tradeA, { quantity: 100, price: 100, executedAt: T11 }), context);
+    const backdated = executeTradeFill(
+      fill(tradeA, { quantity: 50, price: 100, executedAt: T1, idempotencyKey: randomUUID() }),
+      context,
+    );
+
+    const acctB = seedAccount();
+    const tradeB = seedTrade(acctB, { plannedStop: 95 });
+    // Seed B: chronological insertion of the same two fills.
+    executeTradeFill(fill(tradeB, { quantity: 50, price: 100, executedAt: T1 }), context);
+    executeTradeFill(fill(tradeB, { quantity: 100, price: 100, executedAt: T11, idempotencyKey: randomUUID() }), context);
+
+    expect(snapshotTradeState(acctA, tradeA)).toEqual(snapshotTradeState(acctB, tradeB));
+    // openedAt moved to T1 — the earliest executedAt — even though the T1 fill
+    // was inserted second.
+    expect(backdated.trade.openedAt).toBe(T1);
+    expect(backdated.trade.status).toBe('open');
+    expect(metricsForTrade(tradeA).size.entryQuantity).toBe(150);
+  });
+
+  it('derives closedAt from the backdated close executedAt and closes the FIFO position', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    executeTradeFill(fill(tradeId, { quantity: 100, price: 100, executedAt: T1 }), context);
+    const close = executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 100, price: 110, executedAt: T11, idempotencyKey: randomUUID() }),
+      context,
+    );
+
+    expect(close.trade.status).toBe('closed');
+    expect(close.trade.openedAt).toBe(T1);
+    expect(close.trade.closedAt).toBe(T11);
+
+    const metrics = metricsForTrade(tradeId);
+    expect(metrics.position.status).toBe('closed');
+    expect(metrics.position.openedAt).toBe(T1);
+    expect(metrics.position.closedAt).toBe(T11);
+
+    // FIFO projection is flat with realized P&L of 100 × (110 − 100).
+    const position = sqlite
+      .prepare(`SELECT quantity, realized_gross_pnl FROM account_positions WHERE account_id = ?`)
+      .get(accountId) as { quantity: string; realized_gross_pnl: string };
+    expect(position.quantity).toBe('0.00');
+    expect(position.realized_gross_pnl).toBe('1000.00');
+  });
+
+  it('rejects a backdated close before the first entry with zero mutations', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    executeTradeFill(fill(tradeId, { quantity: 100, price: 100, executedAt: T1 }), context);
+
+    // T0 < T1: the close would be replayed before the entry in the FIFO stream.
+    // The pre-flight open-quantity guard passes (open = 100, close = 100), but the
+    // immutable accounting stream rejects the exit-before-entry replay inside the
+    // transaction and rolls the whole fill back — zero mutations survive.
+    expect(() =>
+      executeTradeFill(
+        fill(tradeId, { action: 'sell', quantity: 100, price: 110, executedAt: T0, idempotencyKey: randomUUID() }),
+        context,
+      ),
+    ).toThrow(/NO_POSITION_TO_CLOSE/);
+
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(1);
+    expect(countRows('accounting_executions', 'journal_trade_id = ?', tradeId)).toBe(1);
+    const trade = db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+    expect(trade?.status).toBe('open');
+  });
+
+  it('rejects a backdated close that exceeds the position at its stream position', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    executeTradeFill(fill(tradeId, { quantity: 100, price: 100, executedAt: T1 }), context);
+    executeTradeFill(
+      fill(tradeId, { action: 'add', quantity: 50, price: 105, executedAt: T12, idempotencyKey: randomUUID() }),
+      context,
+    );
+
+    // The pre-flight guard sees the full persisted set (150 open) and passes, but
+    // the FIFO rebuild replays in posted_at order — at T11 only 100 shares exist,
+    // so closing 120 would reverse the position. The atomic transaction rejects
+    // (REVERSAL) and rolls back.
+    expect(() =>
+      executeTradeFill(
+        fill(tradeId, { action: 'sell', quantity: 120, price: 110, executedAt: T11, idempotencyKey: randomUUID() }),
+        context,
+      ),
+    ).toThrow(/REVERSAL/);
+
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(2);
+    expect(countRows('accounting_executions', 'journal_trade_id = ?', tradeId)).toBe(2);
+  });
+
+  it('orders same-executedAt entries by stable id tiebreaker, never insertion order', () => {
+    const ts = '2026-08-20T10:00:00.000Z';
+
+    const acctA = seedAccount();
+    seedSettings();
+    const tradeA = seedTrade(acctA, { plannedStop: 95 });
+    // Same executedAt for both entries; different insertion order per seed.
+    executeTradeFill(fill(tradeA, { quantity: 100, price: 100, executedAt: ts }), context);
+    executeTradeFill(fill(tradeA, { quantity: 50, price: 110, executedAt: ts, idempotencyKey: randomUUID() }), context);
+
+    const acctB = seedAccount();
+    const tradeB = seedTrade(acctB, { plannedStop: 95 });
+    executeTradeFill(fill(tradeB, { quantity: 50, price: 110, executedAt: ts }), context);
+    executeTradeFill(fill(tradeB, { quantity: 100, price: 100, executedAt: ts, idempotencyKey: randomUUID() }), context);
+
+    // Aggregate metrics and the position row are insertion-order independent.
+    // (The per-lot array order may differ between seeds because the tiebreaker
+    // is the stable row id, never insertion order.)
+    const stateA = snapshotTradeState(acctA, tradeA);
+    const stateB = snapshotTradeState(acctB, tradeB);
+    expect(stateA.metrics).toEqual(stateB.metrics);
+    expect(stateA.position).toEqual(stateB.position);
+    expect(stateA.metrics.entryQuantity).toBe(150);
+    expect(stateA.metrics.openQuantity).toBe(150);
+    expect(stateA.metrics.openedAt).toBe(ts);
+    expect(stateA.position?.quantity).toBe('150.00');
   });
 });
