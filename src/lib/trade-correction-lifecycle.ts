@@ -1,36 +1,54 @@
 /**
  * trade-correction-lifecycle.ts
  *
- * S06/T02 — deterministic trade lifecycle rebuild after an accounting
- * execution correction.
+ * S06/T02-T03 — deterministic trade lifecycle rebuild and initial risk
+ * snapshot repair after an accounting execution correction.
  *
  * When a trade-scoped correction changes the effective execution set
- * (reversal + replacement), the trade row's status/openedAt/closedAt must
- * be recomputed so the journal stays coherent with accounting truth:
+ * (reversal + replacement), the journal must stay coherent with accounting
+ * truth:
  *
  *   - a closed trade whose exit fill is corrected to a smaller quantity
  *     reopens (status: open, closedAt: null)
  *   - an open trade whose partial exit is corrected upward can reclose
  *   - a corrected first entry shifts openedAt to the replacement's timeline
+ *   - a corrected first entry also invalidates the stored initial risk
+ *     snapshot (initial entry price / quantity / derived risk values), which
+ *     is repaired from the corrected entry values
  *
  * The effective execution set is derived by resolving correction_lineage:
  * for every corrected execution, the original and its reversal cancel out
  * economically; the replacement (and every uncorrected original) survives.
  *
- * Pure-computation convention (M026): this module owns the lineage
- * resolution and lifecycle derivation only. It imports the canonical
- * computeTradeMetrics kernel from trade-metrics.ts and must not import
- * database access or NextResponse. The sqlite handle is passed in.
+ * Orchestration convention: this module owns the lineage resolution,
+ * lifecycle derivation, and risk-snapshot repair orchestration. The pure
+ * computation kernels (computeTradeMetrics, computeRiskSnapshotValues,
+ * equity cascade) live in trade-metrics.ts / risk-snapshot.ts and are
+ * imported here. Database access happens ONLY through injected handles: the
+ * raw better-sqlite3 handle and the drizzle transaction passed by the
+ * caller, so the module stays testable and the correction stays atomic.
  */
 
 import type Database from 'better-sqlite3';
+import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import { eq } from 'drizzle-orm';
+import * as schema from '@/db/schema';
 import type { AccountingExecutionRow } from '@/db/accounting-repository';
 import {
   computeTradeMetrics,
+  isEntryAction,
   type ExecutionData,
   type Direction,
   type TradeStatus,
 } from '@/lib/trade-metrics';
+import { computeRiskSnapshotValues } from '@/lib/risk-snapshot';
+
+// The drizzle transaction type produced by db.transaction() (same extraction
+// pattern as trade-execution-engine.ts). Repair writes go through this tx so
+// they commit or roll back with the rest of the correction.
+type EngineTx = BetterSQLite3Database<typeof schema> extends {
+  transaction<TReturn>(cb: (tx: infer TTx) => TReturn, config?: unknown): TReturn;
+} ? TTx : never;
 
 // ── Effective Execution Resolution ─────────────────────────────────────
 
@@ -146,4 +164,284 @@ export function recomputeTradeLifecycle(
     openedAt: metrics.position.openedAt,
     closedAt: metrics.position.closedAt,
   };
+}
+
+// ── First-Entry Resolution ─────────────────────────────────────────────
+
+/**
+ * Resolve the first (earliest) entry-action execution of an execution set.
+ *
+ * Entries are entry actions for the direction (buy/add for long,
+ * sell_short/add for short). Ordering matches computeTradeMetrics: executedAt
+ * ASC, then id ASC as a deterministic tiebreaker. Returns null when the set
+ * has no entry actions.
+ */
+export function resolveFirstEntry(
+  executions: ExecutionData[],
+  direction: Direction,
+): ExecutionData | null {
+  return (
+    executions
+      .filter((e) => isEntryAction(e.action, direction))
+      .sort((a, b) => {
+        const t = new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime();
+        if (t !== 0) return t;
+        return (a.id ?? '').localeCompare(b.id ?? '');
+      })[0] ?? null
+  );
+}
+
+// ── Risk Snapshot Repair ───────────────────────────────────────────────
+
+/** The stored risk-snapshot fields that repair may update (row-shaped). */
+export interface RiskSnapshotRepairValues {
+  initialEntryPrice: number | null;
+  initialQuantity: number | null;
+  initialStopPrice: number | null;
+  riskPerShare: number | null;
+  initialRiskAmount: number | null;
+  accountRiskPct: number | null;
+  accountEquityAtOpen: number | null;
+}
+
+export interface RiskSnapshotRepairResult {
+  /** True when the snapshot row was actually updated. */
+  repaired: boolean;
+  /** Why repair did or did not happen. */
+  reason:
+    | 'no-snapshot' // trade has no risk snapshot row — nothing to repair
+    | 'no-entry' // corrected execution is not an entry (or replacement is an exit)
+    | 'first-entry-unchanged' // the corrected execution was not the first entry
+    | 'repaired';
+  /** Snapshot values before repair (null when no snapshot existed). */
+  oldValues: RiskSnapshotRepairValues | null;
+  /** Snapshot values after repair (null when no update happened). */
+  newValues: RiskSnapshotRepairValues | null;
+}
+
+/**
+ * Repair the trade's initial risk snapshot after a correction that changed
+ * the first entry.
+ *
+ * The trade_risk_snapshots row records the risk profile AT OPEN (initial
+ * entry price, quantity, stop price, risk per share, initial risk amount,
+ * account risk percentage, equity at open). When the corrected execution WAS
+ * the first entry, those stored values are stale and must be recomputed from
+ * the corrected entry values through the canonical computeRiskSnapshotValues
+ * kernel.
+ *
+ * Repair is skipped when:
+ *   - no risk snapshot exists for the trade (nothing to repair; a planned
+ *     trade that never filled has no snapshot and none is created here)
+ *   - the corrected execution was NOT the first entry (correcting a later
+ *     add/reduce does not change the open-time risk profile)
+ *   - the replacement is not an entry action for the direction (no valid
+ *     entry values to snapshot)
+ *
+ * Stop price resolution preserves the open-time stop: the snapshot's stored
+ * initialStopPrice wins (it is the stop actually used at open and is never
+ * reconstructed), then the trade's plannedStop, then the latest stop
+ * adjustment as the best available proxy.
+ *
+ * Equity at open is re-resolved through the canonical cascade
+ * (account_performance.nav → account_rollforward.ending_equity →
+ * account.starting_balance → settings.starting_account_value).
+ *
+ * All writes go through the injected drizzle transaction so the repair
+ * commits or rolls back with the rest of the correction.
+ *
+ * @returns The old and new risk values (for logging) plus the outcome.
+ */
+export function repairRiskSnapshot(params: {
+  tx: EngineTx;
+  sqlite: Database.Database;
+  tradeId: string;
+  accountId: string;
+  direction: Direction;
+  /** Id of the first entry of the PRE-correction effective set (null when the trade had no entry). */
+  preCorrectionFirstEntryId: string | null;
+  /** Id of the accounting execution being corrected. */
+  correctedOriginalId: string;
+  /** The replacement execution produced by the correction (canonical decimals). */
+  replacementExecution: { price: string; quantity: string; action: string } | null;
+  /** The trade's planned stop (trades.planned_stop). */
+  plannedStop: number | null;
+}): RiskSnapshotRepairResult {
+  const {
+    tx,
+    sqlite,
+    tradeId,
+    accountId,
+    direction,
+    preCorrectionFirstEntryId,
+    correctedOriginalId,
+    replacementExecution,
+    plannedStop,
+  } = params;
+
+  // 1. Existing snapshot required — repair never creates one.
+  const existing = tx
+    .select()
+    .from(schema.tradeRiskSnapshots)
+    .where(eq(schema.tradeRiskSnapshots.tradeId, tradeId))
+    .get();
+  if (!existing) {
+    return { repaired: false, reason: 'no-snapshot', oldValues: null, newValues: null };
+  }
+
+  const oldValues = rowToRepairValues(existing);
+
+  // 2. The correction must have targeted the first entry. Correcting a later
+  //    add/reduce leaves the open-time risk profile intact.
+  if (
+    preCorrectionFirstEntryId == null ||
+    preCorrectionFirstEntryId !== correctedOriginalId
+  ) {
+    return { repaired: false, reason: 'first-entry-unchanged', oldValues, newValues: null };
+  }
+
+  // 3. The replacement must be an entry for the direction, otherwise there is
+  //    no valid first-entry value to snapshot (e.g. an entry corrected into
+  //    an exit action).
+  if (!replacementExecution || !isEntryAction(replacementExecution.action, direction)) {
+    return { repaired: false, reason: 'no-entry', oldValues, newValues: null };
+  }
+
+  const entryPrice = Number(replacementExecution.price);
+  const entryQuantity = Number(replacementExecution.quantity);
+  if (!Number.isFinite(entryPrice) || entryPrice <= 0 || entryQuantity <= 0) {
+    return { repaired: false, reason: 'no-entry', oldValues, newValues: null };
+  }
+
+  // 4. Resolve stop price and equity, then recompute through the canonical
+  //    kernel (computeRiskSnapshotValues — same function the creation path
+  //    uses in trade-execution-engine.maybeCreateRiskSnapshot).
+  const stopPrice = resolveRepairStopPrice({
+    storedInitialStop: existing.initialStopPrice,
+    plannedStop,
+    sqlite,
+    tradeId,
+  });
+  const equityAtOpen = resolveCanonicalEquity(sqlite, accountId);
+
+  const newValues = computeRiskSnapshotValues({
+    avgEntryPrice: entryPrice,
+    initialQuantity: entryQuantity,
+    initialStopPrice: stopPrice,
+    direction,
+    accountEquityAtOpen: equityAtOpen,
+  });
+
+  // 5. Persist the repaired values inside the caller's transaction.
+  tx.update(schema.tradeRiskSnapshots)
+    .set({
+      initialEntryPrice: newValues.initialEntryPrice,
+      initialQuantity: newValues.initialQuantity,
+      initialStopPrice: newValues.initialStopPrice,
+      riskPerShare: newValues.riskPerShare,
+      initialRiskAmount: newValues.initialRiskAmount,
+      accountRiskPct: newValues.accountRiskPct,
+      ...(equityAtOpen != null ? { accountEquityAtOpen: equityAtOpen } : {}),
+    })
+    .where(eq(schema.tradeRiskSnapshots.tradeId, tradeId))
+    .run();
+
+  return {
+    repaired: true,
+    reason: 'repaired',
+    oldValues,
+    // Reflect what is actually persisted: when equity cannot be re-resolved the
+    // stored value is preserved (matching the creation path's null-guard), so
+    // the old → new log stays truthful.
+    newValues: {
+      ...newValues,
+      accountEquityAtOpen: equityAtOpen ?? existing.accountEquityAtOpen,
+    },
+  };
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+function rowToRepairValues(
+  row: typeof schema.tradeRiskSnapshots.$inferSelect,
+): RiskSnapshotRepairValues {
+  return {
+    initialEntryPrice: row.initialEntryPrice,
+    initialQuantity: row.initialQuantity,
+    initialStopPrice: row.initialStopPrice,
+    riskPerShare: row.riskPerShare,
+    initialRiskAmount: row.initialRiskAmount,
+    accountRiskPct: row.accountRiskPct,
+    accountEquityAtOpen: row.accountEquityAtOpen,
+  };
+}
+
+/**
+ * Resolve the stop price for a repaired risk snapshot.
+ *
+ * The stored initialStopPrice is the stop actually used at open (and the
+ * snapshot's "initial" semantics forbid reconstructing it), so it wins.
+ * Falls back to the trade's planned stop, then the latest stop adjustment
+ * as the best available proxy.
+ */
+function resolveRepairStopPrice(params: {
+  storedInitialStop: number | null;
+  plannedStop: number | null;
+  sqlite: Database.Database;
+  tradeId: string;
+}): number | null {
+  const { storedInitialStop, plannedStop, sqlite, tradeId } = params;
+  if (storedInitialStop != null) return storedInitialStop;
+  if (plannedStop != null) return plannedStop;
+
+  const adjustment = sqlite
+    .prepare(
+      `SELECT new_stop FROM trade_stop_adjustments
+       WHERE trade_id = ?
+       ORDER BY COALESCE(adjusted_at, created_at) DESC, created_at DESC, id DESC
+       LIMIT 1`,
+    )
+    .get(tradeId) as { new_stop: number | null } | undefined;
+  return adjustment?.new_stop ?? null;
+}
+
+/**
+ * Resolve the canonical account equity at open for the risk snapshot:
+ * account_performance.nav (canonical decimal string) → latest
+ * account_rollforward.ending_equity (date DESC) → account.startingBalance →
+ * settings.startingAccountValue.
+ *
+ * Mirrors the cascade in trade-execution-engine.resolveCanonicalEquity (and
+ * the dashboard-v2 journal kernel). The cascade is duplicated here so this
+ * orchestration module does not depend on the execution engine.
+ */
+function resolveCanonicalEquity(
+  sqlite: Database.Database,
+  accountId: string,
+): number | null {
+  const performance = sqlite
+    .prepare('SELECT nav FROM account_performance WHERE account_id = ?')
+    .get(accountId) as { nav: string | null } | undefined;
+  if (performance?.nav) {
+    const nav = parseFloat(performance.nav);
+    if (Number.isFinite(nav)) return nav;
+  }
+
+  const rollforward = sqlite
+    .prepare(
+      `SELECT ending_equity FROM account_rollforward
+       WHERE account_id = ? ORDER BY date DESC, created_at DESC LIMIT 1`,
+    )
+    .get(accountId) as { ending_equity: number | null } | undefined;
+  if (rollforward?.ending_equity != null) return rollforward.ending_equity;
+
+  const account = sqlite
+    .prepare('SELECT starting_balance FROM accounts WHERE id = ?')
+    .get(accountId) as { starting_balance: number | null } | undefined;
+  if (account?.starting_balance != null) return account.starting_balance;
+
+  const settingsRow = sqlite
+    .prepare("SELECT starting_account_value FROM settings WHERE id = 'default'")
+    .get() as { starting_account_value: number | null } | undefined;
+  return settingsRow?.starting_account_value ?? null;
 }

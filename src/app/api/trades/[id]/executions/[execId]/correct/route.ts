@@ -46,6 +46,8 @@ import { findAccountingExecutionByIdempotencyKey } from '@/db/accounting-reposit
 import {
   resolveEffectiveExecutions,
   recomputeTradeLifecycle,
+  resolveFirstEntry,
+  repairRiskSnapshot,
 } from '@/lib/trade-correction-lifecycle';
 import {
   AccountNotFoundError,
@@ -168,6 +170,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     //    visible to resolveEffectiveExecutions on the same connection and
     //    roll back together with the trade row update if anything throws.
     const result = db.transaction((tx) => {
+      // 4a. Capture the PRE-correction effective set first so the risk
+      //     snapshot repair can tell whether the corrected execution was the
+      //     trade's first entry (correcting a later add/reduce must leave the
+      //     open-time risk profile untouched).
+      const preCorrectionExecutions = resolveEffectiveExecutions(sqlite, tradeId);
+      const preCorrectionFirstEntryId =
+        resolveFirstEntry(preCorrectionExecutions, trade.direction)?.id ?? null;
+
       const correctionResult = correctExecution(sqlite, {
         accountId: trade.accountId,
         originalExecutionId: accountingExecution.id,
@@ -189,7 +199,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         trade.direction,
       );
 
-      // 4c. Persist the recomputed lifecycle. reviewedAt is cleared whenever
+      // 4c. Repair the initial risk snapshot when the corrected execution was
+      //     the first entry (stale initial entry price/quantity/derived risk
+      //     values). Skipped when no snapshot exists or a later fill was
+      //     corrected. Writes inside this tx so a failure rolls back the
+      //     whole correction.
+      const riskRepair = repairRiskSnapshot({
+        tx,
+        sqlite,
+        tradeId,
+        accountId: trade.accountId,
+        direction: trade.direction,
+        preCorrectionFirstEntryId,
+        correctedOriginalId: accountingExecution.id,
+        replacementExecution: correctionResult.replacementExecution,
+        plannedStop: trade.plannedStop,
+      });
+
+      // 4d. Persist the recomputed lifecycle. reviewedAt is cleared whenever
       //     an economic correction invalidates a prior review (S07 readiness).
       const now = new Date().toISOString();
       tx.update(trades)
@@ -210,7 +237,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         effectiveExecutionCount: effectiveExecutions.length,
       });
 
-      return { correction: correctionResult, lifecycle };
+      if (riskRepair.repaired) {
+        logInfo('risk-snapshot-repair', {
+          tradeId,
+          from: riskRepair.oldValues,
+          to: riskRepair.newValues,
+        });
+      }
+
+      return { correction: correctionResult, lifecycle, riskRepair };
     });
 
     // 5. Build the canonical correction lineage response
@@ -224,6 +259,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         position: result.correction.position,
         rebuildStatus: result.correction.rebuildStatus,
         tradeLifecycle: result.lifecycle,
+        riskSnapshotRepair: result.riskRepair,
       },
       { status: 200 },
     );

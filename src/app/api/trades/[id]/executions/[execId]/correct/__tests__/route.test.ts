@@ -237,6 +237,49 @@ function seedExecution(tradeId: string, overrides: Record<string, unknown> = {})
   return requireDb().db.select().from(schema.tradeExecutions).where(eq(schema.tradeExecutions.id, id)).get() as Record<string, unknown>;
 }
 
+/** Seed a trade_risk_snapshots row (what the execution engine creates on first fill). */
+function seedRiskSnapshot(tradeId: string, overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  requireDb().db.insert(schema.tradeRiskSnapshots)
+    .values({
+      id,
+      tradeId,
+      accountEquityAtOpen: 100000,
+      initialEntryPrice: 150.0,
+      initialStopPrice: 145.0,
+      initialQuantity: 100,
+      riskPerShare: 5.0,
+      initialRiskAmount: 500.0,
+      accountRiskPct: 0.5,
+      createdAt: now,
+      ...overrides,
+    } as typeof schema.tradeRiskSnapshots.$inferInsert)
+    .run();
+  return requireDb().db.select().from(schema.tradeRiskSnapshots).where(eq(schema.tradeRiskSnapshots.tradeId, tradeId)).get() as Record<string, unknown>;
+}
+
+function getRiskSnapshot(tradeId: string): Record<string, unknown> | undefined {
+  return requireDb().db
+    .select()
+    .from(schema.tradeRiskSnapshots)
+    .where(eq(schema.tradeRiskSnapshots.tradeId, tradeId))
+    .get() as Record<string, unknown> | undefined;
+}
+
+/** Read the account_performance.nav that the canonical cascade resolves first. */
+function readAccountNav(accountId: string): number | null {
+  const row = requireDb().getSqliteHandle()
+    .prepare('SELECT nav FROM account_performance WHERE account_id = ?')
+    .get(accountId) as { nav: string | null } | undefined;
+  return row?.nav ? Number(row.nav) : null;
+}
+
+/** computeRiskSnapshotValues' accountRiskPct formula (null when equity <= 0). */
+function expectedRiskPct(initialRiskAmount: number, equity: number | null): number | null {
+  return equity != null && equity > 0 ? (initialRiskAmount / equity) * 100 : null;
+}
+
 /**
  * Mirror a legacy trade execution into accounting_executions under the
  * `trade-execution-<id>` idempotency key — the exact path the executions
@@ -738,6 +781,140 @@ async function main(): Promise<void> {
       .get() as Record<string, unknown>;
     assertEqual(updatedTrade.status, 'open', 'trade row status reopens for the short trade');
     assertEqual(updatedTrade.closedAt, null, 'trade row closedAt cleared');
+  }
+
+  // ── 15. Risk snapshot repair: first entry price corrected ────────────
+
+  console.log('\n15. 200 — correcting the first entry price repairs the risk snapshot:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+      plannedStop: 145.0,
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    seedRiskSnapshot(trade.id as string); // initialEntryPrice 150, initialStopPrice 145, initialQuantity 100, riskPerShare 5, initialRiskAmount 500
+
+    const result = await callCorrect(trade.id as string, entry.id as string, validBody({ quantity: '100.00', price: '152.00' }));
+
+    assert(result.status === 200, 'entry-price correction returns 200');
+    const data = result.data as { riskSnapshotRepair: { repaired: boolean; reason: string; oldValues: Record<string, unknown> | null; newValues: Record<string, unknown> | null } };
+    assertEqual(data.riskSnapshotRepair.repaired, true, 'repair reported as performed');
+    assertEqual(data.riskSnapshotRepair.reason, 'repaired', 'repair reason is repaired');
+
+    const snapshot = getRiskSnapshot(trade.id as string)!;
+    assertEqual(snapshot.initialEntryPrice, 152.0, 'initialEntryPrice updated to the corrected price (152)');
+    assertEqual(snapshot.initialStopPrice, 145.0, 'initialStopPrice preserved (open-time stop, never reconstructed)');
+    assertEqual(snapshot.initialQuantity, 100, 'initialQuantity unchanged (quantity not corrected)');
+    assertEqual(snapshot.riskPerShare, 7.0, 'riskPerShare recomputed as |152 - 145| = 7');
+    assertEqual(snapshot.initialRiskAmount, 700.0, 'initialRiskAmount recomputed as 7 × 100 = 700');
+    // accountEquityAtOpen is re-resolved through the canonical cascade at repair
+    // time. The test account has no opening funding, so the ledger-derived NAV
+    // is negative after the correction; the repair stores it faithfully and
+    // accountRiskPct is null (computeRiskSnapshotValues requires equity > 0).
+    const nav = readAccountNav('test-account-id');
+    assertEqual(snapshot.accountEquityAtOpen, nav, 'accountEquityAtOpen matches the canonical cascade NAV');
+    assertEqual(snapshot.accountRiskPct, expectedRiskPct(700, nav), 'accountRiskPct consistent with computeRiskSnapshotValues');
+  }
+
+  // ── 16. Risk snapshot repair: first entry quantity corrected ─────────
+
+  console.log('\n16. 200 — correcting the first entry quantity repairs the risk snapshot:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+      plannedStop: 145.0,
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    seedRiskSnapshot(trade.id as string);
+
+    const result = await callCorrect(trade.id as string, entry.id as string, validBody({ price: '150.00', quantity: '150.00' }));
+
+    assert(result.status === 200, 'entry-quantity correction returns 200');
+    const data = result.data as { riskSnapshotRepair: { repaired: boolean } };
+    assertEqual(data.riskSnapshotRepair.repaired, true, 'repair reported as performed');
+
+    const snapshot = getRiskSnapshot(trade.id as string)!;
+    assertEqual(snapshot.initialQuantity, 150, 'initialQuantity updated to the corrected quantity (150)');
+    assertEqual(snapshot.initialEntryPrice, 150.0, 'initialEntryPrice unchanged (price not corrected)');
+    assertEqual(snapshot.riskPerShare, 5.0, 'riskPerShare unchanged (|150 - 145| = 5)');
+    assertEqual(snapshot.initialRiskAmount, 750.0, 'initialRiskAmount recomputed as 5 × 150 = 750');
+    const nav = readAccountNav('test-account-id');
+    assertEqual(snapshot.accountRiskPct, expectedRiskPct(750, nav), 'accountRiskPct consistent with computeRiskSnapshotValues');
+  }
+
+  // ── 17. Risk snapshot untouched: non-first execution corrected ────────
+
+  console.log('\n17. 200 — correcting a later add leaves the risk snapshot unchanged:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    const add = seedExecution(trade.id as string, { action: 'add', quantity: 50, price: 148.0, fees: 1.0, executedAt: '2025-06-01T12:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    mirrorExecution(add, 'test-account-id', 'AAPL');
+    seedRiskSnapshot(trade.id as string);
+
+    const result = await callCorrect(
+      trade.id as string,
+      add.id as string,
+      validBody({ action: 'add', quantity: '80.00', price: '149.00' }),
+    );
+
+    assert(result.status === 200, 'add correction returns 200');
+    const data = result.data as { riskSnapshotRepair: { repaired: boolean; reason: string } };
+    assertEqual(data.riskSnapshotRepair.repaired, false, 'repair skipped for a non-first execution');
+    assertEqual(data.riskSnapshotRepair.reason, 'first-entry-unchanged', 'skip reason is first-entry-unchanged');
+
+    const snapshot = getRiskSnapshot(trade.id as string)!;
+    assertEqual(snapshot.initialEntryPrice, 150.0, 'initialEntryPrice unchanged (first entry untouched)');
+    assertEqual(snapshot.initialQuantity, 100, 'initialQuantity unchanged (first entry untouched)');
+    assertEqual(snapshot.riskPerShare, 5.0, 'riskPerShare unchanged');
+    assertEqual(snapshot.initialRiskAmount, 500.0, 'initialRiskAmount unchanged');
+    assertEqual(snapshot.accountRiskPct, 0.5, 'accountRiskPct unchanged');
+  }
+
+  // ── 18. No risk snapshot: correction succeeds, nothing created ────────
+
+  console.log('\n18. 200 — trade without a risk snapshot is not repaired and no snapshot is created:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    // No risk snapshot seeded — e.g. the fill was synced without the execution engine.
+
+    const result = await callCorrect(trade.id as string, entry.id as string, validBody({ price: '152.00' }));
+
+    assert(result.status === 200, 'correction succeeds without a risk snapshot');
+    const data = result.data as { riskSnapshotRepair: { repaired: boolean; reason: string; oldValues: unknown } };
+    assertEqual(data.riskSnapshotRepair.repaired, false, 'repair reported as skipped');
+    assertEqual(data.riskSnapshotRepair.reason, 'no-snapshot', 'skip reason is no-snapshot');
+    assertEqual(data.riskSnapshotRepair.oldValues, null, 'no old values when no snapshot exists');
+    assertEqual(getRiskSnapshot(trade.id as string), undefined, 'no risk snapshot row created by the correction');
   }
 
   // ── Summary ──────────────────────────────────────────────────────────
