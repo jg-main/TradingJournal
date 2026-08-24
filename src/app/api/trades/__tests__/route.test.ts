@@ -744,36 +744,44 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
       }
     }
 
-    // Resolve account: body.accountId overrides the default chain (mirrors
-    // the real route), then settings.defaultAccountId, then first active
-    // account.
+    // M002-A10: explicit account selection is authoritative (mirror of the
+    // real route) — a missing explicit account is a 404 ACCOUNT_NOT_FOUND and
+    // NEVER falls back; the automatic chain runs only when accountId omitted.
     let accountId: string | undefined;
 
-    if (body.accountId) {
+    if (body.accountId !== undefined) {
       const provided = db
         .select()
         .from(schema.accounts)
         .where(eq(schema.accounts.id, body.accountId as string))
         .get() as Record<string, unknown> | undefined;
-      if (provided) {
-        accountId = provided.id as string;
+      if (!provided) {
+        return {
+          status: 404,
+          data: {
+            error: 'Account not found',
+            code: 'ACCOUNT_NOT_FOUND',
+            details: 'The explicitly selected account does not exist.',
+          },
+        };
       }
-    }
-
-    if (!accountId) {
-      const setting = db.select().from(schema.settings).get() as Record<string, unknown> | undefined;
-      if (setting?.defaultAccountId) {
-        accountId = setting.defaultAccountId as string;
+      accountId = provided.id as string;
+    } else {
+      if (!accountId) {
+        const setting = db.select().from(schema.settings).get() as Record<string, unknown> | undefined;
+        if (setting?.defaultAccountId) {
+          accountId = setting.defaultAccountId as string;
+        }
       }
-    }
 
-    if (!accountId) {
-      const firstActive = db
-        .select()
-        .from(schema.accounts)
-        .where(eq(schema.accounts.isActive, true))
-        .get() as Record<string, unknown> | undefined;
-      accountId = firstActive?.id as string | undefined;
+      if (!accountId) {
+        const firstActive = db
+          .select()
+          .from(schema.accounts)
+          .where(eq(schema.accounts.isActive, true))
+          .get() as Record<string, unknown> | undefined;
+        accountId = firstActive?.id as string | undefined;
+      }
     }
 
     if (!accountId) {
@@ -2574,6 +2582,108 @@ console.log('\nA9-L3. List — portfolio heat: risk-bearing account with canonic
   const d = result.data as { totals: { portfolioHeatAmount: number; portfolioHeatPct: number | null } };
   assertEqual(d.totals.portfolioHeatAmount, 200, 'portfolioHeatAmount = 200');
   assertEqual(d.totals.portfolioHeatPct, null, 'portfolioHeatPct null for zero canonical equity — never a misleading 0%');
+}
+
+// ── A10. Explicit account selection is authoritative ────────────────────
+
+console.log('\nA10-1. POST explicit missing account + valid default → 404, no trade, no fallback:');
+{
+  cleanup();
+  const defaultAcc = seedAccount({ id: 'a10-default', name: 'Default B', currency: 'USD' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a10-default' }).run();
+  const before = db.select().from(schema.trades).all().length;
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: '00000000-0000-0000-0000-000000000000' });
+  assertEqual(result.status, 404, '404 ACCOUNT_NOT_FOUND');
+  assertEqual((result.data as { code: string }).code, 'ACCOUNT_NOT_FOUND', 'stable code');
+  assertEqual(db.select().from(schema.trades).all().length, before, 'zero trades created');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a10-default')).all().length, 0, 'default B never selected');
+  void defaultAcc;
+}
+
+console.log('\nA10-2. POST explicit missing account + first-active exists → 404, zero mutation:');
+{
+  cleanup();
+  seedAccount({ id: 'a10-first', name: 'First Active', currency: 'USD' });
+  const before = db.select().from(schema.trades).all().length;
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: '00000000-0000-0000-0000-000000000001' });
+  assertEqual(result.status, 404, '404 ACCOUNT_NOT_FOUND');
+  assertEqual(db.select().from(schema.trades).all().length, before, 'zero trades created');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a10-first')).all().length, 0, 'first-active fallback never runs');
+}
+
+console.log('\nA10-3. POST explicit inactive account + valid default → 409, no trade:');
+{
+  cleanup();
+  seedAccount({ id: 'a10-inactive', name: 'Inactive A', currency: 'USD', isActive: false });
+  seedAccount({ id: 'a10-default2', name: 'Default B', currency: 'USD' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a10-default2' }).run();
+  const before = db.select().from(schema.trades).all().length;
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: 'a10-inactive' });
+  assertEqual(result.status, 409, '409 planning-eligibility');
+  assertEqual((result.data as { error: string }).error, 'Account not eligible for planning', 'stable error');
+  assertEqual(db.select().from(schema.trades).all().length, before, 'no trade');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a10-default2')).all().length, 0, 'never substituted with default B');
+}
+
+console.log('\nA10-4. POST explicit non-USD account + valid USD default → 409, no trade:');
+{
+  cleanup();
+  seedAccount({ id: 'a10-eur', name: 'EUR A', currency: 'EUR' });
+  seedAccount({ id: 'a10-default3', name: 'USD B', currency: 'USD' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a10-default3' }).run();
+  const before = db.select().from(schema.trades).all().length;
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: 'a10-eur' });
+  assertEqual(result.status, 409, '409 planning-eligibility');
+  assertEqual(db.select().from(schema.trades).all().length, before, 'no trade');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a10-default3')).all().length, 0, 'never substituted with USD B');
+}
+
+console.log('\nA10-5. POST explicit planning-eligible but NOT trading-ready → 201, accountId = A:');
+{
+  cleanup();
+  // A: active USD, no risk params, no commission, no funding.
+  seedAccount({ id: 'a10-planonly', name: 'Plan Only A', currency: 'USD', maxRiskPerTradePct: null, defaultCommission: null });
+  // B: fully configured default.
+  seedAccount({ id: 'a10-ready', name: 'Ready B', currency: 'USD', maxRiskPerTradePct: 2, defaultCommission: 1 });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a10-ready' }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: 'a10-planonly' });
+  assertEqual(result.status, 201, '201 planned trade created');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.accountId, 'a10-planonly', 'response accountId = explicit A');
+  assertEqual(data.status, 'planned', 'status planned');
+  const dbRow = db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a10-planonly')).all();
+  assertEqual(dbRow.length, 1, 'DB trade belongs to A');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a10-ready')).all().length, 0, 'never B');
+}
+
+console.log('\nA10-6. POST explicit valid account wins over default B → 201, accountId = A:');
+{
+  cleanup();
+  seedAccount({ id: 'a10-a', name: 'Explicit A', currency: 'USD' });
+  seedAccount({ id: 'a10-b', name: 'Default B', currency: 'USD' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a10-b' }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: 'a10-a' });
+  assertEqual(result.status, 201, '201');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.accountId, 'a10-a', 'response accountId = A');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a10-b')).all().length, 0, 'never B');
+}
+
+console.log('\nA10-7. POST omitted accountId still enters automatic resolution:');
+{
+  cleanup();
+  seedAccount({ id: 'a10-auto', name: 'Auto', currency: 'USD' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a10-auto' }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 201, '201 via automatic default');
+  assertEqual((result.data as Record<string, unknown>).accountId, 'a10-auto', 'automatic default used when omitted');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

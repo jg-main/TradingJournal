@@ -542,6 +542,30 @@ These are the decisions the requirements doc explicitly defers to S01
     canonical current-risk calculations anywhere in the Trading Workflow.
     (The separate explicit account-selection issue on POST /api/trades is
     recorded for the next audit, NOT bundled here.)
+- **M002-A10 (explicit trade account selection is authoritative):**
+  `POST /api/trades` previously fell through to the automatic
+  default/ready-active/first-active chain when an explicitly supplied
+  `accountId` did not exist — a trade could be created under account Y
+  although the client asked for X. Resolution is now two explicit modes:
+  - **Explicit (accountId !== undefined — presence semantics, UUID-validated
+    by Zod):** resolve EXACTLY that account; a missing account is HTTP 404
+    `ACCOUNT_NOT_FOUND` (never a fallback); an existing but inactive /
+    non-USD account is HTTP 409 `Account not eligible for planning` (the
+    user-selected account is reported, never substituted). Planning
+    eligibility stays exists + active + USD — an explicit active-USD account
+    with no risk params/commission/funding still owns a PLANNED trade (201),
+    even when another fully trading-ready default exists (planning
+    eligibility ≠ execution readiness).
+  - **Automatic (accountId omitted):** the existing default / ready-active /
+    first-active chain runs unchanged (deferred to a separate audit —
+    automatic-ranking policy NOT redesigned here).
+  Account validation completes before setup resolution and trade-code
+  generation, so a rejected explicit selection creates zero trades, no setup
+  rows, and no trade-code side effects; settings.defaultAccountId is never
+  mutated. The Plan Trade form sends the selected accountId, surfaces the
+  404/409 error state, and never silently retries without the account (a
+  stale explicit selection is rejected — distinguished from a stale
+  automatic default, which may legitimately fall back).
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

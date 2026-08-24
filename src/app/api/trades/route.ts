@@ -679,21 +679,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Resolve account: body.accountId overrides the default chain
+    // M002-A10: explicit account selection is authoritative. When the request
+    // supplies accountId, the server uses EXACTLY that account or rejects the
+    // request — the automatic default/ready-active/first-active fallback chain
+    // below runs ONLY when accountId was omitted (presence semantics, never
+    // truthiness; accountId is already UUID-validated by Zod). A missing
+    // explicit account is a 404 (ACCOUNT_NOT_FOUND) and never substitutes
+    // another account; an existing but planning-ineligible account is a 409
+    // (ACCOUNT_NOT_ELIGIBLE_FOR_PLANNING) by the shared eligibility check
+    // below — the user-selected account is reported, never silently replaced.
     let accountId: string | undefined;
 
-    if (parsed.data.accountId) {
+    if (parsed.data.accountId !== undefined) {
       const provided = db
         .select()
         .from(accounts)
         .where(eq(accounts.id, parsed.data.accountId))
         .get();
-      if (provided) {
-        accountId = provided.id;
+      if (!provided) {
+        return NextResponse.json(
+          {
+            error: 'Account not found',
+            code: 'ACCOUNT_NOT_FOUND',
+            details: 'The explicitly selected account does not exist.',
+          },
+          { status: 404 },
+        );
       }
-    }
-
-    if (!accountId) {
+      accountId = provided.id;
+    } else {
+      // Automatic mode (unchanged — deferred to a separate audit): the saved
+      // default / ready-active / first-active chain below may run only when
+      // accountId was omitted.
       const setting = db.select().from(settings).get();
       if (setting?.defaultAccountId) {
         // A8: a saved default is usable only when it references an existing
