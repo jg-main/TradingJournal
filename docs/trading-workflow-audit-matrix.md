@@ -90,15 +90,15 @@ on the trade side — this is the #1 defect S03 must retire.
 | Execution correction (trade-scoped) | `POST /api/trades/[id]/executions/[execId]/correct` → **same** `correctExecution`; **never touches the `trades` table** (journal status/openedAt/closedAt/reviewedAt are not rebuilt — test-verified `trade status unchanged after correction`); reversal/replacement rows are inserted with `journal_trade_id: null`, so the corrected stream **never re-attaches to the journal** (F1/F2, §2c). | **Replace/Refine** | §41/§44: trade-linked corrections must rebuild journal lifecycle **and preserve linkage**. `correctExecution` must become journal-aware (or the trade route must orchestrate the rebuild) in S06. |
 | Trade correction (journal) | No journal-lifecycle rebuild on correction (F1) and no linkage re-attachment of corrected fills (F2). | **Missing** | S06. |
 | Trade metrics | `src/lib/trade-metrics.ts` (`computeTradeMetrics`) — canonical, consumed by routes/UI. | **Current** | Reuse (§51). |
-| Review / grade / mistakes / assets | Grade + lesson upsert on `trades`; mistakes/assets/assessments routes; **no `reviewedAt` anywhere in `src/`**; review completion is inferred from presence of evidence. | **Missing/Refine** | §64/§65: add explicit `reviewedAt` with a meaningful-evidence contract (lesson non-empty + grade exists). S07. |
-| Checklist (`trade_check_results`) | FK to mutable `checklistDefinitions`; **no item-text snapshot** (schema: only `checklist_definition_id`, `passed`, `comment`, `checkedAt`); **no `required`/optional flag on items**. Enforcement diverges by route (T02-verified): `/execute` **enforces ALL merged items** (400 on missing/not-passed, before mutation); `/executions` **no checklist handling at all** — a fill can open a trade with zero checklist evidence. | **Refine** | §20 gate (required items must pass before first fill, enforced on every path — with an explicit required/optional distinction) + §21 historical snapshot (item text at entry). S02/S03. |
+| Review / grade / mistakes / assets | T05-verified (§2d R1a–R1g): grade route upserts `trade_grades` only — **never writes `trades`**; **`trades.lesson`/`exitNotes` are write-orphaned** (PUT schema ends at `preTradePlan`; `TradeExitNotesCard` is read-only display); mistakes/assets/assessments are self-contained evidence tables; **no `reviewedAt` anywhere in `src/`**; review completion is inferred from evidence presence. | **Missing/Refine** | §64/§65: add explicit `reviewedAt` with a meaningful-evidence contract (lesson non-empty + grade exists) **and a lesson/exitNotes write surface** (F6). S07. |
+| Checklist (`trade_check_results`) | FK to mutable `checklistDefinitions`; **no item-text snapshot** (schema: only `checklist_definition_id`, `passed`, `comment`, `checkedAt`); **no `required`/optional flag on items**. Enforcement diverges by route (T02-verified): `/execute` **enforces ALL merged items** (400 on missing/not-passed, before mutation); `/executions` **no checklist handling at all** — a fill can open a trade with zero checklist evidence. T05-verified (§2d R2a–R2e): evidence rows store only the definition FK, GET joins the **live mutable description** (F7), creation is **P1-only with no backfill** (F8), and re-runs append duplicate rows (R2d). | **Refine** | §20 gate (required items must pass before first fill, enforced on every path — with an explicit required/optional distinction) + §21 historical snapshot (item text at entry) + idempotent evidence upsert + backfill surface. S02/S03. |
 | `/trades` UI | Workspace list (`src/app/(trades)/trades/page.tsx`): planned/open/closed/deleted filters, scratch (DELETE), export, mtm refresh. | **Reuse** | §56–60 phase tabs largely present; add `Managed` phase indicator + Reviewed tab in S05/S07. |
 | Trade detail UI | Legacy `src/app/(legacy)/trades/[id]/page.tsx` mounts **both** `execute-dialog` (bulk → `/execute`) and `add-fill-dialog` (individual → `/executions`). | **Replace/Reuse** | §9: remove the bulk dialog from normal UX; individual-fill composer is the primary path. S02. |
 | Root Risk dashboard consumers | `src/app/(legacy)/page.tsx` = WorkstationShell `liveMode`; consumes dashboard API built on canonical libs; M013/S01 already treats unpriced/unavailable risk as `null` (never fabricated 0). | **Reuse** | §54/§32: propagation after refresh already expected; S08 verifies. |
 | Idempotency | `accounting_executions` has a unique idempotency key (M006); journal-side execution creation is **not** idempotent; sync derives a key but a retried journal POST duplicates the journal row. | **Missing** | §10: canonical service must accept a client-generated key, reuse on retry, not consume on failed transaction. S03. |
 | Backdated fills | Ordering is `executedAt, createdAt` in reads; no full deterministic rebuild on backdate (sync/FIFO rebuild runs, journal status derives from ordered stream — partially OK). | **Refine** | §28: S03/S04 formalize deterministic ordering + rebuild semantics. |
 | Action semantics | Direction-action map **duplicated** in both `/execute` and `/executions` (identical `DIRECTION_ACTIONS` constant); no over-close guard on journal path; long/short inversion not explicitly blocked (P2 can re-open a closed trade via `buy`/`sell` on the opposite side). | **Replace** | §24–27: canonical action rules + quantity guards in S04. |
-| Review completion contract | None. | **Missing** | S07 (§64–67). |
+| Review completion contract | None — T05-verified: no `reviewedAt` marker, no 'reviewed' status, no completion gate anywhere in `src/`; stepper infers review from evidence presence. | **Missing** | S07 (§64–67) with F5 (durable marker) + F6 (lesson/exitNotes write surface). |
 | Multi-trade same-symbol | Account FIFO is account/instrument-level; journal attribution not audited. | **Missing** | S06 (§73–74) + S08. |
 
 ---
@@ -173,6 +173,65 @@ only planned-trade fills are mutable on the journal side (C4). Trade linkage is
 correction** (F2); journal lifecycle is **never rebuilt** by any real-fill
 correction path (F1).
 
+### 2d. Review and checklist surface ledger (T05, verified 2026-08-24)
+
+T05 audited every trade review surface (grade, lesson, mistakes, assessments,
+assets, check-results) and the checklist evidence model. **Review completion
+is inferred, never durable** — no `reviewedAt` marker, no 'reviewed' status,
+and the review-narrative columns (`trades.lesson`, `trades.exitNotes`) have
+**no write path in the API at all**. Historical checklist evidence is
+**re-interpreted by mutable definition text** — `trade_check_results` stores
+only the definition FK, and the read route joins the live
+`checklist_definitions.description`.
+
+#### R1. Review completion state
+
+| # | Surface | Verified finding | Class |
+|---|---|---|---|
+| R1a | Trade review completion marker | **None exists.** `trades.status` enum is `planned/open/closed/deleted`; no `reviewedAt` column; `rg 'reviewedAt|reviewed' src/` → **zero matches**. Nothing durably records "review done" vs "in progress". `review_action_items.source_type` accepts `'trade_review'` (action items can be trade-linked) but no table/column marks review completion itself. | **Missing** (§64/§65) → S07 |
+| R1b | Grade | `PUT/GET /api/trades/[id]/grade` → upsert `trade_grades` (UNIQUE `trade_id`; idempotent overwrite; auto `calculateGrade` totalScore/gradeLabel; zod-validated scores 1–10). **Does not touch `trades`** — no lesson write, no status/review marker. A grade can be saved and later overwritten with no completion implication. | **Refine** (per-trade durable; must link to the completion contract) |
+| R1c | Lesson / exit notes | `trades.lesson` and `trades.exitNotes` are **write-orphaned**: `PUT /api/trades/[id]` schema ends at `preTradePlan` (no lesson/exitNotes fields, verified in the set-block); **no route in `src/` writes them** (only seed/prompt-preview fixture/tests); `TradeExitNotesCard` is read-only display. The §64/§65 "lesson non-empty" evidence contract is **unattainable via the API today**. | **Missing** → S07 |
+| R1d | Mistakes | `GET/POST/PUT/DELETE /api/trades/[id]/mistakes` → `trade_mistakes` (mistakeTypeId → lookupValues `mistake_type`; phase/severity enums; status lifecycle `open→addressed→improved→resolved`; PUT partial update). | **Current** |
+| R1e | Assessments | `POST/GET /api/trades/[id]/assessments` → versioned `trade_assessment_snapshots` via `performAssessment` (`ai_quality`/`ai_review`; AssessmentError→HTTP mapping; secret-safe responses; snapshot written in engine tx; version = 1-based history index). | **Current** |
+| R1f | Assets | `GET/POST/DELETE /api/trades/[id]/assets` → `trade_assets`; multipart upload to `public/uploads/trades` (5MB cap, 5-screenshot cap, MIME allowlist) + JSON link path; DELETE unlinks file fire-and-forget. | **Current** |
+| R1g | Phase inference | `lifecycle-stepper.ts` derives step 7 from `exitNotes \|\| lesson \|\| hasGrade \|\| hasMistakes` — a **presence heuristic**, not a completion flag; nothing distinguishes "review in progress" from "review done". | **Missing/Refine** (S07 replaces with durable marker) |
+
+#### R2. Checklist evidence model
+
+| # | Surface | Verified finding | Class |
+|---|---|---|---|
+| R2a | `trade_check_results` schema | Columns: `tradeId`, `checklistDefinitionId` (FK → `checklist_definitions`), `passed`, `comment`, `checkedAt`, `createdAt`. **No item-text snapshot** (description never copied), **no `required`/optional flag**, no `isActive`/`deletedAt` snapshot. | **Refine** (§20/§21) |
+| R2b | Creation path | **Single path: P1 `/execute` only** (insert in-tx, L497–501). Gate: merged active checklist (account OR resolved setup, `isNull(deletedAt)`) → 400 blocks execution when any item missing/not-passed. **P2 `/executions` has zero checklist handling** (T02-verified; does not import checklist tables) — a fill can open a trade with no checklist evidence; the `check-results` route is **GET-only**, so evidence can never be backfilled. | **Replace/Refine** (§20 gate on every path + backfill surface, S02/S03) |
+| R2c | Historical integrity | Read route inner-joins **live** `checklist_definitions.description` (test `check-results.test.ts` codifies this join contract). Editing an item's text rewrites what past fills "checked"; soft-delete (`deletedAt`) removes it from display/future gates; no versioning. | **Refine** (§21 item-text snapshot at entry) |
+| R2d | Duplicate evidence | Re-running `/execute` with the same `checkResults` appends duplicate rows — no UNIQUE on `(tradeId, checklistDefinitionId)`. | **Refine** (idempotent upsert in S03) |
+| R2e | Checklist definition CRUD | `accounts/[id]/checks`, `setups/[id]/checks`, `checks/merged`, `checks/reorder` — fully mutable definitions (description/sortOrder/isActive/deletedAt). | **Current** (management surface; feeds R2c gap) |
+
+**Binding findings (T05):**
+
+- **F5 — Review completion is not durable (Missing).** No `reviewedAt`-style
+  marker and no 'reviewed' status exist anywhere in `src/`; review completion
+  is inferred from evidence presence (`lifecycle-stepper`). S07 must add an
+  explicit completion marker (reviewedAt + reviewed status or equivalent) with
+  the §64/§65 meaningful-evidence contract enforced at the write boundary.
+- **F6 — Lesson/exitNotes have no write path (Missing).** The trade update
+  schema excludes them; no route writes them; the UI only displays them. S07
+  must add a review-write surface (lesson + exitNotes) so the
+  meaningful-evidence contract is satisfiable.
+- **F7 — Historical checklist evidence is mutable-text-dependent (Refine).**
+  `trade_check_results` stores only the definition FK; display joins the live
+  mutable description. S02/S03 must snapshot the item text (and required flag)
+  at check time per §21.
+- **F8 — Checklist evidence can be zero (Replace).** P2 opens trades with no
+  checklist handling and no backfill exists (GET-only route). The §20 gate
+  must be enforced on every execution path (S03) with a backfill/evidence
+  surface for pre-existing fills.
+
+**Correction to §2 (T05-verified):** the earlier "Review / grade / mistakes /
+assets" row claimed "Grade + lesson upsert on `trades`" — **wrong**: the grade
+route upserts `trade_grades` only and never writes `trades.lesson` (the
+lesson/exitNotes columns are write-orphaned, F6). Rows above now reflect the
+verified behavior.
+
 ---
 
 ## 3. S01 binding policy decisions
@@ -245,7 +304,7 @@ These are the decisions the requirements doc explicitly defers to S01
   rebuild on trade-linked corrections, F2 `journalTradeId` re-attachment of
   reversal/replacement rows, F3 account-route linkage guard, F4 missing-mirror
   repair), multi-trade FIFO attribution.
-- **S07** — `reviewedAt` + review-evidence contract + correction invalidation.
+- **S07** — `reviewedAt` + review-evidence contract (F5 durable completion marker) + `lesson`/`exitNotes` write surface (F6) + correction invalidation.
 - **S08** — cross-surface verification against §2 rows; S09 — UAT.
 
 ---
