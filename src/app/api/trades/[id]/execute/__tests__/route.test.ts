@@ -16,6 +16,8 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, and, or, isNull, asc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
+import { checkExecutionReadiness } from '@/lib/execution-readiness';
+import { computeExecutionContext } from '@/lib/execution-context';
 
 let passed = 0;
 let failed = 0;
@@ -303,6 +305,27 @@ function doExecuteTrade(tradeId: string, body: Record<string, unknown>): { statu
       return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { entryQuantity: ['Entry quantity must be positive'] } } } };
     }
 
+    // riskOverrideReason mirrors zod z.string().min(1).max(500).optional()
+    const riskOverrideReasonRaw = body.riskOverrideReason;
+    if (
+      riskOverrideReasonRaw !== undefined &&
+      (typeof riskOverrideReasonRaw !== 'string' ||
+        riskOverrideReasonRaw.length < 1 ||
+        riskOverrideReasonRaw.length > 500)
+    ) {
+      return {
+        status: 400,
+        data: {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              riskOverrideReason: ['String must contain at least 1 character(s)'],
+            },
+          },
+        },
+      };
+    }
+
     // Validate exit quantities don't exceed entry quantity
     const exitQty1 = exit1Quantity ?? 0;
     const exitQty2 = exit2Quantity ?? 0;
@@ -474,10 +497,70 @@ function doExecuteTrade(tradeId: string, body: Record<string, unknown>): { statu
       }
     }
 
-    // ── Execute within a transaction ─────────────────────────────
+    // ── Execution readiness gate (T04) ─────────────────────────────
 
     const now = new Date().toISOString();
     const execTimestamp = (body.executedAt as string) ?? now;
+
+    // Initial risk (D1: null when no valid stop — never 0).
+    const effectiveStopPrice = ((body.stopPrice as number | undefined) ?? (trade.plannedStop as number | null)) ?? null;
+    const initialRiskAmount =
+      effectiveStopPrice != null
+        ? Math.abs((entryPrice as number) - effectiveStopPrice) * (entryQuantity as number)
+        : null;
+
+    const equityContext = computeExecutionContext(
+      db,
+      (trade.accountId as string | null) ?? null,
+      execTimestamp,
+    );
+
+    const readiness = checkExecutionReadiness({
+      account: {
+        isActive: equityContext.account?.isActive ?? false,
+        currency: equityContext.account?.currency ?? 'USD',
+        maxRiskPerTradePct: equityContext.account?.maxRiskPerTradePct ?? null,
+        defaultCommission: equityContext.account?.defaultCommission ?? null,
+      },
+      settings: {
+        maxRiskPerTradePct: equityContext.globalSettings?.maxRiskPerTradePct ?? null,
+        startingAccountValue: equityContext.globalSettings?.startingAccountValue ?? null,
+      },
+      tradeStatus: trade.status as string,
+      initialRiskAmount,
+      equityAtOpen: equityContext.equityAtOpen,
+      hasOpeningCash: equityContext.hasOpeningCash,
+      // Required items were enforced by the checklist gate above.
+      requiredChecklistPassed: true,
+    });
+
+    const nonMaxRiskFailure = readiness.failures.find((f) => f.code !== 'max-risk-exceeded');
+    if (nonMaxRiskFailure) {
+      const status =
+        nonMaxRiskFailure.code === 'account-not-active' ||
+        nonMaxRiskFailure.code === 'account-not-trading-ready'
+          ? 409
+          : 400;
+      return { status, data: { error: nonMaxRiskFailure.message } };
+    }
+
+    const maxRiskFailure = readiness.failures.find((f) => f.code === 'max-risk-exceeded');
+    const riskOverrideReason = (body.riskOverrideReason as string | undefined) ?? null;
+    if (maxRiskFailure && !riskOverrideReason) {
+      return {
+        status: 422,
+        data: {
+          error: 'Max risk exceeded',
+          details: {
+            limit: maxRiskFailure.limit ?? null,
+            computed: maxRiskFailure.computed ?? null,
+            overrideable: true,
+          },
+        },
+      };
+    }
+
+    // ── Execute within a transaction ─────────────────────────────
 
     const tradeIdStr = tradeId;
 
@@ -556,6 +639,7 @@ function doExecuteTrade(tradeId: string, body: Record<string, unknown>): { statu
         openedAt: derived.openedAt,
         closedAt: derived.closedAt,
         updatedAt: now,
+        ...(riskOverrideReason ? { riskOverrideReason } : {}),
       })
       .where(eq(schema.trades.id, tradeIdStr))
       .run();
@@ -593,102 +677,10 @@ function doExecuteTrade(tradeId: string, body: Record<string, unknown>): { statu
             snapshotValues.initialStopPrice = effectiveStopPrice;
           }
 
-          // ── Compute accountEquityAtOpen ──────────────────────
-          if (trade.accountId) {
-            const account = db
-              .select()
-              .from(schema.accounts)
-              .where(eq(schema.accounts.id, trade.accountId as string))
-              .get() as Record<string, unknown> | undefined;
-
-            if (account) {
-              const allTxns = db
-                .select()
-                .from(schema.accountTransactions)
-                .where(eq(schema.accountTransactions.accountId, trade.accountId as string))
-                .all()
-                .filter((tx) => tx.date <= execTimestamp);
-
-              const sumDeposits = allTxns
-                .filter((tx) => tx.type === 'deposit')
-                .reduce((s, tx) => s + tx.amount, 0);
-              const sumWithdrawals = allTxns
-                .filter((tx) => tx.type === 'withdrawal')
-                .reduce((s, tx) => s + tx.amount, 0);
-
-              const priorClosedTrades = db
-                .select()
-                .from(schema.trades)
-                .where(eq(schema.trades.accountId, trade.accountId as string))
-                .all()
-                .filter((t) => t.closedAt != null && t.closedAt <= execTimestamp);
-
-              let realizedPnL = 0;
-              for (const ct of priorClosedTrades) {
-                const execs = db
-                  .select()
-                  .from(schema.tradeExecutions)
-                  .where(eq(schema.tradeExecutions.tradeId, ct.id))
-                  .orderBy(schema.tradeExecutions.executedAt, schema.tradeExecutions.createdAt)
-                  .all() as { action: string; quantity: number; price: number; fees: number | null }[];
-
-                const ctDirection = ct.direction as string;
-                const entries = execs.filter((ex) =>
-                  ctDirection === 'long'
-                    ? ex.action === 'buy' || ex.action === 'add'
-                    : ex.action === 'sell_short',
-                );
-                const exits = execs.filter((ex) =>
-                  ctDirection === 'long'
-                    ? ex.action === 'sell' || ex.action === 'reduce'
-                    : ex.action === 'buy_to_cover',
-                );
-
-                const totalEntryQtyCt = entries.reduce((s, ex) => s + ex.quantity, 0);
-                if (totalEntryQtyCt > 0 && exits.length > 0) {
-                  const weightedSumCt = entries.reduce(
-                    (s, ex) => s + ex.price * ex.quantity,
-                    0,
-                  );
-                  const avgEntryCt = weightedSumCt / totalEntryQtyCt;
-                  realizedPnL += exits.reduce(
-                    (s, ex) =>
-                      s +
-                      ((ex.price as number) - avgEntryCt) *
-                        Math.min(ex.quantity as number, totalEntryQtyCt),
-                    0,
-                  );
-                }
-                realizedPnL -= execs.reduce(
-                  (s, ex) => s + ((ex.fees as number) ?? 0),
-                  0,
-                );
-              }
-
-              const startingBalance = (account.startingBalance as number) ?? 0;
-              const effectiveEquity =
-                startingBalance + sumDeposits - sumWithdrawals + realizedPnL;
-
-              if (effectiveEquity > 0) {
-                snapshotValues.accountEquityAtOpen = effectiveEquity;
-              } else if (
-                account.startingBalance == null &&
-                allTxns.length === 0 &&
-                priorClosedTrades.length === 0
-              ) {
-                const globalSettings = db
-                  .select()
-                  .from(schema.settings)
-                  .get() as Record<string, unknown> | undefined;
-                if (
-                  globalSettings?.startingAccountValue != null &&
-                  (globalSettings.startingAccountValue as number) > 0
-                ) {
-                  snapshotValues.accountEquityAtOpen =
-                    globalSettings.startingAccountValue;
-                }
-              }
-            }
+          // Equity context is hoisted from the readiness gate (T04) — the
+          // same reads the inline derivation below used to perform.
+          if (equityContext.equityAtOpen != null) {
+            snapshotValues.accountEquityAtOpen = equityContext.equityAtOpen;
           }
 
           db.insert(schema.tradeRiskSnapshots)
@@ -771,6 +763,12 @@ function seedAccount(overrides: Record<string, unknown> = {}) {
       broker: null,
       currency: 'USD',
       isActive: true,
+      // T04: execution now requires a trading-ready account (risk params +
+      // commission + opening cash). Default the seed to fully configured so
+      // existing cases exercise the new gate without tripping it; tests that
+      // probe the negative paths override these explicitly.
+      maxRiskPerTradePct: 10,
+      defaultCommission: 1.0,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -1249,6 +1247,134 @@ console.log('\n19. itemText snapshot is written at check time:');
   assertEqual(persisted.length, 1, '1 check result persisted');
   assertEqual(persisted[0].itemText, 'Snapshot text', 'itemText snapshots the description');
   assertEqual(persisted[0].comment, 'verified', 'comment preserved');
+}
+
+// ── 20. Max-risk exceeded blocks with 422 and no mutation ──────────
+
+console.log('\n20. Max-risk exceeded blocks with 422 and no execution created:');
+{
+  cleanup();
+  // 0.5% max risk of $10,000 equity = $50 limit.
+  seedAccount({ id: 'test-account-id', startingBalance: 10000, maxRiskPerTradePct: 0.5 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', plannedStop: 145.0 });
+
+  const result = doExecuteTrade(trade.id as string, {
+    entryPrice: 150.0,
+    entryQuantity: 100,
+    stopPrice: 145.0, // risk = $500 > $50 limit
+  });
+
+  assert(result.status === 422, 'returns 422 for max-risk exceeded');
+  const data = result.data as { error: string; details: { limit: number; computed: number; overrideable: boolean } };
+  assertEqual(data.error, 'Max risk exceeded', 'error message');
+  assertEqual(data.details.limit, 50, 'details.limit = 0.5% of 10000');
+  assertEqual(data.details.computed, 500, 'details.computed = proposed risk');
+  assert(data.details.overrideable === true, 'details.overrideable is true');
+
+  // Gate fires before mutation: no execution created.
+  const execs = db
+    .select()
+    .from(schema.tradeExecutions)
+    .where(eq(schema.tradeExecutions.tradeId, trade.id as string))
+    .all();
+  assertEqual(execs.length, 0, 'no execution created when max-risk blocks');
+}
+
+// ── 21. Max-risk override with reason executes and stores the reason ──
+
+console.log('\n21. Max-risk override with reason executes and stores the reason:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000, maxRiskPerTradePct: 0.5 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', plannedStop: 145.0 });
+
+  const result = doExecuteTrade(trade.id as string, {
+    entryPrice: 150.0,
+    entryQuantity: 100,
+    stopPrice: 145.0,
+    riskOverrideReason: 'Gap risk accepted per desk policy',
+  });
+
+  assert(result.status === 201, 'returns 201 with override reason');
+
+  const updatedTrade = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(updatedTrade.riskOverrideReason, 'Gap risk accepted per desk policy', 'riskOverrideReason stored on trade');
+  assertEqual(updatedTrade.status, 'open', 'trade executed and opened');
+}
+
+// ── 22. Account not trading-ready blocks with 409 ─────────────────
+
+console.log('\n22. Account not trading-ready blocks with 409:');
+{
+  cleanup();
+  // maxRiskPerTradePct missing — execution requires a configured account.
+  seedAccount({ id: 'test-account-id', startingBalance: 10000, maxRiskPerTradePct: null });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', plannedStop: 145.0 });
+
+  const result = doExecuteTrade(trade.id as string, {
+    entryPrice: 150.0,
+    entryQuantity: 100,
+    stopPrice: 145.0,
+  });
+
+  assert(result.status === 409, 'returns 409 for account not trading-ready');
+  const data = result.data as { error: string };
+  assertEqual(data.error, 'Account setup incomplete for trading', 'error message');
+}
+
+// ── 23. Inactive account blocks with 409 ──────────────────────────
+
+console.log('\n23. Inactive account blocks with 409:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000, isActive: false });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', plannedStop: 145.0 });
+
+  const result = doExecuteTrade(trade.id as string, {
+    entryPrice: 150.0,
+    entryQuantity: 100,
+    stopPrice: 145.0,
+  });
+
+  assert(result.status === 409, 'returns 409 for inactive account');
+  const data = result.data as { error: string };
+  assertEqual(data.error, 'Account not active', 'error message');
+}
+
+// ── 24. Null risk (no valid stop) never triggers max-risk (D1) ────
+
+console.log('\n24. Null risk (no valid stop) never triggers max-risk (D1 null-not-zero):');
+{
+  cleanup();
+  // Tiny limit: any non-null risk would exceed it.
+  seedAccount({ id: 'test-account-id', startingBalance: 10000, maxRiskPerTradePct: 0.0001 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', plannedStop: null });
+
+  const result = doExecuteTrade(trade.id as string, {
+    entryPrice: 150.0,
+    entryQuantity: 100,
+    // No stopPrice — initial risk is null, never 0.
+  });
+
+  assert(result.status === 201, 'returns 201 with null initial risk');
+}
+
+// ── 25. riskOverrideReason fails zod validation when empty ────────
+
+console.log('\n25. Empty riskOverrideReason returns 400 validation error:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000, maxRiskPerTradePct: 0.5 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned', plannedStop: 145.0 });
+
+  const result = doExecuteTrade(trade.id as string, {
+    entryPrice: 150.0,
+    entryQuantity: 100,
+    stopPrice: 145.0,
+    riskOverrideReason: '',
+  });
+
+  assert(result.status === 400, 'returns 400 for empty riskOverrideReason');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

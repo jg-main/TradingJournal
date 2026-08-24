@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransactions, settings as settingsTable, checklistDefinitions, tradeCheckResults, lookupValues, setupDefinitions } from '@/db/schema';
-import { eq, and, lte, or, isNull, asc } from 'drizzle-orm';
+import { trades, tradeExecutions, tradeRiskSnapshots, checklistDefinitions, tradeCheckResults, lookupValues, setupDefinitions } from '@/db/schema';
+import { eq, and, or, isNull, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { computeTradeMetrics, type ExecutionData, type Direction } from '@/lib/trade-metrics';
-import {
-  computeEquityAtOpen,
-  computeRealizedPnLFromClosedTrades,
-  computeRiskSnapshotValues,
-  type PriorClosedTradeData,
-} from '@/lib/risk-snapshot';
+import { computeRiskSnapshotValues } from '@/lib/risk-snapshot';
 import { syncAndRebuildPositions } from '@/lib/positions/trade-execution-sync';
+import { checkExecutionReadiness } from '@/lib/execution-readiness';
+import { computeExecutionContext } from '@/lib/execution-context';
 
 const createExecutionSchema = z.object({
   action: z.enum([
@@ -33,6 +30,7 @@ const createExecutionSchema = z.object({
     passed: z.boolean(),
     comment: z.string().optional(),
   })).optional(),
+  riskOverrideReason: z.string().min(1).max(500).optional(),
 });
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -154,6 +152,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }[] = [];
     const checkItemTextById = new Map<string, string>();
 
+    // Shared execution timestamp + hoisted execution context (T04): the
+    // equity/account reads are computed once in the first-fill gate and reused
+    // by the risk-snapshot section below.
+    const now = new Date().toISOString();
+    const execTimestamp = parsed.data.executedAt ?? now;
+    let riskOverrideReasonToStore: string | null = null;
+    let equityContext: ReturnType<typeof computeExecutionContext> | undefined;
+
     if (trade.status === 'planned') {
       const submitted = parsed.data.checkResults ?? [];
       submittedCheckResults = submitted;
@@ -252,9 +258,69 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           }
         }
       }
+
+      // ── Execution readiness gate (T04): first fill only ─────────────
+      // Initial risk comes from the entry price and the planned stop (P2 has
+      // no per-fill stopPrice; the risk snapshot uses trade.plannedStop).
+      const initialRiskAmount =
+        trade.plannedStop != null
+          ? Math.abs(parsed.data.price - trade.plannedStop) * parsed.data.quantity
+          : null;
+
+      equityContext = computeExecutionContext(db, trade.accountId, execTimestamp);
+
+      const readiness = checkExecutionReadiness({
+        account: {
+          isActive: equityContext.account?.isActive ?? false,
+          currency: equityContext.account?.currency ?? 'USD',
+          maxRiskPerTradePct: equityContext.account?.maxRiskPerTradePct ?? null,
+          defaultCommission: equityContext.account?.defaultCommission ?? null,
+        },
+        settings: {
+          maxRiskPerTradePct: equityContext.globalSettings?.maxRiskPerTradePct ?? null,
+          startingAccountValue: equityContext.globalSettings?.startingAccountValue ?? null,
+        },
+        tradeStatus: trade.status,
+        initialRiskAmount,
+        equityAtOpen: equityContext.equityAtOpen,
+        hasOpeningCash: equityContext.hasOpeningCash,
+        // Required items were enforced by the checklist gate above.
+        requiredChecklistPassed: true,
+      });
+
+      const nonMaxRiskFailure = readiness.failures.find(
+        (f) => f.code !== 'max-risk-exceeded',
+      );
+      if (nonMaxRiskFailure) {
+        const status =
+          nonMaxRiskFailure.code === 'account-not-active' ||
+          nonMaxRiskFailure.code === 'account-not-trading-ready'
+            ? 409
+            : 400;
+        return NextResponse.json({ error: nonMaxRiskFailure.message }, { status });
+      }
+
+      const maxRiskFailure = readiness.failures.find(
+        (f) => f.code === 'max-risk-exceeded',
+      );
+      if (maxRiskFailure && !parsed.data.riskOverrideReason) {
+        return NextResponse.json(
+          {
+            error: 'Max risk exceeded',
+            details: {
+              limit: maxRiskFailure.limit ?? null,
+              computed: maxRiskFailure.computed ?? null,
+              overrideable: true,
+            },
+          },
+          { status: 422 },
+        );
+      }
+      if (maxRiskFailure && parsed.data.riskOverrideReason) {
+        riskOverrideReasonToStore = parsed.data.riskOverrideReason;
+      }
     }
     const executionId = randomUUID();
-    const now = new Date().toISOString();
 
     db.insert(tradeExecutions)
       .values({
@@ -264,7 +330,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         quantity: parsed.data.quantity,
         price: parsed.data.price,
         fees: parsed.data.fees,
-        executedAt: parsed.data.executedAt ?? now,
+        executedAt: execTimestamp,
         reasonId: parsed.data.reasonId ?? null,
         notes: parsed.data.notes ?? null,
         createdAt: now,
@@ -314,6 +380,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         openedAt: metrics.position.openedAt,
         closedAt: metrics.position.closedAt,
         updatedAt: now,
+        ...(riskOverrideReasonToStore ? { riskOverrideReason: riskOverrideReasonToStore } : {}),
       })
       .where(eq(trades.id, id))
       .run();
@@ -350,97 +417,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               snapshotValues.initialStopPrice = trade.plannedStop;
             }
 
-            // ── Compute accountEquityAtOpen ──────────────────────────
-            if (trade.accountId) {
-              const account = db
-                .select()
-                .from(accounts)
-                .where(eq(accounts.id, trade.accountId))
-                .get();
-
-              if (account) {
-                const executionDate = parsed.data.executedAt ?? now;
-
-                const allTxns = db
-                  .select()
-                  .from(accountTransactions)
-                  .where(
-                    and(
-                      eq(accountTransactions.accountId, trade.accountId),
-                      lte(accountTransactions.date, executionDate),
-                    ),
-                  )
-                  .all();
-
-                const sumDeposits = allTxns
-                  .filter((tx) => tx.type === 'deposit')
-                  .reduce((s, tx) => s + tx.amount, 0);
-                const sumWithdrawals = allTxns
-                  .filter((tx) => tx.type === 'withdrawal')
-                  .reduce((s, tx) => s + tx.amount, 0);
-
-                const priorClosedTrades = db
-                  .select()
-                  .from(trades)
-                  .where(eq(trades.accountId, trade.accountId))
-                  .all()
-                  .filter(
-                    (t) => t.closedAt != null && t.closedAt <= executionDate,
-                  );
-
-                const priorTradeData: PriorClosedTradeData[] = priorClosedTrades.map((ct) => {
-                  const execs = db
-                    .select()
-                    .from(tradeExecutions)
-                    .where(eq(tradeExecutions.tradeId, ct.id))
-                    .orderBy(
-                      tradeExecutions.executedAt,
-                      tradeExecutions.createdAt,
-                    )
-                    .all();
-                  return {
-                    direction: ct.direction as Direction,
-                    executions: toExecutionData(execs),
-                  };
-                });
-
-                const realizedPnL = computeRealizedPnLFromClosedTrades(priorTradeData);
-
-                const globalSettings = db
-                  .select()
-                  .from(settingsTable)
-                  .get();
-
-                const equityAtOpen = computeEquityAtOpen({
-                  startingBalance: account.startingBalance ?? 0,
-                  deposits: sumDeposits,
-                  withdrawals: sumWithdrawals,
-                  realizedPnL,
-                  hasNoAccountData:
-                    account.startingBalance == null &&
-                    allTxns.length === 0 &&
-                    priorClosedTrades.length === 0,
-                  fallbackValue: globalSettings?.startingAccountValue ?? null,
-                });
-
-                if (equityAtOpen != null) {
-                  snapshotValues.accountEquityAtOpen = equityAtOpen;
-                }
-
-                // Compute derived risk snapshot values
-                const riskValues = computeRiskSnapshotValues({
-                  avgEntryPrice,
-                  initialQuantity: metrics.size.entryQuantity,
-                  initialStopPrice: trade.plannedStop ?? null,
-                  direction: trade.direction as Direction,
-                  accountEquityAtOpen: equityAtOpen,
-                });
-
-                snapshotValues.riskPerShare = riskValues.riskPerShare;
-                snapshotValues.initialRiskAmount = riskValues.initialRiskAmount;
-                snapshotValues.accountRiskPct = riskValues.accountRiskPct;
-              }
+            // Equity context is hoisted from the readiness gate (T04); the
+            // reads are identical to the inline derivation this section
+            // performed before, and no writes occur between the two.
+            if (equityContext?.equityAtOpen != null) {
+              snapshotValues.accountEquityAtOpen = equityContext.equityAtOpen;
             }
+
+            // Compute derived risk snapshot values
+            const riskValues = computeRiskSnapshotValues({
+              avgEntryPrice,
+              initialQuantity: metrics.size.entryQuantity,
+              initialStopPrice: trade.plannedStop ?? null,
+              direction: trade.direction as Direction,
+              accountEquityAtOpen: equityContext?.equityAtOpen ?? null,
+            });
+
+            snapshotValues.riskPerShare = riskValues.riskPerShare;
+            snapshotValues.initialRiskAmount = riskValues.initialRiskAmount;
+            snapshotValues.accountRiskPct = riskValues.accountRiskPct;
 
             db.insert(tradeRiskSnapshots)
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
