@@ -19,10 +19,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getSqliteHandle } from '@/db';
-import { postExecutionFill } from '@/lib/accounting/execution-posting';
+import { postAccountExecutionWithProjections } from '@/lib/accounting/execution-posting';
+import { AccountExecutionProjectionError } from '@/lib/accounting/errors';
 import { resolveEconomicExecutionAction } from '@/lib/accounting/economic-action';
-import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
-import { rebuildPositions } from '@/lib/positions/rebuild';
 import { allocateFifo } from '@/lib/positions/fifo';
 import {
   postExecutionSchema,
@@ -247,9 +246,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 5. Post the execution fill (creates immutable execution + ledger effects)
-    //    with the concrete economic action.
-    const fillResult = postExecutionFill(sqlite, {
+    // 5. Post the execution fill AND its FIFO + account-performance
+    //    projections as ONE atomic transaction (M002-A7). Any projection
+    //    failure rolls back the immutable execution, all cash/fee effects,
+    //    ledger rows, FIFO lots/matches, account position, and projection
+    //    changes together — HTTP 201 below guarantees every projection
+    //    succeeded, and a failure leaves the idempotency key retryable.
+    const result = postAccountExecutionWithProjections(sqlite, {
       accountId,
       symbol,
       action: economicAction,
@@ -262,14 +265,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       postedAt,
     });
 
-    // 6. Rebuild positions to persist the projection
-    const rebuildResult = rebuildPositions(sqlite, accountId, instrument.id);
-
-    // 7. Refresh the account-wide projection so all NAV readers observe the
-    // newly posted cash effect and FIFO position on the same request.
-    rebuildAccountPerformance(sqlite, accountId);
-
-    // 8. Read back updated position for the response
+    // 6. Read back the committed position for the response (pure read — the
+    //    authoritative rebuild already ran inside the transaction).
     const updatedPositionRow = findAccountPosition(sqlite, accountId, instrument.id);
     const updatedLotRows = findFifoLotsByAccountInstrument(sqlite, accountId, instrument.id);
 
@@ -313,25 +310,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       {
         success: true,
         execution: {
-          id: fillResult.execution.id,
-          accountId: fillResult.execution.accountId,
-          instrumentId: fillResult.execution.instrumentId,
-          action: fillResult.execution.action,
-          quantity: fillResult.execution.quantity,
-          price: fillResult.execution.price,
-          fees: fillResult.execution.fees,
-          idempotencyKey: fillResult.execution.idempotencyKey,
-          journalTradeId: fillResult.execution.journalTradeId,
-          description: fillResult.execution.description,
-          postedAt: fillResult.execution.postedAt,
-          createdAt: fillResult.execution.createdAt,
+          id: result.execution.id,
+          accountId: result.execution.accountId,
+          instrumentId: result.execution.instrumentId,
+          action: result.execution.action,
+          quantity: result.execution.quantity,
+          price: result.execution.price,
+          fees: result.execution.fees,
+          idempotencyKey: result.execution.idempotencyKey,
+          journalTradeId: result.execution.journalTradeId,
+          description: result.execution.description,
+          postedAt: result.execution.postedAt,
+          createdAt: result.execution.createdAt,
           symbol,
         },
         position: positionResponse,
         rebuildStatus: {
-          executionCount: rebuildResult.executionCount,
-          lotCount: rebuildResult.lotCount,
-          matchCount: rebuildResult.matchCount,
+          executionCount: result.rebuildStatus.executionCount,
+          lotCount: result.rebuildStatus.lotCount,
+          matchCount: result.rebuildStatus.matchCount,
         },
       },
       { status: 201 },
@@ -378,6 +375,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           details: error.message,
         },
         { status: 409 },
+      );
+    }
+
+    // M002-A7: a FIFO / account-performance projection failure inside the
+    // authoritative transaction (already rolled back) is an unexpected
+    // server-side persistence failure — never a user-domain conflict. The
+    // request is safely retryable with the same idempotency key.
+    if (error instanceof AccountExecutionProjectionError) {
+      return NextResponse.json(
+        {
+          error: 'Failed to finalize account execution',
+          code: error.code,
+          details: error.message,
+        },
+        { status: 500 },
       );
     }
 

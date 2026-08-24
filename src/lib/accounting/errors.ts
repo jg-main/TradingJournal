@@ -492,3 +492,43 @@ export class FinancialEventPostingProjectionError extends AccountingError {
     Object.setPrototypeOf(this, FinancialEventPostingProjectionError.prototype);
   }
 }
+
+/**
+ * Thrown when the FIFO position or account-performance projection cannot be
+ * finalized during DIRECT account execution origination (M002-A7).
+ *
+ * `postAccountExecutionWithProjections` posts the accounting execution, its
+ * gross cash event, its execution-fee event, and ledger entries/postings, then
+ * rebuilds the FIFO position and the account-performance projection INSIDE one
+ * outer transaction, and explicitly enforces `PerformanceRebuildResult.success`
+ * (rebuildAccountPerformance catches internal exceptions and returns
+ * { success: false }). Any failure throws this error inside the transaction —
+ * the immutable execution, all cash/fee effects, ledger rows, FIFO lots /
+ * matches, account position, and projection changes roll back together.
+ *
+ * Mapped to HTTP 500 by the direct account executions route (an unexpected
+ * server-side persistence failure — never a user-domain conflict like
+ * AMBIGUOUS_EXECUTION_ACTION / FIFO over-close / ACCOUNT_INACTIVE /
+ * UNSUPPORTED_ACCOUNT_CURRENCY / DUPLICATE_EXECUTION_IDEMPOTENCY). The
+ * transaction has already rolled back, so the idempotency key is NOT consumed
+ * and the request is safely retryable.
+ */
+export class AccountExecutionProjectionError extends AccountingError {
+  public readonly accountId: string;
+  /** 'fifo' or 'performance' — which projection stage failed. */
+  public readonly stage: 'fifo' | 'performance';
+  public readonly rebuildError?: string;
+
+  constructor(accountId: string, stage: 'fifo' | 'performance', rebuildError?: string) {
+    super(
+      'ACCOUNT_EXECUTION_PROJECTION_FAILED',
+      `Execution for account "${accountId}" rolled back: ${stage} projection could not be finalized` +
+        (rebuildError ? ` (${rebuildError})` : ''),
+    );
+    this.name = 'AccountExecutionProjectionError';
+    this.accountId = accountId;
+    this.stage = stage;
+    this.rebuildError = rebuildError;
+    Object.setPrototypeOf(this, AccountExecutionProjectionError.prototype);
+  }
+}

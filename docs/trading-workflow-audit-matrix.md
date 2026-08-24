@@ -445,6 +445,35 @@ These are the decisions the requirements doc explicitly defers to S01
     fee repair use disjoint keys — order-independent.
   - **Scope:** default-commission resolution, risk, equity, A5 economic-side
     mapping, and standalone account fee events are untouched.
+- **M002-A7 (direct account execution is atomic with FIFO and account
+  performance):** `POST /api/accounts/:id/executions` previously committed
+  the accounting execution + cash/fee events inside `postExecutionFill` and
+  then rebuilt FIFO + account performance OUTSIDE that transaction — a
+  projection failure could leave committed execution economics with a stale
+  projection (and the performance rebuild result was ignored). Now the route
+  delegates to `postAccountExecutionWithProjections` (same posting service),
+  which owns ONE outer transaction:
+
+  BEGIN
+    postExecutionFill (nested savepoint: immutable execution + gross event
+                       + fee event + ledger)
+    rebuildPositionsWithinTransaction (FIFO lots / matches / position)
+    rebuildAccountPerformance (explicit success enforcement)
+    if !performance.success → throw AccountExecutionProjectionError
+  COMMIT
+
+  Any failure — FIFO replay rejection or a `{ success: false }` performance
+  rebuild — throws inside the transaction, so the source execution, all
+  cash/fee effects, ledger rows, FIFO lots/matches, account position, and
+  projection changes roll back together. HTTP 201 therefore guarantees every
+  projection succeeded; a rolled-back failure leaves the idempotency key
+  unused and the request retryable (500
+  ACCOUNT_EXECUTION_PROJECTION_FAILED, never a user-domain 4xx). Preflight
+  (account active, USD-only, idempotency, action normalization, FIFO
+  validation) stays before mutation; 4xx semantics are unchanged; the engine
+  (executeTradeFill) already owns its own larger transaction and is
+  untouched; no duplicate position/performance rebuild (the authoritative
+  mutation path rebuilds exactly once).
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

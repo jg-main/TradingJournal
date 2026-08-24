@@ -21,6 +21,9 @@ import type { FinancialEventWithPostings } from './types';
 import { postFinancialEvent, assertSupportedAccountCurrency } from './posting';
 import { assertAccountAcceptsNewActivity } from './activity-guard';
 import { AmbiguousEconomicActionError, cashDirectionForEconomicAction, ECONOMIC_ACTIONS, type EconomicAction } from './economic-action';
+import { AccountExecutionProjectionError } from './errors';
+import { rebuildPositionsWithinTransaction } from '../positions/rebuild';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import {
   AccountNotFoundError,
   DuplicateExecutionIdempotencyError,
@@ -441,6 +444,124 @@ export function postExecutionFill(
       },
       eventWithPostings,
       feeEventWithPostings,
+    };
+  });
+
+  return transaction();
+}
+
+// ── M002-A7: atomic direct account execution ──────────────────────────────
+
+export interface PostAccountExecutionWithProjectionsInput {
+  accountId: string;
+  symbol: string;
+  /** Concrete economic action (buy/sell/sell_short/buy_to_cover). */
+  action: string;
+  quantity: string;
+  price: string;
+  fees?: string;
+  idempotencyKey?: string;
+  journalTradeId?: string;
+  description?: string;
+  postedAt?: string;
+}
+
+export interface AccountExecutionWithProjectionsResult {
+  /** The committed immutable accounting execution record. */
+  execution: PostExecutionFillResult['execution'];
+  /** Gross consideration event. */
+  eventWithPostings: FinancialEventWithPostings;
+  /** Execution fee event (null when fees = 0). */
+  feeEventWithPostings: FinancialEventWithPostings | null;
+  /** FIFO rebuild outcome (counts). */
+  rebuildStatus: { executionCount: number; lotCount: number; matchCount: number };
+  /** Concise account-performance evidence (proves success inside the txn). */
+  performance: { nav: string | null; computedAt: string };
+}
+
+/**
+ * M002-A7: post a direct account execution WITH its projections, atomically.
+ *
+ * ONE outer transaction owns the entire operation:
+ *
+ *   BEGIN
+ *     postExecutionFill(...)              — nested savepoint (immutable
+ *                                            accounting execution + gross cash
+ *                                            event + fee event + ledger)
+ *     rebuildPositionsWithinTransaction() — FIFO lot / match / position replay
+ *     rebuildAccountPerformance()         — account-wide projection
+ *     enforce performance.success === true
+ *   COMMIT
+ *
+ * Any exception — including a FIFO replay rejection and a
+ * `{ success: false }` performance rebuild (which catches internal errors) —
+ * throws inside the transaction, so the immutable execution, all cash/fee
+ * effects, ledger rows, FIFO lots/matches, account position, and projection
+ * changes roll back together. HTTP 201 from the route therefore guarantees
+ * every projection succeeded; a failure leaves the idempotency key unused and
+ * the request safely retryable.
+ *
+ * @throws {AccountExecutionProjectionError} when a projection stage fails
+ * @throws {DuplicateExecutionIdempotencyError} on a reused idempotency key
+ */
+export function postAccountExecutionWithProjections(
+  sqlite: Database.Database,
+  input: PostAccountExecutionWithProjectionsInput,
+): AccountExecutionWithProjectionsResult {
+  const transaction = sqlite.transaction(() => {
+    const fill = postExecutionFill(sqlite, {
+      accountId: input.accountId,
+      symbol: input.symbol,
+      action: input.action,
+      quantity: input.quantity,
+      price: input.price,
+      fees: input.fees,
+      idempotencyKey: input.idempotencyKey,
+      journalTradeId: input.journalTradeId,
+      description: input.description,
+      postedAt: input.postedAt,
+    });
+
+    // FIFO projection — transaction-aware replay (fails closed when the
+    // immutable execution stream cannot be replayed).
+    let rebuildStatus: { executionCount: number; lotCount: number; matchCount: number };
+    try {
+      const rebuildResult = rebuildPositionsWithinTransaction(
+        sqlite,
+        input.accountId,
+        fill.execution.instrumentId,
+      );
+      rebuildStatus = {
+        executionCount: rebuildResult.executionCount,
+        lotCount: rebuildResult.lotCount,
+        matchCount: rebuildResult.matchCount,
+      };
+    } catch (err) {
+      throw new AccountExecutionProjectionError(
+        input.accountId,
+        'fifo',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // Account-performance projection — rebuildAccountPerformance catches
+    // internal errors and returns { success: false }, so success is enforced
+    // explicitly (never a silent stale projection after a 201).
+    const perf = rebuildAccountPerformance(sqlite, input.accountId);
+    if (!perf.success) {
+      throw new AccountExecutionProjectionError(
+        input.accountId,
+        'performance',
+        perf.error ?? 'rebuild returned success=false',
+      );
+    }
+
+    return {
+      execution: fill.execution,
+      eventWithPostings: fill.eventWithPostings,
+      feeEventWithPostings: fill.feeEventWithPostings,
+      rebuildStatus,
+      performance: { nav: perf.nav, computedAt: perf.computedAt },
     };
   });
 
