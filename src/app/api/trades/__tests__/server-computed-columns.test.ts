@@ -87,8 +87,10 @@ sqlite.exec(`
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
+    risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
+    reviewed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
     current_price REAL,
@@ -109,6 +111,7 @@ sqlite.exec(`
     fees REAL DEFAULT 0,
     reason_id TEXT,
     notes TEXT,
+    idempotency_key TEXT,
     created_at TEXT DEFAULT (current_timestamp)
   );
   CREATE TABLE trade_risk_snapshots (

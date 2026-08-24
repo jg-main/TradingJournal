@@ -119,8 +119,10 @@ sqlite.exec(`
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
+    risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
+    reviewed_at TEXT,
     current_price REAL,
     current_price_fetched_at TEXT,
     gross_realized_pnl REAL,
@@ -143,6 +145,7 @@ sqlite.exec(`
     reason_id TEXT,
     executed_at TEXT,
     notes TEXT,
+    idempotency_key TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     FOREIGN KEY (trade_id) REFERENCES trades(id)
   );

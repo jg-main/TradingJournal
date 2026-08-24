@@ -52,6 +52,7 @@ function buildSampleTradeData(
     riskOverrideReason: null,
     openedAt: isPostExit ? '2024-06-10T09:30:00.000Z' : null,
     closedAt: isPostExit ? '2024-06-10T14:45:00.000Z' : null,
+    reviewedAt: null,
     exitNotes: isPostExit ? 'Target 1 hit. Solid execution managing position to plan.' : null,
     lesson: isPostExit ? 'Patience at the trigger paid off — wait for the confirmation candle next time too.' : null,
     currentPrice: null,

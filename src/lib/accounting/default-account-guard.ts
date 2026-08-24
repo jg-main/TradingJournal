@@ -68,3 +68,37 @@ export function isAccountEligibleAsDefault(
   if (row.is_active !== 1) return false;
   return isSupportedAccountCurrency(row.currency ?? 'USD');
 }
+
+/**
+ * Trading-readiness predicate (T02/S02).
+ *
+ * Planning-eligibility (active + USD) is deliberately distinct from
+ * trading-readiness: an account is trading-ready only when it is active, USD,
+ * has risk parameters (max_risk_per_trade_pct), a default commission, and has
+ * posted opening cash. Creating a planned trade (POST /api/trades) now
+ * requires only planning-eligibility; the trading-ready requirement is an
+ * execution-time gate (enforced by T04's execution-readiness library and the
+ * execute/executions routes). Exported here as a single source of truth so the
+ * execution paths can reuse the same predicate instead of re-implementing it.
+ * Pure predicate — no DB access; the caller supplies the account row and the
+ * hasOpeningCash flag (financial_events existence check).
+ */
+export interface TradingReadinessAccount {
+  isActive: boolean;
+  currency: string | null;
+  maxRiskPerTradePct: number | null;
+  defaultCommission: number | null;
+}
+
+export function isAccountTradingReady(
+  account: TradingReadinessAccount,
+  hasOpeningCash: boolean,
+): boolean {
+  return (
+    account.isActive &&
+    account.currency === 'USD' &&
+    account.maxRiskPerTradePct !== null &&
+    account.defaultCommission !== null &&
+    hasOpeningCash
+  );
+}

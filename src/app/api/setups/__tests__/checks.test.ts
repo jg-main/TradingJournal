@@ -104,6 +104,7 @@ sqlite.exec(`
     account_id TEXT,
     setup_id TEXT REFERENCES setup_definitions(id),
     description TEXT NOT NULL,
+    is_required INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER,
     is_active INTEGER DEFAULT 1,
     deleted_at TEXT,

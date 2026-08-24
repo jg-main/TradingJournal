@@ -95,6 +95,7 @@ const testCtx = vi.hoisted(() => {
       risk_override_reason TEXT,
       opened_at TEXT,
       closed_at TEXT,
+      reviewed_at TEXT,
       exit_notes TEXT,
       lesson TEXT,
       current_price REAL,
@@ -113,6 +114,7 @@ const testCtx = vi.hoisted(() => {
       fees REAL DEFAULT 0,
       reason_id TEXT,
       notes TEXT,
+      idempotency_key TEXT,
       created_at TEXT DEFAULT (current_timestamp)
     );
 
@@ -719,6 +721,7 @@ console.log('\n7. buildAssessmentPrompt handles trade with no symbol:');
       riskOverrideReason: null,
       openedAt: null,
       closedAt: null,
+      reviewedAt: null,
       exitNotes: null,
       lesson: null,
       currentPrice: null,
@@ -769,6 +772,7 @@ console.log('\n8. buildAssessmentPrompt handles trade with no setupId:');
       riskOverrideReason: null,
       openedAt: null,
       closedAt: null,
+      reviewedAt: null,
       exitNotes: null,
       lesson: null,
       currentPrice: null,

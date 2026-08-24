@@ -195,6 +195,7 @@ sqlite.exec(`
     fees REAL DEFAULT 0,
     reason_id TEXT,
     notes TEXT,
+    idempotency_key TEXT,
     created_at TEXT DEFAULT (current_timestamp)
   );
   CREATE TABLE IF NOT EXISTS trades (
@@ -218,6 +219,7 @@ sqlite.exec(`
     risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
+    reviewed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
     current_price REAL,

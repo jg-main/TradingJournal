@@ -50,7 +50,7 @@ describe('migration 0037 — trade_executions.idempotency_key', () => {
       )
     ) as { version: string; entries: { idx: number; version: string; tag: string }[] };
 
-    expect(meta.version).toBe('8');
+    expect(meta.version).toBe('9');
     const entry = meta.entries.find((e) => e.idx === 37);
     expect(entry).toBeDefined();
     expect(entry?.tag).toBe('0037_execution_idempotency');

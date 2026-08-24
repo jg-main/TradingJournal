@@ -42,6 +42,7 @@ import {
   findAccountingExecutionById,
   findAccountPosition,
   findEventByIdempotencyKey,
+  findFifoLotsByAccountInstrument,
   listAccountingExecutions,
 } from '../../db/accounting-repository';
 
@@ -700,5 +701,129 @@ describe('correctExecution', () => {
     const replacement = findAccountingExecutionById(sqlite, result.correction.replacementExecutionId);
     expect(reversal!.journal_trade_id).toBe(journalTradeId);
     expect(replacement!.journal_trade_id).toBe(journalTradeId);
+  });
+
+  it('preserves the FIFO position of another trade in the same symbol when correcting a trade-linked exit', () => {
+    const { sqlite } = ctx;
+
+    // Fresh account to avoid state leakage from prior tests (all other tests
+    // share the suite-level account).
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'Multi-Trade FIFO Account', now, now);
+
+    const symbol = 'AAPL';
+    const trade1Id = randomUUID();
+    const trade2Id = randomUUID();
+
+    // Explicit, strictly-increasing posted_at values make FIFO replay ordering
+    // deterministic — postExecutionFill defaults to Date.now() ISO (ms
+    // resolution), and same-millisecond posts fall back to random-UUID ordering.
+    const t1Entry = postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'buy',
+      quantity: '100.00',
+      price: '100.00',
+      journalTradeId: trade1Id,
+      postedAt: '2026-01-15T14:30:00.000Z',
+    });
+    const t1Exit = postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'sell',
+      quantity: '100.00',
+      price: '110.00',
+      journalTradeId: trade1Id,
+      postedAt: '2026-01-15T14:35:00.000Z',
+    });
+    const t2Entry = postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'buy',
+      quantity: '100.00',
+      price: '120.00',
+      journalTradeId: trade2Id,
+      postedAt: '2026-01-15T14:40:00.000Z',
+    });
+    // Rebuild once — the projection is a deterministic full replay, so posting
+    // order (not rebuild calls) is the only thing that matters.
+    rebuildPositions(sqlite, freshAccountId, t1Entry.execution.instrumentId);
+
+    // ── Pre-correction baseline: trade 2 owns the only open lot ────────
+    const lotsBefore = findFifoLotsByAccountInstrument(
+      sqlite,
+      freshAccountId,
+      t2Entry.execution.instrumentId,
+    );
+    const t2LotBefore = lotsBefore.find((l) => l.opening_execution_id === t2Entry.execution.id);
+    expect(t2LotBefore).toBeTruthy();
+    expect(t2LotBefore!.direction).toBe('long');
+    expect(t2LotBefore!.remaining_quantity).toBe('100.00');
+    expect(t2LotBefore!.original_quantity).toBe('100.00');
+    expect(t2LotBefore!.entry_price).toBe('120.00');
+
+    const positionBefore = findAccountPosition(sqlite, freshAccountId, t2Entry.execution.instrumentId);
+    expect(positionBefore?.quantity).toBe('100.00');
+    expect(positionBefore?.average_cost).toBe('120.00');
+
+    // ── Correct trade 1's exit fill (price correction 110 → 112) ────────
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: t1Exit.execution.id,
+      symbol,
+      action: 'sell',
+      quantity: '100.00',
+      price: '112.00',
+      reason: 'Multi-trade same-symbol FIFO integrity',
+    });
+
+    // The corrected pair keeps trade 1's linkage (T01 contract) so the
+    // trade-scoped lifecycle rebuild can resolve them.
+    expect(result.reversalExecution.journalTradeId).toBe(trade1Id);
+    expect(result.replacementExecution.journalTradeId).toBe(trade1Id);
+
+    // ── Trade 2's FIFO lot is untouched ────────────────────────────────
+    const lotsAfter = findFifoLotsByAccountInstrument(
+      sqlite,
+      freshAccountId,
+      t2Entry.execution.instrumentId,
+    );
+    const t2LotAfter = lotsAfter.find((l) => l.opening_execution_id === t2Entry.execution.id);
+    expect(t2LotAfter).toBeTruthy();
+    expect(t2LotAfter!.direction).toBe('long');
+    expect(t2LotAfter!.remaining_quantity).toBe('100.00');
+    expect(t2LotAfter!.original_quantity).toBe('100.00');
+    expect(t2LotAfter!.entry_price).toBe('120.00');
+
+    // Only trade 2's lot remains open: the correction kernel excludes the
+    // original+reversal pair from replay, so the replacement sell re-closes
+    // trade 1's own oldest entry lot and never allocates against trade 2.
+    const openLotsAfter = lotsAfter.filter((l) => l.remaining_quantity !== '0.00');
+    expect(openLotsAfter).toHaveLength(1);
+    expect(openLotsAfter[0].opening_execution_id).toBe(t2Entry.execution.id);
+
+    // ── Account aggregate FIFO stays consistent ────────────────────────
+    // Position quantity/average cost are byte-identical to pre-correction;
+    // only realized P&L changes to reflect the corrected exit:
+    // (112.00 − 100.00) × 100 = 1200.00 (the pre-correction exit realized 1000.00).
+    const positionAfter = findAccountPosition(sqlite, freshAccountId, t2Entry.execution.instrumentId);
+    expect(positionAfter?.quantity).toBe('100.00');
+    expect(positionAfter?.average_cost).toBe('120.00');
+    expect(positionAfter?.realized_gross_pnl).toBe('1200.00');
+    expect(result.position?.quantity).toBe('100.00');
+    expect(result.position?.averageCost).toBe('120.00');
+
+    // Replay determinism: rebuilding the projection again yields identical state.
+    rebuildPositions(sqlite, freshAccountId, t2Entry.execution.instrumentId);
+    const positionAfterReplay = findAccountPosition(sqlite, freshAccountId, t2Entry.execution.instrumentId);
+    expect(positionAfterReplay?.quantity).toBe(positionAfter?.quantity);
+    expect(positionAfterReplay?.average_cost).toBe(positionAfter?.average_cost);
+    expect(positionAfterReplay?.realized_gross_pnl).toBe(positionAfter?.realized_gross_pnl);
   });
 });

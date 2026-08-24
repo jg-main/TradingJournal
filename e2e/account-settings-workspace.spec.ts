@@ -767,7 +767,7 @@ test.describe('Account Settings Workspace', () => {
         data: { symbol: `EXP${String(ts).slice(-3)}`, direction: 'long', accountId: staleAccount.id },
       });
       expect(explicitRes.status()).toBe(409);
-      expect((await explicitRes.json()).error).toContain('Account setup incomplete');
+      expect((await explicitRes.json()).error).toContain('Account not eligible for planning');
     });
   });
 });

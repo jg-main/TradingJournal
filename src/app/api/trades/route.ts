@@ -285,7 +285,7 @@ export async function GET(request: NextRequest) {
 
       // S05/T02: derived workflow phase — 'managed' when an open trade has
       // add/reduce executions or any stop/target adjustment. reviewedAt is
-      // always null today (the trades table stores no review timestamp), so
+      // always null today (the trades table now stores reviewed_at but no review workflow writes it yet), so
       // closed trades report 'closed'; the 'reviewed' phase lights up through
       // workflow-phase.ts once review storage exists.
       const managementActivity = hasManagementActivity(executions, stopAdjustments, targetAdjustments);
