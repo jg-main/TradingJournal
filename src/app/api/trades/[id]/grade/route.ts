@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeGrades } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { calculateGrade } from '@/lib/grading';
@@ -121,6 +121,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           updatedAt: now,
         },
       })
+      .run();
+
+    // S07: a grade change invalidates the completed review — the trade must
+    // be re-reviewed. Clearing reviewedAt here keeps the durable reviewed
+    // marker consistent with the latest grade (the 'reviewed' workflow phase
+    // derives from reviewedAt in src/lib/workflow-phase.ts).
+    db.update(trades)
+      .set({ reviewedAt: null, updatedAt: sql`(current_timestamp)` })
+      .where(eq(trades.id, id))
       .run();
 
     // Fetch the row after upsert
