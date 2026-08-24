@@ -62,6 +62,7 @@ export default defineConfig({
       'src/lib/__tests__/surface-token-migration.test.ts',
       'src/lib/__tests__/execution-idempotency-migration.test.ts',
       'src/lib/__tests__/workflow-phase.test.ts',
+      'src/app/api/trades/__tests__/workflow-phase.test.ts',
       'src/lib/__tests__/trade-execution-engine.test.ts',
       'src/lib/__tests__/scorecard.test.ts',
       'src/lib/__tests__/performance-view-types.test.ts',

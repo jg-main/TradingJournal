@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
+import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, tradeTargetAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, and, asc, desc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import { computePlannedRiskAmount } from '@/lib/planned-risk';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput, TradeListMetrics } from '@/lib/trade-metrics';
 import { isAccountEligibleAsDefault } from '@/lib/accounting/default-account-guard';
+import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase';
 
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
@@ -181,6 +182,9 @@ export async function GET(request: NextRequest) {
     const stopRows = tradeIds.length > 0
       ? db.select().from(tradeStopAdjustments).where(inArray(tradeStopAdjustments.tradeId, tradeIds)).orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.createdAt), desc(tradeStopAdjustments.id)).all()
       : [];
+    const targetRows = tradeIds.length > 0
+      ? db.select().from(tradeTargetAdjustments).where(inArray(tradeTargetAdjustments.tradeId, tradeIds)).all()
+      : [];
 
     // Group by trade ID
     const execMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();
@@ -198,6 +202,12 @@ export async function GET(request: NextRequest) {
       const list = stopMap.get(stop.tradeId) ?? [];
       list.push(stop);
       stopMap.set(stop.tradeId, list);
+    }
+    const targetMap = new Map<string, (typeof tradeTargetAdjustments.$inferSelect)[]>();
+    for (const target of targetRows) {
+      const list = targetMap.get(target.tradeId) ?? [];
+      list.push(target);
+      targetMap.set(target.tradeId, list);
     }
 
     // Batch-fetch accounts for equity cascade per account
@@ -271,6 +281,15 @@ export async function GET(request: NextRequest) {
       const executions = execMap.get(row.id) ?? [];
       const riskSnapshot = riskMap.get(row.id) ?? null;
       const stopAdjustments = stopMap.get(row.id) ?? [];
+      const targetAdjustments = targetMap.get(row.id) ?? [];
+
+      // S05/T02: derived workflow phase — 'managed' when an open trade has
+      // add/reduce executions or any stop/target adjustment. reviewedAt is
+      // always null today (the trades table stores no review timestamp), so
+      // closed trades report 'closed'; the 'reviewed' phase lights up through
+      // workflow-phase.ts once review storage exists.
+      const managementActivity = hasManagementActivity(executions, stopAdjustments, targetAdjustments);
+      const workflowPhase = deriveWorkflowPhase(row.status, null, managementActivity);
 
       // Account equity cascade: account_performance.nav → rollforward.endingEquity → account.startingBalance → settings.startingAccountValue → null
       const account = accountMap.get(row.accountId);
@@ -352,6 +371,7 @@ export async function GET(request: NextRequest) {
         returnPct: metrics.returnMetrics.returnPct,
         riskPct: metrics.risk.riskToAccount,
         plannedRiskToAccount,
+        workflowPhase,
         metrics: metricsForList satisfies TradeListMetrics,
       };
     });

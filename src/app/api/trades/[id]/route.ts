@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { trades, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, settings, accounts, accountRollforward, accountPerformance } from '@/db/schema';
+import { trades, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, tradeTargetAdjustments, settings, accounts, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
+import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
@@ -118,6 +119,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .orderBy(desc(tradeStopAdjustments.adjustedAt), desc(tradeStopAdjustments.createdAt), desc(tradeStopAdjustments.id))
       .all();
 
+    const targetAdjustmentRows = db
+      .select()
+      .from(tradeTargetAdjustments)
+      .where(eq(tradeTargetAdjustments.tradeId, id))
+      .orderBy(desc(tradeTargetAdjustments.adjustedAt), desc(tradeTargetAdjustments.createdAt), desc(tradeTargetAdjustments.id))
+      .all();
+
     // Derive current account equity: account_performance.nav → rollforward.endingEquity
     // → account.startingBalance → settings.startingAccountValue → null
     const account = db
@@ -211,6 +219,18 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const metrics = computeTradeMetrics(metricsInput);
 
+    // S05/T02: derived workflow phase — 'managed' when an open trade has
+    // add/reduce executions or any stop/target adjustment. reviewedAt is
+    // always null today (the trades table stores no review timestamp), so
+    // closed trades report 'closed'; the 'reviewed' phase lights up through
+    // workflow-phase.ts once review storage exists.
+    const managementActivity = hasManagementActivity(
+      executionRows,
+      stopAdjustmentRows,
+      targetAdjustmentRows,
+    );
+    const workflowPhase = deriveWorkflowPhase(row.status, null, managementActivity);
+
     // Metrics returned via nested metrics: TradeMetricsResult — consumers read
     // metrics.realizedPnl, metrics.unrealizedPnl, metrics.returnMetrics, metrics.risk
     return NextResponse.json({
@@ -218,6 +238,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       accountName,
       accountCurrency,
       sectorName,
+      workflowPhase,
       metrics,
     });
   } catch (error) {
