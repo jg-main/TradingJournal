@@ -18,6 +18,15 @@
  *      execution set, reviewedAt is invalidated, and every surface reflects
  *      the corrected economics (journal-derived metrics and accounting
  *      surfaces must agree — the S08 divergence contract).
+ *   5. Idempotency     — re-posting the same fill with the same idempotency
+ *      key replays the original execution (replayed: true, same id) with
+ *      zero duplicate rows on any surface.
+ *   6. Inactive account— a first fill on an uninitialized (inactive) account
+ *      is rejected by the execution-readiness gate (account-not-active)
+ *      with zero mutations; the trade stays planned on every surface.
+ *   7. Multi-trade      — two trades on the same symbol share one FIFO pool;
+ *      correcting trade A's exit must leave trade B's position and P&L
+ *      untouched while account-level aggregation stays coherent.
  *
  * Surfaces checked after every step:
  *   S1. GET /api/trades            (list rows: status/lifecycle/P&L)
@@ -294,7 +303,7 @@ function resetDb(): void {
 // 3. Engine driver (REAL canonical execution path)
 // ────────────────────────────────────────────────────────────────────────────
 
-import { executeTradeFill, type TradeExecutionAction } from '@/lib/trade-execution-engine';
+import { executeTradeFill, ReadinessFailureError, type TradeExecutionAction } from '@/lib/trade-execution-engine';
 
 interface EngineFillOptions {
   action: TradeExecutionAction;
@@ -824,6 +833,284 @@ async function scenarioCorrection(): Promise<void> {
   assert(!!replacement, 'correction: replacement execution present with quantity 15.00');
 }
 
+/** Scenario 5: idempotent replay — same key → same execution, zero duplicates. */
+async function scenarioIdempotency(): Promise<void> {
+  const accountId = seedAccount();
+  seedInstrument('AAPL');
+  await initializeAccount(accountId, 10000);
+  seedChecklistItem(accountId);
+  seedSettings(10000);
+  const tradeId = seedTrade({ accountId, symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 95, plannedQuantity: 10 });
+
+  const t = fillTimeline();
+  const checklist = passChecklist(accountId);
+  const key = randomUUID();
+
+  // First fill carries a KNOWN idempotency key.
+  const entry = engineFill(tradeId, {
+    action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: t(),
+    checkResults: checklist, idempotencyKey: key,
+  });
+  assertEqual(entry.trade.status, 'open', 'idempotency: trade open after first fill');
+  assertEqual(entry.replayed, false, 'idempotency: first fill is not a replay');
+  assert(entry.accountingExecution != null, 'idempotency: first fill created an accounting execution');
+
+  // SAME fill, SAME key → the engine must return the existing execution.
+  const replay = engineFill(tradeId, {
+    action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: t(),
+    idempotencyKey: key,
+  });
+  assertEqual(replay.replayed, true, 'idempotency: replay flagged');
+  assertEqual(replay.execution.id, entry.execution.id, 'idempotency: replay returns the SAME execution');
+  assertEqual(replay.trade.status, 'open', 'idempotency: trade stays open after replay');
+  assertEqual(replay.accountingExecution?.id ?? null, entry.accountingExecution?.id ?? null, 'idempotency: replay returns the SAME accounting execution');
+
+  // Exactly ONE execution exists on every persistence surface.
+  const h = requireDb().getSqliteHandle();
+  const journalCount = h.prepare('SELECT COUNT(*) AS c FROM trade_executions WHERE trade_id = ?').get(tradeId) as { c: number };
+  assertEqual(journalCount.c, 1, 'idempotency: exactly 1 journal execution row');
+  const accountingCount = h.prepare('SELECT COUNT(*) AS c FROM accounting_executions WHERE journal_trade_id = ?').get(tradeId) as { c: number };
+  assertEqual(accountingCount.c, 1, 'idempotency: exactly 1 accounting execution row');
+  const eventCount = h
+    .prepare("SELECT COUNT(*) AS c FROM financial_events WHERE account_id = ? AND event_type = 'trade_execution'")
+    .get(accountId) as { c: number };
+  assertEqual(eventCount.c, 1, 'idempotency: exactly 1 trade_execution financial event');
+
+  // All 7 surfaces coherent with exactly one execution (journal == accounting).
+  await assertCoherent(accountId, tradeId, 'idempotency:after-replay');
+}
+
+/** Scenario 6: inactive-account guard — first fill rejected with zero mutations. */
+async function scenarioInactiveAccount(): Promise<void> {
+  const accountId = seedAccount(); // isActive: false — deliberately NOT initialized
+  seedInstrument('AAPL');
+  seedChecklistItem(accountId);
+  seedSettings(10000);
+  const tradeId = seedTrade({ accountId, symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 95, plannedQuantity: 10 });
+
+  const t = fillTimeline();
+  const checklist = passChecklist(accountId);
+
+  // First fill on an inactive account must be rejected by the readiness gate.
+  let caught: unknown = null;
+  try {
+    engineFill(tradeId, { action: 'buy', quantity: 10, price: 100, fees: 0, executedAt: t(), checkResults: checklist });
+  } catch (e) {
+    caught = e;
+  }
+  assert(caught instanceof ReadinessFailureError, 'inactive: engine throws ReadinessFailureError');
+  const codes = (caught as ReadinessFailureError).failures.map((f) => f.code);
+  assert(codes.includes('account-not-active'), `inactive: failure includes account-not-active (got ${codes.join(', ')})`);
+
+  // Zero mutations: no journal, no accounting, no events, no positions.
+  const h = requireDb().getSqliteHandle();
+  const journalCount = h.prepare('SELECT COUNT(*) AS c FROM trade_executions WHERE trade_id = ?').get(tradeId) as { c: number };
+  assertEqual(journalCount.c, 0, 'inactive: 0 journal executions after rejection');
+  const accountingCount = h.prepare('SELECT COUNT(*) AS c FROM accounting_executions WHERE journal_trade_id = ?').get(tradeId) as { c: number };
+  assertEqual(accountingCount.c, 0, 'inactive: 0 accounting executions after rejection');
+  const eventCount = h.prepare('SELECT COUNT(*) AS c FROM financial_events WHERE account_id = ?').get(accountId) as { c: number };
+  assertEqual(eventCount.c, 0, 'inactive: 0 financial events after rejection');
+  const positionCount = h.prepare('SELECT COUNT(*) AS c FROM account_positions WHERE account_id = ?').get(accountId) as { c: number };
+  assertEqual(positionCount.c, 0, 'inactive: 0 position rows after rejection');
+
+  // Trade stays in its pre-fill state.
+  const tradeRow = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get()!;
+  assertEqual(tradeRow.status, 'planned', 'inactive: trade remains planned');
+  assertEqual(tradeRow.openedAt, null, 'inactive: openedAt remains null');
+
+  // All 7 surfaces: 200 with zero executions / zero P&L / planned status.
+  const list = await getTradesList(accountId);
+  assert(list.status === 200, `inactive: trades list returns 200 (got ${list.status})`);
+  const listRows = (list.body.data as Array<Record<string, unknown>>) ?? [];
+  const listRow = listRows.find((r) => r.id === tradeId) ?? null;
+  assert(!!listRow, 'inactive: trade present in list');
+  assertEqual(listRow!.status as string, 'planned', 'inactive: list status planned');
+  assertApprox(listRow!.realizedPnl as number, 0, 0.01, 'inactive: list realizedPnl 0');
+
+  const detail = await getTradeDetail(tradeId);
+  assert(detail.status === 200, `inactive: trade detail returns 200 (got ${detail.status})`);
+  assertEqual(detail.body.status as string, 'planned', 'inactive: detail status planned');
+  const detailMetrics = detail.body.metrics as Record<string, unknown> | undefined;
+  assert(!!detailMetrics, 'inactive: detail has metrics');
+  assertApprox((detailMetrics!.size as Record<string, unknown>).openQuantity as number, 0, 0.01, 'inactive: detail openQuantity 0');
+  assertApprox((detailMetrics!.realizedPnl as Record<string, unknown>).netRealizedPnl as number, 0, 0.01, 'inactive: detail realizedPnl 0');
+
+  const dashboard = await getDashboard(accountId);
+  assert(dashboard.status === 200, `inactive: dashboard returns 200 (got ${dashboard.status})`);
+
+  const overview = await getAccountSurface(accountId, 'overview');
+  assert(overview.status === 200, `inactive: overview returns 200 (got ${overview.status})`);
+  const positions = await getAccountSurface(accountId, 'positions');
+  assert(positions.status === 200, `inactive: positions returns 200 (got ${positions.status})`);
+  assertEqual((positions.body.positions as unknown[]).length, 0, 'inactive: positions empty');
+  const ledger = await getAccountSurface(accountId, 'ledger');
+  assert(ledger.status === 200, `inactive: ledger returns 200 (got ${ledger.status})`);
+  assertEqual((ledger.body.events as unknown[]).length, 0, 'inactive: ledger has zero events');
+  const performance = await getAccountSurface(accountId, 'performance');
+  assert(performance.status === 200, `inactive: performance returns 200 (got ${performance.status})`);
+  assertApprox(decToNum(performance.body.realizedPnl as string | null) ?? 0, 0, 0.01, 'inactive: performance realizedPnl 0');
+  assertApprox(decToNum(performance.body.nav as string | null) ?? 0, 0, 0.01, 'inactive: performance nav 0');
+}
+
+interface MultiTradeExpectation {
+  tradeId: string;
+  expectedOpenQty: number;
+  expectedRealized: number;
+}
+
+/**
+ * Multi-trade coherence contract (S09): two trades on the SAME symbol share
+ * one FIFO pool (per account+instrument), so the positions surface shows a
+ * single AAPL row aggregating both trades while journal metrics stay
+ * per-trade. Asserts lifecycle equality, per-trade journal metrics, the
+ * aggregate position row, account-level accounting equality, dashboard
+ * realized (closed-trades-only → 0 here), and ledger event coverage.
+ */
+async function assertMultiTradeCoherent(
+  accountId: string,
+  trades: MultiTradeExpectation[],
+  label: string,
+): Promise<void> {
+  const list = await getTradesList(accountId);
+  assert(list.status === 200, `${label}: trades list returns 200 (got ${list.status})`);
+  const listRows = (list.body.data as Array<Record<string, unknown>>) ?? [];
+
+  const dashboard = await getDashboard(accountId);
+  assert(dashboard.status === 200, `${label}: dashboard returns 200 (got ${dashboard.status})`);
+  const overview = await getAccountSurface(accountId, 'overview');
+  assert(overview.status === 200, `${label}: overview returns 200 (got ${overview.status})`);
+  const positions = await getAccountSurface(accountId, 'positions');
+  assert(positions.status === 200, `${label}: positions returns 200 (got ${positions.status})`);
+  const ledger = await getAccountSurface(accountId, 'ledger');
+  assert(ledger.status === 200, `${label}: ledger returns 200 (got ${ledger.status})`);
+  const performance = await getAccountSurface(accountId, 'performance');
+  assert(performance.status === 200, `${label}: performance returns 200 (got ${performance.status})`);
+
+  const h = requireDb().getSqliteHandle();
+  const totalFills = trades.reduce((sum, t) => {
+    const c = h.prepare('SELECT COUNT(*) AS c FROM trade_executions WHERE trade_id = ?').get(t.tradeId) as { c: number };
+    return sum + c.c;
+  }, 0);
+
+  let sumOpenQty = 0;
+  let sumRealized = 0;
+
+  for (const t of trades) {
+    const tradeRow = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, t.tradeId)).get() as typeof schema.trades.$inferSelect | undefined;
+    assert(!!tradeRow, `${label}: trade row exists (${t.tradeId})`);
+    const listRow = listRows.find((r) => r.id === t.tradeId) ?? null;
+    assert(!!listRow, `${label}: trade present in list (${t.tradeId})`);
+    assertEqual(listRow!.status as string, tradeRow!.status, `${label}: list.status == trade row (${t.tradeId})`);
+    assertEqual(listRow!.openedAt as string | null, tradeRow!.openedAt, `${label}: list.openedAt == trade row (${t.tradeId})`);
+    assertEqual(listRow!.closedAt as string | null, tradeRow!.closedAt, `${label}: list.closedAt == trade row (${t.tradeId})`);
+
+    const detail = await getTradeDetail(t.tradeId);
+    assert(detail.status === 200, `${label}: detail returns 200 (${t.tradeId})`);
+    assertEqual(detail.body.status as string, tradeRow!.status, `${label}: detail.status == trade row (${t.tradeId})`);
+    const metrics = detail.body.metrics as Record<string, unknown> | undefined;
+    assert(!!metrics, `${label}: detail has metrics (${t.tradeId})`);
+    const openQty = (metrics!.size as Record<string, unknown>).openQuantity as number;
+    const realized = (metrics!.realizedPnl as Record<string, unknown>).netRealizedPnl as number | null;
+    assertApprox(openQty, t.expectedOpenQty, 0.01, `${label}: openQuantity (${t.tradeId}) == expected`);
+    assertApprox(realized ?? 0, t.expectedRealized, 0.01, `${label}: realizedPnl (${t.tradeId}) == expected`);
+    assertApprox(listRow!.realizedPnl as number, t.expectedRealized, 0.01, `${label}: list realizedPnl (${t.tradeId}) == expected`);
+    sumOpenQty += t.expectedOpenQty;
+    sumRealized += t.expectedRealized;
+  }
+
+  // Positions surface: ONE AAPL row aggregating both trades.
+  const positionsArr = (positions.body.positions as Array<Record<string, unknown>>) ?? [];
+  const aapl = positionsArr.find((p) => p.symbol === 'AAPL') ?? null;
+  assert(!!aapl, `${label}: AAPL position present`);
+  assertApprox(decToNum(aapl!.quantity as string), sumOpenQty, 0.01, `${label}: positions AAPL quantity == sum of open quantities`);
+  assertApprox(decToNum(aapl!.realizedNetPnl as string), sumRealized, 0.01, `${label}: positions AAPL realizedNetPnl == sum of realized`);
+
+  // Account-level accounting surfaces agree with each other.
+  const snapshot = overview.body.snapshot as Record<string, unknown> | undefined;
+  assert(!!snapshot, `${label}: overview has snapshot`);
+  const perfRealized = decToNum(performance.body.realizedPnl as string | null);
+  const ovRealized = decToNum(snapshot!.realizedPnl as string | null);
+  assertApprox(ovRealized, perfRealized ?? 0, 0.01, `${label}: overview.realizedPnl == performance.realizedPnl`);
+  assertApprox(perfRealized ?? 0, sumRealized, 0.01, `${label}: accounting realized == journal realized sum`);
+  const perfNav = decToNum(performance.body.nav as string | null);
+  const ovNav = decToNum(snapshot!.nav as string | null);
+  assertApprox(ovNav, perfNav ?? 0, 0.01, `${label}: overview.nav == performance.nav`);
+
+  // Dashboard: no closed trades → realized 0 (both trades stay open).
+  const kpis = dashboard.body.kpis as Record<string, unknown> | undefined;
+  if (kpis) {
+    assertApprox(kpis.realizedPnl as number, 0, 0.01, `${label}: dashboard realized == 0 (no closed trades)`);
+  }
+
+  // Ledger reflects every posted fill across both trades.
+  const ledgerEvents = (ledger.body.events as Array<Record<string, unknown>>) ?? [];
+  const tradeExecEvents = ledgerEvents.filter((e) => e.eventType === 'trade_execution' || e.category === 'Trade');
+  assert(tradeExecEvents.length >= totalFills, `${label}: ledger events (${tradeExecEvents.length}) >= fills (${totalFills})`);
+}
+
+/** Scenario 7: multi-trade same-symbol — correction isolation across trades. */
+async function scenarioMultiTradeSameSymbol(): Promise<void> {
+  const accountId = seedAccount();
+  seedInstrument('AAPL');
+  await initializeAccount(accountId, 10000);
+  seedChecklistItem(accountId);
+  seedSettings(10000);
+
+  const t = fillTimeline();
+  const checklist = passChecklist(accountId);
+
+  // Trade A: entry 100 @ 100, exit 50 @ 110.
+  const tradeA = seedTrade({ accountId, symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 95, plannedQuantity: 100 });
+  const entryA = engineFill(tradeA, { action: 'buy', quantity: 100, price: 100, fees: 0, executedAt: t(), checkResults: checklist });
+  assertEqual(entryA.trade.status, 'open', 'multi: trade A open after entry');
+  const exitA = engineFill(tradeA, { action: 'sell', quantity: 50, price: 110, fees: 0, executedAt: t() });
+  assertEqual(exitA.trade.status, 'open', 'multi: trade A open after exit');
+
+  // Trade B: entry 75 @ 102 on the SAME symbol (shares the FIFO pool).
+  const tradeB = seedTrade({ accountId, symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 95, plannedQuantity: 75 });
+  const entryB = engineFill(tradeB, { action: 'buy', quantity: 75, price: 102, fees: 0, executedAt: t(), checkResults: checklist });
+  assertEqual(entryB.trade.status, 'open', 'multi: trade B open after entry');
+
+  // Coherence with both trades live: A 50 open / 500 realized, B 75 open / 0.
+  await assertMultiTradeCoherent(accountId, [
+    { tradeId: tradeA, expectedOpenQty: 50, expectedRealized: 500 },
+    { tradeId: tradeB, expectedOpenQty: 75, expectedRealized: 0 },
+  ], 'multi:before-correction');
+
+  // Capture Trade B's metrics BEFORE the correction — must be identical after.
+  const detailBBefore = await getTradeDetail(tradeB);
+  const metricsBBefore = detailBBefore.body.metrics as Record<string, unknown>;
+  const openBBefore = (metricsBBefore.size as Record<string, unknown>).openQuantity as number;
+  const realizedBBefore = (metricsBBefore.realizedPnl as Record<string, unknown>).netRealizedPnl as number | null;
+
+  // Correct Trade A's exit: replacement quantity 30 @ 110 (was 50).
+  const correct = await callCorrect(tradeA, exitA.execution.id, {
+    symbol: 'AAPL',
+    action: 'sell',
+    quantity: '30.00',
+    price: '110.00',
+    fees: '0.00',
+    reason: 'S09 multi-trade: exit quantity was 50, should be 30',
+    idempotencyKey: randomUUID(),
+  });
+  assert(correct.status === 200, `multi: correct returns 200 (got ${correct.status})`);
+
+  // After correction: A = 100 - 30 = 70 remaining / 300 realized; B untouched.
+  await assertMultiTradeCoherent(accountId, [
+    { tradeId: tradeA, expectedOpenQty: 70, expectedRealized: 300 },
+    { tradeId: tradeB, expectedOpenQty: 75, expectedRealized: 0 },
+  ], 'multi:after-correction');
+
+  // Trade B is byte-identical before/after (cross-trade isolation).
+  const detailBAfter = await getTradeDetail(tradeB);
+  const metricsBAfter = detailBAfter.body.metrics as Record<string, unknown>;
+  assertApprox((metricsBAfter.size as Record<string, unknown>).openQuantity as number, openBBefore, 0.001, 'multi: B openQuantity unchanged by A correction');
+  assertApprox((metricsBAfter.realizedPnl as Record<string, unknown>).netRealizedPnl as number | null ?? 0, realizedBBefore ?? 0, 0.001, 'multi: B realizedPnl unchanged by A correction');
+  assertEqual(detailBAfter.body.status as string, detailBBefore.body.status as string, 'multi: B status unchanged');
+  const rowB = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, tradeB)).get()!;
+  assertEqual(rowB.status, 'open', 'multi: B trade row still open');
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // 7. Main runner
 // ────────────────────────────────────────────────────────────────────────────
@@ -883,6 +1170,9 @@ async function main(): Promise<void> {
   await runScenario('short', 'Short lifecycle (entry/add/reduce/close)', scenarioShortLifecycle);
   await runScenario('backdate', 'Backdated first fill (openedAt from effective fill)', scenarioBackdatedFill);
   await runScenario('correction', 'Execution correction (lifecycle rebuild, review invalidation, zero divergence)', scenarioCorrection);
+  await runScenario('idempotency', 'Idempotent replay (same key → same execution, zero duplicates)', scenarioIdempotency);
+  await runScenario('inactive', 'Inactive-account guard (account-not-active, zero mutations)', scenarioInactiveAccount);
+  await runScenario('multitrade', 'Multi-trade same-symbol (correction isolation across shared FIFO pool)', scenarioMultiTradeSameSymbol);
 
   console.log();
   console.log('━'.repeat(72));
