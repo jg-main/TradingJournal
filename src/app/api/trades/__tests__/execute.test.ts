@@ -145,6 +145,7 @@ sqlite.exec(`
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
+    risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
     exit_notes TEXT,
@@ -201,6 +202,7 @@ sqlite.exec(`
     account_id TEXT REFERENCES accounts(id),
     setup_id TEXT REFERENCES setup_definitions(id),
     description TEXT NOT NULL,
+    is_required INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER,
     is_active INTEGER DEFAULT 1,
     deleted_at TEXT,
@@ -212,6 +214,7 @@ sqlite.exec(`
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT REFERENCES trades(id) ON DELETE CASCADE NOT NULL,
     checklist_definition_id TEXT REFERENCES checklist_definitions(id) NOT NULL,
+    item_text TEXT,
     passed INTEGER NOT NULL,
     comment TEXT,
     checked_at TEXT DEFAULT (current_timestamp),
@@ -384,22 +387,46 @@ function doExecute(tradeId: string, input: ExecuteInput): { status: number; data
       .orderBy(asc(schema.checklistDefinitions.sortOrder), asc(schema.checklistDefinitions.createdAt))
       .all();
 
+    // Item-text snapshot map (F7), shared with the transaction below.
+    const itemTextById = new Map<string, string>();
+
     if (mergedChecks.length > 0) {
       const submitted = input.checkResults ?? [];
 
       // Map submitted results by checklistDefinitionId for quick lookup
       const submittedMap = new Map(submitted.map((cr) => [cr.checklistDefinitionId, cr.passed]));
 
-      // Find checklist items that are missing from submitted results or not passed
+      // Find checklist items that are missing from submitted results or not passed.
+      // Only required items gate execution (D3): optional items may be omitted.
       const missing: string[] = [];
       const notPassed: string[] = [];
 
       for (const check of mergedChecks) {
+        if (!check.isRequired) continue;
         const passedResult = submittedMap.get(check.id);
         if (passedResult === undefined) {
           missing.push(check.description);
         } else if (!passedResult) {
           notPassed.push(check.description);
+        }
+      }
+
+      // Build the item-text snapshot map (F7) for submitted results: snapshot
+      // each definition's description at check time, with a direct fallback for
+      // any submitted definition not part of the merged active set.
+      for (const check of mergedChecks) {
+        itemTextById.set(check.id, check.description);
+      }
+      for (const cr of submitted) {
+        if (!itemTextById.has(cr.checklistDefinitionId)) {
+          const def = db
+            .select()
+            .from(schema.checklistDefinitions)
+            .where(eq(schema.checklistDefinitions.id, cr.checklistDefinitionId))
+            .get();
+          if (def) {
+            itemTextById.set(cr.checklistDefinitionId, def.description);
+          }
         }
       }
 
@@ -529,7 +556,8 @@ function doExecute(tradeId: string, input: ExecuteInput): { status: number; data
         .where(eq(schema.trades.id, tradeId))
         .run();
 
-      // 6. Persist trade check results atomically within the transaction
+      // 6. Persist trade check results atomically within the transaction,
+      // snapshotting the item text (F7) at check time.
       const submitted = input.checkResults ?? [];
       for (const cr of submitted) {
         tx.insert(schema.tradeCheckResults)
@@ -537,6 +565,7 @@ function doExecute(tradeId: string, input: ExecuteInput): { status: number; data
             id: randomUUID(),
             tradeId,
             checklistDefinitionId: cr.checklistDefinitionId,
+            itemText: itemTextById.get(cr.checklistDefinitionId) ?? null,
             passed: cr.passed,
             comment: cr.comment ?? null,
             checkedAt: now,
@@ -1149,6 +1178,118 @@ console.log('\n16. POST allows execution when only soft-deleted checks exist:');
   // Should pass because merged checklist is empty (soft-deleted checks excluded)
   const result = doSimpleExecute(tradeId);
   assert(result.status === 201, 'returns 201');
+}
+
+// ── 17. Optional items can be missing without failing the gate ───────
+
+console.log('\n17. POST succeeds when only optional items are missing from checkResults:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId);
+  tradeId = trade.id as string;
+
+  const requiredCheck = seedCheck({ accountId, description: 'Required check', sortOrder: 1 });
+  seedCheck({ accountId, description: 'Optional check', sortOrder: 2, isRequired: false });
+
+  // Required item is passed; optional item is omitted entirely.
+  const result = doExecute(tradeId, {
+    entryPrice: 100,
+    entryQuantity: 10,
+    checkResults: [
+      { checklistDefinitionId: requiredCheck.id as string, passed: true },
+    ],
+  });
+
+  assert(result.status === 201, 'returns 201 (optional item missing does not gate)');
+
+  // Only the submitted required item is persisted.
+  const persisted = db
+    .select()
+    .from(schema.tradeCheckResults)
+    .where(eq(schema.tradeCheckResults.tradeId, tradeId))
+    .all();
+  assertEqual(persisted.length, 1, '1 check result persisted (optional omitted, not inserted)');
+  assertEqual(persisted[0].checklistDefinitionId, requiredCheck.id as string, 'required check persisted');
+}
+
+// ── 18. All-optional merged list does not gate execution ─────────────
+
+console.log('\n18. POST succeeds when every merged item is optional and none are submitted:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId);
+  tradeId = trade.id as string;
+
+  seedCheck({ accountId, description: 'Optional A', sortOrder: 1, isRequired: false });
+  seedCheck({ accountId, description: 'Optional B', sortOrder: 2, isRequired: false });
+
+  const result = doSimpleExecute(tradeId);
+  assert(result.status === 201, 'returns 201 with zero required items');
+}
+
+// ── 19. Optional item submitted is recorded with item-text snapshot ──
+
+console.log('\n19. POST records submitted optional items with itemText snapshot:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId);
+  tradeId = trade.id as string;
+
+  const optionalCheck = seedCheck({ accountId, description: 'Optional evidence', sortOrder: 1, isRequired: false });
+
+  const result = doExecute(tradeId, {
+    entryPrice: 100,
+    entryQuantity: 10,
+    checkResults: [
+      { checklistDefinitionId: optionalCheck.id as string, passed: true, comment: 'extra note' },
+    ],
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const persisted = db
+    .select()
+    .from(schema.tradeCheckResults)
+    .where(eq(schema.tradeCheckResults.tradeId, tradeId))
+    .all();
+  assertEqual(persisted.length, 1, '1 check result persisted');
+  assertEqual(persisted[0].itemText, 'Optional evidence', 'itemText snapshots the description');
+  assertEqual(persisted[0].comment, 'extra note', 'comment preserved');
+}
+
+// ── 20. itemText snapshots the description at check time ─────────────
+
+console.log('\n20. POST writes itemText snapshot for required items:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId);
+  tradeId = trade.id as string;
+
+  const check1 = seedCheck({ accountId, description: 'Snapshot me', sortOrder: 1 });
+
+  const result = doExecute(tradeId, {
+    entryPrice: 100,
+    entryQuantity: 10,
+    checkResults: [
+      { checklistDefinitionId: check1.id as string, passed: true },
+    ],
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const persisted = db
+    .select()
+    .from(schema.tradeCheckResults)
+    .where(eq(schema.tradeCheckResults.tradeId, tradeId))
+    .all();
+  assertEqual(persisted.length, 1, '1 check result persisted');
+  assertEqual(persisted[0].itemText, 'Snapshot me', 'itemText equals the definition description at check time');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

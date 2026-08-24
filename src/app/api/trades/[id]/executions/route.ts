@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransactions, settings as settingsTable } from '@/db/schema';
-import { eq, and, lte } from 'drizzle-orm';
+import { trades, tradeExecutions, tradeRiskSnapshots, accounts, accountTransactions, settings as settingsTable, checklistDefinitions, tradeCheckResults, lookupValues, setupDefinitions } from '@/db/schema';
+import { eq, and, lte, or, isNull, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { computeTradeMetrics, type ExecutionData, type Direction } from '@/lib/trade-metrics';
@@ -28,6 +28,11 @@ const createExecutionSchema = z.object({
   fees: z.number().min(0).optional().default(0),
   reasonId: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  checkResults: z.array(z.object({
+    checklistDefinitionId: z.string(),
+    passed: z.boolean(),
+    comment: z.string().optional(),
+  })).optional(),
 });
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -135,6 +140,119 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // ── Checklist gate: first fill only ──────────────────────────────
+    //
+    // When the trade is still 'planned' this is the first fill: enforce the
+    // required items of the merged active checklist (account + resolved setup)
+    // before any mutation, mirroring the P1 execute gate (D3). Subsequent
+    // fills (status already 'open'/'closed') do NOT re-enforce the gate.
+    // Submitted check results are persisted with an item-text snapshot (F7).
+    let submittedCheckResults: {
+      checklistDefinitionId: string;
+      passed: boolean;
+      comment?: string;
+    }[] = [];
+    const checkItemTextById = new Map<string, string>();
+
+    if (trade.status === 'planned') {
+      const submitted = parsed.data.checkResults ?? [];
+      submittedCheckResults = submitted;
+
+      // Resolve setup definition ID from the trade's setup lookup value
+      let setupDefId: string | undefined;
+      if (trade.setupId) {
+        const lookupVal = db
+          .select()
+          .from(lookupValues)
+          .where(eq(lookupValues.id, trade.setupId))
+          .get();
+        if (lookupVal) {
+          const setupDef = db
+            .select()
+            .from(setupDefinitions)
+            .where(eq(setupDefinitions.name, lookupVal.value))
+            .get();
+          if (setupDef) {
+            setupDefId = setupDef.id;
+          }
+        }
+      }
+
+      // Fetch merged checklist for this trade's account + resolved setup
+      const mergedChecks = db
+        .select()
+        .from(checklistDefinitions)
+        .where(
+          and(
+            or(
+              eq(checklistDefinitions.accountId, trade.accountId),
+              ...(setupDefId ? [eq(checklistDefinitions.setupId, setupDefId)] : []),
+            ),
+            isNull(checklistDefinitions.deletedAt),
+          ),
+        )
+        .orderBy(asc(checklistDefinitions.sortOrder), asc(checklistDefinitions.createdAt))
+        .all();
+
+      if (mergedChecks.length > 0) {
+        const submittedMap = new Map(submitted.map((cr) => [cr.checklistDefinitionId, cr.passed]));
+
+        // Only required items gate execution (D3): optional items may be
+        // omitted, but if submitted they are still recorded below.
+        const missing: string[] = [];
+        const notPassed: string[] = [];
+
+        for (const check of mergedChecks) {
+          if (!check.isRequired) continue;
+          const passedResult = submittedMap.get(check.id);
+          if (passedResult === undefined) {
+            missing.push(check.description);
+          } else if (!passedResult) {
+            notPassed.push(check.description);
+          }
+        }
+
+        if (missing.length > 0 || notPassed.length > 0) {
+          return NextResponse.json(
+            {
+              error: 'Validation failed',
+              details: {
+                fieldErrors: {
+                  checkResults: [
+                    ...(missing.length > 0
+                      ? [`Missing check results for: ${missing.join(', ')}`]
+                      : []),
+                    ...(notPassed.length > 0
+                      ? [`Checklist items must be passed before execution: ${notPassed.join(', ')}`]
+                      : []),
+                  ],
+                },
+              },
+            },
+            { status: 400 },
+          );
+        }
+      }
+
+      // Build the item-text snapshot map (F7): snapshot each definition's
+      // description at check time, with a direct fallback for any submitted
+      // definition that is not part of the merged active set.
+      for (const check of mergedChecks) {
+        checkItemTextById.set(check.id, check.description);
+      }
+      for (const cr of submitted) {
+        if (!checkItemTextById.has(cr.checklistDefinitionId)) {
+          const def = db
+            .select()
+            .from(checklistDefinitions)
+            .where(eq(checklistDefinitions.id, cr.checklistDefinitionId))
+            .get();
+          if (def) {
+            checkItemTextById.set(cr.checklistDefinitionId, def.description);
+          }
+        }
+      }
+    }
     const executionId = randomUUID();
     const now = new Date().toISOString();
 
@@ -152,6 +270,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         createdAt: now,
       })
       .run();
+
+    // ── Persist first-fill check results (item-text snapshot) ─────────
+    if (trade.status === 'planned' && submittedCheckResults.length > 0) {
+      for (const cr of submittedCheckResults) {
+        db.insert(tradeCheckResults)
+          .values({
+            id: randomUUID(),
+            tradeId: id,
+            checklistDefinitionId: cr.checklistDefinitionId,
+            itemText: checkItemTextById.get(cr.checklistDefinitionId) ?? null,
+            passed: cr.passed,
+            comment: cr.comment ?? null,
+            checkedAt: now,
+            createdAt: now,
+          })
+          .run();
+      }
+    }
 
     // ── Recalculate trade status and timestamps ──────────────────────
 

@@ -3,14 +3,17 @@
  *
  * Tests GET (list by tradeId) and POST (create with validation and status recalculation).
  *
- * Run: npx vitest run --reporter verbose src/app/api/trades/\[id\]/executions/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/trades/[id]/executions/__tests__/route.test.ts
+ *      (also registered in vitest.config.ts include; run via
+ *       `npx vitest run src/app/api/trades/[id]/executions/__tests__/route.test.ts`)
  */
+/// <reference types="vitest/globals" />
 
 import { testDbPath } from '../../../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq } from 'drizzle-orm';
+import { eq, and, or, isNull, asc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 
@@ -101,6 +104,7 @@ sqlite.exec(`
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
+    risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
     exit_notes TEXT,
@@ -161,6 +165,50 @@ sqlite.exec(`
     planned_reward_risk REAL,
     created_at TEXT DEFAULT (current_timestamp)
   );
+  CREATE TABLE IF NOT EXISTS lookup_values (
+    id TEXT PRIMARY KEY NOT NULL,
+    type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    description TEXT,
+    sort_order INTEGER,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS setup_definitions (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    how_to_play TEXT,
+    exit_rules TEXT,
+    tags TEXT,
+    default_risk_pct REAL,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS checklist_definitions (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT REFERENCES accounts(id),
+    setup_id TEXT REFERENCES setup_definitions(id),
+    description TEXT NOT NULL,
+    is_required INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER,
+    is_active INTEGER DEFAULT 1,
+    deleted_at TEXT,
+    created_at TEXT DEFAULT (current_timestamp),
+    updated_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS trade_check_results (
+    id TEXT PRIMARY KEY NOT NULL,
+    trade_id TEXT NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+    checklist_definition_id TEXT NOT NULL REFERENCES checklist_definitions(id),
+    item_text TEXT,
+    passed INTEGER NOT NULL,
+    comment TEXT,
+    checked_at TEXT DEFAULT (current_timestamp),
+    created_at TEXT DEFAULT (current_timestamp)
+  );
 `);
 
 // ── Simulated deriveTradeStatus ─────────────────────────────────────
@@ -181,6 +229,12 @@ interface DeriveStatusResult {
   status: string;
   openedAt: string | null;
   closedAt: string | null;
+}
+
+interface CheckResultInput {
+  checklistDefinitionId: string;
+  passed: boolean;
+  comment?: string;
 }
 
 function simulateDeriveStatus(
@@ -312,6 +366,109 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
       };
     }
 
+    // ── Checklist gate: first fill only (D3 + F8) ──────────────────
+    //
+    // When the trade is still 'planned' this is the first fill: enforce the
+    // required items of the merged active checklist (account + resolved setup)
+    // before any mutation. Subsequent fills (status already 'open'/'closed')
+    // do NOT re-enforce the gate. Submitted results are persisted with an
+    // item-text snapshot (F7).
+    const checkResults = (body.checkResults as CheckResultInput[] | undefined) ?? [];
+    const itemTextById = new Map<string, string>();
+
+    if (tradeRec.status === 'planned') {
+      // Resolve setup definition ID from the trade's setup lookup value
+      let setupDefId: string | undefined;
+      if (tradeRec.setupId) {
+        const lookupVal = db
+          .select()
+          .from(schema.lookupValues)
+          .where(eq(schema.lookupValues.id, tradeRec.setupId as string))
+          .get() as Record<string, unknown> | undefined;
+        if (lookupVal) {
+          const setupDef = db
+            .select()
+            .from(schema.setupDefinitions)
+            .where(eq(schema.setupDefinitions.name, lookupVal.value as string))
+            .get() as Record<string, unknown> | undefined;
+          if (setupDef) {
+            setupDefId = setupDef.id as string;
+          }
+        }
+      }
+
+      const mergedChecks = db
+        .select()
+        .from(schema.checklistDefinitions)
+        .where(
+          and(
+            or(
+              eq(schema.checklistDefinitions.accountId, tradeRec.accountId as string),
+              ...(setupDefId ? [eq(schema.checklistDefinitions.setupId, setupDefId)] : []),
+            ),
+            isNull(schema.checklistDefinitions.deletedAt),
+          ),
+        )
+        .orderBy(asc(schema.checklistDefinitions.sortOrder), asc(schema.checklistDefinitions.createdAt))
+        .all() as Array<Record<string, unknown>>;
+
+      if (mergedChecks.length > 0) {
+        const submittedMap = new Map(checkResults.map((cr) => [cr.checklistDefinitionId, cr.passed]));
+
+        // Only required items gate execution (D3): optional items may be omitted.
+        const missing: string[] = [];
+        const notPassed: string[] = [];
+
+        for (const check of mergedChecks) {
+          if (!check.isRequired) continue;
+          const passedResult = submittedMap.get(check.id as string);
+          if (passedResult === undefined) {
+            missing.push(check.description as string);
+          } else if (!passedResult) {
+            notPassed.push(check.description as string);
+          }
+        }
+
+        // Build the item-text snapshot map (F7) for submitted results.
+        for (const check of mergedChecks) {
+          itemTextById.set(check.id as string, check.description as string);
+        }
+        for (const cr of checkResults) {
+          if (!itemTextById.has(cr.checklistDefinitionId)) {
+            const def = db
+              .select()
+              .from(schema.checklistDefinitions)
+              .where(eq(schema.checklistDefinitions.id, cr.checklistDefinitionId))
+              .get() as Record<string, unknown> | undefined;
+            if (def) {
+              itemTextById.set(cr.checklistDefinitionId, def.description as string);
+            }
+          }
+        }
+
+        if (missing.length > 0 || notPassed.length > 0) {
+          return {
+            status: 400,
+            data: {
+              error: 'Validation failed',
+              details: {
+                fieldErrors: {
+                  checkResults: [
+                    ...(missing.length > 0
+                      ? [`Missing check results for: ${missing.join(', ')}`]
+                      : []),
+                    ...(notPassed.length > 0
+                      ? [`Checklist items must be passed before execution: ${notPassed.join(', ')}`]
+                      : []),
+                  ],
+                },
+              },
+            },
+          };
+        }
+      }
+    }
+
     const executionId = randomUUID();
     const now = new Date().toISOString();
 
@@ -329,6 +486,24 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
         createdAt: now,
       })
       .run();
+
+    // ── Persist first-fill check results (item-text snapshot) ───────
+    if (tradeRec.status === 'planned' && checkResults.length > 0) {
+      for (const cr of checkResults) {
+        db.insert(schema.tradeCheckResults)
+          .values({
+            id: randomUUID(),
+            tradeId,
+            checklistDefinitionId: cr.checklistDefinitionId,
+            itemText: itemTextById.get(cr.checklistDefinitionId) ?? null,
+            passed: cr.passed,
+            comment: cr.comment ?? null,
+            checkedAt: now,
+            createdAt: now,
+          })
+          .run();
+      }
+    }
 
     // ── Recalculate trade status ────────────────────────────────
 
@@ -515,12 +690,33 @@ function doPostExecution(tradeId: string, body: Record<string, unknown>): { stat
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function cleanup() {
+  sqlite.exec('DELETE FROM trade_check_results;');
+  sqlite.exec('DELETE FROM checklist_definitions;');
   sqlite.exec('DELETE FROM trade_risk_snapshots;');
   sqlite.exec('DELETE FROM trade_executions;');
   sqlite.exec('DELETE FROM trades;');
   sqlite.exec('DELETE FROM accounts;');
   sqlite.exec('DELETE FROM account_transactions;');
   sqlite.exec('DELETE FROM settings;');
+  sqlite.exec('DELETE FROM lookup_values;');
+  sqlite.exec('DELETE FROM setup_definitions;');
+}
+
+function seedCheckDefinition(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.checklistDefinitions)
+    .values({
+      id,
+      description: 'Default check description',
+      sortOrder: 0,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.checklistDefinitions).where(eq(schema.checklistDefinitions.id, id)).get() as Record<string, unknown>;
 }
 
 function seedAccount(overrides: Record<string, unknown> = {}) {
@@ -1102,14 +1298,121 @@ console.log('\n21. POST leaves accountEquityAtOpen as null when nothing is avail
   assertEqual(snapshot!.accountEquityAtOpen, null, 'accountEquityAtOpen is null when nothing available');
 }
 
+// ── 22. First fill enforces required checklist items ─────────────────
+
+console.log('\n22. First fill enforces required checklist items:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  seedCheckDefinition({ accountId: 'test-account-id', description: 'Required pre-trade check', sortOrder: 1 });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'buy',
+    quantity: 100,
+    price: 150.0,
+  });
+
+  assert(result.status === 400, 'returns 400 when required checklist item missing on first fill');
+  const data = result.data as { details: { fieldErrors: Record<string, string[]> } };
+  const errors = (data.details?.fieldErrors?.checkResults ?? []).join(' ');
+  assert(errors.includes('Required pre-trade check'), 'error names the missing required item');
+
+  // Gate fires before mutation: no execution created.
+  const execs = db
+    .select()
+    .from(schema.tradeExecutions)
+    .where(eq(schema.tradeExecutions.tradeId, trade.id as string))
+    .all();
+  assertEqual(execs.length, 0, 'no execution created when the gate rejects');
+}
+
+// ── 23. First fill passes with required submitted; optional omitted ──
+
+console.log('\n23. First fill passes with required items submitted (optional omitted) and persists itemText:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+  const check1 = seedCheckDefinition({ accountId: 'test-account-id', description: 'Required check A', sortOrder: 1 });
+  seedCheckDefinition({ accountId: 'test-account-id', description: 'Optional check B', sortOrder: 2, isRequired: false });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'buy',
+    quantity: 100,
+    price: 150.0,
+    checkResults: [
+      { checklistDefinitionId: check1.id as string, passed: true },
+      // Optional check B omitted — must not gate.
+    ],
+  });
+
+  assert(result.status === 201, 'returns 201');
+  const persisted = db
+    .select()
+    .from(schema.tradeCheckResults)
+    .where(eq(schema.tradeCheckResults.tradeId, trade.id as string))
+    .all();
+  assertEqual(persisted.length, 1, '1 check result persisted');
+  assertEqual(persisted[0].checklistDefinitionId, check1.id as string, 'required item persisted');
+  assertEqual(persisted[0].itemText, 'Required check A', 'itemText snapshots the description');
+}
+
+// ── 24. Subsequent fills skip the checklist gate ─────────────────────
+
+console.log('\n24. Subsequent fills skip the checklist gate:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
+
+  // Trade already open with a required checklist defined — an add/reduce fill
+  // must NOT re-enforce the gate (F8 fixed without breaking post-open fills).
+  seedCheckDefinition({ accountId: 'test-account-id', description: 'Required check', sortOrder: 1 });
+  seedExecution({ tradeId: trade.id, action: 'buy', quantity: 100, price: 150.0 });
+
+  const result = doPostExecution(trade.id as string, {
+    action: 'add',
+    quantity: 50,
+    price: 152.0,
+  });
+
+  assert(result.status === 201, 'returns 201 on subsequent fill with no checkResults');
+  const persisted = db
+    .select()
+    .from(schema.tradeCheckResults)
+    .where(eq(schema.tradeCheckResults.tradeId, trade.id as string))
+    .all();
+  assertEqual(persisted.length, 0, 'no check results persisted on subsequent fill');
+}
+
 // ── Summary ──────────────────────────────────────────────────────────
 
 const total = passed + failed;
 console.log(`\n${'─'.repeat(40)}`);
 console.log(`Results: ${passed}/${total} passed`);
-if (failed > 0) {
-  console.error(`         ${failed}/${total} FAILED\n`);
-  process.exit(1);
+
+// Dual-mode finish: this file is both a standalone tsx harness (Run:
+// `npx tsx <file>`) and a vitest suite (registered in the include list in
+// vitest.config.ts so the S02/T03 verification surface `npx vitest run <file>`
+// executes it). The harness assertions run during module import; vitest
+// requires at least one test suite per file, so the pass/fail verdict is
+// surfaced through a single test below. `test` is a global only inside the
+// vitest runner (globals: true in vitest.config.ts) — the `typeof test` guard
+// keeps the tsx path import-free; under tsx the summary exits directly.
+if (typeof test !== 'undefined') {
+  test('standalone executions route harness (assertions run at import)', () => {
+    if (failed > 0) {
+      throw new Error(`         ${failed}/${total} FAILED`);
+    }
+    console.log('         All tests passed!');
+  });
 } else {
-  console.log('         All tests passed!\n');
+  if (failed > 0) {
+    console.error(`         ${failed}/${total} FAILED`);
+    process.exit(1);
+  }
+  console.log('         All tests passed!');
 }

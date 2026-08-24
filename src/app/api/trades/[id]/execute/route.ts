@@ -235,11 +235,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // Map submitted results by checklistDefinitionId for quick lookup
       const submittedMap = new Map(submitted.map((cr) => [cr.checklistDefinitionId, cr.passed]));
 
-      // Find checklist items that are missing from submitted results or not passed
+      // Find checklist items that are missing from submitted results or not passed.
+      // Only required items gate execution (D3): optional items may be omitted,
+      // but if submitted they are still recorded below.
       const missing: string[] = [];
       const notPassed: string[] = [];
 
       for (const check of mergedChecks) {
+        if (!check.isRequired) continue;
         const passedResult = submittedMap.get(check.id);
         if (passedResult === undefined) {
           missing.push(check.description);
@@ -267,6 +270,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
           { status: 400 },
         );
+      }
+    }
+
+    // Build the item-text snapshot map before the transaction: for each
+    // submitted check result we snapshot the checklist definition's description
+    // at check time (F7) so historical evidence is not re-interpreted when
+    // checklist templates are edited later.
+    const checkItemTextById = new Map<string, string>();
+    for (const check of mergedChecks) {
+      checkItemTextById.set(check.id, check.description);
+    }
+    for (const cr of parsed.data.checkResults ?? []) {
+      if (!checkItemTextById.has(cr.checklistDefinitionId)) {
+        const def = db
+          .select()
+          .from(checklistDefinitions)
+          .where(eq(checklistDefinitions.id, cr.checklistDefinitionId))
+          .get();
+        if (def) {
+          checkItemTextById.set(cr.checklistDefinitionId, def.description);
+        }
       }
     }
 
@@ -490,7 +514,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         }
       }
 
-      // 7. Persist trade check results atomically within the transaction
+      // 7. Persist trade check results atomically within the transaction,
+      // snapshotting the item text (F7) at check time.
       const submitted = parsed.data.checkResults ?? [];
       const nowTime = now;
       for (const cr of submitted) {
@@ -499,6 +524,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             id: randomUUID(),
             tradeId: id,
             checklistDefinitionId: cr.checklistDefinitionId,
+            itemText: checkItemTextById.get(cr.checklistDefinitionId) ?? null,
             passed: cr.passed,
             comment: cr.comment ?? null,
             checkedAt: nowTime,

@@ -63,6 +63,8 @@ export default defineConfig({
       'src/app/api/trades/__tests__/execute.test.ts',
       'src/app/api/trades/__tests__/check-results.test.ts',
       'src/app/api/trades/__tests__/route.test.ts',
+      'src/app/api/trades/[id]/execute/__tests__/route.test.ts',
+      'src/app/api/trades/[id]/executions/__tests__/route.test.ts',
       'src/app/api/health/__tests__/route.test.ts',
       'src/lib/__tests__/clickhouse-client.test.ts',
       'src/lib/__tests__/ai-provider.test.ts',

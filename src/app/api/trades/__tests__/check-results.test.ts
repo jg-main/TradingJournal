@@ -140,6 +140,7 @@ sqlite.exec(`
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
+    risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
     exit_notes TEXT,
@@ -196,6 +197,7 @@ sqlite.exec(`
     account_id TEXT REFERENCES accounts(id),
     setup_id TEXT REFERENCES setup_definitions(id),
     description TEXT NOT NULL,
+    is_required INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER,
     is_active INTEGER DEFAULT 1,
     deleted_at TEXT,
@@ -207,6 +209,7 @@ sqlite.exec(`
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT REFERENCES trades(id) ON DELETE CASCADE NOT NULL,
     checklist_definition_id TEXT REFERENCES checklist_definitions(id) NOT NULL,
+    item_text TEXT,
     passed INTEGER NOT NULL,
     comment TEXT,
     checked_at TEXT DEFAULT (current_timestamp),
@@ -221,6 +224,8 @@ interface CheckResultRow {
   tradeId: string;
   checklistDefinitionId: string;
   description: string;
+  itemText: string | null;
+  isRequired: boolean;
   passed: boolean;
   comment: string | null;
   checkedAt: string | null;
@@ -240,6 +245,8 @@ function doGetCheckResults(tradeId: string): { status: number; data: unknown } {
         tradeId: schema.tradeCheckResults.tradeId,
         checklistDefinitionId: schema.tradeCheckResults.checklistDefinitionId,
         description: schema.checklistDefinitions.description,
+        itemText: schema.tradeCheckResults.itemText,
+        isRequired: schema.checklistDefinitions.isRequired,
         passed: schema.tradeCheckResults.passed,
         comment: schema.tradeCheckResults.comment,
         checkedAt: schema.tradeCheckResults.checkedAt,
@@ -259,6 +266,124 @@ function doGetCheckResults(tradeId: string): { status: number; data: unknown } {
     return {
       status: 500,
       data: { error: 'Failed to fetch trade check results', details: String(error) },
+    };
+  }
+}
+
+// ── Simulated POST backfill (mirror of the route implementation) ────
+
+function doPostBackfill(
+  tradeId: string,
+  body: { checkResults: Array<{ checklistDefinitionId: string; passed: boolean; comment?: string }> },
+): { status: number; data: unknown } {
+  try {
+    // Zod-compatible validation
+    if (!Array.isArray(body.checkResults) || body.checkResults.length === 0) {
+      return { status: 400, data: { error: 'Validation failed' } };
+    }
+    for (const cr of body.checkResults) {
+      if (
+        typeof cr.checklistDefinitionId !== 'string' ||
+        cr.checklistDefinitionId.length === 0 ||
+        typeof cr.passed !== 'boolean'
+      ) {
+        return { status: 400, data: { error: 'Validation failed' } };
+      }
+    }
+
+    const trade = db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+    if (!trade) {
+      return { status: 404, data: { error: 'Trade not found' } };
+    }
+
+    const executions = db
+      .select()
+      .from(schema.tradeExecutions)
+      .where(eq(schema.tradeExecutions.tradeId, tradeId))
+      .all();
+    if (executions.length === 0) {
+      return {
+        status: 400,
+        data: { error: 'Cannot backfill check results for a trade with no executions' },
+      };
+    }
+
+    // Resolve live definitions — their descriptions become the item-text snapshot.
+    const defsById = new Map<string, Record<string, unknown>>();
+    for (const cr of body.checkResults) {
+      if (!defsById.has(cr.checklistDefinitionId)) {
+        const def = db
+          .select()
+          .from(schema.checklistDefinitions)
+          .where(eq(schema.checklistDefinitions.id, cr.checklistDefinitionId))
+          .get() as Record<string, unknown> | undefined;
+        if (def) {
+          defsById.set(cr.checklistDefinitionId, def);
+        }
+      }
+    }
+
+    const unknown = body.checkResults.filter((cr) => !defsById.has(cr.checklistDefinitionId));
+    if (unknown.length > 0) {
+      return {
+        status: 400,
+        data: {
+          error: 'Validation failed',
+          details: {
+            fieldErrors: {
+              checklistDefinitionId: [
+                `Unknown checklist definitions: ${unknown.map((u) => u.checklistDefinitionId).join(', ')}`,
+              ],
+            },
+          },
+        },
+      };
+    }
+
+    // Backfill is for missing evidence only — never overwrite existing results.
+    const existing = db
+      .select()
+      .from(schema.tradeCheckResults)
+      .where(eq(schema.tradeCheckResults.tradeId, tradeId))
+      .all();
+    const existingIds = new Set(existing.map((r) => r.checklistDefinitionId));
+    const alreadyRecorded = body.checkResults.filter((cr) => existingIds.has(cr.checklistDefinitionId));
+    if (alreadyRecorded.length > 0) {
+      return {
+        status: 409,
+        data: {
+          error: 'Check results already exist for this trade',
+          details: {
+            checkResults: alreadyRecorded.map((cr) => cr.checklistDefinitionId),
+          },
+        },
+      };
+    }
+
+    const now = new Date().toISOString();
+    const created = body.checkResults.map((cr) => {
+      const def = defsById.get(cr.checklistDefinitionId);
+      return db
+        .insert(schema.tradeCheckResults)
+        .values({
+          id: randomUUID(),
+          tradeId,
+          checklistDefinitionId: cr.checklistDefinitionId,
+          itemText: (def?.description as string) ?? null,
+          passed: cr.passed,
+          comment: cr.comment ?? null,
+          checkedAt: now,
+          createdAt: now,
+        })
+        .returning()
+        .get();
+    });
+
+    return { status: 201, data: created };
+  } catch (error) {
+    return {
+      status: 500,
+      data: { error: 'Failed to backfill trade check results', details: String(error) },
     };
   }
 }
@@ -350,6 +475,25 @@ function seedCheckResult(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return db.select().from(schema.tradeCheckResults).where(eq(schema.tradeCheckResults.id, id)).get() as Record<string, unknown>;
+}
+
+function seedExecution(overrides: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.tradeExecutions)
+    .values({
+      id,
+      tradeId: overrides.tradeId as string,
+      action: 'buy',
+      quantity: 100,
+      price: 150.0,
+      fees: 0,
+      executedAt: now,
+      createdAt: now,
+      ...overrides,
+    })
+    .run();
+  return db.select().from(schema.tradeExecutions).where(eq(schema.tradeExecutions.id, id)).get() as Record<string, unknown>;
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -614,6 +758,183 @@ console.log('\n10. GET returns all expected fields in the response:');
   assertEqual(row.comment, 'Looks good', 'has comment');
   assertNotNull(row.checkedAt, 'has checkedAt');
   assertNotNull(row.createdAt, 'has createdAt');
+}
+
+// ── 11. GET returns the item-text snapshot and isRequired flag ──────
+
+console.log('\n11. GET returns itemText snapshot and isRequired flag:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId);
+  tradeId = trade.id as string;
+
+  const check = seedCheckDefinition({ accountId, description: 'Snapshot field check', sortOrder: 1, isRequired: false });
+  seedCheckResult({ tradeId, checklistDefinitionId: check.id as string, passed: true, itemText: 'Snapshot field check' });
+
+  const res = doGetCheckResults(tradeId);
+  assert(res.status === 200, 'returns 200');
+  const rows = res.data as CheckResultRow[];
+  const row = rows[0];
+  assertEqual(row.itemText, 'Snapshot field check', 'itemText returned from the snapshot');
+  assertEqual(row.isRequired, false, 'isRequired returned from the joined definition');
+}
+
+// ── 12. itemText is the immutable snapshot, not the live description ──
+
+console.log('\n12. GET returns itemText snapshot even after the definition description changed:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId);
+  tradeId = trade.id as string;
+
+  const check = seedCheckDefinition({ accountId, description: 'Original wording', sortOrder: 1 });
+  seedCheckResult({ tradeId, checklistDefinitionId: check.id as string, passed: true, itemText: 'Original wording' });
+
+  // Edit the definition description AFTER the check was recorded.
+  db.update(schema.checklistDefinitions)
+    .set({ description: 'Rewritten wording' })
+    .where(eq(schema.checklistDefinitions.id, check.id as string))
+    .run();
+
+  const res = doGetCheckResults(tradeId);
+  assert(res.status === 200, 'returns 200');
+  const rows = res.data as CheckResultRow[];
+  const row = rows[0];
+  assertEqual(row.itemText, 'Original wording', 'itemText preserves the historical wording');
+  assertEqual(row.description, 'Rewritten wording', 'description reflects the current (edited) wording');
+}
+
+// ── 13. POST backfill writes evidence with an item-text snapshot ─────
+
+console.log('\n13. POST backfills check results with itemText snapshot for a filled trade:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId, { status: 'open' });
+  tradeId = trade.id as string;
+
+  // Pre-gate fill: the trade has executions but no check results.
+  seedExecution({ tradeId });
+
+  const check = seedCheckDefinition({ accountId, description: 'Backfilled evidence', sortOrder: 1 });
+
+  const res = doPostBackfill(tradeId, {
+    checkResults: [
+      { checklistDefinitionId: check.id as string, passed: true, comment: 'reconstructed post-hoc' },
+    ],
+  });
+
+  assert(res.status === 201, 'returns 201');
+  const created = res.data as Array<Record<string, unknown>>;
+  assertEqual(created.length, 1, '1 check result created');
+  assertEqual(created[0].itemText, 'Backfilled evidence', 'itemText snapshots the live definition description');
+  assertEqual(created[0].passed, true, 'passed preserved');
+  assertEqual(created[0].comment, 'reconstructed post-hoc', 'comment preserved');
+
+  // The created evidence is visible through GET.
+  const getRes = doGetCheckResults(tradeId);
+  const rows = (getRes.data as CheckResultRow[]);
+  assertEqual(rows.length, 1, 'GET returns the backfilled result');
+  assertEqual(rows[0].itemText, 'Backfilled evidence', 'GET returns the backfilled itemText');
+}
+
+// ── 14. POST backfill: 404 for unknown trade ─────────────────────────
+
+console.log('\n14. POST backfill returns 404 for unknown trade:');
+{
+  cleanup();
+  const res = doPostBackfill('nonexistent-trade-id', {
+    checkResults: [{ checklistDefinitionId: 'def-1', passed: true }],
+  });
+  assert(res.status === 404, 'returns 404');
+  assertEqual((res.data as { error: string }).error, 'Trade not found', 'error message');
+}
+
+// ── 15. POST backfill: 400 when the trade has no executions ──────────
+
+console.log('\n15. POST backfill returns 400 for a trade with no executions:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId); // still 'planned', no executions
+  tradeId = trade.id as string;
+
+  const check = seedCheckDefinition({ accountId, description: 'No fill', sortOrder: 1 });
+
+  const res = doPostBackfill(tradeId, {
+    checkResults: [{ checklistDefinitionId: check.id as string, passed: true }],
+  });
+  assert(res.status === 400, 'returns 400');
+  assert(
+    (res.data as { error: string }).error.includes('no executions'),
+    'error explains the no-executions guard',
+  );
+}
+
+// ── 16. POST backfill: 409 when evidence already exists ──────────────
+
+console.log('\n16. POST backfill returns 409 when a result already exists for the item:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId, { status: 'open' });
+  tradeId = trade.id as string;
+
+  seedExecution({ tradeId });
+
+  const check = seedCheckDefinition({ accountId, description: 'Already recorded', sortOrder: 1 });
+  seedCheckResult({ tradeId, checklistDefinitionId: check.id as string, passed: true });
+
+  const res = doPostBackfill(tradeId, {
+    checkResults: [{ checklistDefinitionId: check.id as string, passed: true }],
+  });
+  assert(res.status === 409, 'returns 409');
+  const details = (res.data as { details: { checkResults: string[] } }).details;
+  assertEqual(details.checkResults.length, 1, 'conflict names the already-recorded item');
+  assertEqual(details.checkResults[0], check.id as string, 'conflict names the item id');
+}
+
+// ── 17. POST backfill: 400 for unknown checklist definitions ─────────
+
+console.log('\n17. POST backfill returns 400 for unknown checklist definitions:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId, { status: 'open' });
+  tradeId = trade.id as string;
+
+  seedExecution({ tradeId });
+
+  const res = doPostBackfill(tradeId, {
+    checkResults: [{ checklistDefinitionId: 'missing-def-id', passed: true }],
+  });
+  assert(res.status === 400, 'returns 400');
+  const details = (res.data as { details: { fieldErrors: Record<string, string[]> } }).details;
+  assertNotNull(details.fieldErrors?.checklistDefinitionId, 'has checklistDefinitionId field error');
+}
+
+// ── 18. POST backfill: 400 when the request body is empty/invalid ────
+
+console.log('\n18. POST backfill returns 400 for an empty checkResults array:');
+{
+  cleanup();
+  const acc = seedAccount();
+  accountId = acc.id as string;
+  const trade = seedTrade(accountId, { status: 'open' });
+  tradeId = trade.id as string;
+
+  seedExecution({ tradeId });
+
+  const res = doPostBackfill(tradeId, { checkResults: [] });
+  assert(res.status === 400, 'returns 400 for empty checkResults');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
