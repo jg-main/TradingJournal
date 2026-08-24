@@ -107,6 +107,7 @@ export const trades = sqliteTable('trades', {
   riskOverrideReason: text('risk_override_reason'),
   openedAt: text('opened_at'),
   closedAt: text('closed_at'),
+  reviewedAt: text('reviewed_at'),
   exitNotes: text('exit_notes'),
   lesson: text('lesson'),
   currentPrice: real('current_price'),

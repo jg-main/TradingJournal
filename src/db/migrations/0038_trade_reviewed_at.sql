@@ -1,0 +1,11 @@
+-- Migration: Trade reviewed_at column
+--
+-- S06/T02 (M002) — the trade-scoped execution correction path must clear
+-- reviewedAt when an economic correction invalidates a prior review, and
+-- S07 (trade review workflow) needs a durable review timestamp on the
+-- trade row.
+--
+-- The column is nullable text (ISO-8601); NULL means the trade has not
+-- been reviewed. Existing rows default to NULL, so this migration is
+-- non-destructive for all current data.
+ALTER TABLE `trades` ADD `reviewed_at` text;

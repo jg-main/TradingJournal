@@ -44,6 +44,10 @@ import { correctionInputSchema } from '@/lib/accounting/correction-contracts';
 import { tradeExecutionIdempotencyKey } from '@/lib/positions/trade-execution-sync';
 import { findAccountingExecutionByIdempotencyKey } from '@/db/accounting-repository';
 import {
+  resolveEffectiveExecutions,
+  recomputeTradeLifecycle,
+} from '@/lib/trade-correction-lifecycle';
+import {
   AccountNotFoundError,
   ExecutionAlreadyCorrectedError,
   ExecutionNotMutableError,
@@ -53,6 +57,11 @@ import {
   InvalidMicrosBoundsError,
   FifoAllocationRejectedError,
 } from '@/lib/accounting/errors';
+
+function logInfo(message: string, ...args: unknown[]): void {
+  console.log(`[trade-correction] ${message}`, ...args);
+}
+
 
 type RouteParams = { params: Promise<{ id: string; execId: string }> };
 
@@ -148,30 +157,73 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // 4. Delegate to the canonical correction service (reversal + replacement
-    //    + correction_lineage; FIFO and performance projections rebuilt).
-    const result = correctExecution(sqlite, {
-      accountId: trade.accountId,
-      originalExecutionId: accountingExecution.id,
-      symbol,
-      action,
-      quantity,
-      price,
-      fees: fees ?? '0.00',
-      reason,
-      idempotencyKey,
-      postedAt,
+    //    + correction_lineage; FIFO and performance projections rebuilt) and
+    //    deterministically rebuild the trade lifecycle from the effective
+    //    execution set — all inside ONE transaction so a failed lifecycle
+    //    recomputation rolls back the entire correction.
+    //
+    //    correctExecution uses sqlite.transaction() internally; nested inside
+    //    the outer drizzle transaction it becomes a savepoint (better-sqlite3
+    //    nested-transaction semantics), so reversal/replacement writes are
+    //    visible to resolveEffectiveExecutions on the same connection and
+    //    roll back together with the trade row update if anything throws.
+    const result = db.transaction((tx) => {
+      const correctionResult = correctExecution(sqlite, {
+        accountId: trade.accountId,
+        originalExecutionId: accountingExecution.id,
+        symbol,
+        action,
+        quantity,
+        price,
+        fees: fees ?? '0.00',
+        reason,
+        idempotencyKey,
+        postedAt,
+      });
+
+      // 4b. Resolve the effective execution set and recompute the trade's
+      //     lifecycle (status / openedAt / closedAt) from accounting truth.
+      const effectiveExecutions = resolveEffectiveExecutions(sqlite, tradeId);
+      const lifecycle = recomputeTradeLifecycle(
+        effectiveExecutions,
+        trade.direction,
+      );
+
+      // 4c. Persist the recomputed lifecycle. reviewedAt is cleared whenever
+      //     an economic correction invalidates a prior review (S07 readiness).
+      const now = new Date().toISOString();
+      tx.update(trades)
+        .set({
+          status: lifecycle.status,
+          openedAt: lifecycle.openedAt,
+          closedAt: lifecycle.closedAt,
+          reviewedAt: null,
+          updatedAt: now,
+        })
+        .where(eq(trades.id, tradeId))
+        .run();
+
+      logInfo('lifecycle-transition', {
+        tradeId,
+        from: trade.status,
+        to: lifecycle.status,
+        effectiveExecutionCount: effectiveExecutions.length,
+      });
+
+      return { correction: correctionResult, lifecycle };
     });
 
     // 5. Build the canonical correction lineage response
     return NextResponse.json(
       {
         success: true,
-        correction: result.correction,
-        originalExecution: result.originalExecution,
-        reversalExecution: result.reversalExecution,
-        replacementExecution: result.replacementExecution,
-        position: result.position,
-        rebuildStatus: result.rebuildStatus,
+        correction: result.correction.correction,
+        originalExecution: result.correction.originalExecution,
+        reversalExecution: result.correction.reversalExecution,
+        replacementExecution: result.correction.replacementExecution,
+        position: result.correction.position,
+        rebuildStatus: result.correction.rebuildStatus,
+        tradeLifecycle: result.lifecycle,
       },
       { status: 200 },
     );

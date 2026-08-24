@@ -18,7 +18,10 @@
  *     "No accounting record" state inline for that case instead)
  *
  * Run: npx tsx src/app/api/trades/\[id\]/executions/\[execId\]/correct/__tests__/route.test.ts
+ *      (also registered in vitest.config.ts include; run via
+ *       `npx vitest run src/app/api/trades/\[id\]/executions/\[execId\]/correct/__tests__/route.test.ts`)
  */
+/// <reference types="vitest/globals" />
 
 // ────────────────────────────────────────────────────────────────────────────
 // 0. Node/tsx runtime shims
@@ -52,6 +55,8 @@ process.env.DB_FILE_NAME = TEST_DB_FILE;
 // ────────────────────────────────────────────────────────────────────────────
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import * as schema from '@/db/schema';
@@ -292,6 +297,16 @@ function validBody(overrides: Record<string, unknown> = {}): Record<string, unkn
 // ────────────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Resolve the route source path for source-evidence assertions. Under tsx,
+  // import.meta.url is a file: URL; under vitest it is not (jsdom base URL),
+  // so fall back to the cwd-relative path — both runners share repo-root cwd.
+  const routeSourcePath = (() => {
+    try {
+      return fileURLToPath(new URL('../route.ts', import.meta.url));
+    } catch {
+      return path.join(process.cwd(), 'src/app/api/trades/[id]/executions/[execId]/correct/route.ts');
+    }
+  })();
   // Load the real modules AFTER the env var is set so @/db initializes
   // against TEST_DB_FILE with all migrations auto-applied.
   const dbMod = await import('@/db');
@@ -308,7 +323,15 @@ async function main(): Promise<void> {
   syncAndRebuildPositions = syncMod.syncAndRebuildPositions;
   syncKeyBuilder = syncMod.tradeExecutionIdempotencyKey;
 
-  const routePath = fileURLToPath(new URL('../route.ts', import.meta.url)).replace(`${process.cwd()}/`, '');
+  const routePath = (() => {
+    try {
+      // fileURLToPath only works under tsx (file: URL); vitest's jsdom base
+      // URL is http://localhost, so the diagnostic falls back gracefully.
+      return fileURLToPath(new URL('../route.ts', import.meta.url)).replace(`${process.cwd()}/`, '');
+    } catch {
+      return '../route.ts';
+    }
+  })();
 
   console.log('\n--- Trade Execution Correction API Tests (real route handlers) ---\n');
   console.log(`  Route module: ${routePath}`);
@@ -366,13 +389,19 @@ async function main(): Promise<void> {
     assertEqual(persistedLegacy.quantity, 100, 'legacy execution quantity unchanged (immutable fill)');
     assertEqual(persistedLegacy.price, 150.0, 'legacy execution price unchanged (immutable fill)');
 
-    // Trade status untouched by the correction.
+    // Trade lifecycle recomputed from the effective (post-correction)
+    // execution set: a single-entry trade stays open.
     const updatedTrade = db!
       .select()
       .from(schema.trades)
       .where(eq(schema.trades.id, trade.id as string))
       .get() as Record<string, unknown>;
-    assertEqual(updatedTrade.status, 'open', 'trade status unchanged after correction');
+    assertEqual(updatedTrade.status, 'open', 'trade status stays open after correction of a single-entry trade');
+    assertEqual(updatedTrade.closedAt, null, 'closedAt stays null for an open trade');
+    const tl = (result.data as { tradeLifecycle: { status: string; openedAt: string | null; closedAt: string | null } }).tradeLifecycle;
+    assertEqual(updatedTrade.status, tl.status, 'persisted status matches the returned tradeLifecycle');
+    assertEqual(updatedTrade.openedAt, tl.openedAt, 'persisted openedAt matches the returned tradeLifecycle');
+    assertEqual(updatedTrade.closedAt, tl.closedAt, 'persisted closedAt matches the returned tradeLifecycle');
   }
 
   // ── 2. 404: nonexistent trade ───────────────────────────────────────
@@ -530,10 +559,7 @@ async function main(): Promise<void> {
   {
     const execId = 'abc-123';
     assertEqual(syncKeyBuilder!(execId), `trade-execution-${execId}`, 'sync key builder produces trade-execution-<execId>');
-    const routeSource = (await import('fs')).readFileSync(
-      fileURLToPath(new URL('../route.ts', import.meta.url)),
-      'utf-8',
-    );
+    const routeSource = readFileSync(routeSourcePath, 'utf-8');
     assert(
       routeSource.includes('tradeExecutionIdempotencyKey(execId)') &&
         routeSource.includes("from '@/lib/positions/trade-execution-sync'"),
@@ -545,10 +571,7 @@ async function main(): Promise<void> {
 
   console.log('\n10. Source evidence — NO_ACCOUNTING_RECORD guard present:');
   {
-    const routeSource = (await import('fs')).readFileSync(
-      fileURLToPath(new URL('../route.ts', import.meta.url)),
-      'utf-8',
-    );
+    const routeSource = readFileSync(routeSourcePath, 'utf-8');
     assert(
       routeSource.includes("if (!trade.accountId) {") &&
         routeSource.includes("code: 'NO_ACCOUNTING_RECORD'") &&
@@ -560,20 +583,199 @@ async function main(): Promise<void> {
     // for that case (covered by the correction-dialog source-contract test).
   }
 
+  // ── 11. Lifecycle: closed trade reopens when exit fill is reduced ──
+
+  console.log('\n11. 200 — reducing an exit fill reopens a closed trade (and clears reviewedAt):');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'closed',
+      openedAt: '2025-06-01T10:00:00Z',
+      closedAt: '2025-06-01T15:00:00Z',
+      reviewedAt: '2025-06-02T09:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    const exit = seedExecution(trade.id as string, { action: 'sell', quantity: 100, price: 160.0, fees: 1.0, executedAt: '2025-06-01T15:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    mirrorExecution(exit, 'test-account-id', 'AAPL');
+
+    const result = await callCorrect(
+      trade.id as string,
+      exit.id as string,
+      validBody({ action: 'sell', quantity: '50.00', price: '158.00', fees: '1.00' }),
+    );
+
+    assert(result.status === 200, 'exit correction returns 200');
+    const data = result.data as { tradeLifecycle: { status: string; openedAt: string | null; closedAt: string | null } };
+    assertEqual(data.tradeLifecycle.status, 'open', 'tradeLifecycle reports the trade reopened');
+    assertEqual(data.tradeLifecycle.closedAt, null, 'tradeLifecycle closedAt cleared on reopen');
+    assertNotNull(data.tradeLifecycle.openedAt, 'tradeLifecycle keeps an openedAt');
+
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'open', 'trade row status reopens (closed → open)');
+    assertEqual(updatedTrade.closedAt, null, 'trade row closedAt cleared');
+    assertEqual(updatedTrade.reviewedAt, null, 'reviewedAt cleared by the economic correction');
+    assertEqual(updatedTrade.status, data.tradeLifecycle.status, 'persisted status matches tradeLifecycle');
+    assertEqual(updatedTrade.openedAt, data.tradeLifecycle.openedAt, 'persisted openedAt matches tradeLifecycle');
+    assertEqual(updatedTrade.closedAt, data.tradeLifecycle.closedAt, 'persisted closedAt matches tradeLifecycle');
+    assertEqual(accountingExecutionCount('test-account-id'), 4, 'entry + exit + reversal + replacement persist');
+  }
+
+  // ── 12. Lifecycle: open trade recloses when partial exit is increased ──
+
+  console.log('\n12. 200 — increasing a partial exit fill recloses an open trade:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    const partialExit = seedExecution(trade.id as string, { action: 'sell', quantity: 50, price: 155.0, fees: 1.0, executedAt: '2025-06-01T12:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    mirrorExecution(partialExit, 'test-account-id', 'AAPL');
+
+    const result = await callCorrect(
+      trade.id as string,
+      partialExit.id as string,
+      validBody({ action: 'sell', quantity: '100.00', price: '156.00', fees: '1.00' }),
+    );
+
+    assert(result.status === 200, 'partial-exit correction returns 200');
+    const data = result.data as { tradeLifecycle: { status: string; openedAt: string | null; closedAt: string | null } };
+    assertEqual(data.tradeLifecycle.status, 'closed', 'tradeLifecycle reports the trade recloses');
+    assertNotNull(data.tradeLifecycle.closedAt, 'tradeLifecycle closedAt set on reclose');
+
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'closed', 'trade row status recloses (open → closed)');
+    assertNotNull(updatedTrade.closedAt, 'trade row closedAt set');
+    assertEqual(updatedTrade.status, data.tradeLifecycle.status, 'persisted status matches tradeLifecycle');
+    assertEqual(updatedTrade.closedAt, data.tradeLifecycle.closedAt, 'persisted closedAt matches tradeLifecycle');
+  }
+
+  // ── 13. Lifecycle: correcting the entry fill shifts openedAt ────────
+
+  console.log('\n13. 200 — correcting an entry fill shifts openedAt to the replacement timeline:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+
+    const result = await callCorrect(trade.id as string, entry.id as string, validBody({ quantity: '150.00', price: '152.00' }));
+
+    assert(result.status === 200, 'entry correction returns 200');
+    const data = result.data as { tradeLifecycle: { status: string; openedAt: string | null; closedAt: string | null } };
+    assertEqual(data.tradeLifecycle.status, 'open', 'tradeLifecycle still open');
+    assert(
+      data.tradeLifecycle.openedAt !== null && data.tradeLifecycle.openedAt !== '2025-06-01T10:00:00Z',
+      `openedAt moved off the original entry timestamp (got: ${data.tradeLifecycle.openedAt})`,
+    );
+
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.openedAt, data.tradeLifecycle.openedAt, 'persisted openedAt matches tradeLifecycle');
+    assertEqual(updatedTrade.status, 'open', 'trade row stays open');
+  }
+
+  // ── 14. Lifecycle: short trade reopens when exit fill is reduced ────
+
+  console.log('\n14. 200 — reducing a short exit fill reopens the short trade:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      symbol: 'TSLA',
+      direction: 'short',
+      status: 'closed',
+      openedAt: '2025-06-01T10:00:00Z',
+      closedAt: '2025-06-01T15:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'sell_short', quantity: 100, price: 200.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    const exit = seedExecution(trade.id as string, { action: 'buy_to_cover', quantity: 100, price: 195.0, fees: 1.0, executedAt: '2025-06-01T15:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'TSLA');
+    mirrorExecution(exit, 'test-account-id', 'TSLA');
+
+    const result = await callCorrect(
+      trade.id as string,
+      exit.id as string,
+      validBody({ symbol: 'TSLA', action: 'buy_to_cover', quantity: '50.00', price: '196.00', fees: '1.00' }),
+    );
+
+    assert(result.status === 200, 'short exit correction returns 200');
+    const data = result.data as { tradeLifecycle: { status: string; openedAt: string | null; closedAt: string | null } };
+    assertEqual(data.tradeLifecycle.status, 'open', 'tradeLifecycle reports the short trade reopened');
+    assertEqual(data.tradeLifecycle.closedAt, null, 'tradeLifecycle closedAt cleared on reopen');
+
+    const updatedTrade = db!
+      .select()
+      .from(schema.trades)
+      .where(eq(schema.trades.id, trade.id as string))
+      .get() as Record<string, unknown>;
+    assertEqual(updatedTrade.status, 'open', 'trade row status reopens for the short trade');
+    assertEqual(updatedTrade.closedAt, null, 'trade row closedAt cleared');
+  }
+
   // ── Summary ──────────────────────────────────────────────────────────
 
   const total = passed + failed;
   console.log(`\n${'─'.repeat(40)}`);
   console.log(`Results: ${passed}/${total} passed`);
   if (failed > 0) {
-    console.error(`         ${failed}/${total} FAILED\n`);
-    process.exit(1);
+    console.error(`         ${failed}/${total} FAILED`);
+    // The tsx path must exit non-zero; under vitest the verdict is surfaced
+    // by the registered test below (process.exit would kill the runner).
+    if (typeof test === 'undefined') {
+      process.exit(1);
+    }
   } else {
     console.log('         All tests passed!\n');
   }
 }
 
-main().catch((e) => {
-  console.error('route.test.ts: unexpected error', e);
-  process.exit(1);
-});
+// Dual-mode finish: this file is both a standalone tsx harness (Run:
+// `npx tsx <file>`) and a vitest suite (registered in the include list in
+// vitest.config.ts so the T02 verification surface `npx vitest run <file>`
+// executes it). main() is async (real route imports + awaits), so the vitest
+// test awaits the shared main() promise; under tsx main() runs to completion
+// and exits non-zero on failure.
+const mainPromise = main();
+
+if (typeof test !== 'undefined') {
+  test('standalone trade correction route harness (assertions run at import)', async () => {
+    await mainPromise;
+    if (failed > 0) {
+      throw new Error(`         ${failed}/${passed + failed} FAILED`);
+    }
+    console.log('         All tests passed!');
+  });
+} else {
+  mainPromise.catch((e) => {
+    console.error('route.test.ts: unexpected error', e);
+    process.exit(1);
+  });
+}

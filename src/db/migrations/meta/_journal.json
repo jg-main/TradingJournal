@@ -1,5 +1,5 @@
 {
-  "version": "8",
+  "version": "9",
   "dialect": "sqlite",
   "entries": [
     {
@@ -266,6 +266,13 @@
       "version": "8",
       "when": 1787542684047,
       "tag": "0037_execution_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "9",
+      "when": 1787577493011,
+      "tag": "0038_trade_reviewed_at",
       "breakpoints": true
     }
   ]
