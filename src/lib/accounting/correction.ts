@@ -30,7 +30,7 @@ import {
   executionFeeRefundIdempotencyKey,
   buildExecutionFeeFinancialEventInput,
 } from './execution-posting';
-import { rebuildPositions } from '../positions/rebuild';
+import { rebuildPositionsWithinTransaction } from '../positions/rebuild';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { reverseAction } from './correction-contracts';
 import {
@@ -39,6 +39,7 @@ import {
   ExecutionNotMutableError,
   DuplicateCorrectionIdempotencyError,
   FifoAllocationRejectedError,
+  ExecutionCorrectionProjectionError,
 } from './errors';
 import {
   accountExists,
@@ -324,18 +325,19 @@ export function correctExecution(
     throw new ExecutionAlreadyCorrectedError(originalExecutionId, existingCorrection.id);
   }
 
-  // ── 6. Resolve instrument for reversal and replacement ───────────────
+  // ── 6. Resolve original instrument (read-only preflight) ─────────────
   const originalInstrument = findInstrumentById(sqlite, originalExecution.instrument_id);
   if (!originalInstrument) {
     throw new Error(`Original instrument ${originalExecution.instrument_id} not found`);
   }
 
-  // The replacement may use a different symbol (in case the ticker changed)
-  const replacementInstrument = findOrCreateInstrument(sqlite, symbol);
-
   // ── 7. Execute correction atomically ─────────────────────────────────
   const transaction = sqlite.transaction(() => {
     const correctedAt = new Date().toISOString();
+
+    // M002-A8: resolve the replacement instrument INSIDE the transaction so a
+    // failed correction never leaves an unused instrument row behind.
+    const replacementInstrument = findOrCreateInstrument(sqlite, symbol);
 
     // ── 7a. Create reversal execution ──────────────────────────────────
     // The reversal mirrors the original: same quantity, same price, opposite action
@@ -502,46 +504,76 @@ export function correctExecution(
       correctedAt,
     });
 
+    // ── 7d. M002-A8: FIFO + account-performance projections INSIDE the
+    //        correction transaction (fail closed, success enforced) ──────
+    // Rebuild the original instrument's positions (affected by reversal),
+    // then the replacement instrument when different — both transaction-aware
+    // so an immutable execution that cannot replay through FIFO aborts the
+    // whole correction.
+    try {
+      rebuildPositionsWithinTransaction(sqlite, accountId, originalExecution.instrument_id);
+      if (replacementExecution.instrument_id !== originalExecution.instrument_id) {
+        rebuildPositionsWithinTransaction(sqlite, accountId, replacementExecution.instrument_id);
+      }
+    } catch (err) {
+      throw new ExecutionCorrectionProjectionError(
+        accountId,
+        originalExecution.id,
+        'fifo',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    // Account-performance rebuild — rebuildAccountPerformance catches
+    // internal errors and returns { success: false }, so success is enforced
+    // explicitly: no successful correction response may leave the NAV stale.
+    const performance = rebuildAccountPerformance(sqlite, accountId);
+    if (!performance.success) {
+      throw new ExecutionCorrectionProjectionError(
+        accountId,
+        originalExecution.id,
+        'performance',
+        performance.error ?? 'rebuild returned success=false',
+      );
+    }
+
+    // Rebuild fingerprint for the response (coherent with the commit point).
+    const rebuildFingerprint = computeRebuildFingerprint(sqlite, accountId);
+    const rebuildStatus = {
+      executionCount: rebuildFingerprint.executionCount,
+      lotCount: rebuildFingerprint.lotCount,
+      matchCount: rebuildFingerprint.matchCount,
+    };
+
+    // Read back position state for the replacement instrument (in-transaction
+    // so the response reflects exactly what committed).
+    const updatedPositionRow = findAccountPosition(sqlite, accountId, replacementExecution.instrument_id);
+    const updatedLotRows = findFifoLotsByAccountInstrument(sqlite, accountId, replacementExecution.instrument_id);
+    const position = updatedPositionRow
+      ? positionRowToPositionState(
+          updatedPositionRow as unknown as Record<string, unknown>,
+          (updatedLotRows as unknown as Record<string, unknown>[]).map(lotRowToFifoLot),
+        )
+      : null;
+
     return {
       correction,
       reversalExecution,
       replacementExecution,
+      position,
+      rebuildStatus,
+      performance: { nav: performance.nav, computedAt: performance.computedAt },
     };
   });
 
-  const { correction, reversalExecution, replacementExecution } = transaction();
+  const { correction, reversalExecution, replacementExecution, position, rebuildStatus } = transaction();
 
-  // ── 8. Rebuild positions for both instruments ────────────────────────
-  // Rebuild the original instrument's positions (affected by reversal)
-  rebuildPositions(sqlite, accountId, originalExecution.instrument_id);
-
-  // If the replacement uses a different instrument, rebuild that too
-  if (replacementExecution.instrument_id !== originalExecution.instrument_id) {
-    rebuildPositions(sqlite, accountId, replacementExecution.instrument_id);
-  }
-
-  // Rebuild the aggregate cash/NAV projection only after both position
-  // projections reflect the reversal-and-replacement correction.
-  rebuildAccountPerformance(sqlite, accountId);
-
-  // ── 9. Read back position state for the replacement instrument ───────
-  const updatedPositionRow = findAccountPosition(sqlite, accountId, replacementExecution.instrument_id);
-  const updatedLotRows = findFifoLotsByAccountInstrument(sqlite, accountId, replacementExecution.instrument_id);
-
-  const position = updatedPositionRow
-    ? positionRowToPositionState(
-        updatedPositionRow as unknown as Record<string, unknown>,
-        (updatedLotRows as unknown as Record<string, unknown>[]).map(lotRowToFifoLot),
-      )
-    : null;
-
-  // Read back the original and reversal execution for the response
+  // ── 8. Read back the original and reversal execution for the response ──
+  // (pure reads — the authoritative FIFO + performance rebuilds already ran
+  // inside the correction transaction and committed with it).
   const persistedOriginal = findAccountingExecutionById(sqlite, originalExecutionId)!;
   const persistedReversal = findAccountingExecutionById(sqlite, reversalExecution.id)!;
   const persistedReplacement = findAccountingExecutionById(sqlite, replacementExecution.id)!;
-
-  // Compute rebuild status counts
-  const rebuildFingerprint = computeRebuildFingerprint(sqlite, accountId);
 
   return {
     correction: {
@@ -566,11 +598,7 @@ export function correctExecution(
       symbol,
     },
     position,
-    rebuildStatus: {
-      executionCount: rebuildFingerprint.executionCount,
-      lotCount: rebuildFingerprint.lotCount,
-      matchCount: rebuildFingerprint.matchCount,
-    },
+    rebuildStatus,
   };
 }
 

@@ -39,6 +39,7 @@ import {
   InvalidAmountError,
   InvalidMicrosBoundsError,
   FifoAllocationRejectedError,
+  ExecutionCorrectionProjectionError,
 } from '@/lib/accounting/errors';
 
 type RouteParams = { params: Promise<{ id: string; executionId: string }> };
@@ -228,6 +229,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           details: error.message,
         },
         { status: 409 },
+      );
+    }
+
+    // M002-A8: a FIFO / account-performance projection failure inside the
+    // correction transaction (already rolled back) is an unexpected
+    // server-side persistence failure — never a user-domain conflict. The
+    // correction idempotency key is not consumed; the original execution
+    // remains correctable on retry.
+    if (error instanceof ExecutionCorrectionProjectionError) {
+      return NextResponse.json(
+        {
+          error: 'Failed to finalize execution correction',
+          code: error.code,
+          details: error.message,
+        },
+        { status: 500 },
       );
     }
 

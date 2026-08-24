@@ -532,3 +532,50 @@ export class AccountExecutionProjectionError extends AccountingError {
     Object.setPrototypeOf(this, AccountExecutionProjectionError.prototype);
   }
 }
+
+/**
+ * Thrown when the FIFO position or account-performance projection cannot be
+ * finalized inside an execution correction (M002-A8).
+ *
+ * `correctExecution` posts reversal + replacement + fee economics + lineage,
+ * then rebuilds the FIFO projection(s) and the account-performance projection
+ * INSIDE the same correction transaction, and explicitly enforces
+ * `PerformanceRebuildResult.success` (rebuildAccountPerformance catches
+ * internal errors and returns { success: false }). Any failure throws this
+ * error inside the transaction — reversal/replacement executions, all
+ * cash/fee effects, ledger rows, correction lineage, FIFO lots/matches,
+ * account position, and projection changes roll back together.
+ *
+ * Mapped to HTTP 500 by both correction routes (an unexpected server-side
+ * persistence failure — never a user-domain conflict like
+ * EXECUTION_ALREADY_CORRECTED / DUPLICATE_CORRECTION_IDEMPOTENCY /
+ * FIFO allocation 422). The transaction is already rolled back, so the
+ * correction idempotency key is NOT consumed and the original execution
+ * remains correctable on retry.
+ */
+export class ExecutionCorrectionProjectionError extends AccountingError {
+  public readonly accountId: string;
+  public readonly originalExecutionId: string;
+  /** 'fifo' or 'performance' — which projection stage failed. */
+  public readonly stage: 'fifo' | 'performance';
+  public readonly rebuildError?: string;
+
+  constructor(
+    accountId: string,
+    originalExecutionId: string,
+    stage: 'fifo' | 'performance',
+    rebuildError?: string,
+  ) {
+    super(
+      'EXECUTION_CORRECTION_PROJECTION_FAILED',
+      `Correction of execution "${originalExecutionId}" for account "${accountId}" rolled back: ${stage} projection could not be finalized` +
+        (rebuildError ? ` (${rebuildError})` : ''),
+    );
+    this.name = 'ExecutionCorrectionProjectionError';
+    this.accountId = accountId;
+    this.originalExecutionId = originalExecutionId;
+    this.stage = stage;
+    this.rebuildError = rebuildError;
+    Object.setPrototypeOf(this, ExecutionCorrectionProjectionError.prototype);
+  }
+}

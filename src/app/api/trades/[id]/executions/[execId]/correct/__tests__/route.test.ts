@@ -922,6 +922,48 @@ async function main(): Promise<void> {
     assertEqual(getRiskSnapshot(trade.id as string), undefined, 'no risk snapshot row created by the correction');
   }
 
+  // ── 19. A8: projection failure rolls back accounting + trade state ────
+
+  console.log('\n19. 500 — forced performance failure rolls back correction + trade state (M002-A8):');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    seedRiskSnapshot(trade.id as string);
+
+    // Force a REAL account-performance persistence failure inside the
+    // correction (the outer trade transaction owns everything).
+    const h = requireDb().getSqliteHandle();
+    h.exec(`CREATE TRIGGER a8_trd_perf_fail BEFORE INSERT ON account_performance
+            BEGIN SELECT RAISE(ABORT, 'a8: trade correction perf block'); END;`);
+    let result;
+    try {
+      result = await callCorrect(trade.id as string, entry.id as string, validBody({ price: '152.00', fees: '2.00' }));
+    } finally {
+      h.exec('DROP TRIGGER IF EXISTS a8_trd_perf_fail;');
+    }
+
+    assertEqual(result.status, 500, '500 projection failure');
+    assertEqual((result.data as { code: string }).code, 'EXECUTION_CORRECTION_PROJECTION_FAILED', 'stable code');
+
+    // Accounting + trade state fully rolled back.
+    assertEqual(correctionLineageCount(), 0, 'no correction lineage');
+    assertEqual(accountingExecutionCount('test-account-id'), 1, 'only the original execution');
+    const tradeRow = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(tradeRow.status, 'open', 'trade status unchanged');
+    assertEqual(tradeRow.openedAt, '2025-06-01T10:00:00Z', 'openedAt unchanged');
+    const snap = getRiskSnapshot(trade.id as string);
+    assertEqual(snap!.initialEntryPrice, 150.0, 'initial risk snapshot unchanged');
+    assertEqual(snap!.initialRiskAmount, 500.0, 'initial risk amount unchanged');
+  }
+
   // ── Summary ──────────────────────────────────────────────────────────
 
   const total = passed + failed;

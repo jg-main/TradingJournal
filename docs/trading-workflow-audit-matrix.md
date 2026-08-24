@@ -474,6 +474,43 @@ These are the decisions the requirements doc explicitly defers to S01
   (executeTradeFill) already owns its own larger transaction and is
   untouched; no duplicate position/performance rebuild (the authoritative
   mutation path rebuilds exactly once).
+- **M002-A8 (execution correction is atomic with FIFO, performance, and the
+  trade lifecycle):** `correctExecution` previously committed reversal +
+  replacement + fee economics + lineage and THEN rebuilt FIFO + account
+  performance OUTSIDE the transaction (best-effort, success not enforced).
+  Now `correctExecution` owns ONE correction transaction:
+
+  BEGIN
+    reversal execution + gross event
+    replacement execution + gross event
+    A6 replacement fee event / original fee refund (when the deterministic
+      original fee event exists)
+    correction lineage
+    rebuildPositionsWithinTransaction (original + replacement instrument,
+      fail closed on replay rejection)
+    rebuildAccountPerformance (explicit success enforcement)
+    if !success → throw ExecutionCorrectionProjectionError
+  COMMIT
+
+  A failed projection (real SQLite-trigger RAISE(ABORT) verified) rolls back
+  reversal/replacement executions, all cash/fee/refund effects, ledger rows,
+  lineage, FIFO lots/matches, account position, and projection changes
+  together — the original execution stays immutable, is NOT marked
+  already-corrected, and the correction idempotency key remains retryable
+  (500 EXECUTION_CORRECTION_PROJECTION_FAILED, never a user-domain 4xx).
+  `findOrCreateInstrument` for a new replacement symbol moved inside the
+  transaction (no orphan instrument on failure). Both correction routes map
+  the error to 500; the trade-scoped route keeps its outer transaction
+  (lifecycle, risk-snapshot repair, reviewedAt invalidation) so a projection
+  failure there rolls back the accounting correction AND the trade state —
+  verified end-to-end. No duplicate post-transaction projection rebuilds
+  remain; the correction response is built from in-transaction state.
+
+  Final contract: ACCOUNT correction (reversal, replacement, fee correction,
+  lineage, FIFO, account performance) is one atomic boundary; TRADE-LINKED
+  correction additionally wraps lifecycle, risk-snapshot repair, and review
+  invalidation in the caller's larger transaction. Projection failure → full
+  rollback, idempotency retryable.
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

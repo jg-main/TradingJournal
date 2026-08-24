@@ -429,8 +429,17 @@ describe('POST /api/accounts/:id/executions/:executionId/correct', () => {
     expect(replacementExec.fees).toBe('5.00');
   });
 
-  it('returns 200 for sell_short correction', () => {
-    const { sqlite, accountId, symbol } = ctx;
+  it('returns 200 for sell_short correction (M002-A8: atomic FIFO replay needs a clean stream)', () => {
+    const { sqlite, symbol } = ctx;
+    // Fresh account: the correction's transactional FIFO replay replays the
+    // whole instrument stream — a shared account with a prior long stream
+    // would make the sell_short an unsupported flip and correctly fail closed.
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+       VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+    ).run(accountId, 'Fresh Sell Short', now, now);
 
     const exec = postExecutionFill(sqlite, { accountId, symbol, action: 'sell_short', quantity: '100.00', price: '200.00' });
     rebuildPositions(sqlite, accountId, exec.execution.instrumentId);
@@ -452,9 +461,16 @@ describe('POST /api/accounts/:id/executions/:executionId/correct', () => {
   });
 
   it('rebuilds position correctly and passes second rebuild (deterministic replay)', () => {
-    const { sqlite, accountId, symbol } = ctx;
+    const { sqlite, symbol } = ctx;
+    // Fresh account: A8's transactional FIFO rebuild replays the full
+    // instrument stream, so an isolated account keeps the replay deterministic.
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+       VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+    ).run(accountId, 'Fresh Replay', now, now);
 
-    // Use same account - post a fresh execution
     const exec = postExecutionFill(sqlite, { accountId, symbol, action: 'buy', quantity: '15.00', price: '300.00' });
     rebuildPositions(sqlite, accountId, exec.execution.instrumentId);
 
