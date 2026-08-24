@@ -202,6 +202,21 @@ function setLaptopViewport(page: Page) {
 }
 
 /**
+ * Wait until the application shell is hydrated and interactive. The sidebar
+ * account trigger only renders after the AccountProvider's /api/accounts
+ * fetch resolves post-hydration, so it is a strong "app is interactive"
+ * signal (same signal trades-identity-uat waits on before interacting). The
+ * first visit to a route in dev compiles its chunk server-side, which can
+ * delay hydration well past the default 5s expect timeout under load
+ * (observed as a cold-start flake in the S09 combined chromium+firefox run:
+ * the dashboard sidebar trigger and the /trades closed-tab row both raced
+ * it). Generous timeout; on warm routes this resolves in ms.
+ */
+async function waitForAppShell(page: Page) {
+  await expect(page.getByTestId('sidebar-account-trigger')).toBeVisible({ timeout: 20_000 });
+}
+
+/**
  * Open a fresh page for a page visit at the laptop viewport. In Firefox the
  * Next dev client aborts full navigations from a page that previously visited
  * /trades or the dashboard (NS_BINDING_ABORTED), so every cross-page visit
@@ -212,6 +227,7 @@ async function freshPage(context: BrowserContext, url: string): Promise<Page> {
   await p.setViewportSize(LAPTOP_VIEWPORT);
   await p.goto(url, { waitUntil: 'domcontentloaded' });
   await hideDevOverlay(p);
+  await waitForAppShell(p);
   return p;
 }
 
@@ -348,9 +364,15 @@ async function verifyPageTheme(
   return tokens;
 }
 
-/** Select an account through the sidebar global account selector. */
+/**
+ * Select an account through the sidebar global account selector. The first
+ * dashboard visit in dev compiles the (workstation) route chunk, which can
+ * delay the AccountProvider hydration past the default 5s expect timeout
+ * (observed as a cold-start flake in the S09 combined chromium+firefox run
+ * at line 437). Use the trades-identity-uat pattern (10s) with headroom.
+ */
 async function selectAccountOnDashboard(page: Page, name: string) {
-  await expect(page.getByTestId('sidebar-account-trigger')).toBeVisible();
+  await expect(page.getByTestId('sidebar-account-trigger')).toBeVisible({ timeout: 15_000 });
   await page.getByTestId('sidebar-account-trigger').click();
   await page
     .getByRole('listbox')
@@ -395,10 +417,14 @@ test.describe('M002 trading lifecycle browser UAT at laptop viewport', () => {
     // ── /trades: the closed trade in the Closed tab with P&L and R ──
     await page.goto('/trades');
     await hideDevOverlay(page);
+    // Cold-compile headroom: the first /trades visit compiles the route chunk
+    // in dev and the closed tab lazily fetches its rows — wait for the shell
+    // to be interactive before interacting, then allow the fetch to land.
+    await waitForAppShell(page);
     await expect(page.locator('h1')).toContainText('Trades');
     await page.getByRole('tab', { name: /closed/i }).click();
     const closedRow = page.locator('tbody tr').filter({ hasText: symbol });
-    await expect(closedRow).toBeVisible({ timeout: 10_000 });
+    await expect(closedRow).toBeVisible({ timeout: 15_000 });
     await expect(closedRow).toContainText(fmtCurrency(netPnl));
     await expect(closedRow).toContainText(fmtRMultiple(rMultiple));
     await assertNoHorizontalOverflow(page, LAPTOP_VIEWPORT.width);
@@ -433,7 +459,10 @@ test.describe('M002 trading lifecycle browser UAT at laptop viewport', () => {
     //    assert against the same projection API the panel renders.
     const dashPage = await freshPage(context, '/');
     const accountState = dashPage.getByTestId('ws-panel-account-state');
-    await expect(accountState).toBeVisible();
+    // Cold-compile headroom: the first dashboard visit compiles the
+    // workstation chunk in dev; the AccountProvider fetch resolves after
+    // hydration (see selectAccountOnDashboard).
+    await expect(accountState).toBeVisible({ timeout: 15_000 });
     await selectAccountOnDashboard(dashPage, account.name);
     await expect(accountState.getByTestId('ws-account-state-realized')).toContainText(fmtCurrency(projectedRealized));
     await expect(accountState.getByTestId('ws-account-state-nav')).toContainText(fmtCurrency(projectedNav));
@@ -479,16 +508,24 @@ test.describe('M002 trading lifecycle browser UAT at laptop viewport', () => {
     // ── /trades: Closed tab shows the losing short with negative P&L ──
     await page.goto('/trades');
     await hideDevOverlay(page);
+    await waitForAppShell(page);
     await page.getByRole('tab', { name: /closed/i }).click();
     const closedRow = page.locator('tbody tr').filter({ hasText: symbol });
-    await expect(closedRow).toBeVisible({ timeout: 10_000 });
+    await expect(closedRow).toBeVisible({ timeout: 15_000 });
     await expect(closedRow.getByText('Short', { exact: true })).toBeVisible();
     // Negative P&L renders in the red identity token (light theme red-600,
     // declared in oklch — read back through the canvas as true sRGB and
-    // assert red dominance).
+    // assert red dominance). Under cold-start dev load the row can still be
+    // settling when it first becomes visible and the canvas round-trip can
+    // transiently read black; poll until the red sample holds (bounded).
     const pnlText = fmtCurrency(netPnl);
-    const pnlCellColor = await sampleTextColor(closedRow.getByText(pnlText).first());
-    expect(redHue(pnlCellColor), `negative P&L should be red (got ${pnlCellColor})`).toBe(true);
+    await expect
+      .poll(async () => redHue(await sampleTextColor(closedRow.getByText(pnlText).first())), {
+        message: `negative P&L should be red`,
+        timeout: 10_000,
+        intervals: [250, 500, 1000, 2000],
+      })
+      .toBe(true);
     await expect(closedRow).toContainText(fmtRMultiple(rMultiple));
     await assertNoHorizontalOverflow(page, LAPTOP_VIEWPORT.width);
 
