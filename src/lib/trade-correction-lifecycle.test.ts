@@ -476,6 +476,48 @@ describe('repairRiskSnapshot', () => {
     const effective = resolveEffectiveExecutions(sqlite, 'trade-repair-future');
     expect(resolveFirstEntry(effective, 'long')?.id).toBe(secondEntry.id);
   });
+
+  it('A3 §23: repair rolls back atomically when the surrounding correction transaction fails', () => {
+    // A client PUT is retired, but legitimate server repair must stay
+    // transactional: force a failure AFTER repair begins, inside the same
+    // correction transaction — the snapshot must keep its prior coherent
+    // value (no non-transactional snapshot write survives the rollback).
+    seedTradeRow('trade-repair-rollback');
+    const original = seedExecution({ journalTradeId: 'trade-repair-rollback' });
+    const reversal = seedExecution({ journalTradeId: 'trade-repair-rollback', action: 'sell' });
+    const replacement = seedExecution({
+      journalTradeId: 'trade-repair-rollback',
+      price: '152.00',
+      postedAt: '2025-06-01T10:00:00.001Z',
+    });
+    seedLineage(original.id, reversal.id, replacement.id);
+    seedRiskSnapshot('trade-repair-rollback'); // entry 150, risk 500
+    const before = readSnapshot('trade-repair-rollback') as Record<string, unknown>;
+
+    expect(() =>
+      dbHandle.transaction((tx) => {
+        repairRiskSnapshot({
+          tx,
+          sqlite,
+          tradeId: 'trade-repair-rollback',
+          accountId: 'acct-1',
+          direction: 'long',
+          preCorrectionFirstEntryId: original.id,
+          correctedOriginalId: original.id,
+          replacementExecution: { price: '152.00', quantity: '100.00', action: 'buy' },
+          plannedStop: 145,
+          asOf: replacement.posted_at,
+        });
+        // Simulated failure after the repair began, before commit.
+        throw new Error('correction pipeline failed after repair');
+      }),
+    ).toThrow('correction pipeline failed after repair');
+
+    const after = readSnapshot('trade-repair-rollback');
+    expect(after?.initial_entry_price).toBe(before.initial_entry_price);
+    expect(after?.initial_risk_amount).toBe(before.initial_risk_amount);
+    expect(after?.risk_per_share).toBe(before.risk_per_share);
+  });
 });
 
 describe('recomputeTradeLifecycle', () => {

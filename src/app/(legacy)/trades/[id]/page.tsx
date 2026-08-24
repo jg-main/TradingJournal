@@ -452,12 +452,6 @@ export default function TradeDetailPage() {
       }
     : null;
 
-  const handleRiskSnapshotSave = async (payload: Record<string, number | null>) => {
-    const res = await fetch(`/api/trades/${id}/risk-snapshot`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!res.ok) throw new Error('Failed to save risk snapshot');
-    setRiskSnapshot(await res.json());
-  };
-
   const handleGradeSave = async (payload: GradeFormPayload) => {
     const res = await fetch(`/api/trades/${id}/grade`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!res.ok) throw new Error('Failed to save grade');
