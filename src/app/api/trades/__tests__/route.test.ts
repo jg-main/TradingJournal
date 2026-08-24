@@ -8,7 +8,10 @@
  * riskPct, nested metrics, and server-computed totals.
  *
  * Run: npx tsx src/app/api/trades/__tests__/route.test.ts
+ *      (also registered in vitest.config.ts include; run via
+ *       `npx vitest run src/app/api/trades/__tests__/route.test.ts`)
  */
+/// <reference types="vitest/globals" />
 
 import { testDbPath } from '../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
@@ -22,6 +25,7 @@ import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
 import { computePlannedRiskAmount } from '@/lib/planned-risk';
+import { isAccountTradingReady } from '@/lib/accounting/default-account-guard';
 
 let passed = 0;
 let failed = 0;
@@ -211,6 +215,7 @@ sqlite.exec(`
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
+    risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
     exit_notes TEXT,
@@ -742,13 +747,30 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
       }
     }
 
-    // Resolve account: settings.defaultAccountId first, then first active account
-    const setting = db.select().from(schema.settings).get() as Record<string, unknown> | undefined;
+    // Resolve account: body.accountId overrides the default chain (mirrors
+    // the real route), then settings.defaultAccountId, then first active
+    // account.
     let accountId: string | undefined;
 
-    if (setting?.defaultAccountId) {
-      accountId = setting.defaultAccountId as string;
-    } else {
+    if (body.accountId) {
+      const provided = db
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.id, body.accountId as string))
+        .get() as Record<string, unknown> | undefined;
+      if (provided) {
+        accountId = provided.id as string;
+      }
+    }
+
+    if (!accountId) {
+      const setting = db.select().from(schema.settings).get() as Record<string, unknown> | undefined;
+      if (setting?.defaultAccountId) {
+        accountId = setting.defaultAccountId as string;
+      }
+    }
+
+    if (!accountId) {
       const firstActive = db
         .select()
         .from(schema.accounts)
@@ -759,6 +781,24 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
 
     if (!accountId) {
       return { status: 400, data: { error: 'No active account found. Create an account first or set a default account in settings.' } };
+    }
+
+    // T02/S02 planning-eligibility guard (mirrors the real route): planning a
+    // trade requires an existing, active, USD account — NOT trading readiness
+    // (risk params, commission, opening cash), which is an execution-time gate.
+    const account = db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.id, accountId))
+      .get() as Record<string, unknown> | undefined;
+    if (!account || !account.isActive || account.currency !== 'USD') {
+      return {
+        status: 409,
+        data: {
+          error: 'Account not eligible for planning',
+          details: 'Planning requires an active USD account. Trading additionally requires risk parameters, a default commission, and posted opening cash.',
+        },
+      };
     }
 
     // Generate tradeCode: T-XXXX
@@ -1225,6 +1265,88 @@ console.log('\n12e. POST does not reject partial/null planned field combinations
 
   const neither = doPostTrade({ symbol: 'GOOGL', direction: 'short' });
   assert(neither.status === 201, 'neither plannedEntry nor plannedStop returns 201');
+}
+
+// ── 12f. POST: planning-eligible guard — risk params/cash NOT required ──
+
+console.log('\n12f. POST allows planning on an account without trading readiness:');
+{
+  cleanup();
+  // Active USD account with NO maxRiskPerTradePct, NO defaultCommission, and
+  // NO posted cash — planning works (T02: planning-eligibility ≠ trading-
+  // readiness). Previously this returned 409 'Account setup incomplete'.
+  const account = seedAccount({
+    name: 'Pre-Config Account',
+    maxRiskPerTradePct: null,
+    defaultCommission: null,
+  });
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', thesis: 'Plan first' });
+
+  assert(result.status === 201, 'returns 201 for active USD account without trading readiness');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.accountId, account.id, 'trade planned against the unprepared account');
+  assertEqual(data.status, 'planned', 'trade created in planned status');
+}
+
+// ── 12g. POST: Rejects inactive account with 409 ──
+
+console.log('\n12g. POST returns 409 for an inactive account:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'Draft Account', isActive: false });
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: account.id as string });
+
+  assert(result.status === 409, 'returns 409 for inactive account');
+  const data = result.data as { error: string };
+  assertEqual(data.error, 'Account not eligible for planning', 'error names planning eligibility');
+}
+
+// ── 12h. POST: Rejects non-USD account with 409 ──
+
+console.log('\n12h. POST returns 409 for a non-USD account:');
+{
+  cleanup();
+  const account = seedAccount({ name: 'EUR Account', currency: 'EUR' });
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: account.id as string });
+
+  assert(result.status === 409, 'returns 409 for non-USD account');
+  const data = result.data as { error: string };
+  assertEqual(data.error, 'Account not eligible for planning', 'error names planning eligibility');
+}
+
+// ── 12i. POST: Explicit accountId overrides default chain ──
+
+console.log('\n12i. POST honors explicit accountId over a stale default:');
+{
+  cleanup();
+  const inactive = seedAccount({ name: 'Inactive', isActive: false });
+  seedSettings({ defaultAccountId: inactive.id });
+  const active = seedAccount({ name: 'Active USD' });
+
+  // Explicit active account wins over the inactive default.
+  const ok = doPostTrade({ symbol: 'AAPL', direction: 'long', accountId: active.id as string });
+  assert(ok.status === 201, 'explicit active accountId wins over inactive default');
+  assertEqual((ok.data as Record<string, unknown>).accountId, active.id, 'trade created against explicit account');
+
+  // Without an explicit accountId the inactive default would resolve and 409.
+  const noOverride = doPostTrade({ symbol: 'MSFT', direction: 'long' });
+  assert(noOverride.status === 409, 'inactive default without override returns 409');
+}
+
+// ── 12j. isAccountTradingReady predicate (exported for T04 execution gate) ──
+
+console.log('\n12j. isAccountTradingReady separates planning-eligibility from trading-readiness:');
+{
+  const base = { isActive: true, currency: 'USD', maxRiskPerTradePct: 0.5, defaultCommission: 1.0 };
+  assert(isAccountTradingReady({ ...base, isActive: false }, true) === false, 'inactive account is not trading-ready');
+  assert(isAccountTradingReady({ ...base, currency: 'EUR' }, true) === false, 'non-USD account is not trading-ready');
+  assert(isAccountTradingReady({ ...base, maxRiskPerTradePct: null }, true) === false, 'missing maxRiskPerTradePct is not trading-ready');
+  assert(isAccountTradingReady({ ...base, defaultCommission: null }, true) === false, 'missing defaultCommission is not trading-ready');
+  assert(isAccountTradingReady({ ...base }, false) === false, 'no opening cash is not trading-ready');
+  assert(isAccountTradingReady({ ...base }, true) === true, 'fully configured account with cash is trading-ready');
 }
 
 // ── 13. GET: Date-range filter ─────────────────────────────────────
@@ -2310,9 +2432,26 @@ console.log('\n43. GET default listing excludes deleted trades (status=deleted o
 const total = passed + failed;
 console.log(`\n${'─'.repeat(40)}`);
 console.log(`Results: ${passed}/${total} passed`);
-if (failed > 0) {
-  console.error(`         ${failed}/${total} FAILED\n`);
-  process.exit(1);
+
+// Dual-mode finish: this file is both a standalone tsx harness (Run:
+// `npx tsx <file>`) and a vitest suite (registered in the include list in
+// vitest.config.ts so the S02/T02 verification surface `npx vitest run <file>`
+// executes it). The harness assertions run during module import; vitest
+// requires at least one test suite per file, so the pass/fail verdict is
+// surfaced through a single test below. `test` is a global only inside the
+// vitest runner (globals: true in vitest.config.ts) — the `typeof test` guard
+// keeps the tsx path import-free; under tsx the summary exits directly.
+if (typeof test !== 'undefined') {
+  test('standalone route harness (assertions run at import)', () => {
+    if (failed > 0) {
+      throw new Error(`         ${failed}/${total} FAILED`);
+    }
+    console.log('         All tests passed!');
+  });
 } else {
-  console.log('         All tests passed!\n');
+  if (failed > 0) {
+    console.error(`         ${failed}/${total} FAILED`);
+    process.exit(1);
+  }
+  console.log('         All tests passed!');
 }

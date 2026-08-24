@@ -786,12 +786,22 @@ export async function POST(request: NextRequest) {
     }
 
     const account = db.select().from(accounts).where(eq(accounts.id, accountId)).get();
-    const hasOpeningCash = getSqliteHandle()
-      .prepare(`SELECT EXISTS(SELECT 1 FROM financial_events WHERE account_id = ? AND event_type IN ('opening_balance', 'deposit')) AS has_cash`)
-      .get(accountId) as { has_cash: number };
-    if (!account?.isActive || account.maxRiskPerTradePct === null || account.defaultCommission === null || !hasOpeningCash.has_cash) {
+    // T02/S02: planning-eligibility is deliberately distinct from
+    // trading-readiness. Creating a planned trade requires only an existing,
+    // active, USD account — risk parameters (maxRiskPerTradePct), default
+    // commission, and posted opening cash are execution-time requirements
+    // enforced by the execution readiness gate (T04), NOT planning
+    // requirements. A user can build a complete plan before the account is
+    // configured for execution. The trading-ready predicate is preserved as
+    // an exported function (isAccountTradingReady in
+    // src/lib/accounting/default-account-guard.ts) for execution-time use.
+    if (!account || !account.isActive || account.currency !== 'USD') {
       return NextResponse.json(
-        { error: 'Account setup incomplete', details: 'Set risk parameters, post opening cash, then activate the account before trading.' },
+        {
+          error: 'Account not eligible for planning',
+          details:
+            'Planning requires an active USD account. Trading additionally requires risk parameters, a default commission, and posted opening cash.',
+        },
         { status: 409 },
       );
     }

@@ -90,10 +90,12 @@ export default function EditTradeDialog({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // R019: plannedStop is immutable once a trade leaves 'planned' status.
-  // Non-planned trades (open, closed, deleted) show a read-only historical
-  // Planned Stop; only planned trades can edit it. Mirrors the PUT guard.
-  const plannedStopLocked = trade.status !== 'planned';
+  // R019/T02: all planning-geometry fields (symbol, direction, setup, entry,
+  // stop, targets, quantity) are immutable once a trade leaves 'planned'
+  // status. Non-planned trades (open, closed, deleted) render planning fields
+  // read-only and keep thesis / invalidationCondition / preTradePlan editable.
+  // Mirrors the PUT guard in src/app/api/trades/[id]/route.ts.
+  const planningLocked = trade.status !== 'planned';
 
   // Fetch setup options when dialog opens
   useEffect(() => {
@@ -125,21 +127,24 @@ export default function EditTradeDialog({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          symbol: symbol.trim().toUpperCase(),
-          direction,
-          setup: setup === '__none__' ? null : (setup.trim() || null),
-          thesis: thesis.trim() || null,
-          plannedEntry: plannedEntry ? parseFloat(plannedEntry) : null,
-          // plannedStop is immutable once the trade leaves 'planned' status
-          // (R019): open, closed, and deleted trades show a read-only
-          // historical Planned Stop. The backend rejects plannedStop updates
-          // for non-planned trades; omit it client-side.
-          ...(plannedStopLocked
+          // Planning fields are frozen once the trade leaves 'planned' status
+          // (R019 generalized in T02): the backend rejects any planning-field
+          // update for non-planned trades, so omit them client-side entirely.
+          // Only narrative fields (thesis, invalidationCondition,
+          // preTradePlan) remain editable at any status.
+          ...(planningLocked
             ? {}
-            : { plannedStop: plannedStop ? parseFloat(plannedStop) : null }),
-          plannedTarget1: plannedTarget1 ? parseFloat(plannedTarget1) : null,
-          plannedTarget2: plannedTarget2 ? parseFloat(plannedTarget2) : null,
-          plannedQuantity: plannedQuantity ? parseFloat(plannedQuantity) : null,
+            : {
+                symbol: symbol.trim().toUpperCase(),
+                direction,
+                setup: setup === '__none__' ? null : (setup.trim() || null),
+                plannedEntry: plannedEntry ? parseFloat(plannedEntry) : null,
+                plannedStop: plannedStop ? parseFloat(plannedStop) : null,
+                plannedTarget1: plannedTarget1 ? parseFloat(plannedTarget1) : null,
+                plannedTarget2: plannedTarget2 ? parseFloat(plannedTarget2) : null,
+                plannedQuantity: plannedQuantity ? parseFloat(plannedQuantity) : null,
+              }),
+          thesis: thesis.trim() || null,
           invalidationCondition: invalidationCondition.trim() || null,
           preTradePlan: preTradePlan.trim() || null,
         }),
@@ -185,10 +190,10 @@ export default function EditTradeDialog({
         <DialogHeader>
           <DialogTitle>Edit Trade — {trade.symbol}</DialogTitle>
           <DialogDescription>
-            {plannedStopLocked
+            {planningLocked
               ? trade.status === 'open'
-                ? 'Update trade details. The active stop is managed through Adjust Stop.'
-                : 'Update trade details. The planned stop is historical and read-only.'
+                ? 'Update trade details. Planning fields are locked after the first fill; the active stop is managed through Adjust Stop.'
+                : 'Update trade details. Planning fields are historical and locked after the first fill.'
               : 'Update the trade details below. Changes apply at any stage.'}
           </DialogDescription>
         </DialogHeader>
@@ -200,6 +205,14 @@ export default function EditTradeDialog({
             </div>
           )}
 
+          {planningLocked && (
+            <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+              Planning fields are locked after first fill. Only narrative
+              details (thesis, invalidation condition, pre-trade plan) can be
+              updated.
+            </div>
+          )}
+
           {/* Symbol + Direction */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -208,9 +221,16 @@ export default function EditTradeDialog({
               </label>
               <Input
                 placeholder="e.g. AAPL"
-                value={symbol}
+                value={planningLocked ? trade.symbol : symbol}
                 onChange={(e) => setSymbol(e.target.value)}
+                readOnly={planningLocked}
+                aria-readonly={planningLocked ? 'true' : undefined}
                 disabled={submitting}
+                className={
+                  planningLocked
+                    ? 'cursor-not-allowed bg-input/50 opacity-60'
+                    : undefined
+                }
               />
             </div>
             <div className="space-y-1.5">
@@ -218,9 +238,9 @@ export default function EditTradeDialog({
                 Direction
               </label>
               <Select
-                value={direction}
+                value={planningLocked ? trade.direction : direction}
                 onValueChange={(v: 'long' | 'short') => setDirection(v)}
-                disabled={submitting}
+                disabled={submitting || planningLocked}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -241,7 +261,7 @@ export default function EditTradeDialog({
             <Select
               value={setup}
               onValueChange={(v) => setSetup(v)}
-              disabled={submitting}
+              disabled={submitting || planningLocked}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select setup" />
@@ -267,16 +287,27 @@ export default function EditTradeDialog({
                 type="number"
                 step="any"
                 placeholder="0.00"
-                value={plannedEntry}
+                value={
+                  planningLocked
+                    ? (trade.plannedEntry?.toString() ?? '')
+                    : plannedEntry
+                }
                 onChange={(e) => setPlannedEntry(e.target.value)}
+                readOnly={planningLocked}
+                aria-readonly={planningLocked ? 'true' : undefined}
                 disabled={submitting}
+                className={
+                  planningLocked
+                    ? 'cursor-not-allowed bg-input/50 opacity-60'
+                    : undefined
+                }
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                {plannedStopLocked ? 'Original Planned Stop' : 'Stop Loss'}
+                {planningLocked ? 'Original Planned Stop' : 'Stop Loss'}
               </label>
-              {plannedStopLocked ? (
+              {planningLocked ? (
                 <>
                   <Input
                     type="number"
@@ -290,7 +321,7 @@ export default function EditTradeDialog({
                   <p className="text-[11px] leading-snug text-muted-foreground">
                     {trade.status === 'open'
                       ? 'Read-only — the active stop is managed through Adjust Stop.'
-                      : 'Read-only — the planned stop can only be changed while the trade is planned.'}
+                      : 'Read-only — planning fields can only be changed while the trade is planned.'}
                   </p>
                 </>
               ) : (
@@ -312,9 +343,20 @@ export default function EditTradeDialog({
                 type="number"
                 step="any"
                 placeholder="0.00"
-                value={plannedTarget1}
+                value={
+                  planningLocked
+                    ? (trade.plannedTarget1?.toString() ?? '')
+                    : plannedTarget1
+                }
                 onChange={(e) => setPlannedTarget1(e.target.value)}
+                readOnly={planningLocked}
+                aria-readonly={planningLocked ? 'true' : undefined}
                 disabled={submitting}
+                className={
+                  planningLocked
+                    ? 'cursor-not-allowed bg-input/50 opacity-60'
+                    : undefined
+                }
               />
             </div>
             <div className="space-y-1.5">
@@ -325,9 +367,20 @@ export default function EditTradeDialog({
                 type="number"
                 step="any"
                 placeholder="0.00"
-                value={plannedTarget2}
+                value={
+                  planningLocked
+                    ? (trade.plannedTarget2?.toString() ?? '')
+                    : plannedTarget2
+                }
                 onChange={(e) => setPlannedTarget2(e.target.value)}
+                readOnly={planningLocked}
+                aria-readonly={planningLocked ? 'true' : undefined}
                 disabled={submitting}
+                className={
+                  planningLocked
+                    ? 'cursor-not-allowed bg-input/50 opacity-60'
+                    : undefined
+                }
               />
             </div>
           </div>
@@ -341,9 +394,20 @@ export default function EditTradeDialog({
               type="number"
               step="any"
               placeholder="0"
-              value={plannedQuantity}
+              value={
+                planningLocked
+                  ? (trade.plannedQuantity?.toString() ?? '')
+                  : plannedQuantity
+              }
               onChange={(e) => setPlannedQuantity(e.target.value)}
+              readOnly={planningLocked}
+              aria-readonly={planningLocked ? 'true' : undefined}
               disabled={submitting}
+              className={
+                planningLocked
+                  ? 'cursor-not-allowed bg-input/50 opacity-60'
+                  : undefined
+              }
             />
           </div>
 

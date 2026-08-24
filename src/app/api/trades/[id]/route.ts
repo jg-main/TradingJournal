@@ -27,6 +27,30 @@ const updateTradeSchema = z.object({
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+// R019/T02: all planning-geometry fields are frozen once a trade leaves
+// 'planned' status. Open trades manage their active stop exclusively through
+// the Adjust Stop flow (trade_stop_adjustments); closed and deleted trades
+// must keep their historical planning geometry intact. Editing planning
+// fields on a non-planned trade would silently corrupt historical state —
+// e.g. changing direction on an open trade reverses P&L sign, and rewriting
+// the symbol rewrites the executed instrument. A null value is still an
+// update attempt and is rejected. Thesis, invalidationCondition, and
+// preTradePlan remain editable at any status — they are narrative/context
+// fields, not planning geometry.
+const PLANNING_FIELDS = [
+  'direction',
+  'symbol',
+  'plannedEntry',
+  'plannedStop',
+  'plannedTarget1',
+  'plannedTarget2',
+  'plannedQuantity',
+  'setupId',
+  'setup',
+  'sectorId',
+  'marketConditionId',
+] as const;
+
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
@@ -230,20 +254,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // R019: plannedStop is immutable once a trade leaves 'planned' status.
-    // Open trades manage their active stop exclusively through the Adjust
-    // Stop flow (trade_stop_adjustments); closed and deleted trades must keep
-    // their historical planned stop intact. Reject direct plannedStop edits —
-    // they would silently overwrite the original planned stop and bypass the
-    // audit trail. A null value is still an update attempt and is rejected.
-    if (existing.status !== 'planned' && parsed.data.plannedStop !== undefined) {
-      return NextResponse.json(
-        {
-          error:
-            'Planned stop can only be changed while the trade is planned.',
-        },
-        { status: 400 }
+    // R019/T02: all planning fields are immutable once a trade leaves
+    // 'planned' status (generalized from the original plannedStop-only freeze).
+    // Editing planning geometry on an open trade would corrupt live state
+    // (direction flip reverses P&L sign; symbol rewrite detaches executions);
+    // on closed/deleted trades it would rewrite history. Null values are still
+    // update attempts and are rejected. Thesis, invalidationCondition, and
+    // preTradePlan are narrative/context fields and stay editable at any
+    // status. The response lists the offending fields for actionable clients.
+    if (existing.status !== 'planned') {
+      const frozenPresent = PLANNING_FIELDS.filter(
+        (field) => parsed.data[field] !== undefined,
       );
+      if (frozenPresent.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              'Planning fields can only be changed while the trade is planned.',
+            details: { fields: frozenPresent },
+          },
+          { status: 400 },
+        );
+      }
     }
 
     // Map 'setup' back to 'setupId' for the DB column

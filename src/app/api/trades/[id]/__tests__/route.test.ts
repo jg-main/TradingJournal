@@ -7,7 +7,10 @@
  * returnPct, riskPct, and nested metrics.
  *
  * Run: npx tsx src/app/api/trades/\[id\]/__tests__/route.test.ts
+ *      (also registered in vitest.config.ts include; run via
+ *       `npx vitest run src/app/api/trades/[id]/__tests__/route.test.ts`)
  */
+/// <reference types="vitest/globals" />
 
 import { testDbPath } from '../../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
@@ -18,6 +21,14 @@ import { eq, and, desc } from 'drizzle-orm';
 import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
+
+// R019/T02: planning-geometry fields frozen once a trade leaves 'planned'
+// status (mirrors the PUT route guard in src/app/api/trades/[id]/route.ts).
+const PLANNING_FIELDS = [
+  'direction', 'symbol', 'plannedEntry', 'plannedStop',
+  'plannedTarget1', 'plannedTarget2', 'plannedQuantity',
+  'setupId', 'setup', 'sectorId', 'marketConditionId',
+];
 
 let passed = 0;
 let failed = 0;
@@ -162,6 +173,7 @@ sqlite.exec(`
     thesis TEXT,
     invalidation_condition TEXT,
     pre_trade_plan TEXT,
+    risk_override_reason TEXT,
     opened_at TEXT,
     closed_at TEXT,
     exit_notes TEXT,
@@ -430,18 +442,20 @@ function doPutTrade(id: string, body: Record<string, unknown>): { status: number
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
-    // R019: plannedStop is immutable once a trade leaves 'planned' status.
-    // Open trades manage their active stop exclusively through the Adjust
-    // Stop flow (trade_stop_adjustments); closed and deleted trades must keep
-    // their historical planned stop intact. Reject direct plannedStop edits.
-    if (existing.status !== 'planned' && body.plannedStop !== undefined) {
-      return {
-        status: 400,
-        data: {
-          error:
-            'Planned stop can only be changed while the trade is planned.',
-        },
-      };
+    // R019/T02: all planning fields are immutable once a trade leaves
+    // 'planned' status (generalized from the original plannedStop-only
+    // freeze). Null values are still update attempts and are rejected.
+    if (existing.status !== 'planned') {
+      const frozenPresent = PLANNING_FIELDS.filter((f) => body[f] !== undefined);
+      if (frozenPresent.length > 0) {
+        return {
+          status: 400,
+          data: {
+            error: 'Planning fields can only be changed while the trade is planned.',
+            details: { fields: frozenPresent },
+          },
+        };
+      }
     }
 
     // Map 'setup' back to 'setupId' for the DB column
@@ -467,7 +481,10 @@ function doPutTrade(id: string, body: Record<string, unknown>): { status: number
     if (body.thesis !== undefined) updateData.thesis = body.thesis;
     if (body.plannedEntry !== undefined) updateData.plannedEntry = body.plannedEntry;
     if (body.plannedStop !== undefined) updateData.plannedStop = body.plannedStop;
+    if (body.symbol !== undefined) updateData.symbol = body.symbol;
+    if (body.direction !== undefined) updateData.direction = body.direction;
     if (body.plannedTarget1 !== undefined) updateData.plannedTarget1 = body.plannedTarget1;
+    if (body.plannedTarget2 !== undefined) updateData.plannedTarget2 = body.plannedTarget2;
     if (body.plannedQuantity !== undefined) updateData.plannedQuantity = body.plannedQuantity;
     if (body.invalidationCondition !== undefined) updateData.invalidationCondition = body.invalidationCondition;
     if (body.preTradePlan !== undefined) updateData.preTradePlan = body.preTradePlan;
@@ -1335,11 +1352,12 @@ console.log('\n22. PUT rejects plannedStop for an open trade:');
   const result = doPutTrade(trade.id as string, { plannedStop: 590.0 });
 
   assert(result.status === 400, 'returns 400');
-  const data = result.data as { error: string };
+  const data = result.data as { error: string; details: { fields: string[] } };
   assert(
-    data.error === 'Planned stop can only be changed while the trade is planned.',
+    data.error === 'Planning fields can only be changed while the trade is planned.',
     'error message explains lifecycle restriction',
   );
+  assertEqual(JSON.stringify(data.details.fields), JSON.stringify(['plannedStop']), 'details.fields names plannedStop');
   // DB must be untouched — plannedStop preserved, no partial write
   const row = db
     .select()
@@ -1428,8 +1446,8 @@ console.log('\n26. PUT rejects plannedStop for a closed trade:');
   const data = result.data as { error: string };
   assertEqual(
     data.error,
-    'Planned stop can only be changed while the trade is planned.',
-    'error message matches R019 lifecycle message',
+    'Planning fields can only be changed while the trade is planned.',
+    'error message matches generalized lifecycle message',
   );
   const row = db
     .select()
@@ -1480,8 +1498,8 @@ console.log('\n28. PUT rejects plannedStop for a deleted trade:');
   const data = result.data as { error: string };
   assertEqual(
     data.error,
-    'Planned stop can only be changed while the trade is planned.',
-    'error message matches R019 lifecycle message',
+    'Planning fields can only be changed while the trade is planned.',
+    'error message matches generalized lifecycle message',
   );
   const row = db
     .select()
@@ -1491,14 +1509,224 @@ console.log('\n28. PUT rejects plannedStop for a deleted trade:');
   assertEqual(row.plannedStop, 30.0, 'plannedStop unchanged in DB for deleted trade');
 }
 
+// ── 29. PUT: Rejects direction change on open trade ─────────────────
+
+console.log('\n29. PUT rejects direction change for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    direction: 'long',
+  });
+
+  const result = doPutTrade(trade.id as string, { direction: 'short' });
+
+  assert(result.status === 400, 'returns 400 for direction edit on open trade');
+  const data = result.data as { error: string; details: { fields: string[] } };
+  assertEqual(data.error, 'Planning fields can only be changed while the trade is planned.', 'generalized lifecycle error');
+  assertEqual(JSON.stringify(data.details.fields), JSON.stringify(['direction']), 'details.fields names direction');
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.direction, 'long', 'direction unchanged in DB — P&L sign cannot be flipped retroactively');
+}
+
+// ── 30. PUT: Rejects symbol change on open trade ────────────────────
+
+console.log('\n30. PUT rejects symbol change for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open', symbol: 'AAPL' });
+
+  const result = doPutTrade(trade.id as string, { symbol: 'MSFT' });
+  assert(result.status === 400, 'returns 400 for symbol edit on open trade');
+  const data = result.data as { error: string; details: { fields: string[] } };
+  assertEqual(JSON.stringify(data.details.fields), JSON.stringify(['symbol']), 'details.fields names symbol');
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.symbol, 'AAPL', 'symbol unchanged in DB');
+}
+
+// ── 31. PUT: Rejects setup change on open trade (setup and setupId) ──
+
+console.log('\n31. PUT rejects setup change for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const lookup = seedLookupValue({ type: 'setup', value: 'breakout' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open', setupId: null });
+
+  const byName = doPutTrade(trade.id as string, { setup: 'breakout' });
+  assert(byName.status === 400, 'returns 400 for setup (name) edit on open trade');
+  assertEqual(JSON.stringify((byName.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['setup']), 'details.fields names setup');
+
+  const byId = doPutTrade(trade.id as string, { setupId: lookup.id as string });
+  assert(byId.status === 400, 'returns 400 for setupId edit on open trade');
+  assertEqual(JSON.stringify((byId.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['setupId']), 'details.fields names setupId');
+
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.setupId, null, 'setupId unchanged in DB');
+}
+
+// ── 32. PUT: Rejects entry/target/quantity changes on open trade ─────
+
+console.log('\n32. PUT rejects entry, target, and quantity changes for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    plannedEntry: 150,
+    plannedTarget1: 160,
+    plannedTarget2: 170,
+    plannedQuantity: 100,
+  });
+
+  const entry = doPutTrade(trade.id as string, { plannedEntry: 155 });
+  assert(entry.status === 400, 'returns 400 for plannedEntry edit on open trade');
+
+  const target1 = doPutTrade(trade.id as string, { plannedTarget1: 165 });
+  assert(target1.status === 400, 'returns 400 for plannedTarget1 edit on open trade');
+
+  const target2 = doPutTrade(trade.id as string, { plannedTarget2: 175 });
+  assert(target2.status === 400, 'returns 400 for plannedTarget2 edit on open trade');
+
+  const qty = doPutTrade(trade.id as string, { plannedQuantity: 200 });
+  assert(qty.status === 400, 'returns 400 for plannedQuantity edit on open trade');
+
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.plannedEntry, 150, 'plannedEntry unchanged in DB');
+  assertEqual(row.plannedQuantity, 100, 'plannedQuantity unchanged in DB');
+}
+
+// ── 33. PUT: Rejects sectorId/marketConditionId on open trade ────────
+
+console.log('\n33. PUT rejects sectorId and marketConditionId for an open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
+
+  const sector = doPutTrade(trade.id as string, { sectorId: '00000000-0000-0000-0000-000000000001' });
+  assert(sector.status === 400, 'returns 400 for sectorId edit on open trade');
+  assertEqual(JSON.stringify((sector.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['sectorId']), 'details.fields names sectorId');
+
+  const mkt = doPutTrade(trade.id as string, { marketConditionId: '00000000-0000-0000-0000-000000000002' });
+  assert(mkt.status === 400, 'returns 400 for marketConditionId edit on open trade');
+  assertEqual(JSON.stringify((mkt.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['marketConditionId']), 'details.fields names marketConditionId');
+}
+
+// ── 34. PUT: Narrative fields stay editable on open trade ────────────
+
+console.log('\n34. PUT allows narrative fields (thesis, invalidation, preTradePlan) on open trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    thesis: 'Old thesis',
+    invalidationCondition: 'Old invalidation',
+    preTradePlan: 'Old plan',
+  });
+
+  const result = doPutTrade(trade.id as string, {
+    thesis: 'Updated thesis',
+    invalidationCondition: 'Updated invalidation',
+    preTradePlan: 'Updated plan',
+  });
+
+  assert(result.status === 200, 'returns 200 for narrative field edits on open trade');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.thesis, 'Updated thesis', 'thesis updated on open trade');
+  assertEqual(data.invalidationCondition, 'Updated invalidation', 'invalidationCondition updated on open trade');
+  assertEqual(data.preTradePlan, 'Updated plan', 'preTradePlan updated on open trade');
+  assertEqual(data.symbol, 'AAPL', 'planning geometry untouched');
+}
+
+// ── 35. PUT: All planning fields still editable while planned ────────
+
+console.log('\n35. PUT allows all planning fields for a planned trade:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const lookup = seedLookupValue({ type: 'setup', value: 'breakout' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'planned',
+    symbol: 'AAPL',
+    direction: 'long',
+  });
+
+  const result = doPutTrade(trade.id as string, {
+    symbol: 'MSFT',
+    direction: 'short',
+    setup: 'breakout',
+    plannedEntry: 200,
+    plannedStop: 205,
+    plannedTarget1: 210,
+    plannedTarget2: 220,
+    plannedQuantity: 50,
+    sectorId: '00000000-0000-0000-0000-000000000003',
+    marketConditionId: '00000000-0000-0000-0000-000000000004',
+  });
+
+  assert(result.status === 200, 'returns 200 for full planning-field update while planned');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.symbol, 'MSFT', 'symbol updated');
+  assertEqual(data.direction, 'short', 'direction updated');
+  assertEqual(data.setupId, lookup.id, 'setupId updated');
+  assertEqual(data.plannedEntry, 200, 'plannedEntry updated');
+  assertEqual(data.plannedStop, 205, 'plannedStop updated');
+  assertEqual(data.plannedTarget1, 210, 'plannedTarget1 updated');
+  assertEqual(data.plannedTarget2, 220, 'plannedTarget2 updated');
+  assertEqual(data.plannedQuantity, 50, 'plannedQuantity updated');
+}
+
+// ── 36. PUT: Null planning field on non-planned trade is still rejected ──
+
+console.log('\n36. PUT rejects null planning fields for an open trade (still an update attempt):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    plannedEntry: 150,
+  });
+
+  const result = doPutTrade(trade.id as string, { plannedEntry: null });
+  assert(result.status === 400, 'returns 400 (null is still an update attempt)');
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.plannedEntry, 150, 'plannedEntry not cleared in DB');
+}
+
 // ── Summary ──────────────────────────────────────────────────────────
 
 const total = passed + failed;
 console.log(`\n${'─'.repeat(40)}`);
 console.log(`Results: ${passed}/${total} passed`);
-if (failed > 0) {
-  console.error(`         ${failed}/${total} FAILED\n`);
-  process.exit(1);
+
+// Dual-mode finish: this file is both a standalone tsx harness (Run:
+// `npx tsx <file>`) and a vitest suite (registered in the include list in
+// vitest.config.ts so the S02/T02 verification surface `npx vitest run <file>`
+// executes it). The harness assertions run during module import; vitest
+// requires at least one test suite per file, so the pass/fail verdict is
+// surfaced through a single test below. `test` is a global only inside the
+// vitest runner (globals: true in vitest.config.ts) — the `typeof test` guard
+// keeps the tsx path import-free; under tsx the summary exits directly.
+if (typeof test !== 'undefined') {
+  test('standalone route harness (assertions run at import)', () => {
+    if (failed > 0) {
+      throw new Error(`         ${failed}/${total} FAILED`);
+    }
+    console.log('         All tests passed!');
+  });
 } else {
-  console.log('         All tests passed!\n');
+  if (failed > 0) {
+    console.error(`         ${failed}/${total} FAILED`);
+    process.exit(1);
+  }
+  console.log('         All tests passed!');
 }

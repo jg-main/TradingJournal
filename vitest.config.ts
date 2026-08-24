@@ -8,6 +8,13 @@ export default defineConfig({
     },
   },
   test: {
+    // globals: true lets standalone assert-harness test files (e.g.
+    // src/app/api/trades/__tests__/route.test.ts) register a vitest suite via
+    // the synchronous `test` global — guarded by `typeof test !== 'undefined'`
+    // — without a static vitest import, which would break their alternate
+    // `npx tsx <file>` execution path. Regular vitest suites are unaffected
+    // (they import from 'vitest' explicitly).
+    globals: true,
     include: [
       'src/lib/account-lifecycle.test.ts',
       'src/lib/performance-pnl-scope.test.ts',
@@ -55,11 +62,13 @@ export default defineConfig({
       'src/app/api/ai-settings/__tests__/route.test.ts',
       'src/app/api/trades/__tests__/execute.test.ts',
       'src/app/api/trades/__tests__/check-results.test.ts',
+      'src/app/api/trades/__tests__/route.test.ts',
       'src/app/api/health/__tests__/route.test.ts',
       'src/lib/__tests__/clickhouse-client.test.ts',
       'src/lib/__tests__/ai-provider.test.ts',
       'src/lib/__tests__/ai-settings-integration.test.ts',
       'src/lib/__tests__/assessment-engine.test.ts',
+      'src/app/api/trades/[id]/__tests__/route.test.ts',
       'src/app/api/trades/[id]/assessments/__tests__/route.test.ts',
       'src/lib/__tests__/market-quote.test.ts',
       'src/lib/__tests__/scheduler.test.ts',

@@ -1,15 +1,18 @@
 /**
- * Component tests for EditTradeDialog — R019 planned-stop lifecycle.
+ * Component tests for EditTradeDialog — R019/T02 planning-field lifecycle.
  *
  * Covers:
- * - Planned trade: editable "Stop Loss" field; PUT sends plannedStop.
- * - Open trade: read-only historical "Original Planned Stop"; PUT omits
- *   plannedStop; Adjust Stop helper text.
- * - Closed trade: read-only historical "Original Planned Stop"; PUT omits
- *   plannedStop; R019 helper text.
- * - Deleted trade: read-only historical "Original Planned Stop"; PUT omits
- *   plannedStop.
- * - Missing plannedStop renders an empty read-only field for non-planned
+ * - Planned trade: editable planning fields (symbol, direction, setup, entry,
+ *   stop, targets, quantity); PUT sends the full planning payload.
+ * - Open trade: lock banner + read-only historical planning fields (Symbol,
+ *   Planned Entry, Targets, Quantity, Original Planned Stop); PUT omits ALL
+ *   planning fields; Adjust Stop helper text.
+ * - Closed trade: read-only historical planning fields; PUT omits planning
+ *   fields; generalized helper text.
+ * - Deleted trade: read-only historical planning fields; PUT omits planning
+ *   fields.
+ * - Narrative fields (thesis, invalidationCondition, preTradePlan) stay
+ *   editable at any status and are the only fields sent for non-planned
  *   trades.
  *
  * Run: npx vitest run --reporter verbose src/components/edit-trade-dialog.test.tsx
@@ -98,7 +101,7 @@ async function getPutBody(fetchMock: ReturnType<typeof vi.fn>) {
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
-describe('EditTradeDialog — planned trade (editable Stop Loss)', () => {
+describe('EditTradeDialog — planned trade (editable planning fields)', () => {
   it('renders an editable Stop Loss field seeded with the planned stop', () => {
     const fetchMock = mockFetchForSave();
     globalThis.fetch = fetchMock;
@@ -120,6 +123,26 @@ describe('EditTradeDialog — planned trade (editable Stop Loss)', () => {
     expect(input.value).toBe('145.5');
   });
 
+  it('shows no lock banner for planned trades', () => {
+    const fetchMock = mockFetchForSave();
+    globalThis.fetch = fetchMock;
+
+    render(
+      <EditTradeDialog
+        open
+        onOpenChange={vi.fn()}
+        trade={makeTrade()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/Planning fields are locked after first fill/),
+    ).toBeNull();
+    const symbol = stopFieldInput('Symbol');
+    expect(symbol.readOnly).toBe(false);
+  });
+
   it('sends the edited plannedStop in the PUT payload', async () => {
     const fetchMock = mockFetchForSave();
     globalThis.fetch = fetchMock;
@@ -139,6 +162,31 @@ describe('EditTradeDialog — planned trade (editable Stop Loss)', () => {
 
     const body = await getPutBody(fetchMock);
     expect(body.plannedStop).toBe(144);
+  });
+
+  it('sends the full planning payload for planned trades', async () => {
+    const fetchMock = mockFetchForSave();
+    globalThis.fetch = fetchMock;
+
+    render(
+      <EditTradeDialog
+        open
+        onOpenChange={vi.fn()}
+        trade={makeTrade({ plannedTarget1: 160, plannedQuantity: 100 })}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Save Changes'));
+
+    const body = await getPutBody(fetchMock);
+    expect(body.symbol).toBe('AAPL');
+    expect(body.direction).toBe('long');
+    expect(body.plannedEntry).toBe(150);
+    expect(body.plannedStop).toBe(145.5);
+    expect(body.plannedTarget1).toBe(160);
+    expect(body.plannedQuantity).toBe(100);
+    expect(body).toHaveProperty('setup');
   });
 });
 
@@ -188,6 +236,88 @@ describe('EditTradeDialog — open trade (read-only historical stop)', () => {
     const body = await getPutBody(fetchMock);
     expect(body).not.toHaveProperty('plannedStop');
   });
+
+  it('shows the lock banner and renders ALL planning fields read-only', () => {
+    const fetchMock = mockFetchForSave();
+    globalThis.fetch = fetchMock;
+
+    render(
+      <EditTradeDialog
+        open
+        onOpenChange={vi.fn()}
+        trade={makeTrade({ status: 'open' })}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Planning fields are locked after first fill/),
+    ).toBeTruthy();
+
+    const symbol = stopFieldInput('Symbol');
+    expect(symbol.readOnly).toBe(true);
+    expect(symbol.getAttribute('aria-readonly')).toBe('true');
+    expect(symbol.value).toBe('AAPL');
+
+    const entry = stopFieldInput('Planned Entry');
+    expect(entry.readOnly).toBe(true);
+    expect(entry.value).toBe('150');
+
+    const target1 = stopFieldInput('Target 1');
+    expect(target1.readOnly).toBe(true);
+
+    const target2 = stopFieldInput('Target 2');
+    expect(target2.readOnly).toBe(true);
+
+    const qty = stopFieldInput('Quantity');
+    expect(qty.readOnly).toBe(true);
+  });
+
+  it('omits ALL planning fields and sends only narrative fields for open trades', async () => {
+    const fetchMock = mockFetchForSave();
+    globalThis.fetch = fetchMock;
+
+    render(
+      <EditTradeDialog
+        open
+        onOpenChange={vi.fn()}
+        trade={makeTrade({
+          status: 'open',
+          thesis: 'Old thesis',
+          invalidationCondition: 'Old invalidation',
+          preTradePlan: 'Old plan',
+        })}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    const thesis = screen.getByPlaceholderText('Why are you taking this trade?');
+    fireEvent.change(thesis, { target: { value: 'Updated thesis' } });
+    const invalidation = screen.getByPlaceholderText(
+      'What would invalidate this trade idea?',
+    );
+    fireEvent.change(invalidation, { target: { value: 'Updated invalidation' } });
+    const plan = screen.getByPlaceholderText(
+      'Your plan before executing this trade',
+    );
+    fireEvent.change(plan, { target: { value: 'Updated plan' } });
+
+    fireEvent.click(screen.getByText('Save Changes'));
+
+    const body = await getPutBody(fetchMock);
+    expect(body.thesis).toBe('Updated thesis');
+    expect(body.invalidationCondition).toBe('Updated invalidation');
+    expect(body.preTradePlan).toBe('Updated plan');
+    // Every planning field is omitted — the backend would reject them with 400.
+    expect(body).not.toHaveProperty('symbol');
+    expect(body).not.toHaveProperty('direction');
+    expect(body).not.toHaveProperty('setup');
+    expect(body).not.toHaveProperty('plannedEntry');
+    expect(body).not.toHaveProperty('plannedStop');
+    expect(body).not.toHaveProperty('plannedTarget1');
+    expect(body).not.toHaveProperty('plannedTarget2');
+    expect(body).not.toHaveProperty('plannedQuantity');
+  });
 });
 
 describe('EditTradeDialog — closed trade (read-only historical stop)', () => {
@@ -213,12 +343,12 @@ describe('EditTradeDialog — closed trade (read-only historical stop)', () => {
     expect(input.value).toBe('145.5');
     expect(
       screen.getByText(
-        'Read-only — the planned stop can only be changed while the trade is planned.',
+        'Read-only — planning fields can only be changed while the trade is planned.',
       ),
     ).toBeTruthy();
     expect(
       screen.getByText(
-        'Update trade details. The planned stop is historical and read-only.',
+        'Update trade details. Planning fields are historical and locked after the first fill.',
       ),
     ).toBeTruthy();
   });
