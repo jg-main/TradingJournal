@@ -12,6 +12,8 @@ import {
   ReadinessFailureError,
   ActionDirectionError,
   ChecklistGateError,
+  OverCloseError,
+  OpenPositionRequiredError,
   type ExecuteTradeFillInput,
   type TradeExecutionAction,
 } from '@/lib/trade-execution-engine';
@@ -304,6 +306,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 fieldErrors: {
                   action: [err.message],
                 },
+              },
+            },
+            { status: 400 },
+          );
+        }
+        if (err instanceof OverCloseError) {
+          // S04 pre-flight rejection: a closing fill exceeded the persisted
+          // open quantity (defense-in-depth — the adapter's exit-quantity
+          // guard compares against the REQUEST entry quantity, the engine
+          // compares against the PERSISTED open position).
+          return NextResponse.json(
+            {
+              error: 'Over-close rejected',
+              details: {
+                requestedQuantity: err.requestedQuantity,
+                openQuantity: err.openQuantity,
+              },
+            },
+            { status: 400 },
+          );
+        }
+        if (err instanceof OpenPositionRequiredError) {
+          return NextResponse.json(
+            {
+              error: 'Action requires open position',
+              details: {
+                action: err.action,
               },
             },
             { status: 400 },

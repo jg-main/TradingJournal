@@ -109,8 +109,10 @@ export interface TradeFillCheckResult {
  *
  * `stopPrice` applies to the FIRST fill only (the P1 bulk path passes the
  * request stop price; P2 has no per-fill stop and falls back to
- * trade.plannedStop). Over-close and quantity guards are intentionally NOT
- * enforced here — that is S04's action-semantics concern.
+ * trade.plannedStop). Over-close and open-position quantity guards are
+ * enforced by the engine pre-flight (S04) with typed errors and zero
+ * mutations: closing fills may not exceed the open quantity, and 'add'/
+ * 'reduce' require an existing open position.
  */
 export interface ExecuteTradeFillInput {
   tradeId: string;
@@ -181,6 +183,38 @@ export class ActionDirectionError extends Error {
     this.name = 'ActionDirectionError';
     this.action = action;
     this.direction = direction;
+  }
+}
+
+/**
+ * A closing/reducing fill (sell / reduce / buy_to_cover) exceeded the
+ * currently open quantity. Thrown in the engine pre-flight, BEFORE any
+ * mutation, so routes can return a friendly 400 — the FIFO rebuild layer
+ * would otherwise reject the over-close only after the journal row was
+ * inserted, forcing a full-transaction rollback and a 500.
+ */
+export class OverCloseError extends Error {
+  readonly requestedQuantity: number;
+  readonly openQuantity: number;
+  constructor(requestedQuantity: number, openQuantity: number) {
+    super(`Close quantity (${requestedQuantity}) exceeds open quantity (${openQuantity})`);
+    this.name = 'OverCloseError';
+    this.requestedQuantity = requestedQuantity;
+    this.openQuantity = openQuantity;
+  }
+}
+
+/**
+ * 'add'/'reduce' are position-management actions: they require an existing
+ * open position. Thrown pre-flight when the trade is still 'planned' (no
+ * position exists to manage).
+ */
+export class OpenPositionRequiredError extends Error {
+  readonly action: string;
+  constructor(action: string, tradeStatus: string) {
+    super(`Action '${action}' requires an open position (trade status is '${tradeStatus}')`);
+    this.name = 'OpenPositionRequiredError';
+    this.action = action;
   }
 }
 
@@ -578,13 +612,15 @@ function isUniqueConstraintViolation(err: unknown): boolean {
  * checklist evidence + accounting execution + FIFO positions + account
  * performance commit together or roll back together.
  *
- * @throws {TradeNotFoundError}      trade is missing
- * @throws {TradeDeletedError}       trade is deleted
- * @throws {ActionDirectionError}    action not valid for the trade direction
- * @throws {ReadinessFailureError}   first-fill readiness gate failed
- * @throws {ChecklistGateError}      first-fill required checklist items not passed
- * @throws {IdempotentReplayError}   concurrent duplicate (result attached)
- * @throws {Error}                   any accounting/rebuild failure (full rollback)
+ * @throws {TradeNotFoundError}        trade is missing
+ * @throws {TradeDeletedError}         trade is deleted
+ * @throws {ActionDirectionError}      action not valid for the trade direction
+ * @throws {OverCloseError}            closing fill exceeds the open quantity (pre-flight)
+ * @throws {OpenPositionRequiredError} 'add'/'reduce' on a planned trade (pre-flight)
+ * @throws {ReadinessFailureError}     first-fill readiness gate failed
+ * @throws {ChecklistGateError}        first-fill required checklist items not passed
+ * @throws {IdempotentReplayError}     concurrent duplicate (result attached)
+ * @throws {Error}                     any accounting/rebuild failure (full rollback)
  */
 export function executeTradeFill(
   input: ExecuteTradeFillInput,
@@ -622,6 +658,46 @@ export function executeTradeFill(
   }
 
   validateActionForDirection(input.action, trade.direction as TradeDirection);
+
+  // ── Quantity guards (S04) — pre-flight, zero mutations ─────────────
+  // 'add'/'reduce' are position-management actions: on a planned trade there
+  // is no position to manage, so they are rejected with a typed error before
+  // any gate or transaction runs.
+  if (
+    (input.action === 'add' || input.action === 'reduce') &&
+    trade.status === 'planned'
+  ) {
+    throw new OpenPositionRequiredError(input.action, trade.status);
+  }
+
+  // Closing/reducing fills may not exceed the currently open quantity
+  // (entry − exit from the persisted execution set). A planned trade has zero
+  // open quantity, so a 'sell'/'buy_to_cover' on a planned trade is caught
+  // here as an over-close — the first-fill gates never see it.
+  if (
+    input.action === 'sell' ||
+    input.action === 'reduce' ||
+    input.action === 'buy_to_cover'
+  ) {
+    const existingExecutions = dbHandle
+      .select()
+      .from(tradeExecutions)
+      .where(eq(tradeExecutions.tradeId, input.tradeId))
+      .orderBy(tradeExecutions.executedAt, tradeExecutions.createdAt)
+      .all();
+    const openQuantity = computeTradeMetrics({
+      executions: toExecutionData(existingExecutions),
+      direction: trade.direction as Direction,
+      riskSnapshot: null,
+      stopAdjustments: [],
+      currentMark: null,
+      currentAccountEquity: null,
+    }).size.openQuantity;
+
+    if (input.quantity > openQuantity) {
+      throw new OverCloseError(input.quantity, openQuantity);
+    }
+  }
 
   let riskOverrideReasonToStore: string | null = null;
   let checklistSnapshot: ChecklistSnapshot = { submitted: [], itemTextById: new Map() };

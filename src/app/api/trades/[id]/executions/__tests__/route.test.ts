@@ -578,9 +578,9 @@ async function main(): Promise<void> {
     assertEqual(countRows('trade_executions', 'trade_id = ?', trade.id as string), 0, 'no execution created');
   }
 
-  // ── 12. POST: Over-close exit on a flat position is rejected atomically ─
+  // ── 12. POST: Over-close exit rejected pre-flight with 400, zero mutations ─
 
-  console.log('\n12. POST rejects an over-close exit atomically (no orphan rows):');
+  console.log('\n12. POST rejects an over-close exit pre-flight with 400 (zero orphan rows):');
   {
     cleanup();
     seedAccount({ id: 'test-account-id' });
@@ -590,19 +590,84 @@ async function main(): Promise<void> {
     await callPost(trade.id as string, { action: 'buy', quantity: 100, price: 150.0 });
     await callPost(trade.id as string, { action: 'sell', quantity: 100, price: 160.0 });
 
-    // A third exit exceeds the flat accounting position: the engine's FIFO
-    // rebuild rejects it inside the transaction and rolls EVERYTHING back.
+    // A third exit exceeds the flat position: the engine's S04 pre-flight
+    // quantity guard rejects it with a typed error BEFORE any mutation, so
+    // the route returns a friendly 400 instead of a 500 rollback.
     const result = await callPost(trade.id as string, {
       action: 'sell',
       quantity: 100,
       price: 162.0,
     });
 
-    assert(result.status === 500, 'returns 500 for the rejected over-close fill');
+    assert(result.status === 400, 'returns 400 for the rejected over-close fill');
+    const data = result.data as { error: string; details: { requestedQuantity: number; openQuantity: number } };
+    assertEqual(data.error, 'Over-close rejected', 'error names the over-close');
+    assertEqual(data.details.requestedQuantity, 100, 'details carries the requested quantity');
+    assertEqual(data.details.openQuantity, 0, 'details carries the open quantity');
     assertEqual(countRows('trade_executions', 'trade_id = ?', trade.id as string), 2, 'no orphan journal execution');
     assertEqual(countRows('accounting_executions', 'journal_trade_id = ?', trade.id as string), 2, 'no orphan accounting execution');
     const updatedTrade = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
-    assertEqual(updatedTrade.status, 'closed', 'trade status unchanged after rollback');
+    assertEqual(updatedTrade.status, 'closed', 'trade status unchanged after rejection');
+  }
+
+  // ── 12b. POST: Over-close on an open position (partial close) → 400 ─
+
+  console.log('\n12b. POST rejects an over-close against an open position with 400:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    await callPost(trade.id as string, { action: 'buy', quantity: 100, price: 150.0 });
+
+    // Only 100 are open; selling 150 exceeds the open quantity.
+    const result = await callPost(trade.id as string, {
+      action: 'sell',
+      quantity: 150,
+      price: 160.0,
+    });
+
+    assert(result.status === 400, 'returns 400');
+    const data = result.data as { error: string; details: { requestedQuantity: number; openQuantity: number } };
+    assertEqual(data.error, 'Over-close rejected', 'error names the over-close');
+    assertEqual(data.details.requestedQuantity, 150, 'details carries the requested quantity');
+    assertEqual(data.details.openQuantity, 100, 'details carries the open quantity');
+    assertEqual(countRows('trade_executions', 'trade_id = ?', trade.id as string), 1, 'no new journal execution');
+  }
+
+  // ── 12c. POST: add/reduce on a planned trade → 400 (open position required) ─
+
+  console.log('\n12c. POST rejects add/reduce on a planned trade with 400 (open position required):');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const addResult = await callPost(trade.id as string, {
+      action: 'add',
+      quantity: 50,
+      price: 152.0,
+    });
+    assert(addResult.status === 400, 'add on planned returns 400');
+    assertEqual(
+      (addResult.data as { error: string }).error,
+      'Action requires open position',
+      'add error names the open-position requirement',
+    );
+
+    const reduceResult = await callPost(trade.id as string, {
+      action: 'reduce',
+      quantity: 25,
+      price: 152.0,
+    });
+    assert(reduceResult.status === 400, 'reduce on planned returns 400');
+    assertEqual(
+      (reduceResult.data as { error: string }).error,
+      'Action requires open position',
+      'reduce error names the open-position requirement',
+    );
+
+    assertEqual(countRows('trade_executions', 'trade_id = ?', trade.id as string), 0, 'no execution created');
   }
 
   // ── 13. POST: Validates action-direction compatibility for long trade ──

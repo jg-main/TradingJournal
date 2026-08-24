@@ -35,6 +35,8 @@ import {
   ActionDirectionError,
   ReadinessFailureError,
   ChecklistGateError,
+  OverCloseError,
+  OpenPositionRequiredError,
   type ExecuteTradeFillInput,
   type TradeExecutionContext,
 } from '../trade-execution-engine';
@@ -510,5 +512,146 @@ describe('executeTradeFill', () => {
     expect(metrics.size.exitQuantity).toBe(150);
     expect(metrics.size.openQuantity).toBe(0);
     expect(metrics.position.status).toBe('closed');
+  });
+});
+
+describe('S04 quantity guards', () => {
+  it('rejects an over-close on a long trade before any mutation', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    // Open with 100, then try to close 200.
+    executeTradeFill(fill(tradeId), context);
+    expect(() =>
+      executeTradeFill(
+        fill(tradeId, { action: 'sell', quantity: 200, price: 110, idempotencyKey: randomUUID() }),
+        context,
+      ),
+    ).toThrow(OverCloseError);
+
+    // Zero mutations across every domain: the pre-flight rejection never
+    // reached the transaction.
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(1);
+    expect(countRows('accounting_executions', 'journal_trade_id = ?', tradeId)).toBe(1);
+    expect(countRows('financial_events', 'account_id = ?', accountId)).toBe(1);
+    expect(
+      db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get()?.status,
+    ).toBe('open');
+  });
+
+  it('rejects an over-cover on a short trade before any mutation', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 105 });
+
+    // Open a 100-share short, then try to cover 200.
+    executeTradeFill(fill(tradeId, { action: 'sell_short', price: 100 }), context);
+    expect(() =>
+      executeTradeFill(
+        fill(tradeId, { action: 'buy_to_cover', quantity: 200, price: 98, idempotencyKey: randomUUID() }),
+        context,
+      ),
+    ).toThrow(OverCloseError);
+
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(1);
+    expect(countRows('accounting_executions', 'journal_trade_id = ?', tradeId)).toBe(1);
+  });
+
+  it('carries the requested/open quantities on the over-close error', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    executeTradeFill(fill(tradeId), context); // buy 100
+    let caught: unknown;
+    try {
+      executeTradeFill(
+        fill(tradeId, { action: 'sell', quantity: 200, price: 110, idempotencyKey: randomUUID() }),
+        context,
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(OverCloseError);
+    const overClose = caught as OverCloseError;
+    expect(overClose.name).toBe('OverCloseError');
+    expect(overClose.requestedQuantity).toBe(200);
+    expect(overClose.openQuantity).toBe(100);
+    expect(overClose.message).toContain('200');
+    expect(overClose.message).toContain('100');
+  });
+
+  it('accepts a partial close and leaves the remainder open', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    executeTradeFill(fill(tradeId), context); // buy 100
+    const partial = executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 50, price: 110, idempotencyKey: randomUUID() }),
+      context,
+    );
+
+    expect(partial.trade.status).toBe('open');
+    const metrics = metricsForTrade(tradeId);
+    expect(metrics.size.entryQuantity).toBe(100);
+    expect(metrics.size.exitQuantity).toBe(50);
+    expect(metrics.size.openQuantity).toBe(50);
+    expect(metrics.position.status).toBe('open');
+  });
+
+  it('accepts a full close and derives closed status', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    executeTradeFill(fill(tradeId), context); // buy 100
+    const full = executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 100, price: 110, idempotencyKey: randomUUID() }),
+      context,
+    );
+
+    expect(full.trade.status).toBe('closed');
+    expect(full.trade.closedAt).toBeTruthy();
+    const metrics = metricsForTrade(tradeId);
+    expect(metrics.size.openQuantity).toBe(0);
+    expect(metrics.position.status).toBe('closed');
+  });
+
+  it("rejects 'add' on a planned trade with OpenPositionRequiredError", () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    expect(() =>
+      executeTradeFill(fill(tradeId, { action: 'add', quantity: 50 }), context),
+    ).toThrow(OpenPositionRequiredError);
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(0);
+  });
+
+  it("rejects 'reduce' on a planned trade with OpenPositionRequiredError", () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    expect(() =>
+      executeTradeFill(fill(tradeId, { action: 'reduce', quantity: 25 }), context),
+    ).toThrow(OpenPositionRequiredError);
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(0);
+  });
+
+  it("rejects 'sell' on a planned trade as an over-close (open quantity is zero)", () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    // A closing fill on a planned trade has no position to close: the
+    // open-quantity guard (openQuantity = 0) rejects it pre-flight, before
+    // the first-fill readiness/checklist gates run.
+    expect(() =>
+      executeTradeFill(fill(tradeId, { action: 'sell', quantity: 10 }), context),
+    ).toThrow(OverCloseError);
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(0);
   });
 });

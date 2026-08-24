@@ -888,6 +888,58 @@ async function main(): Promise<void> {
     assertEqual(accountingExecs.count, 2, 'exactly 2 accounting executions, no duplicates');
   }
 
+  // ── 22. Engine-level over-close via the P1 bulk adapter maps to 400 ──
+
+  console.log('\n22. POST returns 400 (Over-close rejected) when the engine guard fires through the bulk adapter:');
+  {
+    cleanup();
+    const acc = seedAccount();
+    const trade = seedTrade(acc.id as string, { status: 'planned' });
+
+    // Pre-insert a 10-share entry carrying the derived `:entry` key. The bulk
+    // request replays it (no new row) while its exit1 (20 shares) exceeds the
+    // PERSISTED open quantity (10) — the adapter-level guard only compares
+    // against the REQUEST entry quantity (30), so the engine's S04 pre-flight
+    // OverCloseError fires and the route maps it to a friendly 400 instead of
+    // a 500 rollback.
+    const key = randomUUID();
+    const nowIso = new Date().toISOString();
+    requireDb().db.insert(schema.tradeExecutions)
+      .values({
+        id: randomUUID(),
+        tradeId: trade.id as string,
+        action: 'buy',
+        quantity: 10,
+        price: 100,
+        fees: 0,
+        executedAt: nowIso,
+        createdAt: nowIso,
+        idempotencyKey: `${key}:entry`,
+      })
+      .run();
+
+    const result = await callPost(trade.id as string, {
+      entryPrice: 100,
+      entryQuantity: 30,
+      exit1Price: 110,
+      exit1Quantity: 20,
+      idempotencyKey: key,
+    });
+
+    assert(result.status === 400, 'returns 400');
+    const data = result.data as { error: string; details: { requestedQuantity: number; openQuantity: number } };
+    assertEqual(data.error, 'Over-close rejected', 'error names the over-close');
+    assertEqual(data.details.requestedQuantity, 20, 'details carries the requested exit quantity');
+    assertEqual(data.details.openQuantity, 10, 'details carries the persisted open quantity');
+
+    const execs = requireDb().db
+      .select()
+      .from(schema.tradeExecutions)
+      .where(eq(schema.tradeExecutions.tradeId, trade.id as string))
+      .all();
+    assertEqual(execs.length, 1, 'no new execution created by the rejected exit fill');
+  }
+
   // ── Summary ──────────────────────────────────────────────────────────
 
   const total = passed + failed;
