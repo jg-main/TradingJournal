@@ -726,6 +726,7 @@ export function executeTradeFill(
       },
       settings: {
         maxRiskPerTradePct: equityContext.globalSettings?.maxRiskPerTradePct ?? null,
+        defaultCommission: equityContext.globalSettings?.defaultCommission ?? null,
         startingAccountValue: equityContext.globalSettings?.startingAccountValue ?? null,
       },
       tradeStatus: trade.status,

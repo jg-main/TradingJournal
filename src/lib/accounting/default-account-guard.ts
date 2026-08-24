@@ -70,35 +70,43 @@ export function isAccountEligibleAsDefault(
 }
 
 /**
- * Trading-readiness predicate (T02/S02).
+ * Trading-readiness predicate (T02/S02, M002-A1).
  *
  * Planning-eligibility (active + USD) is deliberately distinct from
  * trading-readiness: an account is trading-ready only when it is active, USD,
- * has risk parameters (max_risk_per_trade_pct), a default commission, and has
- * posted opening cash. Creating a planned trade (POST /api/trades) now
- * requires only planning-eligibility; the trading-ready requirement is an
- * execution-time gate (enforced by T04's execution-readiness library and the
- * execute/executions routes). Exported here as a single source of truth so the
- * execution paths can reuse the same predicate instead of re-implementing it.
- * Pure predicate — no DB access; the caller supplies the account row and the
- * hasOpeningCash flag (financial_events existence check).
+ * has EFFECTIVE risk parameters (max_risk_per_trade_pct) and an EFFECTIVE
+ * default commission (each resolved as account override → global default →
+ * unavailable), and has posted opening cash. A null account-level value is
+ * fine when a valid global default exists; explicit zero is a valid configured
+ * value (never treated as missing).
+ *
+ * Callers must resolve the effective values first (via
+ * resolveEffectiveExecutionConfig) — this predicate never performs the
+ * account ?? global fallback itself. Exported here as a single source of
+ * truth so the execution paths reuse the same predicate instead of
+ * re-implementing it. Pure predicate — no DB access; the caller supplies the
+ * resolved values and the hasOpeningCash flag (financial_events existence
+ * check).
  */
-export interface TradingReadinessAccount {
+export interface ExecutionReadinessConfig {
   isActive: boolean;
   currency: string | null;
-  maxRiskPerTradePct: number | null;
-  defaultCommission: number | null;
+  /** Effective max risk (account ?? global); null when unavailable. */
+  effectiveMaxRiskPerTradePct: number | null;
+  /** Effective default commission (account ?? global); null when unavailable. */
+  effectiveDefaultCommission: number | null;
+  /** Whether the account has posted opening cash (positive equity). */
+  hasOpeningCash: boolean;
 }
 
 export function isAccountTradingReady(
-  account: TradingReadinessAccount,
-  hasOpeningCash: boolean,
+  config: ExecutionReadinessConfig,
 ): boolean {
   return (
-    account.isActive &&
-    account.currency === 'USD' &&
-    account.maxRiskPerTradePct !== null &&
-    account.defaultCommission !== null &&
-    hasOpeningCash
+    config.isActive &&
+    config.currency === 'USD' &&
+    config.effectiveMaxRiskPerTradePct !== null &&
+    config.effectiveDefaultCommission !== null &&
+    config.hasOpeningCash
   );
 }

@@ -418,6 +418,130 @@ describe('executeTradeFill', () => {
     expect(result.trade.riskOverrideReason).toBe('High-conviction breakout');
   });
 
+  it('A1: first fill succeeds with GLOBAL-ONLY risk/commission configuration', () => {
+    // Account carries NO account-level risk/commission, but the global
+    // settings row provides both. Pre-A1 this threw
+    // account-not-trading-ready ('Account setup incomplete for trading').
+    const accountId = seedAccount({
+      maxRiskPerTradePct: null,
+      defaultCommission: null,
+      startingBalance: 100000,
+    });
+    // seedSettings(startingAccountValue, maxRiskPerTradePct) also writes
+    // default_commission = 1 in the settings row (single-row convention).
+    seedSettings(100000, 2);
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    const result = executeTradeFill(fill(tradeId), context);
+
+    expect(result.trade.status).toBe('open');
+    expect(result.trade.openedAt).toBeTruthy();
+    // Full atomic execution state: journal + accounting + FIFO + performance.
+    expect(result.accountingExecution).not.toBeNull();
+    expect(
+      countRows('financial_events', "account_id = ? AND event_type = 'trade_execution'", accountId),
+    ).toBe(1);
+    expect(countRows('account_positions', 'account_id = ?', accountId)).toBe(1);
+    const perf = sqlite
+      .prepare('SELECT nav FROM account_performance WHERE account_id = ?')
+      .get(accountId) as { nav: string } | undefined;
+    expect(perf).toBeTruthy();
+    // The risk snapshot uses the global-derived max risk configuration.
+    expect(result.riskSnapshot).not.toBeNull();
+  });
+
+  it('A1: max-risk threshold uses the GLOBAL default when the account has none', () => {
+    // Global max risk 2% of equity 10000 = 200 limit. Account risk null.
+    const accountId = seedAccount({
+      maxRiskPerTradePct: null,
+      defaultCommission: 1,
+      startingBalance: 10000,
+    });
+    seedSettings(10000, 2);
+    // Risk = |95 - 90| * 50 = 250 > 200 → blocked (overrideable).
+    const tradeId = seedTrade(accountId, { plannedStop: 90 });
+
+    let caught: unknown;
+    try {
+      executeTradeFill(fill(tradeId, { quantity: 50, price: 95 }), context);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ReadinessFailureError);
+    const failure = (caught as ReadinessFailureError).failures.find(
+      (f) => f.code === 'max-risk-exceeded',
+    );
+    expect(failure?.overrideable).toBe(true);
+    expect(failure?.limit).toBe(200); // global 2% of 10000
+    expect(failure?.computed).toBe(250);
+    // Global fallback also makes the account trading-ready (no readiness block).
+    expect(
+      (caught as ReadinessFailureError).failures.some(
+        (f) => f.code === 'account-not-trading-ready',
+      ),
+    ).toBe(false);
+  });
+
+  it('A1: risk override still lifts the global-max-risk block and persists the reason', () => {
+    const accountId = seedAccount({
+      maxRiskPerTradePct: null,
+      defaultCommission: 1,
+      startingBalance: 10000,
+    });
+    seedSettings(10000, 2);
+    const tradeId = seedTrade(accountId, { plannedStop: 90 });
+
+    const result = executeTradeFill(
+      fill(tradeId, {
+        quantity: 50,
+        price: 95,
+        riskOverrideReason: 'Exceptional setup',
+      }),
+      context,
+    );
+    expect(result.trade.status).toBe('open');
+    expect(result.trade.riskOverrideReason).toBe('Exceptional setup');
+  });
+
+  it('A1: management fills (add/reduce/close) never rerun the first-fill readiness gate', () => {
+    // Open a trade with full account-level config, then REMOVE the global
+    // settings row entirely. Management fills must still work.
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+    executeTradeFill(fill(tradeId), context);
+
+    sqlite.prepare('DELETE FROM settings WHERE id = ?').run('default');
+
+    const add = executeTradeFill(
+      fill(tradeId, { action: 'add', quantity: 50, price: 101 }),
+      context,
+    );
+    expect(add.trade.status).toBe('open');
+
+    const close = executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 150, price: 110 }),
+      context,
+    );
+    expect(close.trade.status).toBe('closed');
+  });
+
+  it('A1: inactive account stays blocked even with complete global defaults', () => {
+    const accountId = seedAccount({ isActive: false });
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    expect(() => executeTradeFill(fill(tradeId), context)).toThrow(ReadinessFailureError);
+  });
+
+  it('A1: non-USD account stays blocked even with complete global defaults', () => {
+    const accountId = seedAccount({ currency: 'EUR' });
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    expect(() => executeTradeFill(fill(tradeId), context)).toThrow(ReadinessFailureError);
+  });
+
   it('canonical equity cascade: performance.nav wins over the legacy model', () => {
     const accountId = seedAccount();
     seedSettings();

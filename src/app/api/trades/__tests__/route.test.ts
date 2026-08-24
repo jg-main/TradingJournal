@@ -1339,16 +1339,45 @@ console.log('\n12i. POST honors explicit accountId over a stale default:');
 }
 
 // ── 12j. isAccountTradingReady predicate (exported for T04 execution gate) ──
+// M002-A1: the predicate consumes EFFECTIVE resolved values (account override
+// → global default → unavailable), so an account-level null with a valid
+// global default is trading-ready; explicit zero commission is configured.
 
-console.log('\n12j. isAccountTradingReady separates planning-eligibility from trading-readiness:');
+console.log('\n12j. isAccountTradingReady separates planning-eligibility from trading-readiness (A1 effective defaults):');
 {
-  const base = { isActive: true, currency: 'USD', maxRiskPerTradePct: 0.5, defaultCommission: 1.0 };
-  assert(isAccountTradingReady({ ...base, isActive: false }, true) === false, 'inactive account is not trading-ready');
-  assert(isAccountTradingReady({ ...base, currency: 'EUR' }, true) === false, 'non-USD account is not trading-ready');
-  assert(isAccountTradingReady({ ...base, maxRiskPerTradePct: null }, true) === false, 'missing maxRiskPerTradePct is not trading-ready');
-  assert(isAccountTradingReady({ ...base, defaultCommission: null }, true) === false, 'missing defaultCommission is not trading-ready');
-  assert(isAccountTradingReady({ ...base }, false) === false, 'no opening cash is not trading-ready');
-  assert(isAccountTradingReady({ ...base }, true) === true, 'fully configured account with cash is trading-ready');
+  const base = {
+    isActive: true,
+    currency: 'USD',
+    effectiveMaxRiskPerTradePct: 0.5,
+    effectiveDefaultCommission: 1.0,
+    hasOpeningCash: true,
+  };
+  assert(isAccountTradingReady({ ...base, isActive: false }) === false, 'inactive account is not trading-ready');
+  assert(isAccountTradingReady({ ...base, currency: 'EUR' }) === false, 'non-USD account is not trading-ready');
+  assert(isAccountTradingReady({ ...base, effectiveMaxRiskPerTradePct: null }) === false, 'missing effective maxRisk is not trading-ready');
+  assert(isAccountTradingReady({ ...base, effectiveDefaultCommission: null }) === false, 'missing effective commission is not trading-ready');
+  assert(isAccountTradingReady({ ...base, hasOpeningCash: false }) === false, 'no opening cash is not trading-ready');
+  assert(isAccountTradingReady({ ...base }) === true, 'fully configured account with cash is trading-ready');
+  // A1: global defaults make the account trading-ready even when the account
+  // row carries nulls for both fields.
+  assert(
+    isAccountTradingReady({
+      isActive: true,
+      currency: 'USD',
+      effectiveMaxRiskPerTradePct: 2,
+      effectiveDefaultCommission: 1.5,
+      hasOpeningCash: true,
+    }) === true,
+    'global-defaulted account is trading-ready',
+  );
+  // Explicit zero commission is configured, not missing.
+  assert(
+    isAccountTradingReady({
+      ...base,
+      effectiveDefaultCommission: 0,
+    }) === true,
+    'explicit zero commission counts as configured',
+  );
 }
 
 // ── 13. GET: Date-range filter ─────────────────────────────────────

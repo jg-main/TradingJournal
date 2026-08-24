@@ -1,7 +1,8 @@
 /**
  * execution-readiness.ts
  *
- * Unified execution-readiness gate (T04 / S02, audit-matrix D2).
+ * Unified execution-readiness gate (T04 / S02, audit-matrix D2; M002-A1
+ * effective-defaults correction).
  *
  * Planning eligibility (active + USD account, enforced at trade creation) is
  * deliberately distinct from execution readiness. Before the first fill both
@@ -9,14 +10,20 @@
  * to enforce, in order:
  *
  *   a. the account is active                       → 'Account not active'
- *   b. the account is trading-ready (risk params + commission + opening cash)
- *                                                 → 'Account setup incomplete for trading'
+ *   b. the account is trading-ready (EFFECTIVE risk params + commission +
+ *      opening cash)                               → 'Account setup incomplete for trading'
  *   c. the trade is still 'planned' (first fill)   → 'Trade not in planned status'
  *   d. all required checklist items passed         → 'Required checklist items not passed'
  *   e. proposed initial risk within max-risk limit → 'Max risk exceeded'
- *      (account maxRiskPerTradePct overrides the settings fallback; the
- *      failure is marked overrideable so the caller may lift the block with an
+ *      (effective maxRiskPerTradePct — account override ?? global default;
+ *      the failure is marked overrideable so the caller may lift the block with an
  *      explicit `riskOverrideReason`, stored on the trade for the audit trail)
+ *
+ * A1 contract: risk and commission configuration resolve through the shared
+ * resolveEffectiveExecutionConfig (account override → global default →
+ * unavailable). An account-level null is NOT by itself not-trading-ready when
+ * a valid global default exists; explicit zero is a valid configured value.
+ * Readiness and the max-risk threshold use the SAME resolved value.
  *
  * Pure function library: NO database access, NO NextResponse. The caller
  * supplies the account/settings rows, the caller-computed initial risk amount,
@@ -25,6 +32,7 @@
  */
 
 import { isAccountTradingReady } from '@/lib/accounting/default-account-guard';
+import { resolveEffectiveExecutionConfig } from '@/lib/execution-config';
 
 /**
  * Stable failure codes surfaced to clients and used by callers to decide
@@ -61,6 +69,8 @@ export interface ExecutionReadinessAccount {
 /** Global settings fields relevant to the readiness gate. */
 export interface ExecutionReadinessSettings {
   maxRiskPerTradePct: number | null;
+  /** Global default commission fallback (A1). */
+  defaultCommission: number | null;
   startingAccountValue: number | null;
 }
 
@@ -106,17 +116,27 @@ export function checkExecutionReadiness(
     failures.push({ code: 'account-not-active', message: 'Account not active' });
   }
 
-  // b. Account must be fully configured for trading: risk parameters,
-  //    default commission and posted opening cash.
-  const tradingReady = isAccountTradingReady(
-    {
-      isActive: input.account.isActive,
-      currency: input.account.currency,
+  // b. Account must be fully configured for trading: EFFECTIVE risk
+  //    parameters, EFFECTIVE default commission (each account override →
+  //    global default → unavailable) and posted opening cash. A1: account
+  //    nulls fall back to global defaults; explicit zero is configured.
+  const effective = resolveEffectiveExecutionConfig({
+    account: {
       maxRiskPerTradePct: input.account.maxRiskPerTradePct,
       defaultCommission: input.account.defaultCommission,
     },
-    input.hasOpeningCash,
-  );
+    settings: {
+      maxRiskPerTradePct: input.settings.maxRiskPerTradePct,
+      defaultCommission: input.settings.defaultCommission,
+    },
+  });
+  const tradingReady = isAccountTradingReady({
+    isActive: input.account.isActive,
+    currency: input.account.currency,
+    effectiveMaxRiskPerTradePct: effective.maxRiskPerTradePct,
+    effectiveDefaultCommission: effective.defaultCommission,
+    hasOpeningCash: input.hasOpeningCash,
+  });
   if (!tradingReady) {
     failures.push({
       code: 'account-not-trading-ready',
@@ -140,18 +160,18 @@ export function checkExecutionReadiness(
     });
   }
 
-  // e. Max-risk hard block (D2): account override → settings fallback.
-  //    Skipped when initialRiskAmount is null (no valid stop — D1 null-not-zero)
-  //    or when no threshold is configured or equity is unavailable.
-  const accountMaxRisk =
-    input.account.maxRiskPerTradePct ?? input.settings.maxRiskPerTradePct;
+  // e. Max-risk hard block (D2, A1): effective max risk = account override →
+  //    global default, resolved ONCE above and used both for readiness and the
+  //    threshold. Skipped when initialRiskAmount is null (no valid stop — D1
+  //    null-not-zero) or when no threshold is configured or equity is
+  //    unavailable.
   if (
     input.initialRiskAmount !== null &&
-    accountMaxRisk != null &&
+    effective.maxRiskPerTradePct != null &&
     input.equityAtOpen != null &&
     input.equityAtOpen > 0
   ) {
-    const limit = (accountMaxRisk / 100) * input.equityAtOpen;
+    const limit = (effective.maxRiskPerTradePct / 100) * input.equityAtOpen;
     if (input.initialRiskAmount > limit) {
       failures.push({
         code: 'max-risk-exceeded',

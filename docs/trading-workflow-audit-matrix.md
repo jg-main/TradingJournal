@@ -70,7 +70,7 @@ on the trade side — this is the #1 defect S03 must retire.
 
 | Concern (doc §120) | Current behavior | Class | Notes / binding direction |
 |---|---|---|---|
-| Trade creation | `POST /api/trades` — validates planned-stop geometry via canonical `computePlannedRiskAmount` (R025, only when both entry+stop supplied; partial combos skip); account resolution via A8 eligible-default chain → first **trading-ready** active USD account (risk params + commission + opening cash) → first active USD fallback; 409 readiness guard; `tradeCode` `T-XXXX` generated with 3-attempt UNIQUE retry; **status hardcoded `'planned'`** at insert (no client-supplied status; schema has no DB default). | **Refine** | Planning eligibility (§11) should be lighter (exists/active/USD); the ready-account fallback conflates planning with execution readiness. Keep the canonical stop-geometry validation. |
+| Trade creation | `POST /api/trades` — validates planned-stop geometry via canonical `computePlannedRiskAmount` (R025, only when both entry+stop supplied; partial combos skip); account resolution via A8 eligible-default chain → first **trading-ready** active USD account (effective risk params + effective commission + opening cash, each account override → global default → unavailable per M002-A1) → first active USD fallback; 409 readiness guard; `tradeCode` `T-XXXX` generated with 3-attempt UNIQUE retry; **status hardcoded `'planned'`** at insert (no client-supplied status; schema has no DB default). | **Refine** | Planning eligibility (§11) should be lighter (exists/active/USD); the ready-account fallback conflates planning with execution readiness. Keep the canonical stop-geometry validation. M002-A1: execution readiness resolves effective risk/commission through account override → global default → unavailable; account-level null does not by itself mean not trading-ready. |
 | Trade update / status mutation | `PUT /api/trades/[id]` — **no `status` field in the update schema, so PUT cannot mutate status (good)**. Direct vs derived split: the **only direct `trades.status` write in `src/`** is the scratch `DELETE` (`status='deleted'`, planned-only); every open/closed transition is **derived** — both execution routes reload the execution stream and write `metrics.position.status`/`openedAt`/`closedAt` from canonical `computeTradeMetrics`. Guards `plannedStop` only after planned (R019); **planned-trade editing is currently unrestricted** (while planned, every field is editable with no lock/versioning/approval), and post-first-fill `plannedEntry`/`plannedQuantity`/targets/`symbol`/`direction` remain editable — a `direction` edit on an open trade silently rewrites P&L sign derivation. | **Refine** | §23 requires the full pre-trade intent frozen after first fill. Extend the freeze to **all** planning fields (incl. `direction`) once an effective execution exists; the sole direct status write (scratch) stays as-is. |
 | Scratch / delete (planned-only soft-delete) | `DELETE /api/trades/[id]` — **soft-delete only; no hard delete exists anywhere**. Guarded to `planned` status (already-scratched → idempotent 400 "Trade is already scratched."; open/closed → 400 naming current status). Writes `status='deleted'` + `updatedAt` stamp (auditable scratch time); row and FK children preserved; `watchlist_items.promotedTradeId` intentionally **not** nullified so the promotion audit trail survives the scratch (D057/R027). List GET excludes deleted unless `?status=deleted` (Deleted tab). | **Current** | Matches R027/D057; keep as-is. |
 | Bulk execute | P1 (`/execute`). | **Replace** | Retire from normal UX (§9). May remain as a compatibility adapter only if it delegates to the canonical service (S03). |
@@ -313,6 +313,16 @@ These are the decisions the requirements doc explicitly defers to S01
   journal evidence on the trade (plan/management history). No silent override.
 - Implemented in S02 (planned-risk preview shows the limit) and S03 (enforced
   at the canonical execution boundary).
+- **M002-A1 (effective execution configuration):** execution readiness
+  resolves risk and commission through the shared `resolveEffectiveExecutionConfig`
+  — **account override → global default → unavailable**. An account-level null
+  does NOT by itself mean not-trading-ready when a valid global default
+  exists; explicit zero commission is a valid configured value. Readiness and
+  the max-risk threshold use the SAME effective max-risk value, and the
+  planned-risk preview resolves it through the same resolver so preview and
+  execution agree. Planning eligibility (exists/active/USD) stays strictly
+  lighter than execution readiness; management fills never re-run the
+  first-fill readiness gate.
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

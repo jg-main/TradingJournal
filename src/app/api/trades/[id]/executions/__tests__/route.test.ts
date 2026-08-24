@@ -438,6 +438,52 @@ async function main(): Promise<void> {
     assertNotNull(updatedTrade.openedAt, 'trade has openedAt');
   }
 
+  // ── 4b. A1: global-only risk/commission configuration allows the first fill ──
+
+  console.log('\n4b. POST /executions succeeds with GLOBAL-ONLY risk/commission (A1):');
+  {
+    cleanup();
+    // Account carries NO account-level risk/commission — the global settings
+    // row provides both. Pre-A1 this returned 409 'Account setup incomplete'.
+    seedAccount({ id: 'test-account-id', maxRiskPerTradePct: null, defaultCommission: null });
+    seedSettings(10000, 10); // settings row also writes default_commission = 1
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const result = await callPost(trade.id as string, {
+      action: 'buy',
+      quantity: 100,
+      price: 150.0,
+      fees: 5.0,
+    });
+
+    assert(result.status === 201, 'returns 201 for global-only configuration');
+    const data = result.data as EngineResultShape;
+    assertNotNull(data.trade, 'response includes the trade');
+    assertEqual(data.trade.status, 'open', 'trade opened via the canonical engine');
+  }
+
+  // ── 4c. A1: account-level overrides still win over global defaults ──
+
+  console.log('\n4c. POST /executions honors account overrides (A1):');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id', maxRiskPerTradePct: 1, defaultCommission: 0.75 });
+    seedSettings(10000, 10); // global risk 10% / commission 1 — account wins
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const result = await callPost(trade.id as string, {
+      action: 'buy',
+      quantity: 100,
+      price: 150.0,
+      fees: 5.0,
+    });
+
+    assert(result.status === 201, 'returns 201');
+    const data = result.data as EngineResultShape;
+    assertNotNull(data.trade, 'response includes the trade');
+    assertEqual(data.trade.status, 'open', 'trade opened');
+  }
+
   // ── 5. POST: Validates action enum ──────────────────────────────────
 
   console.log('\n5. POST returns 400 for invalid action:');

@@ -25,6 +25,7 @@ function baseInput(
     },
     settings: {
       maxRiskPerTradePct: 2, // fallback — ignored while account override is set
+      defaultCommission: 1.5, // global commission fallback (A1)
       startingAccountValue: 100000,
     },
     tradeStatus: 'planned',
@@ -60,10 +61,15 @@ describe('checkExecutionReadiness', () => {
 
   // ── b. account-not-trading-ready ───────────────────────────────────
 
-  it('fails with account-not-trading-ready when maxRiskPerTradePct is missing', () => {
+  it('A1: fails with account-not-trading-ready when effective maxRiskPerTradePct is missing (account + global both null)', () => {
     const result = checkExecutionReadiness(
       baseInput({
         account: { ...baseInput().account, maxRiskPerTradePct: null },
+        settings: {
+          maxRiskPerTradePct: null,
+          defaultCommission: 1.5,
+          startingAccountValue: 100000,
+        },
       }),
     );
     expect(result.ready).toBe(false);
@@ -73,16 +79,39 @@ describe('checkExecutionReadiness', () => {
     expect(failure?.message).toBe('Account setup incomplete for trading');
   });
 
-  it('fails with account-not-trading-ready when defaultCommission is missing', () => {
-    const result = checkExecutionReadiness(
-      baseInput({
-        account: { ...baseInput().account, defaultCommission: null },
-      }),
-    );
-    expect(codesOf(baseInput({ account: { ...baseInput().account, defaultCommission: null } }))).toContain(
-      'account-not-trading-ready',
-    );
-    expect(result.ready).toBe(false);
+  it('A1: does NOT fail trading-ready when account maxRisk is null but the global default resolves', () => {
+    const input = baseInput({
+      account: { ...baseInput().account, maxRiskPerTradePct: null },
+    });
+    expect(codesOf(input)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(input).ready).toBe(true);
+  });
+
+  it('A1: fails with account-not-trading-ready when effective defaultCommission is missing (account + global both null)', () => {
+    const input = baseInput({
+      account: { ...baseInput().account, defaultCommission: null },
+      settings: {
+        maxRiskPerTradePct: 2,
+        defaultCommission: null,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).toContain('account-not-trading-ready');
+    expect(input.settings.defaultCommission).toBeNull();
+    expect(checkExecutionReadiness(input).ready).toBe(false);
+  });
+
+  it('A1: does NOT fail trading-ready when account commission is null but the global default resolves', () => {
+    const input = baseInput({
+      account: { ...baseInput().account, defaultCommission: null },
+      settings: {
+        maxRiskPerTradePct: 2,
+        defaultCommission: 1.5,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(input).ready).toBe(true);
   });
 
   it('fails with account-not-trading-ready when there is no opening cash', () => {
@@ -172,16 +201,17 @@ describe('checkExecutionReadiness', () => {
     ).toBe(1000);
   });
 
-  it('falls back to the settings maxRiskPerTradePct when the account has none', () => {
+  it('uses the effective settings maxRiskPerTradePct when the account has none (A1 global fallback is trading-ready)', () => {
     // Account has no threshold → settings 2% → limit = 2% of 100000 = 2000.
+    // A1: the global default makes the account trading-ready (no
+    // account-not-trading-ready failure) AND the max-risk threshold uses it.
     const withinLimit = baseInput({
       account: { ...baseInput().account, maxRiskPerTradePct: null },
       initialRiskAmount: 1500,
     });
     expect(codesOf(withinLimit)).not.toContain('max-risk-exceeded');
-    // The account still lacks its own risk parameter, so the trading-ready
-    // check fails — but the settings threshold is what the max-risk check used.
-    expect(codesOf(withinLimit)).toContain('account-not-trading-ready');
+    expect(codesOf(withinLimit)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(withinLimit).ready).toBe(true);
 
     // 2500 exceeds the settings-derived limit (2000) → max-risk failure whose
     // limit proves the settings value was used, not the account's.
@@ -194,6 +224,160 @@ describe('checkExecutionReadiness', () => {
     expect(failure).toBeDefined();
     expect(failure?.limit).toBe(2000);
     expect(failure?.computed).toBe(2500);
+    expect(codesOf(overLimit)).not.toContain('account-not-trading-ready');
+  });
+
+  it('A1: global defaultCommission makes the account trading-ready', () => {
+    // Account commission null → settings defaultCommission 1.5 → configured.
+    const input = baseInput({
+      account: { ...baseInput().account, defaultCommission: null },
+      settings: {
+        maxRiskPerTradePct: 2,
+        defaultCommission: 1.5,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(input).ready).toBe(true);
+  });
+
+  it('A1: explicit zero commission counts as configured (not missing)', () => {
+    const input = baseInput({
+      account: { ...baseInput().account, defaultCommission: 0 },
+    });
+    expect(codesOf(input)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(input).ready).toBe(true);
+  });
+
+  it('A1: mixed fallback — account max risk + global commission', () => {
+    const input = baseInput({
+      account: {
+        ...baseInput().account,
+        maxRiskPerTradePct: 1,
+        defaultCommission: null,
+      },
+      settings: {
+        maxRiskPerTradePct: 2,
+        defaultCommission: 1.5,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(input).ready).toBe(true);
+    // Max-risk threshold uses the ACCOUNT override (1% → 1000), not the global.
+    const over = checkExecutionReadiness(
+      baseInput({
+        account: {
+          ...baseInput().account,
+          maxRiskPerTradePct: 1,
+          defaultCommission: null,
+        },
+        settings: {
+          maxRiskPerTradePct: 2,
+          defaultCommission: 1.5,
+          startingAccountValue: 100000,
+        },
+        initialRiskAmount: 1500,
+      }),
+    );
+    const failure = over.failures.find((f) => f.code === 'max-risk-exceeded');
+    expect(failure?.limit).toBe(1000);
+  });
+
+  it('A1: mixed fallback — global max risk + account commission', () => {
+    const input = baseInput({
+      account: {
+        ...baseInput().account,
+        maxRiskPerTradePct: null,
+        defaultCommission: 0.75,
+      },
+      settings: {
+        maxRiskPerTradePct: 2,
+        defaultCommission: 1.5,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(input).ready).toBe(true);
+    // Max-risk threshold uses the GLOBAL risk (2% → 2000), commission is the
+    // account override 0.75.
+    const at = checkExecutionReadiness(
+      baseInput({
+        account: {
+          ...baseInput().account,
+          maxRiskPerTradePct: null,
+          defaultCommission: 0.75,
+        },
+        settings: {
+          maxRiskPerTradePct: 2,
+          defaultCommission: 1.5,
+          startingAccountValue: 100000,
+        },
+        initialRiskAmount: 2500,
+      }),
+    );
+    const failure = at.failures.find((f) => f.code === 'max-risk-exceeded');
+    expect(failure?.limit).toBe(2000);
+  });
+
+  it('A1: missing risk at both levels remains not-ready even when commission resolves', () => {
+    const input = baseInput({
+      account: {
+        ...baseInput().account,
+        maxRiskPerTradePct: null,
+        defaultCommission: 1,
+      },
+      settings: {
+        maxRiskPerTradePct: null,
+        defaultCommission: 1.5,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).toContain('account-not-trading-ready');
+    expect(codesOf(input)).not.toContain('max-risk-exceeded');
+  });
+
+  it('A1: missing commission at both levels remains not-ready even when risk resolves', () => {
+    const input = baseInput({
+      account: {
+        ...baseInput().account,
+        maxRiskPerTradePct: 1,
+        defaultCommission: null,
+      },
+      settings: {
+        maxRiskPerTradePct: 2,
+        defaultCommission: null,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).toContain('account-not-trading-ready');
+    expect(codesOf(input)).not.toContain('max-risk-exceeded');
+  });
+
+  it('A1: account-level override wins over the global default for BOTH fields', () => {
+    const input = baseInput({
+      account: { ...baseInput().account, maxRiskPerTradePct: 1, defaultCommission: 0.75 },
+      settings: {
+        maxRiskPerTradePct: 2,
+        defaultCommission: 2,
+        startingAccountValue: 100000,
+      },
+    });
+    expect(codesOf(input)).not.toContain('account-not-trading-ready');
+    expect(checkExecutionReadiness(input).ready).toBe(true);
+    const over = checkExecutionReadiness(
+      baseInput({
+        account: { ...baseInput().account, maxRiskPerTradePct: 1, defaultCommission: 0.75 },
+        settings: {
+          maxRiskPerTradePct: 2,
+          defaultCommission: 2,
+          startingAccountValue: 100000,
+        },
+        initialRiskAmount: 1500,
+      }),
+    );
+    const failure = over.failures.find((f) => f.code === 'max-risk-exceeded');
+    expect(failure?.limit).toBe(1000); // account 1%, not global 2%
   });
 
   it('skips the max-risk check entirely when no threshold is configured anywhere', () => {
@@ -203,7 +387,7 @@ describe('checkExecutionReadiness', () => {
         maxRiskPerTradePct: null,
         defaultCommission: 1,
       },
-      settings: { maxRiskPerTradePct: null, startingAccountValue: 100000 },
+      settings: { maxRiskPerTradePct: null, defaultCommission: 1.5, startingAccountValue: 100000 },
       initialRiskAmount: 999999,
     });
     // No max-risk failure — but the account is not trading-ready (no risk
@@ -246,7 +430,7 @@ describe('checkExecutionReadiness', () => {
         maxRiskPerTradePct: null,
         defaultCommission: null,
       },
-      settings: { maxRiskPerTradePct: null, startingAccountValue: 100000 },
+      settings: { maxRiskPerTradePct: null, defaultCommission: 1.5, startingAccountValue: 100000 },
       tradeStatus: 'open',
       requiredChecklistPassed: false,
       initialRiskAmount: 5000,

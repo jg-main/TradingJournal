@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { z } from 'zod';
 import { computePlannedRiskAmount } from '@/lib/planned-risk';
 import { computeExecutionContext } from '@/lib/execution-context';
+import { resolveEffectiveExecutionConfig } from '@/lib/execution-config';
 
 /**
  * GET /api/trades/planned-risk-preview
@@ -102,10 +103,21 @@ export async function GET(request: NextRequest) {
         ? (riskDollar / equityAtOpen) * 100
         : null;
 
-    // Account override first, global settings fallback (same cascade as the
-    // execution-readiness gate), null when neither is configured.
-    const maxRiskPerTradePct =
-      account.maxRiskPerTradePct ?? settings?.maxRiskPerTradePct ?? null;
+    // Effective max risk (A1): shared canonical resolver — account override →
+    // global default → unavailable — so the preview and the execution
+    // readiness gate / engine agree on the same threshold for the same
+    // account/settings state.
+    const effective = resolveEffectiveExecutionConfig({
+      account: {
+        maxRiskPerTradePct: account.maxRiskPerTradePct,
+        defaultCommission: account.defaultCommission,
+      },
+      settings: {
+        maxRiskPerTradePct: settings?.maxRiskPerTradePct ?? null,
+        defaultCommission: settings?.defaultCommission ?? null,
+      },
+    });
+    const maxRiskPerTradePct = effective.maxRiskPerTradePct;
 
     const maxRiskExceeded =
       accountRiskPct != null &&

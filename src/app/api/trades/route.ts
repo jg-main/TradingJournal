@@ -808,12 +808,15 @@ export async function POST(request: NextRequest) {
     // configured for execution. The trading-ready predicate is preserved as
     // an exported function (isAccountTradingReady in
     // src/lib/accounting/default-account-guard.ts) for execution-time use.
+    // M002-A1: execution readiness resolves effective risk/commission through
+    // account override → global default → unavailable (see
+    // src/lib/execution-config.ts).
     if (!account || !account.isActive || account.currency !== 'USD') {
       return NextResponse.json(
         {
           error: 'Account not eligible for planning',
           details:
-            'Planning requires an active USD account. Trading additionally requires risk parameters, a default commission, and posted opening cash.',
+            'Planning requires an active USD account. Trading additionally requires effective risk parameters, a default commission, and posted opening cash.',
         },
         { status: 409 },
       );

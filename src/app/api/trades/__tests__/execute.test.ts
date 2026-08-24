@@ -340,6 +340,58 @@ async function main(): Promise<void> {
     assertEqual(checkResults.length, 0, 'no check results persisted');
   }
 
+  // ── 1b. A1: global-only risk/commission configuration allows the first fill ──
+
+  console.log('\n1b. POST /trades/:id/execute succeeds with GLOBAL-ONLY risk/commission (A1):');
+  {
+    cleanup();
+    // Account has NO account-level risk/commission — global settings provide
+    // both. Pre-A1 this returned 409 'Account setup incomplete for trading'.
+    const acc = seedAccount({ maxRiskPerTradePct: null, defaultCommission: null });
+    requireDb().getSqliteHandle()
+      .prepare(
+        `INSERT OR REPLACE INTO settings (id, starting_account_value, max_risk_per_trade_pct, default_commission)
+         VALUES ('default', 10000, 10, 1)`,
+      )
+      .run();
+    const trade = seedTrade(acc.id as string);
+
+    const result = await callPost(trade.id as string, {
+      entryPrice: 100,
+      entryQuantity: 10,
+      fees: 0,
+    });
+
+    assert(result.status === 201, 'returns 201 for global-only configuration');
+    const data = result.data as Record<string, unknown>;
+    assertNotNull(data.trade, 'has trade');
+    assertEqual((data.trade as Record<string, unknown>).status, 'open', 'trade opened');
+  }
+
+  // ── 1c. A1: account-level overrides still win over global defaults ──
+
+  console.log('\n1c. POST /trades/:id/execute honors account overrides (A1):');
+  {
+    cleanup();
+    const acc = seedAccount({ maxRiskPerTradePct: 1, defaultCommission: 0.75 });
+    requireDb().getSqliteHandle()
+      .prepare(
+        `INSERT OR REPLACE INTO settings (id, starting_account_value, max_risk_per_trade_pct, default_commission)
+         VALUES ('default', 10000, 10, 2)`,
+      )
+      .run();
+    const trade = seedTrade(acc.id as string);
+
+    const result = await callPost(trade.id as string, {
+      entryPrice: 100,
+      entryQuantity: 10,
+      fees: 0,
+    });
+
+    assert(result.status === 201, 'returns 201');
+    assertEqual((result.data as Record<string, unknown>).trade && ((result.data as Record<string, unknown>).trade as Record<string, unknown>).status, 'open', 'trade opened');
+  }
+
   // ── 2. Execute with account checks all passed ────────────────────────
 
   console.log('\n2. POST succeeds when account-level checks are all passed:');
