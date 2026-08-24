@@ -6,6 +6,7 @@ import { NotebookPen, PlusCircle, RefreshCw, Download, Clock } from 'lucide-reac
 import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { ActionsCell } from '@/components/trades/actions-cell';
 import { TradesScratchContext } from '@/components/trades/scratch-context';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -30,6 +31,7 @@ import {
   formatNumber,
 } from '@/lib/trade-formatters';
 import type { TradeListMetrics } from '@/lib/trade-metrics';
+import type { WorkflowPhase } from '@/lib/workflow-phase';
 
 // ── Types (mirrors the S02 API response shape) ─────────────────────────
 
@@ -47,6 +49,9 @@ interface TradeRow {
   marketConditionId: string | null;
   marketConditionName: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
+  // S05/T03: derived workflow phase from GET /api/trades (additive — older
+  // API responses omit it, so the Open-tab Phase column falls back to 'open').
+  workflowPhase?: WorkflowPhase;
   thesis: string | null;
   plannedEntry: number | null;
   plannedStop: number | null;
@@ -419,6 +424,29 @@ const openColumns: ColumnDef<TradeRow>[] = [
     header: 'Direction',
     accessorKey: 'direction',
     cell: ({ getValue }) => <DirectionBadge direction={getValue<string>()} />,
+  },
+  {
+    // S05/T03: workflow phase distinguishes 'Open' (no management activity yet)
+    // from 'Managed' (add/reduce execution or stop/target adjustment). Narrow
+    // badge-only column — same info tint as the planned status badge.
+    id: 'phase',
+    header: 'Phase',
+    accessorKey: 'workflowPhase',
+    cell: ({ getValue }) => {
+      const phase = getValue<string>();
+      if (phase === 'managed') {
+        return (
+          <Badge variant="secondary" className="bg-info/10 text-info">
+            Managed
+          </Badge>
+        );
+      }
+      return (
+        <Badge variant="outline" className="text-muted-foreground">
+          Open
+        </Badge>
+      );
+    },
   },
   {
     id: 'setup',

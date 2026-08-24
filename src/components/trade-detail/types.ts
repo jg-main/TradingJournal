@@ -4,6 +4,8 @@
  * and provide a single import source for all trade-detail sub-components.
  */
 
+import type { WorkflowPhase } from '@/lib/workflow-phase';
+
 export interface Trade {
   id: string;
   tradeCode: string;
@@ -14,6 +16,10 @@ export interface Trade {
   setupName: string | null;
   marketConditionId: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
+  // S05/T03: derived workflow phase returned by GET /api/trades/[id].
+  // Optional for structural compatibility with the page-level fetch, which
+  // carries it through from the API response.
+  workflowPhase?: WorkflowPhase;
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;

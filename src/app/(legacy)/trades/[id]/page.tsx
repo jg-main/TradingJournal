@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 
 import type { TradeMetricsResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
+import type { WorkflowPhase } from '@/lib/workflow-phase';
 import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 import { useMtmRefreshInterval } from '@/hooks/use-mtm-refresh-interval';
 import type { GradeFormPayload } from '@/components/trade-detail/trade-grade-card';
@@ -37,6 +38,9 @@ interface Trade {
   setupName: string | null;
   marketConditionId: string | null;
   status: 'planned' | 'open' | 'closed' | 'deleted';
+  // S05/T03: derived workflow phase returned by GET /api/trades/[id];
+  // threaded to ActivePhaseView (header badge + lifecycle stepper).
+  workflowPhase?: WorkflowPhase;
   plannedEntry: number | null;
   plannedStop: number | null;
   plannedTarget1: number | null;
@@ -604,6 +608,7 @@ export default function TradeDetailPage() {
           stopAdjustments={stopAdjustments}
           targetAdjustments={targetAdjustments}
           assets={assets}
+          workflowPhase={trade.workflowPhase}
           derivedStatus={derivedStatus}
           pnlResult={pnlResult}
           rMultiple={rMultiple}

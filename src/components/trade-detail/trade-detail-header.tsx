@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { statusBadgeVariant, statusLabel } from './helpers';
 import { useAppTimezone } from '@/lib/timezone-context';
+import type { WorkflowPhase } from '@/lib/workflow-phase';
 import type { Trade } from './types';
 
 interface TradeDetailHeaderProps {
@@ -18,6 +19,10 @@ interface TradeDetailHeaderProps {
   setupName?: string | null;
   gradeLabel?: string | null;
   tradeId?: string;
+  // S05/T03: derived workflow phase — when 'managed', an extra Managed badge
+  // appears next to the economic status badge. Other phases render nothing
+  // extra (the status badge already carries the label).
+  workflowPhase?: WorkflowPhase;
   onTradeChanged?: () => Promise<void>;
   rightContent?: ReactNode;
 }
@@ -31,6 +36,7 @@ export default function TradeDetailHeader({
   setupName,
   gradeLabel,
   tradeId,
+  workflowPhase,
   onTradeChanged,
   rightContent,
 }: TradeDetailHeaderProps) {
@@ -84,6 +90,11 @@ export default function TradeDetailHeader({
           <Badge variant={statusBadgeVariant(status).variant} className={statusBadgeVariant(status).className}>
             {statusLabel(status)}
           </Badge>
+          {workflowPhase === 'managed' && (
+            <Badge variant="secondary" className="bg-info/10 text-info">
+              Managed
+            </Badge>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-mono">{tradeCode}</span>

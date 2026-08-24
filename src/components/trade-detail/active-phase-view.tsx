@@ -24,6 +24,7 @@ import type {
 } from './types';
 import type { DeriveStatusResult } from '@/lib/trade-metrics';
 import type { PerfMetrics } from '@/lib/perf-metrics';
+import type { WorkflowPhase } from '@/lib/workflow-phase';
 
 interface ActivePhaseViewProps {
   trade: Trade;
@@ -33,6 +34,9 @@ interface ActivePhaseViewProps {
   stopAdjustments: StopAdjustment[];
   targetAdjustments: TargetAdjustment[];
   assets: TradeAsset[];
+  // S05/T03: derived workflow phase from GET /api/trades/[id] — threaded to
+  // the Lifecycle band and Cockpit header so both reflect the managed sub-phase.
+  workflowPhase?: WorkflowPhase;
   derivedStatus: DeriveStatusResult | null;
   pnlResult: {
     totalRealizedPnL: number;
@@ -63,6 +67,7 @@ export default function ActivePhaseView({
   stopAdjustments,
   targetAdjustments,
   assets,
+  workflowPhase,
   derivedStatus,
   pnlResult,
   rMultiple,
@@ -88,6 +93,7 @@ export default function ActivePhaseView({
           openedAt={trade.openedAt}
           exitNotes={trade.exitNotes}
           lesson={trade.lesson}
+          workflowPhase={workflowPhase}
         />
       </TradeDetailPanel>
 
@@ -102,6 +108,7 @@ export default function ActivePhaseView({
             openedAt={trade.openedAt}
             setupName={trade.setupName}
             tradeId={trade.id}
+            workflowPhase={workflowPhase}
             onTradeChanged={onTradeChanged}
           />
           <PriceWidget mtmData={mtmData} onRefreshPrice={onRefreshPrice} />

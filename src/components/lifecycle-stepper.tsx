@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
+import type { WorkflowPhase } from '@/lib/workflow-phase';
 
 interface LifecycleStepperProps {
   status: 'planned' | 'open' | 'closed' | 'deleted';
@@ -11,6 +12,10 @@ interface LifecycleStepperProps {
   lesson?: string | null;
   hasGrade?: boolean;
   hasMistakes?: boolean;
+  // S05/T03: derived workflow phase — when 'managed', the Manage step (4)
+  // is current regardless of openedAt; 'open' preserves the existing
+  // Execute/Manage behavior.
+  workflowPhase?: WorkflowPhase;
 }
 
 interface Step {
@@ -34,11 +39,18 @@ export function getCurrentStep(
   lesson?: string | null,
   hasGrade?: boolean,
   hasMistakes?: boolean,
+  // S05/T03: appended last so existing positional callers stay valid.
+  workflowPhase?: WorkflowPhase,
 ): { currentStep: number; isScratched: boolean } {
   switch (status) {
     case 'planned':
       return { currentStep: 1, isScratched: false };
     case 'open':
+      if (workflowPhase === 'managed') {
+        // Meaningful management activity exists (add/reduce/adjustment) —
+        // the Manage step is current even if openedAt is missing.
+        return { currentStep: 4, isScratched: false };
+      }
       return {
         currentStep: openedAt ? 4 : 3,
         isScratched: false,
@@ -63,8 +75,9 @@ export function LifecycleStepper({
   lesson,
   hasGrade,
   hasMistakes,
+  workflowPhase,
 }: LifecycleStepperProps) {
-  const { currentStep, isScratched } = getCurrentStep(status, openedAt, exitNotes, lesson, hasGrade, hasMistakes);
+  const { currentStep, isScratched } = getCurrentStep(status, openedAt, exitNotes, lesson, hasGrade, hasMistakes, workflowPhase);
   const isLong = direction === 'long';
 
   return (
