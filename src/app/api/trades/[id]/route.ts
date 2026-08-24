@@ -79,6 +79,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         closedAt: trades.closedAt,
         exitNotes: trades.exitNotes,
         lesson: trades.lesson,
+        reviewedAt: trades.reviewedAt,
         createdAt: trades.createdAt,
         updatedAt: trades.updatedAt,
         currentPrice: trades.currentPrice,
@@ -220,21 +221,22 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const metrics = computeTradeMetrics(metricsInput);
 
     // S05/T02: derived workflow phase — 'managed' when an open trade has
-    // add/reduce executions or any stop/target adjustment. reviewedAt is
-    // always null today (the trades table now stores reviewed_at but no review workflow writes it yet), so
-    // closed trades report 'closed'; the 'reviewed' phase lights up through
-    // workflow-phase.ts once review storage exists.
+    // add/reduce executions or any stop/target adjustment. S07/T02: the
+    // 'reviewed' phase is driven by the durable reviewedAt marker written by
+    // POST /api/trades/[id]/review; closed trades without the marker report
+    // 'closed'.
     const managementActivity = hasManagementActivity(
       executionRows,
       stopAdjustmentRows,
       targetAdjustmentRows,
     );
-    const workflowPhase = deriveWorkflowPhase(row.status, null, managementActivity);
+    const workflowPhase = deriveWorkflowPhase(row.status, row.reviewedAt, managementActivity);
 
     // Metrics returned via nested metrics: TradeMetricsResult — consumers read
     // metrics.realizedPnl, metrics.unrealizedPnl, metrics.returnMetrics, metrics.risk
     return NextResponse.json({
       ...row,
+      reviewedAt: row.reviewedAt ?? null,
       accountName,
       accountCurrency,
       sectorName,

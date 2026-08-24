@@ -53,6 +53,10 @@ interface Trade {
   closedAt: string | null;
   exitNotes: string | null;
   lesson: string | null;
+  // S07/T02: durable review marker (POST /api/trades/[id]/review); drives
+  // the 'reviewed' workflow phase and the stepper's reviewed step. Mirrored
+  // from src/components/trade-detail/types.ts.
+  reviewedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }

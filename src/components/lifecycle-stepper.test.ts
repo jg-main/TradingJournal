@@ -54,40 +54,60 @@ function assert(condition: boolean, msg: string) {
     assert(r.currentStep === 6, 'closed without notes → step 6 (Grade current)');
   }
 
-  // 5. closed WITH exitNotes → all steps complete (step 7)
+  // 5. closed WITH exitNotes but WITHOUT reviewedAt → Grade current (step 6)
+  //    (S07/T02: step 7 is driven by the durable reviewedAt marker only)
   {
     const r = getCurrentStep('closed', null, 'Stopped out on earnings gap', null);
-    assert(r.currentStep === 7, 'closed with exitNotes → step 7 (all complete)');
+    assert(r.currentStep === 6, 'closed with exitNotes but no reviewedAt → step 6 (Grade current)');
   }
 
-  // 6. closed WITH lesson → all steps complete (step 7)
+  // 6. closed WITH lesson but WITHOUT reviewedAt → Grade current (step 6)
   {
     const r = getCurrentStep('closed', null, null, 'Should have cut loss earlier');
-    assert(r.currentStep === 7, 'closed with lesson → step 7 (all complete)');
+    assert(r.currentStep === 6, 'closed with lesson but no reviewedAt → step 6 (Grade current)');
   }
 
-  // 7. closed WITH both exitNotes and lesson → all steps complete (step 7)
+  // 7. closed WITH both notes but WITHOUT reviewedAt → Grade current (step 6)
   {
     const r = getCurrentStep('closed', null, 'Stopped out', 'Should have cut earlier');
-    assert(r.currentStep === 7, 'closed with both notes → step 7 (all complete)');
+    assert(r.currentStep === 6, 'closed with both notes but no reviewedAt → step 6 (Grade current)');
   }
 
-  // 7b. closed WITHOUT notes but WITH hasGrade → all steps complete (step 7)
+  // 7b. closed WITH hasGrade but WITHOUT reviewedAt → Grade current (step 6)
   {
     const r = getCurrentStep('closed', null, null, null, true, false);
-    assert(r.currentStep === 7, 'closed with hasGrade=true and no notes → step 7 (all complete)');
+    assert(r.currentStep === 6, 'closed with hasGrade=true but no reviewedAt → step 6 (Grade current)');
   }
 
-  // 7c. closed WITHOUT notes but WITH hasMistakes → all steps complete (step 7)
+  // 7c. closed WITH hasMistakes but WITHOUT reviewedAt → Grade current (step 6)
   {
     const r = getCurrentStep('closed', null, null, null, false, true);
-    assert(r.currentStep === 7, 'closed with hasMistakes=true and no notes → step 7 (all complete)');
+    assert(r.currentStep === 6, 'closed with hasMistakes=true but no reviewedAt → step 6 (Grade current)');
   }
 
-  // 7d. closed WITHOUT notes but WITH both hasGrade and hasMistakes → all steps complete (step 7)
+  // 7d. closed WITH both hasGrade and hasMistakes but WITHOUT reviewedAt → step 6
   {
     const r = getCurrentStep('closed', null, null, null, true, true);
-    assert(r.currentStep === 7, 'closed with both grade and mistakes → step 7 (all complete)');
+    assert(r.currentStep === 6, 'closed with grade and mistakes but no reviewedAt → step 6 (Grade current)');
+  }
+
+  // 7e. closed WITH reviewedAt (durable marker) → all steps complete (step 7)
+  {
+    const r = getCurrentStep('closed', null, undefined, undefined, undefined, undefined, undefined, '2026-08-10T12:00:00Z');
+    assert(r.currentStep === 7, 'closed with reviewedAt → step 7 (all complete)');
+    assert(r.isScratched === false, 'closed with reviewedAt → not scratched');
+  }
+
+  // 7f. closed WITH reviewedAt even when evidence presence is false → step 7
+  {
+    const r = getCurrentStep('closed', null, null, null, false, false, undefined, '2026-08-10T12:00:00Z');
+    assert(r.currentStep === 7, 'closed with reviewedAt and no notes/grade/mistakes → step 7 (all complete)');
+  }
+
+  // 7g. reviewedAt is ignored for non-closed statuses
+  {
+    const r = getCurrentStep('planned', null, null, null, undefined, undefined, undefined, '2026-08-10T12:00:00Z');
+    assert(r.currentStep === 1, 'planned ignores reviewedAt → step 1');
   }
 
   // 8. deleted → step 1, isScratched = true
@@ -147,10 +167,11 @@ function assert(condition: boolean, msg: string) {
     assert(r.currentStep === 1, 'planned ignores hasGrade/hasMistakes → step 1');
   }
 
-  // 16. hasGrade and hasMistakes default to falsey when omitted
+  // 16. notes presence does NOT advance a closed trade to step 7 without the
+  //     reviewedAt marker (S07/T02); omitted grade/mistakes stay falsey
   {
     const r = getCurrentStep('closed', null, 'Has notes', null);
-    assert(r.currentStep === 7, 'closed with notes and omitted grade/mistakes → step 7 (all complete)');
+    assert(r.currentStep === 6, 'closed with notes but no reviewedAt → step 6 (Grade current)');
   }
 }
 

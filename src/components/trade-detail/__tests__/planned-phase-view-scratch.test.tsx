@@ -47,6 +47,7 @@ function makeTrade(overrides: Partial<Trade> = {}): Trade {
     closedAt: null,
     exitNotes: null,
     lesson: null,
+    reviewedAt: null,
     createdAt: '2026-07-01T10:00:00.000Z',
     updatedAt: null,
     ...overrides,

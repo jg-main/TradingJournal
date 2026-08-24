@@ -324,6 +324,7 @@ const T_OPEN_STOP_ADJ = 'wf-open-stop';
 const T_OPEN_TARGET_ADJ = 'wf-open-target';
 const T_PLANNED = 'wf-planned';
 const T_CLOSED = 'wf-closed';
+const T_REVIEWED = 'wf-reviewed';
 const T_DELETED = 'wf-deleted';
 
 registerCategory('wf-list', 'List surface: workflowPhase per row', async () => {
@@ -401,6 +402,47 @@ registerCategory('wf-detail', 'Detail surface: workflowPhase present and derived
   const plannedRes = await getTradeDetail(T_PLANNED);
   assert(plannedRes.status === 200, 'GET /api/trades/[id] returns 200 for planned trade');
   assertEqual(plannedRes.body.workflowPhase, 'planned', 'detail: planned trade → planned');
+});
+
+// S07/T02: the durable reviewedAt marker (written by POST /api/trades/[id]/review)
+// drives the 'reviewed' workflow phase in BOTH list and detail surfaces.
+registerCategory('wf-reviewed', 'List + detail surface: reviewed phase from the durable reviewedAt marker', async () => {
+  seedAccount();
+
+  seedTrade(T_REVIEWED, 'closed', { reviewedAt: '2026-08-10T12:00:00Z' });
+  seedExecution(T_REVIEWED, 'buy');
+  seedExecution(T_REVIEWED, 'sell');
+
+  const listRes = await getTradesList();
+  assert(listRes.status === 200, 'GET /api/trades returns 200 with a reviewed trade present');
+  assertEqual(
+    findListRow(listRes.body, T_REVIEWED).workflowPhase,
+    'reviewed',
+    'list: closed trade with reviewedAt → reviewed',
+  );
+  assertEqual(
+    findListRow(listRes.body, T_REVIEWED).reviewedAt,
+    '2026-08-10T12:00:00Z',
+    'list: row carries reviewedAt',
+  );
+
+  const detailRes = await getTradeDetail(T_REVIEWED);
+  assert(detailRes.status === 200, 'GET /api/trades/[id] returns 200 for reviewed trade');
+  assertEqual(detailRes.body.workflowPhase, 'reviewed', 'detail: closed trade with reviewedAt → reviewed');
+  assertEqual(detailRes.body.reviewedAt, '2026-08-10T12:00:00Z', 'detail: response carries reviewedAt');
+
+  // Closed trade WITHOUT the marker stays 'closed' on both surfaces (regression guard).
+  seedTrade(T_CLOSED, 'closed');
+  seedExecution(T_CLOSED, 'buy');
+  seedExecution(T_CLOSED, 'sell');
+  const listRes2 = await getTradesList();
+  assertEqual(
+    findListRow(listRes2.body, T_CLOSED).workflowPhase,
+    'closed',
+    'list: closed trade without reviewedAt stays closed',
+  );
+  const detailRes2 = await getTradeDetail(T_CLOSED);
+  assertEqual(detailRes2.body.workflowPhase, 'closed', 'detail: closed trade without reviewedAt stays closed');
 });
 
 // ────────────────────────────────────────────────────────────────────────────

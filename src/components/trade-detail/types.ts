@@ -32,6 +32,10 @@ export interface Trade {
   closedAt: string | null;
   exitNotes: string | null;
   lesson: string | null;
+  // S07/T02: durable review marker written by POST /api/trades/[id]/review.
+  // Drives the 'reviewed' workflow phase and the lifecycle stepper's reviewed
+  // step (7). Cleared by grade upserts and economic execution corrections.
+  reviewedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }

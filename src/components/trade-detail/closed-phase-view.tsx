@@ -180,6 +180,7 @@ export default function ClosedPhaseView({
             lesson={trade.lesson}
             hasGrade={!!grade}
             hasMistakes={mistakes.length > 0}
+            reviewedAt={trade.reviewedAt}
           />
         </TradeDetailPanel>
 

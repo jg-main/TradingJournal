@@ -16,6 +16,10 @@ interface LifecycleStepperProps {
   // is current regardless of openedAt; 'open' preserves the existing
   // Execute/Manage behavior.
   workflowPhase?: WorkflowPhase;
+  // S07/T02: durable reviewedAt marker (written by POST /api/trades/[id]/review)
+  // drives the reviewed step (7). When present on a closed trade, all six
+  // steps show as complete.
+  reviewedAt?: string | null;
 }
 
 interface Step {
@@ -41,6 +45,9 @@ export function getCurrentStep(
   hasMistakes?: boolean,
   // S05/T03: appended last so existing positional callers stay valid.
   workflowPhase?: WorkflowPhase,
+  // S07/T02: durable review marker, appended after workflowPhase so existing
+  // positional callers stay valid.
+  reviewedAt?: string | null,
 ): { currentStep: number; isScratched: boolean } {
   switch (status) {
     case 'planned':
@@ -58,8 +65,10 @@ export function getCurrentStep(
     case 'closed':
       return {
         // Steps 1-5 are complete for closed trades. Step 6 (Grade) is current.
-        // When grade/review data exists, use 7 so all 6 steps show as complete.
-        currentStep: exitNotes || lesson || hasGrade || hasMistakes ? 7 : 6,
+        // S07/T02: the reviewed step (7) is driven by the durable reviewedAt
+        // marker alone — not by the presence of exit notes, a lesson, a grade,
+        // or recorded mistakes (evidence presence ≠ reviewed).
+        currentStep: reviewedAt ? 7 : 6,
         isScratched: false,
       };
     case 'deleted':
@@ -76,8 +85,9 @@ export function LifecycleStepper({
   hasGrade,
   hasMistakes,
   workflowPhase,
+  reviewedAt,
 }: LifecycleStepperProps) {
-  const { currentStep, isScratched } = getCurrentStep(status, openedAt, exitNotes, lesson, hasGrade, hasMistakes, workflowPhase);
+  const { currentStep, isScratched } = getCurrentStep(status, openedAt, exitNotes, lesson, hasGrade, hasMistakes, workflowPhase, reviewedAt);
   const isLong = direction === 'long';
 
   return (

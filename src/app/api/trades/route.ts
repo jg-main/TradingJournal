@@ -156,6 +156,7 @@ export async function GET(request: NextRequest) {
         // are now computed via computeTradeMetrics().averagePrices in the enriched rows below.
         exitNotes: trades.exitNotes,
         lesson: trades.lesson,
+        reviewedAt: trades.reviewedAt,
         createdAt: trades.createdAt,
         updatedAt: trades.updatedAt,
         currentPriceFetchedAt: trades.currentPriceFetchedAt,
@@ -284,12 +285,12 @@ export async function GET(request: NextRequest) {
       const targetAdjustments = targetMap.get(row.id) ?? [];
 
       // S05/T02: derived workflow phase — 'managed' when an open trade has
-      // add/reduce executions or any stop/target adjustment. reviewedAt is
-      // always null today (the trades table now stores reviewed_at but no review workflow writes it yet), so
-      // closed trades report 'closed'; the 'reviewed' phase lights up through
-      // workflow-phase.ts once review storage exists.
+      // add/reduce executions or any stop/target adjustment. S07/T02: the
+      // 'reviewed' phase is driven by the durable reviewedAt marker written by
+      // POST /api/trades/[id]/review; closed trades without the marker report
+      // 'closed'.
       const managementActivity = hasManagementActivity(executions, stopAdjustments, targetAdjustments);
-      const workflowPhase = deriveWorkflowPhase(row.status, null, managementActivity);
+      const workflowPhase = deriveWorkflowPhase(row.status, row.reviewedAt, managementActivity);
 
       // Account equity cascade: account_performance.nav → rollforward.endingEquity → account.startingBalance → settings.startingAccountValue → null
       const account = accountMap.get(row.accountId);
