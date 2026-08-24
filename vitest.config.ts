@@ -5,6 +5,13 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // src/db/index.ts imports Next.js's 'server-only' marker package (its
+      // default export throws outside React Server Components). Route test
+      // suites that exercise REAL handlers import '@/db', so alias the marker
+      // to an empty module here; the plain-tsx path uses a Module._load
+      // interception at the top of each test file instead (see the
+      // executions/__tests__/route.test.ts harness).
+      'server-only': path.resolve(__dirname, './src/lib/testing/server-only-stub.ts'),
     },
   },
   test: {
