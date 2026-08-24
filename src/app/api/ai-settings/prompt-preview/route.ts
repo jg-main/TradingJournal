@@ -49,6 +49,7 @@ function buildSampleTradeData(
     invalidationCondition: 'Close below 145 support level',
     preTradePlan:
       'Wait for confirmation candle above 150.50 on above-average volume. Enter on retest of the breakthrough level.',
+    riskOverrideReason: null,
     openedAt: isPostExit ? '2024-06-10T09:30:00.000Z' : null,
     closedAt: isPostExit ? '2024-06-10T14:45:00.000Z' : null,
     exitNotes: isPostExit ? 'Target 1 hit. Solid execution managing position to plan.' : null,
