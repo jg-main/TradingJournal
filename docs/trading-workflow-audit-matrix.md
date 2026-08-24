@@ -92,9 +92,9 @@ on the trade side — this is the #1 defect S03 must retire.
 | Trade metrics | `src/lib/trade-metrics.ts` (`computeTradeMetrics`) — canonical, consumed by routes/UI. | **Current** | Reuse (§51). |
 | Review / grade / mistakes / assets | T05-verified (§2d R1a–R1g): grade route upserts `trade_grades` only — **never writes `trades`**; **`trades.lesson`/`exitNotes` are write-orphaned** (PUT schema ends at `preTradePlan`; `TradeExitNotesCard` is read-only display); mistakes/assets/assessments are self-contained evidence tables; **no `reviewedAt` anywhere in `src/`**; review completion is inferred from evidence presence. | **Missing/Refine** | §64/§65: add explicit `reviewedAt` with a meaningful-evidence contract (lesson non-empty + grade exists) **and a lesson/exitNotes write surface** (F6). S07. |
 | Checklist (`trade_check_results`) | FK to mutable `checklistDefinitions`; **no item-text snapshot** (schema: only `checklist_definition_id`, `passed`, `comment`, `checkedAt`); **no `required`/optional flag on items**. Enforcement diverges by route (T02-verified): `/execute` **enforces ALL merged items** (400 on missing/not-passed, before mutation); `/executions` **no checklist handling at all** — a fill can open a trade with zero checklist evidence. T05-verified (§2d R2a–R2e): evidence rows store only the definition FK, GET joins the **live mutable description** (F7), creation is **P1-only with no backfill** (F8), and re-runs append duplicate rows (R2d). | **Refine** | §20 gate (required items must pass before first fill, enforced on every path — with an explicit required/optional distinction) + §21 historical snapshot (item text at entry) + idempotent evidence upsert + backfill surface. S02/S03. |
-| `/trades` UI | Workspace list (`src/app/(trades)/trades/page.tsx`): planned/open/closed/deleted filters, scratch (DELETE), export, mtm refresh. | **Reuse** | §56–60 phase tabs largely present; add `Managed` phase indicator + Reviewed tab in S05/S07. |
-| Trade detail UI | Legacy `src/app/(legacy)/trades/[id]/page.tsx` mounts **both** `execute-dialog` (bulk → `/execute`) and `add-fill-dialog` (individual → `/executions`). | **Replace/Reuse** | §9: remove the bulk dialog from normal UX; individual-fill composer is the primary path. S02. |
-| Root Risk dashboard consumers | `src/app/(legacy)/page.tsx` = WorkstationShell `liveMode`; consumes dashboard API built on canonical libs; M013/S01 already treats unpriced/unavailable risk as `null` (never fabricated 0). | **Reuse** | §54/§32: propagation after refresh already expected; S08 verifies. |
+| `/trades` UI | Workspace list (`src/app/(trades)/trades/page.tsx`): planned/open/closed/deleted filters, scratch (DELETE), export, mtm refresh. (T06 §2e U1) | **Reuse** | §56–60 phase tabs largely present; add `Managed` phase indicator + Reviewed tab in S05/S07 (F10 phase-visibility gap, U1/U3). |
+| Trade detail UI | Legacy `src/app/(legacy)/trades/[id]/page.tsx` mounts **both** `execute-dialog` (bulk → `/execute`) and `add-fill-dialog` (individual → `/executions`). (T06 §2e U2 — the **sole live execution-posting UI**; F9) | **Replace/Reuse** | §9: remove the bulk dialog from normal UX; individual-fill composer is the primary path. S02. Rewire both dialogs to the canonical service in S03 (F9 — no other surface posts executions). |
+| Root Risk dashboard consumers | `src/app/(legacy)/page.tsx` = WorkstationShell `liveMode`; consumes dashboard API built on canonical libs; M013/S01 already treats unpriced/unavailable risk as `null` (never fabricated 0). (T06 §2e U3 — V1+V2 + watchlist via `workstation-live-adapter.ts`; never posts executions; F10 zero phase awareness) | **Reuse** | §54/§32: propagation after refresh already expected; S08 verifies. |
 | Idempotency | `accounting_executions` has a unique idempotency key (M006); journal-side execution creation is **not** idempotent; sync derives a key but a retried journal POST duplicates the journal row. | **Missing** | §10: canonical service must accept a client-generated key, reuse on retry, not consume on failed transaction. S03. |
 | Backdated fills | Ordering is `executedAt, createdAt` in reads; no full deterministic rebuild on backdate (sync/FIFO rebuild runs, journal status derives from ordered stream — partially OK). | **Refine** | §28: S03/S04 formalize deterministic ordering + rebuild semantics. |
 | Action semantics | Direction-action map **duplicated** in both `/execute` and `/executions` (identical `DIRECTION_ACTIONS` constant); no over-close guard on journal path; long/short inversion not explicitly blocked (P2 can re-open a closed trade via `buy`/`sell` on the opposite side). | **Replace** | §24–27: canonical action rules + quantity guards in S04. |
@@ -231,6 +231,54 @@ assets" row claimed "Grade + lesson upsert on `trades`" — **wrong**: the grade
 route upserts `trade_grades` only and never writes `trades.lesson` (the
 lesson/exitNotes columns are write-orphaned, F6). Rows above now reflect the
 verified behavior.
+
+### 2e. UI consumer ledger (T06, verified 2026-08-24)
+
+T06 audited every user-facing consumer of execution and risk data. **The only
+live execution-posting UI is the legacy trade detail (U2), and it posts
+exclusively to the two Replace-class trade endpoints (P1/P2).** The canonical
+account-scoped posting route (P5) has **no live UI consumer** — its only client
+component (`AccountExecutionForm`) is dead code with no mount site. The root
+dashboard reads position/risk entirely through the canonical V1+V2 dashboard
+APIs and never posts executions.
+
+| # | UI surface | Endpoints it calls | Posts executions? | Position/risk reads | Phase visibility | Class |
+|---|---|---|---|---|---|---|
+| U1 | `/trades` workspace list (`src/app/(trades)/trades/page.tsx`, 1964 lines) | GET `/api/accounts` (filter); GET `/api/trades?status=&page=&limit=&from=&to=&accountId=&direction=` (per-tab list, `result.totals` + `plannedTotals`); GET `/api/trades/export?…`; DELETE `/api/trades/[id]` (scratch, R027/D057); POST `/api/trades/mtm/refresh` | **No** | Open-tab rows carry `row.metrics` (canonical `computeTradeMetrics`: open risk, avg cost, unrealized P&L) and planned-tab totals show `plannedRiskToAccount` | Tabs: planned / open / closed / deleted; **no Managed indicator, no Reviewed tab** (row link → `/trades/[id]` legacy detail U2) | **Reuse** (add Managed + Reviewed surfacing in S05/S07) |
+| U2 | Legacy trade detail (`src/app/(legacy)/trades/[id]/page.tsx`) — **the only live execution-posting UI** | POST `/api/trades/[id]/execute` (**P1**) via `ExecuteDialog` (bulk entry+exit1+exit2, merged checklist → `checkResults` all-passed — the §20 hard gate, optional stop override); POST `/api/trades/[id]/executions` (**P2**) via `AddFillDialog` (single fill + reasonId/notes, **no checklist**); `CorrectionDialog`: planned → **C4** PUT/DELETE `/api/trades/[id]/executions/[execId]`, non-planned → **C1** POST `/api/trades/[id]/executions/[execId]/correct`; `TradeExecutionsCard` planned PUT/DELETE (C4). Reads: GET trade, executions, risk-snapshot, level-history, stop/target-adjustments, grade, mistakes, check-results, assets, lookups; POST `/api/trades/[id]/mtm` + `/api/trades/mtm/refresh`. **Dead code:** `handleRiskSnapshotSave` PUT `/api/trades/[id]/risk-snapshot` (L3; never wired, `RiskSnapshotCard` read-only) | **Yes — P1 + P2 only** (both **Replace**); corrections C1/C4 | Risk snapshot card (first-entry), P&L card, level-history feed, check-results card | `LifecycleStepper` 6 steps (Plan/Size/Execute/Manage/Exit/Grade) + **inferred** 7th (F5/R1g — evidence-presence heuristic, not a durable marker); phase views: planned/active/closed/deleted — **no managed phase view** (open is used for both managing and managed) | **Replace/Reuse** (retire bulk dialog → S02; rewire dialogs to canonical service → S03; managed phase + durable reviewed → S05/S07) |
+| U3 | Root Risk & Positions dashboard (`src/app/(legacy)/page.tsx` → `WorkstationShell` `liveMode=true`) | `fetchAllLiveDashboardData` (`src/lib/workstation-live-adapter.ts`): GET `/api/dashboard` (V1), GET `/api/dashboard/v2` (V2), GET `/api/watchlist`, GET `/api/accounts`; best-effort live prices; POST `/api/trades/mtm/refresh` | **No** | RiskPanel: `riskSummary.openRisk` = Σ `initialRiskAmount` of open journal risk snapshots (R032) + `openRiskToStop` vs nav; TradesWorkspacePanel: open tab = V2 `valuation.positions` (**account_positions**, FIFO), closed tab = GET `/api/trades?status=closed&accountId=`; AccountStatePanel: V2 metrics + valuation completeness; RiskPositionsTable; EquityChart; WatchlistPanel | **No workflow phase model** — open positions + closed trades only; no planned/managed/reviewed surfaces (gap vs §56–60) | **Reuse** (canonical APIs, M013 null semantics; phase surfacing deferred to S05/S07) |
+| U4 | Account Overview (`src/app/(legacy)/settings/accounts/[id]/page.tsx` → `AccountOverview`) | GET `/api/accounts/[id]/overview` (snapshot: nav, netCash, realized/unrealized P&L, exposure + positions + recent financial events); POST `/api/accounts/[id]/financial-events` via `FinancialTransactionComposer` (**cash events only**, not executions) | **No** (financial events only) | Overview snapshot + positions rows (mark status fresh/stale/missing/pending) | n/a (account workspace) | **Reuse** |
+| U5 | Account Positions (`/settings/accounts/[id]/positions` → `AccountPositions`) | GET `/api/accounts/[id]/positions` | No | FIFO lots with expandable open-lot detail, missing-price/null-mark states | n/a | **Reuse** |
+| U6 | Account Ledger (`/settings/accounts/[id]/ledger` → `AccountLedger`) | GET `/api/accounts/[id]/ledger` (financial events + correction lineage) | No | — | n/a | **Reuse** |
+| U7 | **Orphaned account-execution UI — dead code, zero mount sites** | `AccountExecutionForm` → **POST `/api/accounts/[id]/executions` (P5)** with client-generated `idempotencyKey` + optional `journalTradeId` — **the canonical economic path's only UI consumer, never mounted**; `AccountExecutionsActivity` → GET `/api/accounts/[id]/executions` (never mounted); `AccountCorrectionForm` (**C2** account-scoped correct) mounted only inside the orphaned `AccountExecutionsActivity`; `AccountActivity` (financial-events composer, superseded by `FinancialTransactionComposer`); `CurrentRiskPanel` (9-metric dashboard grid) referenced only by its own test — the workstation uses its own `RiskPanel`; `AddExitDialog` (exit fill → P2) referenced only by a comment in `add-fill-dialog.tsx` | Would (P5/P2) but never mounted | Would but never mounted | n/a | **Replace/Reuse** (S03 must wire the canonical execution surface through U2's dialogs, not resurrect U7 as-is; decide component fate in S03) |
+| U8 | Planning / creation surfaces | `PlanTradeForm` (mounted in `/trades/new`) → **POST `/api/trades`** (Refine creation route, T01); sizing calculator (`src/app/(legacy)/sizing/page.tsx`) → GET `/api/settings` + `/api/accounts` + **POST `/api/trades`** (creates a planned trade from the calculator), preview math via canonical `calculatePositionSize`/`calculatePlanRiskRewardPreview` (`position-sizing.ts`) | **No** (creates planned trades only) | Sizing preview only (no live position/risk state) | planned-only by construction | **Reuse** — the sizing preview is the D2 max-risk preview foundation S02 must surface |
+
+**Binding findings (T06):**
+
+- **F9 — Sole live execution-posting UI is U2, and it posts exclusively to the
+  Replace-class endpoints (P1/P2).** No live UI calls the canonical P5 account
+  route; its only client (`AccountExecutionForm`, U7) is dead code. The S03
+  canonical-service swap must rewire **exactly two posting dialogs**
+  (ExecuteDialog → retire; AddFillDialog → canonical service) plus the
+  CorrectionDialog C1 routing (S06) — no other surface posts executions, so the
+  swap's UI blast radius is confined to the legacy trade detail.
+- **F10 — Root dashboard has zero workflow-phase awareness.** U3 reads
+  position/risk exclusively through canonical V1+V2 APIs (open positions =
+  `account_positions`; closed trades = `GET /api/trades?status=closed`; open
+  risk = journal risk snapshots) but surfaces **no planned/managed/reviewed
+  state** — the phase model lives only in U2's legacy stepper, and even there
+  Managed is collapsed into `open` and Reviewed is an evidence-presence
+  heuristic (F5). S05/S07 must add phase surfacing to the dashboard and
+  workspace without changing the canonical data contract.
+- **F11 — MTM refresh is a shared write path, not a duplication.** Both U1 and
+  U2 POST `/api/trades/mtm/refresh` (one route); the workstation (U3) also
+  triggers it. Single route, multiple consumers — no divergence.
+
+**Plan mismatch (T06, adapted):** the plan listed `src/app/(legacy)/trades/page.tsx`
+as a legacy trades list — **that file no longer exists**; the legacy trades list
+was replaced by the workspace list U1 (`(trades)/trades/page.tsx`). Only
+`/trades/new` and `/trades/[id]` remain in the legacy group. The audit covered
+the actual list surface (U1) instead.
 
 ---
 
