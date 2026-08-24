@@ -31,6 +31,7 @@
 // plain `tsx` the react-server export condition is not active, so the real
 // package throws. Short-circuit it before any module that transitively
 // requires it is loaded. Same pattern as cross-surface-integration.test.ts.
+import { testDbPath } from '../../../../../../lib/testing/test-db';
 import Module from 'node:module';
 
 const originalLoad = (Module as unknown as { _load: (r: string, p: unknown, m: boolean) => unknown })._load;
@@ -46,7 +47,7 @@ const originalLoad = (Module as unknown as { _load: (r: string, p: unknown, m: b
 
 // Point @/db at a dedicated throwaway test database BEFORE it initializes.
 // (This must happen before the dynamic import of '@/db' inside main().)
-const TEST_DB_FILE = './.test-level-history-route.db';
+const TEST_DB_FILE = testDbPath('level-history-route');
 process.env.DB_FILE_NAME = TEST_DB_FILE;
 
 // ────────────────────────────────────────────────────────────────────────────

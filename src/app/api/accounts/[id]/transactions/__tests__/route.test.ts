@@ -7,6 +7,7 @@
  * Run: DB_FILE_NAME=./.test-txns.db npx tsx src/app/api/accounts/[id]/transactions/__tests__/route.test.ts
  */
 
+import { testDbPath } from '../../../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -39,7 +40,7 @@ function assertEqual(actual: unknown, expected: unknown, msg: string) {
 
 // ── Setup: test DB ──────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-txns.db';
+const DB_FILE = process.env.DB_FILE_NAME || testDbPath('txns');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');

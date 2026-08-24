@@ -16,6 +16,7 @@
  * @module reconciliation.test
  */
 
+import { testDbPath } from '../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -27,7 +28,7 @@ import { computeReconciliation } from './reconciliation';
 
 // ── Test Database Path ──────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-reconciliation.db';
+const TEST_DB_PATH = testDbPath('reconciliation');
 
 // ── Helpers (same pattern as runner tests) ──────────────────────────────
 

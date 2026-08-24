@@ -15,6 +15,7 @@
  * Run: npx vitest run src/app/api/accounts/\[id\]/migration/__tests__/route.test.ts
  */
 
+import { testDbPath } from '../../../../../../lib/testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -27,7 +28,7 @@ import type { MigrationRunResult } from '@/lib/accounting/legacy-migration-runne
 
 // ── Test Database Path ──────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-migration-route.db';
+const TEST_DB_PATH = testDbPath('migration-route');
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 

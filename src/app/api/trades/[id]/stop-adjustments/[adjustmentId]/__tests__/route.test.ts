@@ -6,6 +6,7 @@
  * Run: npx vitest run --reporter verbose src/app/api/trades/\[id\]/stop-adjustments/\[adjustmentId\]/__tests__/route.test.ts
  */
 
+import { testDbPath } from '../../../../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,7 +45,7 @@ function assertEqual(actual: unknown, expected: unknown, msg: string) {
 // Always use this test's OWN throwaway DB — never the ambient DB_FILE_NAME
 // (this test used to read it, which let an exported workaround variable
 // redirect table-DROPs onto another suite's database).
-const DB_FILE = './.test-stop-adjustment-by-id.db';
+const DB_FILE = testDbPath('stop-adjustment-by-id');
 
 // Start from a clean file so stale tables from previous runs cannot mask
 // schema drift.

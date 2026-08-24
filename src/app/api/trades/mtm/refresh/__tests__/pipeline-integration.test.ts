@@ -19,6 +19,7 @@
  * @module pipeline-integration.test
  */
 
+import { testDbPath } from '../../../../../../lib/testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -39,7 +40,7 @@ import { normalizeDecimal, sumDecimals } from '@/lib/accounting/decimal';
 
 // ── Test Database Path ──────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-pipeline-integration.db';
+const TEST_DB_PATH = testDbPath('pipeline-integration');
 
 // ── Test Scenario Constants ──────────────────────────────────────────────
 //

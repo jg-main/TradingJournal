@@ -15,6 +15,7 @@
  * Run: npx vitest run src/app/api/accounts/\[id\]/reconciliation/__tests__/route.test.ts
  */
 
+import { testDbPath } from '../../../../../../lib/testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -24,7 +25,7 @@ import { runLegacyMigration } from '@/lib/accounting/legacy-migration-runner';
 
 // ── Test Database Path ──────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-reconciliation-route.db';
+const TEST_DB_PATH = testDbPath('reconciliation-route');
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 

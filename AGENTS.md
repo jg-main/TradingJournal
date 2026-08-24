@@ -392,6 +392,12 @@ so every harness sees the same policy.
 
 ## Repository Hygiene
 
+- Tests and diagnostic scripts must not create disposable databases or
+  temporary artifacts in the repository root. Use the shared temp fixture
+  (`src/lib/testing/test-db.ts`) or the OS temp directory, and dispose owned
+  resources (db + wal + shm). See `docs/testing/test-databases.md`. The
+  root-pollution guard (`scripts/check-root-test-artifacts.mjs`) runs as part
+  of `make test-all`.
 - Do not rewrite generated migration history.
 - Do not clean or reformat unrelated files.
 - Do not commit or rely on generated artifacts from `playwright-report/`,

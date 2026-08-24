@@ -137,6 +137,19 @@ async function main(): Promise<void> {
   }
   console.log();
 
+  /* ─── Root test-artifact hygiene guard (H1) ───────────── */
+  console.log('◆  Root test-artifact hygiene check …');
+  const hygiene = run(`npx tsx scripts/check-root-test-artifacts.mjs`, PROJECT_ROOT, 'root-test-artifacts');
+  results.push(hygiene);
+  if (!hygiene.passed) {
+    console.log(`   ✗ root test-artifact hygiene FAILED`);
+    console.log(hygiene.output.split('\n').slice(0, 20).map(l => `     ${l}`).join('\n'));
+    exitCode = 1;
+  } else {
+    console.log(`   ✓ root test-artifact hygiene PASSED`);
+  }
+  console.log();
+
   /* ─── Summary table ──────────────────────────────────── */
   console.log('━'.repeat(60));
   console.log('  Summary');

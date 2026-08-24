@@ -29,7 +29,7 @@
 // hoisting defeated it (the singleton initialized against the real DB with
 // 740+ open trades, failing the validation suites).
 vi.hoisted(() => {
-  process.env.DB_FILE_NAME = './.test-restore-vitest.db';
+  process.env.DB_FILE_NAME = (process.env.TMPDIR || process.env.TMP || '/tmp') + '/tradingjournal-test-restore-vitest-' + process.pid + '-' + Date.now() + '.db';
 });
 
 import { describe, it, expect, vi } from 'vitest';

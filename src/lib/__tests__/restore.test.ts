@@ -22,8 +22,9 @@
  * Run: npx tsx src/lib/__tests__/restore.test.ts
  */
 
-process.env.DB_FILE_NAME = './.test-restore-units.db';
+process.env.DB_FILE_NAME = testDbPath('restore-units');
 
+import { testDbPath } from '../testing/test-db';
 import { mkdirSync, rmSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';

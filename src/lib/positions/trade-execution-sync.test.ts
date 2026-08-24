@@ -12,6 +12,7 @@
  * Run: npx vitest run src/lib/positions/trade-execution-sync.test.ts
  */
 
+import { testDbPath } from '../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -32,7 +33,7 @@ import {
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-trade-execution-sync.db';
+const TEST_DB_PATH = testDbPath('trade-execution-sync');
 
 interface TestContext {
   sqlite: Database.Database;

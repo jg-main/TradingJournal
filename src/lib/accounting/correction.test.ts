@@ -21,6 +21,7 @@
  * Run: npx vitest run --reporter verbose src/lib/accounting/correction.test.ts
  */
 
+import { testDbPath } from '../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -46,7 +47,7 @@ import {
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-correction-unit.db';
+const TEST_DB_PATH = testDbPath('correction-unit');
 
 interface TestContext {
   sqlite: Database.Database;

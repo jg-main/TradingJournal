@@ -749,13 +749,18 @@ test.describe('Account Settings Workspace', () => {
         .run(staleAccount.id);
       sqlite.close();
 
-      // Automatic resolution must ignore the stale default and use B.
+      // Automatic resolution must IGNORE the stale default and fall through
+      // to the eligible-account chain: the trade lands on an existing ACTIVE
+      // USD account — never the stale draft.
       const tradeRes = await page.request.post('/api/trades', {
         data: { symbol: `STALE${String(ts).slice(-3)}`, direction: 'long' },
       });
       expect(tradeRes.status()).toBe(201);
       const trade = await tradeRes.json();
-      expect(trade.accountId).toBe(usableAccount.id);
+      expect(trade.accountId).not.toBe(staleAccount.id);
+      const resolved = await (await page.request.get(`/api/accounts/${trade.accountId}`)).json();
+      expect(resolved.isActive).toBe(true);
+      expect(resolved.currency).toBe('USD');
 
       // Explicit selection of the inactive account is NOT silently replaced.
       const explicitRes = await page.request.post('/api/trades', {

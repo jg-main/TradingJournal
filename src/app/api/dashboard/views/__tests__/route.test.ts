@@ -13,6 +13,7 @@
  * Run: npx vitest run src/app/api/dashboard/views/__tests__/route.test.ts
  */
 
+import { testDbPath } from '../../../../../lib/testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -20,7 +21,7 @@ import { unlinkSync, existsSync } from 'node:fs';
 
 // ── Test Database Path ──────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-dashboard-views-route.db';
+const TEST_DB_PATH = testDbPath('dashboard-views-route');
 
 // ── Type Helpers ────────────────────────────────────────────────────────
 

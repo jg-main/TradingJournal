@@ -17,6 +17,7 @@
  * Run: npx vitest run --reporter verbose src/app/api/accounts/\[id\]/positions/__tests__/route.test.ts
  */
 
+import { testDbPath } from '../../../../../../lib/testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -40,7 +41,7 @@ import { toMicros } from '@/lib/accounting/decimal';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-positions-route.db';
+const TEST_DB_PATH = testDbPath('positions-route');
 
 interface TestContext {
   sqlite: Database.Database;

@@ -53,7 +53,7 @@ import { unlinkSync, existsSync } from 'node:fs';
 // one real SQLite file through the real `@/db` module.
 
 const testDbPath = vi.hoisted(() => {
-  const p = './.test-dashboard-journal-reconciliation.db';
+  const p = (process.env.TMPDIR || process.env.TMP || '/tmp') + '/tradingjournal-test-dashboard-journal-reconciliation-' + process.pid + '-' + Date.now() + '.db';
   process.env.DB_FILE_NAME = p;
   return p;
 });

@@ -6,6 +6,7 @@
  * Run: DB_FILE_NAME=./.test-trades.db npx tsx src/app/api/trades/\[id\]/risk-snapshot/__tests__/route.test.ts
  */
 
+import { testDbPath } from '../../../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -48,7 +49,7 @@ function assertDeep(
 
 // ── Setup: in-memory test DB ────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-trades.db';
+const DB_FILE = process.env.DB_FILE_NAME || testDbPath('trades');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');

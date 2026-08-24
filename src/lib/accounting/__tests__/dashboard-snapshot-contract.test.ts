@@ -17,6 +17,7 @@
  * @module accounting/__tests__/dashboard-snapshot-contract.test
  */
 
+import { testDbPath } from '../../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -28,7 +29,7 @@ import { postOpeningBalance } from '../posting';
 
 // ── Test Database Path ──────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-dashboard-snapshot-contract.db';
+const TEST_DB_PATH = testDbPath('dashboard-snapshot-contract');
 
 // ── Schema / Seed Helpers ───────────────────────────────────────────────
 

@@ -115,6 +115,7 @@ export default defineConfig({
       'src/lib/accounting/__tests__/usd-currency-contract.test.ts',
       'src/lib/accounting/__tests__/financial-event-posting-atomicity.test.ts',
       'src/lib/accounting/__tests__/account-initialization.test.ts',
+      'src/lib/testing/__tests__/test-db.test.ts',
       'src/app/api/accounts/[id]/initialize/__tests__/route.test.ts',
       'src/lib/accounting/__tests__/execution-contracts.test.ts',
       'src/lib/positions/fifo.test.ts',

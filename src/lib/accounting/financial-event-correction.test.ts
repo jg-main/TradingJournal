@@ -22,6 +22,7 @@
  * Run: npx vitest run src/lib/accounting/financial-event-correction.test.ts
  */
 
+import { testDbPath } from '../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -54,7 +55,7 @@ import {
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-financial-event-correction.db';
+const TEST_DB_PATH = testDbPath('financial-event-correction');
 
 interface TestContext {
   sqlite: Database.Database;

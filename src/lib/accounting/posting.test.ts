@@ -11,6 +11,7 @@
  * - Transaction integrity (no partial events on failure)
  */
 
+import { testDbPath } from '../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -31,7 +32,7 @@ import {
 // ── Test Database Setup ─────────────────────────────────────────────────
 
 // Use a file-based temp DB so better-sqlite3 transactions with WAL work
-const TEST_DB_PATH = './.test-accounting-posting.db';
+const TEST_DB_PATH = testDbPath('accounting-posting');
 
 interface TestContext {
   sqlite: Database.Database;

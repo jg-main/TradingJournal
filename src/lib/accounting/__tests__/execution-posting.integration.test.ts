@@ -12,6 +12,7 @@
  * - Instrument auto-creation
  */
 
+import { testDbPath } from '../../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -31,7 +32,7 @@ import { checkLedgerBalance } from '../rebuild';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-execution-posting.db';
+const TEST_DB_PATH = testDbPath('execution-posting');
 
 interface TestContext {
   sqlite: Database.Database;

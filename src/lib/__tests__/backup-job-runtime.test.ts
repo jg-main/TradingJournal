@@ -10,8 +10,9 @@
  * Run: npx tsx src/lib/__tests__/backup-job-runtime.test.ts
  */
 
-process.env.DB_FILE_NAME = './.test-backup-job-runtime.db';
+process.env.DB_FILE_NAME = testDbPath('backup-job-runtime');
 
+import { testDbPath } from '../testing/test-db';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import Database from 'better-sqlite3';

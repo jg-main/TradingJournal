@@ -16,6 +16,7 @@
  * 7. Legacy opening_balance backward compatibility
  */
 
+import { testDbPath } from '../../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -33,7 +34,7 @@ import {
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-financial-event-contracts.db';
+const TEST_DB_PATH = testDbPath('financial-event-contracts');
 
 interface TestContext {
   sqlite: Database.Database;

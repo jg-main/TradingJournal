@@ -19,6 +19,7 @@
  * Run: npx vitest run --reporter verbose src/lib/accounting/__tests__/financial-event-posting.test.ts
  */
 
+import { testDbPath } from '../../testing/test-db';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
@@ -37,7 +38,7 @@ import { checkLedgerBalance } from '../rebuild';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
-const TEST_DB_PATH = './.test-financial-event-posting.db';
+const TEST_DB_PATH = testDbPath('financial-event-posting');
 
 interface TestContext {
   sqlite: Database.Database;
