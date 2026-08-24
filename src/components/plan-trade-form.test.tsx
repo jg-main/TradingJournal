@@ -53,13 +53,60 @@ const SETUPS: SetupDefinition[] = [];
 const UNMOCKED_FETCH = globalThis.fetch;
 let fetchMock: ReturnType<typeof makeFetchMock>;
 
-/** Mock fetch to resolve a successful trade-creation response. */
-function makeFetchMock() {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    status: 201,
-    json: async () => ({ id: 'trade-1' }),
-  } as Response);
+/** Preview payload returned for /api/trades/planned-risk-preview requests. */
+interface PreviewPayload {
+  riskDollar: number | null;
+  riskPct: number | null;
+  accountRiskPct: number | null;
+  rewardDollar: number | null;
+  rewardPct: number | null;
+  riskRewardRatio: number | null;
+  equityAtOpen: number | null;
+  maxRiskPerTradePct: number | null;
+  maxRiskExceeded: boolean;
+}
+
+const DEFAULT_PREVIEW: PreviewPayload = {
+  riskDollar: 500,
+  riskPct: 5,
+  accountRiskPct: 5,
+  rewardDollar: 1000,
+  rewardPct: 10,
+  riskRewardRatio: 2,
+  equityAtOpen: 10000,
+  maxRiskPerTradePct: 1,
+  maxRiskExceeded: true,
+};
+
+/**
+ * URL-aware fetch mock: preview requests (planned-risk-preview) resolve with
+ * the configured preview payload; everything else is a successful trade
+ * creation. Fail previews when previewOpts.failPreview is set.
+ */
+function makeFetchMock(previewOpts?: {
+  preview?: Partial<PreviewPayload> | null;
+  failPreview?: boolean;
+}) {
+  const preview = previewOpts?.preview ?? DEFAULT_PREVIEW;
+  const failPreview = previewOpts?.failPreview ?? false;
+  return vi.fn().mockImplementation((url: string | URL | Request) => {
+    const urlStr = String(url);
+    if (urlStr.startsWith('/api/trades/planned-risk-preview')) {
+      if (failPreview) {
+        return Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => preview,
+      } as Response);
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: 'trade-1' }),
+    } as Response);
+  });
 }
 
 beforeEach(() => {
@@ -307,5 +354,96 @@ describe('PlanTradeForm — narrative field character limit', () => {
     submitForm();
     const body = await getPostedBody();
     expect(body.thesis).toBe(thesis);
+  });
+});
+
+describe('PlanTradeForm — account-relative risk preview (S02/T05)', () => {
+  it('displays account risk % of equity when preview data is available', async () => {
+    renderForm();
+    setField('Symbol', 'AAPL');
+    setField('Planned Entry', '100');
+    setField('Stop Loss', '95');
+    setField('Qty', '100');
+
+    // Debounced preview fetch fires once the price/quantity inputs settle;
+    // the Account Risk row renders X.XX% of account equity.
+    await screen.findByText('of account equity');
+    expect(screen.getByText('5.00%')).toBeTruthy();
+
+    // The preview request carries the account + planned geometry
+    const previewCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).startsWith('/api/trades/planned-risk-preview'),
+    );
+    expect(previewCall).toBeTruthy();
+    const url = new URL(String(previewCall![0]), 'http://localhost');
+    expect(url.searchParams.get('accountId')).toBe('acc-1');
+    expect(url.searchParams.get('direction')).toBe('long');
+    expect(url.searchParams.get('entry')).toBe('100');
+    expect(url.searchParams.get('stop')).toBe('95');
+    expect(url.searchParams.get('quantity')).toBe('100');
+  });
+
+  it('shows the max-risk warning when the preview reports maxRiskExceeded', async () => {
+    fetchMock = makeFetchMock({
+      preview: {
+        ...DEFAULT_PREVIEW,
+        accountRiskPct: 5,
+        maxRiskPerTradePct: 2,
+        maxRiskExceeded: true,
+      },
+    });
+    globalThis.fetch = fetchMock;
+    renderForm();
+    setField('Symbol', 'AAPL');
+    setField('Planned Entry', '100');
+    setField('Stop Loss', '95');
+    setField('Qty', '100');
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(
+      'This trade exceeds the account max-risk limit of 2%',
+    );
+  });
+
+  it('shows no max-risk warning when within the limit', async () => {
+    fetchMock = makeFetchMock({
+      preview: {
+        ...DEFAULT_PREVIEW,
+        accountRiskPct: 0.5,
+        maxRiskExceeded: false,
+      },
+    });
+    globalThis.fetch = fetchMock;
+    renderForm();
+    setField('Symbol', 'AAPL');
+    setField('Planned Entry', '100');
+    setField('Stop Loss', '95');
+    setField('Qty', '100');
+
+    await screen.findByText('0.50%');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('falls back to a dash for Account Risk when the preview request fails', async () => {
+    fetchMock = makeFetchMock({ failPreview: true });
+    globalThis.fetch = fetchMock;
+    renderForm();
+    setField('Symbol', 'AAPL');
+    setField('Planned Entry', '100');
+    setField('Stop Loss', '95');
+    setField('Qty', '100');
+
+    // The client-side risk/reward preview still renders; Account Risk is '—'
+    // because the account-relative fetch failed.
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((c) =>
+          String(c[0]).startsWith('/api/trades/planned-risk-preview'),
+        ),
+      ).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Account Risk').parentElement!.textContent).toContain('—');
+    });
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { HelpTooltip } from '@/components/help-tooltip';
 
@@ -20,6 +20,48 @@ import { computePlannedRiskAmount } from '@/lib/planned-risk';
 // Narrative fields (Thesis, Invalidation Condition, Pre-Trade Plan) allow up to
 // two small paragraphs each; enforced by character count, not sentence count.
 const NARRATIVE_MAX_CHARS = 600;
+
+// Debounce window for the account-relative risk preview fetch (S02/T05).
+// Prevents a request per keystroke while typing entry/stop/quantity.
+const PREVIEW_DEBOUNCE_MS = 300;
+
+// Account-relative planned-risk preview returned by
+// GET /api/trades/planned-risk-preview (S02/T05).
+interface PlannedRiskPreview {
+  riskDollar: number | null;
+  riskPct: number | null;
+  accountRiskPct: number | null;
+  rewardDollar: number | null;
+  rewardPct: number | null;
+  riskRewardRatio: number | null;
+  equityAtOpen: number | null;
+  maxRiskPerTradePct: number | null;
+  maxRiskExceeded: boolean;
+}
+
+/**
+ * Build the preview request query for the current form inputs. Returns null
+ * when the preview is not yet fetchable (no account, or entry/stop/quantity
+ * not all positive). Pure — shared by the render-time eligibility guard and
+ * the debounced fetch effect so both agree on the request signature.
+ */
+function buildPreviewSearchParams(form: TradeForm): URLSearchParams | null {
+  const entry = parseFloat(form.plannedEntry);
+  const stop = parseFloat(form.plannedStop);
+  const qty = parseFloat(form.plannedQuantity);
+  if (!form.accountId || !(entry > 0) || !(stop > 0) || !(qty > 0)) return null;
+
+  const params = new URLSearchParams({
+    accountId: form.accountId,
+    direction: form.direction,
+    entry: String(entry),
+    stop: String(stop),
+    quantity: String(qty),
+  });
+  const target = parseFloat(form.plannedTarget1);
+  if (target > 0) params.set('target1', String(target));
+  return params;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -96,6 +138,18 @@ export default function PlanTradeForm({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Account-relative risk preview (S02/T05): fetched (debounced) from
+  // GET /api/trades/planned-risk-preview when the account and the price/
+  // quantity inputs are filled. The stored value is keyed by the request
+  // signature it was computed for; the render-time guard only surfaces it when
+  // the signature still matches the current inputs, so a stale in-flight
+  // preview never displays (the form falls back to the purely client-side
+  // risk/reward preview in the meantime).
+  const [accountPreview, setAccountPreview] = useState<{
+    key: string;
+    data: PlannedRiskPreview;
+  } | null>(null);
+
   const activeAccounts = accounts.filter((a) => a.isActive);
   const activeSetups = setups.filter((s) => s.isActive);
 
@@ -124,6 +178,36 @@ export default function PlanTradeForm({
     setForm((prev) => ({ ...prev, [field]: value }));
     if (error) setError(null);
   };
+
+  // Debounced fetch of the account-relative risk preview. Fires 300ms after
+  // the account/direction/entry/stop/target/quantity inputs settle; cancelled
+  // on change/unmount so a stale response can never overwrite a newer one.
+  // State is only mutated inside the async callback (react-hooks lint), and
+  // render-time eligibility + signature checks guard against stale display.
+  useEffect(() => {
+    const params = buildPreviewSearchParams(form);
+    if (!params) return;
+    const key = params.toString();
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/trades/planned-risk-preview?${key}`);
+        if (!res.ok) throw new Error('preview request failed');
+        const data = (await res.json()) as PlannedRiskPreview;
+        if (!cancelled) setAccountPreview({ key, data });
+      } catch {
+        // Fall back to the client-side preview only (account-relative risk
+        // shows '—'); never block planning on a preview failure.
+        if (!cancelled) setAccountPreview(null);
+      }
+    }, PREVIEW_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [form]);
 
   /** Validate character limit for narrative fields */
   const validateCharLimit = (field: string, text: string): string | null => {
@@ -430,8 +514,36 @@ export default function PlanTradeForm({
               ? previewFinal.riskRewardRatio.toFixed(2)
               : null;
 
+            // Account-relative risk from the preview API (S02/T05). Only the
+            // value keyed to the current input signature is displayed; while
+            // the debounced fetch is pending, failed, or the inputs are not yet
+            // eligible, the row shows '—' and the client-side preview above is
+            // the fallback.
+            const previewParams = buildPreviewSearchParams(form);
+            const previewData =
+              accountPreview &&
+              previewParams &&
+              accountPreview.key === previewParams.toString()
+                ? accountPreview.data
+                : null;
+            const accountRiskPct = previewData?.accountRiskPct ?? null;
+            const accountRiskDisplay =
+              accountRiskPct != null ? `${accountRiskPct.toFixed(2)}%` : null;
+            const maxRiskExceeded = previewData?.maxRiskExceeded ?? false;
+            const maxRiskLimit = previewData?.maxRiskPerTradePct;
+
             return (
-              <div className="grid grid-cols-3 gap-3 rounded-lg border bg-muted p-3">
+              <>
+                {maxRiskExceeded && maxRiskLimit != null && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning"
+                  >
+                    This trade exceeds the account max-risk limit of{' '}
+                    {maxRiskLimit}%
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-3 rounded-lg border bg-muted p-3">
                 {/* Risk */}
                 <div>
                   <p className="mb-0.5 text-xs font-medium text-negative">Max Risk</p>
@@ -477,7 +589,25 @@ export default function PlanTradeForm({
                     <p className="text-sm text-muted-foreground">—</p>
                   )}
                 </div>
-              </div>
+                </div>
+
+                {/* Account Risk (S02/T05): label start, value end — the metric
+                    group layout from the design system. Null while the preview
+                    API has no equity context or the fetch is pending/failed. */}
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-warning/20 bg-muted px-3 py-2">
+                  <p className="text-xs font-medium text-muted-foreground">Account Risk</p>
+                  {accountRiskDisplay ? (
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {accountRiskDisplay}
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        of account equity
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">—</p>
+                  )}
+                </div>
+              </>
             );
           })()}
 
