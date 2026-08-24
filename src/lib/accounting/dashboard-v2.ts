@@ -22,6 +22,7 @@ import Decimal from 'decimal.js';
 import { fromMicros, toMicros, normalizeDecimal, sumDecimals, addDecimal, subtractDecimal, equalsDecimal } from './decimal';
 import type { CanonicalDecimal } from './types';
 import { computeTradeMetrics } from '../trade-metrics';
+import { resolveExecutionEquityContext } from '../execution-equity';
 import type { TradeMetricsInput, TradeMetricsResult } from '../trade-metrics';
 import { computeUnrealizedPnlFromMarkMicros } from '../performance/valuation';
 import {
@@ -1032,26 +1033,17 @@ export function computeDashboardV2(
     );
   }
 
-  // Current account equity for the journal kernel (faithful to the Trades API
-  // cascade: account_performance.nav → rollforward.endingEquity →
-  // account.startingBalance → settings.startingAccountValue). Only the
-  // risk / position-weight fields consume it — the six extracted journal
-  // metrics do not depend on equity.
-  const journalEquitySettings = sqlite
-    .prepare(`SELECT starting_account_value FROM settings WHERE id = 'default'`)
-    .get() as { starting_account_value: number | null } | undefined;
-  const journalEquityRollforward = sqlite
-    .prepare(
-      `SELECT ending_equity FROM account_rollforward
-       WHERE account_id = ? ORDER BY date DESC, created_at DESC LIMIT 1`,
-    )
-    .get(accountId) as { ending_equity: number | null } | undefined;
-  const journalCurrentAccountEquity =
-    (performance?.nav ? parseFloat(performance.nav) : null) ??
-    journalEquityRollforward?.ending_equity ??
-    accountRow.starting_balance ??
-    journalEquitySettings?.starting_account_value ??
-    null;
+  // M002-A9: current account equity for the journal kernel resolves through
+  // the SAME canonical resolver the Trades API and execution readiness use
+  // (current_projection → bounded rollforward → reconstruction → explicit
+  // legacy compatibility → unavailable). Only the risk / position-weight
+  // fields consume it — the six extracted journal metrics do not depend on
+  // equity, and the display NAV below still uses `performance?.nav` directly.
+  const journalCurrentAccountEquity = resolveExecutionEquityContext(
+    sqlite,
+    accountId,
+    new Date().toISOString(),
+  ).equity;
 
   // ── Open journal trades by symbol (for per-position risk state) ──────
   const openTradeRows = sqlite

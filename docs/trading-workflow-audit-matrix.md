@@ -511,6 +511,37 @@ These are the decisions the requirements doc explicitly defers to S01
   correction additionally wraps lifecycle, risk-snapshot repair, and review
   invalidation in the caller's larger transaction. Projection failure → full
   rollback, idempotency retryable.
+- **M002-A9 (current trade risk surfaces use canonical account equity):**
+  `GET /api/trades` and `GET /api/trades/:id` previously maintained their OWN
+  legacy current-equity cascade (account_performance.nav → latest rollforward
+  → account.startingBalance → settings.startingAccountValue → null), creating
+  two definitions of account equity (execution gate vs display/risk). Both
+  surfaces now resolve current equity through the SAME canonical resolver as
+  execution readiness (`resolveExecutionEquityContext`, one stable request
+  timestamp; once per unique account in the list, never N+1):
+  - canonical projection wins over contradictory legacy rows; canonical zero
+    stays zero and never falls through to `settings.startingAccountValue`;
+    unavailable equity keeps risk percentages null (no local fallback);
+    explicit legacy compatibility (startingBalance-only accounts) remains
+    supported with provenance `legacy_compatibility`.
+  - `/api/trades/:id` exposes `currentAccountEquityContext`
+    ({ equity, source, asOf }) additively for risk trust/debugging;
+    historical riskSnapshot.accountEquityAtOpen is untouched.
+  - **Portfolio heat:** the denominator sums one canonical equity per unique
+    account (no double-counting); `portfolioHeatPct` becomes `null` when a
+    risk-bearing account lacks a usable canonical equity denominator
+    (unavailable or zero) — never a partial-denominator percentage and never
+    a misleading 0% — while `portfolioHeatAmount` stays available.
+    Accounts with zero open risk never poison the percentage. The trades
+    footer renders the null pct as the missing semantic (—), not 0.00%.
+  - **Root dashboard (§39 audit):** `dashboard-v2`'s current
+    risk/position-weight equity used the same legacy cascade — replaced with
+    the shared resolver (display NAV still reads account_performance.nav
+    directly; historical equity curves/rollforward charts untouched).
+  - No local `startingBalance → startingAccountValue` fallback remains for
+    canonical current-risk calculations anywhere in the Trading Workflow.
+    (The separate explicit account-selection issue on POST /api/trades is
+    recorded for the next audit, NOT bundled here.)
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

@@ -178,7 +178,7 @@ function seedTrade(overrides: Record<string, unknown> = {}) {
   requireDb().insert(schema.trades)
     .values({
       id,
-      tradeCode: `TC-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`,
+      tradeCode: `TC-${randomUUID().slice(0, 8)}`,
       accountId: 'test-account-id',
       symbol: 'AAPL',
       direction: 'long',

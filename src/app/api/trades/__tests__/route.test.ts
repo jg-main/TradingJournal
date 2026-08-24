@@ -23,6 +23,7 @@ import Decimal from 'decimal.js';
 
 import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
+import { resolveExecutionEquityContext } from '@/lib/execution-equity';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
 import { computePlannedRiskAmount } from '@/lib/planned-risk';
 import { isAccountTradingReady } from '@/lib/accounting/default-account-guard';
@@ -172,6 +173,36 @@ sqlite.exec(`
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
+
+  CREATE TABLE IF NOT EXISTS financial_events (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    idempotency_key TEXT,
+    description TEXT,
+    payload TEXT,
+    effect TEXT,
+    posted_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS ledger_entries (
+    id TEXT PRIMARY KEY NOT NULL,
+    financial_event_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    description TEXT,
+    posted_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS account_transactions (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    amount REAL,
+    balance_after REAL,
+    date TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+
   CREATE TABLE IF NOT EXISTS trade_risk_snapshots (
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT NOT NULL UNIQUE,
@@ -336,33 +367,14 @@ function doGetTrades(params: {
       riskMap.set(risk.tradeId, risk);
     }
 
-    // Batch-fetch latest account_rollforward per unique account
+    // M002-A9: canonical current account equity (same resolver as the route),
+    // resolved once per unique account with a single request timestamp.
     const uniqueAccountIds = [...new Set(dbRows.map((r) => r.accountId))];
-    const latestRollforwardMap = new Map<string, typeof schema.accountRollforward.$inferSelect>();
+    const now = new Date().toISOString();
+    const equityContextByAccount = new Map<string, ReturnType<typeof resolveExecutionEquityContext>>();
     for (const accId of uniqueAccountIds) {
       if (!accId) continue;
-      const rf = db
-        .select()
-        .from(schema.accountRollforward)
-        .where(eq(schema.accountRollforward.accountId, accId))
-        .orderBy(desc(schema.accountRollforward.date))
-        .limit(1)
-        .get();
-      if (rf) {
-        latestRollforwardMap.set(accId, rf);
-      }
-    }
-
-    // Batch-fetch account_performance.nav per unique account (primary equity source)
-    const accountPerfMap = new Map<string, string>();
-    for (const accId of uniqueAccountIds) {
-      if (!accId) continue;
-      const perf = sqlite
-        .prepare(`SELECT nav FROM account_performance WHERE account_id = ?`)
-        .get(accId) as { nav: string } | undefined;
-      if (perf && perf.nav) {
-        accountPerfMap.set(accId, perf.nav);
-      }
+      equityContextByAccount.set(accId, resolveExecutionEquityContext(sqlite, accId, now));
     }
 
     // Batch-fetch sector lookupValues for sector name resolution
@@ -396,16 +408,9 @@ function doGetTrades(params: {
       const executions = execMap.get(row.id) ?? [];
       const riskSnapshot = riskMap.get(row.id) ?? null;
 
-      // Account equity cascade: account_performance.nav → rollforward.endingEquity → account.startingBalance → null
-      const latestRollforward = latestRollforwardMap.get(row.accountId);
-      const navRaw = accountPerfMap.get(row.accountId);
-      const navValue = navRaw ? parseFloat(navRaw) : null;
+      // M002-A9: canonical current account equity (never a local legacy fallback).
       const acc = accMap.get(row.accountId) as Record<string, unknown> | undefined;
-      const currentAccountEquity =
-        navValue ??
-        latestRollforward?.endingEquity ??
-        (acc?.startingBalance as number | undefined) ??
-        null;
+      const currentAccountEquity = equityContextByAccount.get(row.accountId)?.equity ?? null;
 
       const metricsInput: TradeMetricsInput = {
         executions: executions.map((e) => ({
@@ -530,42 +535,20 @@ function doGetTrades(params: {
         .all();
       const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
 
-      // Batch-fetch latest rollforward per account for totals computation (mirrors route.ts)
-      const allLatestRollforwardMap = new Map<string, typeof schema.accountRollforward.$inferSelect>();
+      // M002-A9: canonical current equity for the FULL dataset accounts (mirror
+      // of route.ts), resolved once per account with the SAME request timestamp —
+      // page-independent portfolioHeat denominator.
+      const allEquityContextByAccount = new Map<string, ReturnType<typeof resolveExecutionEquityContext>>();
       for (const accId of allUniqueAccountIds) {
         if (!accId) continue;
-        const rf = db
-          .select()
-          .from(schema.accountRollforward)
-          .where(eq(schema.accountRollforward.accountId, accId))
-          .orderBy(desc(schema.accountRollforward.date))
-          .limit(1)
-          .get();
-        if (rf) {
-          allLatestRollforwardMap.set(accId, rf);
-        }
-      }
-
-      // Batch-fetch account_performance.nav for ALL full-dataset accounts (S02 T02):
-      // keyed by the FULL dataset, NOT the paginated page, so totals.portfolioHeatPct
-      // is identical across pagination pages for multi-account datasets.
-      const allAccountPerfMap = new Map<string, string>();
-      const allAccIds = allUniqueAccountIds.filter(Boolean);
-      if (allAccIds.length > 0) {
-        const perfRows = sqlite
-          .prepare(`SELECT account_id, nav FROM account_performance WHERE account_id IN (${allAccIds.map(() => '?').join(',')})`)
-          .all(...allAccIds) as Array<{ account_id: string; nav: string }>;
-        for (const perf of perfRows) {
-          if (perf.nav) {
-            allAccountPerfMap.set(perf.account_id, perf.nav);
-          }
-        }
+        allEquityContextByAccount.set(accId, resolveExecutionEquityContext(sqlite, accId, now));
       }
 
       // Track unique account equities for the portfolioHeat denominator
       // (one equity per account to avoid double-counting). Mirror of route.ts:
       // monetary aggregates are accumulated in Decimal.js (P2 hardening).
       const totalEquityByAccount = new Map<string, Decimal>();
+      const openRiskByAccount = new Map<string, Decimal>();
 
       // Decimal.js accumulators (mirror of route.ts totals pipeline)
       const decTotals = {
@@ -581,16 +564,7 @@ function doGetTrades(params: {
         const executions = allExecMap.get(row.id) ?? [];
         const riskSnapshot = allRiskMap.get(row.id) ?? null;
         const account = allAccountMap.get(row.accountId);
-        const latestRollforward = allLatestRollforwardMap.get(row.accountId);
-        // Full-dataset nav map (S02 T02): keyed by ALL matching accounts, so the
-        // equity denominator — and therefore portfolioHeatPct — is page-independent.
-        const navRaw = allAccountPerfMap.get(row.accountId);
-        const navValue = navRaw ? parseFloat(navRaw) : null;
-        const currentAccountEquity =
-          navValue ??
-          latestRollforward?.endingEquity ??
-          account?.startingBalance ??
-          null;
+        const currentAccountEquity = allEquityContextByAccount.get(row.accountId)?.equity ?? null;
 
         const metricsInput: TradeMetricsInput = {
           executions: executions.map((e) => ({
@@ -620,6 +594,12 @@ function doGetTrades(params: {
 
         const metrics = computeTradeMetrics(metricsInput);
 
+        const oR = new Decimal(metrics.risk.openRisk ?? 0);
+        openRiskByAccount.set(
+          row.accountId,
+          (openRiskByAccount.get(row.accountId) ?? new Decimal(0)).plus(oR),
+        );
+
         // M013/S01 mirror: count open positions without a market mark.
         if (metrics.size.openQuantity > 0 && row.currentPrice == null) {
           unpricedOpenPositions += 1;
@@ -635,7 +615,6 @@ function doGetTrades(params: {
         const tF = new Decimal(metrics.fees.totalFees ?? 0);
         const gUP = new Decimal(metrics.unrealizedPnl.grossUnrealizedPnl ?? 0);
         const nUP = new Decimal(metrics.unrealizedPnl.netUnrealizedPnl ?? 0);
-        const oR = new Decimal(metrics.risk.openRisk ?? 0);
 
         decTotals.grossRealizedPnl = decTotals.grossRealizedPnl.plus(gRP);
         decTotals.netRealizedPnl = decTotals.netRealizedPnl.plus(nRP);
@@ -654,10 +633,24 @@ function doGetTrades(params: {
       // double-counting when multiple open positions share an account.
       const totalEquityAcrossAccounts = [...totalEquityByAccount.values()].reduce((s, v) => s.plus(v), new Decimal(0));
       totals.portfolioHeatAmount = decTotals.totalOpenRisk.toNumber();
-      totals.portfolioHeatPct =
-        totalEquityAcrossAccounts.gt(0) && decTotals.totalOpenRisk.gt(0)
-          ? decTotals.totalOpenRisk.div(totalEquityAcrossAccounts).toNumber()
-          : 0;
+      // M002-A9 mirror: portfolio-heat % is null when a risk-bearing account
+      // lacks a usable canonical equity denominator (unavailable or zero).
+      let portfolioHeatPct: number | null = 0;
+      if (decTotals.totalOpenRisk.gt(0)) {
+        const unusableDenominator = [...openRiskByAccount.entries()].some(([accId, risk]) => {
+          if (risk.lte(0)) return false;
+          const eq = allEquityContextByAccount.get(accId)?.equity ?? null;
+          return eq == null || eq <= 0;
+        });
+        if (unusableDenominator) {
+          portfolioHeatPct = null;
+        } else {
+          portfolioHeatPct = totalEquityAcrossAccounts.gt(0)
+            ? decTotals.totalOpenRisk.div(totalEquityAcrossAccounts).toNumber()
+            : null;
+        }
+      }
+      totals.portfolioHeatPct = portfolioHeatPct;
       totals.grossRealizedPnl = decTotals.grossRealizedPnl.toNumber();
       totals.netRealizedPnl = decTotals.netRealizedPnl.toNumber();
       totals.totalFees = decTotals.totalFees.toNumber();
@@ -873,6 +866,11 @@ function cleanup() {
   sqlite.exec('DELETE FROM lookup_values;');
   sqlite.exec('DELETE FROM settings;');
   sqlite.exec('DELETE FROM account_performance;');
+  // M002-A9: canonical-equity fixtures seed financial_events — wipe them
+  // between cases so no canonical funding leaks across tests.
+  sqlite.exec('DELETE FROM financial_events;');
+  sqlite.exec('DELETE FROM ledger_entries;');
+  sqlite.exec('DELETE FROM account_transactions;');
   sqlite.exec('DELETE FROM accounts;');
 }
 
@@ -963,6 +961,26 @@ function seedExecution(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return id;
+}
+
+/** M002-A9: seed canonical funding (opening_balance financial event) so the
+ *  canonical equity resolver enters the canonical branch (current_projection /
+ *  historical_rollforward) instead of legacy compatibility. */
+function seedCanonicalOpening(accountId: string, amount = 10000): void {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.financialEvents)
+    .values({
+      id,
+      accountId,
+      eventType: 'opening_balance',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: amount.toFixed(2) }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: amount.toFixed(2), amountMicros: Math.round(amount * 1_000_000) }),
+      postedAt: now,
+      createdAt: now,
+    })
+    .run();
 }
 
 function seedRollforward(overrides: Record<string, unknown> = {}) {
@@ -1611,8 +1629,10 @@ console.log('\n21. GET status-aware: planned trades filtered by createdAt:');
 console.log('\n22. GET uses rollforward.endingEquity as primary equity source:');
 {
   cleanup();
-  // Account with startingBalance 10000 but rollforward endingEquity 12500
+  // M002-A9: canonical account with an opening event + rollforward — the
+  // shared resolver's historical_rollforward branch supplies 12500.
   const acc = seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedCanonicalOpening('test-account-id', 10000);
   seedRollforward({
     accountId: 'test-account-id',
     date: new Date().toISOString().slice(0, 10),
@@ -1745,6 +1765,7 @@ console.log('\n26. GET plannedRiskToAccount computed for planned trades:');
 {
   cleanup();
   seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedCanonicalOpening('test-account-id', 10000);
   seedRollforward({
     accountId: 'test-account-id',
     date: new Date().toISOString().slice(0, 10),
@@ -1797,11 +1818,13 @@ console.log('\n26. GET plannedRiskToAccount computed for planned trades:');
 console.log('\n27. GET returns portfolioHeat in totals:');
 {
   cleanup();
-  // Account 1 (USD) with rollforward: equity 25000
+  // M002-A9: canonical accounts (opening events) so the rollforwards are
+  // authoritative through the shared resolver.
   const usdAcc = seedAccount({ id: 'usd-heat-acc', name: 'USD Heat', currency: 'USD' });
+  seedCanonicalOpening('usd-heat-acc', 10000);
   seedRollforward({ accountId: 'usd-heat-acc', endingEquity: 25000 });
-  // Account 2 (EUR) with rollforward: equity 40000
   const eurAcc = seedAccount({ id: 'eur-heat-acc', name: 'EUR Heat', currency: 'EUR' });
+  seedCanonicalOpening('eur-heat-acc', 10000);
   seedRollforward({ accountId: 'eur-heat-acc', endingEquity: 40000 });
 
   // USD open trade with open risk ~1000 (100 shares * $10 risk)
@@ -2118,8 +2141,10 @@ console.log('\n32. GET returns resolved accountName, sectorName, marketCondition
 console.log('\n33. GET uses account_performance.nav as primary equity source:');
 {
   cleanup();
-  // Account with startingBalance 10000, rollforward 20000, but NAV 25000
+  // M002-A9: canonical account (opening event) — the seeded NAV is the
+  // canonical current_projection (25000) and wins over rollforward/legacy.
   const acc = seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedCanonicalOpening('test-account-id', 10000);
   seedRollforward({ accountId: 'test-account-id', endingEquity: 20000 });
 
   // Insert account_performance row with NAV higher than both
@@ -2158,8 +2183,9 @@ console.log('\n34. GET falls back to rollforward when no account_performance row
 {
   cleanup();
   const acc = seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+  seedCanonicalOpening('test-account-id', 10000);
   seedRollforward({ accountId: 'test-account-id', endingEquity: 20000 });
-  // No account_performance row — cascade falls through to rollforward.endingEquity
+  // No account_performance row — canonical resolver's rollforward branch supplies 20000
 
   const trade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
   const tId = trade.id as string;
@@ -2263,11 +2289,16 @@ console.log('\n37. S02 T02: totals.portfolioHeatPct identical on page=1 and page
   // equity and shift the portfolioHeatPct denominator). Note: seedAccount with a
   // custom id returns undefined (helper re-selects by its own UUID), so subsequent
   // calls use the literal ids.
+  // M002-A9: canonical accounts (opening events) so the seeded NAV rows are
+  // authoritative current_projection values through the shared resolver.
   seedAccount({ id: 'navp-acc-a', name: 'Nav A', startingBalance: 80000 });
+  seedCanonicalOpening('navp-acc-a', 10000);
   seedRollforward({ accountId: 'navp-acc-a', endingEquity: 70000 });
   seedAccount({ id: 'navp-acc-b', name: 'Nav B', startingBalance: 30000 });
+  seedCanonicalOpening('navp-acc-b', 10000);
   seedRollforward({ accountId: 'navp-acc-b', endingEquity: 40000 });
   seedAccount({ id: 'navp-acc-c', name: 'Nav C', startingBalance: 15000 });
+  seedCanonicalOpening('navp-acc-c', 10000);
   seedRollforward({ accountId: 'navp-acc-c', endingEquity: 20000 });
 
   const insertPerf = (accountId: string, nav: string) => {
@@ -2458,6 +2489,91 @@ console.log('\n43. GET default listing excludes deleted trades (status=deleted o
   assertEqual(d2.total, 1, 'status=deleted total includes the scratched trade');
   assertEqual(d2.data[0]?.id, deleted.id, 'scratched trade returned via status=deleted');
   assertEqual(d2.data[0]?.status, 'deleted', 'scratched row carries status deleted');
+}
+
+// ── A9. Canonical equity on the list surface ────────────────────────────
+
+console.log('\nA9-L1. List — canonical zero equity: plannedRiskToAccount null, never a global-fallback percentage:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id', startingBalance: null });
+  seedCanonicalOpening('test-account-id', 10000);
+  // Withdraw the full amount → canonical NAV 0 (current_projection).
+  const now = new Date().toISOString();
+  db.insert(schema.accountPerformance).values({
+    id: randomUUID(), accountId: 'test-account-id', computedAsOf: now, netCash: '0', nav: '0',
+    markedPositions: '[]', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', realizedFees: '0',
+    grossExposure: '0', netExposure: '0', warnings: '[]', positionsJson: '[]', rebuildCount: 0, lastRebuiltAt: now,
+  }).run();
+  db.insert(schema.settings).values({ id: 'default', startingAccountValue: 100000 }).run();
+
+  // Planned trade: planned risk 200 → null against canonical zero.
+  seedTrade({ accountId: 'test-account-id', symbol: 'MSFT', direction: 'long', status: 'planned', plannedEntry: 105, plannedStop: 95, plannedQuantity: 20 });
+
+  // Open trade: current risk-to-account null against canonical zero.
+  const openTrade = seedTrade({ accountId: 'test-account-id', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  seedExecution({ tradeId: openTrade.id as string, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: openTrade.id as string, initialRiskAmount: 200, accountEquityAtOpen: 0 }).run();
+
+  const result = doGetTrades();
+  assert(result.status === 200, 'A9-L1 returns 200');
+  const d = result.data as { data: Record<string, unknown>[] };
+  const msft = d.data.find((r) => r.symbol === 'MSFT') as Record<string, unknown>;
+  assertEqual(msft.plannedRiskToAccount, null, 'plannedRiskToAccount null (denominator 0 — never 0.2% vs global 100000)');
+  const aapl = d.data.find((r) => r.symbol === 'AAPL') as Record<string, unknown>;
+  const risk = (aapl.metrics as Record<string, unknown>).risk as Record<string, unknown>;
+  assertEqual(risk.riskToAccount, null, 'open risk-to-account null against canonical zero');
+}
+
+console.log('\nA9-L2. List — portfolio heat: risk-bearing account with unavailable equity → amount known, pct null:');
+{
+  cleanup();
+  // Account A: canonical equity 10000, open risk 100.
+  seedAccount({ id: 'a9-a-acc', startingBalance: null });
+  seedCanonicalOpening('a9-a-acc', 10000);
+  const now = new Date().toISOString();
+  db.insert(schema.accountPerformance).values({
+    id: randomUUID(), accountId: 'a9-a-acc', computedAsOf: now, netCash: '10000', nav: '10000',
+    markedPositions: '[]', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', realizedFees: '0',
+    grossExposure: '0', netExposure: '0', warnings: '[]', positionsJson: '[]', rebuildCount: 0, lastRebuiltAt: now,
+  }).run();
+  const tradeA = seedTrade({ accountId: 'a9-a-acc', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  seedExecution({ tradeId: tradeA.id as string, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tradeA.id as string, initialRiskAmount: 100, accountEquityAtOpen: 10000 }).run();
+
+  // Account B: NO canonical funding, NO legacy startingBalance → equity unavailable, open risk 200.
+  seedAccount({ id: 'a9-b-acc', startingBalance: null });
+  const tradeB = seedTrade({ accountId: 'a9-b-acc', symbol: 'MSFT', direction: 'long', status: 'open', currentPrice: 120 });
+  seedExecution({ tradeId: tradeB.id as string, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tradeB.id as string, initialRiskAmount: 200, accountEquityAtOpen: null }).run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'A9-L2 returns 200');
+  const d = result.data as { totals: { portfolioHeatAmount: number; portfolioHeatPct: number | null } };
+  assertEqual(d.totals.portfolioHeatAmount, 300, 'portfolioHeatAmount = 300 (known independently of denominator)');
+  assertEqual(d.totals.portfolioHeatPct, null, 'portfolioHeatPct null — risk-bearing account B has unavailable equity (never a partial-denominator %)');
+}
+
+console.log('\nA9-L3. List — portfolio heat: risk-bearing account with canonical ZERO equity → pct null:');
+{
+  cleanup();
+  seedAccount({ id: 'a9-c-acc', startingBalance: null });
+  seedCanonicalOpening('a9-c-acc', 10000);
+  const now = new Date().toISOString();
+  db.insert(schema.accountPerformance).values({
+    id: randomUUID(), accountId: 'a9-c-acc', computedAsOf: now, netCash: '0', nav: '0',
+    markedPositions: '[]', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', realizedFees: '0',
+    grossExposure: '0', netExposure: '0', warnings: '[]', positionsJson: '[]', rebuildCount: 0, lastRebuiltAt: now,
+  }).run();
+  const tradeC = seedTrade({ accountId: 'a9-c-acc', symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  seedExecution({ tradeId: tradeC.id as string, action: 'buy', quantity: 100, price: 100, fees: 0 });
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tradeC.id as string, initialRiskAmount: 200, accountEquityAtOpen: 0 }).run();
+
+  const result = doGetTrades({ status: 'open' });
+  assert(result.status === 200, 'A9-L3 returns 200');
+  const d = result.data as { totals: { portfolioHeatAmount: number; portfolioHeatPct: number | null } };
+  assertEqual(d.totals.portfolioHeatAmount, 200, 'portfolioHeatAmount = 200');
+  assertEqual(d.totals.portfolioHeatPct, null, 'portfolioHeatPct null for zero canonical equity — never a misleading 0%');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

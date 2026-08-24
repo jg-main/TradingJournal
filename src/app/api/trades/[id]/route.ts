@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, tradeTargetAdjustments, settings, accounts, accountRollforward, accountPerformance } from '@/db/schema';
+import { trades, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, tradeTargetAdjustments, accounts } from '@/db/schema';
 import { eq, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveSetup } from '@/lib/setup-resolver';
@@ -8,6 +8,7 @@ import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
 import { resolveTradeMetricsExecutions } from '@/lib/trade-correction-lifecycle';
+import { resolveExecutionEquityContext } from '@/lib/execution-equity';
 
 const updateTradeSchema = z.object({
   symbol: z.string().min(1).max(20).optional(),
@@ -163,35 +164,16 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       .where(eq(accounts.id, row.accountId))
       .get();
 
-    const settingsRow = db
-      .select()
-      .from(settings)
-      .where(eq(settings.id, 'default'))
-      .get();
-
-    // Primary equity source: account_performance.nav (TEXT → parseFloat)
-    const perfRow = db
-      .select({ nav: accountPerformance.nav })
-      .from(accountPerformance)
-      .where(eq(accountPerformance.accountId, row.accountId))
-      .get();
-    const navValue = perfRow?.nav ? parseFloat(perfRow.nav) : null;
-
-    // Secondary equity source: latest account_rollforward.endingEquity
-    const rollforwardRow = db
-      .select()
-      .from(accountRollforward)
-      .where(eq(accountRollforward.accountId, row.accountId))
-      .orderBy(desc(accountRollforward.date))
-      .limit(1)
-      .get();
-
-    const currentAccountEquity =
-      navValue ??
-      rollforwardRow?.endingEquity ??
-      account?.startingBalance ??
-      settingsRow?.startingAccountValue ??
-      null;
+    // M002-A9: current account equity resolves through the SAME canonical
+    // resolver execution readiness uses (current_projection → bounded
+    // rollforward → reconstruction → explicit legacy compatibility →
+    // unavailable), resolved with one stable request timestamp. Canonical zero
+    // stays zero; settings.startingAccountValue can never fabricate canonical
+    // funding. No local startingBalance/startingAccountValue fallback cascade
+    // remains. The account row lookup is retained only for display metadata.
+    const now = new Date().toISOString();
+    const currentEquityContext = resolveExecutionEquityContext(getSqliteHandle(), row.accountId, now);
+    const currentAccountEquity = currentEquityContext.equity;
 
     // Resolve account display name and currency
     const accountName = account?.name ?? null;
@@ -282,6 +264,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
             accountEquityAsOf: riskSnapshotRow.accountEquityAsOf ?? null,
           }
         : null,
+      // M002-A9: current canonical account-equity context (debuggable risk
+      // trust — equity/source/asOf for the CURRENT risk denominator, distinct
+      // from the historical riskSnapshotProvenance).
+      currentAccountEquityContext: {
+        equity: currentEquityContext.equity,
+        source: currentEquityContext.source,
+        asOf: currentEquityContext.asOf,
+      },
     });
   } catch (error) {
     return NextResponse.json(

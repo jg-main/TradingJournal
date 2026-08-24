@@ -20,6 +20,7 @@ import { eq, and, desc } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
+import { resolveExecutionEquityContext } from '@/lib/execution-equity';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
 // M002-A4: the complete pre-trade context (geometry + narrative intent) is
@@ -203,6 +204,36 @@ sqlite.exec(`
     idempotency_key TEXT,
     created_at TEXT DEFAULT (current_timestamp)
   );
+
+  CREATE TABLE IF NOT EXISTS financial_events (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    idempotency_key TEXT,
+    description TEXT,
+    payload TEXT,
+    effect TEXT,
+    posted_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+  CREATE TABLE IF NOT EXISTS ledger_entries (
+    id TEXT PRIMARY KEY NOT NULL,
+    financial_event_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    description TEXT,
+    posted_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS account_transactions (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    amount REAL,
+    balance_after REAL,
+    date TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (current_timestamp)
+  );
+
   CREATE TABLE IF NOT EXISTS trade_risk_snapshots (
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT NOT NULL UNIQUE,
@@ -327,36 +358,10 @@ function doGetTrade(id: string): { status: number; data: unknown } {
       .where(eq(schema.accounts.id, row.accountId))
       .get() as Record<string, unknown> | undefined;
 
-    // Settings fallback
-    const settingsRow = db
-      .select()
-      .from(schema.settings)
-      .where(eq(schema.settings.id, 'default'))
-      .get() as Record<string, unknown> | undefined;
-
-    // Primary equity source: account_performance.nav (TEXT → parseFloat)
-    const perfRow = db
-      .select({ nav: schema.accountPerformance.nav })
-      .from(schema.accountPerformance)
-      .where(eq(schema.accountPerformance.accountId, row.accountId))
-      .get() as { nav: string | null } | undefined;
-    const navValue = perfRow?.nav ? parseFloat(perfRow.nav) : null;
-
-    // Secondary equity source: latest account_rollforward.endingEquity
-    const rollforwardRow = db
-      .select()
-      .from(schema.accountRollforward)
-      .where(eq(schema.accountRollforward.accountId, row.accountId))
-      .orderBy(desc(schema.accountRollforward.date))
-      .limit(1)
-      .get() as Record<string, unknown> | undefined;
-
-    const currentAccountEquity =
-      navValue ??
-      (rollforwardRow?.endingEquity as number | undefined) ??
-      (accountRow?.startingBalance as number | undefined) ??
-      (settingsRow?.startingAccountValue as number | undefined) ??
-      null;
+    // M002-A9: canonical current account equity (same resolver as the route).
+    const now = new Date().toISOString();
+    const currentEquityContext = resolveExecutionEquityContext(sqlite, row.accountId as string, now);
+    const currentAccountEquity = currentEquityContext.equity;
 
     // Compute trade metrics
     const metricsInput: TradeMetricsInput = {
@@ -430,6 +435,12 @@ function doGetTrade(id: string): { status: number; data: unknown } {
         accountCurrency,
         sectorName,
         metrics,
+        // M002-A9: mirror of the route's canonical current-equity context.
+        currentAccountEquityContext: {
+          equity: currentEquityContext.equity,
+          source: currentEquityContext.source,
+          asOf: currentEquityContext.asOf,
+        },
       },
     };
   } catch (error) {
@@ -576,6 +587,25 @@ function cleanup() {
   sqlite.exec('DELETE FROM account_rollforward;');
   sqlite.exec('DELETE FROM account_performance;');
   sqlite.exec('DELETE FROM accounts;');
+}
+
+/** M002-A9: seed canonical funding so the shared resolver enters the canonical
+ *  branch (current_projection / historical_rollforward). */
+function seedCanonicalOpening(accountId: string, amount = 10000): void {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.insert(schema.financialEvents)
+    .values({
+      id,
+      accountId,
+      eventType: 'opening_balance',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: amount.toFixed(2) }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: amount.toFixed(2), amountMicros: Math.round(amount * 1_000_000) }),
+      postedAt: now,
+      createdAt: now,
+    })
+    .run();
 }
 
 function seedAccount(overrides: Record<string, unknown> = {}) {
@@ -1217,6 +1247,8 @@ console.log('\n19. GET uses account_performance.nav over rollforward.endingEquit
   cleanup();
   const accId = randomUUID();
   seedAccount({ id: accId, startingBalance: 50000 });
+  // M002-A9: canonical funding so the seeded NAV is the current_projection.
+  seedCanonicalOpening(accId, 10000);
 
   // Seed an open trade with executions (so riskToAccount is meaningful)
   const trade = seedTrade({
@@ -1290,6 +1322,8 @@ console.log('\n20. GET falls back to rollforward.endingEquity when no account_pe
   cleanup();
   const accId = randomUUID();
   seedAccount({ id: accId, startingBalance: 50000 });
+  // M002-A9: canonical funding so the rollforward branch is authoritative.
+  seedCanonicalOpening(accId, 10000);
 
   const trade = seedTrade({
     accountId: accId,
@@ -1895,6 +1929,115 @@ console.log('\n41. PUT allows editing a trade with no execution history even if 
   assert(result.status === 200, 'returns 200 — no execution history, still editable');
   const data = result.data as Record<string, unknown>;
   assertEqual(data.thesis, 'B', 'thesis updated');
+}
+
+// ── A9. Canonical current equity on the detail surface ──────────────────
+
+console.log('\nA9-1. GET detail — canonical funded account: equity 10000, current risk-to-account 2%:');
+{
+  cleanup();
+  const accId = randomUUID();
+  seedAccount({ id: accId, startingBalance: null });
+  seedCanonicalOpening(accId, 10000);
+  // Canonical projection NAV 10000 (current_projection).
+  const now = new Date().toISOString();
+  db.insert(schema.accountPerformance).values({
+    id: randomUUID(), accountId: accId, computedAsOf: now, netCash: '10000', nav: '10000',
+    markedPositions: '[]', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', realizedFees: '0',
+    grossExposure: '0', netExposure: '0', warnings: '[]', positionsJson: '[]', rebuildCount: 0, lastRebuiltAt: now,
+  }).run();
+
+  const trade = seedTrade({ accountId: accId, symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  db.insert(schema.tradeExecutions).values({ id: randomUUID(), tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0, executedAt: now, createdAt: now }).run();
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tId, initialRiskAmount: 200, accountEquityAtOpen: 10000 }).run();
+
+  const result = doGetTrade(tId);
+  assert(result.status === 200, 'A9-1 returns 200');
+  const data = result.data as Record<string, unknown>;
+  const m = data.metrics as Record<string, unknown>;
+  // open risk 200 (100 × |110-100| via active stop 100) / canonical equity 10000 = 2%
+  assertApprox((m.risk as Record<string, unknown>).riskToAccount as number, 0.02, 0.001, 'current risk-to-account = 2% against canonical equity');
+  const ctx = data.currentAccountEquityContext as { equity: number; source: string } | undefined;
+  assertNotNull(ctx, 'currentAccountEquityContext exposed');
+  assertEqual(ctx!.equity, 10000, 'context equity 10000');
+  assertEqual(ctx!.source, 'current_projection', 'provenance current_projection');
+}
+
+console.log('\nA9-2. GET detail — canonical zero equity: risk-to-account null, never 0.2%:');
+{
+  cleanup();
+  const accId = randomUUID();
+  seedAccount({ id: accId, startingBalance: null });
+  seedCanonicalOpening(accId, 10000);
+  // Withdraw the full amount → canonical NAV 0.
+  const now = new Date().toISOString();
+  db.insert(schema.accountPerformance).values({
+    id: randomUUID(), accountId: accId, computedAsOf: now, netCash: '0', nav: '0',
+    markedPositions: '[]', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', realizedFees: '0',
+    grossExposure: '0', netExposure: '0', warnings: '[]', positionsJson: '[]', rebuildCount: 0, lastRebuiltAt: now,
+  }).run();
+  // Global starting value must NOT fabricate funding.
+  db.insert(schema.settings).values({ id: 'default', startingAccountValue: 100000 }).run();
+
+  const trade = seedTrade({ accountId: accId, symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  db.insert(schema.tradeExecutions).values({ id: randomUUID(), tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0, executedAt: now, createdAt: now }).run();
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tId, initialRiskAmount: 200, accountEquityAtOpen: 10000 }).run();
+
+  const result = doGetTrade(tId);
+  assert(result.status === 200, 'A9-2 returns 200');
+  const data = result.data as Record<string, unknown>;
+  const m = data.metrics as Record<string, unknown>;
+  assertEqual((m.risk as Record<string, unknown>).riskToAccount, null, 'risk-to-account null (denominator 0) — never 0.2% against global');
+  const ctx = data.currentAccountEquityContext as { equity: number; source: string } | undefined;
+  assertEqual(ctx!.equity, 0, 'canonical zero stays zero');
+  assertEqual(ctx!.source, 'current_projection', 'zero is a known projection value');
+}
+
+console.log('\nA9-3. GET detail — contradictory legacy: canonical 12000 wins over startingBalance 500000 / global 1000000:');
+{
+  cleanup();
+  const accId = randomUUID();
+  seedAccount({ id: accId, startingBalance: 500000 });
+  seedCanonicalOpening(accId, 12000);
+  const now = new Date().toISOString();
+  db.insert(schema.accountPerformance).values({
+    id: randomUUID(), accountId: accId, computedAsOf: now, netCash: '12000', nav: '12000',
+    markedPositions: '[]', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', realizedFees: '0',
+    grossExposure: '0', netExposure: '0', warnings: '[]', positionsJson: '[]', rebuildCount: 0, lastRebuiltAt: now,
+  }).run();
+  db.insert(schema.settings).values({ id: 'default', startingAccountValue: 1000000 }).run();
+
+  const trade = seedTrade({ accountId: accId, symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  db.insert(schema.tradeExecutions).values({ id: randomUUID(), tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0, executedAt: now, createdAt: now }).run();
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tId, initialRiskAmount: 240, accountEquityAtOpen: 12000 }).run();
+
+  const result = doGetTrade(tId);
+  assert(result.status === 200, 'A9-3 returns 200');
+  const m = (result.data as Record<string, unknown>).metrics as Record<string, unknown>;
+  assertApprox((m.risk as Record<string, unknown>).riskToAccount as number, 0.02, 0.001, '2% = 240/12000 — canonical wins over legacy 500000/1000000');
+}
+
+console.log('\nA9-4. GET detail — explicit legacy compatibility: startingBalance 25000, no canonical funding:');
+{
+  cleanup();
+  const accId = randomUUID();
+  seedAccount({ id: accId, startingBalance: 25000 });
+  // NO canonical funding events, NO projection, NO rollforward.
+
+  const trade = seedTrade({ accountId: accId, symbol: 'AAPL', direction: 'long', status: 'open', currentPrice: 110 });
+  const tId = trade.id as string;
+  db.insert(schema.tradeExecutions).values({ id: randomUUID(), tradeId: tId, action: 'buy', quantity: 100, price: 100, fees: 0, executedAt: new Date().toISOString(), createdAt: new Date().toISOString() }).run();
+  db.insert(schema.tradeRiskSnapshots).values({ id: randomUUID(), tradeId: tId, initialRiskAmount: 500, accountEquityAtOpen: 25000 }).run();
+
+  const result = doGetTrade(tId);
+  assert(result.status === 200, 'A9-4 returns 200');
+  const m = (result.data as Record<string, unknown>).metrics as Record<string, unknown>;
+  assertApprox((m.risk as Record<string, unknown>).riskToAccount as number, 0.02, 0.001, '2% = 500/25000 via explicit legacy compatibility');
+  const ctx = (result.data as Record<string, unknown>).currentAccountEquityContext as { source: string } | undefined;
+  assertEqual(ctx!.source, 'legacy_compatibility', 'provenance legacy_compatibility');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

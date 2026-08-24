@@ -229,7 +229,24 @@ function seedAccount(id: string, overrides: Partial<typeof schema.accounts.$infe
 }
 
 /** Seed an account_performance row with a TEXT nav value (authoritative NAV). */
+/** M002-A9: seed canonical funding (opening_balance financial event) so the
+ *  seeded NAV is the canonical current_projection through the shared equity
+ *  resolver (a derived projection alone is NOT canonical funding evidence). */
+function seedCanonicalOpening(accountId: string, amount = 10000): void {
+  requireDb().db.insert(schema.financialEvents).values({
+    id: randomUUID(),
+    accountId,
+    eventType: 'opening_balance',
+    description: 'Opening balance',
+    payload: JSON.stringify({ amount: amount.toFixed(2) }),
+    effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: amount.toFixed(2), amountMicros: Math.round(amount * 1_000_000) }),
+    postedAt: nowIso(),
+    createdAt: nowIso(),
+  } as typeof schema.financialEvents.$inferInsert).run();
+}
+
 function seedAccountPerformance(accountId: string, nav: number | string): void {
+  seedCanonicalOpening(accountId);
   requireDb().db.insert(schema.accountPerformance).values({
     id: randomUUID(),
     accountId,
@@ -1127,25 +1144,28 @@ registerCategory('C08', 'NAV consistency', async () => {
   assertApprox(withRollforward, 500 / 15000, 1e-9, 'riskToAccount = 500/15000 (rollforward)' );
   assert(withRollforward !== 5, 'rollforward wins over startingBalance (≠ 5.0)');
 
-  // ── Phase 3: rollforward removed → account.startingBalance 100 → 500/100 ──
+  // ── Phase 3: rollforward removed → M002-A9 canonical reconstruction from
+  //     the opening funding (10000) — legacy startingBalance 100 is IGNORED
+  //     (canonical state beats contradictory legacy; no local fallback). ──
   requireDb().db.delete(schema.accountRollforward)
     .where(eq(schema.accountRollforward.accountId, accountId)).run();
-  const withStartingBalance = await riskToAccountFor('after rollforward removed');
-  assertApprox(withStartingBalance, 5.0, 1e-9, 'riskToAccount = 5.0 (500 / startingBalance 100)');
+  const withCanonicalCash = await riskToAccountFor('after rollforward removed');
+  assertApprox(withCanonicalCash, 500 / 10000, 1e-9, 'riskToAccount = 500/10000 (canonical reconstruction)');
+  assert(withCanonicalCash !== 5.0, 'canonical cash wins over legacy startingBalance (≠ 5.0)');
 
-  // ── Phase 4: startingBalance removed → settings.startingAccountValue 40000 ──
+  // ── Phase 4: startingBalance removed + settings 40000 → still canonical 10000 ──
   requireDb().db.update(schema.accounts)
     .set({ startingBalance: null })
     .where(eq(schema.accounts.id, accountId))
     .run();
   seedSettings(40000);
   const withSettings = await riskToAccountFor('after startingBalance removed');
-  assertApprox(withSettings, 500 / 40000, 1e-9, 'riskToAccount = 500/40000 (settings fallback)');
+  assertApprox(withSettings, 500 / 10000, 1e-9, 'settings.startingAccountValue cannot fabricate canonical funding (500/10000)');
 
-  // ── Phase 5: settings removed → no equity source → riskToAccount null ──
+  // ── Phase 5: settings removed → canonical reconstruction still 10000 ──
   requireDb().db.delete(schema.settings).where(eq(schema.settings.id, 'default')).run();
-  const withNoEquity = await riskToAccountFor('after settings removed');
-  assertEqual(withNoEquity, null, 'riskToAccount = null when no equity source exists');
+  const withNoSettings = await riskToAccountFor('after settings removed');
+  assertApprox(withNoSettings, 500 / 10000, 1e-9, 'riskToAccount stays 500/10000 — canonical equity independent of settings');
 });
 
 // ── C09. Short position risk ───────────────────────────────────────────────

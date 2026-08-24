@@ -71,7 +71,7 @@ export interface ClosedTradesTotals {
   netUnrealizedPnl: number | null;
   totalOpenRisk: number;
   portfolioHeatAmount: number;
-  portfolioHeatPct: number;
+  portfolioHeatPct: number | null;
   unpricedOpenPositions: number;
 }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
-import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, tradeTargetAdjustments, accountRollforward, accountPerformance } from '@/db/schema';
+import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, tradeTargetAdjustments } from '@/db/schema';
 import { eq, and, asc, desc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -12,6 +12,7 @@ import type { TradeMetricsInput, TradeListMetrics } from '@/lib/trade-metrics';
 import { isAccountEligibleAsDefault } from '@/lib/accounting/default-account-guard';
 import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase';
 import { resolveTradeMetricsExecutions } from '@/lib/trade-correction-lifecycle';
+import { resolveExecutionEquityContext } from '@/lib/execution-equity';
 
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
@@ -221,36 +222,20 @@ export async function GET(request: NextRequest) {
       .all();
     const accountMap = new Map(accountRows.map((a) => [a.id, a]));
 
-    // Batch-fetch latest account_rollforward per unique account — endingEquity is
-    // used as the secondary source for current account equity (after account_performance.nav).
-    const latestRollforwardMap = new Map<string, typeof accountRollforward.$inferSelect>();
+    // M002-A9: current account equity resolves through the SAME canonical
+    // resolver execution readiness uses (current_projection → bounded
+    // rollforward → reconstruction → explicit legacy compatibility →
+    // unavailable). Resolved ONCE per unique account with a single request
+    // timestamp (deterministic source/asOf within one response); canonical
+    // zero stays zero and settings.startingAccountValue can never fabricate
+    // canonical funding. No local startingBalance/startingAccountValue
+    // fallback cascade remains on this surface.
+    const now = new Date().toISOString();
+    const sqlite = getSqliteHandle();
+    const equityContextByAccount = new Map<string, ReturnType<typeof resolveExecutionEquityContext>>();
     for (const accId of uniqueAccountIds) {
       if (!accId) continue;
-      const rf = db
-        .select()
-        .from(accountRollforward)
-        .where(eq(accountRollforward.accountId, accId))
-        .orderBy(desc(accountRollforward.date))
-        .limit(1)
-        .get();
-      if (rf) {
-        latestRollforwardMap.set(accId, rf);
-      }
-    }
-
-    // Batch-fetch account_performance.nav per unique account — primary equity source
-    // (more accurate than rollforward as it includes marked-to-market positions).
-    const accountPerfMap = new Map<string, string>();
-    for (const accId of uniqueAccountIds) {
-      if (!accId) continue;
-      const perf = db
-        .select({ nav: accountPerformance.nav })
-        .from(accountPerformance)
-        .where(eq(accountPerformance.accountId, accId))
-        .get();
-      if (perf && perf.nav) {
-        accountPerfMap.set(accId, perf.nav);
-      }
+      equityContextByAccount.set(accId, resolveExecutionEquityContext(sqlite, accId, now));
     }
 
     // Batch-fetch sector lookupValues for sector name resolution
@@ -271,13 +256,6 @@ export async function GET(request: NextRequest) {
       : [];
     const marketConditionMap = new Map(marketConditionRows.map((s) => [s.id, s.value]));
 
-    // Single settings row for equity fallback
-    const settingsRow = db
-      .select()
-      .from(settings)
-      .where(eq(settings.id, 'default'))
-      .get();
-
     // Compute enhanced rows with computeTradeMetrics()
     const enhancedRows = rows.map((row) => {
       const executions = execMap.get(row.id) ?? [];
@@ -293,17 +271,9 @@ export async function GET(request: NextRequest) {
       const managementActivity = hasManagementActivity(executions, stopAdjustments, targetAdjustments);
       const workflowPhase = deriveWorkflowPhase(row.status, row.reviewedAt, managementActivity);
 
-      // Account equity cascade: account_performance.nav → rollforward.endingEquity → account.startingBalance → settings.startingAccountValue → null
+      // M002-A9: canonical current account equity (never a local legacy fallback).
       const account = accountMap.get(row.accountId);
-      const latestRollforward = latestRollforwardMap.get(row.accountId);
-      const navRaw = accountPerfMap.get(row.accountId);
-      const navValue = navRaw ? parseFloat(navRaw) : null;
-      const currentAccountEquity =
-        navValue ??
-        latestRollforward?.endingEquity ??
-        account?.startingBalance ??
-        settingsRow?.startingAccountValue ??
-        null;
+      const currentAccountEquity = equityContextByAccount.get(row.accountId)?.equity ?? null;
 
       const metricsInput: TradeMetricsInput = {
         // S08 zero-divergence: derive metrics from the effective execution
@@ -404,7 +374,7 @@ export async function GET(request: NextRequest) {
       netUnrealizedPnl: number | null;
       totalOpenRisk: number;
       portfolioHeatAmount: number;
-      portfolioHeatPct: number;
+      portfolioHeatPct: number | null;
       unpricedOpenPositions: number;
     } = {
       grossRealizedPnl: 0,
@@ -458,46 +428,23 @@ export async function GET(request: NextRequest) {
         .all();
       const allAccountMap = new Map(allAccountRows.map((a) => [a.id, a]));
 
-      // Batch-fetch latest rollforward per account for totals computation
-      const allLatestRollforwardMap = new Map<string, typeof accountRollforward.$inferSelect>();
+      // M002-A9: canonical current equity for the FULL dataset accounts, resolved
+      // once per account with the SAME request timestamp (page-independent
+      // portfolioHeat denominator). No local legacy fallback cascade.
+      const allEquityContextByAccount = new Map<string, ReturnType<typeof resolveExecutionEquityContext>>();
       for (const accId of allUniqueAccountIds) {
         if (!accId) continue;
-        const rf = db
-          .select()
-          .from(accountRollforward)
-          .where(eq(accountRollforward.accountId, accId))
-          .orderBy(desc(accountRollforward.date))
-          .limit(1)
-          .get();
-        if (rf) {
-          allLatestRollforwardMap.set(accId, rf);
-        }
-      }
-
-      // Batch-fetch account_performance.nav for ALL full-dataset accounts — primary
-      // equity source for the totals denominator. Keyed by the FULL dataset (not the
-      // paginated page) so totals.portfolioHeatPct stays identical across pagination
-      // pages when a multi-account dataset spans accounts that don't all appear on
-      // the requested page.
-      const allAccountIdsFiltered = allUniqueAccountIds.filter(Boolean);
-      const allPerfRows = allAccountIdsFiltered.length > 0
-        ? db
-            .select({ accountId: accountPerformance.accountId, nav: accountPerformance.nav })
-            .from(accountPerformance)
-            .where(inArray(accountPerformance.accountId, allAccountIdsFiltered))
-            .all()
-        : [];
-      const allAccountPerfMap = new Map<string, string>();
-      for (const perf of allPerfRows) {
-        if (perf.nav) {
-          allAccountPerfMap.set(perf.accountId, perf.nav);
-        }
+        allEquityContextByAccount.set(accId, resolveExecutionEquityContext(sqlite, accId, now));
       }
 
       // Track unique account equities for portfolioHeat denominator
-      // (one equity per account to avoid double-counting). Monetary values are
-      // held as Decimal.js throughout the aggregation (P2 hardening).
+      // (one equity per account to avoid double-counting) and per-account OPEN
+      // RISK (M002-A9: an account contributing open risk whose canonical
+      // equity is unavailable/zero must make the percentage unavailable).
+      // Monetary values are held as Decimal.js throughout the aggregation
+      // (P2 hardening).
       const totalEquityByAccount = new Map<string, Decimal>();
+      const openRiskByAccount = new Map<string, Decimal>();
 
       // Decimal.js accumulators — no plain floating-point reduction of monetary
       // aggregates anywhere in the totals pipeline.
@@ -515,15 +462,7 @@ export async function GET(request: NextRequest) {
         const riskSnapshot = allRiskMap.get(row.id) ?? null;
         const stopAdjustments = allStopMap.get(row.id) ?? [];
         const account = allAccountMap.get(row.accountId);
-        const latestRollforward = allLatestRollforwardMap.get(row.accountId);
-        const navRaw = allAccountPerfMap.get(row.accountId);
-        const navValue = navRaw ? parseFloat(navRaw) : null;
-        const currentAccountEquity =
-          navValue ??
-          latestRollforward?.endingEquity ??
-          account?.startingBalance ??
-          settingsRow?.startingAccountValue ??
-          null;
+        const currentAccountEquity = allEquityContextByAccount.get(row.accountId)?.equity ?? null;
 
         const metricsInput: TradeMetricsInput = {
           // S08 zero-divergence: derive metrics from the effective execution
@@ -573,6 +512,10 @@ export async function GET(request: NextRequest) {
         const gUP = new Decimal(metrics.unrealizedPnl.grossUnrealizedPnl ?? 0);
         const nUP = new Decimal(metrics.unrealizedPnl.netUnrealizedPnl ?? 0);
         const oR = new Decimal(metrics.risk.openRisk ?? 0);
+        openRiskByAccount.set(
+          row.accountId,
+          (openRiskByAccount.get(row.accountId) ?? new Decimal(0)).plus(oR),
+        );
 
         decTotals.grossRealizedPnl = decTotals.grossRealizedPnl.plus(gRP);
         decTotals.netRealizedPnl = decTotals.netRealizedPnl.plus(nRP);
@@ -592,6 +535,27 @@ export async function GET(request: NextRequest) {
       // M013/S01: any unpriced open position makes the aggregate unrealized P&L
       // unknown — report null (never a partial sum or 0).
       const unrealizedUnknown = unpricedOpenPositions > 0;
+      // M002-A9: portfolio-heat % requires a usable canonical equity denominator
+      // for EVERY account contributing open risk. If a risk-bearing account's
+      // canonical equity is unavailable (null) or zero, the percentage is
+      // unavailable (never a partial denominator or a misleading 0% — 0% would
+      // imply no risk). The absolute amount stays available. Accounts with no
+      // open risk never poison the percentage.
+      let portfolioHeatPct: number | null = 0;
+      if (decTotals.totalOpenRisk.gt(0)) {
+        const unusableDenominator = [...openRiskByAccount.entries()].some(([accId, risk]) => {
+          if (risk.lte(0)) return false;
+          const eq = allEquityContextByAccount.get(accId)?.equity ?? null;
+          return eq == null || eq <= 0;
+        });
+        if (unusableDenominator) {
+          portfolioHeatPct = null;
+        } else {
+          portfolioHeatPct = totalEquityAcrossAccounts.gt(0)
+            ? decTotals.totalOpenRisk.div(totalEquityAcrossAccounts).toNumber()
+            : null;
+        }
+      }
       fullTotals = {
         grossRealizedPnl: decTotals.grossRealizedPnl.toNumber(),
         netRealizedPnl: decTotals.netRealizedPnl.toNumber(),
@@ -600,10 +564,7 @@ export async function GET(request: NextRequest) {
         netUnrealizedPnl: unrealizedUnknown ? null : decTotals.netUnrealizedPnl.toNumber(),
         totalOpenRisk: decTotals.totalOpenRisk.toNumber(),
         portfolioHeatAmount: decTotals.totalOpenRisk.toNumber(),
-        portfolioHeatPct:
-          totalEquityAcrossAccounts.gt(0) && decTotals.totalOpenRisk.gt(0)
-            ? decTotals.totalOpenRisk.div(totalEquityAcrossAccounts).toNumber()
-            : 0,
+        portfolioHeatPct,
         unpricedOpenPositions,
       };
     }

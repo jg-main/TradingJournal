@@ -386,7 +386,15 @@ function TotalsFooter({
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">Portfolio Heat %</span>
-            <span className="text-lg font-semibold tabular-nums">{((totals.portfolioHeatPct ?? 0) * 100).toFixed(2)}%</span>
+            {totals.portfolioHeatPct === null ? (
+              // M002-A9: an account contributing open risk lacks a usable
+              // canonical equity denominator — never render a false 0.00%.
+              <span className="text-lg font-semibold tabular-nums italic text-muted-foreground">—</span>
+            ) : (
+              // Absent fields (older responses / fallback state) keep the
+              // defensive 0.00% rendering.
+              <span className="text-lg font-semibold tabular-nums">{((totals.portfolioHeatPct ?? 0) * 100).toFixed(2)}%</span>
+            )}
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-muted-foreground">Open Positions</span>
