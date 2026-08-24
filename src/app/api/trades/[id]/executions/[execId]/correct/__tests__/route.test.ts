@@ -332,8 +332,8 @@ async function main(): Promise<void> {
       success: boolean;
       correction: { id: string; originalExecutionId: string; reversalExecutionId: string; replacementExecutionId: string };
       originalExecution: { id: string; action: string; quantity: string; price: string; fees: string };
-      reversalExecution: { id: string; action: string; quantity: string; price: string; fees: string; symbol: string };
-      replacementExecution: { id: string; action: string; quantity: string; price: string; fees: string; symbol: string };
+      reversalExecution: { id: string; action: string; quantity: string; price: string; fees: string; symbol: string; journalTradeId: string | null };
+      replacementExecution: { id: string; action: string; quantity: string; price: string; fees: string; symbol: string; journalTradeId: string | null };
       rebuildStatus: { executionCount: number; lotCount: number; matchCount: number };
     };
     assertEqual(data.success, true, 'success flag true');
@@ -349,6 +349,8 @@ async function main(): Promise<void> {
     assertEqual(data.replacementExecution.price, '152.00', 'replacement carries the corrected price');
     assertEqual(data.replacementExecution.fees, '1.00', 'replacement carries the corrected fees');
     assertEqual(data.replacementExecution.symbol, 'AAPL', 'replacement uses the requested symbol');
+    assertEqual(data.reversalExecution.journalTradeId, trade.id, 'reversal preserves the trade linkage (journalTradeId)');
+    assertEqual(data.replacementExecution.journalTradeId, trade.id, 'replacement preserves the trade linkage (journalTradeId)');
     assertNotNull(data.rebuildStatus, 'rebuild status included (execution/lot/match counts)');
 
     // Persisted state: 1 original + 1 reversal + 1 replacement, one lineage row.

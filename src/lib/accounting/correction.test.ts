@@ -125,7 +125,7 @@ function destroyTestDatabase(): void {
 
 // ── Helper to post an execution ─────────────────────────────────────────
 
-function postBuy(sqlite: Database.Database, accountId: string, symbol: string, quantity: string, price: string, fees?: string) {
+function postBuy(sqlite: Database.Database, accountId: string, symbol: string, quantity: string, price: string, fees?: string, journalTradeId?: string) {
   return postExecutionFill(sqlite, {
     accountId,
     symbol,
@@ -133,10 +133,11 @@ function postBuy(sqlite: Database.Database, accountId: string, symbol: string, q
     quantity,
     price,
     fees,
+    journalTradeId,
   });
 }
 
-function postSell(sqlite: Database.Database, accountId: string, symbol: string, quantity: string, price: string, fees?: string) {
+function postSell(sqlite: Database.Database, accountId: string, symbol: string, quantity: string, price: string, fees?: string, journalTradeId?: string) {
   return postExecutionFill(sqlite, {
     accountId,
     symbol,
@@ -144,10 +145,11 @@ function postSell(sqlite: Database.Database, accountId: string, symbol: string, 
     quantity,
     price,
     fees,
+    journalTradeId,
   });
 }
 
-function postSellShort(sqlite: Database.Database, accountId: string, symbol: string, quantity: string, price: string, fees?: string) {
+function postSellShort(sqlite: Database.Database, accountId: string, symbol: string, quantity: string, price: string, fees?: string, journalTradeId?: string) {
   return postExecutionFill(sqlite, {
     accountId,
     symbol,
@@ -155,6 +157,7 @@ function postSellShort(sqlite: Database.Database, accountId: string, symbol: str
     quantity,
     price,
     fees,
+    journalTradeId,
   });
 }
 
@@ -612,5 +615,90 @@ describe('correctExecution', () => {
     expect(result.rebuildStatus.executionCount).toBeGreaterThanOrEqual(3);
     expect(result.rebuildStatus.lotCount).toBeGreaterThanOrEqual(0);
     expect(result.rebuildStatus.matchCount).toBeGreaterThanOrEqual(0);
+  });
+
+  it('carries journalTradeId onto reversal and replacement for a trade-linked buy correction', () => {
+    const { sqlite } = ctx;
+
+    // Fresh account to avoid state leakage
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'Journal Link Buy Account', now, now);
+
+    const symbol = 'AAPL';
+    const journalTradeId = randomUUID();
+
+    // Post a trade-linked buy (journalTradeId set, as the trade-scoped route does)
+    const original = postBuy(sqlite, freshAccountId, symbol, '100.00', '150.00', undefined, journalTradeId);
+    rebuildPositions(sqlite, freshAccountId, original.execution.instrumentId);
+
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: original.execution.id,
+      symbol,
+      action: 'buy',
+      quantity: '100.00',
+      price: '155.00',
+      reason: 'Price correction on trade-linked fill',
+    });
+
+    // Result mappings carry the linkage
+    expect(result.originalExecution.journalTradeId).toBe(journalTradeId);
+    expect(result.reversalExecution.journalTradeId).toBe(journalTradeId);
+    expect(result.replacementExecution.journalTradeId).toBe(journalTradeId);
+
+    // Persisted rows carry the linkage too
+    const reversal = findAccountingExecutionById(sqlite, result.correction.reversalExecutionId);
+    const replacement = findAccountingExecutionById(sqlite, result.correction.replacementExecutionId);
+    expect(reversal!.journal_trade_id).toBe(journalTradeId);
+    expect(replacement!.journal_trade_id).toBe(journalTradeId);
+  });
+
+  it('carries journalTradeId onto reversal and replacement for a trade-linked sell_short correction', () => {
+    const { sqlite } = ctx;
+
+    // Fresh account to avoid state leakage
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'Journal Link Sell Short Account', now, now);
+
+    const symbol = 'AAPL';
+    const journalTradeId = randomUUID();
+
+    // Post a trade-linked sell_short
+    const original = postSellShort(sqlite, freshAccountId, symbol, '100.00', '200.00', undefined, journalTradeId);
+    rebuildPositions(sqlite, freshAccountId, original.execution.instrumentId);
+
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: original.execution.id,
+      symbol,
+      action: 'sell_short',
+      quantity: '100.00',
+      price: '195.00',
+      reason: 'Better entry fill on trade-linked short',
+    });
+
+    // Result mappings carry the linkage
+    expect(result.reversalExecution.action).toBe('buy_to_cover');
+    expect(result.originalExecution.journalTradeId).toBe(journalTradeId);
+    expect(result.reversalExecution.journalTradeId).toBe(journalTradeId);
+    expect(result.replacementExecution.journalTradeId).toBe(journalTradeId);
+
+    // Persisted rows carry the linkage too
+    const reversal = findAccountingExecutionById(sqlite, result.correction.reversalExecutionId);
+    const replacement = findAccountingExecutionById(sqlite, result.correction.replacementExecutionId);
+    expect(reversal!.journal_trade_id).toBe(journalTradeId);
+    expect(replacement!.journal_trade_id).toBe(journalTradeId);
   });
 });

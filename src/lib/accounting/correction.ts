@@ -348,7 +348,7 @@ export function correctExecution(
       price: originalExecution.price,
       fees: originalExecution.fees,
       idempotencyKey: null, // No public idempotency key for internal reversal
-      journalTradeId: null,
+      journalTradeId: originalExecution.journal_trade_id,
       description: reversalDescription,
       postedAt: reversalPostedAt,
     });
@@ -396,7 +396,7 @@ export function correctExecution(
       price: replacementPrice,
       fees,
       idempotencyKey: null, // No public idempotency key for internal replacement
-      journalTradeId: null,
+      journalTradeId: originalExecution.journal_trade_id,
       description: replacementDescription,
       postedAt: replacementPostedAt,
     });
