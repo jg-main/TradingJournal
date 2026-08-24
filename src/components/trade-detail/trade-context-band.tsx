@@ -12,6 +12,12 @@ interface TradeContextBandProps {
   invalidationCondition?: string | null;
   preTradePlan?: string | null;
   onTradeChanged?: () => Promise<void>;
+  /**
+   * M002-A4: true once the trade has any accepted economic execution history.
+   * The narrative pre-trade context is then historical evidence — rendered
+   * read-only with no edit affordance (the API rejects these fields).
+   */
+  preTradeFrozen?: boolean;
 }
 
 const fields: Array<{ key: ContextField; label: string; placeholder: string }> = [
@@ -31,6 +37,7 @@ export default function TradeContextBand({
   invalidationCondition,
   preTradePlan,
   onTradeChanged,
+  preTradeFrozen = false,
 }: TradeContextBandProps) {
   const values: Record<ContextField, string> = {
     thesis: thesis ?? '',
@@ -41,7 +48,8 @@ export default function TradeContextBand({
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const canEdit = Boolean(tradeId && onTradeChanged);
+  // M002-A4: executed trades render the narrative pre-trade context read-only.
+  const canEdit = Boolean(tradeId && onTradeChanged && !preTradeFrozen);
 
   const startEdit = (field: ContextField) => {
     setEditingField(field);

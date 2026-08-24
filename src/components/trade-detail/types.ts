@@ -28,6 +28,9 @@ export interface Trade {
   thesis: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
+  // M002-A4: true once the trade has any accepted economic execution history;
+  // the complete pre-trade context is then historical evidence (read-only).
+  preTradeFrozen?: boolean;
   openedAt: string | null;
   closedAt: string | null;
   exitNotes: string | null;

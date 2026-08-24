@@ -29,17 +29,18 @@ const updateTradeSchema = z.object({
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-// R019/T02: all planning-geometry fields are frozen once a trade leaves
-// 'planned' status. Open trades manage their active stop exclusively through
-// the Adjust Stop flow (trade_stop_adjustments); closed and deleted trades
-// must keep their historical planning geometry intact. Editing planning
-// fields on a non-planned trade would silently corrupt historical state —
-// e.g. changing direction on an open trade reverses P&L sign, and rewriting
-// the symbol rewrites the executed instrument. A null value is still an
-// update attempt and is rejected. Thesis, invalidationCondition, and
-// preTradePlan remain editable at any status — they are narrative/context
-// fields, not planning geometry.
-const PLANNING_FIELDS = [
+// M002-A4: the COMPLETE pre-trade decision context is historical evidence once
+// the first economic execution exists. R019/T02 froze the planning geometry;
+// A4 extends the same historical-integrity contract to the narrative decision
+// fields (thesis / invalidationCondition / preTradePlan). The freeze trigger is
+// EXECUTION HISTORY (hasTradeExecutionHistory), not derived status — trade
+// status can change through correction, but original pre-trade intent remains
+// immutable once any execution has been accepted. Post-entry learning belongs
+// in management notes / exit notes / lesson / review / mistakes / grade, not in
+// a rewrite of the original plan.
+//
+// One canonical list: geometry + narrative classification + narrative intent.
+const PRE_TRADE_CONTEXT_FIELDS = [
   'direction',
   'symbol',
   'plannedEntry',
@@ -51,7 +52,33 @@ const PLANNING_FIELDS = [
   'setup',
   'sectorId',
   'marketConditionId',
+  'thesis',
+  'invalidationCondition',
+  'preTradePlan',
 ] as const;
+
+/**
+ * Deterministic execution-history predicate (M002-A4).
+ *
+ * True when the trade has an accepted economic execution record. The
+ * repository audit proves every accepted trade fill creates a
+ * trade_executions row (engine + both execution routes) and no production
+ * path deletes them. Historical compatibility also recognizes linked
+ * accounting_executions (journal_trade_id). Status / open quantity / risk
+ * snapshot are NOT the criterion — a legacy executed trade with an
+ * inconsistent stored status must stay frozen, and a genuine planned trade
+ * with no executions must stay editable regardless of derived state.
+ */
+function hasTradeExecutionHistory(sqlite: ReturnType<typeof getSqliteHandle>, tradeId: string): boolean {
+  const journalRow = sqlite
+    .prepare('SELECT 1 FROM trade_executions WHERE trade_id = ? LIMIT 1')
+    .get(tradeId);
+  if (journalRow) return true;
+  const accountingRow = sqlite
+    .prepare('SELECT 1 FROM accounting_executions WHERE journal_trade_id = ? LIMIT 1')
+    .get(tradeId);
+  return Boolean(accountingRow);
+}
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -230,6 +257,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     );
     const workflowPhase = deriveWorkflowPhase(row.status, row.reviewedAt, managementActivity);
 
+    // M002-A4: expose the freeze signal so clients render pre-trade context
+    // read-only instead of presenting controls that can never succeed. Based
+    // on execution history, not derived status.
+    const preTradeFrozen = hasTradeExecutionHistory(getSqliteHandle(), id);
+
     // Metrics returned via nested metrics: TradeMetricsResult — consumers read
     // metrics.realizedPnl, metrics.unrealizedPnl, metrics.returnMetrics, metrics.risk
     return NextResponse.json({
@@ -239,6 +271,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       accountCurrency,
       sectorName,
       workflowPhase,
+      preTradeFrozen,
       metrics,
       // A2: expose risk-snapshot equity provenance (nullable for historical
       // snapshots that predate the provenance migration).
@@ -284,23 +317,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // R019/T02: all planning fields are immutable once a trade leaves
-    // 'planned' status (generalized from the original plannedStop-only freeze).
-    // Editing planning geometry on an open trade would corrupt live state
-    // (direction flip reverses P&L sign; symbol rewrite detaches executions);
-    // on closed/deleted trades it would rewrite history. Null values are still
-    // update attempts and are rejected. Thesis, invalidationCondition, and
-    // preTradePlan are narrative/context fields and stay editable at any
-    // status. The response lists the offending fields for actionable clients.
-    if (existing.status !== 'planned') {
-      const frozenPresent = PLANNING_FIELDS.filter(
+    // M002-A4: the complete pre-trade context (geometry + narrative intent) is
+    // immutable once the trade has ANY accepted economic execution history.
+    // Status is derived state and may change through correction — the freeze
+    // key is execution history. Null values are still update attempts and are
+    // rejected. The whole request is rejected before any mutation (atomic),
+    // listing every offending field for actionable clients.
+    const sqlite = getSqliteHandle();
+    if (hasTradeExecutionHistory(sqlite, id)) {
+      const frozenPresent = PRE_TRADE_CONTEXT_FIELDS.filter(
         (field) => parsed.data[field] !== undefined,
       );
       if (frozenPresent.length > 0) {
         return NextResponse.json(
           {
-            error:
-              'Planning fields can only be changed while the trade is planned.',
+            error: 'Pre-trade context is immutable after execution.',
+            code: 'PRE_TRADE_CONTEXT_FROZEN',
             details: { fields: frozenPresent },
           },
           { status: 400 },

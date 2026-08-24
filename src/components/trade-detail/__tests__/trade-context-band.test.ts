@@ -16,7 +16,9 @@ assert(source.includes('tradeId?: string;') && source.includes('onTradeChanged?:
 assert(source.includes('body: JSON.stringify({ [editingField]: draft.trim() || null })'), 'saves only the field being edited');
 assert(source.includes('aria-label={`${value ? \'Edit\' : \'Add\'} ${field.label}`}'), 'each context field has an accessible local edit or add control');
 assert(source.includes('Save') && source.includes('Cancel') && source.includes('role="alert"'), 'inline editor exposes save, cancel, and error recovery');
+assert(source.includes('preTradeFrozen = false') && source.includes('!preTradeFrozen'), 'M002-A4: the edit affordance is disabled once pre-trade context is frozen (execution history)');
 assert(active.includes('tradeId={trade.id}') && active.includes('onTradeChanged={onTradeChanged}'), 'active trade wires the Context editor to the page refresh owner');
+assert(active.includes('preTradeFrozen={trade.preTradeFrozen}'), 'M002-A4: active trade passes the execution-history freeze signal to the band');
 
 if (failures.length) process.exit(1);
 console.log('\nAll Context field-editing assertions passed.');

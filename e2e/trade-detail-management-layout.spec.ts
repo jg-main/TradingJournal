@@ -176,12 +176,13 @@ test.describe('Active trade detail management layout', () => {
     await expect(details.getByRole('button', { name: 'Adjust Target' })).toBeVisible();
     await expect(assets.getByText('Assets', { exact: true })).toBeVisible();
 
-    await context.getByRole('button', { name: 'Edit Thesis' }).click();
-    const thesisEditor = context.locator('textarea').first();
-    await thesisEditor.fill('Updated thesis is saved from Context.');
-    await context.getByRole('button', { name: 'Save' }).click();
-    await expect(thesisEditor).toHaveCount(0);
-    await expect(context.getByText('Updated thesis is saved from Context.')).toBeVisible();
+    // M002-A4: the complete pre-trade context is frozen historical evidence
+    // once the trade has execution history — the Context band renders the
+    // original thesis read-only with NO edit affordance (previously it
+    // offered in-place thesis rewriting on executed trades).
+    await expect(context.getByText('Thesis', { exact: true })).toBeVisible();
+    await expect(context.getByRole('button', { name: /Edit Thesis/ })).toHaveCount(0);
+    await expect(context.getByText('Initial thesis for the management layout.')).toBeVisible();
 
     await page.screenshot({
       path: testInfo.outputPath('active-trade-management-layout.png'),

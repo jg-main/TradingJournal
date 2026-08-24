@@ -48,6 +48,7 @@ function makeTrade(
     plannedQuantity: null,
     invalidationCondition: null,
     preTradePlan: null,
+    preTradeFrozen: false,
     ...overrides,
   };
 }
@@ -137,7 +138,7 @@ describe('EditTradeDialog — planned trade (editable planning fields)', () => {
     );
 
     expect(
-      screen.queryByText(/Planning fields are locked after first fill/),
+      screen.queryByText(/The complete pre-trade context/),
     ).toBeNull();
     const symbol = stopFieldInput('Symbol');
     expect(symbol.readOnly).toBe(false);
@@ -199,7 +200,7 @@ describe('EditTradeDialog — open trade (read-only historical stop)', () => {
       <EditTradeDialog
         open
         onOpenChange={vi.fn()}
-        trade={makeTrade({ status: 'open' })}
+        trade={makeTrade({ status: 'open', preTradeFrozen: true })}
         onSaved={vi.fn()}
       />,
     );
@@ -226,7 +227,7 @@ describe('EditTradeDialog — open trade (read-only historical stop)', () => {
       <EditTradeDialog
         open
         onOpenChange={vi.fn()}
-        trade={makeTrade({ status: 'open' })}
+        trade={makeTrade({ status: 'open', preTradeFrozen: true })}
         onSaved={vi.fn()}
       />,
     );
@@ -245,13 +246,13 @@ describe('EditTradeDialog — open trade (read-only historical stop)', () => {
       <EditTradeDialog
         open
         onOpenChange={vi.fn()}
-        trade={makeTrade({ status: 'open' })}
+        trade={makeTrade({ status: 'open', preTradeFrozen: true })}
         onSaved={vi.fn()}
       />,
     );
 
     expect(
-      screen.getByText(/Planning fields are locked after first fill/),
+      screen.getByText(/The complete pre-trade context/),
     ).toBeTruthy();
 
     const symbol = stopFieldInput('Symbol');
@@ -273,7 +274,7 @@ describe('EditTradeDialog — open trade (read-only historical stop)', () => {
     expect(qty.readOnly).toBe(true);
   });
 
-  it('omits ALL planning fields and sends only narrative fields for open trades', async () => {
+  it('A4: renders narrative fields read-only and sends NO pre-trade fields for a frozen trade', async () => {
     const fetchMock = mockFetchForSave();
     globalThis.fetch = fetchMock;
 
@@ -283,6 +284,7 @@ describe('EditTradeDialog — open trade (read-only historical stop)', () => {
         onOpenChange={vi.fn()}
         trade={makeTrade({
           status: 'open',
+          preTradeFrozen: true,
           thesis: 'Old thesis',
           invalidationCondition: 'Old invalidation',
           preTradePlan: 'Old plan',
@@ -291,32 +293,28 @@ describe('EditTradeDialog — open trade (read-only historical stop)', () => {
       />,
     );
 
-    const thesis = screen.getByPlaceholderText('Why are you taking this trade?');
-    fireEvent.change(thesis, { target: { value: 'Updated thesis' } });
+    // The complete pre-trade context is historical evidence: narrative fields
+    // render read-only (no post-entry edit affordance that can never succeed).
+    const thesis = screen.getByPlaceholderText('Why are you taking this trade?') as HTMLTextAreaElement;
+    expect(thesis.readOnly).toBe(true);
+    expect(thesis.value).toBe('Old thesis');
     const invalidation = screen.getByPlaceholderText(
       'What would invalidate this trade idea?',
-    );
-    fireEvent.change(invalidation, { target: { value: 'Updated invalidation' } });
+    ) as HTMLTextAreaElement;
+    expect(invalidation.readOnly).toBe(true);
+    expect(invalidation.value).toBe('Old invalidation');
     const plan = screen.getByPlaceholderText(
       'Your plan before executing this trade',
-    );
-    fireEvent.change(plan, { target: { value: 'Updated plan' } });
+    ) as HTMLTextAreaElement;
+    expect(plan.readOnly).toBe(true);
+    expect(plan.value).toBe('Old plan');
 
     fireEvent.click(screen.getByText('Save Changes'));
 
     const body = await getPutBody(fetchMock);
-    expect(body.thesis).toBe('Updated thesis');
-    expect(body.invalidationCondition).toBe('Updated invalidation');
-    expect(body.preTradePlan).toBe('Updated plan');
-    // Every planning field is omitted — the backend would reject them with 400.
-    expect(body).not.toHaveProperty('symbol');
-    expect(body).not.toHaveProperty('direction');
-    expect(body).not.toHaveProperty('setup');
-    expect(body).not.toHaveProperty('plannedEntry');
-    expect(body).not.toHaveProperty('plannedStop');
-    expect(body).not.toHaveProperty('plannedTarget1');
-    expect(body).not.toHaveProperty('plannedTarget2');
-    expect(body).not.toHaveProperty('plannedQuantity');
+    // Nothing editable remains for an executed trade — geometry AND narrative
+    // are omitted (the backend would reject any of them with 400).
+    expect(Object.keys(body).filter((k) => k !== 'updatedAt')).toEqual([]);
   });
 });
 
@@ -329,7 +327,7 @@ describe('EditTradeDialog — closed trade (read-only historical stop)', () => {
       <EditTradeDialog
         open
         onOpenChange={vi.fn()}
-        trade={makeTrade({ status: 'closed' })}
+        trade={makeTrade({ status: 'closed', preTradeFrozen: true })}
         onSaved={vi.fn()}
       />,
     );
@@ -361,7 +359,7 @@ describe('EditTradeDialog — closed trade (read-only historical stop)', () => {
       <EditTradeDialog
         open
         onOpenChange={vi.fn()}
-        trade={makeTrade({ status: 'closed' })}
+        trade={makeTrade({ status: 'closed', preTradeFrozen: true })}
         onSaved={vi.fn()}
       />,
     );
@@ -382,7 +380,7 @@ describe('EditTradeDialog — deleted trade (read-only historical stop)', () => 
       <EditTradeDialog
         open
         onOpenChange={vi.fn()}
-        trade={makeTrade({ status: 'deleted' })}
+        trade={makeTrade({ status: 'deleted', preTradeFrozen: true })}
         onSaved={vi.fn()}
       />,
     );
@@ -409,7 +407,7 @@ describe('EditTradeDialog — missing historical stop', () => {
       <EditTradeDialog
         open
         onOpenChange={vi.fn()}
-        trade={makeTrade({ status: 'closed', plannedStop: null })}
+        trade={makeTrade({ status: 'closed', preTradeFrozen: true, plannedStop: null })}
         onSaved={vi.fn()}
       />,
     );

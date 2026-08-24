@@ -37,6 +37,12 @@ export interface EditableTrade {
   plannedQuantity: number | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
+  /**
+   * M002-A4: true once the trade has any accepted economic execution history.
+   * The complete pre-trade context (geometry + thesis + invalidation +
+   * pre-trade plan) is then historical evidence and rendered read-only.
+   */
+  preTradeFrozen: boolean;
 }
 
 interface SetupOption {
@@ -90,12 +96,13 @@ export default function EditTradeDialog({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // R019/T02: all planning-geometry fields (symbol, direction, setup, entry,
-  // stop, targets, quantity) are immutable once a trade leaves 'planned'
-  // status. Non-planned trades (open, closed, deleted) render planning fields
-  // read-only and keep thesis / invalidationCondition / preTradePlan editable.
-  // Mirrors the PUT guard in src/app/api/trades/[id]/route.ts.
-  const planningLocked = trade.status !== 'planned';
+  // M002-A4: the complete pre-trade context is immutable once the trade has
+  // any accepted economic execution history (execution-history predicate from
+  // the API — NOT derived status, so a correction-reopened trade stays
+  // frozen). Planning geometry AND thesis / invalidationCondition /
+  // preTradePlan render read-only and are omitted from the PUT body; the
+  // backend independently enforces the same contract.
+  const planningLocked = trade.preTradeFrozen;
 
   // Fetch setup options when dialog opens
   useEffect(() => {
@@ -127,11 +134,10 @@ export default function EditTradeDialog({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Planning fields are frozen once the trade leaves 'planned' status
-          // (R019 generalized in T02): the backend rejects any planning-field
-          // update for non-planned trades, so omit them client-side entirely.
-          // Only narrative fields (thesis, invalidationCondition,
-          // preTradePlan) remain editable at any status.
+          // The complete pre-trade context (geometry + thesis + invalidation +
+          // pre-trade plan) is frozen once the trade has execution history
+          // (M002-A4): the backend rejects any of these fields for an executed
+          // trade, so omit them client-side entirely.
           ...(planningLocked
             ? {}
             : {
@@ -143,10 +149,10 @@ export default function EditTradeDialog({
                 plannedTarget1: plannedTarget1 ? parseFloat(plannedTarget1) : null,
                 plannedTarget2: plannedTarget2 ? parseFloat(plannedTarget2) : null,
                 plannedQuantity: plannedQuantity ? parseFloat(plannedQuantity) : null,
+                thesis: thesis.trim() || null,
+                invalidationCondition: invalidationCondition.trim() || null,
+                preTradePlan: preTradePlan.trim() || null,
               }),
-          thesis: thesis.trim() || null,
-          invalidationCondition: invalidationCondition.trim() || null,
-          preTradePlan: preTradePlan.trim() || null,
         }),
       });
 
@@ -207,9 +213,10 @@ export default function EditTradeDialog({
 
           {planningLocked && (
             <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-              Planning fields are locked after first fill. Only narrative
-              details (thesis, invalidation condition, pre-trade plan) can be
-              updated.
+              The complete pre-trade context (planning geometry, thesis,
+              invalidation condition, pre-trade plan) is frozen historical
+              evidence after the first fill. Post-entry notes belong in exit
+              notes, lesson, and review.
             </div>
           )}
 
@@ -411,7 +418,8 @@ export default function EditTradeDialog({
             />
           </div>
 
-          {/* Thesis */}
+          {/* Thesis — pre-trade rationale; frozen once the trade has execution
+              history (M002-A4). Review discusses it; it is never rewritten. */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">
               Thesis
@@ -419,14 +427,17 @@ export default function EditTradeDialog({
             <textarea
               rows={2}
               placeholder="Why are you taking this trade?"
-              value={thesis}
+              value={planningLocked ? (trade.thesis ?? '') : thesis}
               onChange={(e) => setThesis(e.target.value)}
-              disabled={submitting}
+              disabled={submitting || planningLocked}
+              readOnly={planningLocked}
+              aria-readonly={planningLocked ? 'true' : undefined}
               className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
             />
           </div>
 
-          {/* Invalidation Condition */}
+          {/* Invalidation Condition — records what would prove the idea wrong
+              BEFORE the outcome is known; frozen after execution. */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">
               Invalidation Condition
@@ -434,14 +445,18 @@ export default function EditTradeDialog({
             <textarea
               rows={2}
               placeholder="What would invalidate this trade idea?"
-              value={invalidationCondition}
+              value={planningLocked ? (trade.invalidationCondition ?? '') : invalidationCondition}
               onChange={(e) => setInvalidationCondition(e.target.value)}
-              disabled={submitting}
+              disabled={submitting || planningLocked}
+              readOnly={planningLocked}
+              aria-readonly={planningLocked ? 'true' : undefined}
               className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
             />
           </div>
 
-          {/* Pre-Trade Plan */}
+          {/* Pre-Trade Plan — intended management before execution; actual
+              management is the execution/adjustment stream. Frozen after
+              execution so plan vs actual stays distinguishable. */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">
               Pre-Trade Plan
@@ -449,9 +464,11 @@ export default function EditTradeDialog({
             <textarea
               rows={2}
               placeholder="Your plan before executing this trade"
-              value={preTradePlan}
+              value={planningLocked ? (trade.preTradePlan ?? '') : preTradePlan}
               onChange={(e) => setPreTradePlan(e.target.value)}
-              disabled={submitting}
+              disabled={submitting || planningLocked}
+              readOnly={planningLocked}
+              aria-readonly={planningLocked ? 'true' : undefined}
               className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 resize-none"
             />
           </div>

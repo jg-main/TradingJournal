@@ -22,12 +22,15 @@ import * as schema from '@/db/schema';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
 
-// R019/T02: planning-geometry fields frozen once a trade leaves 'planned'
-// status (mirrors the PUT route guard in src/app/api/trades/[id]/route.ts).
-const PLANNING_FIELDS = [
+// M002-A4: the complete pre-trade context (geometry + narrative intent) is
+// frozen once the trade has ANY accepted economic execution history — the
+// freeze key is execution history, not derived status (mirrors the PUT route
+// guard in src/app/api/trades/[id]/route.ts).
+const PRE_TRADE_CONTEXT_FIELDS = [
   'direction', 'symbol', 'plannedEntry', 'plannedStop',
   'plannedTarget1', 'plannedTarget2', 'plannedQuantity',
   'setupId', 'setup', 'sectorId', 'marketConditionId',
+  'thesis', 'invalidationCondition', 'preTradePlan',
 ];
 
 let passed = 0;
@@ -446,16 +449,32 @@ function doPutTrade(id: string, body: Record<string, unknown>): { status: number
       return { status: 404, data: { error: 'Trade not found' } };
     }
 
-    // R019/T02: all planning fields are immutable once a trade leaves
-    // 'planned' status (generalized from the original plannedStop-only
-    // freeze). Null values are still update attempts and are rejected.
-    if (existing.status !== 'planned') {
-      const frozenPresent = PLANNING_FIELDS.filter((f) => body[f] !== undefined);
+    // M002-A4: the complete pre-trade context (geometry + thesis +
+    // invalidation + pre-trade plan) is immutable once the trade has any
+    // accepted economic execution history. Null values are still update
+    // attempts and are rejected. The whole request is rejected before any
+    // mutation (atomic), listing every offending field.
+    const hasExecHistory = Boolean(
+      db.select().from(schema.tradeExecutions).where(eq(schema.tradeExecutions.tradeId, id)).get(),
+    ) || (() => {
+      // Historical-compatibility fallback (accounting_executions linkage).
+      // Guarded: this harness's hand-rolled schema has no accounting table.
+      try {
+        return Boolean(
+          db.select().from(schema.accountingExecutions).where(eq(schema.accountingExecutions.journalTradeId, id)).get(),
+        );
+      } catch {
+        return false;
+      }
+    })();
+    if (hasExecHistory) {
+      const frozenPresent = PRE_TRADE_CONTEXT_FIELDS.filter((f) => body[f] !== undefined);
       if (frozenPresent.length > 0) {
         return {
           status: 400,
           data: {
-            error: 'Planning fields can only be changed while the trade is planned.',
+            error: 'Pre-trade context is immutable after execution.',
+            code: 'PRE_TRADE_CONTEXT_FROZEN',
             details: { fields: frozenPresent },
           },
         };
@@ -612,6 +631,24 @@ function seedTrade(overrides: Record<string, unknown> = {}) {
     })
     .run();
   return db.select().from(schema.trades).where(eq(schema.trades.id, id)).get() as Record<string, unknown>;
+}
+
+/** Seed a canonical trade_executions row (M002-A4 execution-history evidence). */
+function seedExecution(tradeId: string, overrides: Record<string, unknown> = {}) {
+  const now = new Date().toISOString();
+  db.insert(schema.tradeExecutions)
+    .values({
+      id: randomUUID(),
+      tradeId,
+      action: 'buy',
+      quantity: 100,
+      price: 150.0,
+      fees: 0,
+      executedAt: now,
+      createdAt: now,
+      ...overrides,
+    })
+    .run();
 }
 
 function seedWatchlistItem(overrides: Record<string, unknown> = {}) {
@@ -1352,13 +1389,14 @@ console.log('\n22. PUT rejects plannedStop for an open trade:');
     status: 'open',
     plannedStop: 605.02,
   });
+  seedExecution(trade.id as string); // accepted first fill → pre-trade context frozen
 
   const result = doPutTrade(trade.id as string, { plannedStop: 590.0 });
 
   assert(result.status === 400, 'returns 400');
   const data = result.data as { error: string; details: { fields: string[] } };
   assert(
-    data.error === 'Planning fields can only be changed while the trade is planned.',
+    data.error === 'Pre-trade context is immutable after execution.',
     'error message explains lifecycle restriction',
   );
   assertEqual(JSON.stringify(data.details.fields), JSON.stringify(['plannedStop']), 'details.fields names plannedStop');
@@ -1382,6 +1420,7 @@ console.log('\n23. PUT rejects null plannedStop for an open trade:');
     status: 'open',
     plannedStop: 100.0,
   });
+  seedExecution(trade.id as string);
 
   const result = doPutTrade(trade.id as string, { plannedStop: null });
 
@@ -1394,9 +1433,9 @@ console.log('\n23. PUT rejects null plannedStop for an open trade:');
   assertEqual(row.plannedStop, 100.0, 'plannedStop not cleared in DB');
 }
 
-// ── 24. PUT: Open trade still updatable on other fields ────────────────
+// ── 24. PUT: A4 — open trade WITH execution history rejects thesis ─────
 
-console.log('\n24. PUT allows other fields on an open trade (no plannedStop):');
+console.log('\n24. PUT rejects thesis for an open trade with execution history (A4):');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
@@ -1404,15 +1443,23 @@ console.log('\n24. PUT allows other fields on an open trade (no plannedStop):');
     accountId: 'test-account-id',
     status: 'open',
     plannedStop: 605.02,
-    thesis: 'Old thesis',
+    thesis: 'Original thesis',
   });
+  seedExecution(trade.id as string);
 
-  const result = doPutTrade(trade.id as string, { thesis: 'Updated thesis' });
+  const result = doPutTrade(trade.id as string, { thesis: 'Hindsight thesis' });
 
-  assert(result.status === 200, 'returns 200');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.thesis, 'Updated thesis', 'thesis is updated');
-  assertEqual(data.plannedStop, 605.02, 'plannedStop preserved');
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as { error: string; code: string; details: { fields: string[] } };
+  assertEqual(data.error, 'Pre-trade context is immutable after execution.', 'frozen-context error message');
+  assertEqual(data.code, 'PRE_TRADE_CONTEXT_FROZEN', 'stable frozen-context code');
+  assertEqual(JSON.stringify(data.details.fields), JSON.stringify(['thesis']), 'details.fields names thesis');
+  const row = db
+    .select()
+    .from(schema.trades)
+    .where(eq(schema.trades.id, trade.id as string))
+    .get() as Record<string, unknown>;
+  assertEqual(row.thesis, 'Original thesis', 'persisted thesis unchanged');
 }
 
 // ── 25. PUT: plannedStop still allowed for planned trades ────────────
@@ -1443,6 +1490,7 @@ console.log('\n26. PUT rejects plannedStop for a closed trade:');
     status: 'closed',
     plannedStop: 20.0,
   });
+  seedExecution(closed.id as string);
 
   const result = doPutTrade(closed.id as string, { plannedStop: 21.5 });
 
@@ -1450,7 +1498,7 @@ console.log('\n26. PUT rejects plannedStop for a closed trade:');
   const data = result.data as { error: string };
   assertEqual(
     data.error,
-    'Planning fields can only be changed while the trade is planned.',
+    'Pre-trade context is immutable after execution.',
     'error message matches generalized lifecycle message',
   );
   const row = db
@@ -1472,6 +1520,7 @@ console.log('\n27. PUT rejects null plannedStop for a closed trade:');
     status: 'closed',
     plannedStop: 20.0,
   });
+  seedExecution(closed.id as string);
 
   const result = doPutTrade(closed.id as string, { plannedStop: null });
 
@@ -1495,6 +1544,7 @@ console.log('\n28. PUT rejects plannedStop for a deleted trade:');
     status: 'deleted',
     plannedStop: 30.0,
   });
+  seedExecution(deleted.id as string); // legacy executed trade — history still frozen
 
   const result = doPutTrade(deleted.id as string, { plannedStop: 31.0 });
 
@@ -1502,7 +1552,7 @@ console.log('\n28. PUT rejects plannedStop for a deleted trade:');
   const data = result.data as { error: string };
   assertEqual(
     data.error,
-    'Planning fields can only be changed while the trade is planned.',
+    'Pre-trade context is immutable after execution.',
     'error message matches generalized lifecycle message',
   );
   const row = db
@@ -1524,12 +1574,13 @@ console.log('\n29. PUT rejects direction change for an open trade:');
     status: 'open',
     direction: 'long',
   });
+  seedExecution(trade.id as string);
 
   const result = doPutTrade(trade.id as string, { direction: 'short' });
 
   assert(result.status === 400, 'returns 400 for direction edit on open trade');
   const data = result.data as { error: string; details: { fields: string[] } };
-  assertEqual(data.error, 'Planning fields can only be changed while the trade is planned.', 'generalized lifecycle error');
+  assertEqual(data.error, 'Pre-trade context is immutable after execution.', 'generalized lifecycle error');
   assertEqual(JSON.stringify(data.details.fields), JSON.stringify(['direction']), 'details.fields names direction');
   const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
   assertEqual(row.direction, 'long', 'direction unchanged in DB — P&L sign cannot be flipped retroactively');
@@ -1542,6 +1593,7 @@ console.log('\n30. PUT rejects symbol change for an open trade:');
   cleanup();
   seedAccount({ id: 'test-account-id' });
   const trade = seedTrade({ accountId: 'test-account-id', status: 'open', symbol: 'AAPL' });
+  seedExecution(trade.id as string);
 
   const result = doPutTrade(trade.id as string, { symbol: 'MSFT' });
   assert(result.status === 400, 'returns 400 for symbol edit on open trade');
@@ -1559,6 +1611,7 @@ console.log('\n31. PUT rejects setup change for an open trade:');
   seedAccount({ id: 'test-account-id' });
   const lookup = seedLookupValue({ type: 'setup', value: 'breakout' });
   const trade = seedTrade({ accountId: 'test-account-id', status: 'open', setupId: null });
+  seedExecution(trade.id as string);
 
   const byName = doPutTrade(trade.id as string, { setup: 'breakout' });
   assert(byName.status === 400, 'returns 400 for setup (name) edit on open trade');
@@ -1586,6 +1639,7 @@ console.log('\n32. PUT rejects entry, target, and quantity changes for an open t
     plannedTarget2: 170,
     plannedQuantity: 100,
   });
+  seedExecution(trade.id as string);
 
   const entry = doPutTrade(trade.id as string, { plannedEntry: 155 });
   assert(entry.status === 400, 'returns 400 for plannedEntry edit on open trade');
@@ -1611,6 +1665,7 @@ console.log('\n33. PUT rejects sectorId and marketConditionId for an open trade:
   cleanup();
   seedAccount({ id: 'test-account-id' });
   const trade = seedTrade({ accountId: 'test-account-id', status: 'open' });
+  seedExecution(trade.id as string);
 
   const sector = doPutTrade(trade.id as string, { sectorId: '00000000-0000-0000-0000-000000000001' });
   assert(sector.status === 400, 'returns 400 for sectorId edit on open trade');
@@ -1621,32 +1676,38 @@ console.log('\n33. PUT rejects sectorId and marketConditionId for an open trade:
   assertEqual(JSON.stringify((mkt.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['marketConditionId']), 'details.fields names marketConditionId');
 }
 
-// ── 34. PUT: Narrative fields stay editable on open trade ────────────
+// ── 34. PUT: A4 — narrative fields rejected individually after execution ──
 
-console.log('\n34. PUT allows narrative fields (thesis, invalidation, preTradePlan) on open trade:');
+console.log('\n34. PUT rejects thesis, invalidationCondition, preTradePlan individually (A4):');
 {
   cleanup();
   seedAccount({ id: 'test-account-id' });
   const trade = seedTrade({
     accountId: 'test-account-id',
     status: 'open',
-    thesis: 'Old thesis',
-    invalidationCondition: 'Old invalidation',
-    preTradePlan: 'Old plan',
+    thesis: 'Original thesis',
+    invalidationCondition: 'Original invalidation',
+    preTradePlan: 'Original plan',
   });
+  seedExecution(trade.id as string);
 
-  const result = doPutTrade(trade.id as string, {
-    thesis: 'Updated thesis',
-    invalidationCondition: 'Updated invalidation',
-    preTradePlan: 'Updated plan',
-  });
+  const t = doPutTrade(trade.id as string, { thesis: 'Hindsight thesis' });
+  assert(t.status === 400, 'returns 400 for thesis edit after execution');
+  assertEqual(JSON.stringify((t.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['thesis']), 'details.fields names thesis');
 
-  assert(result.status === 200, 'returns 200 for narrative field edits on open trade');
-  const data = result.data as Record<string, unknown>;
-  assertEqual(data.thesis, 'Updated thesis', 'thesis updated on open trade');
-  assertEqual(data.invalidationCondition, 'Updated invalidation', 'invalidationCondition updated on open trade');
-  assertEqual(data.preTradePlan, 'Updated plan', 'preTradePlan updated on open trade');
-  assertEqual(data.symbol, 'AAPL', 'planning geometry untouched');
+  const i = doPutTrade(trade.id as string, { invalidationCondition: 'Hindsight invalidation' });
+  assert(i.status === 400, 'returns 400 for invalidationCondition edit after execution');
+  assertEqual(JSON.stringify((i.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['invalidationCondition']), 'details.fields names invalidationCondition');
+
+  const p = doPutTrade(trade.id as string, { preTradePlan: 'Hindsight plan' });
+  assert(p.status === 400, 'returns 400 for preTradePlan edit after execution');
+  assertEqual(JSON.stringify((p.data as { details: { fields: string[] } }).details.fields), JSON.stringify(['preTradePlan']), 'details.fields names preTradePlan');
+
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.thesis, 'Original thesis', 'persisted thesis unchanged');
+  assertEqual(row.invalidationCondition, 'Original invalidation', 'persisted invalidation unchanged');
+  assertEqual(row.preTradePlan, 'Original plan', 'persisted pre-trade plan unchanged');
+  assertEqual(row.symbol, 'AAPL', 'planning geometry untouched');
 }
 
 // ── 35. PUT: All planning fields still editable while planned ────────
@@ -1699,11 +1760,141 @@ console.log('\n36. PUT rejects null planning fields for an open trade (still an 
     status: 'open',
     plannedEntry: 150,
   });
+  seedExecution(trade.id as string);
 
   const result = doPutTrade(trade.id as string, { plannedEntry: null });
   assert(result.status === 400, 'returns 400 (null is still an update attempt)');
   const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
   assertEqual(row.plannedEntry, 150, 'plannedEntry not cleared in DB');
+}
+
+// ── 37. A4 §26: Planned trade — narrative fields remain editable ──────
+
+console.log('\n37. PUT allows thesis/invalidation/preTradePlan for a planned trade (no execution):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'planned',
+    thesis: 'A',
+    invalidationCondition: 'B',
+    preTradePlan: 'C',
+  });
+
+  const result = doPutTrade(trade.id as string, {
+    thesis: 'A2',
+    invalidationCondition: 'B2',
+    preTradePlan: 'C2',
+  });
+
+  assert(result.status === 200, 'returns 200');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.thesis, 'A2', 'thesis updated pre-entry');
+  assertEqual(data.invalidationCondition, 'B2', 'invalidationCondition updated pre-entry');
+  assertEqual(data.preTradePlan, 'C2', 'preTradePlan updated pre-entry');
+}
+
+// ── 38. A4 §28: Combined forbidden request rejected atomically ────────
+
+console.log('\n38. PUT rejects a combined pre-trade rewrite atomically (zero mutation):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    thesis: 'Original thesis',
+    invalidationCondition: 'Original invalidation',
+    preTradePlan: 'Original plan',
+    plannedStop: 95,
+  });
+  seedExecution(trade.id as string);
+
+  const result = doPutTrade(trade.id as string, {
+    thesis: 'rewrite',
+    invalidationCondition: 'rewrite',
+    preTradePlan: 'rewrite',
+    plannedStop: 999,
+  });
+
+  assert(result.status === 400, 'returns 400');
+  const data = result.data as { error: string; code: string; details: { fields: string[] } };
+  assertEqual(data.code, 'PRE_TRADE_CONTEXT_FROZEN', 'stable code');
+  assertEqual(
+    JSON.stringify(data.details.fields),
+    JSON.stringify(['plannedStop', 'thesis', 'invalidationCondition', 'preTradePlan']), // canonical PRE_TRADE_CONTEXT_FIELDS order
+    'details lists ALL offending fields',
+  );
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.thesis, 'Original thesis', 'thesis untouched');
+  assertEqual(row.invalidationCondition, 'Original invalidation', 'invalidation untouched');
+  assertEqual(row.preTradePlan, 'Original plan', 'plan untouched');
+  assertEqual(row.plannedStop, 95, 'plannedStop untouched');
+}
+
+// ── 39. A4 §30/§32: Execution history freezes even with inconsistent status ──
+
+console.log('\n39. PUT freeze is keyed on execution history, not status (legacy planned + executions):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  // Legacy/inconsistent state: stored status 'planned' but executions exist.
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'planned',
+    thesis: 'Original thesis',
+  });
+  seedExecution(trade.id as string);
+
+  const result = doPutTrade(trade.id as string, { thesis: 'Hindsight thesis' });
+  assert(result.status === 400, 'returns 400 — history exists despite status planned');
+  assertEqual((result.data as { code: string }).code, 'PRE_TRADE_CONTEXT_FROZEN', 'stable code');
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.thesis, 'Original thesis', 'thesis unchanged');
+}
+
+// ── 40. A4 §31: Correction-reopened trade stays frozen ────────────────
+
+console.log('\n40. PUT freeze survives a correction-reopen lifecycle change (closed -> open):');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  // The trade executed, closed, then an execution correction reopened it:
+  // derived status is 'open' again but execution history exists.
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    thesis: 'Original thesis',
+    openedAt: '2026-01-05T10:00:00.000Z',
+  });
+  seedExecution(trade.id as string, { executedAt: '2026-01-05T10:00:00.000Z' });
+
+  const result = doPutTrade(trade.id as string, { thesis: 'Hindsight thesis' });
+  assert(result.status === 400, 'returns 400 — reopened trade stays frozen');
+  assertEqual((result.data as { code: string }).code, 'PRE_TRADE_CONTEXT_FROZEN', 'stable code');
+  const row = db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+  assertEqual(row.thesis, 'Original thesis', 'thesis unchanged after reopen');
+}
+
+// ── 41. A4 §33: Genuine planned trade with a stray status stays editable ──
+
+console.log('\n41. PUT allows editing a trade with no execution history even if status is inconsistent:');
+{
+  cleanup();
+  seedAccount({ id: 'test-account-id' });
+  // No executions, no linked accounting executions — derived status 'open'
+  // is stray/malformed, but edit eligibility derives from economic history.
+  const trade = seedTrade({
+    accountId: 'test-account-id',
+    status: 'open',
+    thesis: 'A',
+  });
+
+  const result = doPutTrade(trade.id as string, { thesis: 'B' });
+  assert(result.status === 200, 'returns 200 — no execution history, still editable');
+  const data = result.data as Record<string, unknown>;
+  assertEqual(data.thesis, 'B', 'thesis updated');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

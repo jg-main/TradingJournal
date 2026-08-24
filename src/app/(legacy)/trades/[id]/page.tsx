@@ -49,6 +49,11 @@ interface Trade {
   thesis: string | null;
   invalidationCondition: string | null;
   preTradePlan: string | null;
+  // M002-A4: true once the trade has any accepted economic execution history;
+  // the complete pre-trade context is then read-only (EditTradeDialog uses
+  // this instead of deriving from status, so a correction-reopened trade
+  // stays frozen).
+  preTradeFrozen?: boolean;
   openedAt: string | null;
   closedAt: string | null;
   exitNotes: string | null;
@@ -708,6 +713,7 @@ export default function TradeDetailPage() {
           plannedQuantity: trade.plannedQuantity,
           invalidationCondition: trade.invalidationCondition,
           preTradePlan: trade.preTradePlan,
+          preTradeFrozen: trade.preTradeFrozen ?? trade.status !== 'planned',
         }}
         onSaved={() => {
           setRefetchTrigger((n) => n + 1);

@@ -128,6 +128,7 @@ export default function ActivePhaseView({
             thesis={trade.thesis}
             invalidationCondition={trade.invalidationCondition}
             preTradePlan={trade.preTradePlan}
+            preTradeFrozen={trade.preTradeFrozen}
             onTradeChanged={onTradeChanged}
           />
         </TradeDetailPanel>
