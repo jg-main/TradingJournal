@@ -332,6 +332,11 @@ export function ExecuteDialog({
         fees: parseFloat(form.fees) || 0,
       };
 
+      // One idempotency key per submit attempt (S03): retrying the same
+      // bulk request with the same key is replay-safe through the P1 adapter
+      // (derives :entry/:exit1/:exit2 keys) and the canonical engine.
+      body.idempotencyKey = crypto.randomUUID();
+
       if (form.stopPrice.trim()) {
         body.stopPrice = parseFloat(form.stopPrice);
       }

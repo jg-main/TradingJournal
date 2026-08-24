@@ -190,6 +190,10 @@ export function AddFillDialog({
         fees: parseFloat(form.fees) || 0,
       };
 
+      // One idempotency key per submit attempt (S03): the engine replays
+      // retries with the same key instead of creating a duplicate execution.
+      body.idempotencyKey = crypto.randomUUID();
+
       if (form.executedAt.trim()) {
         body.executedAt = form.executedAt;
       }
