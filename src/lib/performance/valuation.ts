@@ -261,6 +261,8 @@ export function deriveValuationPosition(
     realizedPnl: CanonicalDecimal;
     realizedFees: CanonicalDecimal;
     realizedNetPnl: CanonicalDecimal;
+    /** M002-A6: remaining opening fees on still-open quantity. */
+    openFees: CanonicalDecimal;
   },
   mark: {
     price: CanonicalDecimal;
@@ -282,7 +284,7 @@ export function deriveValuationPosition(
   const markedValue = mark?.priceMicros !== undefined
     ? computeMarkedValueFromMarkMicros(position.quantity, mark.priceMicros)
     : computeMarkedValue(position.quantity, marketPrice);
-  const unrealizedPnl = mark?.priceMicros !== undefined
+  const grossUnrealizedPnl = mark?.priceMicros !== undefined
     ? computeUnrealizedPnlFromMarkMicros(
         position.averageCost,
         mark.priceMicros,
@@ -296,6 +298,15 @@ export function deriveValuationPosition(
         position.direction,
       );
 
+  // M002-A6: net unrealized = gross unrealized - remaining opening fees.
+  // Open fees were paid in cash at entry; they are never double-counted in
+  // NAV (NAV already reflects the cash outflow), but they explain the
+  // mark-vs-cost P&L for the still-open quantity.
+  const openFees = position.openFees;
+  const netUnrealizedPnl = grossUnrealizedPnl != null
+    ? subtractDecimal(grossUnrealizedPnl, openFees)
+    : null;
+
   return {
     instrumentId: position.instrumentId,
     direction: position.direction,
@@ -305,10 +316,13 @@ export function deriveValuationPosition(
     realizedPnl: position.realizedPnl,
     realizedFees: position.realizedFees,
     realizedNetPnl: position.realizedNetPnl,
+    openFees,
     markPrice: marketPrice,
     markStatus,
     markedValue,
-    unrealizedPnl,
+    grossUnrealizedPnl,
+    unrealizedPnl: netUnrealizedPnl,
+    netUnrealizedPnl,
     markTimestamp: mark?.timestamp ?? null,
     markSource: mark?.source ?? null,
     markAgeMinutes: markAge,

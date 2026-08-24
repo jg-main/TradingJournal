@@ -682,7 +682,8 @@ describe('cross-cutting integrity — trade workflow', () => {
   }
 
   it('buy execution reduces cash and opens a position that marks to market', () => {
-    // Buy 100 AAPL @ 150.75 → consideration 15075.00, cash 20000 - 15075 = 4925.
+    // M002-A6: gross consideration AND the execution fee both move cash.
+    // Buy 100 AAPL @ 150.75 fee 5.00 → cash 20000 - 15075 - 5 = 4920.
     const buy = postExecution({
       accountId: ctx.accountId,
       symbol: 'AAPL',
@@ -695,18 +696,23 @@ describe('cross-cutting integrity — trade workflow', () => {
     });
     expect(buy.execution.action).toBe('buy');
     expect(buy.execution.quantity).toBe('100.00');
+    // A fee-bearing execution carries its fee cash event.
+    expect(buy.feeEventWithPostings).not.toBeNull();
 
     instrumentId = buy.execution.instrumentId;
 
-    // ── Ledger effect: gross consideration posted, ledger stays balanced ──
+    // ── Ledger effect: gross consideration + fee event, ledger balanced ──
     const cashImpact = computeAccountCashImpact(ctx.sqlite, ctx.accountId);
-    // Running total including opening: 20000 - 15075 (buy) = 4925.00.
-    expect(cashImpact.netCashImpact).toBe('4925.00');
+    // Running total including opening: 20000 - 15075 (buy) - 5 (fee) = 4920.00.
+    expect(cashImpact.netCashImpact).toBe('4920.00');
 
     const ledger = composeLedgerProjection(ctx);
     const execRows = ledger.events.filter((e) => e.eventType === 'trade_execution');
     expect(execRows).toHaveLength(1);
     expect(execRows[0].cashImpact).toBe('-15075.00');
+    const feeRows = ledger.events.filter((e) => e.eventType === 'fee');
+    expect(feeRows).toHaveLength(1);
+    expect(feeRows[0].cashImpact).toBe('-5.00');
     assertLedgerInvariants(ctx, 'buy execution');
 
     // ── FIFO position projection ──────────────────────────────────────
@@ -734,16 +740,18 @@ describe('cross-cutting integrity — trade workflow', () => {
     const proj = findAccountPerformance(ctx.sqlite, ctx.accountId);
     expect(proj).toBeDefined();
     if (!proj) return;
-    expect(proj.net_cash).toBe('4925.00');
+    // M002-A6: fee deducted in cash (4920); open fee (5.00) reduces net
+    // unrealized P&L. NAV = cash + marked positions.
+    expect(proj.net_cash).toBe('4920.00');
     expect(proj.marked_positions).toBe('15500.00'); // 100 × 155.00
-    expect(proj.nav).toBe('20425.00'); // 4925 + 15500
-    expect(proj.unrealized_pnl).toBe('425.00'); // (155 - 150.75) × 100
+    expect(proj.nav).toBe('20420.00'); // 4920 + 15500
+    expect(proj.unrealized_pnl).toBe('420.00'); // (155 - 150.75) × 100 - 5 open fee
     expect(proj.realized_pnl).toBe('0.00');
-    expect(proj.total_pnl).toBe('425.00');
+    expect(proj.total_pnl).toBe('420.00');
     expect(proj.gross_exposure).toBe('15500.00');
     expect(proj.net_exposure).toBe('15500.00');
     expect(proj.realized_fees).toBe('0.00');
-    expect(proj.high_water_mark).toBe('20425.00');
+    expect(proj.high_water_mark).toBe('20420.00');
     expect(proj.drawdown).toBe('0.00');
   });
 
@@ -763,10 +771,9 @@ describe('cross-cutting integrity — trade workflow', () => {
 
     // ── Cash ──────────────────────────────────────────────────────────
     const cashImpact = computeAccountCashImpact(ctx.sqlite, ctx.accountId);
-    // Running total including opening: 20000 - 15075 (buy) + 16000 (sell)
-    // = 20925.00. (Ledger records gross consideration; fees are a
-    // position-level FIFO concern, so they do not move ledger cash.)
-    expect(cashImpact.netCashImpact).toBe('20925.00');
+    // M002-A6: fees move cash. 20000 - 15075 - 5 (buy fee) + 16000 - 6
+    // (sell fee) = 20914.00.
+    expect(cashImpact.netCashImpact).toBe('20914.00');
 
     // ── Position closed ───────────────────────────────────────────────
     const position = findAccountPosition(ctx.sqlite, ctx.accountId, instrumentId);
@@ -774,25 +781,27 @@ describe('cross-cutting integrity — trade workflow', () => {
     if (!position) return;
     expect(position.direction).toBeNull();
     expect(position.quantity).toBe('0.00');
-    // Gross: (160 - 150.75) × 100 = 925.00; closing fee 6.00 → net 919.00.
+    // M002-A6: realized fees = allocated opening entry fee (5.00, full close
+    // absorbs the lot's remaining fee) + closing fee (6.00) = 11.00.
+    // Gross: (160 - 150.75) × 100 = 925.00; net = 914.00.
     expect(position.realized_gross_pnl).toBe('925.00');
-    expect(position.realized_fees).toBe('6.00');
-    expect(position.realized_net_pnl).toBe('919.00');
+    expect(position.realized_fees).toBe('11.00');
+    expect(position.realized_net_pnl).toBe('914.00');
 
     // ── Projection: NAV = cash, realized P&L net of closing fees ──────
     const proj = findAccountPerformance(ctx.sqlite, ctx.accountId);
     expect(proj).toBeDefined();
     if (!proj) return;
-    expect(proj.net_cash).toBe('20925.00');
+    expect(proj.net_cash).toBe('20914.00');
     expect(proj.marked_positions).toBe('0.00');
-    expect(proj.nav).toBe('20925.00');
-    expect(proj.realized_pnl).toBe('919.00');
+    expect(proj.nav).toBe('20914.00');
+    expect(proj.realized_pnl).toBe('914.00');
     expect(proj.unrealized_pnl).toBe('0.00');
-    expect(proj.total_pnl).toBe('919.00');
-    expect(proj.realized_fees).toBe('6.00');
+    expect(proj.total_pnl).toBe('914.00');
+    expect(proj.realized_fees).toBe('11.00');
     expect(proj.gross_exposure).toBe('0.00');
     expect(proj.net_exposure).toBe('0.00');
-    expect(proj.high_water_mark).toBe('20925.00');
+    expect(proj.high_water_mark).toBe('20914.00');
     expect(proj.drawdown).toBe('0.00');
 
     // ── Ledger: both executions visible, ledger balanced ──────────────
@@ -815,10 +824,10 @@ describe('cross-cutting integrity — trade workflow', () => {
       grossExposure: proj.gross_exposure,
       netExposure: proj.net_exposure,
     });
-    expect(overview.netCash).toBe('20925.00');
-    expect(overview.nav).toBe('20925.00');
-    expect(overview.realizedPnl).toBe('919.00');
-    expect(overview.realizedFees).toBe('6.00');
+    expect(overview.netCash).toBe('20914.00');
+    expect(overview.nav).toBe('20914.00');
+    expect(overview.realizedPnl).toBe('914.00');
+    expect(overview.realizedFees).toBe('11.00');
   });
 
   it('dashboard-v2 reflects the trade-workflow NAV and P&L', () => {
@@ -826,13 +835,13 @@ describe('cross-cutting integrity — trade workflow', () => {
     expect(dash).toBeDefined();
     if (!dash) return;
     expect(dash.account.id).toBe(ctx.accountId);
-    expect(dash.metrics.cash).toBe('20925.00');
-    expect(dash.metrics.nav).toBe('20925.00');
+    expect(dash.metrics.cash).toBe('20914.00');
+    expect(dash.metrics.nav).toBe('20914.00');
     expect(dash.metrics.markedPositions).toBe('0.00');
-    expect(dash.metrics.realizedPnl).toBe('919.00');
+    expect(dash.metrics.realizedPnl).toBe('914.00');
     expect(dash.metrics.unrealizedPnl).toBe('0.00');
-    expect(dash.metrics.totalPnl).toBe('919.00');
-    expect(dash.metrics.realizedFees).toBe('6.00');
+    expect(dash.metrics.totalPnl).toBe('914.00');
+    expect(dash.metrics.realizedFees).toBe('11.00');
     expect(dash.metrics.grossExposure).toBe('0.00');
     expect(dash.metrics.netExposure).toBe('0.00');
   });
@@ -875,8 +884,9 @@ describe('cross-cutting integrity — trade workflow', () => {
     const proj = findAccountPerformance(ctx.sqlite, ctx.accountId);
     expect(proj).toBeDefined();
     if (!proj) return;
-    expect(proj.net_cash).toBe('20925.00');
-    expect(proj.nav).toBe('20925.00');
+    // M002-A6: both fees deducted in cash (buy 5.00 + sell 6.00).
+    expect(proj.net_cash).toBe('20914.00');
+    expect(proj.nav).toBe('20914.00');
     assertLedgerInvariants(ctx, 'rejected over-close preflight');
   });
 });

@@ -133,6 +133,7 @@ export default defineConfig({
       'src/lib/accounting/decimal.test.ts',
       'src/lib/accounting/__tests__/economic-action.test.ts',
       'src/lib/accounting/__tests__/cash-direction-repair.test.ts',
+      'src/lib/accounting/__tests__/fee-repair.test.ts',
       'src/lib/accounting/legacy-migration.test.ts',
       'src/lib/accounting/legacy-migration-runner.test.ts',
       'src/lib/accounting/posting.test.ts',

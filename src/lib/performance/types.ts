@@ -73,14 +73,27 @@ export interface ValuationPosition {
   realizedFees: CanonicalDecimal;
   /** Aggregate realized net P&L = realizedGrossPnl - realizedFees. */
   realizedNetPnl: CanonicalDecimal;
+  /**
+   * M002-A6: remaining opening execution fees on still-open quantity
+   * (sum of open fifo_lots.allocated_fees). Cash was already paid at entry;
+   * these fees reduce net unrealized P&L until the quantity is closed.
+   */
+  openFees: CanonicalDecimal;
   /** Current mark price per unit, or null if no mark exists. */
   markPrice: CanonicalDecimal | null;
   /** Mark status (fresh, stale, or missing). */
   markStatus: MarkStatus;
   /** Marked-to-market value of the position = quantity × markPrice, or null. */
   markedValue: CanonicalDecimal | null;
-  /** Unrealized P&L for the position, or null if not computable. */
+  /** Gross unrealized P&L (mark vs average cost, no fee adjustment), or null. */
+  grossUnrealizedPnl: CanonicalDecimal | null;
+  /**
+   * Unrealized P&L for the position, or null if not computable.
+   * M002-A6: net economic unrealized P&L = gross - remaining opening fees.
+   */
   unrealizedPnl: CanonicalDecimal | null;
+  /** Net unrealized P&L after remaining opening fees (alias of unrealizedPnl). */
+  netUnrealizedPnl: CanonicalDecimal | null;
   /** ISO-8601 timestamp of the mark, or null if missing. */
   markTimestamp: string | null;
   /** Source of the mark, or null if missing. */

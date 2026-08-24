@@ -30,6 +30,7 @@ import { join } from 'node:path';
 
 import { correctExecution } from './correction';
 import { postExecutionFill } from './execution-posting';
+import { postFinancialEvent } from './posting';
 import { rebuildPositions } from '../positions/rebuild';
 import {
   AccountNotFoundError,
@@ -39,6 +40,7 @@ import {
 } from './errors';
 import {
   findOrCreateInstrument,
+  insertAccountingExecution,
   findAccountingExecutionById,
   findAccountPosition,
   findEventByIdempotencyKey,
@@ -1073,5 +1075,148 @@ describe('correctExecution', () => {
     const position = findAccountPosition(sqlite, freshAccountId, openShort.execution.instrumentId);
     expect(position?.direction).toBe('short');
     expect(position?.quantity).toBe('125.00');
+  });
+
+  it('A6: correcting a fee-bearing execution refunds the original fee and posts the replacement fee once', () => {
+    const { sqlite } = ctx;
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'Fresh Fee Account', now, now);
+
+    const symbol = 'AAPL';
+    // Buy 100 @ 50 fee 10 — postExecutionFill creates the fee cash event (-10).
+    const original = postBuy(sqlite, freshAccountId, symbol, '100.00', '50.00', '10.00');
+    expect(original.feeEventWithPostings).not.toBeNull();
+
+    // Correct to Buy 100 @ 49 fee 7.
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: original.execution.id,
+      symbol,
+      action: 'buy',
+      quantity: '100.00',
+      price: '49.00',
+      fees: '7.00',
+      reason: 'A6 fee test',
+    });
+
+    // Reversal carries the original fee value but is never charged a fee cash
+    // event (correction machinery, not a broker transaction).
+    expect(result.reversalExecution.fees).toBe('10.00');
+    // Replacement posts its own fee cash event (-7).
+    expect(result.replacementExecution.fees).toBe('7.00');
+
+    const feeEvents = sqlite
+      .prepare(
+        `SELECT event_type, description, effect FROM financial_events
+         WHERE account_id = ? ORDER BY posted_at ASC, id ASC`,
+      )
+      .all(freshAccountId) as Array<{ event_type: string; description: string; effect: string | null }>;
+    const cashEvents = feeEvents
+      .map((e) => ({ type: e.event_type, dir: e.effect ? (JSON.parse(e.effect) as { direction: string; amountMicros: number }) : null }))
+      .filter((e) => e.dir && e.dir.direction === 'decrease');
+    // Original gross -5000, original fee -10, replacement gross -4900, replacement fee -7.
+    const feeDecreases = cashEvents.filter((e) => e.type === 'fee');
+    expect(feeDecreases).toHaveLength(2); // original + replacement, never the reversal
+    const refunds = feeEvents.filter((e) => e.event_type === 'manual_adjustment');
+    expect(refunds).toHaveLength(1); // +10 refund for the original fee
+    expect((JSON.parse(refunds[0].effect ?? '{}') as { direction: string; amount: string })).toMatchObject({
+      direction: 'increase',
+    });
+
+    // Effective cash fee impact: -10 (original) +10 (refund) -7 (replacement) = -7.
+    let feeCashMicros = 0;
+    for (const e of feeEvents) {
+      const eff = e.effect ? (JSON.parse(e.effect) as { direction: string; amountMicros: number }) : null;
+      if (!eff) continue;
+      const isExecutionFee = e.event_type === 'fee' || e.description.includes('fee refund');
+      if (!isExecutionFee) continue;
+      feeCashMicros += eff.direction === 'decrease' ? -eff.amountMicros : eff.amountMicros;
+    }
+    expect(feeCashMicros).toBe(-7_000_000);
+
+    // Idempotent refund: a second correction attempt is rejected before any
+    // new fee mutation (already-corrected guard).
+    expect(() =>
+      correctExecution(sqlite, {
+        accountId: freshAccountId,
+        originalExecutionId: original.execution.id,
+        symbol,
+        action: 'buy',
+        quantity: '100.00',
+        price: '49.00',
+        fees: '7.00',
+        reason: 'duplicate',
+      }),
+    ).toThrow();
+  });
+
+  it('A6: pre-A6 correction (original fee with NO fee event) never refunds an unposted fee', () => {
+    const { sqlite } = ctx;
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'Fresh PreA6 Account', now, now);
+
+    const symbol = 'AAPL';
+    // Simulate a PRE-A6 original: fees stored on the execution but NO fee cash
+    // event (insert the accounting row + gross event directly, skipping the
+    // fee event).
+    const instrument = findOrCreateInstrument(sqlite, symbol);
+    const original = insertAccountingExecution(sqlite, {
+      accountId: freshAccountId,
+      instrumentId: instrument.id,
+      action: 'buy',
+      quantity: '100.00',
+      price: '50.00',
+      fees: '10.00',
+      idempotencyKey: null,
+      journalTradeId: null,
+      description: 'Pre-A6 original',
+      postedAt: now,
+    });
+    postFinancialEvent(sqlite, {
+      accountId: freshAccountId,
+      eventType: 'trade_execution',
+      amount: '5000.00',
+      idempotencyKey: `accounting-execution-${original.id}`,
+      description: 'Pre-A6 gross',
+      payload: JSON.stringify({ accountingExecutionId: original.id, action: 'buy', quantity: '100.00', price: '50.00', fees: '10.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'decrease', amount: '5000.00', amountMicros: 5_000_000_000 }),
+      postedAt: now,
+    });
+
+    // Correct to fee 7.
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: original.id,
+      symbol,
+      action: 'buy',
+      quantity: '100.00',
+      price: '49.00',
+      fees: '7.00',
+      reason: 'pre-A6 fee test',
+    });
+
+    // NO refund: the original never posted a fee cash event.
+    const refunds = sqlite
+      .prepare(`SELECT count(*) AS n FROM financial_events WHERE event_type = 'manual_adjustment' AND account_id = ?`)
+      .get(freshAccountId) as { n: number };
+    expect(refunds.n).toBe(0);
+    // Replacement fee event exists (-7).
+    const replacementFee = sqlite
+      .prepare(`SELECT count(*) AS n FROM financial_events WHERE event_type = 'fee' AND account_id = ?`)
+      .get(freshAccountId) as { n: number };
+    expect(replacementFee.n).toBe(1);
+    expect(result.replacementExecution.fees).toBe('7.00');
   });
 });

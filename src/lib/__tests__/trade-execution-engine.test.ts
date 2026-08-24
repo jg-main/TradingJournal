@@ -47,6 +47,8 @@ import { computeTradeMetrics } from '../trade-metrics';
 import { UnsupportedAccountCurrencyError } from '../accounting/errors';
 import { postExecutionFill } from '../accounting/execution-posting';
 import { postFinancialEvent } from '../accounting/posting';
+import { insertValuationMark } from '@/db/accounting-repository';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -231,6 +233,25 @@ function netCash(accountId: string): number {
     .prepare('SELECT net_cash FROM account_performance WHERE account_id = ?')
     .get(accountId) as { net_cash: string } | undefined;
   return row ? Number(row.net_cash) : Number.NaN;
+}
+
+/** Read account_performance.nav / unrealized_pnl / realized_fees / realized_pnl. */
+function perfValue(accountId: string, column: 'nav' | 'unrealized_pnl' | 'realized_pnl' | 'realized_fees' | 'total_pnl'): number {
+  const row = sqlite
+    .prepare(`SELECT ${column} FROM account_performance WHERE account_id = ?`)
+    .get(accountId) as Record<string, string> | undefined;
+  return row ? Number(row[column]) : Number.NaN;
+}
+
+/** Sum of open lot remaining entry fees (fifo_lots.allocated_fees, qty > 0). */
+function openFees(accountId: string): number {
+  const rows = sqlite
+    .prepare(
+      `SELECT allocated_fees FROM fifo_lots
+       WHERE account_id = ? AND remaining_quantity != '0.00'`,
+    )
+    .all(accountId) as Array<{ allocated_fees: string }>;
+  return rows.reduce((sum, r) => sum + Number(r.allocated_fees), 0);
 }
 
 function fill(tradeId: string, overrides: Partial<ExecuteTradeFillInput> = {}): ExecuteTradeFillInput {
@@ -739,6 +760,145 @@ describe('executeTradeFill', () => {
     executeTradeFill(fill(tradeId, { action: 'sell', quantity: 90, price: 60 }), context);
     expect(netCash(accountId)).toBe(11150); // flat
 
+    expect(countRows('account_positions', "account_id = ? AND quantity != '0.00'", accountId)).toBe(0);
+  });
+
+  it('A6 §55: long entry fee reduces cash and NAV immediately; open fee reduces net unrealized', () => {
+    // Opening 10000, buy 100 @ 50 fee 10, mark 50.
+    const accountId = seedAccount({ startingBalance: null, maxRiskPerTradePct: 10 });
+    seedSettings(12345, 10);
+    postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '10000.00',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: '10000.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: '10000.00', amountMicros: 10_000_000_000 }),
+      postedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const tradeId = seedTrade(accountId, { plannedStop: 45 });
+
+    const result = executeTradeFill(fill(tradeId, { quantity: 100, price: 50, fees: 10 }), context);
+
+    // Gross execution event -5000, fee event -10 → net cash 4990.
+    expect(netCash(accountId)).toBe(4990);
+    expect(countRows('financial_events', "account_id = ? AND event_type = 'fee'", accountId)).toBe(1);
+    expect(result.accountingExecution!.fees).toBe('10.00');
+
+    // Mark at 50: gross unrealized 0, open fee 10, net unrealized -10, NAV 9990.
+    insertValuationMark(sqlite, {
+      accountId,
+      instrumentId: result.accountingExecution!.instrument_id,
+      price: '50.00',
+      priceMicros: 50_000_000,
+      source: 'user',
+      markTimestamp: new Date().toISOString(),
+    });
+    const perf = rebuildAccountPerformance(sqlite, accountId);
+    expect(perf.success).toBe(true);
+    expect(openFees(accountId)).toBe(10);
+    expect(perfValue(accountId, 'nav')).toBe(9990); // 4990 + 5000
+    expect(perfValue(accountId, 'unrealized_pnl')).toBe(-10);
+  });
+
+  it('A6 §56: full long round trip with fees — cash, NAV, realized P&L all agree (10,995)', () => {
+    const accountId = seedAccount({ startingBalance: null, maxRiskPerTradePct: 10 });
+    seedSettings(12345, 10);
+    postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '10000.00',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: '10000.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: '10000.00', amountMicros: 10_000_000_000 }),
+      postedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const tradeId = seedTrade(accountId, { plannedStop: 45 });
+
+    executeTradeFill(fill(tradeId, { quantity: 100, price: 50, fees: 2 }), context);
+    executeTradeFill(fill(tradeId, { action: 'sell', quantity: 100, price: 60, fees: 3 }), context);
+
+    expect(netCash(accountId)).toBe(10995); // 10000 - 5000 - 2 + 6000 - 3
+    expect(perfValue(accountId, 'nav')).toBe(10995);
+    expect(perfValue(accountId, 'realized_pnl')).toBe(995); // 1000 gross - 5 fees
+    expect(perfValue(accountId, 'realized_fees')).toBe(5);
+    expect(openFees(accountId)).toBe(0);
+  });
+
+  it('A6 §57: full short round trip with fees — symmetric to long (10,995)', () => {
+    const accountId = seedAccount({ startingBalance: null, maxRiskPerTradePct: 10 });
+    seedSettings(12345, 10);
+    postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '10000.00',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: '10000.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: '10000.00', amountMicros: 10_000_000_000 }),
+      postedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 55 });
+
+    executeTradeFill(fill(tradeId, { action: 'sell_short', quantity: 100, price: 50, fees: 2 }), context);
+    executeTradeFill(fill(tradeId, { action: 'buy_to_cover', quantity: 100, price: 40, fees: 3 }), context);
+
+    expect(netCash(accountId)).toBe(10995); // 10000 + 5000 - 2 - 4000 - 3
+    expect(perfValue(accountId, 'nav')).toBe(10995);
+    expect(perfValue(accountId, 'realized_pnl')).toBe(995); // 1000 gross - 5 fees
+    expect(perfValue(accountId, 'realized_fees')).toBe(5);
+  });
+
+  it('A6 §58: partial close allocates entry fee to matched quantity (100/40 scenario)', () => {
+    const accountId = seedAccount({ startingBalance: null, maxRiskPerTradePct: 10 });
+    seedSettings(12345, 10);
+    postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '10000.00',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: '10000.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: '10000.00', amountMicros: 10_000_000_000 }),
+      postedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const tradeId = seedTrade(accountId, { plannedStop: 45 });
+
+    // Buy 100 @ 50 fee 10 → cash 4990, open fee 10.
+    executeTradeFill(fill(tradeId, { quantity: 100, price: 50, fees: 10 }), context);
+    expect(openFees(accountId)).toBe(10);
+
+    // Sell 40 @ 55 fee 4: gross 200, entry fee share 4, exit fee 4 → net 192.
+    executeTradeFill(fill(tradeId, { action: 'sell', quantity: 40, price: 55, fees: 4 }), context);
+    expect(netCash(accountId)).toBe(7186); // 4990 + 2200 - 4
+    expect(perfValue(accountId, 'realized_fees')).toBe(8);
+    expect(perfValue(accountId, 'realized_pnl')).toBe(192);
+    expect(openFees(accountId)).toBe(6); // 10 - 4 allocated to closed 40
+
+    // Mark 55: gross unrealized (55-50)*60 = 300, net 294; NAV 10486.
+    const accounting = db
+      .select()
+      .from(schema.accountingExecutions)
+      .where(eq(schema.accountingExecutions.accountId, accountId))
+      .get()!;
+    insertValuationMark(sqlite, {
+      accountId,
+      instrumentId: accounting.instrumentId,
+      price: '55.00',
+      priceMicros: 55_000_000,
+      source: 'user',
+      markTimestamp: new Date().toISOString(),
+    });
+    const perf = rebuildAccountPerformance(sqlite, accountId);
+    expect(perf.success).toBe(true);
+    expect(perfValue(accountId, 'unrealized_pnl')).toBe(294); // 300 - 6 open fee
+    expect(perfValue(accountId, 'total_pnl')).toBe(486); // 192 + 294
+    expect(perfValue(accountId, 'nav')).toBe(10486); // 7186 + 3300
+
+    // §59: close remaining 60 @ 55 fee 6 → flat, all 20 fees realized exactly once.
+    executeTradeFill(fill(tradeId, { action: 'sell', quantity: 60, price: 55, fees: 6 }), context);
+    expect(netCash(accountId)).toBe(10480); // 7186 + 3300 - 6
+    expect(perfValue(accountId, 'realized_fees')).toBe(20); // 10 + 4 + 6
+    expect(perfValue(accountId, 'realized_pnl')).toBe(480); // 200 + 300 - 20
+    expect(openFees(accountId)).toBe(0);
     expect(countRows('account_positions', "account_id = ? AND quantity != '0.00'", accountId)).toBe(0);
   });
 

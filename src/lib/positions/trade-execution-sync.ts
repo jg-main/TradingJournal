@@ -18,7 +18,7 @@
 
 import Database from 'better-sqlite3';
 import { normalizeDecimal } from '../accounting/decimal';
-import { ensureExecutionFinancialEvent } from '../accounting/execution-posting';
+import { ensureExecutionFinancialEvent, ensureExecutionFeeFinancialEvent } from '../accounting/execution-posting';
 import { assertSupportedAccountCurrency } from '../accounting/posting';
 import { resolveEconomicExecutionAction, isGenericManagementAction } from '../accounting/economic-action';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
@@ -215,10 +215,13 @@ export function syncAndRebuildPositions(
       symbol,
     );
 
-    // 2. Ensure the immutable execution has its matching cash event. Legacy
-    // syncs created FIFO rows without this effect, so this is intentionally
-    // idempotent and also repairs any retried partial sync.
+    // 2. Ensure the immutable execution has its matching cash events. Legacy
+    // syncs created FIFO rows without these effects, so this is intentionally
+    // idempotent and also repairs any retried partial sync. M002-A6: the fee
+    // is a separate cash effect (eventType fee, decrease), guaranteed exactly
+    // once by its own deterministic key.
     ensureExecutionFinancialEvent(sqlite, accountingExecution, symbol);
+    ensureExecutionFeeFinancialEvent(sqlite, accountingExecution, symbol);
 
     // 3. Resolve instrument ID for rebuild
     const instrument = findOrCreateInstrument(sqlite, symbol);

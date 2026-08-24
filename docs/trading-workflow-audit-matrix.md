@@ -408,6 +408,43 @@ These are the decisions the requirements doc explicitly defers to S01
   rewritten; long aliases and concrete actions are never touched; a re-run
   adds zero economic effect. Execution fees are deliberately NOT bundled into
   A5 (separate audit follows).
+- **M002-A6 (execution fees: exactly once in cash, FIFO P&L, and NAV):**
+  `execution.fees` is the factual fee truth; the fee is a real cash expense
+  at execution time regardless of economic side. Final economic contract:
+  - **Cash:** the gross trade event stays quantity × price (never netted); a
+    separate deterministic execution-fee event (`eventType fee`, direction
+    decrease, key `accounting-execution-fee:<executionId>:v1`) posts the fee.
+    Zero fee → no meaningless $0 event. `postExecutionFill` creates both
+    atomically (result gains `feeEventWithPostings`); the legacy sync ensures
+    both; failure of either rolls the whole execution back.
+  - **FIFO:** opening fees travel with their FIFO lots. A closing match
+    realizes a proportional share of the lot's REMAINING opening fee (exact
+    integer micros; a full close absorbs the remainder) plus its proportional
+    share of the closing fee — `match.allocatedFees = entry share + exit
+    share`, `realizedNetPnl = realizedGrossPnl − allocatedFees`. Partial
+    closes reduce the lot's remaining quantity AND remaining fee; a fully
+    closed lot retains no open fee. Exact preservation: sum(entry fees
+    realized) + remaining entry fee == original opening fee (no cent lost,
+    no double allocation).
+  - **Valuation:** open fees (sum of open `fifo_lots.allocated_fees`) reduce
+    net unrealized P&L (`netUnrealizedPnl = grossUnrealizedPnl − openFees`,
+    exposed alongside `openFees`/`grossUnrealizedPnl` on ValuationPosition;
+    `unrealized_pnl` is the net figure). NAV = cash + marked positions only —
+    fees hit NAV through cash, never as a second subtraction.
+  - **Corrections:** reversal executions are accounting machinery — never
+    charged an execution fee. A correction refunds the original's posted fee
+    exactly once (typed `manual_adjustment` increase, key
+    `correction-execution-fee-refund:<originalExecutionId>:v1`, only when the
+    original fee cash event exists — pre-A6 originals that never posted a fee
+    get no fictitious refund) and posts the replacement's fee event once.
+  - **Historical repair:** `fee-repair` appends missing fee cash events for
+    EFFECTIVE executions only (uncorrected + correction replacements;
+    lineage originals/reversals excluded), rebuilds positions under the
+    corrected allocator and the account projection atomically, and is fully
+    idempotent (second run changes nothing). A5 cash-direction repair and A6
+    fee repair use disjoint keys — order-independent.
+  - **Scope:** default-commission resolution, risk, equity, A5 economic-side
+    mapping, and standalone account fee events are untouched.
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

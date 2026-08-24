@@ -83,8 +83,13 @@ export interface PostExecutionFillResult {
     postedAt: string;
     createdAt: string;
   };
-  /** The balanced ledger event + entry + postings. */
+  /** The balanced ledger event + entry + postings (gross consideration). */
   eventWithPostings: FinancialEventWithPostings;
+  /**
+   * M002-A6: the execution fee cash event (eventType fee, direction decrease),
+   * or null when the execution has no fee (fees = 0 → no meaningless $0 event).
+   */
+  feeEventWithPostings: FinancialEventWithPostings | null;
 }
 
 /**
@@ -95,6 +100,26 @@ export interface PostExecutionFillResult {
  */
 export function executionFinancialEventIdempotencyKey(accountingExecutionId: string): string {
   return `accounting-execution-${accountingExecutionId}`;
+}
+
+/**
+ * M002-A6: deterministic idempotency key for the execution fee cash event.
+ *
+ * Same accounting execution → exactly one fee cash event. Repeated
+ * synchronization / repair → zero duplicate fee effects. Identified by key,
+ * never by fuzzy description.
+ */
+export function executionFeeFinancialEventIdempotencyKey(accountingExecutionId: string): string {
+  return `accounting-execution-fee:${accountingExecutionId}:v1`;
+}
+
+/**
+ * M002-A6: deterministic key for the fee REFUND posted when an execution
+ * correction supersedes an original that already posted a fee cash event.
+ * Keyed by the ORIGINAL execution — a refund is never posted twice.
+ */
+export function executionFeeRefundIdempotencyKey(originalExecutionId: string): string {
+  return `correction-execution-fee-refund:${originalExecutionId}:v1`;
 }
 
 type ExecutionFinancialEventInput = Parameters<typeof postFinancialEvent>[1];
@@ -161,6 +186,85 @@ export function buildExecutionFinancialEventInput(input: {
       amountMicros: considerationMicros,
     }),
     postedAt: input.postedAt,
+  };
+}
+
+/**
+ * M002-A6: build the immutable CASH effect for one execution fee.
+ *
+ * The fee is a real cash expense at execution time, regardless of the
+ * economic action: buy/sell/sell_short/buy_to_cover — fees always reduce
+ * cash. The gross trade event stays quantity × price; this separate event
+ * posts the fee only (the projection sums both — never change the gross
+ * event to net consideration AND post a fee event, which would double-charge).
+ *
+ * `accounting_executions.fees` remains the factual fee source; this event
+ * represents its cash effect, with explicit linkage in the payload.
+ */
+export function buildExecutionFeeFinancialEventInput(input: {
+  accountingExecutionId: string;
+  accountId: string;
+  symbol: string;
+  action: string;
+  fees: string;
+  journalTradeId?: string | null;
+  postedAt: string;
+}): ExecutionFinancialEventInput {
+  return {
+    accountId: input.accountId,
+    eventType: 'fee',
+    amount: input.fees as CanonicalDecimal,
+    idempotencyKey: executionFeeFinancialEventIdempotencyKey(input.accountingExecutionId),
+    description: `Execution fee for ${input.action} ${input.symbol} @ ${input.fees}`,
+    payload: JSON.stringify({
+      feeType: 'execution',
+      accountingExecutionId: input.accountingExecutionId,
+      action: input.action,
+      symbol: input.symbol,
+      amount: input.fees,
+      ...(input.journalTradeId ? { journalTradeId: input.journalTradeId } : {}),
+    }),
+    effect: JSON.stringify({
+      kind: 'cash',
+      direction: 'decrease',
+      amount: input.fees,
+      amountMicros: toMicros(input.fees),
+    }),
+    postedAt: input.postedAt,
+  };
+}
+
+/**
+ * Ensure an immutable accounting execution has its corresponding execution
+ * fee cash event (deterministic + idempotent). Returns null when the
+ * execution has no fee (fees = 0) or the fee event already exists.
+ */
+export function ensureExecutionFeeFinancialEvent(
+  sqlite: Database.Database,
+  execution: AccountingExecutionRow,
+  symbol: string,
+): { inserted: boolean; eventWithPostings: FinancialEventWithPostings | null } {
+  if (toMicros(execution.fees) === 0) {
+    return { inserted: false, eventWithPostings: null };
+  }
+  const idempotencyKey = executionFeeFinancialEventIdempotencyKey(execution.id);
+  if (findEventByIdempotencyKey(sqlite, idempotencyKey)) {
+    return { inserted: false, eventWithPostings: null };
+  }
+  return {
+    inserted: true,
+    eventWithPostings: postFinancialEvent(
+      sqlite,
+      buildExecutionFeeFinancialEventInput({
+        accountingExecutionId: execution.id,
+        accountId: execution.account_id,
+        symbol,
+        action: execution.action,
+        fees: execution.fees,
+        journalTradeId: execution.journal_trade_id,
+        postedAt: execution.posted_at,
+      }),
+    ),
   };
 }
 
@@ -304,6 +408,22 @@ export function postExecutionFill(
       }),
     );
 
+    // ── 7. M002-A6: post the execution fee cash event (only when fees > 0) ─
+    const feeEventWithPostings = toMicros(fees) > 0
+      ? postFinancialEvent(
+          sqlite,
+          buildExecutionFeeFinancialEventInput({
+            accountingExecutionId: executionRow.id,
+            accountId,
+            symbol,
+            action,
+            fees,
+            journalTradeId,
+            postedAt,
+          }),
+        )
+      : null;
+
     return {
       execution: {
         id: executionRow.id,
@@ -320,6 +440,7 @@ export function postExecutionFill(
         createdAt: executionRow.created_at,
       },
       eventWithPostings,
+      feeEventWithPostings,
     };
   });
 

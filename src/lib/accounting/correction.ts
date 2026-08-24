@@ -24,7 +24,12 @@ import Database from 'better-sqlite3';
 import { toMicros, fromMicros } from './decimal';
 import type { CanonicalDecimal } from './types';
 import { postFinancialEvent } from './posting';
-import { executionFinancialEventIdempotencyKey } from './execution-posting';
+import {
+  executionFinancialEventIdempotencyKey,
+  executionFeeFinancialEventIdempotencyKey,
+  executionFeeRefundIdempotencyKey,
+  buildExecutionFeeFinancialEventInput,
+} from './execution-posting';
 import { rebuildPositions } from '../positions/rebuild';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { reverseAction } from './correction-contracts';
@@ -47,6 +52,7 @@ import {
   findAccountPosition,
   findFifoLotsByAccountInstrument,
   findInstrumentById,
+  findEventByIdempotencyKey,
 } from '../../db/accounting-repository';
 import type { FifoLot, PositionState } from '../positions/types';
 
@@ -428,6 +434,62 @@ export function correctExecution(
       effect: replacementEffect,
       postedAt: replacementPostedAt,
     });
+
+    // ── 7b.1 M002-A6: execution fee economics ─────────────────────────
+    // The reversal is ACCOUNTING CORRECTION MACHINERY, not another real
+    // broker transaction — it never charges an execution fee.
+    //
+    // Replacement: post the corrected factual fee as a normal deterministic
+    // fee cash event (decrease), linked to the replacement execution.
+    if (toMicros(fees) > 0) {
+      postFinancialEvent(
+        sqlite,
+        buildExecutionFeeFinancialEventInput({
+          accountingExecutionId: replacementExecution.id,
+          accountId,
+          symbol,
+          action: replacementAction,
+          fees,
+          journalTradeId: originalExecution.journal_trade_id,
+          postedAt: replacementPostedAt,
+        }),
+      );
+    }
+
+    // Original refund: when the original factual execution ALREADY posted a
+    // fee cash event (post-A6), refund it exactly once via a typed
+    // compensating manual_adjustment (increase) with a deterministic key.
+    // Pre-A6 originals with fees but NO fee event must NOT receive a
+    // fictitious refund — the money was never deducted from cash.
+    if (toMicros(originalExecution.fees) > 0) {
+      const originalFeeKey = executionFeeFinancialEventIdempotencyKey(originalExecution.id);
+      const originalFeeEvent = findEventByIdempotencyKey(sqlite, originalFeeKey);
+      if (originalFeeEvent) {
+        const refundKey = executionFeeRefundIdempotencyKey(originalExecution.id);
+        if (!findEventByIdempotencyKey(sqlite, refundKey)) {
+          postFinancialEvent(sqlite, {
+            accountId,
+            eventType: 'manual_adjustment',
+            amount: originalExecution.fees as CanonicalDecimal,
+            idempotencyKey: refundKey,
+            description: `Correction fee refund for execution ${originalExecution.id} (${originalExecution.fees})`,
+            payload: JSON.stringify({
+              repairType: 'execution_fee_reversal',
+              originalExecutionId: originalExecution.id,
+              correctionIdempotencyKey: idempotencyKey ?? null,
+              originalFees: originalExecution.fees,
+            }),
+            effect: JSON.stringify({
+              kind: 'cash',
+              direction: 'increase',
+              amount: originalExecution.fees,
+              amountMicros: toMicros(originalExecution.fees),
+            }),
+            postedAt: correctedAt,
+          });
+        }
+      }
+    }
 
     // ── 7c. Create correction lineage record ───────────────────────────
     const correction = insertCorrectionLineage(sqlite, {

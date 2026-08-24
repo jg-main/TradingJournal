@@ -28,6 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { allocateFifo } from './fifo';
 import type { FifoLot, PositionState, FifoExecutionInput, ExecutionAction } from './types';
 import type { CanonicalDecimal } from '../accounting/types';
+import { subtractDecimal } from '../accounting/decimal';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -576,17 +577,18 @@ describe('Full close — selling all lots flattens the position', () => {
     expect(result.matches[0].matchQuantity).toBe('75.00');
     // P&L = (150 - 100) * 75 = 3750
     expect(result.matches[0].realizedGrossPnl).toBe('3750.00');
-    // Fees: 15.00
-    expect(result.matches[0].allocatedFees).toBe('15.00');
-    expect(result.matches[0].realizedNetPnl).toBe('3735.00');
+    // M002-A6: full close absorbs the lot's remaining entry fee (5.00) PLUS
+    // the closing fee (15.00) — fees are 20.00 total.
+    expect(result.matches[0].allocatedFees).toBe('20.00');
+    expect(result.matches[0].realizedNetPnl).toBe('3730.00');
 
     expect(result.position.direction).toBeNull();
     expect(result.position.quantity).toBe('0.00');
     expect(result.position.averageCost).toBe('0.00');
     expect(result.position.totalCostBasis).toBe('0.00');
     expect(result.position.realizedGrossPnl).toBe('3750.00');
-    expect(result.position.realizedFees).toBe('15.00');
-    expect(result.position.realizedNetPnl).toBe('3735.00');
+    expect(result.position.realizedFees).toBe('20.00');
+    expect(result.position.realizedNetPnl).toBe('3730.00');
     expect(result.position.openLots).toHaveLength(0);
   });
 });
@@ -972,17 +974,18 @@ describe('Fee allocation across matches', () => {
 
     expect(result.matches).toHaveLength(2);
 
-    // Lot1: 60/100 * 15 = 9.00
-    expect(result.matches[0].allocatedFees).toBe('9.00');
-    expect(result.matches[0].realizedNetPnl).toBe('2991.00'); // (150-100)*60 - 9 = 3000 - 9 = 2991
+    // M002-A6: match fees = allocated opening entry fee + closing fee.
+    // Lot1 full close: entry 5.00 (lot fee) + exit 60/100*15 = 9.00 → 14.00
+    expect(result.matches[0].allocatedFees).toBe('14.00');
+    expect(result.matches[0].realizedNetPnl).toBe('2986.00'); // 3000 - 14 = 2986
 
-    // Lot2: 40/100 * 15 = 6.00
-    expect(result.matches[1].allocatedFees).toBe('6.00');
-    expect(result.matches[1].realizedNetPnl).toBe('1594.00'); // (150-110)*40 - 6 = 1600 - 6 = 1594
+    // Lot2 full close: entry 5.00 + exit 6.00 → 11.00
+    expect(result.matches[1].allocatedFees).toBe('11.00');
+    expect(result.matches[1].realizedNetPnl).toBe('1589.00'); // 1600 - 11 = 1589
 
-    // Position total fees
-    expect(result.position.realizedFees).toBe('15.00');
-    expect(result.position.realizedNetPnl).toBe('4585.00'); // 2991 + 1594 = 4585
+    // Position total fees = 10 entry + 15 exit
+    expect(result.position.realizedFees).toBe('25.00');
+    expect(result.position.realizedNetPnl).toBe('4575.00'); // 2986 + 1589 = 4575
   });
 
   it('handles zero fees cleanly', () => {
@@ -1009,8 +1012,10 @@ describe('Fee allocation across matches', () => {
     expect(result.status).toBe('success');
     if (result.status !== 'success') return;
 
-    expect(result.matches[0].allocatedFees).toBe('0.00');
-    expect(result.matches[0].realizedNetPnl).toBe(result.matches[0].realizedGrossPnl);
+    // M002-A6: the closing fee is 0 but the full close still realizes the
+    // lot's remaining entry fee (5.00).
+    expect(result.matches[0].allocatedFees).toBe('5.00');
+    expect(result.matches[0].realizedNetPnl).toBe(subtractDecimal(result.matches[0].realizedGrossPnl, '5.00' as CanonicalDecimal));
   });
 });
 
@@ -1149,5 +1154,103 @@ describe('Edge cases — empty lots', () => {
     expect(result.status).toBe('success');
     if (result.status !== 'success') return;
     expect(result.openedLots).toHaveLength(1);
+  });
+
+  it('M002-A6 §29: multi-lot scale-in close — entry fees travel with their lots, exact remainder handling', () => {
+    // Lot A: 60 shares entry fee 6.00. Lot B: 40 shares entry fee 8.00.
+    // Close 70 @ fee 7.00: FIFO matches 60 from A (full close, absorbs all
+    // remaining 6.00) and 10 from B (partial: 8.00 × 10/40 = 2.00).
+    const lotA = lot({
+      id: 'a6-lot-a',
+      remainingQuantity: '60.00' as CanonicalDecimal,
+      originalQuantity: '60.00' as CanonicalDecimal,
+      entryPrice: '50.00' as CanonicalDecimal,
+      allocatedFees: '6.00' as CanonicalDecimal,
+      direction: 'long',
+      openedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const lotB = lot({
+      id: 'a6-lot-b',
+      remainingQuantity: '40.00' as CanonicalDecimal,
+      originalQuantity: '40.00' as CanonicalDecimal,
+      entryPrice: '52.00' as CanonicalDecimal,
+      allocatedFees: '8.00' as CanonicalDecimal,
+      direction: 'long',
+      openedAt: '2026-02-01T00:00:00.000Z',
+    });
+
+    const currentPos = position({
+      direction: 'long',
+      quantity: '100.00' as CanonicalDecimal,
+      openLots: [lotA, lotB],
+    });
+
+    const result = allocateFifo(
+      execution({ action: 'sell', quantity: '70.00', price: '60.00', fees: '7.00' }),
+      currentPos,
+      [lotA, lotB],
+      idGen,
+    );
+
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+
+    // Match A (60, full close): entry 6.00 + exit (60/70 × 7 = 6.00) = 12.00
+    expect(result.matches[0].matchQuantity).toBe('60.00');
+    expect(result.matches[0].allocatedFees).toBe('12.00');
+    // Match B (10, partial): entry 2.00 + exit (10/70 → last match absorbs 1.00) = 3.00
+    expect(result.matches[1].matchQuantity).toBe('10.00');
+    expect(result.matches[1].allocatedFees).toBe('3.00');
+
+    // Total realized fees = 15.00 (6 + 2 entry + 7 exit).
+    expect(result.position.realizedFees).toBe('15.00');
+
+    // Remaining Lot B: qty 30, remaining entry fee 6.00 — exact preservation.
+    expect(result.position.openLots).toHaveLength(1);
+    expect(result.position.openLots[0].remainingQuantity).toBe('30.00');
+    expect(result.position.openLots[0].allocatedFees).toBe('6.00');
+  });
+
+  it('M002-A6 §30: fractional fee allocation — exact micros, final close absorbs remainder', () => {
+    // 100 shares entry fee 10.00, three partial closes of 33/33/34 at exit
+    // fee 1.00 total. Remaining entry fee after each close: 3.30, 3.30, 3.40
+    // (33/100 × 10 = 3.30 floor; final 34/100 = 3.40 floor → but exact
+    // remainder must land on the final close).
+    const openLot = lot({
+      id: 'a6-frac',
+      remainingQuantity: '100.00' as CanonicalDecimal,
+      originalQuantity: '100.00' as CanonicalDecimal,
+      entryPrice: '50.00' as CanonicalDecimal,
+      allocatedFees: '10.00' as CanonicalDecimal,
+      direction: 'long',
+      openedAt: '2026-01-01T00:00:00.000Z',
+    });
+    let pos = position({
+      direction: 'long',
+      quantity: '100.00' as CanonicalDecimal,
+      openLots: [openLot],
+    });
+    for (const [qty, exitFee] of [['33.00', '1.00'], ['33.00', '1.00'], ['34.00', '1.00']] as const) {
+      const r = allocateFifo(
+        execution({ action: 'sell', quantity: qty as CanonicalDecimal, price: '60.00', fees: exitFee as CanonicalDecimal }),
+        pos,
+        pos.openLots,
+        idGen,
+      );
+      expect(r.status).toBe('success');
+      if (r.status !== 'success') return;
+      pos = r.position;
+    }
+
+    // After the FINAL close the lot is consumed: remaining fee 0.
+    expect(pos.quantity).toBe('0.00');
+    expect(pos.openLots).toHaveLength(0);
+
+    // The entry fee is realized exactly: 10.00 across all closes (not 9.99/10.01).
+    const realizedEntry = 10 - Number(
+      pos.openLots.reduce((sum: number, l: { allocatedFees: string }) => sum + Number(l.allocatedFees), 0),
+    );
+    expect(realizedEntry).toBe(10);
+    expect(pos.realizedFees).toBe('13.00'); // 10 entry + 3 exit
   });
 });

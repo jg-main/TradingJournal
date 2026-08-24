@@ -226,11 +226,25 @@ describe('syncAndRebuildPositions integration round-trip', () => {
       amount: '15075.00',
     });
 
+    // M002-A6: the execution fee has its own deterministic cash event.
+    const feeEvent = findEventByIdempotencyKey(
+      ctx.sqlite,
+      `accounting-execution-fee:${ae.id}:v1`,
+    );
+    expect(feeEvent).toBeDefined();
+    expect(feeEvent!.event_type).toBe('fee');
+    expect(JSON.parse(feeEvent!.effect ?? '{}')).toMatchObject({
+      kind: 'cash',
+      direction: 'decrease',
+      amount: '5.50',
+    });
+
     // The persisted account-performance projection is rebuilt from the same
-    // ledger and position data in the synchronous write path.
+    // ledger and position data in the synchronous write path. The fee is
+    // deducted in cash: 20000 - 15075 - 5.50 = 4919.50.
     const performance = findAccountPerformance(ctx.sqlite, ctx.accountId);
     expect(performance).toBeDefined();
-    expect(performance!.net_cash).toBe('4925.00');
+    expect(performance!.net_cash).toBe('4919.50');
 
     // ── Verify position state ──────────────────────────────────────────
     const key = `${ctx.accountId}:${ctx.instrumentId}`;
@@ -439,17 +453,17 @@ describe('syncAndRebuildPositions integration round-trip', () => {
     // Match P&L = (160 - 150.75) * 30 = 9.25 * 30 = 277.50
     expect(pos.realizedGrossPnl).toBe('277.50');
 
-    // Fees: proportional allocation. Total fees = 2.00, matched qty = 30.00
-    // First lot entry fees: 5.50 on 100 shares
-    // Wait — the fee allocation logic only applies closing fees proportionally across matches.
-    // In this case there's 1 match of 30 shares, so the match gets all 2.00 in fees.
-    // realizedFees: 2.00
-    expect(pos.realizedFees).toBe('2.00');
-    expect(pos.realizedNetPnl).toBe('275.50'); // 277.50 - 2.00
+    // M002-A6: match fees = allocated opening entry fee + closing fee.
+    // Entry fee share for a 30/100 partial close of lot 1 (5.50) = 1.65;
+    // closing fee = 2.00 (single match absorbs all). Match fees = 3.65.
+    expect(pos.realizedFees).toBe('3.65');
+    expect(pos.realizedNetPnl).toBe('273.85'); // 277.50 - 3.65
 
-    // Verify the first lot has reduced remaining quantity
+    // Verify the first lot has reduced remaining quantity AND remaining fee
+    // (5.50 - 1.65 = 3.85 belongs to the still-open 70 shares).
     expect(pos.openLots[0].remainingQuantity).toBe('70.00');
     expect(pos.openLots[1].remainingQuantity).toBe('50.00');
+    expect((pos.openLots[0] as { remainingQuantity: string; allocatedFees: string }).allocatedFees).toBe('3.85');
 
     // Execution count: 3 (buy + add + reduce). Idempotent call did not add execution.
     expect(success.rebuildResult.executionCount).toBe(3);
@@ -537,13 +551,15 @@ describe('syncAndRebuildPositions integration round-trip', () => {
     // new from sell: 997.50 + 500.00 = 1497.50
     // total: 277.50 + 1497.50 = 1775.00
     
-    // Total realized fees: 2.00 (reduce) + 2.33 + 1.67 = 6.00
-    // Total realized net: 275.50 + 995.17 + 498.33 = 1769.00
-
-    // OK let me just verify the key assertions
+    // M002-A6: full closes also realize the lots' REMAINING entry fees.
+    // Sell match 0 (70 from lot 1): entry 3.85 (remaining) + exit 2.33 = 6.18
+    // Sell match 1 (50 from lot 2): entry 3.00 (remaining) + exit 1.67 = 4.67
+    // Cumulative realized fees = 3.65 (reduce) + 6.18 + 4.67 = 14.50
+    //   = all entry fees (5.50 + 3.00) + all exit fees (2.00 + 4.00)
+    // Cumulative realized net = 273.85 + 991.32 + 495.33 = 1760.50
     expect(pos.realizedGrossPnl).toBe('1775.00');
-    expect(pos.realizedFees).toBe('6.00');
-    expect(pos.realizedNetPnl).toBe('1769.00');
+    expect(pos.realizedFees).toBe('14.50');
+    expect(pos.realizedNetPnl).toBe('1760.50');
 
     // No open lots
     expect(pos.openLots).toHaveLength(0);

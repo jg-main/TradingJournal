@@ -24,7 +24,7 @@ import {
 } from '../../db/accounting-repository';
 import { rebuildOpeningCash, rebuildAccountActivity } from '../accounting/rebuild';
 import { computeAccountActivity, computeRebuildCashFlow } from '../accounting/activity';
-import { fromMicros, normalizeDecimal } from '../accounting/decimal';
+import { fromMicros, normalizeDecimal, addDecimal } from '../accounting/decimal';
 import type { CanonicalDecimal } from '../accounting/types';
 import { deriveValuationPosition, computeAccountValuation } from './valuation';
 import { computePerformance } from './performance';
@@ -144,6 +144,29 @@ function buildValuationPositions(
   const marks = listLatestValuationMarks(sqlite, accountId);
   const warnings: string[] = [];
 
+  // M002-A6: remaining opening fees per open lot (fifo_lots.allocated_fees
+  // where remaining_quantity > 0). The FIFO allocator reduces a lot's fee on
+  // partial closes, so this is the canonical open-fee source (never derived
+  // from journal executions). Summed in JS with exact decimal micros.
+  const openFeeByInstrument = new Map<string, CanonicalDecimal>();
+  const openFeeRows = sqlite
+    .prepare(
+      `SELECT instrument_id, allocated_fees
+       FROM fifo_lots
+       WHERE account_id = ? AND remaining_quantity != '0.00'`,
+    )
+    .all(accountId) as Array<{ instrument_id: string; allocated_fees: string }>;
+  const openFeeAccum: Record<string, CanonicalDecimal> = {};
+  for (const row of openFeeRows) {
+    openFeeAccum[row.instrument_id] = addDecimal(
+      openFeeAccum[row.instrument_id] ?? ('0.00' as CanonicalDecimal),
+      row.allocated_fees as CanonicalDecimal,
+    );
+  }
+  for (const [instrumentId, total] of Object.entries(openFeeAccum)) {
+    openFeeByInstrument.set(instrumentId, total);
+  }
+
   // Build a map of mark by instrument_id
   const markByInstrument = new Map<string, {
     price: string;
@@ -205,6 +228,7 @@ function buildValuationPositions(
         realizedPnl: pos.realized_gross_pnl as CanonicalDecimal,
         realizedFees: pos.realized_fees as CanonicalDecimal,
         realizedNetPnl: pos.realized_net_pnl as CanonicalDecimal,
+        openFees: (openFeeByInstrument.get(pos.instrument_id) ?? '0.00') as CanonicalDecimal,
       },
       markInput,
       nowTimestamp,

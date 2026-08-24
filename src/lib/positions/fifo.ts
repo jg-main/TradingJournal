@@ -114,6 +114,36 @@ function allocateMatchFees(
 }
 
 /**
+ * M002-A6: proportional share of a lot's REMAINING opening fee for the
+ * quantity matched by one closing execution.
+ *
+ * A partial close takes the exact proportional share in integer micros
+ * (remainder stays on the lot). A FULL close of the lot absorbs ALL remaining
+ * fee, which is how the exact-preservation invariant is guaranteed:
+ *
+ *   sum(entry fees realized across all closes) + current remaining entry fee
+ *       == original opening execution fee
+ *
+ * No cent disappears; no fee is allocated twice.
+ */
+function allocateLotEntryFeeShare(
+  remainingLotFee: CanonicalDecimal,
+  remainingLotQty: CanonicalDecimal,
+  matchQty: CanonicalDecimal,
+  isFullLotClose: boolean,
+): CanonicalDecimal {
+  const feeMicros = toMicros(remainingLotFee);
+  if (feeMicros === 0) return '0.00' as CanonicalDecimal;
+  if (isFullLotClose) return remainingLotFee; // absorb any rounding remainder
+  const qtyMicros = toMicros(remainingLotQty);
+  const matchMicros = toMicros(matchQty);
+  const shareM = Number(
+    (BigInt(feeMicros) * BigInt(matchMicros)) / BigInt(qtyMicros),
+  );
+  return fromMicros(shareM);
+}
+
+/**
  * Sort lots for FIFO matching: oldest openedAt first, then sequence, then id.
  */
 function sortLotsFifo(lots: FifoLot[]): FifoLot[] {
@@ -347,6 +377,7 @@ function handleClosing(
   const matches: LotMatch[] = [];
   const updatedLots: FifoLot[] = [];
   const matchQuantities: CanonicalDecimal[] = [];
+  const entryFeeShares: CanonicalDecimal[] = [];
   let sequence = 0;
 
   for (const lot of sortedLots) {
@@ -386,27 +417,43 @@ function handleClosing(
 
     matches.push(match);
 
-    // Update remaining quantity on the lot
+    // M002-A6: allocate the proportional share of this lot's REMAINING
+    // opening fee to the matched quantity. A full close absorbs all remaining
+    // fee (exact preservation); a partial close leaves the remainder on the
+    // lot so the still-open quantity keeps its own fee.
+    const isFullLotClose = compareDecimal(matchQty, lot.remainingQuantity) === 0;
+    const entryFeeShare = allocateLotEntryFeeShare(
+      lot.allocatedFees,
+      lot.remainingQuantity,
+      matchQty,
+      isFullLotClose,
+    );
+    entryFeeShares.push(entryFeeShare);
+
+    // Update remaining quantity AND remaining opening fee on the lot
     const newRemaining = subtractDecimal(lot.remainingQuantity, matchQty);
     if (compareDecimal(newRemaining, '0.00' as CanonicalDecimal) > 0) {
-      // Lot still open
+      // Lot still open — keep only the fee belonging to still-open quantity
       updatedLots.push({
         ...lot,
         remainingQuantity: newRemaining,
+        allocatedFees: subtractDecimal(lot.allocatedFees, entryFeeShare),
       });
     }
-    // If newRemaining is "0.00", the lot is fully closed — don't add to updatedLots
+    // If newRemaining is "0.00", the lot is fully closed — don't add to
+    // updatedLots (its remaining entry fee is fully realized; a fully closed
+    // lot never retains a fee that could be interpreted as still open).
 
     remainingToClose = subtractDecimal(remainingToClose, matchQty);
   }
 
-  // Allocate fees across matches proportionally
-  const feeAllocations = allocateMatchFees(fees, quantity, matchQuantities);
+  // Allocate the CLOSING execution fee across matches proportionally
+  const exitFeeAllocations = allocateMatchFees(fees, quantity, matchQuantities);
 
   for (let i = 0; i < matches.length; i++) {
-    const alloc = feeAllocations[i];
-    matches[i].allocatedFees = alloc;
-    matches[i].realizedNetPnl = subtractDecimal(matches[i].realizedGrossPnl, alloc);
+    // M002-A6: match fees = allocated opening-entry fee + closing-execution fee.
+    matches[i].allocatedFees = addDecimal(entryFeeShares[i], exitFeeAllocations[i]);
+    matches[i].realizedNetPnl = subtractDecimal(matches[i].realizedGrossPnl, matches[i].allocatedFees);
   }
 
   // Compute new position state

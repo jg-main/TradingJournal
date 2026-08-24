@@ -267,11 +267,9 @@ describe('POST /api/accounts/[id]/performance — service composition', () => {
     expect(result.success).toBe(true);
     expect(result.positionCount).toBe(1);
     expect(result.markCount).toBe(1);
-    // NAV should be net cash ($10,000 opening - $15,000 buy consideration) + marked position value (100 * $160 = $16,000)
-    // Cash = $10,000 - $15,000 = -$5,000.  NAV = -$5,000 + $16,000 = $11,000.
-    // The trade execution cash effect is included because deriveActivityEffect
-    // (activity.ts) reconstructs the consideration from the execution payload.
-    expect(result.nav).toBe('11000.00');
+    // M002-A6: the execution fee (5.00) is also a cash outflow.
+    // Cash = 10000 - 15000 - 5 = -5005; NAV = -5005 + 16000 = 10995.
+    expect(result.nav).toBe('10995.00');
   });
 
   it('should produce deterministic rebuild results', () => {
