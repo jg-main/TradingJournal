@@ -127,8 +127,11 @@ export const tradeExecutions = sqliteTable('trade_executions', {
   fees: real('fees').default(0),
   reasonId: text('reason_id').references(() => lookupValues.id),
   notes: text('notes'),
+  idempotencyKey: text('idempotency_key'),
   createdAt: text('created_at').default(sql`(current_timestamp)`),
-});
+}, (t) => [
+  unique('uq_trade_executions_idempotency_key').on(t.idempotencyKey),
+]);
 
 export const positionPriceSnapshots = sqliteTable('position_price_snapshots', {
   id: text('id').primaryKey().notNull(),

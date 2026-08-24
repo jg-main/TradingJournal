@@ -73,6 +73,7 @@ function buildSampleTradeData(
           fees: 1.5,
           reasonId: null as string | null,
           notes: null as string | null,
+          idempotencyKey: null as string | null,
           createdAt: now,
         } satisfies typeof tradeExecutions.$inferSelect,
         {
@@ -85,6 +86,7 @@ function buildSampleTradeData(
           fees: 1.5,
           reasonId: null as string | null,
           notes: 'Target 1 filled cleanly',
+          idempotencyKey: null as string | null,
           createdAt: now,
         } satisfies typeof tradeExecutions.$inferSelect,
       ]
