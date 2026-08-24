@@ -86,9 +86,9 @@ on the trade side — this is the #1 defect S03 must retire.
 | Account execution posting | P5 `POST /api/accounts/[id]/executions` → `postExecutionFill` → M006 kernel (`postFinancialEvent`; `event-posting.ts` `postEventWithEffect` for the API surface) — atomic, idempotency-keyed, pre-flight FIFO, USD + A6 guards; **trade executions bypass it** via P3 (T02 verified: no trade path calls it). | **Reuse** | S03 must route trade executions through this path (with journal linkage), not through P3. |
 | FIFO rebuild | `src/lib/positions/rebuild.ts` (`rebuildPositions`) — canonical, used by sync layer and corrections. | **Reuse** | Deterministic FIFO allocation. S03 embeds it in the execution transaction; rejection must roll back the whole operation (§26/§47). |
 | Position rebuild | `account_positions` maintained by `rebuildPositions`; reconciled to FIFO. | **Reuse** | §72 invariant; S08 verifies reconciliation. |
-| Execution correction (account-scoped) | `POST /api/accounts/[id]/executions/[executionId]/correct` → `correctExecution` (reversal + replacement + lineage; FIFO + performance rebuild). | **Reuse** | Accounting-only corrections keep this path (§77). |
-| Execution correction (trade-scoped) | `POST /api/trades/[id]/executions/[execId]/correct` → **same** `correctExecution`; **never touches the `trades` table** (journal status/openedAt/closedAt/reviewedAt are not rebuilt). | **Replace/Refine** | §41/§44: trade-linked corrections must rebuild journal lifecycle. `correctExecution` must become journal-aware (or the trade route must orchestrate the rebuild) in S06. |
-| Trade correction (journal) | No journal-lifecycle rebuild on correction. | **Missing** | S06. |
+| Execution correction (account-scoped) | `POST /api/accounts/[id]/executions/[executionId]/correct` → `correctExecution` (reversal + replacement + lineage; FIFO + performance rebuild). T04: **no `journal_trade_id` guard** — can correct a trade-linked execution directly, silently unlinking it (F3, §2c). | **Reuse** | Accounting-only corrections keep this path (§77). Add a trade-linkage guard or delegate trade-linked corrections to the trade-scoped path (S06, F3). |
+| Execution correction (trade-scoped) | `POST /api/trades/[id]/executions/[execId]/correct` → **same** `correctExecution`; **never touches the `trades` table** (journal status/openedAt/closedAt/reviewedAt are not rebuilt — test-verified `trade status unchanged after correction`); reversal/replacement rows are inserted with `journal_trade_id: null`, so the corrected stream **never re-attaches to the journal** (F1/F2, §2c). | **Replace/Refine** | §41/§44: trade-linked corrections must rebuild journal lifecycle **and preserve linkage**. `correctExecution` must become journal-aware (or the trade route must orchestrate the rebuild) in S06. |
+| Trade correction (journal) | No journal-lifecycle rebuild on correction (F1) and no linkage re-attachment of corrected fills (F2). | **Missing** | S06. |
 | Trade metrics | `src/lib/trade-metrics.ts` (`computeTradeMetrics`) — canonical, consumed by routes/UI. | **Current** | Reuse (§51). |
 | Review / grade / mistakes / assets | Grade + lesson upsert on `trades`; mistakes/assets/assessments routes; **no `reviewedAt` anywhere in `src/`**; review completion is inferred from presence of evidence. | **Missing/Refine** | §64/§65: add explicit `reviewedAt` with a meaningful-evidence contract (lesson non-empty + grade exists). S07. |
 | Checklist (`trade_check_results`) | FK to mutable `checklistDefinitions`; **no item-text snapshot** (schema: only `checklist_definition_id`, `passed`, `comment`, `checkedAt`); **no `required`/optional flag on items**. Enforcement diverges by route (T02-verified): `/execute` **enforces ALL merged items** (400 on missing/not-passed, before mutation); `/executions` **no checklist handling at all** — a fill can open a trade with zero checklist evidence. | **Refine** | §20 gate (required items must pass before first fill, enforced on every path — with an explicit required/optional distinction) + §21 historical snapshot (item text at entry). S02/S03. |
@@ -118,6 +118,60 @@ T03 confirmed the risk surface is a **reuse layer over a legacy equity foundatio
 | L7 | Canonical libs | `trade-metrics.ts` (312 tests), `risk-snapshot.ts` (75), `position-sizing.ts` (82), `mark-to-market.ts` (74), `trade-levels.ts` — all pure, all passing; consumed by dashboard/UI. | **Reuse** |
 | L8 | Current-stop derivation | `computeTradeMetrics.risk.activeStop` and `deriveCurrentStop` agree: latest valid adjustment → stored `initialStopPrice` (never reconstructed from risk amount) → backward-compat derive-from-risk-amount. | **Current** |
 | L9 | Max-risk limit | No enforcement anywhere; display-only risk-to-account. | **Missing** → D2 |
+
+### 2c. Correction surface ledger (T04, verified 2026-08-24)
+
+T04 confirmed a **three-surface correction model** built on a **single immutable
+reversal+replacement engine**: both execution-correction routes (C1, C2) share
+`correctExecution` (`src/lib/accounting/correction.ts`), cash events use a
+separate cash-only kernel (C3), and planned-trade fills alone are mutable on the
+journal side (C4). **No real-fill correction surface rebuilds the journal trade
+lifecycle, and reversal/replacement rows drop `journal_trade_id` linkage.**
+
+| # | Surface | Route / kernel | Ownership model | Journal lifecycle rebuild (openedAt/closedAt/status/reviewedAt) | journalTradeId linkage preservation | Class |
+|---|---|---|---|---|---|---|
+| C1 | Trade-scoped execution correction | `POST /api/trades/[id]/executions/[execId]/correct` → `correctExecution` (`src/lib/accounting/correction.ts`) | Trade-side bridge: resolves trade → accountId; 422 `NO_ACCOUNTING_RECORD` when trade has no account; finds the accounting mirror by idempotency key `trade-execution-<execId>` (builder **shared** with the sync layer — must not diverge); 404 if the mirror is missing; 404 if mirror `journal_trade_id` is set to a **different** trade; delegates to `correctExecution`. | **NO** — `trades.status/openedAt/closedAt/reviewedAt` untouched (test-verified: `trade status unchanged after correction`); legacy `trade_executions` row immutable (test-verified: quantity/price unchanged). | **NO** — reversal + replacement inserted with `journal_trade_id: null` (correction.ts 7a/7b). Original mirror keeps linkage (sync sets it at L142), the corrected stream does not re-attach. | **Replace/Refine** (§41/§44) |
+| C2 | Account-scoped execution correction | `POST /api/accounts/[id]/executions/[executionId]/correct` → same `correctExecution` | Account-ownership pre-flight only (404 cross-account). **No `journal_trade_id` guard** — can correct a trade-linked execution directly, bypassing C1's linkage check. | **NO** (same kernel) | **NO** (same kernel) | **Reuse** for accounting-only (§77); add linkage guard or delegate when `journal_trade_id` set (S06, F3). |
+| C3 | Financial-event (cash) correction | `POST /api/accounts/[id]/financial-events/[eventId]/correct` → `correctFinancialEvent` (`src/lib/accounting/financial-event-correction.ts`) | Cash events only — `CORRECTABLE_EVENT_TYPES` **explicitly excludes** `trade_execution` (deposit/withdrawal/dividend/interest/fee/tax/manual_adjustment/opening_balance). | n/a (no trade linkage) | n/a | **Reuse** — clean separation; no double correction surface for executions. |
+| C4 | Planned-trade fill mutation | `PUT`/`DELETE /api/trades/[id]/executions/[execId]` | Guarded to `trade.status === 'planned'` (422 `Execution changes are only allowed for planned trades` otherwise). Directly mutates the legacy journal row **and rebuilds** status/openedAt/closedAt via `computeTradeMetrics` (both PUT and DELETE). UI: `CorrectionDialog` (trade-detail) routes planned → here, non-planned → C1. | **YES** (planned-only; journal rebuilt after mutation) | n/a (journal-side row; no accounting mirror) | **Current** for planned; real fills must use C1 (this path locks after first fill). |
+
+**Binding findings (T04):**
+
+- **F1 — Journal lifecycle never rebuilt on real-fill correction (Replace/Refine).**
+  `correctExecution` rebuilds FIFO positions + account performance only; the
+  `trades` row (status/openedAt/closedAt) and legacy `trade_executions` are
+  untouched (test-verified C1). A correction that changes a closing fill's
+  price/quantity leaves the trade's P&L, status, and close timestamps stale →
+  **journal/accounting divergence after every trade-linked correction** — the
+  same §7/§46 invariant violation as posting, in the correction direction.
+  S06 must rebuild journal lifecycle from the corrected stream (mirror the
+  planned-PUT path's `computeTradeMetrics` orchestration).
+- **F2 — Correction drops trade linkage (Replace).** Reversal + replacement are
+  inserted with `journal_trade_id: null` (correction.ts 7a/7b).
+  `correction_lineage.original_execution_id` preserves a traceable chain back
+  to the trade, but the corrected stream (replacement) is not directly
+  trade-linked; multi-fill trades and journal attribution lose the corrected
+  fills. S06 must carry `journalTradeId` from the original into reversal +
+  replacement (and the correction financial-event payloads).
+- **F3 — Account-scoped route has no trade-linkage guard (Refine).** C2 can
+  correct a trade-linked execution directly with no `journal_trade_id`
+  consistency check (unlike C1), producing a corrected accounting stream the
+  trade journal never sees. Either 4xx trade-linked corrections on the account
+  route (directing to C1) or handle linkage uniformly in the kernel.
+- **F4 — Missing mirror blocks correction (Refine).** C1 404s `Execution not
+  found` when the mirror is absent — exactly when P3 sync failed (non-fatal by
+  design, §1) or the fill predates M006. Unsynced fills cannot be corrected at
+  all (UI renders the `No accounting record` state; M019/S04 must-have #5).
+  S06 must repair/backfill the mirror or provide an audited journal-side
+  correction for that case.
+
+**Ownership model summary (T04):** corrections are **accounting-owned** — all
+real-fill corrections run in the M006 accounting layer through one shared
+immutable engine (C1+C2), cash events through a separate cash kernel (C3), and
+only planned-trade fills are mutable on the journal side (C4). Trade linkage is
+**attribution-only** (never enforced by the kernel) and is **lost on
+correction** (F2); journal lifecycle is **never rebuilt** by any real-fill
+correction path (F1).
 
 ---
 
@@ -187,8 +241,10 @@ These are the decisions the requirements doc explicitly defers to S01
 - **S04** — action rules, quantity guards, backdated deterministic ordering.
 - **S05** — management actions over the canonical service; stop/target history
   (already Current) wired to live risk propagation.
-- **S06** — journal-aware correction (fix the `correctExecution` gap), lifecycle
-  rebuild, multi-trade FIFO attribution.
+- **S06** — journal-aware correction (fix the `correctExecution` gap: F1 lifecycle
+  rebuild on trade-linked corrections, F2 `journalTradeId` re-attachment of
+  reversal/replacement rows, F3 account-route linkage guard, F4 missing-mirror
+  repair), multi-trade FIFO attribution.
 - **S07** — `reviewedAt` + review-evidence contract + correction invalidation.
 - **S08** — cross-surface verification against §2 rows; S09 — UAT.
 
