@@ -10,6 +10,8 @@
 
 import {
   computeTradeMetrics,
+  isEntryAction,
+  isExitAction,
   type TradeMetricsInput,
   type TradeMetricsResult,
 } from './trade-metrics';
@@ -1485,6 +1487,133 @@ function assertMatchesCount(r: TradeMetricsResult, expected: number, msg: string
     currentAccountEquity: null,
   });
   assert(r.fees.totalFees === 10, `T05-2: totalFees === 10 exactly (got ${r.fees.totalFees})`);
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// S04/T01: long-short symmetry — 'add' counts as an entry and 'reduce' as
+// an exit for BOTH directions (mirrors positions/types.ts OPENING/CLOSING
+// action sets). Before this fix, short trades only classified
+// sell_short/buy_to_cover, so scaling in or partially closing a short would
+// have produced wrong quantities, status, and P&L.
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## S04-T01: isEntryAction/isExitAction long-short symmetry');
+
+  // Short: entries = sell_short + add; exits = buy_to_cover + reduce.
+  assert(isEntryAction('sell_short', 'short') === true, "isEntryAction('sell_short','short') = true");
+  assert(isEntryAction('add', 'short') === true, "isEntryAction('add','short') = true (short scale-in)");
+  assert(isEntryAction('buy_to_cover', 'short') === false, "isEntryAction('buy_to_cover','short') = false");
+  assert(isEntryAction('reduce', 'short') === false, "isEntryAction('reduce','short') = false");
+  assert(isEntryAction('buy', 'short') === false, "isEntryAction('buy','short') = false");
+
+  assert(isExitAction('buy_to_cover', 'short') === true, "isExitAction('buy_to_cover','short') = true");
+  assert(isExitAction('reduce', 'short') === true, "isExitAction('reduce','short') = true (short partial close)");
+  assert(isExitAction('sell_short', 'short') === false, "isExitAction('sell_short','short') = false");
+  assert(isExitAction('add', 'short') === false, "isExitAction('add','short') = false");
+  assert(isExitAction('sell', 'short') === false, "isExitAction('sell','short') = false");
+
+  // Long side mirrors the same classification (unchanged, shown for symmetry).
+  assert(isEntryAction('buy', 'long') === true, "isEntryAction('buy','long') = true");
+  assert(isEntryAction('add', 'long') === true, "isEntryAction('add','long') = true");
+  assert(isExitAction('sell', 'long') === true, "isExitAction('sell','long') = true");
+  assert(isExitAction('reduce', 'long') === true, "isExitAction('reduce','long') = true");
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// S04/T01: short add/reduce flow through computeTradeMetrics end-to-end —
+// entry/exit quantities, FIFO matching, P&L, and status derivation.
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## S04-T01: short add/reduce counted in size + FIFO P&L');
+
+  // Short: sell_short 100@100 (fee 1), add 50@101 (fee 1),
+  //        reduce 25@99 (fee 1), buy_to_cover 125@98 (fee 1).
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'S-E1', action: 'sell_short', quantity: 100, price: 100, fees: 1, executedAt: '2026-01-10T10:00:00Z' },
+      { id: 'S-E2', action: 'add', quantity: 50, price: 101, fees: 1, executedAt: '2026-01-10T11:00:00Z' },
+      { id: 'S-E3', action: 'reduce', quantity: 25, price: 99, fees: 1, executedAt: '2026-01-10T12:00:00Z' },
+      { id: 'S-E4', action: 'buy_to_cover', quantity: 125, price: 98, fees: 1, executedAt: '2026-01-10T13:00:00Z' },
+    ],
+    direction: 'short',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+
+  // 'add' counts as entry; 'reduce' + 'buy_to_cover' count as exits.
+  assertApprox(r.size.entryQuantity, 150, 'short entryQuantity = 150 (sell_short + add)');
+  assertApprox(r.size.exitQuantity, 150, 'short exitQuantity = 150 (reduce + buy_to_cover)');
+  assertApprox(r.size.openQuantity, 0, 'short openQuantity = 0 (fully closed)');
+  assert(r.size.sizeDisplay === '150 / 150', 'short sizeDisplay = "150 / 150"');
+
+  assertApprox(r.averagePrices.avgEntryPrice, 100.3333, 'short avgEntryPrice = 100.3333 (15050/150)');
+  assertApprox(r.averagePrices.avgExitPrice, 98.1667, 'short avgExitPrice = 98.1667 (14725/150)');
+
+  // FIFO: reduce 25 matches the 100@100 lot; buy_to_cover 125 matches
+  // 75 remaining @100 + 50 @101 (oldest lots first). Matches are recorded
+  // per (exit, lot) pair → 3 total.
+  assertMatchesCount(r, 3, '3 FIFO lot matches (reduce→lot1 25, cover→lot1 75 + lot2 50)');
+  assert(
+    r.matches[0].lotExecutionId === 'S-E1' &&
+      Number(r.matches[0].matchedQuantity) === 25 &&
+      Number(r.matches[0].exitPrice) === 99,
+    'reduce 25 matches the 100@100 lot first (FIFO)',
+  );
+  assert(
+    r.matches[1].lotExecutionId === 'S-E1' &&
+      Number(r.matches[1].matchedQuantity) === 75 &&
+      Number(r.matches[1].exitPrice) === 98,
+    'buy_to_cover 75 consumes the remaining 100@100 lot',
+  );
+  assert(
+    r.matches[2].lotExecutionId === 'S-E2' &&
+      Number(r.matches[2].matchedQuantity) === 50 &&
+      Number(r.matches[2].exitPrice) === 98,
+    'buy_to_cover 50 consumes the 101@101 add lot',
+  );
+  assertApprox(r.realizedPnl.grossRealizedPnl, 325, 'short grossRealizedPnl = (100-99)*25 + (100-98)*75 + (101-98)*50 = 325');
+  assertApprox(r.fees.realizedFees, 4, 'short realizedFees = 4 (entry fees 1+1 + exit fees 1+1)');
+  assertApprox(r.realizedPnl.netRealizedPnl, 321, 'short netRealizedPnl = 325 - 4 = 321');
+
+  // Fully closed → status 'closed'; openedAt/closedAt follow timestamps.
+  assert(r.position.status === 'closed', 'short trade with add/reduce → status closed');
+  assert(r.position.openedAt === '2026-01-10T10:00:00Z', 'short openedAt = first entry timestamp');
+  assert(r.position.closedAt === '2026-01-10T13:00:00Z', 'short closedAt = last exit timestamp');
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// S04/T01: status derivation for a still-open short with a partial reduce.
+// ────────────────────────────────────────────────────────────────────────
+{
+  console.log('\n## S04-T01: short status derivation with partial reduce');
+
+  // Open short: sell_short 100@100, add 50@101, reduce 25@99 → still open.
+  const input: TradeMetricsInput = {
+    executions: [
+      { id: 'P-E1', action: 'sell_short', quantity: 100, price: 100, fees: 0, executedAt: '2026-01-10T10:00:00Z' },
+      { id: 'P-E2', action: 'add', quantity: 50, price: 101, fees: 0, executedAt: '2026-01-10T11:00:00Z' },
+      { id: 'P-E3', action: 'reduce', quantity: 25, price: 99, fees: 0, executedAt: '2026-01-10T12:00:00Z' },
+    ],
+    direction: 'short',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  };
+
+  const r = computeTradeMetrics(input);
+
+  assertApprox(r.size.entryQuantity, 150, 'open short entryQuantity = 150');
+  assertApprox(r.size.exitQuantity, 25, 'open short exitQuantity = 25 (reduce)');
+  assertApprox(r.size.openQuantity, 125, 'open short openQuantity = 125');
+  assert(r.position.status === 'open', 'short trade with partial reduce → status open');
+  assert(r.position.openedAt === '2026-01-10T10:00:00Z', 'open short openedAt = first entry');
+  assert(r.position.closedAt === null, 'open short closedAt = null');
+  assertApprox(r.realizedPnl.grossRealizedPnl, 25, 'open short grossRealizedPnl = (100-99)*25 = 25');
 }
 
 // ────────────────────────────────────────────────────────────────────────

@@ -276,7 +276,7 @@ function parseTimestamp(value: string | undefined | null): number {
  */
 export function isEntryAction(action: string, direction: Direction): boolean {
   if (direction === 'long') return action === 'buy' || action === 'add';
-  return action === 'sell_short';
+  return action === 'sell_short' || action === 'add';
 }
 
 /**
@@ -284,7 +284,7 @@ export function isEntryAction(action: string, direction: Direction): boolean {
  */
 export function isExitAction(action: string, direction: Direction): boolean {
   if (direction === 'long') return action === 'sell' || action === 'reduce';
-  return action === 'buy_to_cover';
+  return action === 'buy_to_cover' || action === 'reduce';
 }
 
 // ── Main Computation ───────────────────────────────────────────────────

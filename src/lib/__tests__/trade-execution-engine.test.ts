@@ -38,6 +38,7 @@ import {
   type ExecuteTradeFillInput,
   type TradeExecutionContext,
 } from '../trade-execution-engine';
+import { computeTradeMetrics } from '../trade-metrics';
 import { UnsupportedAccountCurrencyError } from '../accounting/errors';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
@@ -183,6 +184,36 @@ function fill(tradeId: string, overrides: Partial<ExecuteTradeFillInput> = {}): 
     idempotencyKey: randomUUID(),
     ...overrides,
   };
+}
+
+/**
+ * Recompute trade metrics from the executions the engine actually persisted.
+ * Mirrors the engine's internal postExecutionFill derivation so tests can
+ * assert quantities/status on the canonical computation path.
+ */
+function metricsForTrade(tradeId: string) {
+  const trade = db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+  if (!trade) throw new Error(`trade ${tradeId} not found`);
+  const rows = db
+    .select()
+    .from(schema.tradeExecutions)
+    .where(eq(schema.tradeExecutions.tradeId, tradeId))
+    .all();
+  return computeTradeMetrics({
+    executions: rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      quantity: r.quantity,
+      price: r.price,
+      fees: r.fees,
+      executedAt: r.executedAt ?? r.createdAt ?? '',
+    })),
+    direction: trade.direction as 'long' | 'short',
+    riskSnapshot: null,
+    stopAdjustments: [],
+    currentMark: null,
+    currentAccountEquity: null,
+  });
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -437,15 +468,47 @@ describe('executeTradeFill', () => {
       ActionDirectionError,
     );
 
-    // Short trade accepts only sell_short / buy_to_cover.
+    // Short trades accept the full symmetric action set: sell_short, add,
+    // buy_to_cover, reduce. 'buy' (a long-side action) is still rejected.
     const shortTradeId = seedTrade(accountId, { direction: 'short', plannedStop: 105 });
     expect(() => executeTradeFill(fill(shortTradeId, { action: 'buy' }), context)).toThrow(
       ActionDirectionError,
     );
-    const ok = executeTradeFill(
+
+    // Open with sell_short, then scale in with 'add'.
+    const opened = executeTradeFill(
       fill(shortTradeId, { action: 'sell_short', price: 100 }),
       context,
     );
-    expect(ok.trade.status).toBe('open');
+    expect(opened.trade.status).toBe('open');
+
+    const added = executeTradeFill(
+      fill(shortTradeId, { action: 'add', quantity: 50, price: 101 }),
+      context,
+    );
+    expect(added.trade.status).toBe('open');
+
+    // Partially reduce the short, then cover the remainder.
+    const reduced = executeTradeFill(
+      fill(shortTradeId, { action: 'reduce', quantity: 25, price: 99 }),
+      context,
+    );
+    expect(reduced.trade.status).toBe('open');
+
+    const closed = executeTradeFill(
+      fill(shortTradeId, { action: 'buy_to_cover', quantity: 125, price: 98 }),
+      context,
+    );
+    expect(closed.trade.status).toBe('closed');
+    expect(closed.trade.closedAt).toBeTruthy();
+
+    // The full short lifecycle (sell_short → add → reduce → buy_to_cover) is
+    // accepted by the engine and derives symmetric quantities through the
+    // canonical computeTradeMetrics path.
+    const metrics = metricsForTrade(shortTradeId);
+    expect(metrics.size.entryQuantity).toBe(150);
+    expect(metrics.size.exitQuantity).toBe(150);
+    expect(metrics.size.openQuantity).toBe(0);
+    expect(metrics.position.status).toBe('closed');
   });
 });

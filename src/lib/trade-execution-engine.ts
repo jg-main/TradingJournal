@@ -232,7 +232,7 @@ export class IdempotentReplayError extends Error {
 
 const DIRECTION_ACTIONS: Record<TradeDirection, TradeExecutionAction[]> = {
   long: ['buy', 'add', 'sell', 'reduce'],
-  short: ['sell_short', 'buy_to_cover'],
+  short: ['sell_short', 'add', 'buy_to_cover', 'reduce'],
 };
 
 // ── Structured Logging ──────────────────────────────────────────────────
