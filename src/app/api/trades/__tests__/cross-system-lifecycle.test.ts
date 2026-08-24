@@ -744,6 +744,15 @@ async function scenarioLongLifecycle(): Promise<void> {
   assertEqual(detailAfter.body.workflowPhase as string, 'reviewed', 'long: workflowPhase reviewed');
 }
 
+/** Read account_performance.net_cash (canonical cash projection). */
+function readNetCash(accountId: string): number {
+  const h = requireDb().getSqliteHandle();
+  const row = h
+    .prepare('SELECT net_cash FROM account_performance WHERE account_id = ?')
+    .get(accountId) as { net_cash: string } | undefined;
+  return row ? Number(row.net_cash) : Number.NaN;
+}
+
 /** Scenario 2: full short lifecycle. */
 async function scenarioShortLifecycle(): Promise<void> {
   const accountId = seedAccount();
@@ -757,19 +766,25 @@ async function scenarioShortLifecycle(): Promise<void> {
   const checklist = passChecklist(accountId);
   const entry = engineFill(tradeId, { action: 'sell_short', quantity: 10, price: 100, fees: 0, executedAt: t(), checkResults: checklist });
   assertEqual(entry.trade.status, 'open', 'short: trade open after entry');
+  // A5 §8/§9/§10: short add = sell_short (cash INCREASE), short reduce =
+  // buy_to_cover (cash DECREASE). Exact canonical cash after every mutation.
+  assertEqual(readNetCash(accountId), 11000, 'short: cash after sell_short 10@100 = 10000 + 1000');
   await assertCoherent(accountId, tradeId, 'short:after-entry');
 
   const add = engineFill(tradeId, { action: 'add', quantity: 5, price: 102, fees: 0, executedAt: t() });
   assertEqual(add.trade.status, 'open', 'short: trade open after add');
+  assertEqual(readNetCash(accountId), 11510, 'short: cash after add 5@102 = 11000 + 510 (NEVER 10490)');
   await assertCoherent(accountId, tradeId, 'short:after-add');
 
   const reduce = engineFill(tradeId, { action: 'reduce', quantity: 3, price: 98, fees: 0, executedAt: t() });
   assertEqual(reduce.trade.status, 'open', 'short: trade open after reduce');
+  assertEqual(readNetCash(accountId), 11216, 'short: cash after reduce 3@98 = 11510 - 294 (NEVER 11804)');
   await assertCoherent(accountId, tradeId, 'short:after-reduce');
 
   const close = engineFill(tradeId, { action: 'buy_to_cover', quantity: 12, price: 96, fees: 0, executedAt: t() });
   assertEqual(close.trade.status, 'closed', 'short: trade closed');
   assert(close.trade.closedAt != null, 'short: closedAt set');
+  assertEqual(readNetCash(accountId), 10064, 'short: flat cash = 10000 + 1000 + 510 - 294 - 1152');
   await assertCoherent(accountId, tradeId, 'short:after-close');
 }
 

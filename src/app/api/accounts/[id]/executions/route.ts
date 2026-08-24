@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getSqliteHandle } from '@/db';
 import { postExecutionFill } from '@/lib/accounting/execution-posting';
+import { resolveEconomicExecutionAction } from '@/lib/accounting/economic-action';
 import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import { rebuildPositions } from '@/lib/positions/rebuild';
 import { allocateFifo } from '@/lib/positions/fifo';
@@ -176,10 +177,32 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // 4. Pre-flight FIFO check: read current position + lots and run
-    //    speculative allocation to catch over-close / flip before any writes.
+    // 4. M002-A5: generic management aliases (add/reduce) are workflow intent,
+    //    not economic sides. Resolve them from the current canonical position
+    //    direction (long add → buy, long reduce → sell, short add →
+    //    sell_short, short reduce → buy_to_cover). With no resolvable position
+    //    direction, reject rather than guess — no ambiguous accounting rows.
     const instrument = findOrCreateInstrument(sqlite, symbol);
     const currentPositionRow = findAccountPosition(sqlite, accountId, instrument.id);
+
+    let economicAction: string;
+    if (action === 'add' || action === 'reduce') {
+      const positionDirection = currentPositionRow?.direction ?? null;
+      if (!positionDirection) {
+        return NextResponse.json(
+          {
+            error: 'Cannot resolve add/reduce to an economic side',
+            code: 'AMBIGUOUS_EXECUTION_ACTION',
+            details: `Action "${action}" requires an existing ${'position'} with a known direction on this account and instrument.`, 
+          },
+          { status: 400 },
+        );
+      }
+      economicAction = resolveEconomicExecutionAction(action, positionDirection as 'long' | 'short');
+    } else {
+      economicAction = action;
+    }
+
     const currentLotRows = findFifoLotsByAccountInstrument(sqlite, accountId, instrument.id);
 
     const currentPosition: PositionState | null = currentPositionRow
@@ -225,10 +248,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // 5. Post the execution fill (creates immutable execution + ledger effects)
+    //    with the concrete economic action.
     const fillResult = postExecutionFill(sqlite, {
       accountId,
       symbol,
-      action,
+      action: economicAction,
       quantity,
       price,
       fees,

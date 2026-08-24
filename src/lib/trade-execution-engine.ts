@@ -65,6 +65,7 @@ import { computeRiskSnapshotValues } from '@/lib/risk-snapshot';
 import { computeExecutionContext } from '@/lib/execution-context';
 import { checkExecutionReadiness, type ReadinessFailure } from '@/lib/execution-readiness';
 import { postExecutionFill, type PostExecutionFillResult } from '@/lib/accounting/execution-posting';
+import { resolveEconomicExecutionAction } from '@/lib/accounting/economic-action';
 import { rebuildPositionsWithinTransaction } from '@/lib/positions/rebuild';
 import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import { tradeExecutionIdempotencyKey } from '@/lib/positions/trade-execution-sync';
@@ -876,13 +877,20 @@ export function executeTradeFill(
     });
 
     // f. Accounting execution (P4/P5 kernel; nested savepoint).
+    //    M002-A5: the accounting side receives the CONCRETE economic action
+    //    (journal add/reduce are workflow aliases; the cash side must be
+    //    unambiguous — short add = sell_short, short reduce = buy_to_cover).
     let accountingRow: AccountingExecutionRow;
     try {
+      const economicAction = resolveEconomicExecutionAction(
+        input.action,
+        trade.direction as TradeDirection,
+      );
       accountingRow = toAccountingExecutionRow(
         postExecutionFill(sqlite, {
           accountId: trade.accountId,
           symbol: trade.symbol,
-          action: input.action,
+          action: economicAction,
           quantity: normalizeDecimal(input.quantity),
           price: normalizeDecimal(input.price),
           fees: normalizeDecimal(input.fees ?? 0),

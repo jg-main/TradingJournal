@@ -20,6 +20,7 @@ import Database from 'better-sqlite3';
 import { normalizeDecimal } from '../accounting/decimal';
 import { ensureExecutionFinancialEvent } from '../accounting/execution-posting';
 import { assertSupportedAccountCurrency } from '../accounting/posting';
+import { resolveEconomicExecutionAction, isGenericManagementAction } from '../accounting/economic-action';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { rebuildPositions } from './rebuild';
 import type { RebuildResult } from './types';
@@ -130,11 +131,28 @@ export function syncTradeExecution(
   const fees = toCanonicalDecimal(tradeExecution.fees);
   const postedAt = tradeExecution.executedAt ?? new Date().toISOString();
 
+  // ── M002-A5: resolve the concrete economic action from the linked
+  //    trade's direction (legacy sync must never originate an ambiguous
+  //    add/reduce accounting row). Generic aliases with no resolvable
+  //    direction are rejected; concrete actions pass through.
+  let action = tradeExecution.action;
+  if (isGenericManagementAction(action)) {
+    const tradeRow = sqlite
+      .prepare('SELECT direction FROM trades WHERE id = ?')
+      .get(tradeExecution.tradeId) as { direction: 'long' | 'short' } | undefined;
+    if (!tradeRow) {
+      throw new Error(
+        `Cannot resolve "${action}" to an economic side: linked trade ${tradeExecution.tradeId} not found`,
+      );
+    }
+    action = resolveEconomicExecutionAction(action, tradeRow.direction);
+  }
+
   // ── Insert accounting execution ───────────────────────────────────
   const accountingExecution = insertAccountingExecution(sqlite, {
     accountId,
     instrumentId: instrument.id,
-    action: tradeExecution.action,
+    action,
     quantity,
     price,
     fees,

@@ -46,6 +46,7 @@ import {
 import { computeTradeMetrics } from '../trade-metrics';
 import { UnsupportedAccountCurrencyError } from '../accounting/errors';
 import { postExecutionFill } from '../accounting/execution-posting';
+import { postFinancialEvent } from '../accounting/posting';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -222,6 +223,14 @@ function countRows(table: string, where: string, ...params: unknown[]): number {
     .prepare(`SELECT count(*) AS count FROM ${table} WHERE ${where}`)
     .get(...params) as { count: number };
   return row.count;
+}
+
+/** Read account_performance.net_cash (canonical cash projection). */
+function netCash(accountId: string): number {
+  const row = sqlite
+    .prepare('SELECT net_cash FROM account_performance WHERE account_id = ?')
+    .get(accountId) as { net_cash: string } | undefined;
+  return row ? Number(row.net_cash) : Number.NaN;
 }
 
 function fill(tradeId: string, overrides: Partial<ExecuteTradeFillInput> = {}): ExecuteTradeFillInput {
@@ -649,6 +658,88 @@ describe('executeTradeFill', () => {
     // No execution, no risk snapshot persisted.
     expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(0);
     expect(countRows('trade_risk_snapshots', 'trade_id = ?', tradeId)).toBe(0);
+  });
+
+  it('A5: short add/resolve sell_short and reduce/buy_to_cover post the correct cash side (§8/§9/§10)', () => {
+    // Canonical funding 10000; short trade. Full workflow: sell_short 100@50,
+    // add 20@45 (sell more short → cash +900), reduce 30@40 (buy to cover →
+    // cash -1200), buy_to_cover 90@35. Final cash 11550, position flat.
+    const accountId = seedAccount({ startingBalance: null, maxRiskPerTradePct: 10 }); // 10% max-risk limit
+    seedSettings(12345, 10);
+    // Opening posted through the posting kernel so the projection's
+    // rebuildOpeningCash (ledger postings) counts it in net cash.
+    postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '10000.00',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: '10000.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: '10000.00', amountMicros: 10_000_000_000 }),
+      postedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 55 });
+
+    executeTradeFill(fill(tradeId, { action: 'sell_short', quantity: 100, price: 50 }), context);
+    expect(netCash(accountId)).toBe(15000); // 10000 + 5000
+
+    // Journal keeps the workflow alias; accounting gets the concrete side.
+    executeTradeFill(fill(tradeId, { action: 'add', quantity: 20, price: 45 }), context);
+    expect(netCash(accountId)).toBe(15900); // 15000 + 900 — NEVER 14100
+    const journalActions = db
+      .select()
+      .from(schema.tradeExecutions)
+      .where(eq(schema.tradeExecutions.tradeId, tradeId))
+      .all()
+      .map((r) => r.action);
+    expect(journalActions).toContain('add');
+    const acctRows = db
+      .select()
+      .from(schema.accountingExecutions)
+      .where(eq(schema.accountingExecutions.journalTradeId, tradeId))
+      .all();
+    expect(acctRows.map((r) => r.action).filter((a) => a === 'sell_short').length).toBeGreaterThanOrEqual(2);
+
+    executeTradeFill(fill(tradeId, { action: 'reduce', quantity: 30, price: 40 }), context);
+    expect(netCash(accountId)).toBe(14700); // 15900 - 1200 — NEVER 17100
+
+    executeTradeFill(fill(tradeId, { action: 'buy_to_cover', quantity: 90, price: 35 }), context);
+    expect(netCash(accountId)).toBe(11550); // flat: 10000 + 5000 + 900 - 1200 - 3150
+
+    // Position flat, trade closed.
+    expect(countRows('account_positions', "account_id = ? AND quantity != '0.00'", accountId)).toBe(0);
+    const t = db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get();
+    expect(t?.status).toBe('closed');
+  });
+
+  it('A5: long add/buy and reduce/sell cash behavior stays correct (§11)', () => {
+    // Canonical funding 10000; long trade. buy 100@50, add 20@45, reduce
+    // 30@55, sell 90@60. Final cash 11150.
+    const accountId = seedAccount({ startingBalance: null, maxRiskPerTradePct: 10 });
+    seedSettings(12345, 10);
+    postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '10000.00',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: '10000.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: '10000.00', amountMicros: 10_000_000_000 }),
+      postedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const tradeId = seedTrade(accountId, { plannedStop: 45 });
+
+    executeTradeFill(fill(tradeId, { action: 'buy', quantity: 100, price: 50 }), context);
+    expect(netCash(accountId)).toBe(5000);
+
+    executeTradeFill(fill(tradeId, { action: 'add', quantity: 20, price: 45 }), context);
+    expect(netCash(accountId)).toBe(4100); // 5000 - 900
+
+    executeTradeFill(fill(tradeId, { action: 'reduce', quantity: 30, price: 55 }), context);
+    expect(netCash(accountId)).toBe(5750); // 4100 + 1650
+
+    executeTradeFill(fill(tradeId, { action: 'sell', quantity: 90, price: 60 }), context);
+    expect(netCash(accountId)).toBe(11150); // flat
+
+    expect(countRows('account_positions', "account_id = ? AND quantity != '0.00'", accountId)).toBe(0);
   });
 
   it('A2: settings.startingAccountValue never funds an account with no canonical/legacy evidence', () => {

@@ -20,6 +20,7 @@ import type { CanonicalDecimal } from './types';
 import type { FinancialEventWithPostings } from './types';
 import { postFinancialEvent, assertSupportedAccountCurrency } from './posting';
 import { assertAccountAcceptsNewActivity } from './activity-guard';
+import { AmbiguousEconomicActionError, cashDirectionForEconomicAction, ECONOMIC_ACTIONS, type EconomicAction } from './economic-action';
 import {
   AccountNotFoundError,
   DuplicateExecutionIdempotencyError,
@@ -104,6 +105,13 @@ type ExecutionFinancialEventInput = Parameters<typeof postFinancialEvent>[1];
  * The calculation is shared by direct accounting entries, legacy journal
  * synchronization, and the one-time repair command so those paths cannot
  * disagree about available cash or NAV.
+ *
+ * M002-A5: `input.action` must be a CONCRETE economic action
+ * (buy / sell / sell_short / buy_to_cover). Generic workflow aliases
+ * (`add` / `reduce`) are rejected — callers resolve the economic side from
+ * position/trade direction via resolveEconomicExecutionAction BEFORE this
+ * builder, so no accounting cash effect ever guesses direction from an
+ * unresolved management alias.
  */
 export function buildExecutionFinancialEventInput(input: {
   accountingExecutionId: string;
@@ -125,6 +133,11 @@ export function buildExecutionFinancialEventInput(input: {
   const amount = fromMicros(considerationMicros);
   const description = input.description ?? `Execution: ${input.action} ${input.quantity} ${input.symbol} @ ${input.price}`;
 
+  if (!(ECONOMIC_ACTIONS as readonly string[]).includes(input.action)) {
+    throw new AmbiguousEconomicActionError(input.action, 'unknown');
+  }
+  const economicAction = input.action as EconomicAction;
+
   return {
     accountId: input.accountId,
     eventType: 'trade_execution',
@@ -133,7 +146,7 @@ export function buildExecutionFinancialEventInput(input: {
     description,
     payload: JSON.stringify({
       accountingExecutionId: input.accountingExecutionId,
-      action: input.action,
+      action: economicAction,
       symbol: input.symbol,
       quantity: input.quantity,
       price: input.price,
@@ -143,7 +156,7 @@ export function buildExecutionFinancialEventInput(input: {
     }),
     effect: JSON.stringify({
       kind: 'cash',
-      direction: ['sell', 'reduce', 'sell_short'].includes(input.action) ? 'increase' : 'decrease',
+      direction: cashDirectionForEconomicAction(economicAction),
       amount,
       amountMicros: considerationMicros,
     }),

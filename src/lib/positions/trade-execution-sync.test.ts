@@ -86,6 +86,15 @@ function createTestDatabase(): TestContext {
   insertAccount.run(accountId, 'Sync Test Account', 'Test Broker', 'USD', now, now);
   insertAccount.run(secondAccountId, 'Second Sync Account', 'Test Broker', 'USD', now, now);
 
+  // M002-A5: the sync resolves add/reduce from the linked trade's direction,
+  // so the fixture must seed a real long trade for the journal linkage.
+  sqlite
+    .prepare(
+      `INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'AAPL', 'long', 'open', ?, ?)`,
+    )
+    .run(tradeId, `TC-${tradeId.slice(0, 8)}`, accountId, now, now);
+
   // Create instrument
   const instrument = findOrCreateInstrument(sqlite, 'AAPL');
 
@@ -674,7 +683,9 @@ describe('syncAndRebuildPositions integration round-trip', () => {
       offset: 0,
     });
 
-    // Should have 4 executions: buy, add, reduce, sell (idempotent doesn't create a new row)
+    // Should have 4 executions: buy, add→buy, reduce→sell, sell (idempotent
+    // doesn't create a new row). M002-A5: the sync stores CONCRETE economic
+    // actions — generic aliases never reach accounting.
     expect(executions.length).toBeGreaterThanOrEqual(4);
 
     // The first execution should be the buy
@@ -683,14 +694,17 @@ describe('syncAndRebuildPositions integration round-trip', () => {
     expect(buyExec!.quantity).toBe('100.00');
     expect(buyExec!.price).toBe('150.75');
 
-    // The reduce execution
-    const reduceExec = executions.find((e) => e.action === 'reduce');
-    expect(reduceExec).toBeDefined();
-    expect(reduceExec!.quantity).toBe('30.00');
+    // The add execution is normalized to a second buy
+    const adds = executions.filter((e) => e.action === 'buy');
+    expect(adds.length).toBeGreaterThanOrEqual(2);
+    expect(adds.some((e) => e.quantity === '50.00')).toBe(true);
 
-    // The sell execution
-    const sellExec = executions.find((e) => e.action === 'sell');
-    expect(sellExec).toBeDefined();
-    expect(sellExec!.quantity).toBe('120.00');
+    // The reduce execution is normalized to sell
+    const sells = executions.filter((e) => e.action === 'sell');
+    expect(sells.length).toBeGreaterThanOrEqual(2);
+    expect(sells.some((e) => e.quantity === '30.00')).toBe(true);
+
+    // No generic aliases in accounting
+    expect(executions.some((e) => e.action === 'add' || e.action === 'reduce')).toBe(false);
   });
 });

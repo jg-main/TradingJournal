@@ -371,6 +371,43 @@ These are the decisions the requirements doc explicitly defers to S01
   - The legacy compatibility path alone retains the pre-M006 journal-P&L
     contract (unchanged from A2; hybrid/legacy classification is audited
     separately).
+- **M002-A5 (economic-side normalization — short Add/Reduce cash direction):**
+  journal `add`/`reduce` are **workflow aliases** (management phase, timeline,
+  trader UX, analytics); canonical accounting actions are **concrete economic
+  sides** and financially unambiguous. ONE shared resolver
+  (`resolveEconomicExecutionAction` in `src/lib/accounting/economic-action.ts`)
+  maps workflow action + position direction to the economic side:
+
+  | journal | long | short |
+  |---|---|---|
+  | buy | buy | (rejected) |
+  | add | buy | **sell_short** |
+  | sell | sell | (rejected) |
+  | reduce | sell | **buy_to_cover** |
+  | sell_short | (rejected) | sell_short |
+  | buy_to_cover | (rejected) | buy_to_cover |
+
+  Cash direction derives from the economic side only: sell/sell_short →
+  increase; buy/buy_to_cover → decrease. The engine resolves the economic
+  action before `postExecutionFill`; the direct account route resolves
+  add/reduce from the current canonical position direction (rejects with
+  `AMBIGUOUS_EXECUTION_ACTION` when no position exists — never guesses); the
+  legacy sync helper resolves via the linked trade; the financial-event
+  builder throws on an unresolved add/reduce. Journal `trade_executions` keep
+  the alias; `accounting_executions`/financial-event payloads carry the
+  concrete action (short add 20@45 → cash +900, not -900; short reduce 20@40
+  → cash -800, not +800). Correction reversal/replacement use the concrete
+  opposites (sell_short ↔ buy_to_cover).
+
+  **Historical compatibility:** pre-A5 short add/reduce rows whose financial
+  event recorded the inverted cash side are repaired by an auditable,
+  idempotent compensating event (`cash-direction-repair` service: typed
+  `manual_adjustment` with deterministic key
+  `cash-direction-repair:<executionId>:v1`, delta = ±2× consideration, atomic
+  with the account-performance rebuild). Immutable originals are never
+  rewritten; long aliases and concrete actions are never touched; a re-run
+  adds zero economic effect. Execution fees are deliberately NOT bundled into
+  A5 (separate audit follows).
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

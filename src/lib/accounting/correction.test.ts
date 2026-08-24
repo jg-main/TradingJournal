@@ -1004,4 +1004,74 @@ describe('correctExecution', () => {
     expect(afterReplay?.quantity).toBe('5.00');
     expect(afterReplay?.realized_gross_pnl).toBe('100.00');
   });
+
+  it('A5: correcting a short ADD (accounting sell_short) uses concrete reversal/replacement sides', () => {
+    const { sqlite } = ctx;
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'Fresh Short Add Account', now, now);
+
+    const symbol = 'AAPL';
+    const journalTradeId = randomUUID();
+
+    // A5 flow: short entry + short add posted with the CONCRETE accounting
+    // action (journal add → accounting sell_short), linked to the trade.
+    const openShort = postSellShort(sqlite, freshAccountId, symbol, '100.00', '50.00', '0.00', journalTradeId);
+    const shortAdd = postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'sell_short',
+      quantity: '20.00',
+      price: '45.00',
+      fees: '0.00',
+      journalTradeId,
+    });
+    rebuildPositions(sqlite, freshAccountId, openShort.execution.instrumentId);
+
+    // Correct the short add (should have been 25 @ 44): reversal = the
+    // concrete opposite (buy_to_cover), replacement = sell_short.
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: shortAdd.execution.id,
+      symbol,
+      action: 'sell_short',
+      quantity: '25.00',
+      price: '44.00',
+      reason: 'Short add fill was 20@45, should be 25@44',
+    });
+
+    // Concrete reversal/replacement sides — never a guess at add/reduce.
+    expect(result.reversalExecution.action).toBe('buy_to_cover');
+    expect(result.reversalExecution.price).toBe('45.00');
+    expect(result.replacementExecution.action).toBe('sell_short');
+    expect(result.replacementExecution.price).toBe('44.00');
+    expect(result.replacementExecution.journalTradeId).toBe(journalTradeId);
+
+    // Cash coherence: original add -900 (cash out for sell_short 20@45 was
+    // +900), reversal +900, replacement -1100 → net -200 beyond the entry.
+    const entries = sqlite
+      .prepare(
+        `SELECT effect FROM financial_events
+         WHERE account_id = ? AND event_type = 'trade_execution'
+         ORDER BY posted_at ASC, id ASC`,
+      )
+      .all(freshAccountId) as Array<{ effect: string | null }>;
+    const totalMicros = entries.reduce((sum, e) => {
+      const eff = e.effect ? (JSON.parse(e.effect) as { kind: string; direction: string; amountMicros: number }) : null;
+      if (!eff || eff.kind !== 'cash') return sum;
+      return sum + (eff.direction === 'increase' ? eff.amountMicros : -eff.amountMicros);
+    }, 0);
+    // 5000 (entry) + 900 (add) - 900 (reversal) + 1100 (replacement) = 6100.
+    expect(totalMicros).toBe(6_100_000_000);
+
+    // Position coherent: short 125 @ weighted avg ((100*50 + 25*44)/125 = 48.8).
+    const position = findAccountPosition(sqlite, freshAccountId, openShort.execution.instrumentId);
+    expect(position?.direction).toBe('short');
+    expect(position?.quantity).toBe('125.00');
+  });
 });
