@@ -813,13 +813,18 @@ async function main(): Promise<void> {
     assertEqual(snapshot.initialQuantity, 100, 'initialQuantity unchanged (quantity not corrected)');
     assertEqual(snapshot.riskPerShare, 7.0, 'riskPerShare recomputed as |152 - 145| = 7');
     assertEqual(snapshot.initialRiskAmount, 700.0, 'initialRiskAmount recomputed as 7 × 100 = 700');
-    // accountEquityAtOpen is re-resolved through the canonical cascade at repair
-    // time. The test account has no opening funding, so the ledger-derived NAV
-    // is negative after the correction; the repair stores it faithfully and
-    // accountRiskPct is null (computeRiskSnapshotValues requires equity > 0).
-    const nav = readAccountNav('test-account-id');
-    assertEqual(snapshot.accountEquityAtOpen, nav, 'accountEquityAtOpen matches the canonical cascade NAV');
-    assertEqual(snapshot.accountRiskPct, expectedRiskPct(700, nav), 'accountRiskPct consistent with computeRiskSnapshotValues');
+    // A2: accountEquityAtOpen is re-resolved through the shared canonical
+    // execution-equity resolver at repair time. This bare test account has NO
+    // canonical funding history (no opening_balance/deposit financial events)
+    // and no legacy startingBalance, so equity is UNAVAILABLE (null) — the
+    // repair preserves the stored value rather than fabricating a ledger
+    // derivation. accountRiskPct is computed from the stored equity.
+    assertEqual(snapshot.accountEquityAtOpen, 100000, 'accountEquityAtOpen preserved (equity unavailable for a bare account)');
+    assertEqual(snapshot.accountEquitySource, null, 'no provenance fabricated when equity is unavailable');
+    // accountRiskPct is null because computeRiskSnapshotValues received null
+    // equity at repair time (equity unavailable) — the preserved stored value
+    // is retained for compatibility but no new risk-to-account is derived.
+    assertEqual(snapshot.accountRiskPct, null, 'accountRiskPct null when equity unavailable');
   }
 
   // ── 16. Risk snapshot repair: first entry quantity corrected ─────────

@@ -323,6 +323,27 @@ These are the decisions the requirements doc explicitly defers to S01
   execution agree. Planning eligibility (exists/active/USD) stays strictly
   lighter than execution readiness; management fills never re-run the
   first-fill readiness gate.
+- **M002-A2 (canonical execution equity):** execution equity (the denominator
+  of max-risk and account-risk) resolves through the shared
+  `resolveExecutionEquityContext` — **current canonical projection
+  (account_performance.nav, pre-fill) → safe historical canonical source
+  (account_rollforward bounded by asOf) → explicit canonical reconstruction
+  (correction-aware cash + realized P&L at asOf) → explicit legacy
+  compatibility (startingBalance/accountTransactions, only for accounts with
+  no canonical funding history) → unavailable**. Key rules:
+  - Canonical zero never falls through to a global starting value;
+    `settings.startingAccountValue` cannot fabricate funding for a canonical
+    account.
+  - Current NAV is not used for a backdated timestamp when it includes future
+    state — backdated fills resolve bounded historical equity or
+    `unavailable`.
+  - Preview / readiness / max-risk / persisted risk snapshot share ONE
+    resolver; the snapshot stores explicit equity provenance
+    (`account_equity_source`, `account_equity_as_of`).
+  - Legacy compatibility is explicit, last, and cannot override canonical
+    zero. Trade-funded `account_performance` rows alone are NOT canonical
+    funding evidence (a legacy account's rebuild produces a misleading zero
+    NAV).
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

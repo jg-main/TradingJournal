@@ -204,6 +204,8 @@ sqlite.exec(`
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT NOT NULL UNIQUE,
     account_equity_at_open REAL,
+    account_equity_source TEXT,
+    account_equity_as_of TEXT,
     initial_entry_price REAL,
     initial_stop_price REAL,
     initial_quantity REAL,

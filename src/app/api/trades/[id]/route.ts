@@ -240,6 +240,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       sectorName,
       workflowPhase,
       metrics,
+      // A2: expose risk-snapshot equity provenance (nullable for historical
+      // snapshots that predate the provenance migration).
+      riskSnapshotProvenance: riskSnapshotRow
+        ? {
+            accountEquityAtOpen: riskSnapshotRow.accountEquityAtOpen,
+            accountEquitySource: riskSnapshotRow.accountEquitySource ?? null,
+            accountEquityAsOf: riskSnapshotRow.accountEquityAsOf ?? null,
+          }
+        : null,
     });
   } catch (error) {
     return NextResponse.json(

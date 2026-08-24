@@ -297,6 +297,7 @@ describe('repairRiskSnapshot', () => {
         correctedOriginalId: original.id,
         replacementExecution: { price: '152.00', quantity: '100.00', action: 'buy' },
         plannedStop: 145,
+        asOf: replacement.posted_at,
       }),
     );
 
@@ -339,6 +340,7 @@ describe('repairRiskSnapshot', () => {
         correctedOriginalId: add.id, // but the corrected execution is the later add
         replacementExecution: { price: '149.00', quantity: '80.00', action: 'add' },
         plannedStop: null,
+        asOf: '2025-06-01T10:00:00.000Z',
       }),
     );
 
@@ -365,6 +367,7 @@ describe('repairRiskSnapshot', () => {
         correctedOriginalId: original.id,
         replacementExecution: { price: '152.00', quantity: '100.00', action: 'buy' },
         plannedStop: null,
+        asOf: '2025-06-01T10:00:00.000Z',
       }),
     );
 
@@ -390,6 +393,7 @@ describe('repairRiskSnapshot', () => {
         correctedOriginalId: original.id,
         replacementExecution: { price: '152.00', quantity: '100.00', action: 'sell' },
         plannedStop: null,
+        asOf: '2025-06-01T10:00:00.000Z',
       }),
     );
 
@@ -416,6 +420,7 @@ describe('repairRiskSnapshot', () => {
         correctedOriginalId: original.id,
         replacementExecution: { price: '152.00', quantity: '100.00', action: 'buy' },
         plannedStop: 145,
+        asOf: '2025-06-01T10:00:00.000Z',
       }),
     );
 
@@ -460,6 +465,7 @@ describe('repairRiskSnapshot', () => {
         correctedOriginalId: original.id,
         replacementExecution: { price: '152.00', quantity: '100.00', action: 'buy' },
         plannedStop: 145,
+        asOf: '2025-06-01T10:00:00.000Z',
       }),
     );
 

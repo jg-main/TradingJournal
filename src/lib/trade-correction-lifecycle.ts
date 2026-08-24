@@ -42,6 +42,7 @@ import {
   type TradeStatus,
 } from '@/lib/trade-metrics';
 import { computeRiskSnapshotValues } from '@/lib/risk-snapshot';
+import { resolveExecutionEquityContext } from '@/lib/execution-equity';
 
 // The drizzle transaction type produced by db.transaction() (same extraction
 // pattern as trade-execution-engine.ts). Repair writes go through this tx so
@@ -353,9 +354,9 @@ export interface RiskSnapshotRepairResult {
  * reconstructed), then the trade's plannedStop, then the latest stop
  * adjustment as the best available proxy.
  *
- * Equity at open is re-resolved through the canonical cascade
- * (account_performance.nav → account_rollforward.ending_equity →
- * account.starting_balance → settings.starting_account_value).
+ * Equity at open is re-resolved through the shared A2 execution-equity
+ * resolver (resolveExecutionEquityContext) at the corrected effective
+ * timestamp, and its provenance is persisted with the repaired values.
  *
  * All writes go through the injected drizzle transaction so the repair
  * commits or rolls back with the rest of the correction.
@@ -376,6 +377,8 @@ export function repairRiskSnapshot(params: {
   replacementExecution: { price: string; quantity: string; action: string } | null;
   /** The trade's planned stop (trades.planned_stop). */
   plannedStop: number | null;
+  /** Corrected effective timestamp (replacement posted_at) for equity resolution (A2). */
+  asOf: string;
 }): RiskSnapshotRepairResult {
   const {
     tx,
@@ -387,6 +390,7 @@ export function repairRiskSnapshot(params: {
     correctedOriginalId,
     replacementExecution,
     plannedStop,
+    asOf,
   } = params;
 
   // 1. Existing snapshot required — repair never creates one.
@@ -425,14 +429,17 @@ export function repairRiskSnapshot(params: {
 
   // 4. Resolve stop price and equity, then recompute through the canonical
   //    kernel (computeRiskSnapshotValues — same function the creation path
-  //    uses in trade-execution-engine.maybeCreateRiskSnapshot).
+  //    uses in trade-execution-engine.maybeCreateRiskSnapshot). Equity is
+  //    resolved via the shared A2 resolver at the corrected effective
+  //    timestamp, and its provenance is persisted.
   const stopPrice = resolveRepairStopPrice({
     storedInitialStop: existing.initialStopPrice,
     plannedStop,
     sqlite,
     tradeId,
   });
-  const equityAtOpen = resolveCanonicalEquity(sqlite, accountId);
+  const { equity: equityAtOpen, source: equitySource, asOf: equityAsOf } =
+    resolveRepairEquity(sqlite, accountId, asOf);
 
   const newValues = computeRiskSnapshotValues({
     avgEntryPrice: entryPrice,
@@ -442,7 +449,12 @@ export function repairRiskSnapshot(params: {
     accountEquityAtOpen: equityAtOpen,
   });
 
-  // 5. Persist the repaired values inside the caller's transaction.
+  // 5. Persist the repaired values inside the caller's transaction, including
+  //    the A2 equity provenance. Provenance is written ONLY when equity
+  //    actually resolved — a null (unavailable) equity preserves the stored
+  //    value and leaves existing provenance untouched (A2 §26: never fabricate
+  //    provenance for values that did not resolve).
+  const equityResolved = equityAtOpen != null;
   tx.update(schema.tradeRiskSnapshots)
     .set({
       initialEntryPrice: newValues.initialEntryPrice,
@@ -451,7 +463,9 @@ export function repairRiskSnapshot(params: {
       riskPerShare: newValues.riskPerShare,
       initialRiskAmount: newValues.initialRiskAmount,
       accountRiskPct: newValues.accountRiskPct,
-      ...(equityAtOpen != null ? { accountEquityAtOpen: equityAtOpen } : {}),
+      ...(equityResolved ? { accountEquityAtOpen: equityAtOpen } : {}),
+      ...(equityResolved && equitySource ? { accountEquitySource: equitySource } : {}),
+      ...(equityResolved && equityAsOf != null ? { accountEquityAsOf: equityAsOf } : {}),
     })
     .where(eq(schema.tradeRiskSnapshots.tradeId, tradeId))
     .run();
@@ -516,42 +530,22 @@ function resolveRepairStopPrice(params: {
 }
 
 /**
- * Resolve the canonical account equity at open for the risk snapshot:
- * account_performance.nav (canonical decimal string) → latest
- * account_rollforward.ending_equity (date DESC) → account.startingBalance →
- * settings.startingAccountValue.
- *
- * Mirrors the cascade in trade-execution-engine.resolveCanonicalEquity (and
- * the dashboard-v2 journal kernel). The cascade is duplicated here so this
- * orchestration module does not depend on the execution engine.
+ * Resolve the canonical account equity at open for the risk snapshot repair
+ * (M002-A2). Delegates to the shared execution-equity resolver — the SAME
+ * one the engine uses for first-fill readiness / max-risk / snapshot — so a
+ * correction-driven rebuild stays coherent with the creation path. Equity is
+ * resolved at the corrected effective timestamp (the replacement execution's
+ * posted_at) rather than wall-clock now.
  */
-function resolveCanonicalEquity(
+function resolveRepairEquity(
   sqlite: Database.Database,
   accountId: string,
-): number | null {
-  const performance = sqlite
-    .prepare('SELECT nav FROM account_performance WHERE account_id = ?')
-    .get(accountId) as { nav: string | null } | undefined;
-  if (performance?.nav) {
-    const nav = parseFloat(performance.nav);
-    if (Number.isFinite(nav)) return nav;
-  }
-
-  const rollforward = sqlite
-    .prepare(
-      `SELECT ending_equity FROM account_rollforward
-       WHERE account_id = ? ORDER BY date DESC, created_at DESC LIMIT 1`,
-    )
-    .get(accountId) as { ending_equity: number | null } | undefined;
-  if (rollforward?.ending_equity != null) return rollforward.ending_equity;
-
-  const account = sqlite
-    .prepare('SELECT starting_balance FROM accounts WHERE id = ?')
-    .get(accountId) as { starting_balance: number | null } | undefined;
-  if (account?.starting_balance != null) return account.starting_balance;
-
-  const settingsRow = sqlite
-    .prepare("SELECT starting_account_value FROM settings WHERE id = 'default'")
-    .get() as { starting_account_value: number | null } | undefined;
-  return settingsRow?.starting_account_value ?? null;
+  asOf: string,
+): { equity: number | null; source: string; asOf: string | null } {
+  const resolved = resolveExecutionEquityContext(sqlite, accountId, asOf);
+  return {
+    equity: resolved.equity,
+    source: resolved.source,
+    asOf: resolved.asOf ?? asOf,
+  };
 }

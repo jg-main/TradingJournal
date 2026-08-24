@@ -26,12 +26,12 @@ function baseInput(
     settings: {
       maxRiskPerTradePct: 2, // fallback — ignored while account override is set
       defaultCommission: 1.5, // global commission fallback (A1)
-      startingAccountValue: 100000,
+      
     },
     tradeStatus: 'planned',
     initialRiskAmount: 500, // below 1% of 100000 = 1000
     equityAtOpen: 100000,
-    hasOpeningCash: true,
+    hasUsableEquity: true,
     requiredChecklistPassed: true,
     ...overrides,
   };
@@ -68,7 +68,7 @@ describe('checkExecutionReadiness', () => {
         settings: {
           maxRiskPerTradePct: null,
           defaultCommission: 1.5,
-          startingAccountValue: 100000,
+          
         },
       }),
     );
@@ -93,7 +93,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: 2,
         defaultCommission: null,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).toContain('account-not-trading-ready');
@@ -107,7 +107,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: 2,
         defaultCommission: 1.5,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).not.toContain('account-not-trading-ready');
@@ -115,8 +115,8 @@ describe('checkExecutionReadiness', () => {
   });
 
   it('fails with account-not-trading-ready when there is no opening cash', () => {
-    const result = checkExecutionReadiness(baseInput({ hasOpeningCash: false }));
-    expect(codesOf(baseInput({ hasOpeningCash: false }))).toContain(
+    const result = checkExecutionReadiness(baseInput({ hasUsableEquity: false }));
+    expect(codesOf(baseInput({ hasUsableEquity: false }))).toContain(
       'account-not-trading-ready',
     );
     expect(result.ready).toBe(false);
@@ -234,7 +234,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: 2,
         defaultCommission: 1.5,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).not.toContain('account-not-trading-ready');
@@ -259,7 +259,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: 2,
         defaultCommission: 1.5,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).not.toContain('account-not-trading-ready');
@@ -275,7 +275,7 @@ describe('checkExecutionReadiness', () => {
         settings: {
           maxRiskPerTradePct: 2,
           defaultCommission: 1.5,
-          startingAccountValue: 100000,
+          
         },
         initialRiskAmount: 1500,
       }),
@@ -294,7 +294,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: 2,
         defaultCommission: 1.5,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).not.toContain('account-not-trading-ready');
@@ -311,7 +311,7 @@ describe('checkExecutionReadiness', () => {
         settings: {
           maxRiskPerTradePct: 2,
           defaultCommission: 1.5,
-          startingAccountValue: 100000,
+          
         },
         initialRiskAmount: 2500,
       }),
@@ -330,7 +330,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: null,
         defaultCommission: 1.5,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).toContain('account-not-trading-ready');
@@ -347,7 +347,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: 2,
         defaultCommission: null,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).toContain('account-not-trading-ready');
@@ -360,7 +360,7 @@ describe('checkExecutionReadiness', () => {
       settings: {
         maxRiskPerTradePct: 2,
         defaultCommission: 2,
-        startingAccountValue: 100000,
+        
       },
     });
     expect(codesOf(input)).not.toContain('account-not-trading-ready');
@@ -371,7 +371,7 @@ describe('checkExecutionReadiness', () => {
         settings: {
           maxRiskPerTradePct: 2,
           defaultCommission: 2,
-          startingAccountValue: 100000,
+          
         },
         initialRiskAmount: 1500,
       }),
@@ -387,7 +387,7 @@ describe('checkExecutionReadiness', () => {
         maxRiskPerTradePct: null,
         defaultCommission: 1,
       },
-      settings: { maxRiskPerTradePct: null, defaultCommission: 1.5, startingAccountValue: 100000 },
+      settings: { maxRiskPerTradePct: null, defaultCommission: 1.5 },
       initialRiskAmount: 999999,
     });
     // No max-risk failure — but the account is not trading-ready (no risk
@@ -430,12 +430,12 @@ describe('checkExecutionReadiness', () => {
         maxRiskPerTradePct: null,
         defaultCommission: null,
       },
-      settings: { maxRiskPerTradePct: null, defaultCommission: 1.5, startingAccountValue: 100000 },
+      settings: { maxRiskPerTradePct: null, defaultCommission: 1.5 },
       tradeStatus: 'open',
       requiredChecklistPassed: false,
       initialRiskAmount: 5000,
       equityAtOpen: 100000,
-      hasOpeningCash: false,
+      hasUsableEquity: false,
     });
     const result = checkExecutionReadiness(input);
     expect(result.ready).toBe(false);

@@ -25,9 +25,16 @@
  * a valid global default exists; explicit zero is a valid configured value.
  * Readiness and the max-risk threshold use the SAME resolved value.
  *
+ * A2 contract: the funded-equity requirement uses canonical pre-fill equity
+ * (hasUsableEquity = canonical equity > 0), resolved by the shared
+ * resolveExecutionEquityContext — never the mere existence of an
+ * opening_balance/deposit event, and never a global starting value for a
+ * canonical account. An account may have historical funding but zero current
+ * equity and must NOT be considered ready.
+ *
  * Pure function library: NO database access, NO NextResponse. The caller
  * supplies the account/settings rows, the caller-computed initial risk amount,
- * equity-at-open and the hasOpeningCash flag, and decides how to surface each
+ * equity-at-open and the hasUsableEquity flag, and decides how to surface each
  * failure (block, override, or bubble).
  */
 
@@ -71,7 +78,6 @@ export interface ExecutionReadinessSettings {
   maxRiskPerTradePct: number | null;
   /** Global default commission fallback (A1). */
   defaultCommission: number | null;
-  startingAccountValue: number | null;
 }
 
 export interface ExecutionReadinessInput {
@@ -87,8 +93,8 @@ export interface ExecutionReadinessInput {
   initialRiskAmount: number | null;
   /** Account equity at open (canonical computeEquityAtOpen); null when unavailable. */
   equityAtOpen: number | null;
-  /** Whether the account has posted opening cash (positive equity). */
-  hasOpeningCash: boolean;
+  /** Whether the account has usable positive canonical equity (A2). */
+  hasUsableEquity: boolean;
   /** Whether every required checklist item is recorded as passed. */
   requiredChecklistPassed: boolean;
 }
@@ -135,7 +141,7 @@ export function checkExecutionReadiness(
     currency: input.account.currency,
     effectiveMaxRiskPerTradePct: effective.maxRiskPerTradePct,
     effectiveDefaultCommission: effective.defaultCommission,
-    hasOpeningCash: input.hasOpeningCash,
+    hasUsableEquity: input.hasUsableEquity,
   });
   if (!tradingReady) {
     failures.push({

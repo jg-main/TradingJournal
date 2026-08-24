@@ -81,12 +81,12 @@ export function isAccountEligibleAsDefault(
  * value (never treated as missing).
  *
  * Callers must resolve the effective values first (via
- * resolveEffectiveExecutionConfig) — this predicate never performs the
- * account ?? global fallback itself. Exported here as a single source of
- * truth so the execution paths reuse the same predicate instead of
- * re-implementing it. Pure predicate — no DB access; the caller supplies the
- * resolved values and the hasOpeningCash flag (financial_events existence
- * check).
+ * resolveEffectiveExecutionConfig) and the canonical equity (via
+ * resolveExecutionEquityContext) — this predicate never performs those
+ * fallbacks itself. Exported here as a single source of truth so the
+ * execution paths reuse the same predicate instead of re-implementing it.
+ * Pure predicate — no DB access; the caller supplies the resolved values and
+ * the hasUsableEquity flag (canonical pre-fill equity > 0).
  */
 export interface ExecutionReadinessConfig {
   isActive: boolean;
@@ -95,8 +95,8 @@ export interface ExecutionReadinessConfig {
   effectiveMaxRiskPerTradePct: number | null;
   /** Effective default commission (account ?? global); null when unavailable. */
   effectiveDefaultCommission: number | null;
-  /** Whether the account has posted opening cash (positive equity). */
-  hasOpeningCash: boolean;
+  /** Whether the account has usable positive canonical equity (A2). */
+  hasUsableEquity: boolean;
 }
 
 export function isAccountTradingReady(
@@ -107,6 +107,6 @@ export function isAccountTradingReady(
     config.currency === 'USD' &&
     config.effectiveMaxRiskPerTradePct !== null &&
     config.effectiveDefaultCommission !== null &&
-    config.hasOpeningCash
+    config.hasUsableEquity
   );
 }

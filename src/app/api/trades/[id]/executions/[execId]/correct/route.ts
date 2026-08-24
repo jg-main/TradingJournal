@@ -214,6 +214,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         correctedOriginalId: accountingExecution.id,
         replacementExecution: correctionResult.replacementExecution,
         plannedStop: trade.plannedStop,
+        // A2: resolve equity at the corrected effective timestamp (the
+        // replacement execution's posted_at), never wall-clock now.
+        asOf: correctionResult.replacementExecution.postedAt,
       });
 
       // 4d. Persist the recomputed lifecycle. reviewedAt is cleared whenever

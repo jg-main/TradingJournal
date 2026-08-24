@@ -201,6 +201,28 @@ function seedSettings(startingAccountValue: number): void {
   } as typeof schema.settings.$inferInsert).run();
 }
 
+/**
+ * Seed a canonical opening_balance financial event at an explicit postedAt
+ * (A2 canonical funding evidence). Used when a scenario needs funding
+ * AT/BEFORE a backdated fill timestamp that the real initialize route (which
+ * posts at wall-clock now) cannot provide.
+ */
+function seedOpeningBalanceEvent(accountId: string, amount: number, postedAt: string): void {
+  const h = requireDb().getSqliteHandle();
+  h.prepare(
+    `INSERT INTO financial_events
+       (id, account_id, event_type, description, payload, effect, posted_at, created_at)
+     VALUES (?, ?, 'opening_balance', 'Opening balance', ?, ?, ?, ?)`,
+  ).run(
+    randomUUID(),
+    accountId,
+    JSON.stringify({ amount: amount.toFixed(2) }),
+    JSON.stringify({ kind: 'cash', direction: 'increase', amount: amount.toFixed(2), amountMicros: Math.round(amount * 1_000_000) }),
+    postedAt,
+    nowIso(),
+  );
+}
+
 let tradeSeq = 0;
 
 /**
@@ -210,12 +232,18 @@ let tradeSeq = 0;
  * inside the 1-2ms correction-anchor window and make the correction scenario
  * flaky. Explicit, realistically-spaced fill times keep every scenario
  * deterministic (S08 contract: deterministic lifecycles, zero divergence).
+ *
+ * A2: fills must NOT predate the account's canonical funding. The real
+ * initialize route posts the opening_balance at wall-clock now, so the fill
+ * timeline starts just AFTER funding (now + 1s, stepping 1s). This keeps the
+ * current_projection source applicable and never consumes future funding for
+ * a backdated fill.
  */
 function fillTimeline(): () => string {
-  const base = Date.now() - 5 * 60_000;
+  const base = Date.now() + 1_000;
   let cursor = 0;
   return () => {
-    cursor += 60_000;
+    cursor += 1_000;
     return new Date(base + cursor).toISOString();
   };
 }
@@ -749,7 +777,15 @@ async function scenarioShortLifecycle(): Promise<void> {
 async function scenarioBackdatedFill(): Promise<void> {
   const accountId = seedAccount();
   seedInstrument('AAPL');
+  // Activate the account via the real initialize route (isActive false → true).
   await initializeAccount(accountId, 10000);
+  // A2: the backdated fill (2025-06-01) must have canonical funding AT/BEFORE
+  // its timestamp. The initialize route posts its opening at wall-clock now
+  // (2026-08) — future relative to the fill — so seed the historical funding
+  // directly at 2025-05-01. The resolver bounds reconstruction by the fill
+  // date, so the future (now) opening is excluded and only the 2025 funding
+  // counts (never future state).
+  seedOpeningBalanceEvent(accountId, 10000, '2025-05-01T00:00:00.000Z');
   seedChecklistItem(accountId);
   seedSettings(10000);
   const tradeId = seedTrade({ accountId, symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 95, plannedQuantity: 10 });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { z } from 'zod';
 import { computePlannedRiskAmount } from '@/lib/planned-risk';
 import { computeExecutionContext } from '@/lib/execution-context';
@@ -52,11 +52,12 @@ export async function GET(request: NextRequest) {
 
     const { accountId, direction, entry, stop, target1, quantity } = parsed.data;
 
-    // Canonical account + settings + equity-at-open resolution (T04 path).
-    // computeExecutionContext internally calls computeEquityAtOpen() with the
-    // canonical inputs (starting balance + deposits − withdrawals + realized
-    // P&L from prior closed trades, global-settings fallback).
-    const context = computeExecutionContext(db, accountId, new Date().toISOString());
+    // Canonical account + settings + equity-at-open resolution (T04 path,
+    // A2). computeExecutionContext delegates equity to the shared
+    // resolveExecutionEquityContext so the preview uses the SAME canonical
+    // pre-fill equity (with provenance) as first-fill readiness and the
+    // persisted risk snapshot.
+    const context = computeExecutionContext(db, getSqliteHandle(), accountId, new Date().toISOString());
     const account = context.account;
     const settings = context.globalSettings;
 
@@ -132,6 +133,8 @@ export async function GET(request: NextRequest) {
       rewardPct,
       riskRewardRatio,
       equityAtOpen,
+      equitySource: context.equitySource,
+      equityAsOf: context.equityAsOf,
       maxRiskPerTradePct,
       maxRiskExceeded,
     });

@@ -299,6 +299,30 @@ function seedRollforward(accountId: string, endingEquity: number): void {
     .run(randomUUID(), accountId, endingEquity, now, now);
 }
 
+/**
+ * Seed a canonical opening_balance financial event (A2 canonical funding
+ * evidence). The A2 resolver keys canonical-path eligibility on non-trade
+ * financial events — a bare account with only startingBalance/rollforward/
+ * performance rows takes the legacy path instead.
+ */
+function seedOpeningBalance(accountId: string, amount: number): void {
+  const now = new Date().toISOString();
+  requireDb().getSqliteHandle()
+    .prepare(
+      `INSERT INTO financial_events
+         (id, account_id, event_type, description, payload, effect, posted_at, created_at)
+       VALUES (?, ?, 'opening_balance', 'Opening balance', ?, ?, ?, ?)`,
+    )
+    .run(
+      randomUUID(),
+      accountId,
+      JSON.stringify({ amount: amount.toFixed(2) }),
+      JSON.stringify({ kind: 'cash', direction: 'increase', amount: amount.toFixed(2), amountMicros: Math.round(amount * 1_000_000) }),
+      now,
+      now,
+    );
+}
+
 /** Seed account_performance.nav (canonical cascade fallback #1). */
 function seedAccountPerformance(accountId: string, nav: string): void {
   const now = new Date().toISOString();
@@ -836,17 +860,19 @@ async function main(): Promise<void> {
 
   // ── 18. POST: Canonical cascade — rollforward.ending_equity wins ────
 
-  console.log('\n18. POST uses account_rollforward.ending_equity over startingBalance:');
+  console.log('\n18. A2: historical_rollforward is used for a backdated fill (canonical funding present):');
   {
     cleanup();
-    seedAccount({ id: 'test-account-id', startingBalance: 5000 });
-    seedRollforward('test-account-id', 8000);
+    seedAccount({ id: 'test-account-id', startingBalance: null });
+    seedOpeningBalance('test-account-id', 10000);
+    seedRollforward('test-account-id', 8000); // date 2026-01-01
     const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
 
     const result = await callPost(trade.id as string, {
       action: 'buy',
       quantity: 100,
       price: 150.0,
+      executedAt: '2026-01-05T10:00:00.000Z', // after the rollforward date
     });
 
     assert(result.status === 201, 'returns 201');
@@ -858,15 +884,17 @@ async function main(): Promise<void> {
       .get() as Record<string, unknown> | undefined;
 
     assertNotNull(snapshot, 'risk snapshot was created');
-    assertEqual(snapshot!.accountEquityAtOpen, 8000, 'equity = rollforward.ending_equity (canonical cascade)');
+    assertEqual(snapshot!.accountEquityAtOpen, 8000, 'equity = rollforward.ending_equity (historical_rollforward)');
+    assertEqual(snapshot!.accountEquitySource, 'historical_rollforward', 'provenance = historical_rollforward');
   }
 
   // ── 19. POST: Canonical cascade — performance.nav wins over all ────
 
-  console.log('\n19. POST uses account_performance.nav over rollforward/startingBalance:');
+  console.log('\n19. A2: current canonical projection wins over rollforward/legacy (canonical funding present):');
   {
     cleanup();
     seedAccount({ id: 'test-account-id', startingBalance: 5000 });
+    seedOpeningBalance('test-account-id', 9000);
     seedRollforward('test-account-id', 8000);
     seedAccountPerformance('test-account-id', '9000.00');
     const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
@@ -886,12 +914,13 @@ async function main(): Promise<void> {
       .get() as Record<string, unknown> | undefined;
 
     assertNotNull(snapshot, 'risk snapshot was created');
-    assertEqual(snapshot!.accountEquityAtOpen, 9000, 'equity = account_performance.nav (canonical cascade)');
+    assertEqual(snapshot!.accountEquityAtOpen, 9000, 'equity = account_performance.nav (current_projection)');
+    assertEqual(snapshot!.accountEquitySource, 'current_projection', 'provenance = current_projection');
   }
 
   // ── 20. POST: Falls back to settings.startingAccountValue when no account data ─
 
-  console.log('\n20. POST falls back to settings.startingAccountValue:');
+  console.log('\n20. A2: settings.startingAccountValue never funds a bare account:');
   {
     cleanup();
     seedAccount({ id: 'test-account-id', startingBalance: null });
@@ -905,16 +934,7 @@ async function main(): Promise<void> {
       price: 150.0,
     });
 
-    assert(result.status === 201, 'returns 201');
-
-    const snapshot = requireDb().db
-      .select()
-      .from(schema.tradeRiskSnapshots)
-      .where(eq(schema.tradeRiskSnapshots.tradeId, trade.id as string))
-      .get() as Record<string, unknown> | undefined;
-
-    assertNotNull(snapshot, 'risk snapshot was created');
-    assertEqual(snapshot!.accountEquityAtOpen, 25000, 'equity falls back to settings.startingAccountValue');
+    assert(result.status !== 201, 'bare account is NOT executable via the global starting value');
   }
 
   // ── 21. POST: Blocks execution when the account has no cash/equity ──

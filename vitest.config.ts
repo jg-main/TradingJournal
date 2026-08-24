@@ -52,6 +52,7 @@ export default defineConfig({
       'src/lib/restore.test.ts',
       'src/lib/__tests__/error-utils.test.ts',
       'src/lib/__tests__/execution-readiness.test.ts',
+      'src/lib/__tests__/execution-equity.test.ts',
       'src/lib/__tests__/chart-palette.test.ts',
       'src/lib/__tests__/design-system-docs.test.ts',
       'src/lib/__tests__/workstation-docs.test.ts',

@@ -1,0 +1,12 @@
+-- Migration: Execution equity provenance on trade risk snapshots (part 1)
+--
+-- M002-A2 — the canonical execution-equity resolver persists explicit
+-- provenance for the risk snapshot's accountEquityAtOpen so the milestone
+-- contract ("never persist a risk-snapshot equity number without knowing where
+-- it came from") holds.
+--
+-- Nullable text: existing historical snapshots have source = NULL because
+-- provenance was not recorded. That is acceptable — A2 does not fabricate
+-- provenance for old snapshots. Canonical engine owns these values; the manual
+-- risk-snapshot PUT surface excludes them so clients cannot spoof provenance.
+ALTER TABLE `trade_risk_snapshots` ADD `account_equity_source` text;

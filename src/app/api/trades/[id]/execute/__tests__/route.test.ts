@@ -605,9 +605,11 @@ async function main(): Promise<void> {
 
   // ── 16. Account equity fallback to settings ─────────────────────────
 
-  console.log('\n16. Falls back to settings.startingAccountValue:');
+  console.log('\n16. A2: settings.startingAccountValue never funds a bare account:');
   {
     cleanup();
+    // No canonical funding event, no startingBalance, no accountTransactions.
+    // The global starting value must NOT fabricate equity (A2 §11/§21).
     seedAccount({ id: 'test-account-id', startingBalance: null });
     seedSettings(25000);
 
@@ -618,16 +620,7 @@ async function main(): Promise<void> {
       entryQuantity: 100,
     });
 
-    assert(result.status === 201, 'returns 201');
-
-    const snapshot = requireDb().db
-      .select()
-      .from(schema.tradeRiskSnapshots)
-      .where(eq(schema.tradeRiskSnapshots.tradeId, trade.id as string))
-      .get() as Record<string, unknown> | undefined;
-
-    assertNotNull(snapshot, 'risk snapshot created');
-    assertEqual(snapshot!.accountEquityAtOpen, 25000, 'equity falls back to settings');
+    assert(result.status !== 201, 'bare account is NOT executable via the global starting value');
   }
 
   // ── 17. Only required items gate execution ──────────────────────────

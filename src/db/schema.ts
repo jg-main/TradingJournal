@@ -164,6 +164,10 @@ export const tradeRiskSnapshots = sqliteTable('trade_risk_snapshots', {
     .unique()
     .notNull(),
   accountEquityAtOpen: real('account_equity_at_open'),
+  /** Provenance of accountEquityAtOpen (A2: current_projection / historical_rollforward / reconstructed_canonical / legacy_compatibility / unavailable). */
+  accountEquitySource: text('account_equity_source'),
+  /** As-of marker for accountEquityAtOpen (projection computed_as_of, rollforward date, or fill timestamp). */
+  accountEquityAsOf: text('account_equity_as_of'),
   initialEntryPrice: real('initial_entry_price'),
   initialStopPrice: real('initial_stop_price'),
   initialQuantity: real('initial_quantity'),

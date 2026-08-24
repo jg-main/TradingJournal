@@ -13,11 +13,11 @@
  *   a. journal execution   — trade_executions row (with idempotency key)
  *   b. trade state         — status / openedAt / closedAt derived by
  *                            computeTradeMetrics from the full execution set
- *   c. risk snapshot       — first-entry snapshot with the canonical equity
- *                            cascade (account_performance.nav →
- *                            account_rollforward.ending_equity →
- *                            account.startingBalance →
- *                            settings.startingAccountValue)
+ *   c. risk snapshot       — first-entry snapshot with the canonical A2
+ *                            execution equity (resolveExecutionEquityContext:
+ *                            current projection → historical rollforward →
+ *                            canonical reconstruction → legacy compatibility
+ *                            → unavailable) + explicit provenance
  *   d. checklist evidence  — trade_check_results with item-text snapshot (F7)
  *   e. accounting          — immutable accounting_executions row + financial
  *                            event + balanced ledger postings via
@@ -304,47 +304,6 @@ function validateActionForDirection(
   }
 }
 
-/**
- * Resolve the canonical account equity at open for the risk snapshot:
- * account_performance.nav (canonical decimal string, parsed as float) →
- * latest account_rollforward.ending_equity (date DESC) →
- * account.startingBalance → settings.startingAccountValue.
- *
- * Mirrors the dashboard-v2 journal-kernel cascade. This is the source for the
- * risk snapshot only — the readiness gate keeps using execution-context.ts
- * (S02 contract preserved).
- */
-function resolveCanonicalEquity(
-  sqlite: Database.Database,
-  accountId: string,
-): number | null {
-  const performance = sqlite
-    .prepare('SELECT nav FROM account_performance WHERE account_id = ?')
-    .get(accountId) as { nav: string | null } | undefined;
-  if (performance?.nav) {
-    const nav = parseFloat(performance.nav);
-    if (Number.isFinite(nav)) return nav;
-  }
-
-  const rollforward = sqlite
-    .prepare(
-      `SELECT ending_equity FROM account_rollforward
-       WHERE account_id = ? ORDER BY date DESC, created_at DESC LIMIT 1`,
-    )
-    .get(accountId) as { ending_equity: number | null } | undefined;
-  if (rollforward?.ending_equity != null) return rollforward.ending_equity;
-
-  const account = sqlite
-    .prepare('SELECT starting_balance FROM accounts WHERE id = ?')
-    .get(accountId) as { starting_balance: number | null } | undefined;
-  if (account?.starting_balance != null) return account.starting_balance;
-
-  const settingsRow = sqlite
-    .prepare("SELECT starting_account_value FROM settings WHERE id = 'default'")
-    .get() as { starting_account_value: number | null } | undefined;
-  return settingsRow?.starting_account_value ?? null;
-}
-
 // ── Checklist helpers ───────────────────────────────────────────────────
 
 interface ChecklistSnapshot {
@@ -477,23 +436,40 @@ function persistChecklistEvidence(
 
 /**
  * Create the first-entry risk snapshot when none exists for the trade and the
- * entry quantity is positive. Equity-at-open comes from the canonical cascade
- * (resolveCanonicalEquity), NOT from the legacy startingBalance + flows model.
+ * entry quantity is positive. Equity-at-open (and its provenance) come from
+ * the canonical execution-equity context resolved in first-fill preflight
+ * (A2), NOT from an independent resolver inside the transaction — readiness
+ * equity === max-risk equity === persisted snapshot equity for the same fill.
  */
 function maybeCreateRiskSnapshot(
   tx: EngineTx,
   sqlite: Database.Database,
   params: {
     tradeId: string;
-    accountId: string;
     direction: Direction;
     entryQuantity: number;
     avgEntryPrice: number | null;
     stopPrice: number | null;
     now: string;
+    /** Canonical pre-fill equity resolved in preflight (A2). */
+    equityAtOpen: number | null;
+    /** Provenance of the resolved equity (A2). */
+    equitySource: string;
+    /** As-of marker of the resolved equity (A2). */
+    equityAsOf: string | null;
   },
 ): typeof schema.tradeRiskSnapshots.$inferSelect | null {
-  const { tradeId, accountId, direction, entryQuantity, avgEntryPrice, stopPrice, now } = params;
+  const {
+    tradeId,
+    direction,
+    entryQuantity,
+    avgEntryPrice,
+    stopPrice,
+    now,
+    equityAtOpen,
+    equitySource,
+    equityAsOf,
+  } = params;
 
   if (entryQuantity <= 0 || avgEntryPrice == null) return null;
 
@@ -503,8 +479,6 @@ function maybeCreateRiskSnapshot(
     .where(eq(tradeRiskSnapshots.tradeId, tradeId))
     .get();
   if (existing) return existing;
-
-  const equityAtOpen = resolveCanonicalEquity(sqlite, accountId);
 
   const riskValues = computeRiskSnapshotValues({
     avgEntryPrice,
@@ -519,6 +493,8 @@ function maybeCreateRiskSnapshot(
     tradeId,
     createdAt: now,
     ...(equityAtOpen != null ? { accountEquityAtOpen: equityAtOpen } : {}),
+    ...(equitySource ? { accountEquitySource: equitySource } : {}),
+    ...(equityAsOf != null ? { accountEquityAsOf: equityAsOf } : {}),
     ...riskValues,
   };
   tx.insert(tradeRiskSnapshots).values(insert).run();
@@ -702,6 +678,17 @@ export function executeTradeFill(
   let riskOverrideReasonToStore: string | null = null;
   let checklistSnapshot: ChecklistSnapshot = { submitted: [], itemTextById: new Map() };
 
+  // A2: resolve the canonical execution-equity context ONCE for the first-fill
+  // preflight. The SAME frozen context feeds execution readiness, the max-risk
+  // limit, and (inside the transaction) the persisted first-entry risk
+  // snapshot — readiness equity === max-risk equity === snapshot equity.
+  const equityContext = computeExecutionContext(
+    dbHandle,
+    sqlite,
+    trade.accountId,
+    execTimestamp,
+  );
+
   // First-fill gates (trade still 'planned').
   if (trade.status === 'planned') {
     // ── Execution readiness gate (S02 contract) ──────────────────────
@@ -710,12 +697,6 @@ export function executeTradeFill(
       effectiveStop != null
         ? Math.abs(input.price - effectiveStop) * input.quantity
         : null;
-
-    const equityContext = computeExecutionContext(
-      dbHandle,
-      trade.accountId,
-      execTimestamp,
-    );
 
     const readiness = checkExecutionReadiness({
       account: {
@@ -727,12 +708,11 @@ export function executeTradeFill(
       settings: {
         maxRiskPerTradePct: equityContext.globalSettings?.maxRiskPerTradePct ?? null,
         defaultCommission: equityContext.globalSettings?.defaultCommission ?? null,
-        startingAccountValue: equityContext.globalSettings?.startingAccountValue ?? null,
       },
       tradeStatus: trade.status,
       initialRiskAmount,
       equityAtOpen: equityContext.equityAtOpen,
-      hasOpeningCash: equityContext.hasOpeningCash,
+      hasUsableEquity: equityContext.hasUsableEquity,
       // Required checklist items were enforced by the checklist gate below.
       requiredChecklistPassed: true,
     });
@@ -859,12 +839,16 @@ export function executeTradeFill(
     try {
       riskSnapshot = maybeCreateRiskSnapshot(tx, sqlite, {
         tradeId: input.tradeId,
-        accountId: trade.accountId,
         direction: trade.direction as Direction,
         entryQuantity: metrics.size.entryQuantity,
         avgEntryPrice: metrics.averagePrices.avgEntryPrice,
         stopPrice: input.stopPrice ?? trade.plannedStop,
         now,
+        // A2: the frozen preflight equity context — same value used for
+        // readiness and max-risk enforcement.
+        equityAtOpen: equityContext.equityAtOpen,
+        equitySource: equityContext.equitySource,
+        equityAsOf: equityContext.equityAsOf,
       });
     } catch (err) {
       logError('risk-snapshot', err);

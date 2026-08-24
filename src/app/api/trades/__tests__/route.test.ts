@@ -176,6 +176,8 @@ sqlite.exec(`
     id TEXT PRIMARY KEY NOT NULL,
     trade_id TEXT NOT NULL UNIQUE,
     account_equity_at_open REAL,
+    account_equity_source TEXT,
+    account_equity_as_of TEXT,
     initial_entry_price REAL,
     initial_stop_price REAL,
     initial_quantity REAL,
@@ -1350,13 +1352,13 @@ console.log('\n12j. isAccountTradingReady separates planning-eligibility from tr
     currency: 'USD',
     effectiveMaxRiskPerTradePct: 0.5,
     effectiveDefaultCommission: 1.0,
-    hasOpeningCash: true,
+    hasUsableEquity: true,
   };
   assert(isAccountTradingReady({ ...base, isActive: false }) === false, 'inactive account is not trading-ready');
   assert(isAccountTradingReady({ ...base, currency: 'EUR' }) === false, 'non-USD account is not trading-ready');
   assert(isAccountTradingReady({ ...base, effectiveMaxRiskPerTradePct: null }) === false, 'missing effective maxRisk is not trading-ready');
   assert(isAccountTradingReady({ ...base, effectiveDefaultCommission: null }) === false, 'missing effective commission is not trading-ready');
-  assert(isAccountTradingReady({ ...base, hasOpeningCash: false }) === false, 'no opening cash is not trading-ready');
+  assert(isAccountTradingReady({ ...base, hasUsableEquity: false }) === false, 'no usable equity is not trading-ready');
   assert(isAccountTradingReady({ ...base }) === true, 'fully configured account with cash is trading-ready');
   // A1: global defaults make the account trading-ready even when the account
   // row carries nulls for both fields.
@@ -1366,7 +1368,7 @@ console.log('\n12j. isAccountTradingReady separates planning-eligibility from tr
       currency: 'USD',
       effectiveMaxRiskPerTradePct: 2,
       effectiveDefaultCommission: 1.5,
-      hasOpeningCash: true,
+      hasUsableEquity: true,
     }) === true,
     'global-defaulted account is trading-ready',
   );

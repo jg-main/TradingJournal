@@ -16,7 +16,7 @@
  */
 /// <reference types="vitest/globals" />
 
-import { testDbPath } from '../../../../../lib/testing/test-db';
+import { testDbPath, applyAllMigrations } from '../../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -59,100 +59,12 @@ sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 const db = drizzle(sqlite, { schema });
 
-// Create the subset of tables computeExecutionContext reads: accounts,
-// settings, account_transactions, trades, trade_executions.
-sqlite.exec(`
-  DROP TABLE IF EXISTS trade_executions;
-  DROP TABLE IF EXISTS trades;
-  DROP TABLE IF EXISTS account_transactions;
-  DROP TABLE IF EXISTS settings;
-  DROP TABLE IF EXISTS accounts;
+// Use the REAL migrated schema — the preview now shares the canonical A2
+// execution-equity resolver (resolveExecutionEquityContext) which reads
+// account_performance / financial_events / ledger_entries /
+// accounting_executions, so the mirror must run against the real schema.
+applyAllMigrations(sqlite);
 
-  CREATE TABLE accounts (
-    id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    broker TEXT,
-    currency TEXT DEFAULT 'USD',
-    is_active INTEGER DEFAULT 1,
-    max_risk_per_trade_pct REAL,
-    default_commission REAL,
-    starting_balance REAL,
-    created_at TEXT,
-    updated_at TEXT
-  );
-
-  CREATE TABLE settings (
-    id TEXT PRIMARY KEY NOT NULL,
-    default_account_id TEXT,
-    starting_account_value REAL,
-    max_risk_per_trade_pct REAL,
-    default_commission REAL,
-    journal_start_date TEXT,
-    currency TEXT DEFAULT 'USD',
-    backup_enabled INTEGER DEFAULT 0,
-    backup_retention_count INTEGER DEFAULT 3,
-    backup_last_run_at TEXT,
-    backup_last_run_status TEXT,
-    backup_cron_time TEXT DEFAULT '02:00',
-    created_at TEXT,
-    updated_at TEXT
-  );
-
-  CREATE TABLE account_transactions (
-    id TEXT PRIMARY KEY NOT NULL,
-    account_id TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('deposit', 'withdrawal')),
-    amount REAL NOT NULL,
-    balance_after REAL NOT NULL,
-    date TEXT NOT NULL,
-    notes TEXT,
-    created_at TEXT
-  );
-
-  CREATE TABLE trades (
-    id TEXT PRIMARY KEY NOT NULL,
-    trade_code TEXT UNIQUE NOT NULL,
-    account_id TEXT NOT NULL,
-    symbol TEXT NOT NULL,
-    direction TEXT NOT NULL CHECK(direction IN ('long', 'short')),
-    sector_id TEXT,
-    setup_id TEXT,
-    market_condition_id TEXT,
-    status TEXT NOT NULL CHECK(status IN ('planned', 'open', 'closed', 'deleted')),
-    planned_entry REAL,
-    planned_stop REAL,
-    planned_target_1 REAL,
-    planned_target_2 REAL,
-    planned_quantity REAL,
-    thesis TEXT,
-    invalidation_condition TEXT,
-    pre_trade_plan TEXT,
-    risk_override_reason TEXT,
-    opened_at TEXT,
-    closed_at TEXT,
-    reviewed_at TEXT,
-    exit_notes TEXT,
-    lesson TEXT,
-    current_price REAL,
-    current_price_fetched_at TEXT,
-    created_at TEXT,
-    updated_at TEXT
-  );
-
-  CREATE TABLE trade_executions (
-    id TEXT PRIMARY KEY NOT NULL,
-    trade_id TEXT NOT NULL,
-    executed_at TEXT,
-    action TEXT NOT NULL CHECK(action IN ('buy', 'sell', 'buy_to_cover', 'sell_short', 'add', 'reduce')),
-    quantity REAL NOT NULL,
-    price REAL NOT NULL,
-    fees REAL DEFAULT 0,
-    reason_id TEXT,
-    notes TEXT,
-    idempotency_key TEXT,
-    created_at TEXT
-  );
-`);
 
 // ── Seed helpers ────────────────────────────────────────────────────
 
@@ -226,7 +138,7 @@ function doGetPreview(search: string): { status: number; data: Record<string, un
 
   const { accountId, direction, entry, stop, target1, quantity } = parsed.data;
 
-  const context = computeExecutionContext(db, accountId, new Date().toISOString());
+  const context = computeExecutionContext(db, sqlite, accountId, new Date().toISOString());
   const account = context.account;
   const settings = context.globalSettings;
 
@@ -279,6 +191,8 @@ function doGetPreview(search: string): { status: number; data: Record<string, un
       rewardPct,
       riskRewardRatio,
       equityAtOpen,
+      equitySource: context.equitySource,
+      equityAsOf: context.equityAsOf,
       maxRiskPerTradePct,
       maxRiskExceeded,
     },
@@ -398,15 +312,17 @@ console.log('\n10. Equity-at-open includes deposits:');
   assertApprox(r.data.accountRiskPct as number, 2, 1e-9, 'accountRiskPct → 500/25000 = 2');
 }
 
-// 11. Global settings fallback for equity when no account data (hasNoAccountData).
-console.log('\n11. Equity fallback to settings.startingAccountValue:');
+// 11. A2: global settings.startingAccountValue must NOT fabricate equity for
+//     an account with no canonical evidence and no legacy rows → unavailable.
+console.log('\n11. A2: no equity fabrication from settings.startingAccountValue:');
 {
   const accNoData = seedAccount({ startingBalance: null });
   seedSettings({ startingAccountValue: 40000, maxRiskPerTradePct: 1 });
   const r = doGetPreview(`accountId=${accNoData}&direction=long&entry=100&stop=95&quantity=100`);
-  assertApprox(r.data.equityAtOpen as number, 40000, 1e-9, 'equity fallback → 40000');
-  assertApprox(r.data.accountRiskPct as number, 1.25, 1e-9, 'accountRiskPct → 500/40000 = 1.25');
-  assertEqual(r.data.maxRiskExceeded, true, '1.25% > 1% → exceeded');
+  assertNull(r.data.equityAtOpen, 'no canonical/legacy evidence → equity unavailable (null)');
+  assertNull(r.data.accountRiskPct, 'no equity → accountRiskPct null');
+  assertEqual(r.data.maxRiskExceeded, false, 'no equity/risk pct → maxRiskExceeded false');
+  assertEqual(r.data.equitySource, 'unavailable', 'equitySource → unavailable');
 }
 
 // 12. Default direction is long when omitted.

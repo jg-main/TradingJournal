@@ -161,6 +161,50 @@ function seedAccountPerformance(accountId: string, nav: string): void {
     .run(randomUUID(), accountId, now(), '0.00', nav, now(), now(), now());
 }
 
+/**
+ * Seed a canonical opening_balance financial event (M006 funding evidence).
+ * A2 canonical-funding detection keys on non-trade financial events, so a
+ * canonical account must have at least one such event (opening_balance,
+ * deposit, ...) to take the canonical path — the derived account_performance
+ * row alone is NOT canonical funding evidence.
+ */
+function seedOpeningBalance(accountId: string, amount: number, postedAt = now()): void {
+  sqlite
+    .prepare(
+      `INSERT INTO financial_events
+         (id, account_id, event_type, idempotency_key, description, payload, effect, posted_at, created_at)
+       VALUES (?, ?, 'opening_balance', ?, 'Opening balance', ?, ?, ?, ?)`,
+    )
+    .run(
+      randomUUID(),
+      accountId,
+      null,
+      JSON.stringify({ amount: amount.toFixed(2) }),
+      JSON.stringify({ kind: 'cash', direction: 'increase', amount: amount.toFixed(2), amountMicros: Math.round(amount * 1_000_000) }),
+      postedAt,
+      now(),
+    );
+}
+
+/** Seed a canonical withdrawal financial event (M006 funding evidence). */
+function seedWithdrawal(accountId: string, amount: number, postedAt = now()): void {
+  sqlite
+    .prepare(
+      `INSERT INTO financial_events
+         (id, account_id, event_type, idempotency_key, description, payload, effect, posted_at, created_at)
+       VALUES (?, ?, 'withdrawal', ?, 'Withdrawal', ?, ?, ?, ?)`,
+    )
+    .run(
+      randomUUID(),
+      accountId,
+      null,
+      JSON.stringify({ amount: amount.toFixed(2) }),
+      JSON.stringify({ kind: 'cash', direction: 'decrease', amount: amount.toFixed(2), amountMicros: Math.round(amount * 1_000_000) }),
+      postedAt,
+      now(),
+    );
+}
+
 function seedRollforward(accountId: string, endingEquity: number): void {
   sqlite
     .prepare(
@@ -542,37 +586,64 @@ describe('executeTradeFill', () => {
     expect(() => executeTradeFill(fill(tradeId), context)).toThrow(ReadinessFailureError);
   });
 
-  it('canonical equity cascade: performance.nav wins over the legacy model', () => {
-    const accountId = seedAccount();
+  it('A2: current canonical projection wins over contradictory legacy data', () => {
+    // Canonical funding evidence (opening_balance event) + current projection
+    // NAV 50000. Contradictory legacy startingBalance is seeded too — the
+    // canonical projection must win.
+    const accountId = seedAccount({ startingBalance: 500000 });
     seedSettings();
+    seedOpeningBalance(accountId, 50000);
     seedAccountPerformance(accountId, '50000.00');
     const tradeId = seedTrade(accountId, { plannedStop: 95 });
 
     const result = executeTradeFill(fill(tradeId), context);
 
     expect(result.riskSnapshot?.accountEquityAtOpen).toBe(50000);
+    expect(result.riskSnapshot?.accountEquitySource).toBe('current_projection');
   });
 
-  it('canonical equity cascade: rollforward.ending_equity is the next fallback', () => {
+  it('A2: historical_rollforward is used for a backdated fill (bounded by asOf)', () => {
+    // Canonical funding + a rollforward observation dated before the backdated
+    // fill timestamp. The fill is backdated to AFTER the rollforward date, so
+    // the bounded lookup finds it (never "latest row overall").
     const accountId = seedAccount({ startingBalance: null });
     seedSettings(12345);
-    seedRollforward(accountId, 75000);
+    seedOpeningBalance(accountId, 10000, '2025-12-15T00:00:00.000Z');
+    seedRollforward(accountId, 75000); // date '2026-01-01'
     const tradeId = seedTrade(accountId, { plannedStop: 99 });
 
-    const result = executeTradeFill(fill(tradeId, { quantity: 10, price: 100 }), context);
+    const result = executeTradeFill(
+      fill(tradeId, { quantity: 10, price: 100, executedAt: '2026-01-10T10:00:00.000Z' }),
+      context,
+    );
 
-    // No account_performance → rollforward.ending_equity.
     expect(result.riskSnapshot?.accountEquityAtOpen).toBe(75000);
+    expect(result.riskSnapshot?.accountEquitySource).toBe('historical_rollforward');
   });
 
-  it('canonical equity cascade: settings.startingAccountValue is the final fallback', () => {
+  it('A2: settings.startingAccountValue never funds an account with no canonical/legacy evidence', () => {
+    // No canonical funding event, no startingBalance, no accountTransactions:
+    // the global starting value must NOT fabricate equity (A2 §11/§21).
     const accountId = seedAccount({ startingBalance: null });
     seedSettings(12345);
     const tradeId = seedTrade(accountId, { plannedStop: 99 });
 
-    const result = executeTradeFill(fill(tradeId, { quantity: 10, price: 100 }), context);
+    expect(() => executeTradeFill(fill(tradeId, { quantity: 10, price: 100 }), context)).toThrow(
+      ReadinessFailureError,
+    );
+  });
 
-    expect(result.riskSnapshot?.accountEquityAtOpen).toBe(12345);
+  it('A2: canonical zero equity (opening 10000, withdrawal 10000) stays zero — no global fallback', () => {
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(50000);
+    seedOpeningBalance(accountId, 10000, '2026-01-01T00:00:00.000Z');
+    seedWithdrawal(accountId, 10000, '2026-01-02T00:00:00.000Z');
+    // No projection row: reconstruction path resolves correction-aware cash = 0.
+    const tradeId = seedTrade(accountId, { plannedStop: 99 });
+
+    expect(() => executeTradeFill(fill(tradeId, { quantity: 10, price: 100 }), context)).toThrow(
+      ReadinessFailureError,
+    );
   });
 
   it('deleted trade is rejected before any mutation', () => {
