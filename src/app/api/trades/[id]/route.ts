@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { trades, lookupValues, setupDefinitions, tradeExecutions, tradeRiskSnapshots, tradeStopAdjustments, tradeTargetAdjustments, settings, accounts, accountRollforward, accountPerformance } from '@/db/schema';
 import { eq, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { resolveSetup } from '@/lib/setup-resolver';
 import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase';
 import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput } from '@/lib/trade-metrics';
+import { resolveTradeMetricsExecutions } from '@/lib/trade-correction-lifecycle';
 
 const updateTradeSchema = z.object({
   symbol: z.string().min(1).max(20).optional(),
@@ -183,14 +184,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     // ── Build TradeMetricsInput ───────────────────────────────────────
 
     const metricsInput: TradeMetricsInput = {
-      executions: executionRows.map((e) => ({
-        id: e.id,
-        action: e.action,
-        quantity: e.quantity,
-        price: e.price,
-        fees: e.fees,
-        executedAt: e.executedAt ?? '',
-      })),
+      // S08 zero-divergence: when the trade has economic corrections, derive
+      // metrics from the effective execution set (accounting_executions +
+      // correction_lineage) so this surface never disagrees with positions /
+      // overview / ledger / performance after a correction.
+      executions: resolveTradeMetricsExecutions(getSqliteHandle(), id, executionRows),
       direction: row.direction as 'long' | 'short',
       riskSnapshot: riskSnapshotRow
         ? {

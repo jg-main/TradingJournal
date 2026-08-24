@@ -12,11 +12,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
+import { db, getSqliteHandle } from '@/db';
 import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, accountPerformance, accountRollforward, settings, accounts, lookupValues } from '@/db/schema';
 import { eq, inArray, desc, and, ne } from 'drizzle-orm';
 import { type ExecutionData } from '@/lib/trade-metrics';
 import { computeMarkToMarketSummary } from '@/lib/mark-to-market';
+import { resolveTradeMetricsExecutions } from '@/lib/trade-correction-lifecycle';
 import {
   computeKpiMetrics,
   computeMonthlyPerformance,
@@ -133,6 +134,13 @@ export async function GET(request: NextRequest) {
     const executionsMap = new Map<string, (typeof tradeExecutions.$inferSelect)[]>();
     const gradesMap = new Map<string, typeof tradeGrades.$inferSelect>();
     const riskMap = new Map<string, typeof tradeRiskSnapshots.$inferSelect>();
+    // S08 zero-divergence: after an economic correction, journal rows are
+    // immutable but the effective accounting set is authoritative. Resolve
+    // the effective execution set once per trade (cheap no-op when no
+    // corrections exist) and use it for every metric computation below so
+    // the dashboard never disagrees with positions/overview/ledger/
+    // performance after a correction.
+    const effectiveExecutionsMap = new Map<string, ExecutionData[]>();
 
     if (allTradeIds.length > 0) {
       // Executions — batch in chunks of 999 to avoid SQLite parameter limit
@@ -147,6 +155,14 @@ export async function GET(request: NextRequest) {
         const list = executionsMap.get(exec.tradeId) ?? [];
         list.push(exec);
         executionsMap.set(exec.tradeId, list);
+      }
+
+      const sqliteHandle = getSqliteHandle();
+      for (const tradeId of allTradeIds) {
+        effectiveExecutionsMap.set(
+          tradeId,
+          resolveTradeMetricsExecutions(sqliteHandle, tradeId, executionsMap.get(tradeId) ?? []),
+        );
       }
 
       // Grades — batch in chunks of 999
@@ -179,13 +195,7 @@ export async function GET(request: NextRequest) {
       id: trade.id,
       direction: trade.direction as 'long' | 'short',
       status: trade.status,
-      executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? null,
-        executedAt: ex.executedAt ?? '',
-      })),
+      executions: effectiveExecutionsMap.get(trade.id) ?? [],
       grade: (() => {
         const gradeRow = gradesMap.get(trade.id);
         const totalScore = gradeRow?.totalScore;
@@ -202,13 +212,7 @@ export async function GET(request: NextRequest) {
       id: trade.id,
       direction: trade.direction as 'long' | 'short',
       status: trade.status,
-      executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? null,
-        executedAt: ex.executedAt ?? '',
-      })),
+      executions: effectiveExecutionsMap.get(trade.id) ?? [],
       grade: (() => {
         const gradeRow = gradesMap.get(trade.id);
         const totalScore = gradeRow?.totalScore;
@@ -224,13 +228,7 @@ export async function GET(request: NextRequest) {
     const openTrades = allTrades
       .filter((t) => t.status === 'open')
       .map((trade) => ({
-        executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
-          action: ex.action,
-          quantity: ex.quantity,
-          price: ex.price,
-          fees: ex.fees ?? null,
-          executedAt: ex.executedAt ?? '',
-        })),
+        executions: effectiveExecutionsMap.get(trade.id) ?? [],
         direction: trade.direction as 'long' | 'short',
         currentPrice: trade.currentPrice ?? null,
       }));
@@ -321,13 +319,7 @@ export async function GET(request: NextRequest) {
       dateFilteredClosedTrades.map((trade) => ({
         id: trade.id,
         direction: trade.direction as 'long' | 'short',
-        executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
-          action: ex.action,
-          quantity: ex.quantity,
-          price: ex.price,
-          fees: ex.fees ?? null,
-          executedAt: ex.executedAt ?? '',
-        })),
+        executions: effectiveExecutionsMap.get(trade.id) ?? [],
         closedAt: trade.closedAt ?? null,
       }));
 
@@ -376,13 +368,7 @@ export async function GET(request: NextRequest) {
     const setupPerfInputs: SetupPerfTradeInput[] = dateFilteredClosedTrades.map((trade) => ({
       id: trade.id,
       direction: trade.direction as 'long' | 'short',
-      executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? null,
-        executedAt: ex.executedAt ?? '',
-      })),
+      executions: effectiveExecutionsMap.get(trade.id) ?? [],
       grade: (() => {
         const gradeRow = gradesMap.get(trade.id);
         const totalScore = gradeRow?.totalScore;
@@ -401,13 +387,7 @@ export async function GET(request: NextRequest) {
     const insightInputs: AttentionInsightTradeInput[] = dateFilteredClosedTrades.map((trade) => ({
       id: trade.id,
       direction: trade.direction as 'long' | 'short',
-      executions: (executionsMap.get(trade.id) ?? []).map((ex) => ({
-        action: ex.action,
-        quantity: ex.quantity,
-        price: ex.price,
-        fees: ex.fees ?? null,
-        executedAt: ex.executedAt ?? '',
-      })),
+      executions: effectiveExecutionsMap.get(trade.id) ?? [],
       riskSnapshot: riskMap.has(trade.id)
         ? { initialRiskAmount: riskMap.get(trade.id)!.initialRiskAmount ?? null }
         : null,

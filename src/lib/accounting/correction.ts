@@ -265,21 +265,17 @@ export function correctExecution(
 
   const fees = replacementFees ?? '0.00';
 
-  // Compute the postedAt for reversal and replacement executions.
-  // Both MUST come AFTER the original execution in the FIFO stream
-  // so the original's economic effect is processed before the reversal
-  // tries to close it.  Use the original's postedAt as the base,
-  // and add 1ms per tick so ordering is deterministic regardless of
-  // how fast the test runs.
-  const postedAt = rawPostedAt ?? new Date().toISOString();
-  // Both MUST come AFTER the original execution in the FIFO stream
-  // so the original's economic effect is processed before the reversal
-  // tries to close it.  Add 1ms to the effective base to guarantee the
-  // reversal posted_at is always strictly greater than the original's
-  // posted_at, even when correction runs in the same clock tick.
+  // Anchor the reversal/replacement to the ORIGINAL execution's position in
+  // the FIFO stream (+1ms / +2ms) rather than to `now`. Using `now` pushes
+  // the pair past any fill posted between the original and the correction
+  // (e.g. correcting a closed trade's ENTRY after its exit): the projection
+  // replay then consumes the exit against nothing and the replacement opens
+  // a fresh unmatched lot — journal/effective P&L says 5 remaining while
+  // positions say 15 (S08 zero-divergence contract). An explicit postedAt
+  // (user backdate) is honored as a floor, never below original+1ms.
   const baseDateMs = Math.max(
     new Date(originalExecution.posted_at).getTime() + 1,
-    new Date(postedAt).getTime(),
+    rawPostedAt ? new Date(rawPostedAt).getTime() : 0,
   );
   const effectivePostedAt = new Date(baseDateMs).toISOString();
   // Reversal first (same timestamp as effective), replacement 1ms later

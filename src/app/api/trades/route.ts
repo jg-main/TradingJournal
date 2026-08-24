@@ -11,6 +11,7 @@ import { computeTradeMetrics } from '@/lib/trade-metrics';
 import type { TradeMetricsInput, TradeListMetrics } from '@/lib/trade-metrics';
 import { isAccountEligibleAsDefault } from '@/lib/accounting/default-account-guard';
 import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase';
+import { resolveTradeMetricsExecutions } from '@/lib/trade-correction-lifecycle';
 
 const createTradeSchema = z.object({
   symbol: z.string().trim().min(1, 'Symbol is required').max(20),
@@ -305,14 +306,9 @@ export async function GET(request: NextRequest) {
         null;
 
       const metricsInput: TradeMetricsInput = {
-        executions: executions.map((e) => ({
-          id: e.id,
-          action: e.action,
-          quantity: e.quantity,
-          price: e.price,
-          fees: e.fees,
-          executedAt: e.executedAt ?? '',
-        })),
+        // S08 zero-divergence: derive metrics from the effective execution
+        // set when corrections exist so list never disagrees with accounting.
+        executions: resolveTradeMetricsExecutions(getSqliteHandle(), row.id, executions),
         direction: row.direction as 'long' | 'short',
         riskSnapshot: riskSnapshot
           ? {
@@ -530,14 +526,10 @@ export async function GET(request: NextRequest) {
           null;
 
         const metricsInput: TradeMetricsInput = {
-          executions: executions.map((e) => ({
-            id: e.id,
-            action: e.action,
-            quantity: e.quantity,
-            price: e.price,
-            fees: e.fees,
-            executedAt: e.executedAt ?? '',
-          })),
+          // S08 zero-divergence: derive metrics from the effective execution
+          // set when corrections exist so list totals never disagree with
+          // accounting.
+          executions: resolveTradeMetricsExecutions(getSqliteHandle(), row.id, executions),
           direction: row.direction as 'long' | 'short',
           riskSnapshot: riskSnapshot
             ? {

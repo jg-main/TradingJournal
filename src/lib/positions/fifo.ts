@@ -432,12 +432,18 @@ function handleClosing(
     newTotalCostBasis = '0.00' as CanonicalDecimal;
     newAvgCost = '0.00' as CanonicalDecimal;
   } else {
-    // Scale down remaining lots' costBasisTotal proportionally
+    // Remaining lots keep exact cost basis: remainingQuantity × entryPrice.
+    // The previous proportional-ratio scaling (originalQty × entryPrice ×
+    // remainingRatio) rounded the ratio to cents through fromMicros, so a
+    // partial close like 10 of 15 (@ 100) left 495.00 instead of 500.00 on
+    // the remaining 5 shares (S08 zero-divergence: journal/effective P&L and
+    // the accounting projection disagreed on cost basis for non-divisible
+    // quantities).
     updatedLots.forEach((lot) => {
-      const remainingRatio = fromMicros(
-        Number((BigInt(toMicros(lot.remainingQuantity)) * BigInt(MICROS_PER_UNIT)) / BigInt(toMicros(lot.originalQuantity)))
-      ) as CanonicalDecimal;
-      lot.costBasisTotal = multiplyDecimal(multiplyDecimal(lot.originalQuantity as CanonicalDecimal, lot.entryPrice), remainingRatio);
+      lot.costBasisTotal = multiplyDecimal(
+        lot.remainingQuantity as CanonicalDecimal,
+        lot.entryPrice as CanonicalDecimal,
+      );
     });
     newTotalCostBasis = sumDecimals(updatedLots.map((l) => l.costBasisTotal));
     newAvgCost = computeAverageCost(newTotalCostBasis, newQuantity);

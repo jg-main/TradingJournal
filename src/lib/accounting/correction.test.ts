@@ -826,4 +826,182 @@ describe('correctExecution', () => {
     expect(positionAfterReplay?.average_cost).toBe(positionAfter?.average_cost);
     expect(positionAfterReplay?.realized_gross_pnl).toBe(positionAfter?.realized_gross_pnl);
   });
+
+  it('anchors reversal/replacement at the original stream position so a later exit matches the replacement (S08)', () => {
+    const { sqlite } = ctx;
+
+    // Fresh account to avoid state leakage.
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'S08 Reopen Account', now, now);
+
+    const symbol = 'AAPL';
+    const tradeId = randomUUID();
+
+    // Deterministic timeline: entry 10 @ 100, exit 10 @ 110 (trade closes).
+    // The exit posts LATER than the entry, so a late correction of the entry
+    // must anchor reversal/replacement BEFORE the exit in the FIFO stream.
+    const entry = postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'buy',
+      quantity: '10.00',
+      price: '100.00',
+      journalTradeId: tradeId,
+      postedAt: '2026-02-01T10:00:00.000Z',
+    });
+    const exit = postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'sell',
+      quantity: '10.00',
+      price: '110.00',
+      journalTradeId: tradeId,
+      postedAt: '2026-02-01T10:00:05.000Z',
+    });
+    rebuildPositions(sqlite, freshAccountId, entry.execution.instrumentId);
+
+    // Pre-correction baseline: flat (trade closed), realized +100.
+    const before = findAccountPosition(sqlite, freshAccountId, entry.execution.instrumentId);
+    expect(before?.quantity).toBe('0.00');
+    expect(before?.realized_gross_pnl).toBe('100.00');
+
+    // Correct the ENTRY: quantity 10 -> 15 @ 100. The replacement adds 5
+    // shares, so the trade reopens with 5 remaining and the exit (10 @ 110)
+    // must match the replacement lot, not be orphaned.
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: entry.execution.id,
+      symbol,
+      action: 'buy',
+      quantity: '15.00',
+      price: '100.00',
+      fees: '0.00',
+      reason: 'S08: entry quantity was 10, should be 15',
+    });
+
+    // The reversal/replacement MUST be anchored at the original's position
+    // (entry+1ms / entry+2ms), strictly BEFORE the exit at +5s. Otherwise the
+    // projection replay consumes the exit against nothing and leaves a 15-share
+    // lot with zero realized P&L (the S08 divergence this test guards).
+    const reversal = findAccountingExecutionById(sqlite, result.correction.reversalExecutionId);
+    const replacement = findAccountingExecutionById(sqlite, result.correction.replacementExecutionId);
+    expect(reversal).toBeTruthy();
+    expect(replacement).toBeTruthy();
+    const exitTime = new Date(exit.execution.postedAt).getTime();
+    expect(new Date(reversal!.posted_at).getTime()).toBeLessThan(exitTime);
+    expect(new Date(replacement!.posted_at).getTime()).toBeLessThan(exitTime);
+
+    // Effective economics: entry 15 @ 100, exit 10 @ 110 -> 5 remaining,
+    // realized +100 on the 10 matched shares.
+    const position = findAccountPosition(sqlite, freshAccountId, entry.execution.instrumentId);
+    expect(position?.quantity).toBe('5.00');
+    expect(position?.average_cost).toBe('100.00');
+    expect(position?.realized_gross_pnl).toBe('100.00');
+    expect(result.position?.quantity).toBe('5.00');
+
+    // The open lot belongs to the replacement execution.
+    const lots = findFifoLotsByAccountInstrument(sqlite, freshAccountId, entry.execution.instrumentId);
+    const openLots = lots.filter((l) => l.remaining_quantity !== '0.00');
+    expect(openLots).toHaveLength(1);
+    expect(openLots[0].opening_execution_id).toBe(result.correction.replacementExecutionId);
+    expect(openLots[0].remaining_quantity).toBe('5.00');
+
+    // Replay determinism: a full rebuild reproduces the same state.
+    rebuildPositions(sqlite, freshAccountId, entry.execution.instrumentId);
+    const afterReplay = findAccountPosition(sqlite, freshAccountId, entry.execution.instrumentId);
+    expect(afterReplay?.quantity).toBe('5.00');
+    expect(afterReplay?.realized_gross_pnl).toBe('100.00');
+  });
+
+  it('replays a replacement at its original stream position even when a fill posts inside the correction window (S08 tight-timing)', () => {
+    const { sqlite } = ctx;
+
+    // Fresh account to avoid state leakage.
+    const freshAccountId = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, ?, 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(freshAccountId, 'S08 Tight-Timing Account', now, now);
+
+    const symbol = 'AAPL';
+    const tradeId = randomUUID();
+
+    // Wall-clock-tight fills: the exit posts 1ms after the entry (the engine's
+    // now()-based timestamps in fast test runs can land inside the correction
+    // window). The correction anchors reversal/replacement at entry+1ms /
+    // entry+2ms, so by RAW posted_at the replacement sorts AFTER the exit — a
+    // projection replay would then consume the exit against a flat position
+    // (rejected) and leave a 15-share lot with zero realized P&L while journal
+    // metrics say 5 remaining / +100 realized (the S08 divergence this test
+    // guards).
+    const entry = postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'buy',
+      quantity: '10.00',
+      price: '100.00',
+      journalTradeId: tradeId,
+      postedAt: '2026-02-01T10:00:00.000Z',
+    });
+    postExecutionFill(sqlite, {
+      accountId: freshAccountId,
+      symbol,
+      action: 'sell',
+      quantity: '10.00',
+      price: '110.00',
+      journalTradeId: tradeId,
+      postedAt: '2026-02-01T10:00:00.001Z',
+    });
+    rebuildPositions(sqlite, freshAccountId, entry.execution.instrumentId);
+
+    // Pre-correction baseline: flat (trade closed), realized +100.
+    const before = findAccountPosition(sqlite, freshAccountId, entry.execution.instrumentId);
+    expect(before?.quantity).toBe('0.00');
+    expect(before?.realized_gross_pnl).toBe('100.00');
+
+    // Correct the ENTRY: quantity 10 -> 15 @ 100. Raw stream after correction:
+    // entry(10:00:00.000), exit(10:00:00.001), reversal(10:00:00.001),
+    // replacement(10:00:00.002). The replacement's OWN posted_at is after the
+    // exit, yet the replay must still place it at the original's stream
+    // position (10:00:00.000) so the exit matches the replacement lot:
+    // 5 remaining, realized +100.
+    const result = correctExecution(sqlite, {
+      accountId: freshAccountId,
+      originalExecutionId: entry.execution.id,
+      symbol,
+      action: 'buy',
+      quantity: '15.00',
+      price: '100.00',
+      fees: '0.00',
+      reason: 'S08: entry quantity was 10, should be 15 (tight timing)',
+    });
+
+    const position = findAccountPosition(sqlite, freshAccountId, entry.execution.instrumentId);
+    expect(position?.quantity).toBe('5.00');
+    expect(position?.average_cost).toBe('100.00');
+    expect(position?.realized_gross_pnl).toBe('100.00');
+    expect(result.position?.quantity).toBe('5.00');
+
+    // The open lot belongs to the replacement execution.
+    const lots = findFifoLotsByAccountInstrument(sqlite, freshAccountId, entry.execution.instrumentId);
+    const openLots = lots.filter((l) => l.remaining_quantity !== '0.00');
+    expect(openLots).toHaveLength(1);
+    expect(openLots[0].opening_execution_id).toBe(result.correction.replacementExecutionId);
+    expect(openLots[0].remaining_quantity).toBe('5.00');
+
+    // Replay determinism: a full rebuild reproduces the same state.
+    rebuildPositions(sqlite, freshAccountId, entry.execution.instrumentId);
+    const afterReplay = findAccountPosition(sqlite, freshAccountId, entry.execution.instrumentId);
+    expect(afterReplay?.quantity).toBe('5.00');
+    expect(afterReplay?.realized_gross_pnl).toBe('100.00');
+  });
 });

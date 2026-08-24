@@ -96,7 +96,48 @@ export function rebuildPositions(
       )
       .all(accountId, accountId) as Array<{ execution_id: string }>;
     const supersededExecutionIds = new Set(supersededRows.map((row) => row.execution_id));
-    const executions = rawExecutions.filter((execution) => !supersededExecutionIds.has(execution.id));
+
+    // A replacement occupies its ORIGINAL's stream position: the reversal
+    // cancels the original at the original's posted_at slot, and the
+    // replacement is the true economic fill at that same slot. Ordering
+    // replacements by their own posted_at (correction time) would let a fill
+    // posted between the original and the correction (e.g. an exit in the
+    // same 1-2ms window) replay BEFORE the replacement, get rejected against
+    // a flat position, and leave the replacement's quantity unmatched —
+    // journal says 5 remaining while positions say 15 (S08 zero-divergence
+    // contract). Inheriting the original's posted_at makes the effective
+    // stream order deterministic regardless of wall-clock spacing between
+    // fills and the correction.
+    const streamPositionRows = sqlite
+      .prepare(
+        `SELECT cl.replacement_execution_id AS execution_id,
+                orig.posted_at AS stream_posted_at
+         FROM correction_lineage cl
+         JOIN accounting_executions orig ON orig.id = cl.original_execution_id
+         WHERE cl.account_id = ?`,
+      )
+      .all(accountId) as Array<{ execution_id: string; stream_posted_at: string }>;
+    const streamPositions = new Map(
+      streamPositionRows.map((row) => [row.execution_id, row.stream_posted_at]),
+    );
+    const executions = rawExecutions
+      .filter((execution) => !supersededExecutionIds.has(execution.id))
+      .map((execution) => ({
+        ...execution,
+        streamPostedAt: streamPositions.get(execution.id) ?? execution.posted_at,
+      }))
+      .sort((a, b) => {
+        const timeOrder = a.streamPostedAt.localeCompare(b.streamPostedAt);
+        if (timeOrder !== 0) return timeOrder;
+        // A replacement inherits its original's stream slot: when a later
+        // fill shares the same timestamp (same-ms window), the replacement
+        // must still precede it so the close never replays before the
+        // corrected entry.
+        const aIsReplacement = streamPositions.has(a.id) ? 0 : 1;
+        const bIsReplacement = streamPositions.has(b.id) ? 0 : 1;
+        if (aIsReplacement !== bIsReplacement) return aIsReplacement - bIsReplacement;
+        return a.id.localeCompare(b.id);
+      });
 
     if (executions.length === 0) {
       return {

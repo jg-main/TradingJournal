@@ -113,16 +113,126 @@ export function resolveEffectiveExecutions(
     excluded.add(lineage.reversal_execution_id);
   }
 
+  // A replacement occupies its ORIGINAL's stream position: the reversal
+  // cancels the original at the original's posted_at slot, and the
+  // replacement is the true economic fill at that same slot. Ordering
+  // replacements by their own posted_at (correction time) would let a fill
+  // posted between the original and the correction (e.g. an exit in the
+  // same 1-2ms window) sort BEFORE the replacement — journal metrics would
+  // derive the open quantity from an order the accounting FIFO replay
+  // rejects (S08 zero-divergence contract). Inheriting the original's
+  // posted_at makes the effective stream order identical to rebuild.ts and
+  // deterministic regardless of wall-clock spacing between fills and the
+  // correction.
+  const streamPositionRows = sqlite
+    .prepare(
+      `SELECT cl.replacement_execution_id AS execution_id,
+              orig.posted_at AS stream_posted_at
+       FROM correction_lineage cl
+       JOIN accounting_executions orig ON orig.id = cl.original_execution_id
+       WHERE cl.original_execution_id IN (
+         SELECT id FROM accounting_executions WHERE journal_trade_id = ?
+       )`,
+    )
+    .all(tradeId) as Array<{ execution_id: string; stream_posted_at: string }>;
+  const streamPositions = new Map(
+    streamPositionRows.map((r) => [r.execution_id, r.stream_posted_at]),
+  );
+
   return rows
     .filter((row) => !excluded.has(row.id))
     .map((row) => ({
-      id: row.id,
-      action: row.action,
-      quantity: Number(row.quantity),
-      price: Number(row.price),
-      fees: row.fees === null ? null : Number(row.fees),
-      executedAt: row.posted_at,
+      execution: {
+        id: row.id,
+        action: row.action,
+        quantity: Number(row.quantity),
+        price: Number(row.price),
+        fees: row.fees === null ? null : Number(row.fees),
+        executedAt: row.posted_at,
+      },
+      // Internal sort key: the original's stream position for replacements.
+      streamPostedAt: streamPositions.get(row.id) ?? row.posted_at,
+    }))
+    .sort((a, b) => {
+      const t = a.streamPostedAt.localeCompare(b.streamPostedAt);
+      if (t !== 0) return t;
+      // A replacement inherits its original's stream slot: when a later fill
+      // shares the same timestamp (same-ms window), the replacement must
+      // still precede it so metrics never derive from an order the
+      // accounting FIFO replay rejects.
+      const aIsReplacement = streamPositions.has(a.execution.id) ? 0 : 1;
+      const bIsReplacement = streamPositions.has(b.execution.id) ? 0 : 1;
+      if (aIsReplacement !== bIsReplacement) return aIsReplacement - bIsReplacement;
+      return (a.execution.id ?? '').localeCompare(b.execution.id ?? '');
+    })
+    .map(({ execution }) => execution);
+}
+
+// ── Read-Surface Execution Resolution ──────────────────────────────────
+
+/**
+ * Resolve the execution set that read surfaces (trades list, trades detail,
+ * dashboard) must feed into computeTradeMetrics for a trade.
+ *
+ * S08 zero-divergence contract: after an economic correction, the immutable
+ * trade_executions journal still holds the original fills while the
+ * accounting_executions + correction_lineage stream holds the effective
+ * (reversal + replacement resolved) set. Read surfaces must derive metrics
+ * from the EFFECTIVE set whenever corrections exist, otherwise the /trades
+ * surfaces diverge from positions/overview/ledger/performance (e.g. a
+ * corrected entry that reopens a trade reports flat in list/detail while
+ * positions show the reopened quantity).
+ *
+ * Falls back to the journal rows (mapped to ExecutionData) when the trade
+ * has no corrections, so the common path is byte-identical to previous
+ * behavior and adds no accounting queries.
+ *
+ * @param sqlite      - Raw better-sqlite3 handle (read-only use).
+ * @param tradeId     - The journal trade id.
+ * @param journalRows - The raw trade_executions rows already loaded by the route.
+ * @returns ExecutionData-compatible executions for computeTradeMetrics.
+ */
+export function resolveTradeMetricsExecutions(
+  sqlite: Database.Database,
+  tradeId: string,
+  journalRows: Array<{
+    id: string;
+    action: string;
+    quantity: number;
+    price: number;
+    fees: number | null;
+    executedAt: string | null;
+    createdAt: string | null;
+  }>,
+): ExecutionData[] {
+  const hasCorrections = sqlite
+    .prepare(
+      `SELECT 1 FROM correction_lineage cl
+       WHERE cl.original_execution_id IN (
+         SELECT id FROM accounting_executions WHERE journal_trade_id = ?
+       )
+          OR cl.reversal_execution_id IN (
+         SELECT id FROM accounting_executions WHERE journal_trade_id = ?
+       )
+          OR cl.replacement_execution_id IN (
+         SELECT id FROM accounting_executions WHERE journal_trade_id = ?
+       )
+       LIMIT 1`,
+    )
+    .get(tradeId, tradeId, tradeId);
+
+  if (!hasCorrections) {
+    return journalRows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      quantity: r.quantity,
+      price: r.price,
+      fees: r.fees,
+      executedAt: r.executedAt ?? r.createdAt ?? '',
     }));
+  }
+
+  return resolveEffectiveExecutions(sqlite, tradeId);
 }
 
 // ── Lifecycle Derivation ───────────────────────────────────────────────
