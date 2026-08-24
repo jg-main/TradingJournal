@@ -29,9 +29,21 @@
  *
  *   current_projection       account_performance.nav (pre-fill, current)
  *   historical_rollforward   account_rollforward.ending_equity at/before asOf
- *   reconstructed_canonical  correction-aware cash + realized P&L at asOf
+ *   reconstructed_canonical  canonical net cash at asOf ONLY when no prior
+ *                            canonical trade-execution activity exists
  *   legacy_compatibility     explicit legacy startingBalance/accountTransactions
- *   unavailable              no canonical or legacy evidence
+ *   unavailable              no canonical or legacy evidence, OR historical
+ *                            trade activity with no trusted as-of valuation
+ *
+ * A2.1 invariant: reconstructed_canonical NEVER adds journal-derived realized
+ * P&L to net cash. Canonical trade-execution financial events already embed
+ * the full economic consideration of every fill (cash in for sells/shorts,
+ * cash out for buys/covers), so a flat account's NAV equals its net cash
+ * exactly. Adding journal realized P&L on top would count each execution's
+ * economic effect twice. When trade activity exists at/before asOf, a safe
+ * historical marked valuation (cash + open positions) is not provable from
+ * available canonical state, so the resolver returns unavailable rather than
+ * fabricate equity (A2 false-precision rule).
  *
  * Pure resolver: no NextResponse. Database access ONLY through the injected
  * raw better-sqlite3 handle.
@@ -114,7 +126,15 @@ function legacyFields(
   return row ? { startingBalance: row.starting_balance } : undefined;
 }
 
-/** Journal trades closed at/before asOf (for realized P&L reconstruction). */
+/**
+ * Journal trades closed at/before asOf.
+ *
+ * LEGACY-PATH ONLY (A2.1): used solely by the explicit legacy_compatibility
+ * branch below, which preserves the pre-M006 computeEquityAtOpen contract
+ * (startingBalance + accountTransactions + journal realized P&L). The
+ * canonical reconstructed_canonical branch NEVER uses journal P&L — canonical
+ * execution financial events already encode the economic proceeds.
+ */
 function closedTradesAt(
   sqlite: Database.Database,
   accountId: string,
@@ -175,6 +195,33 @@ function canonicalNetCashAt(sqlite: Database.Database, accountId: string, asOf: 
 }
 
 /**
+ * Detect canonical trade-execution activity at/before asOf.
+ *
+ * A2.1 economic criterion: a canonical financial_event with
+ * event_type = 'trade_execution' posted at/before asOf. Journal
+ * trades/trade_executions rows are attribution/workflow records — they are
+ * NOT the economic criterion, and journal status is never inspected.
+ * Reversal/replacement events from the correction kernel also carry
+ * event_type = 'trade_execution', so corrected executions count as activity
+ * at their posted (effective) timestamps.
+ */
+function hasCanonicalTradeActivityAt(
+  sqlite: Database.Database,
+  accountId: string,
+  asOf: string,
+): boolean {
+  return Boolean(
+    sqlite
+      .prepare(
+        `SELECT 1 FROM financial_events
+         WHERE account_id = ? AND event_type = 'trade_execution' AND posted_at <= ?
+         LIMIT 1`,
+      )
+      .get(accountId, asOf),
+  );
+}
+
+/**
  * Resolve the canonical execution equity context for an account at asOf.
  *
  * Precedence (A2 binding contract):
@@ -185,19 +232,27 @@ function canonicalNetCashAt(sqlite: Database.Database, accountId: string, asOf: 
  *   2. historical_rollforward   — latest account_rollforward row with
  *                                 date <= asOf (bounded, never "latest row
  *                                 overall").
- *   3. reconstructed_canonical  — correction-aware net cash at asOf + realized
- *                                 P&L from journal trades closed at/before
- *                                 asOf. Documented approximation: excludes
- *                                 unrealized P&L on positions open at asOf (no
- *                                 historical marks — false precision is worse
- *                                 than unavailable risk).
+ *   3. reconstructed_canonical  — canonical net cash at asOf ONLY when there is
+ *                                 NO prior canonical trade-execution activity
+ *                                 at/before asOf (financial_event
+ *                                 event_type = 'trade_execution'). Canonical
+ *                                 execution cash flows already embed the full
+ *                                 economic consideration of every fill, so for
+ *                                 a cash-only account NAV = net cash exactly.
+ *                                 NEVER adds journal-derived realized P&L (A2.1
+ *                                 double-count fix). With prior trade activity
+ *                                 and no trusted historical rollforward/
+ *                                 projection, historical marked equity is not
+ *                                 provable → unavailable.
  *   4. legacy_compatibility     — ONLY when no canonical evidence exists AND
  *                                 the account has legacy rows
  *                                 (startingBalance/accountTransactions). The
  *                                 legacy computeEquityAtOpen contract (incl.
  *                                 the documented settings.startingAccountValue
  *                                 fallback) applies here and only here.
- *   5. unavailable              — no canonical evidence and no legacy evidence.
+ *   5. unavailable              — no canonical evidence and no legacy evidence,
+ *                                 or historical trade activity with no trusted
+ *                                 as-of valuation.
  *
  * Canonical zero (nav '0.00') NEVER falls through to a global starting value.
  * settings.startingAccountValue can never fund a canonical account.
@@ -251,10 +306,22 @@ export function resolveExecutionEquityContext(
       };
     }
 
-    // 3. Reconstructed canonical: correction-aware cash + realized P&L at asOf.
-    const netCash = canonicalNetCashAt(sqlite, accountId, asOfTimestamp);
-    const realized = computeRealizedPnLFromClosedTrades(closedTradesAt(sqlite, accountId, asOfTimestamp));
-    const equity = netCash + realized;
+    // 3. Reconstructed canonical: canonical net cash at asOf, ONLY when there
+    //    is NO prior canonical trade-execution activity at/before asOf.
+    //
+    //    Canonical execution financial events (event_type = 'trade_execution')
+    //    already embed the full economic consideration of each fill (cash in
+    //    for sells/shorts, cash out for buys/covers), so a cash-only account's
+    //    equity equals its net cash exactly. Adding journal-derived realized
+    //    P&L on top would count each execution's economic effect twice (A2.1).
+    //    When trade activity exists and no trusted historical rollforward/
+    //    projection is available, a safe historical marked valuation
+    //    (cash + open positions) is not provable from canonical state →
+    //    unavailable (false precision is worse than unavailable risk).
+    if (hasCanonicalTradeActivityAt(sqlite, accountId, asOfTimestamp)) {
+      return unavailable();
+    }
+    const equity = canonicalNetCashAt(sqlite, accountId, asOfTimestamp);
     return {
       equity,
       source: 'reconstructed_canonical',
@@ -264,7 +331,10 @@ export function resolveExecutionEquityContext(
   }
 
   // 4. Legacy compatibility — only for accounts with NO canonical funding
-  //    history (no non-trade financial events).
+  //    history (no non-trade financial events). The pre-M006 contract
+  //    (startingBalance + accountTransactions + journal realized P&L +
+  //    settings fallback) is preserved here and ONLY here (A2/A2.1: the
+  //    canonical reconstructed branch never adds journal P&L).
   const hasLegacyTransactions = Boolean(
     sqlite
       .prepare('SELECT 1 FROM account_transactions WHERE account_id = ? LIMIT 1')

@@ -328,9 +328,10 @@ These are the decisions the requirements doc explicitly defers to S01
   `resolveExecutionEquityContext` — **current canonical projection
   (account_performance.nav, pre-fill) → safe historical canonical source
   (account_rollforward bounded by asOf) → explicit canonical reconstruction
-  (correction-aware cash + realized P&L at asOf) → explicit legacy
-  compatibility (startingBalance/accountTransactions, only for accounts with
-  no canonical funding history) → unavailable**. Key rules:
+  (canonical net cash at asOf, only when no prior canonical trade-execution
+  activity exists) → explicit legacy compatibility
+  (startingBalance/accountTransactions, only for accounts with no canonical
+  funding history) → unavailable**. Key rules:
   - Canonical zero never falls through to a global starting value;
     `settings.startingAccountValue` cannot fabricate funding for a canonical
     account.
@@ -344,6 +345,32 @@ These are the decisions the requirements doc explicitly defers to S01
     zero. Trade-funded `account_performance` rows alone are NOT canonical
     funding evidence (a legacy account's rebuild produces a misleading zero
     NAV).
+- **M002-A2.1 (no double-counted trading P&L in historical reconstruction):**
+  `reconstructed_canonical` means **canonical cash-only reconstruction, and
+  ONLY when no canonical trade-execution activity exists at/before asOf**
+  (financial_event `event_type = 'trade_execution'`, `posted_at <= asOf`;
+  journal trades/executions are attribution records, never the economic
+  criterion). Rationale and rules:
+  - Canonical execution financial events already embed the full economic
+    consideration of every fill (cash in for sells/shorts, cash out for
+    buys/covers), so a flat account's equity equals its net cash exactly.
+    **Realized P&L is never added separately to cash** — execution cash flows
+    already encode the economic proceeds. `netCash + journalRealizedPnl` was
+    the A2 defect (e.g. long 10,000 → buy 1@100 → sell 1@350 returned
+    10,500 instead of 10,250).
+  - With prior trade activity and no trusted as-of rollforward/projection,
+    historical marked equity (cash + open positions) is not provable from
+    canonical state → **`unavailable`** (false precision is worse than
+    unavailable risk). A backdated first fill then blocks through the normal
+    account-not-trading-ready / unavailable-equity contract: no execution, no
+    risk snapshot.
+  - The correction kernel's reversal/replacement events are also
+    `trade_execution` events, so corrected executions count as activity at
+    their effective timestamps — historical resolution never uses stale
+    pre-correction journal P&L.
+  - The legacy compatibility path alone retains the pre-M006 journal-P&L
+    contract (unchanged from A2; hybrid/legacy classification is audited
+    separately).
 
 ### D3 — Pre-trade checklist gate policy (§20)
 

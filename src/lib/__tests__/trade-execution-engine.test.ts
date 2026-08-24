@@ -45,6 +45,7 @@ import {
 } from '../trade-execution-engine';
 import { computeTradeMetrics } from '../trade-metrics';
 import { UnsupportedAccountCurrencyError } from '../accounting/errors';
+import { postExecutionFill } from '../accounting/execution-posting';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -619,6 +620,35 @@ describe('executeTradeFill', () => {
 
     expect(result.riskSnapshot?.accountEquityAtOpen).toBe(75000);
     expect(result.riskSnapshot?.accountEquitySource).toBe('historical_rollforward');
+  });
+
+  it('A2.1: backdated fill after prior canonical trade activity blocks safely (no trusted as-of valuation)', () => {
+    // Canonical funding + a prior canonical execution (postExecutionFill →
+    // accounting_executions + financial_events + ledger) BEFORE the backdated
+    // fill timestamp. No projection/rollforward usable for the historical
+    // window: A2.1 refuses to fabricate equity (never netCash + journal P&L,
+    // never today's NAV) → readiness blocks, no execution, no risk snapshot.
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(12345);
+    seedOpeningBalance(accountId, 10000, '2026-01-01T00:00:00.000Z');
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '10.00',
+      price: '100.00',
+      postedAt: '2026-01-05T10:00:00.000Z',
+    });
+    const tradeId = seedTrade(accountId, { plannedStop: 99 });
+
+    // The new fill is backdated AFTER the prior trade activity — the safe
+    // reconstruction branch must NOT double-count that execution's cash.
+    expect(() =>
+      executeTradeFill(fill(tradeId, { quantity: 10, price: 100, executedAt: '2026-01-06T10:00:00.000Z' }), context),
+    ).toThrow(ReadinessFailureError);
+    // No execution, no risk snapshot persisted.
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(0);
+    expect(countRows('trade_risk_snapshots', 'trade_id = ?', tradeId)).toBe(0);
   });
 
   it('A2: settings.startingAccountValue never funds an account with no canonical/legacy evidence', () => {

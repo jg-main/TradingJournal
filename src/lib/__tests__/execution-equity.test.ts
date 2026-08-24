@@ -18,6 +18,10 @@
  *   - Zero vs null are distinct (zero is a known value; null is unavailable).
  *   - Legacy compatibility is explicit, last, and cannot override canonical
  *     zero.
+ *   - A2.1: reconstructed_canonical NEVER adds journal realized P&L —
+ *     canonical execution cash flows already embed the economic proceeds, so
+ *     historical trade activity without a trusted rollforward/projection
+ *     resolves to unavailable instead of double-counting.
  *   - Provenance is always asserted.
  *
  * Run: npx vitest run src/lib/__tests__/execution-equity.test.ts
@@ -29,7 +33,18 @@ import { randomUUID } from 'node:crypto';
 import { testDbPath, disposeSqliteFile, applyAllMigrations } from '@/lib/testing/test-db';
 import { resolveExecutionEquityContext } from '@/lib/execution-equity';
 import { postFinancialEvent } from '@/lib/accounting/posting';
+import { postExecutionFill } from '@/lib/accounting/execution-posting';
+import { correctExecution } from '@/lib/accounting/correction';
+import { computeAccountActivity, computeRebuildCashFlow } from '@/lib/accounting/activity';
 import type { CanonicalDecimal } from '@/lib/accounting/types';
+
+/** Canonical net cash at/before asOf (test-side mirror of the resolver's cash truth). */
+function canonicalNetCashAt(sqlite: Database.Database, accountId: string, asOf: string): number {
+  const activity = computeAccountActivity(sqlite, accountId);
+  const bounded = activity.events.filter((event) => event.postedAt <= asOf);
+  const cash = computeRebuildCashFlow(bounded);
+  return cash.netCashImpactMicros / 1_000_000;
+}
 
 const TEST_DB_PATH = testDbPath('execution-equity');
 
@@ -321,7 +336,12 @@ describe('resolveExecutionEquityContext', () => {
     expect(ctx.source).toBe('unavailable');
   });
 
-  it('A2: reconstructed_canonical includes realized P&L from closed trades at/before asOf', () => {
+  it('A2.1 §18: journal-only closed trade does NOT alter canonical equity', () => {
+    // Canonical funding + a journal-only historical closed trade (trades +
+    // trade_executions rows) with NO canonical accounting/financial-event
+    // effects. Journal trades are attribution/workflow records, never an
+    // independent canonical equity source — equity stays at canonical cash
+    // 10000, NOT 10250.
     const accountId = seedAccount({ startingBalance: null });
     seedSettings(99999);
     seedOpeningBalance(accountId, 10000, '2026-01-01T00:00:00.000Z');
@@ -329,8 +349,149 @@ describe('resolveExecutionEquityContext', () => {
 
     const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
 
-    expect(ctx.equity).toBe(10250); // 10000 cash + 250 realized
+    expect(ctx.equity).toBe(10000); // journal P&L never added to cash
     expect(ctx.source).toBe('reconstructed_canonical');
+  });
+
+  it('A2.1 §14: canonical profitable long round-trip resolves unavailable, never double-counts', () => {
+    // Canonical economic posting (postExecutionFill → accounting_executions +
+    // financial_events + ledger). Opening 10000, buy 1@100 (cash 9900),
+    // sell 1@350 (cash 10250). Realized +250 is already embedded in cash.
+    // Historical resolution with prior trade activity and no trusted
+    // rollforward/projection → unavailable. MUST never return 10250 + 250 =
+    // 10500.
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(99999);
+    seedOpeningBalance(accountId, 10000, '2026-01-01T00:00:00.000Z');
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '1.00',
+      price: '100.00',
+      postedAt: '2026-01-05T10:00:00.000Z',
+    });
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'sell',
+      quantity: '1.00',
+      price: '350.00',
+      postedAt: '2026-01-05T11:00:00.000Z',
+    });
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, '2026-01-05T12:00:00.000Z');
+
+    expect(ctx.equity).toBeNull();
+    expect(ctx.source).toBe('unavailable');
+    expect(ctx.hasUsableEquity).toBe(false);
+    // Sanity: canonical cash already embeds the full round-trip proceeds.
+    expect(canonicalNetCashAt(sqlite, accountId, '2026-01-05T12:00:00.000Z')).toBe(10250);
+  });
+
+  it('A2.1 §15: canonical losing long round-trip resolves unavailable, never double-counts', () => {
+    // Opening 10000, buy 1@350 (cash 9650), sell 1@100 (cash 9750).
+    // Realized -250 already embedded in cash. Never 9750 - 250 = 9500.
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(99999);
+    seedOpeningBalance(accountId, 10000, '2026-01-01T00:00:00.000Z');
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '1.00',
+      price: '350.00',
+      postedAt: '2026-01-05T10:00:00.000Z',
+    });
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'sell',
+      quantity: '1.00',
+      price: '100.00',
+      postedAt: '2026-01-05T11:00:00.000Z',
+    });
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, '2026-01-05T12:00:00.000Z');
+
+    expect(ctx.equity).toBeNull();
+    expect(ctx.source).toBe('unavailable');
+    expect(canonicalNetCashAt(sqlite, accountId, '2026-01-05T12:00:00.000Z')).toBe(9750);
+  });
+
+  it('A2.1 §16: canonical profitable short round-trip resolves unavailable, never double-counts', () => {
+    // Opening 10000, sell_short 1@350 (cash 10350), buy_to_cover 1@100
+    // (cash 10250). Realized +250 already embedded in cash. Never
+    // 10250 + 250 = 10500.
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(99999);
+    seedOpeningBalance(accountId, 10000, '2026-01-01T00:00:00.000Z');
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'sell_short',
+      quantity: '1.00',
+      price: '350.00',
+      postedAt: '2026-01-05T10:00:00.000Z',
+    });
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy_to_cover',
+      quantity: '1.00',
+      price: '100.00',
+      postedAt: '2026-01-05T11:00:00.000Z',
+    });
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, '2026-01-05T12:00:00.000Z');
+
+    expect(ctx.equity).toBeNull();
+    expect(ctx.source).toBe('unavailable');
+    expect(canonicalNetCashAt(sqlite, accountId, '2026-01-05T12:00:00.000Z')).toBe(10250);
+  });
+
+  it('A2.1 §19: corrected execution resolves from effective economics — unavailable, not stale journal P&L', () => {
+    // Opening 10000 + canonical entry/exit, then correct the exit via the
+    // correction kernel (reversal + replacement financial events). The
+    // resolver must NOT derive equity from the original journal P&L: with
+    // prior trade activity and no trusted historical valuation it returns
+    // unavailable (never a stale/corrected double-count).
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(99999);
+    seedOpeningBalance(accountId, 10000, '2026-01-01T00:00:00.000Z');
+    const entry = postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '1.00',
+      price: '100.00',
+      postedAt: '2026-01-05T10:00:00.000Z',
+    });
+    const exit = postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'sell',
+      quantity: '1.00',
+      price: '350.00',
+      postedAt: '2026-01-05T11:00:00.000Z',
+    });
+    correctExecution(sqlite, {
+      accountId,
+      originalExecutionId: exit.execution.id,
+      symbol: 'AAPL',
+      action: 'sell',
+      quantity: '1.00',
+      price: '300.00',
+      reason: 'A2.1 test correction',
+    });
+    void entry;
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, '2026-01-05T12:00:00.000Z');
+
+    expect(ctx.equity).toBeNull();
+    expect(ctx.source).toBe('unavailable');
+    // Effective cash truth after correction: 10000 - 100 + 300 = 10200.
+    expect(canonicalNetCashAt(sqlite, accountId, '2026-01-05T12:00:00.000Z')).toBe(10200);
   });
 
   it('A2 §22: derived account_performance row alone is NOT canonical funding evidence', () => {
