@@ -582,4 +582,245 @@ describe('computeReconciliation', () => {
       expect(typeof reason).toBe('string');
     }
   });
+
+  // ── Short positions — workflow aliases resolve through trade direction ──
+
+  it('reconciles a fully closed short (sell_short + reduce on short) to zero open positions', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Closed Short Account', 'Test', 'USD', now, now);
+
+    insertLegacyDeposit(ctx.sqlite, accountId, {
+      id: 'short-dep-001',
+      amount: 10000,
+      date: '2024-01-01T00:00:00.000Z',
+    });
+
+    const shortTradeId = insertTrade(ctx.sqlite, accountId, 'SHORT', 'short');
+    insertLegacyExecution(ctx.sqlite, shortTradeId, {
+      id: 'short-exe-001',
+      action: 'sell_short',
+      quantity: 100,
+      price: 150.00,
+      executedAt: '2024-01-10T09:30:00.000Z',
+    });
+    // 'reduce' on a short trade = buy_to_cover → nets the short to zero
+    insertLegacyExecution(ctx.sqlite, shortTradeId, {
+      id: 'short-exe-002',
+      action: 'reduce',
+      quantity: 100,
+      price: 150.00,
+      executedAt: '2024-01-15T09:30:00.000Z',
+    });
+
+    insertLegacyPriceSnapshot(ctx.sqlite, shortTradeId, {
+      id: 'short-psnap-001',
+      price: 155.00,
+      fetchedAt: '2024-01-12T12:00:00.000Z',
+    });
+
+    const migrationResult = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(migrationResult.status).toBe('completed');
+
+    const report = computeReconciliation(ctx.sqlite, accountId);
+    expect(report).toBeDefined();
+
+    const positionCount = report!.comparisons.find((c) => c.key === 'position_count');
+    expect(positionCount).toBeDefined();
+    expect(positionCount!.legacyValue).toBe('0');
+    expect(positionCount!.accountingValue).toBe('0');
+    expect(positionCount!.classification).toBe('match');
+
+    const exposure = report!.comparisons.find((c) => c.key === 'position_exposure');
+    expect(exposure!.legacyValue).toBe('0.00');
+    expect(exposure!.accountingValue).toBe('0.00');
+    expect(exposure!.classification).toBe('match');
+
+    expect(report!.cutoverEligible).toBe(true);
+    expect(report!.cutoverRefusalReasons).toEqual([]);
+  });
+
+  it('reconciles a partially closed short (sell_short 100 + buy_to_cover 50)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Partial Short Account', 'Test', 'USD', now, now);
+
+    insertLegacyDeposit(ctx.sqlite, accountId, {
+      id: 'short-part-dep-001',
+      amount: 10000,
+      date: '2024-01-01T00:00:00.000Z',
+    });
+
+    const shortTradeId = insertTrade(ctx.sqlite, accountId, 'SHORT', 'short');
+    insertLegacyExecution(ctx.sqlite, shortTradeId, {
+      id: 'short-part-exe-001',
+      action: 'sell_short',
+      quantity: 100,
+      price: 150.00,
+      executedAt: '2024-01-10T09:30:00.000Z',
+    });
+    insertLegacyExecution(ctx.sqlite, shortTradeId, {
+      id: 'short-part-exe-002',
+      action: 'buy_to_cover',
+      quantity: 50,
+      price: 160.00,
+      executedAt: '2024-01-15T09:30:00.000Z',
+    });
+
+    insertLegacyPriceSnapshot(ctx.sqlite, shortTradeId, {
+      id: 'short-part-psnap-001',
+      price: 155.00,
+      fetchedAt: '2024-01-12T12:00:00.000Z',
+    });
+
+    const migrationResult = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(migrationResult.status).toBe('completed');
+
+    const report = computeReconciliation(ctx.sqlite, accountId);
+    expect(report).toBeDefined();
+
+    const positionCount = report!.comparisons.find((c) => c.key === 'position_count');
+    expect(positionCount).toBeDefined();
+    expect(positionCount!.legacyValue).toBe('1');
+    expect(positionCount!.accountingValue).toBe('1');
+    expect(positionCount!.classification).toBe('match');
+
+    const exposure = report!.comparisons.find((c) => c.key === 'position_exposure');
+    expect(exposure).toBeDefined();
+    // 50 remaining short × $155.00 latest mark = 7750.00
+    expect(exposure!.legacyValue).toBe('7750.00');
+    expect(exposure!.accountingValue).toBe('7750.00');
+    expect(exposure!.classification).toBe('match');
+
+    expect(report!.cutoverEligible).toBe(true);
+  });
+
+  it('resolves add on a short trade as sell_short and reconciles a closed short', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Short Add Alias Account', 'Test', 'USD', now, now);
+
+    insertLegacyDeposit(ctx.sqlite, accountId, {
+      id: 'short-add-dep-001',
+      amount: 10000,
+      date: '2024-01-01T00:00:00.000Z',
+    });
+
+    const shortTradeId = insertTrade(ctx.sqlite, accountId, 'SHORT', 'short');
+    insertLegacyExecution(ctx.sqlite, shortTradeId, {
+      id: 'short-add-exe-001',
+      action: 'add', // on a short trade = sell_short
+      quantity: 50,
+      price: 150.00,
+      executedAt: '2024-01-10T09:30:00.000Z',
+    });
+    insertLegacyExecution(ctx.sqlite, shortTradeId, {
+      id: 'short-add-exe-002',
+      action: 'buy_to_cover',
+      quantity: 50,
+      price: 150.00,
+      executedAt: '2024-01-15T09:30:00.000Z',
+    });
+
+    insertLegacyPriceSnapshot(ctx.sqlite, shortTradeId, {
+      id: 'short-add-psnap-001',
+      price: 155.00,
+      fetchedAt: '2024-01-12T12:00:00.000Z',
+    });
+
+    const migrationResult = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(migrationResult.status).toBe('completed');
+
+    const report = computeReconciliation(ctx.sqlite, accountId);
+    expect(report).toBeDefined();
+
+    const positionCount = report!.comparisons.find((c) => c.key === 'position_count');
+    expect(positionCount).toBeDefined();
+    expect(positionCount!.legacyValue).toBe('0');
+    expect(positionCount!.accountingValue).toBe('0');
+    expect(positionCount!.classification).toBe('match');
+
+    const exposure = report!.comparisons.find((c) => c.key === 'position_exposure');
+    expect(exposure!.legacyValue).toBe('0.00');
+    expect(exposure!.accountingValue).toBe('0.00');
+    expect(exposure!.classification).toBe('match');
+
+    expect(report!.cutoverEligible).toBe(true);
+    expect(report!.cutoverRefusalReasons).toEqual([]);
+  });
+
+  it('skips unresolvable legacy execution actions on both sides (wrong-side for direction)', () => {
+    const accountId = randomUUID();
+    const now = new Date().toISOString();
+
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'Unresolvable Action Account', 'Test', 'USD', now, now);
+
+    insertLegacyDeposit(ctx.sqlite, accountId, {
+      id: 'unres-dep-001',
+      amount: 5000,
+      date: '2024-01-01T00:00:00.000Z',
+    });
+
+    // sell_short on a LONG trade is a wrong-side action: the migration runner
+    // records it as an unsupported anomaly and writes nothing canonically, so
+    // the legacy-side projection must skip it too (parity).
+    const longTradeId = insertTrade(ctx.sqlite, accountId, 'WRONG', 'long');
+    insertLegacyExecution(ctx.sqlite, longTradeId, {
+      id: 'unres-exe-001',
+      action: 'sell_short',
+      quantity: 100,
+      price: 150.00,
+      executedAt: '2024-01-10T09:30:00.000Z',
+    });
+
+    const migrationResult = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(migrationResult.status).toBe('completed');
+    // Wrong-side actions are recorded as anomalies (ANOMALY_UNSUPPORTED_EXECUTION_ACTION),
+    // not as unsupported records, and write nothing canonical.
+    expect(migrationResult.anomalyCount).toBe(1);
+    expect(migrationResult.unsupportedCount).toBe(0);
+
+    const report = computeReconciliation(ctx.sqlite, accountId);
+    expect(report).toBeDefined();
+
+    // No position on either side — the unresolvable execution nets to zero
+    // legacy and writes nothing canonical.
+    const positionCount = report!.comparisons.find((c) => c.key === 'position_count');
+    expect(positionCount!.legacyValue).toBe('0');
+    expect(positionCount!.accountingValue).toBe('0');
+    expect(positionCount!.classification).toBe('match');
+
+    // The execution-count difference is explained by the unsupported anomaly.
+    const execCount = report!.comparisons.find((c) => c.key === 'execution_count');
+    expect(execCount!.classification).toBe('explained');
+
+    // Cash impact is skipped on both sides → deposit-only cash matches.
+    const cash = report!.comparisons.find((c) => c.key === 'cash');
+    expect(cash!.classification).toBe('match');
+
+    expect(report!.cutoverEligible).toBe(true);
+  });
 });

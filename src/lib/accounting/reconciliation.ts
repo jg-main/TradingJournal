@@ -20,6 +20,12 @@ import { listAccountPositions } from '../../db/accounting-repository';
 import { findLatestMigrationRun, listMigrationRecords } from './legacy-migration-runner';
 import { computeAccountActivity, computeRebuildCashFlow } from './activity';
 import { rebuildOpeningCash } from './rebuild';
+import {
+  resolveEconomicExecutionAction,
+  cashDirectionForEconomicAction,
+  AmbiguousEconomicActionError,
+} from './economic-action';
+import type { EconomicAction } from './economic-action';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Public Types
@@ -168,6 +174,34 @@ const TOLERANCE_ONE_CENT = '0.01';
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
+ * Resolve a legacy execution's workflow action to its concrete economic side
+ * using the parent trade's direction ('add' on a short is a sell_short,
+ * 'reduce' on a long is a sell, etc.).
+ *
+ * Returns null when the action cannot be resolved (unknown action, wrong-side
+ * action for the direction, or a missing direction). The migration runner
+ * records such rows as anomalies and excludes them from canonical accounting,
+ * so the legacy-side projection must skip them too to keep both sides
+ * comparable.
+ */
+function resolveLegacyEconomicAction(
+  action: string,
+  direction: string,
+): EconomicAction | null {
+  if (direction !== 'long' && direction !== 'short') {
+    return null;
+  }
+  try {
+    return resolveEconomicExecutionAction(action, direction);
+  } catch (err) {
+    if (err instanceof AmbiguousEconomicActionError) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
  * Calculate net cash from legacy account_transactions for a given account.
  * Sums deposits and withdrawals to produce a net cash value.
  */
@@ -197,17 +231,33 @@ function queryLegacyCash(
 
   const executions = sqlite
     .prepare(
-      `SELECT e.action, e.quantity, e.price, COALESCE(e.fees, 0) AS fees
+      `SELECT e.action, e.quantity, e.price, COALESCE(e.fees, 0) AS fees, t.direction
        FROM trade_executions e
        INNER JOIN trades t ON t.id = e.trade_id
        WHERE t.account_id = ?`,
     )
-    .all(accountId) as Array<{ action: string; quantity: number; price: number; fees: number }>;
+    .all(accountId) as Array<{
+    action: string;
+    quantity: number;
+    price: number;
+    fees: number;
+    direction: string;
+  }>;
 
   let executionCashImpact = 0;
   for (const execution of executions) {
+    // Resolve workflow aliases ('add'/'reduce') through the parent trade's
+    // direction: 'reduce' on a short is a buy_to_cover (cash-decreasing),
+    // 'add' on a short is a sell_short (cash-increasing), etc.
+    const economicAction = resolveLegacyEconomicAction(execution.action, execution.direction);
+    if (!economicAction) {
+      // Unresolvable legacy action: the migration runner records it as an
+      // anomaly and excludes it from canonical accounting, so the legacy
+      // side must skip it too to keep both sides comparable.
+      continue;
+    }
     const consideration = execution.quantity * execution.price;
-    if (['sell', 'reduce', 'sell_short'].includes(execution.action)) {
+    if (cashDirectionForEconomicAction(economicAction) === 'increase') {
       executionCashImpact += consideration - execution.fees;
     } else {
       executionCashImpact -= consideration + execution.fees;
@@ -569,7 +619,7 @@ function queryLegacyPositionExposure(
 ): number {
   const rows = sqlite
     .prepare(
-      `SELECT t.symbol, e.action, e.quantity
+      `SELECT t.symbol, e.action, e.quantity, t.direction
        FROM trade_executions e
        INNER JOIN trades t ON t.id = e.trade_id
        WHERE t.account_id = ?
@@ -579,14 +629,22 @@ function queryLegacyPositionExposure(
     symbol: string;
     action: string;
     quantity: number;
+    direction: string;
   }>;
 
   const symbolPositions = new Map<string, { netQuantity: number }>();
   for (const row of rows) {
+    // Resolve workflow aliases through the parent trade's direction so a
+    // fully closed short (sell_short + reduce) nets to zero.
+    const economicAction = resolveLegacyEconomicAction(row.action, row.direction);
+    if (!economicAction) {
+      continue;
+    }
     const existing = symbolPositions.get(row.symbol) ?? { netQuantity: 0 };
-    if (row.action === 'buy' || row.action === 'buy_to_cover' || row.action === 'add') {
+    if (economicAction === 'buy' || economicAction === 'buy_to_cover') {
       existing.netQuantity += row.quantity;
-    } else if (row.action === 'sell' || row.action === 'sell_short' || row.action === 'reduce') {
+    } else {
+      // 'sell' or 'sell_short' reduce net quantity.
       existing.netQuantity -= row.quantity;
     }
     symbolPositions.set(row.symbol, existing);
@@ -630,16 +688,28 @@ function queryLegacyPositionCount(
 ): number {
   const rows = sqlite
     .prepare(
-      `SELECT t.symbol, e.action, e.quantity
+      `SELECT t.symbol, e.action, e.quantity, t.direction
        FROM trade_executions e
        INNER JOIN trades t ON t.id = e.trade_id
        WHERE t.account_id = ?`,
     )
-    .all(accountId) as Array<{ symbol: string; action: string; quantity: number }>;
+    .all(accountId) as Array<{
+    symbol: string;
+    action: string;
+    quantity: number;
+    direction: string;
+  }>;
 
   const quantities = new Map<string, number>();
   for (const row of rows) {
-    const sign = ['sell', 'reduce', 'sell_short'].includes(row.action) ? -1 : 1;
+    // Resolve workflow aliases through the parent trade's direction before
+    // signing the quantity, mirroring the canonical FIFO rebuild.
+    const economicAction = resolveLegacyEconomicAction(row.action, row.direction);
+    if (!economicAction) {
+      continue;
+    }
+    const sign =
+      economicAction === 'sell' || economicAction === 'sell_short' ? -1 : 1;
     quantities.set(row.symbol, (quantities.get(row.symbol) ?? 0) + sign * row.quantity);
   }
 
