@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
 import { trades, settings, accounts, lookupValues, setupDefinitions, tradeRiskSnapshots, tradeExecutions, tradeStopAdjustments, tradeTargetAdjustments } from '@/db/schema';
-import { eq, and, asc, desc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
+import { eq, and, asc, desc, sql, inArray, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
@@ -86,10 +86,13 @@ export async function GET(request: NextRequest) {
     // open → date filters ignored (all open positions visible regardless of date)
     // closed → filter by closedAt
     // planned → filter by createdAt
+    // deleted / scratched → filter by createdAt (deleted trades originate from
+    //   planned trades and commonly have openedAt = null — filtering by openedAt
+    //   could hide them entirely)
     // default (no status or other) → filter by openedAt (backward compatible)
     const dateColumn = status === 'closed'
       ? trades.closedAt
-      : status === 'planned'
+      : status === 'planned' || status === 'deleted'
         ? trades.createdAt
         : trades.openedAt;
 
@@ -97,12 +100,22 @@ export async function GET(request: NextRequest) {
       if (from || to) {
         console.warn('[trades GET] Date range filters ignored for status=open — open positions are always visible');
       }
-    } else {
-      if (from) {
-        filters.push(gte(dateColumn, from));
+    } else if (from || to) {
+      // Normalize the boundaries to UTC first (the offset-aware ISO strings the
+      // UI sends are converted with Date#toISOString), then compare through
+      // julianday() so both sides are evaluated in the same chronological
+      // domain. Stored timestamps are heterogeneous TEXT: SQLite
+      // current_timestamp ('YYYY-MM-DD HH:MM:SS', UTC) and ISO 8601 (Z or
+      // explicit offset) — julianday() parses every form, and raw lexical
+      // comparison between those representations would silently drop valid
+      // rows (e.g. a planned trade created inside the selected local day).
+      const fromUtc = from ? new Date(from).toISOString() : null;
+      const toUtc = to ? new Date(to).toISOString() : null;
+      if (fromUtc) {
+        filters.push(sql`julianday(${dateColumn}) >= julianday(${fromUtc})`);
       }
-      if (to) {
-        filters.push(lte(dateColumn, to));
+      if (toUtc) {
+        filters.push(sql`julianday(${dateColumn}) <= julianday(${toUtc})`);
       }
     }
     if (accountIdFilter) {
@@ -583,11 +596,16 @@ export async function GET(request: NextRequest) {
       plannedFilters.push(eq(trades.direction, directionFilter as 'long' | 'short'));
     }
     if (status === 'planned') {
+      // Same normalized chronological comparison as the list filter (M002
+      // fix): convert the offset-aware boundary to UTC and compare through
+      // julianday() so stored SQLite current_timestamp / ISO forms are
+      // evaluated in one chronological domain — the footer plannedTotals must
+      // match the filtered tab list.
       if (from) {
-        plannedFilters.push(gte(trades.createdAt, from));
+        plannedFilters.push(sql`julianday(${trades.createdAt}) >= julianday(${new Date(from).toISOString()})`);
       }
       if (to) {
-        plannedFilters.push(lte(trades.createdAt, to));
+        plannedFilters.push(sql`julianday(${trades.createdAt}) <= julianday(${new Date(to).toISOString()})`);
       }
     }
     const plannedWhere = plannedFilters.length > 0 ? and(...plannedFilters) : undefined;

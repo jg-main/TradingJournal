@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, desc, and, asc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
+import { z } from 'zod';
 import type { SQL } from 'drizzle-orm';
 import Decimal from 'decimal.js';
 
@@ -277,6 +278,20 @@ function doGetTrades(params: {
   direction?: string;
 } = {}): { status: number; data: unknown } {
   try {
+    // Mirror the route's zod validation: invalid from/to → 400 (never silently
+    // normalized, never a 500 from new Date()).
+    if (params.from !== undefined) {
+      const parsedFrom = z.string().datetime({ offset: true }).or(z.string().datetime()).safeParse(params.from);
+      if (!parsedFrom.success) {
+        return { status: 400, data: { error: 'Validation failed', details: 'from must be a valid ISO 8601 date string' } };
+      }
+    }
+    if (params.to !== undefined) {
+      const parsedTo = z.string().datetime({ offset: true }).or(z.string().datetime()).safeParse(params.to);
+      if (!parsedTo.success) {
+        return { status: 400, data: { error: 'Validation failed', details: 'to must be a valid ISO 8601 date string' } };
+      }
+    }
     const page = Math.max(1, params.page ?? 1);
     const limit = Math.min(100, Math.max(1, params.limit ?? 50));
     const offset = (page - 1) * limit;
@@ -298,10 +313,12 @@ function doGetTrades(params: {
     // open → date filters ignored (all open positions visible regardless of date)
     // closed → filter by closedAt
     // planned → filter by createdAt
+    // deleted / scratched → filter by createdAt (deleted trades originate from
+    //   planned trades and commonly have openedAt = null)
     // default (no status or other) → filter by openedAt (backward compatible)
     const dateColumn = statusFilter === 'closed'
       ? schema.trades.closedAt
-      : statusFilter === 'planned'
+      : statusFilter === 'planned' || statusFilter === 'deleted'
         ? schema.trades.createdAt
         : schema.trades.openedAt;
 
@@ -309,12 +326,16 @@ function doGetTrades(params: {
       if (params.from || params.to) {
         console.warn('[doGetTrades] Date range filters ignored for status=open');
       }
-    } else {
-      if (params.from) {
-        filters.push(sql`${dateColumn} >= ${params.from}`);
+    } else if (params.from || params.to) {
+      // Normalized chronological comparison (M002 fix): boundaries converted
+      // to UTC ISO in JS, both sides compared through julianday().
+      const fromUtc = params.from ? new Date(params.from).toISOString() : null;
+      const toUtc = params.to ? new Date(params.to).toISOString() : null;
+      if (fromUtc) {
+        filters.push(sql`julianday(${dateColumn}) >= julianday(${fromUtc})`);
       }
-      if (params.to) {
-        filters.push(sql`${dateColumn} <= ${params.to}`);
+      if (toUtc) {
+        filters.push(sql`julianday(${dateColumn}) <= julianday(${toUtc})`);
       }
     }
     if (params.accountId) {
@@ -677,10 +698,10 @@ function doGetTrades(params: {
     }
     if (statusFilter === 'planned') {
       if (params.from) {
-        plannedFiltersT.push(gte(schema.trades.createdAt, params.from));
+        plannedFiltersT.push(sql`julianday(${schema.trades.createdAt}) >= julianday(${new Date(params.from).toISOString()})`);
       }
       if (params.to) {
-        plannedFiltersT.push(lte(schema.trades.createdAt, params.to));
+        plannedFiltersT.push(sql`julianday(${schema.trades.createdAt}) <= julianday(${new Date(params.to).toISOString()})`);
       }
     }
     const plannedRows = db
@@ -2797,6 +2818,128 @@ console.log('\nA11-7. Automatic: funding is irrelevant to planning selection:');
   const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
   assertEqual(result.status, 201, '201');
   assertEqual((result.data as Record<string, unknown>).accountId, 'a11-unfunded', 'unfunded first account selected — funding does not rank plans');
+}
+
+// ── Date-filter normalization (One-Time Fix 1) ────────────────────────
+
+console.log('\nDF1. planned trade created same local day (SQLite current_timestamp form) is returned:');
+{
+  cleanup();
+  // Stored in the SQLite current_timestamp representation (space separator,
+  // no offset — UTC), exactly what a current_timestamp DEFAULT produces.
+  seedTrade({ id: 'df-planned-inside', status: 'planned', createdAt: '2026-08-25 12:42:00', updatedAt: '2026-08-25 12:42:00' });
+  seedTrade({ id: 'df-planned-outside', status: 'planned', createdAt: '2026-08-24 09:00:00', updatedAt: '2026-08-24 09:00:00' });
+
+  const r = doGetTrades({
+    status: 'planned',
+    from: '2026-08-25T00:00:00.000-05:00',
+    to: '2026-08-25T23:59:59.999-05:00',
+  });
+  assertEqual(r.status, 200, '200');
+  const data = r.data as { data: Array<{ id: string }> };
+  const ids = data.data.map((t) => t.id);
+  assert(ids.includes('df-planned-inside'), 'same-local-day planned trade included');
+  assert(!ids.includes('df-planned-outside'), 'outside-range planned trade excluded');
+  assertEqual((r.data as { total: number }).total, 1, 'total matches the filtered universe');
+}
+
+console.log('\nDF2. planned + from-only and to-only use normalized comparisons:');
+{
+  cleanup();
+  seedTrade({ id: 'df-from-a', status: 'planned', createdAt: '2026-08-24 10:00:00', updatedAt: '2026-08-24 10:00:00' });
+  seedTrade({ id: 'df-from-b', status: 'planned', createdAt: '2026-08-26 10:00:00', updatedAt: '2026-08-26 10:00:00' });
+  seedTrade({ id: 'df-to-c', status: 'planned', createdAt: '2026-08-20 10:00:00', updatedAt: '2026-08-20 10:00:00' });
+
+  // from only: 2026-08-25 local day start (UTC 05:00) — only df-from-b qualifies.
+  const fromOnly = doGetTrades({ status: 'planned', from: '2026-08-25T00:00:00.000-05:00' });
+  const fromIds = (fromOnly.data as { data: Array<{ id: string }> }).data.map((t) => t.id);
+  assert(!fromIds.includes('df-from-a'), 'from-only excludes earlier trade');
+  assert(fromIds.includes('df-from-b'), 'from-only includes later trade');
+
+  // to only: end of 2026-08-25 local day (UTC 04:59:59.999 on 08-26) — df-to-c and df-from-a qualify.
+  const toOnly = doGetTrades({ status: 'planned', to: '2026-08-25T23:59:59.999-05:00' });
+  const toIds = (toOnly.data as { data: Array<{ id: string }> }).data.map((t) => t.id);
+  assert(toIds.includes('df-to-c'), 'to-only includes earlier trade');
+  assert(toIds.includes('df-from-a'), 'to-only includes 08-24 trade');
+  assert(!toIds.includes('df-from-b'), 'to-only excludes later trade');
+}
+
+console.log('\nDF3. deleted trade (openedAt null) uses createdAt for date filtering:');
+{
+  cleanup();
+  seedTrade({ id: 'df-del-in', status: 'deleted', createdAt: '2026-08-25 11:00:00', updatedAt: '2026-08-25 11:00:00', openedAt: null });
+  seedTrade({ id: 'df-del-out', status: 'deleted', createdAt: '2026-08-20 11:00:00', updatedAt: '2026-08-20 11:00:00', openedAt: null });
+
+  const inRange = doGetTrades({ status: 'deleted', from: '2026-08-25T00:00:00.000-05:00', to: '2026-08-25T23:59:59.999-05:00' });
+  const inIds = (inRange.data as { data: Array<{ id: string }> }).data.map((t) => t.id);
+  assert(inIds.includes('df-del-in'), 'deleted trade with openedAt=null returned when creation date matches');
+  assert(!inIds.includes('df-del-out'), 'deleted trade outside range excluded');
+  assertEqual((inRange.data as { total: number }).total, 1, 'deleted total matches');
+}
+
+console.log('\nDF4. closed trades filter by closedAt:');
+{
+  cleanup();
+  // Opened long before the range, closed inside it → included.
+  seedTrade({ id: 'df-cl-in', status: 'closed', createdAt: '2026-01-01 09:00:00', openedAt: '2026-01-05 09:00:00', closedAt: '2026-08-25 14:00:00' });
+  // Opened inside the range, closed outside it → excluded.
+  seedTrade({ id: 'df-cl-out', status: 'closed', createdAt: '2026-08-01 09:00:00', openedAt: '2026-08-25 09:00:00', closedAt: '2026-09-30 14:00:00' });
+
+  const r = doGetTrades({ status: 'closed', from: '2026-08-25T00:00:00.000-05:00', to: '2026-08-25T23:59:59.999-05:00' });
+  const ids = (r.data as { data: Array<{ id: string }> }).data.map((t) => t.id);
+  assert(ids.includes('df-cl-in'), 'closed-inside-range included (close date semantics)');
+  assert(!ids.includes('df-cl-out'), 'closed-outside-range excluded even though opened inside');
+}
+
+console.log('\nDF5. open trades ignore date filtering:');
+{
+  cleanup();
+  seedTrade({ id: 'df-open-old', status: 'open', createdAt: '2024-01-01 09:00:00', openedAt: '2024-01-01 09:00:00' });
+  const r = doGetTrades({ status: 'open', from: '2026-08-25T00:00:00.000-05:00', to: '2026-08-25T23:59:59.999-05:00' });
+  const ids = (r.data as { data: Array<{ id: string }> }).data.map((t) => t.id);
+  assert(ids.includes('df-open-old'), 'open trade returned despite old dates');
+}
+
+console.log('\nDF6. timezone-boundary (offset -05:00) maps correctly:');
+{
+  cleanup();
+  // Local day 2026-08-25 in -05:00 = UTC [2026-08-25T05:00, 2026-08-26T04:59:59.999].
+  // 04:59 UTC on 08-25 is 23:59 local on 08-24 → just BEFORE local day start.
+  seedTrade({ id: 'df-tz-before', status: 'planned', createdAt: '2026-08-25T04:59:59.000Z', updatedAt: '2026-08-25T04:59:59.000Z' });
+  // 05:00 UTC on 08-25 is 00:00 local on 08-25 → exactly at local day start.
+  seedTrade({ id: 'df-tz-at', status: 'planned', createdAt: '2026-08-25T05:00:00.000Z', updatedAt: '2026-08-25T05:00:00.000Z' });
+
+  const r = doGetTrades({ status: 'planned', from: '2026-08-25T00:00:00.000-05:00', to: '2026-08-25T23:59:59.999-05:00' });
+  const ids = (r.data as { data: Array<{ id: string }> }).data.map((t) => t.id);
+  assert(!ids.includes('df-tz-before'), 'trade just before local-day start excluded (offset honored)');
+  assert(ids.includes('df-tz-at'), 'trade at local-day start included (offset honored)');
+}
+
+console.log('\nDF7. mixed timestamp forms (SQLite form + ISO-Z) are handled chronologically:');
+{
+  cleanup();
+  // df-mix-1 stored in SQLite current_timestamp form (space, UTC).
+  seedTrade({ id: 'df-mix-1', status: 'planned', createdAt: '2026-08-25 12:00:00', updatedAt: '2026-08-25 12:00:00' });
+  // df-mix-2 stored as ISO 8601 with Z — the same instant.
+  seedTrade({ id: 'df-mix-2', status: 'planned', createdAt: '2026-08-25T12:00:00.000Z', updatedAt: '2026-08-25T12:00:00.000Z' });
+  // df-mix-3: ISO with offset — 10:00 -05:00 == 15:00 UTC, still inside local day.
+  seedTrade({ id: 'df-mix-3', status: 'planned', createdAt: '2026-08-25T10:00:00.000-05:00', updatedAt: '2026-08-25T10:00:00.000-05:00' });
+
+  const r = doGetTrades({ status: 'planned', from: '2026-08-25T00:00:00.000-05:00', to: '2026-08-25T23:59:59.999-05:00' });
+  const ids = (r.data as { data: Array<{ id: string }> }).data.map((t) => t.id);
+  assert(ids.includes('df-mix-1'), 'SQLite current_timestamp form included');
+  assert(ids.includes('df-mix-2'), 'ISO-Z form included');
+  assert(ids.includes('df-mix-3'), 'ISO-offset form included');
+  assertEqual(ids.length, 3, 'all three mixed forms in range');
+}
+
+console.log('\nDF8. invalid from/to still return 400:');
+{
+  cleanup();
+  const badFrom = doGetTrades({ status: 'planned', from: 'not-a-date' });
+  assertEqual(badFrom.status, 400, 'invalid from → 400');
+  const badTo = doGetTrades({ status: 'planned', to: '2026/08/25' });
+  assertEqual(badTo.status, 400, 'invalid to → 400');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────
