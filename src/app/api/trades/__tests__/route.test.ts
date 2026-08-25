@@ -17,7 +17,7 @@ import { testDbPath } from '../../../../lib/testing/test-db';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, desc, and, sql, inArray, gte, lte, ne } from 'drizzle-orm';
+import { eq, desc, and, asc, sql, inArray, gte, lte, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import Decimal from 'decimal.js';
 
@@ -770,15 +770,28 @@ function doPostTrade(body: Record<string, unknown>): { status: number; data: unk
       if (!accountId) {
         const setting = db.select().from(schema.settings).get() as Record<string, unknown> | undefined;
         if (setting?.defaultAccountId) {
-          accountId = setting.defaultAccountId as string;
+          // M002-A11 mirror: saved default is usable only when planning-
+          // eligible (exists + active + USD) — stale defaults are ignored.
+          const def = db
+            .select()
+            .from(schema.accounts)
+            .where(eq(schema.accounts.id, setting.defaultAccountId as string))
+            .get() as Record<string, unknown> | undefined;
+          if (def && def.isActive && def.currency === 'USD') {
+            accountId = def.id as string;
+          }
         }
       }
 
       if (!accountId) {
+        // First planning-eligible active USD account (createdAt ASC) — no
+        // execution-readiness ranking (M002-A11).
         const firstActive = db
           .select()
           .from(schema.accounts)
-          .where(eq(schema.accounts.isActive, true))
+          .where(and(eq(schema.accounts.isActive, true), eq(schema.accounts.currency, 'USD')))
+          .orderBy(asc(schema.accounts.createdAt))
+          .limit(1)
           .get() as Record<string, unknown> | undefined;
         accountId = firstActive?.id as string | undefined;
       }
@@ -1361,9 +1374,12 @@ console.log('\n12i. POST honors explicit accountId over a stale default:');
   assert(ok.status === 201, 'explicit active accountId wins over inactive default');
   assertEqual((ok.data as Record<string, unknown>).accountId, active.id, 'trade created against explicit account');
 
-  // Without an explicit accountId the inactive default would resolve and 409.
+  // M002-A11: without an explicit accountId the stale inactive default is
+  // IGNORED (planning eligibility: exists + active + USD) and the first
+  // planning-eligible active USD account is selected — no readiness ranking.
   const noOverride = doPostTrade({ symbol: 'MSFT', direction: 'long' });
-  assert(noOverride.status === 409, 'inactive default without override returns 409');
+  assert(noOverride.status === 201, 'inactive default ignored → 201 via first eligible account');
+  assertEqual((noOverride.data as Record<string, unknown>).accountId, active.id, 'first active USD account selected');
 }
 
 // ── 12j. isAccountTradingReady predicate (exported for T04 execution gate) ──
@@ -2684,6 +2700,103 @@ console.log('\nA10-7. POST omitted accountId still enters automatic resolution:'
   const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
   assertEqual(result.status, 201, '201 via automatic default');
   assertEqual((result.data as Record<string, unknown>).accountId, 'a10-auto', 'automatic default used when omitted');
+}
+
+// ── A11. Automatic planning resolution ignores execution readiness ──────
+
+console.log('\nA11-1. Automatic: saved default is plan-only (unready) → still chosen over ready B:');
+{
+  cleanup();
+  seedAccount({ id: 'a11-def-planonly', name: 'Default Plan-Only A', currency: 'USD', maxRiskPerTradePct: null, defaultCommission: null });
+  seedAccount({ id: 'a11-ready', name: 'Ready B', currency: 'USD', maxRiskPerTradePct: 2, defaultCommission: 1 });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a11-def-planonly' }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 201, '201 (saved default wins even though execution-unready)');
+  assertEqual((result.data as Record<string, unknown>).accountId, 'a11-def-planonly', 'saved default A selected');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a11-ready')).all().length, 0, 'never B');
+}
+
+console.log('\nA11-2. Automatic: no default — first planning-eligible (plan-only) beats later ready account:');
+{
+  cleanup();
+  // A created first, active USD, execution-UNREADY.
+  seedAccount({ id: 'a11-first', name: 'First Plan-Only A', currency: 'USD', maxRiskPerTradePct: null, defaultCommission: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' });
+  // B created later, fully ready.
+  seedAccount({ id: 'a11-ready2', name: 'Ready B', currency: 'USD', maxRiskPerTradePct: 2, defaultCommission: 1, createdAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-01T00:00:00.000Z' });
+  // No default.
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: null }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 201, '201 (planning eligibility only — no execution-readiness ranking)');
+  assertEqual((result.data as Record<string, unknown>).accountId, 'a11-first', 'first planning-eligible account A selected');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a11-ready2')).all().length, 0, 'never the ready account B');
+}
+
+console.log('\nA11-3. Automatic: stale (inactive) default ignored → first planning-eligible A, not ready C:');
+{
+  cleanup();
+  seedAccount({ id: 'a11-stale', name: 'Stale Inactive X', currency: 'USD', isActive: false });
+  seedAccount({ id: 'a11-b2', name: 'First Plan-Only B', currency: 'USD', maxRiskPerTradePct: null, defaultCommission: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' });
+  seedAccount({ id: 'a11-c2', name: 'Ready C', currency: 'USD', maxRiskPerTradePct: 2, defaultCommission: 1, createdAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-01T00:00:00.000Z' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a11-stale' }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 201, '201');
+  assertEqual((result.data as Record<string, unknown>).accountId, 'a11-b2', 'first planning-eligible B selected (stale default ignored)');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a11-c2')).all().length, 0, 'never ready C');
+}
+
+console.log('\nA11-4. Automatic: non-USD default ignored → first planning-eligible USD B, not ready C:');
+{
+  cleanup();
+  seedAccount({ id: 'a11-eur', name: 'EUR Default A', currency: 'EUR' });
+  seedAccount({ id: 'a11-b3', name: 'First Plan-Only B', currency: 'USD', maxRiskPerTradePct: null, defaultCommission: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' });
+  seedAccount({ id: 'a11-c3', name: 'Ready C', currency: 'USD', maxRiskPerTradePct: 2, defaultCommission: 1, createdAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-01T00:00:00.000Z' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: 'a11-eur' }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 201, '201');
+  assertEqual((result.data as Record<string, unknown>).accountId, 'a11-b3', 'first planning-eligible USD B selected');
+  assertEqual(db.select().from(schema.trades).where(eq(schema.trades.accountId, 'a11-c3')).all().length, 0, 'never ready C');
+}
+
+console.log('\nA11-5. Automatic: only a plan-eligible account exists → 201 (no 409 readiness failure at creation):');
+{
+  cleanup();
+  seedAccount({ id: 'a11-only', name: 'Only Plan-Eligible A', currency: 'USD', maxRiskPerTradePct: null, defaultCommission: null });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: null }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 201, '201');
+  assertEqual((result.data as Record<string, unknown>).accountId, 'a11-only', 'plan-only account owns the planned trade');
+}
+
+console.log('\nA11-6. Automatic: no planning-eligible account → actionable 400, zero trades:');
+{
+  cleanup();
+  seedAccount({ id: 'a11-inactive', name: 'Inactive', currency: 'USD', isActive: false });
+  seedAccount({ id: 'a11-eur2', name: 'EUR', currency: 'EUR' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: null }).run();
+  const before = db.select().from(schema.trades).all().length;
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 400, '400 no eligible account');
+  assertEqual(db.select().from(schema.trades).all().length, before, 'zero trades');
+}
+
+console.log('\nA11-7. Automatic: funding is irrelevant to planning selection:');
+{
+  cleanup();
+  // A: no funding, created first.
+  seedAccount({ id: 'a11-unfunded', name: 'Unfunded First A', currency: 'USD', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' });
+  // B: funded (opening_balance), created later.
+  seedAccount({ id: 'a11-funded', name: 'Funded Later B', currency: 'USD', createdAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-01T00:00:00.000Z' });
+  db.insert(schema.settings).values({ id: 'default', defaultAccountId: null }).run();
+
+  const result = doPostTrade({ symbol: 'AAPL', direction: 'long' });
+  assertEqual(result.status, 201, '201');
+  assertEqual((result.data as Record<string, unknown>).accountId, 'a11-unfunded', 'unfunded first account selected — funding does not rank plans');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────

@@ -725,47 +725,23 @@ export async function POST(request: NextRequest) {
         }
       }
       if (!accountId) {
-        // S06/T04: when no default is configured, prefer the first active
-        // account that is ALSO trading-ready (risk params + commission +
-        // opening cash posted). Shared databases can contain active accounts
-        // that were never prepared for trading — resolving the raw first
-        // active account would 409 the readiness guard below even when
-        // trading-ready accounts exist. Fall through to the first active
-        // account only when none are ready, so the actionable 409 guidance is
-        // preserved for the genuinely-unprepared case. Ordering matches the
-        // dashboard v2 first-active contract (ORDER BY created_at ASC).
-        const readyActive = getSqliteHandle()
-          .prepare(
-            `SELECT a.id FROM accounts a
-             WHERE a.is_active = 1
-               AND a.currency = 'USD'
-               AND a.max_risk_per_trade_pct IS NOT NULL
-               AND a.default_commission IS NOT NULL
-               AND EXISTS (
-                 SELECT 1 FROM financial_events fe
-                 WHERE fe.account_id = a.id
-                   AND fe.event_type IN ('opening_balance', 'deposit')
-               )
-             ORDER BY a.created_at ASC
-             LIMIT 1`,
-          )
-          .get() as { id: string } | undefined;
-        accountId = readyActive?.id;
-        if (!accountId) {
-          // Trading-ready resolution found no USD account; fall through to the
-          // first active USD account so the readiness guard below can produce
-          // actionable guidance. A legacy non-USD account is never auto-
-          // selected as the effective account for new financially meaningful
-          // workflows.
-          const firstActive = db
-            .select()
-            .from(accounts)
-            .where(and(eq(accounts.isActive, true), eq(accounts.currency, 'USD')))
-            .orderBy(asc(accounts.createdAt))
-            .limit(1)
-            .get();
-          accountId = firstActive?.id;
-        }
+        // M002-A11: automatic PLANNING resolution considers only planning
+        // eligibility (active + USD) and saved user preference — never
+        // execution readiness. The previous ready-active ranking step
+        // (max_risk_per_trade_pct / default_commission / opening_balance /
+        // deposit) is REMOVED: whether the chosen plan can later execute is
+        // the first-fill boundary's decision (checkExecutionReadiness /
+        // executeTradeFill), and effective risk/commission resolve through
+        // the M002-A1 cascade there. A plan-only account (no risk config,
+        // no commission, no funding) is a valid planning target.
+        const firstActive = db
+          .select()
+          .from(accounts)
+          .where(and(eq(accounts.isActive, true), eq(accounts.currency, 'USD')))
+          .orderBy(asc(accounts.createdAt))
+          .limit(1)
+          .get();
+        accountId = firstActive?.id;
       }
     }
 
