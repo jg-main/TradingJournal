@@ -675,3 +675,158 @@ describe('findLatestMigrationRun', () => {
     expect(latest!.accountId).toBe(accountId);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// M007-S02 (workstream B) — legacy migration writer economic correctness.
+// RED for: migrated SHORT add/reduce persist workflow aliases into
+// accounting_executions and post cash in the economically wrong direction.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function migrationExecutions(sqlite: Database.Database, accountId: string): Array<{ action: string; effect: string }> {
+  const rows = sqlite
+    .prepare(
+      `SELECT ae.action AS action, fe.effect AS effect
+       FROM accounting_executions ae
+       LEFT JOIN financial_events fe ON fe.account_id = ae.account_id
+       WHERE ae.account_id = ? AND fe.event_type = 'trade_execution'
+       ORDER BY ae.posted_at ASC, ae.id ASC`,
+    )
+    .all(accountId) as Array<{ action: string; effect: string }>;
+  return rows;
+}
+
+describe('M007-S02 legacy migration writer economic correctness', () => {
+  let ctx: TestContext;
+
+  beforeAll(() => {
+    ctx = createTestDatabase();
+  });
+
+  afterAll(() => {
+    destroyTestDatabase(ctx.sqlite);
+  });
+
+  function seedAccount(accountId: string): void {
+    const now = new Date().toISOString();
+    ctx.sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, broker, currency, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+      )
+      .run(accountId, 'M007-S02 Account', 'Test', 'USD', now, now);
+  }
+
+  function seedShortTrade(accountId: string, execution: { id: string; action: string; price: number }): string {
+    const tradeId = insertTrade(ctx.sqlite, accountId, 'S2X', 'short');
+    insertLegacyExecution(ctx.sqlite, tradeId, {
+      id: execution.id,
+      action: execution.action,
+      quantity: 100,
+      price: execution.price,
+      fees: 1.00,
+      executedAt: '2024-03-01T09:30:00.000Z',
+    });
+    return tradeId;
+  }
+
+  it('M007-S02: SHORT add migration persists ONLY the concrete sell_short action and increases cash', () => {
+    const accountId = randomUUID();
+    seedAccount(accountId);
+    // Legacy workflow: short trade, add = additional short sale (sell_short).
+    seedShortTrade(accountId, { id: 's02-add-001', action: 'add', price: 50.00 });
+
+    const result = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(result.status).toBe('completed');
+    expect(result.mappedCount).toBe(1);
+    expect(result.anomalyCount).toBe(0);
+
+    const rows = migrationExecutions(ctx.sqlite, accountId);
+    expect(rows).toHaveLength(1);
+    // Canonical invariant: accounting_executions never persists add/reduce.
+    expect(rows[0].action).not.toBe('add');
+    expect(rows[0].action).toBe('sell_short');
+    // Short sale proceeds INCREASE cash.
+    expect(JSON.parse(rows[0].effect)).toMatchObject({ direction: 'increase' });
+  });
+
+  it('M007-S02: SHORT reduce migration persists ONLY the concrete buy_to_cover action and decreases cash', () => {
+    const accountId = randomUUID();
+    seedAccount(accountId);
+    // Legacy workflow: short trade, reduce = cover part of the short (buy_to_cover).
+    seedShortTrade(accountId, { id: 's02-red-001', action: 'reduce', price: 55.00 });
+
+    const result = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(result.status).toBe('completed');
+    expect(result.mappedCount).toBe(1);
+    expect(result.anomalyCount).toBe(0);
+
+    const rows = migrationExecutions(ctx.sqlite, accountId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).not.toBe('reduce');
+    expect(rows[0].action).toBe('buy_to_cover');
+    // Covering a short DECREASES cash.
+    expect(JSON.parse(rows[0].effect)).toMatchObject({ direction: 'decrease' });
+  });
+
+  it('M007-S02: LONG add/reduce pins — concrete buy/sell with correct cash directions', () => {
+    const accountId = randomUUID();
+    seedAccount(accountId);
+    const tradeId = insertTrade(ctx.sqlite, accountId, 'S2L', 'long');
+    insertLegacyExecution(ctx.sqlite, tradeId, { id: 's02-ladd-001', action: 'add', quantity: 100, price: 50.00, fees: 1.00, executedAt: '2024-03-01T09:30:00.000Z' });
+    insertLegacyExecution(ctx.sqlite, tradeId, { id: 's02-lred-001', action: 'reduce', quantity: 100, price: 55.00, fees: 1.00, executedAt: '2024-03-02T09:30:00.000Z' });
+
+    const result = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(result.status).toBe('completed');
+    expect(result.mappedCount).toBe(2);
+
+    const rows = migrationExecutions(ctx.sqlite, accountId);
+    expect(rows).toHaveLength(2);
+    // Long add -> buy (cash decrease), long reduce -> sell (cash increase).
+    const byAction = new Map(rows.map((r) => [r.action, JSON.parse(r.effect) as { direction: string }]));
+    expect(byAction.get('buy')).toMatchObject({ direction: 'decrease' });
+    expect(byAction.get('sell')).toMatchObject({ direction: 'increase' });
+    // No aliases survived.
+    for (const r of rows) {
+      expect(['buy', 'sell', 'sell_short', 'buy_to_cover']).toContain(r.action);
+    }
+  });
+
+  it('M007-S02: direct invariant — zero add/reduce rows in accounting_executions after migration', () => {
+    const accountId = randomUUID();
+    seedAccount(accountId);
+    seedShortTrade(accountId, { id: 's02-inv-001', action: 'add', price: 50.00 });
+    seedShortTrade(accountId, { id: 's02-inv-002', action: 'reduce', price: 55.00 });
+    seedShortTrade(accountId, { id: 's02-inv-003', action: 'sell_short', price: 50.00 });
+    seedShortTrade(accountId, { id: 's02-inv-004', action: 'buy_to_cover', price: 55.00 });
+
+    const result = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(result.status).toBe('completed');
+    expect(result.mappedCount).toBe(4);
+
+    const count = (ctx.sqlite
+      .prepare(`SELECT COUNT(*) AS count FROM accounting_executions WHERE action IN ('add', 'reduce')`)
+      .get() as { count: number }).count;
+    expect(count).toBe(0);
+  });
+
+  it('M007-S02: migration re-run stays idempotent after alias resolution (source-key duplicates)', () => {
+    const accountId = randomUUID();
+    seedAccount(accountId);
+    seedShortTrade(accountId, { id: 's02-idem-001', action: 'add', price: 50.00 });
+
+    const first = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(first.status).toBe('completed');
+    expect(first.mappedCount).toBe(1);
+
+    const second = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(second.status).toBe('completed');
+    expect(second.mappedCount).toBe(0);
+    expect(second.duplicateCount).toBe(1);
+
+    // No duplicate accounting rows were created.
+    const count = (ctx.sqlite
+      .prepare('SELECT COUNT(*) AS count FROM accounting_executions WHERE account_id = ?')
+      .get(accountId) as { count: number }).count;
+    expect(count).toBe(1);
+  });
+});
