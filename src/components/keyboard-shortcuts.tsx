@@ -12,7 +12,6 @@ const SHORTCUTS: Shortcut[] = [
   { key: 'd', label: 'Dashboard' },
   { key: 't', label: 'Trades' },
   { key: 's', label: 'Settings' },
-  { key: 'c', label: 'Checks' },
   { key: 'n', label: 'New Trade' },
   { key: '?', label: 'Show shortcuts' },
 ];
@@ -35,7 +34,6 @@ export function KeyboardShortcutsProvider({ children }: { children: React.ReactN
         case 'd': e.preventDefault(); router.push('/'); break;
         case 't': e.preventDefault(); router.push('/trades'); break;
         case 's': e.preventDefault(); router.push('/settings'); break;
-        case 'c': e.preventDefault(); router.push('/checks'); break;
         case 'n': e.preventDefault(); {
           const planBtn = document.querySelector<HTMLButtonElement>(
             'a[href*="trades"], button:has(svg.lucide-plus)'

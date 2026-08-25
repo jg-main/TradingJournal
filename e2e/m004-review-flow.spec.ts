@@ -248,12 +248,11 @@ test.describe('M004 review system flow', () => {
     await page.waitForLoadState('networkidle');
     await expect(page.locator('h1')).toContainText('Trades');
 
-    // Verify /checks still renders (M003 page)
+    // Verify /checks no longer renders the legacy page (M002 maintenance —
+    // the canonical checklist subsystem lives in Settings + first-fill gate).
     await page.goto('/checks');
     await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Checks & Validation');
-    await expect(page.getByRole('button', { name: 'Pre-Trade Checklists' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Validation Rules' })).toBeVisible();
+    await expect(page.locator('h1')).not.toContainText('Checks & Validation');
 
     console.log('Existing pages still render correctly after M004 changes');
   });

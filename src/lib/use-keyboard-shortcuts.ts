@@ -19,7 +19,6 @@ export function useKeyboardShortcuts(extraShortcuts: Shortcut[] = []) {
       { key: 'd', label: 'Dashboard', action: () => router.push('/') },
       { key: 't', label: 'Trades', action: () => router.push('/trades') },
       { key: 's', label: 'Settings', action: () => router.push('/settings') },
-      { key: 'c', label: 'Checks', action: () => router.push('/checks') },
       { key: 'n', label: 'New Trade', action: () => {
         const planBtn = document.querySelector<HTMLButtonElement>('button:has(svg.lucide-plus)');
         planBtn?.click();

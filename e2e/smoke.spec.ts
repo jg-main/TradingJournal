@@ -14,12 +14,11 @@ test.describe('Smoke tests — new M002 pages', () => {
     // Page should load even with empty or populated trade list
   });
 
-  test('/checks renders the Checks & Validation heading', async ({ page }) => {
-    await page.goto('/checks');
-    await expect(page.locator('h1')).toContainText('Checks & Validation');
-    // Verify the tab bar is present (checklists + validation rules tabs)
-    await expect(page.getByRole('button', { name: 'Pre-Trade Checklists' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Validation Rules' })).toBeVisible();
+  test('/checks no longer renders the legacy page', async ({ page }) => {
+    // M002 maintenance: the obsolete localStorage-backed legacy page was
+    // removed; the canonical checklist system is DB-backed and untouched.
+    const res = await page.goto('/checks');
+    expect(res?.status()).toBe(404);
   });
 
   test('/trades/[id] renders trade detail with lifecycle stepper', async ({ page }) => {

@@ -18,7 +18,6 @@ describe('resolveActiveHref', () => {
 
   it('matches exact nav hrefs', () => {
     expect(resolveActiveHref('/trades')).toBe('/trades');
-    expect(resolveActiveHref('/checks')).toBe('/checks');
     expect(resolveActiveHref('/sizing')).toBe('/sizing');
     expect(resolveActiveHref('/alerts')).toBe('/alerts');
     expect(resolveActiveHref('/settings')).toBe('/settings');

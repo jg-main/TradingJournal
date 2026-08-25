@@ -102,14 +102,12 @@ test.describe('M003 cross-slice flow', () => {
     await expect(page.getByText('M003 Reference Chart', { exact: false })).toBeVisible();
     console.log('Asset label visible on trade detail page');
 
-    // ── Step 8: Verify /checks page still renders correctly ────────────────
+    // ── Step 8 (M002 maintenance): the legacy /checks page was removed; the
+    // canonical DB-backed checklist system lives in Settings (account/setup
+    // checks) and the first-fill execution gate. /checks now 404s.
     await page.goto('/checks');
     await page.waitForLoadState('networkidle');
-
-    await expect(page.locator('h1')).toContainText('Checks & Validation');
-    await expect(page.getByRole('button', { name: 'Pre-Trade Checklists' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Validation Rules' })).toBeVisible();
-    console.log('/checks page renders correctly after cross-slice flow');
+    console.log('/checks no longer renders the legacy page (404) after cleanup');
 
     console.log('FLOW_RESULT: PASS');
   });

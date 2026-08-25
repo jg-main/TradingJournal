@@ -53,7 +53,6 @@ const LEGACY_ROUTES = [
   { path: '/trades', heading: 'Trades', family: 'trades' },
   { path: '/alerts', heading: 'Alerts', family: 'alerts' },
   { path: '/sizing', heading: 'Sizing', family: 'sizing' },
-  { path: '/checks', heading: 'Checks & Validation', family: 'checks' },
   { path: '/help', heading: 'Help & Documentation', family: 'help' },
   { path: '/lookups', heading: 'Lookups', family: 'lookups' },
   { path: '/settings/accounts', heading: 'Accounts', family: 'accounts' },
@@ -187,11 +186,12 @@ test.describe('Legacy Keyboard Shortcut Navigation', () => {
     await expect(page.locator('h1')).toContainText('Settings');
   });
 
-  test('"c" key navigates to Checks', async ({ page }) => {
+  test('"c" key no longer navigates anywhere (legacy /checks removed)', async ({ page }) => {
+    // M002 maintenance: the legacy /checks page was removed; the 'c' shortcut
+    // was deleted with it. Pressing 'c' must not navigate away.
     await page.keyboard.press('c');
-    await page.waitForURL('/checks');
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Checks & Validation');
+    await page.waitForTimeout(400);
+    expect(new URL(page.url()).pathname).toBe('/');
   });
 
   test('"n" key attempts New Trade navigation', async ({ page }) => {
