@@ -2,9 +2,10 @@ import 'server-only';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as schema from './schema';
+import { runMigrations } from './run-migrations';
 
 const DB_FILE = process.env.DB_FILE_NAME || './.trading-journal/journal.db';
 
@@ -23,41 +24,13 @@ export function initializeDatabase() {
 
   dbInstance = drizzle(sqlite, { schema });
 
-  // Auto-apply pending migrations on startup so schema stays in sync
-  // Uses exec() (not drizzle's migrate()) to support multi-statement SQL files
+  // Auto-apply pending migrations on startup so schema stays in sync.
+  // Fail-closed: any migration error throws out of initializeDatabase() and
+  // prevents module load, so the app never serves requests against a broken
+  // schema. runMigrations is a pure function of (sqlite, migrationsDir) so the
+  // migration logic is testable in isolation.
   const migrationsDir = join(process.cwd(), 'src/db/migrations');
-  const metaPath = join(migrationsDir, 'meta', '_journal.json');
-  try {
-    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { entries: { tag: string }[] };
-    sqlite.exec(
-      'CREATE TABLE IF NOT EXISTS __drizzle_migrations (' +
-      'id INTEGER PRIMARY KEY AUTOINCREMENT, ' +
-      'hash TEXT NOT NULL, ' +
-      'created_at TEXT)'
-    );
-    const insert = sqlite.prepare(
-      "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, datetime('now'))"
-    );
-    for (const entry of meta.entries) {
-      const tag = entry.tag;
-      const existing = sqlite.prepare(
-        'SELECT id FROM __drizzle_migrations WHERE hash = ?'
-      ).get(tag);
-      if (existing) continue;
-      const sql = readFileSync(join(migrationsDir, tag + '.sql'), 'utf8');
-      sqlite.exec('BEGIN');
-      try {
-        sqlite.exec(sql);
-        insert.run(tag);
-        sqlite.exec('COMMIT');
-      } catch (e) {
-        sqlite.exec('ROLLBACK');
-        throw e;
-      }
-    }
-  } catch (e) {
-    console.error('[db] Migration error:', e instanceof Error ? e.message : e);
-  }
+  runMigrations(sqlite, migrationsDir);
 
   // Data migration: convert old status values to the new 4-status model
   // (idea -> planned, partially_closed -> open, scratched -> deleted)

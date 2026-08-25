@@ -50,6 +50,7 @@ export default defineConfig({
       'src/app/api/settings/__tests__/route.default-eligibility.test.ts',
       'src/lib/readiness.test.ts',
       'src/lib/restore.test.ts',
+      'src/db/__tests__/run-migrations.test.ts',
       'src/lib/__tests__/error-utils.test.ts',
       'src/lib/__tests__/execution-readiness.test.ts',
       'src/lib/__tests__/execution-equity.test.ts',
