@@ -5,8 +5,28 @@
  * Run: npx playwright test e2e/corrective-t1-kpi.spec.ts --project=chromium
  */
 import { test, expect, type Page } from '@playwright/test';
+import Database from 'better-sqlite3';
 
 const TS = Date.now().toString(36);
+
+/**
+ * Backdate a historical equity rollforward row so every backdated fill below
+ * resolves equity via the historical_rollforward branch of the A2 resolver
+ * (reconstructed_canonical refuses once ANY prior trade_execution activity
+ * exists at/before the fill's asOf — the second backdated trade would fail).
+ */
+function seedEquityRollforward(accountId: string, asOfDaysAgo: number, equity: number) {
+  const db = new Database(process.env.DB_FILE_NAME as string);
+  const d = new Date(Date.now() - asOfDaysAgo * 86400000);
+  const date = d.toISOString().slice(0, 10);
+  const ts = new Date().toISOString();
+  db.prepare(
+    `INSERT OR REPLACE INTO account_rollforward
+     (id, account_id, date, beginning_equity, deposits_withdrawals, realized_gross_pnl, fees, ending_equity, cumulative_pnl, high_water_mark, drawdown_amount, drawdown_pct, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, ?, 0, 0, ?, ?)`,
+  ).run(crypto.randomUUID(), accountId, date, equity, equity, equity, equity, ts, ts);
+  db.close();
+}
 
 async function seedAccount(page: Page, name: string, currency: string) {
   const res = await page.request.post('/api/accounts', { data: { name, currency } });
@@ -43,8 +63,10 @@ test('captures the refined KPI rail at 1440px dark with populated data', async (
   });
   expect(riskRes.ok()).toBeTruthy();
   await page.request.post(`/api/accounts/${account.id}/initialize`, {
-    data: { mode: 'opening_balance', amount: '100000.00' },
+    data: { mode: 'opening_balance', amount: '100000.00', postedAt: new Date(Date.now() - 31 * 86400000).toISOString() },
   });
+  // Historical equity anchor: see seedEquityRollforward above.
+  seedEquityRollforward(account.id, 31, 100000);
 
   // Spread the executedAt dates across days so the cumulative P&L sparkline
   // has multiple points (a single-day set renders one point → sparkline skips).

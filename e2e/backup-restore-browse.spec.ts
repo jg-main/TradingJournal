@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { copyFileSync, existsSync, mkdirSync, unlinkSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 
 /**
@@ -38,12 +38,41 @@ async function seedBackupSettings(
 }
 
 test.describe('RestoreModal — Browse Scheduled Backups', () => {
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     // Create backup directory and seed a test backup file
     mkdirSync(BACKUP_DIR, { recursive: true });
     if (existsSync(SOURCE_BACKUP_PATH)) {
       copyFileSync(SOURCE_BACKUP_PATH, SEED_BACKUP_PATH);
       console.log(`[seed] Copied backup fixture → ${SEED_BACKUP_PATH}`);
+    } else if (!existsSync(SEED_BACKUP_PATH)) {
+      // The committed fixture is absent — generate a REAL backup through the
+      // running server (the same pipeline /api/backup/now uses) and rename it
+      // to the canonical seeded filename so the browse tab lists a valid
+      // backup without depending on a binary fixture in the repo.
+      const port = process.env.PLAYWRIGHT_PORT ?? '31000';
+      const settingsRes = await fetch(`http://localhost:${port}/api/settings`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          startingAccountValue: 10000,
+          defaultCommission: 0.5,
+          maxRiskPerTradePct: 2,
+          journalStartDate: '2024-01-01',
+          backupEnabled: true,
+          backupRetentionCount: 7,
+        }),
+      });
+      if (settingsRes.ok) {
+        await fetch(`http://localhost:${port}/api/backup/now`, { method: 'POST' });
+      }
+      const zipFiles = existsSync(BACKUP_DIR)
+        ? readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.zip')).sort()
+        : [];
+      const newest = zipFiles[zipFiles.length - 1];
+      if (newest && !existsSync(SEED_BACKUP_PATH)) {
+        renameSync(join(BACKUP_DIR, newest), SEED_BACKUP_PATH);
+        console.log(`[seed] Generated real backup → ${SEED_BACKUP_PATH}`);
+      }
     }
   });
 

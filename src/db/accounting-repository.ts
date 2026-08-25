@@ -422,6 +422,8 @@ export interface InstrumentRow {
 
 export interface AccountingExecutionRow {
   id: string;
+  /** SQLite implicit rowid — monotonic insertion order for same-posted_at fills. */
+  rowid?: number;
   account_id: string;
   instrument_id: string;
   action: string;
@@ -654,7 +656,7 @@ export function listAccountingExecutions(
   const limit = options?.limit ?? 100;
   const offset = options?.offset ?? 0;
 
-  let sql = `SELECT id, account_id, instrument_id, action, quantity, price, fees,
+  let sql = `SELECT rowid, id, account_id, instrument_id, action, quantity, price, fees,
                     idempotency_key, journal_trade_id, description, posted_at, created_at
              FROM accounting_executions
              WHERE account_id = ?`;

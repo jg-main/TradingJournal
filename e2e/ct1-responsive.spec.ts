@@ -1,6 +1,20 @@
 import { test, expect, type Page } from '@playwright/test';
+import Database from 'better-sqlite3';
 
 const TS = Date.now().toString(36);
+
+/** Historical equity anchor for backdated fills (A2 historical_rollforward branch). */
+function seedEquityRollforward(accountId: string, asOfDaysAgo: number, equity: number) {
+  const db = new Database(process.env.DB_FILE_NAME as string);
+  const date = new Date(Date.now() - asOfDaysAgo * 86400000).toISOString().slice(0, 10);
+  const ts = new Date().toISOString();
+  db.prepare(
+    `INSERT OR REPLACE INTO account_rollforward
+     (id, account_id, date, beginning_equity, deposits_withdrawals, realized_gross_pnl, fees, ending_equity, cumulative_pnl, high_water_mark, drawdown_amount, drawdown_pct, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, ?, 0, 0, ?, ?)`,
+  ).run(crypto.randomUUID(), accountId, date, equity, equity, equity, equity, ts, ts);
+  db.close();
+}
 
 /** Seed an account with wins+losses spread across days (same as ct1 metrics). */
 async function seed(page: Page) {
@@ -8,7 +22,8 @@ async function seed(page: Page) {
   expect(res.status()).toBe(201);
   const account = (await res.json()) as { id: string };
   await page.request.put(`/api/accounts/${account.id}`, { data: { maxRiskPerTradePct: 2, defaultCommission: 1 } });
-  await page.request.post(`/api/accounts/${account.id}/initialize`, { data: { mode: 'opening_balance', amount: '100000.00' } });
+  await page.request.post(`/api/accounts/${account.id}/initialize`, { data: { mode: 'opening_balance', amount: '100000.00', postedAt: new Date(Date.now() - 31 * 86400000).toISOString() } });
+  seedEquityRollforward(account.id, 31, 100000);
   const now = new Date();
   const day = (offset: number) => { const d = new Date(now); d.setDate(d.getDate() - offset); return d.toISOString(); };
   const trades = [

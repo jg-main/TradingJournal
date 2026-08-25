@@ -416,4 +416,49 @@ describe('rebuildPositions', () => {
     // Two matches
     expect(result.allMatches).toHaveLength(2);
   });
+
+  it('replays same-timestamp entry+exit in insertion order, not UUID order (S09 regression)', async () => {
+    // A bulk entry+exit submitted with ONE executedAt produces two fills with
+    // identical posted_at. The rebuild must replay them in insertion order
+    // (created_at): an exit whose UUID sorts before its entry's would otherwise
+    // be rejected with NO_POSITION_TO_CLOSE (~50% flake from random UUID ids).
+    // Force the adversarial id order (exit sorts BEFORE entry lexicographically)
+    // to prove insertion order wins.
+    const ord = findOrCreateInstrument(ctx.sqlite, 'TSLA-ORD');
+    const buyId = '00000000-0000-4000-8000-0000000000b1';
+    const sellId = '00000000-0000-4000-8000-0000000000a1'; // sorts before buyId
+    const postedAt = '2026-07-20T10:00:00.000Z';
+
+    insertAccountingExecution(ctx.sqlite, {
+      id: buyId,
+      accountId: ctx.accountId,
+      instrumentId: ord.id,
+      action: 'buy',
+      quantity: '100.00',
+      price: '100.00',
+      postedAt,
+    });
+    // Entry inserted before exit: SQLite rowid (the replay tiebreak) is
+    // monotonic in insert order — the adversarial id order above must lose.
+    insertAccountingExecution(ctx.sqlite, {
+      id: sellId,
+      accountId: ctx.accountId,
+      instrumentId: ord.id,
+      action: 'sell',
+      quantity: '100.00',
+      price: '110.00',
+      postedAt,
+    });
+
+    const result = rebuildPositions(ctx.sqlite, ctx.accountId, ord.id);
+
+    // The exit must replay AFTER the entry: one lot opened and closed.
+    expect(result.matchCount).toBe(1);
+    const key = `${ctx.accountId}:${ord.id}`;
+    const pos = result.positions.get(key);
+    expect(pos).toBeDefined();
+    expect(pos!.direction).toBeNull();
+    expect(pos!.quantity).toBe('0.00');
+    expect(pos!.realizedGrossPnl).toBe('1000.00'); // (110 - 100) * 100
+  });
 });

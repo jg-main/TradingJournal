@@ -246,9 +246,11 @@ test.describe('Account Ledger Workspace', () => {
     await expect(page.getByText('Bonus deposit')).toBeVisible();
     await expect(page.getByText('Deposit', { exact: true }).first()).toBeVisible();
 
-    // Fee event
+    // Fee event — manual fee, execution fees, and corrected-execution fees each
+    // render their own Fee row, so assert the badge with .first() (same pattern
+    // as the Opening/Deposit badges above).
     await expect(page.getByText('Monthly platform fee')).toBeVisible();
-    await expect(page.getByText('Fee', { exact: true })).toBeVisible();
+    await expect(page.getByText('Fee', { exact: true }).first()).toBeVisible();
 
     // Dividend event
     await expect(page.getByText('AAPL quarterly dividend')).toBeVisible();
@@ -379,9 +381,11 @@ test.describe('Account Ledger Workspace', () => {
     // Confirm initial data is loaded
     await expect(page.getByText('Opening balance')).toBeVisible();
 
-    // Click the Adjustment filter — likely has no events in this test account
+    // Click the Transfer filter — no transfer events exist in this test
+    // account (the correction flow posts a manual_adjustment fee refund, so
+    // the Adjustment category is populated).
     const filterGroup = page.getByRole('group', { name: 'Event category filter' });
-    await filterGroup.getByText('Adjustment').click();
+    await filterGroup.getByText('Transfer').click();
 
     // Wait for Opening balance to disappear (filter took effect)
     await expect(page.getByText('Opening balance')).not.toBeVisible({ timeout: 5000 });

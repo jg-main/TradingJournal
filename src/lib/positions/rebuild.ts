@@ -136,6 +136,15 @@ export function rebuildPositions(
         const aIsReplacement = streamPositions.has(a.id) ? 0 : 1;
         const bIsReplacement = streamPositions.has(b.id) ? 0 : 1;
         if (aIsReplacement !== bIsReplacement) return aIsReplacement - bIsReplacement;
+        // Same-timestamp fills (e.g. a bulk entry+exit submitted with one
+        // executedAt) must replay in INSERTION order, not random UUID order:
+        // an exit whose UUID sorts before its entry would be rejected with
+        // NO_POSITION_TO_CLOSE and roll the fill back. The implicit SQLite
+        // rowid is the monotonic insert order (created_at is second-precision
+        // CURRENT_TIMESTAMP and ties within the same second); id is the final
+        // fallback.
+        const rowidOrder = (a.rowid ?? 0) - (b.rowid ?? 0);
+        if (rowidOrder !== 0) return rowidOrder;
         return a.id.localeCompare(b.id);
       });
 

@@ -20,7 +20,7 @@ async function seedAccount(page: Page, name: string, currency: string) {
   expect(res.status()).toBe(201);
   const account = (await res.json()) as { id: string };
   await page.request.put(`/api/accounts/${account.id}`, { data: { maxRiskPerTradePct: 2, defaultCommission: 1 } });
-  await page.request.post(`/api/accounts/${account.id}/initialize`, { data: { mode: 'opening_balance', amount: '50000.00' } });
+  await page.request.post(`/api/accounts/${account.id}/initialize`, { data: { mode: 'opening_balance', amount: '50000.00', postedAt: new Date(Date.now() - 40 * 86400000).toISOString() } });
   return account;
 }
 
