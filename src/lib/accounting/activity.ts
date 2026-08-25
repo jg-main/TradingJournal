@@ -13,6 +13,12 @@
  */
 
 import Database from 'better-sqlite3';
+import {
+  AmbiguousEconomicActionError,
+  cashDirectionForEconomicAction,
+  isGenericManagementAction,
+  resolveEconomicExecutionAction,
+} from './economic-action';
 import { fromMicros, toMicros } from './decimal';
 import type { CanonicalDecimal, EventType, EventEffect } from './types';
 
@@ -89,6 +95,7 @@ interface ActivityEventRow {
   description: string | null;
   payload: string | null;
   effect: string | null;
+  idempotency_key: string | null;
   posted_at: string;
   created_at: string;
   entry_id: string | null;
@@ -114,7 +121,7 @@ export function computeAccountActivity(
   const rows = sqlite
     .prepare(
       `SELECT fe.id, fe.event_type, fe.description, fe.payload, fe.effect,
-              fe.posted_at, fe.created_at,
+              fe.idempotency_key, fe.posted_at, fe.created_at,
               le.id AS entry_id
        FROM financial_events fe
        LEFT JOIN ledger_entries le ON le.financial_event_id = fe.id
@@ -131,9 +138,11 @@ export function computeAccountActivity(
     createdAt: r.created_at,
     payload: r.payload ? tryParseJSON(r.payload) : null,
     effect: deriveActivityEffect(
+      sqlite,
       r.event_type as EventType,
       r.payload ? tryParseJSON(r.payload) : null,
       r.effect ? (tryParseJSON(r.effect) as EventEffect | null) : null,
+      r.idempotency_key,
     ),
     postingStatus: r.entry_id ? 'posted' : 'pending',
   }));
@@ -153,14 +162,66 @@ export function computeAccountActivity(
  * their immutable effect JSON. Their payload retains the economic inputs, so
  * reconstruct the real effect at read time without rewriting the event.
  */
+/**
+ * Resolve the trade direction for a trade_execution event so workflow
+ * aliases (add/reduce) can be interpreted economically.
+ *
+ * Priority:
+ * 1. The event's deterministic idempotency key — `accounting-execution-<id>`
+ *    (both normal postings and correction reversal/replacement events use
+ *    executionFinancialEventIdempotencyKey) → accounting_executions id →
+ *    journal_trade_id → trades.direction.
+ * 2. The correction payload's originalExecutionId (defensive) — the reversal/
+ *    replacement rows inherit journal linkage from the original.
+ */
+function resolveExecutionTradeDirection(
+  sqlite: Database.Database,
+  idempotencyKey: string | null,
+  payload: unknown,
+): 'long' | 'short' | null {
+  const candidateIds: string[] = [];
+
+  if (idempotencyKey && idempotencyKey.startsWith('accounting-execution-')) {
+    candidateIds.push(idempotencyKey.slice('accounting-execution-'.length));
+  }
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    typeof (payload as { originalExecutionId?: unknown }).originalExecutionId === 'string'
+  ) {
+    candidateIds.push((payload as { originalExecutionId: string }).originalExecutionId);
+  }
+
+  for (const id of candidateIds) {
+    const linked = sqlite
+      .prepare(
+        `SELECT t.direction
+         FROM accounting_executions ae
+         JOIN trades t ON t.id = ae.journal_trade_id
+         WHERE ae.id = ?`,
+      )
+      .get(id) as { direction: 'long' | 'short' } | undefined;
+    if (linked) return linked.direction;
+  }
+  return null;
+}
+
+/**
+ * M007-S01 (D1): reconstruct the canonical cash effect for an execution
+ * event. Journal workflow aliases (add/reduce) are resolved through the
+ * canonical economic-action boundary using the trade direction — never a
+ * local raw-action list. Concrete actions keep their established mapping
+ * (buy/buy_to_cover decrease; sell/sell_short increase). This also repairs
+ * legacy `#skip#` effects and earlier correction rows whose effect direction
+ * was recorded incorrectly.
+ */
 function deriveActivityEffect(
+  sqlite: Database.Database,
   eventType: EventType,
   payload: unknown,
   effect: EventEffect | null,
+  idempotencyKey: string | null,
 ): EventEffect | null {
-  // Execution payloads are the immutable economic source of truth. This also
-  // repairs legacy `#skip#` effects and earlier correction rows whose effect
-  // direction was recorded incorrectly.
   if (eventType !== 'trade_execution') {
     return effect;
   }
@@ -178,9 +239,24 @@ function deriveActivityEffect(
     return effect;
   }
 
-  const cashIncreaseActions = new Set(['sell', 'reduce', 'sell_short']);
-  const cashDecreaseActions = new Set(['buy', 'add', 'buy_to_cover']);
-  if (!cashIncreaseActions.has(execution.action) && !cashDecreaseActions.has(execution.action)) {
+  // Resolve aliases through the canonical boundary; concrete actions pass
+  // through unchanged (their classification is canonical already).
+  let direction: 'increase' | 'decrease';
+  try {
+    if (isGenericManagementAction(execution.action)) {
+      const tradeDirection = resolveExecutionTradeDirection(sqlite, idempotencyKey, payload);
+      if (!tradeDirection) {
+        throw new AmbiguousEconomicActionError(execution.action, 'unknown');
+      }
+      direction = cashDirectionForEconomicAction(
+        resolveEconomicExecutionAction(execution.action, tradeDirection),
+      );
+    } else if (['buy', 'sell', 'sell_short', 'buy_to_cover'].includes(execution.action)) {
+      direction = cashDirectionForEconomicAction(execution.action as 'buy' | 'sell' | 'sell_short' | 'buy_to_cover');
+    } else {
+      return effect; // unknown action — leave the stored effect untouched
+    }
+  } catch {
     return effect;
   }
 
@@ -190,7 +266,7 @@ function deriveActivityEffect(
     );
     return {
       kind: 'cash',
-      direction: cashIncreaseActions.has(execution.action) ? 'increase' : 'decrease',
+      direction,
       amount: fromMicros(considerationMicros),
       amountMicros: considerationMicros,
     };

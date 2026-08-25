@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { testDbPath, disposeSqliteFile } from '../../../../../lib/testing/test-db';
 import { eq, and } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
@@ -32,7 +33,7 @@ function assert(condition: boolean, msg: string) {
 
 // ── Setup: test DB ──────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-ms02-t06.db';
+const DB_FILE = process.env.DB_FILE_NAME || testDbPath('reviews-action-items');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
@@ -514,6 +515,13 @@ console.log('\n20. DELETE with non-existent id returns 404:');
     (result.data as { error: string }).error === 'Action item not found',
     'error message is "Action item not found"',
   );
+}
+
+// ── Cleanup (root-hygiene guard: no disposable DBs in the repo root) ──
+try {
+  disposeSqliteFile(DB_FILE);
+} catch {
+  // ignore cleanup errors
 }
 
 // ── Summary ─────────────────────────────────────────────────────────

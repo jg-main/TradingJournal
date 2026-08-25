@@ -32,12 +32,14 @@ import { correctExecution } from './correction';
 import { postExecutionFill } from './execution-posting';
 import { postFinancialEvent } from './posting';
 import { rebuildPositions } from '../positions/rebuild';
+import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import {
   AccountNotFoundError,
   ExecutionAlreadyCorrectedError,
   ExecutionNotMutableError,
   DuplicateCorrectionIdempotencyError,
 } from './errors';
+import { AmbiguousEconomicActionError } from './economic-action';
 import {
   findOrCreateInstrument,
   insertAccountingExecution,
@@ -1220,3 +1222,237 @@ describe('correctExecution', () => {
     expect(result.replacementExecution.fees).toBe('7.00');
   });
 });
+
+// ── Trade-linked helpers (M007 S01: D1 economic-action boundary) ────────
+
+function seedTrade(
+  sqlite: Database.Database,
+  accountId: string,
+  direction: 'long' | 'short',
+  symbol: string,
+): string {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'open', ?, ?)`,
+    )
+    .run(id, `T-${randomUUID().slice(0, 8)}`, accountId, symbol, direction, now, now);
+  return id;
+}
+
+/** Read the ledger net cash for an account (debit subtracts, credit adds). */
+function ledgerNetCash(sqlite: Database.Database, accountId: string): number {
+  const row = sqlite
+    .prepare(
+      `SELECT COALESCE(SUM(CASE WHEN side = 'credit' THEN CAST(amount AS REAL) ELSE -CAST(amount AS REAL) END), 0) AS net
+       FROM ledger_postings WHERE account_id = ?`,
+    )
+    .get(accountId) as { net: number };
+  return row.net;
+}
+
+/** Read the account performance net_cash projection (rebuilds first so the
+ *  projection is current regardless of which writer last touched the
+ *  account — the ledger net is zero by double-entry design). */
+function projectedNetCash(sqlite: Database.Database, accountId: string): number {
+  rebuildAccountPerformance(sqlite, accountId);
+  const row = sqlite
+    .prepare('SELECT net_cash FROM account_performance WHERE account_id = ?')
+    .get(accountId) as { net_cash: string } | undefined;
+  return row ? Number(row.net_cash) : 0;
+}
+
+describe('M007-S01 D1 economic-action boundary in correction', () => {
+  let ctx: TestContext;
+
+  beforeAll(() => {
+    ctx = createTestDatabase();
+  });
+
+  afterAll(() => {
+    destroyTestDatabase();
+  });
+
+  it('short correction to action add posts economically as sell_short (cash increase)', () => {
+    const { sqlite, accountId, symbol } = ctx;
+    const tradeId = seedTrade(sqlite, accountId, 'short', symbol);
+
+    // Original short entry 100 @ 50, fee 1 — journal sell_short.
+    const original = postSellShort(sqlite, accountId, symbol, '100.00', '50.00', '1.00', tradeId);
+    rebuildPositions(sqlite, accountId, original.execution.instrumentId);
+    const cashBefore = projectedNetCash(sqlite, accountId);
+
+    // Correct the entry to action 'add' (a short add is economically sell_short).
+    const result = correctExecution(sqlite, {
+      accountId,
+      originalExecutionId: original.execution.id,
+      symbol,
+      action: 'add',
+      quantity: '100.00',
+      price: '55.00',
+      fees: '1.00',
+      reason: 'Management intent recorded as add (M007-S01)',
+      direction: 'short',
+    });
+
+    // Reversal is economically concrete: sell_short → buy_to_cover.
+    expect(result.reversalExecution.action).toBe('buy_to_cover');
+    // Replacement is economically concrete: add → sell_short (never the alias).
+    expect(result.replacementExecution.action).toBe('sell_short');
+    expect(result.replacementExecution.journalTradeId).toBe(tradeId);
+
+    // The stored accounting rows contain NO alias.
+    const stored = listAccountingExecutions(sqlite, accountId);
+    for (const row of stored) {
+      expect(['buy', 'sell', 'sell_short', 'buy_to_cover']).toContain(row.action);
+    }
+
+    // Cash increases: reversal refunds the original sale (100@50) and the
+    // replacement shorts higher (100@55) — net movement +500 (price
+    // improvement), plus fee refund/repayment balancing to +500.
+    const netCashAfter = projectedNetCash(sqlite, accountId);
+    expect(netCashAfter).toBeGreaterThan(cashBefore);
+    expect(netCashAfter - cashBefore).toBeCloseTo(500, 0);
+
+    // FIFO/position remains a short of 100.
+    expect(result.position!.direction).toBe('short');
+    expect(result.position!.quantity).toBe('100.00');
+  });
+
+  it('short correction to action reduce posts economically as buy_to_cover (cash decrease)', () => {
+    const { sqlite, accountId, symbol } = ctx;
+    const tradeId = seedTrade(sqlite, accountId, 'short', symbol);
+
+    // Short 100 @ 50.
+    const original = postSellShort(sqlite, accountId, symbol, '100.00', '50.00', '1.00', tradeId);
+    rebuildPositions(sqlite, accountId, original.execution.instrumentId);
+    const cashBefore = projectedNetCash(sqlite, accountId);
+
+    // Correct to action 'reduce' — economically buy_to_cover (cash decreases).
+    const result = correctExecution(sqlite, {
+      accountId,
+      originalExecutionId: original.execution.id,
+      symbol,
+      action: 'reduce',
+      quantity: '100.00',
+      price: '45.00',
+      fees: '1.00',
+      reason: 'Management intent recorded as reduce (M007-S01)',
+      direction: 'short',
+    });
+
+    // Reversal of sell_short is economically buy_to_cover; replacement is
+    // economically buy_to_cover (short reduce).
+    expect(result.reversalExecution.action).toBe('buy_to_cover');
+    expect(result.replacementExecution.action).toBe('buy_to_cover');
+
+    // The stored accounting rows contain NO alias.
+    const stored = listAccountingExecutions(sqlite, accountId);
+    for (const row of stored) {
+      expect(['buy', 'sell', 'sell_short', 'buy_to_cover']).toContain(row.action);
+    }
+
+    // Cash decreases: buying to cover costs money.
+    const netCashAfter = projectedNetCash(sqlite, accountId);
+    expect(netCashAfter).toBeLessThan(cashBefore);
+  });
+
+  it('long correction to action add posts economically as buy (cash decrease)', () => {
+    const { sqlite, symbol } = ctx;
+    const accountId2 = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, 'M007 Long Add', 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(accountId2, now, now);
+    const tradeId = seedTrade(sqlite, accountId2, 'long', symbol);
+
+    // Long entry 100 @ 50.
+    const original = postBuy(sqlite, accountId2, symbol, '100.00', '50.00', '1.00', tradeId);
+    rebuildPositions(sqlite, accountId2, original.execution.instrumentId);
+    const cashBefore = projectedNetCash(sqlite, accountId2);
+
+    // Correct to action 'add' — long add is economically buy (cash decreases).
+    const addResult = correctExecution(sqlite, {
+      accountId: accountId2,
+      originalExecutionId: original.execution.id,
+      symbol,
+      action: 'add',
+      quantity: '100.00',
+      price: '55.00',
+      fees: '1.00',
+      reason: 'Management intent recorded as add (long, M007-S01)',
+      direction: 'long',
+    });
+    expect(addResult.replacementExecution.action).toBe('buy');
+    expect(addResult.reversalExecution.action).toBe('sell');
+    // Replacement buy costs cash: reversal sell 100@50 refunds 5000-1, the
+    // replacement buy 100@55 costs 5500+1 — the ledger net decreases.
+    expect(projectedNetCash(sqlite, accountId2)).toBeLessThan(cashBefore);
+  });
+
+  it('long correction to action reduce posts economically as sell (cash increase)', () => {
+    const { sqlite, symbol } = ctx;
+    const accountId2 = randomUUID();
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+         VALUES (?, 'M007 Long Reduce', 'USD', 1, 0.0, ?, ?)`,
+      )
+      .run(accountId2, now, now);
+    const tradeId = seedTrade(sqlite, accountId2, 'long', symbol);
+
+    // Open long 200 @ 60, then sell 50 @ 70.
+    const open = postBuy(sqlite, accountId2, symbol, '200.00', '60.00', '1.00', tradeId);
+    rebuildPositions(sqlite, accountId2, open.execution.instrumentId);
+    const sell = postSell(sqlite, accountId2, symbol, '50.00', '70.00', '1.00', tradeId);
+    rebuildPositions(sqlite, accountId2, sell.execution.instrumentId);
+    const cashBeforeReduce = projectedNetCash(sqlite, accountId2);
+
+    // Correct the sell to action 'reduce' — long reduce is economically sell.
+    const reduceResult = correctExecution(sqlite, {
+      accountId: accountId2,
+      originalExecutionId: sell.execution.id,
+      symbol,
+      action: 'reduce',
+      quantity: '50.00',
+      price: '75.00',
+      fees: '1.00',
+      reason: 'Management intent recorded as reduce (long, M007-S01)',
+      direction: 'long',
+    });
+    expect(reduceResult.replacementExecution.action).toBe('sell');
+    expect(reduceResult.reversalExecution.action).toBe('buy');
+    // Replacement sell at a higher price than the original: ledger net
+    // increases by the price improvement (5.00 * 50 minus fees).
+    expect(projectedNetCash(sqlite, accountId2)).toBeGreaterThan(cashBeforeReduce);
+    // Position stays long 150.
+    expect(reduceResult.position!.direction).toBe('long');
+    expect(reduceResult.position!.quantity).toBe('150.00');
+  });
+
+  it('alias correction without resolvable direction is rejected (AmbiguousEconomicActionError)', () => {
+    const { sqlite, accountId, symbol } = ctx;
+    // No journal linkage → no direction → alias cannot be resolved.
+    const original = postSellShort(sqlite, accountId, symbol, '10.00', '50.00');
+    rebuildPositions(sqlite, accountId, original.execution.instrumentId);
+
+    expect(() =>
+      correctExecution(sqlite, {
+        accountId,
+        originalExecutionId: original.execution.id,
+        symbol,
+        action: 'add',
+        quantity: '10.00',
+        price: '55.00',
+        reason: 'Should be rejected without direction',
+      }),
+    ).toThrow(AmbiguousEconomicActionError);
+  });
+});
+

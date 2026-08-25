@@ -190,6 +190,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         reason,
         idempotencyKey,
         postedAt,
+        // M007-S01 (D1): the persisted trade direction is the canonical
+        // economic boundary — an alias replacement (add/reduce) resolves to
+        // its concrete side and accounting_executions never persists aliases.
+        direction: trade.direction,
       });
 
       // 4b. Resolve the effective execution set and recompute the trade's

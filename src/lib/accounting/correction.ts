@@ -34,6 +34,13 @@ import { rebuildPositionsWithinTransaction } from '../positions/rebuild';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
 import { reverseAction } from './correction-contracts';
 import {
+  AmbiguousEconomicActionError,
+  cashDirectionForEconomicAction,
+  isGenericManagementAction,
+  resolveEconomicExecutionAction,
+  type EconomicAction,
+} from './economic-action';
+import {
   AccountNotFoundError,
   ExecutionAlreadyCorrectedError,
   ExecutionNotMutableError,
@@ -87,6 +94,15 @@ export interface CorrectExecutionInput {
   idempotencyKey?: string;
   /** ISO-8601 timestamp. Defaults to current UTC time. */
   postedAt?: string;
+  /**
+   * M007-S01: trade direction for economic-action resolution. The trade-
+   * scoped correction route passes the persisted trade's direction so the
+   * kernel can resolve journal workflow aliases (add/reduce) to their
+   * concrete economic side. When omitted, the kernel resolves direction from
+   * the original execution's journal linkage; raw account executions (no
+   * linkage) must already be concrete actions.
+   */
+  direction?: 'long' | 'short';
 }
 
 export interface CorrectExecutionResult {
@@ -332,6 +348,41 @@ export function correctExecution(
   }
 
   // ── 7. Execute correction atomically ─────────────────────────────────
+
+  // M007-S01 (D1): the canonical economic-action boundary. The kernel may
+  // receive journal workflow aliases (add/reduce) from the trade-scoped path;
+  // canonical accounting may persist ONLY the concrete economic action
+  // (buy/sell/sell_short/buy_to_cover) and cash direction must derive from
+  // the concrete action. Direction resolves from the input hint, else the
+  // original execution's journal linkage, else null (raw account execution —
+  // actions must already be concrete there).
+  const tradeDirection: 'long' | 'short' | null =
+    input.direction ??
+    (originalExecution.journal_trade_id
+      ? (
+          sqlite
+            .prepare('SELECT direction FROM trades WHERE id = ?')
+            .get(originalExecution.journal_trade_id) as
+            | { direction: 'long' | 'short' }
+            | undefined
+        )?.direction ?? null
+      : null);
+
+  const concreteOriginalAction: EconomicAction = tradeDirection
+    ? resolveEconomicExecutionAction(originalExecution.action, tradeDirection)
+    : (originalExecution.action as EconomicAction);
+  const concreteReplacementAction: EconomicAction = tradeDirection
+    ? resolveEconomicExecutionAction(replacementAction, tradeDirection)
+    : (replacementAction as EconomicAction);
+
+  if (!tradeDirection) {
+    for (const action of [concreteOriginalAction, concreteReplacementAction]) {
+      if (isGenericManagementAction(action)) {
+        throw new AmbiguousEconomicActionError(action, 'unknown');
+      }
+    }
+  }
+
   const transaction = sqlite.transaction(() => {
     const correctedAt = new Date().toISOString();
 
@@ -340,8 +391,10 @@ export function correctExecution(
     const replacementInstrument = findOrCreateInstrument(sqlite, symbol);
 
     // ── 7a. Create reversal execution ──────────────────────────────────
-    // The reversal mirrors the original: same quantity, same price, opposite action
-    const reversalAction = reverseAction(originalExecution.action);
+    // The reversal mirrors the original's ECONOMIC action (buy↔sell,
+    // sell_short↔buy_to_cover) — never a workflow alias — so the stored
+    // accounting action and its cash direction stay canonical.
+    const reversalAction = reverseAction(concreteOriginalAction) as EconomicAction;
     const reversalDescription = `Correction reversal for ${originalExecution.id}: ${reversalAction} ${originalExecution.quantity} ${originalInstrument.symbol} @ ${originalExecution.price}`;
 
     const reversalExecution = insertAccountingExecution(sqlite, {
@@ -373,7 +426,7 @@ export function correctExecution(
     });
     const reversalEffect = JSON.stringify({
       kind: 'cash',
-      direction: ['sell', 'reduce', 'sell_short'].includes(reversalAction) ? 'increase' : 'decrease',
+      direction: cashDirectionForEconomicAction(reversalAction),
       amount: fromMicros(reversalConsiderationMicros),
       amountMicros: reversalConsiderationMicros,
     });
@@ -395,7 +448,7 @@ export function correctExecution(
     const replacementExecution = insertAccountingExecution(sqlite, {
       accountId,
       instrumentId: replacementInstrument.id,
-      action: replacementAction,
+      action: concreteReplacementAction,
       quantity: replacementQuantity,
       price: replacementPrice,
       fees,
@@ -411,7 +464,7 @@ export function correctExecution(
       replacementPrice,
     );
     const replacementPayload = JSON.stringify({
-      action: replacementAction,
+      action: concreteReplacementAction,
       symbol,
       quantity: replacementQuantity,
       price: replacementPrice,
@@ -421,7 +474,7 @@ export function correctExecution(
     });
     const replacementEffect = JSON.stringify({
       kind: 'cash',
-      direction: ['sell', 'reduce', 'sell_short'].includes(replacementAction) ? 'increase' : 'decrease',
+      direction: cashDirectionForEconomicAction(concreteReplacementAction),
       amount: fromMicros(replacementConsiderationMicros),
       amountMicros: replacementConsiderationMicros,
     });
@@ -450,7 +503,7 @@ export function correctExecution(
           accountingExecutionId: replacementExecution.id,
           accountId,
           symbol,
-          action: replacementAction,
+          action: concreteReplacementAction,
           fees,
           journalTradeId: originalExecution.journal_trade_id,
           postedAt: replacementPostedAt,

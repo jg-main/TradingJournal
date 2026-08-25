@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { testDbPath, disposeSqliteFile } from '../../../../../lib/testing/test-db';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 
 import * as schema from '@/db/schema';
@@ -33,7 +34,7 @@ function assert(condition: boolean, msg: string) {
 
 // ── Setup: test DB ──────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-ms02-t06.db';
+const DB_FILE = process.env.DB_FILE_NAME || testDbPath('reviews-weekly');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
@@ -92,6 +93,8 @@ sqlite.exec(`
     reviewed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -716,6 +719,13 @@ console.log('\n15. DELETE with non-existent id returns 404:');
     (result.data as { error: string }).error === 'Weekly review not found',
     'error message is "Weekly review not found"',
   );
+}
+
+// ── Cleanup (root-hygiene guard: no disposable DBs in the repo root) ──
+try {
+  disposeSqliteFile(DB_FILE);
+} catch {
+  // ignore cleanup errors
 }
 
 // ── Summary ─────────────────────────────────────────────────────────
