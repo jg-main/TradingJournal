@@ -112,7 +112,9 @@ function doGetReconciliation(
         status: 404,
         body: {
           error: 'Account not found',
+          status: 'unavailable',
           details: `Account "${accountId}" not found`,
+          failureMode: 'account_not_found',
         },
       };
     }
@@ -125,7 +127,9 @@ function doGetReconciliation(
         status: 400,
         body: {
           error: 'No migration run found',
+          status: 'unavailable',
           details: `No completed migration runs exist for account "${accountId}". Run a migration first via POST /api/accounts/${accountId}/migration.`,
+          failureMode: 'no_migration_run',
         },
       };
     }
@@ -136,8 +140,10 @@ function doGetReconciliation(
     return {
       status: 500,
       body: {
-        error: 'Failed to compute reconciliation report',
+        error: 'Reconciliation computation failed',
+        status: 'unavailable',
         details: error instanceof Error ? error.message : String(error),
+        failureMode: 'computation_error',
       },
     };
   }
@@ -257,6 +263,8 @@ describe('GET /api/accounts/:id/reconciliation', () => {
     expect(result.status).toBe(404);
     expect(result.body.error).toBe('Account not found');
     expect(result.body.details).toContain(fakeId);
+    expect(result.body.status).toBe('unavailable');
+    expect(result.body.failureMode).toBe('account_not_found');
   });
 
   // ── No migration run ──────────────────────────────────────────────────
@@ -274,6 +282,8 @@ describe('GET /api/accounts/:id/reconciliation', () => {
     const result = doGetReconciliation(ctx.sqlite, noRunAccountId);
     expect(result.status).toBe(400);
     expect(result.body.error).toBe('No migration run found');
+    expect(result.body.status).toBe('unavailable');
+    expect(result.body.failureMode).toBe('no_migration_run');
   });
 
   // ── Successful reconciliation — all match ─────────────────────────────
@@ -350,6 +360,7 @@ describe('GET /api/accounts/:id/reconciliation', () => {
     // Cutover should be eligible
     expect(body.cutoverEligible).toBe(true);
     expect(body.cutoverRefusalReasons).toEqual([]);
+    expect(body.status).toBe('clean');
 
     // Verify record status counts (1 deposit + 2 executions + 1 snapshot)
     const recordCounts = body.recordStatusCounts as Record<string, number>;
@@ -436,6 +447,8 @@ describe('GET /api/accounts/:id/reconciliation', () => {
     expect(typeof body.accountId).toBe('string');
     expect(typeof body.runStatus).toBe('string');
     expect(typeof body.computedAt).toBe('string');
+    expect(typeof body.status).toBe('string');
+    expect(['clean', 'mismatch']).toContain(body.status);
     expect(typeof body.cutoverEligible).toBe('boolean');
     expect(Array.isArray(body.cutoverRefusalReasons)).toBe(true);
 
@@ -503,6 +516,7 @@ describe('GET /api/accounts/:id/reconciliation', () => {
 
     const body = result.body as Record<string, unknown>;
     expect(body.cutoverEligible).toBe(false);
+    expect(body.status).toBe('mismatch');
     expect(Array.isArray(body.cutoverRefusalReasons)).toBe(true);
     expect((body.cutoverRefusalReasons as string[]).length).toBeGreaterThan(0);
 
@@ -510,5 +524,29 @@ describe('GET /api/accounts/:id/reconciliation', () => {
     const reasons = body.cutoverRefusalReasons as string[];
     const hasUnexplainedReason = reasons.some((r) => r.includes('unexplained'));
     expect(hasUnexplainedReason).toBe(true);
+  });
+
+  // ── Computation error ─────────────────────────────────────────────────
+
+  it('returns 500 with failureMode computation_error when computation fails', () => {
+    // Fresh DB with no tables: accountExists throws, exercising the catch
+    // path that maps any computation failure to status 'unavailable'.
+    const errDbPath = testDbPath('reconciliation-route-error');
+    if (existsSync(errDbPath)) {
+      unlinkSync(errDbPath);
+    }
+    const errSqlite = new Database(errDbPath);
+    errSqlite.pragma('journal_mode = WAL');
+
+    const result = doGetReconciliation(errSqlite, 'any-account-id');
+    expect(result.status).toBe(500);
+    expect(result.body.error).toBe('Reconciliation computation failed');
+    expect(result.body.status).toBe('unavailable');
+    expect(result.body.failureMode).toBe('computation_error');
+
+    errSqlite.close();
+    try { unlinkSync(errDbPath); } catch { /* ok */ }
+    try { unlinkSync(errDbPath + '-wal'); } catch { /* ok */ }
+    try { unlinkSync(errDbPath + '-shm'); } catch { /* ok */ }
   });
 });

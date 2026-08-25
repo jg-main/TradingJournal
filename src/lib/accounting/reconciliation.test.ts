@@ -293,6 +293,7 @@ describe('computeReconciliation', () => {
 
     // Cutover should be eligible
     expect(report!.cutoverEligible).toBe(true);
+    expect(report!.status).toBe('clean');
     expect(report!.cutoverRefusalReasons.length).toBe(0);
 
     // Verify anomaly summaries exist
@@ -395,6 +396,7 @@ describe('computeReconciliation', () => {
     const report = computeReconciliation(ctx.sqlite, accountId);
     expect(report).toBeDefined();
     expect(report!.cutoverEligible).toBe(true);
+    expect(report!.status).toBe('clean');
   });
 
   // ── Execution count mismatch via anomalies ────────────────────────────
@@ -467,6 +469,7 @@ describe('computeReconciliation', () => {
     const report = computeReconciliation(ctx.sqlite, accountId);
     expect(report).toBeDefined();
     expect(report!.cutoverEligible).toBe(true);
+    expect(report!.status).toBe('clean');
     expect(report!.cutoverRefusalReasons).toEqual([]);
   });
 
@@ -511,6 +514,7 @@ describe('computeReconciliation', () => {
 
     // Cutover should be refused
     expect(report!.cutoverEligible).toBe(false);
+    expect(report!.status).toBe('mismatch');
     expect(report!.cutoverRefusalReasons.length).toBeGreaterThan(0);
     expect(report!.cutoverRefusalReasons[0]).toContain('unexplained');
   });
@@ -541,6 +545,8 @@ describe('computeReconciliation', () => {
     expect(typeof report!.runStatus).toBe('string');
     expect(report!.rebuildFingerprint === null || typeof report!.rebuildFingerprint === 'string').toBe(true);
     expect(typeof report!.computedAt).toBe('string');
+    expect(typeof report!.status).toBe('string');
+    expect(['clean', 'mismatch']).toContain(report!.status);
     expect(typeof report!.cutoverEligible).toBe('boolean');
 
     // Totals
@@ -643,6 +649,7 @@ describe('computeReconciliation', () => {
     expect(exposure!.classification).toBe('match');
 
     expect(report!.cutoverEligible).toBe(true);
+    expect(report!.status).toBe('clean');
     expect(report!.cutoverRefusalReasons).toEqual([]);
   });
 
@@ -705,6 +712,7 @@ describe('computeReconciliation', () => {
     expect(exposure!.classification).toBe('match');
 
     expect(report!.cutoverEligible).toBe(true);
+    expect(report!.status).toBe('clean');
   });
 
   it('resolves add on a short trade as sell_short and reconciles a closed short', () => {
@@ -764,6 +772,7 @@ describe('computeReconciliation', () => {
     expect(exposure!.classification).toBe('match');
 
     expect(report!.cutoverEligible).toBe(true);
+    expect(report!.status).toBe('clean');
     expect(report!.cutoverRefusalReasons).toEqual([]);
   });
 
@@ -822,5 +831,6 @@ describe('computeReconciliation', () => {
     expect(cash!.classification).toBe('match');
 
     expect(report!.cutoverEligible).toBe(true);
+    expect(report!.status).toBe('clean');
   });
 });

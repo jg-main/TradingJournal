@@ -45,6 +45,28 @@ export type ComparisonKey =
 export type ComparisonClassification = 'match' | 'explained' | 'unexplained';
 
 /**
+ * Machine-readable status of a reconciliation report.
+ *
+ * - 'clean'       — migration completed with no unexplained differences.
+ * - 'mismatch'    — unexplained differences exist between the legacy and
+ *                   accounting projections.
+ * - 'unavailable' — the report could not be computed (no migration run,
+ *                   missing account, or computation error). Reports of this
+ *                   status are never produced by computeReconciliation; the
+ *                   API layer synthesizes them as structured error responses.
+ */
+export type ReconciliationStatus = 'clean' | 'mismatch' | 'unavailable';
+
+/**
+ * Machine-readable reason a reconciliation report is unavailable, carried on
+ * API error responses in the `failureMode` field.
+ */
+export type ReconciliationUnavailableReason =
+  | 'no_migration_run'
+  | 'account_not_found'
+  | 'computation_error';
+
+/**
  * One comparison result between a legacy-derived value and its accounting
  * projection counterpart.
  */
@@ -133,6 +155,11 @@ export interface ReconciliationReport {
   anomalies: AnomalySummary[];
   /** Record status counts from the migration run. */
   recordStatusCounts: RecordStatusCounts;
+  /**
+   * Overall report status: 'clean' when cutover is eligible (no unexplained
+   * differences, completed migration), 'mismatch' otherwise.
+   */
+  status: ReconciliationStatus;
   /** True when no unexplained differences exist (cutover gate). */
   cutoverEligible: boolean;
   /** If cutoverEligible is false, one or more refusal reasons. */
@@ -948,6 +975,7 @@ export function computeReconciliation(
       duplicateCount: run.duplicateCount,
       totalRecords: run.totalRecords,
     },
+    status: cutoverEligible ? 'clean' : 'mismatch',
     cutoverEligible,
     cutoverRefusalReasons,
   };

@@ -16,7 +16,11 @@ import { getSqliteHandle } from '@/db';
 import {
   accountExists,
 } from '@/db/accounting-repository';
-import { computeReconciliation } from '@/lib/accounting/reconciliation';
+import {
+  computeReconciliation,
+  type ReconciliationStatus,
+  type ReconciliationUnavailableReason,
+} from '@/lib/accounting/reconciliation';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -32,10 +36,14 @@ type RouteParams = { params: Promise<{ id: string }> };
  *
  * Responses:
  * - 200: Complete reconciliation report with comparisons, anomaly summaries,
- *        record status counts, and cutover eligibility
+ *        record status counts, cutover eligibility, and an explicit status
+ *        ('clean' or 'mismatch')
  * - 400: No completed migration runs exist for this account
+ *        (status: 'unavailable', failureMode: 'no_migration_run')
  * - 404: Account not found
+ *        (status: 'unavailable', failureMode: 'account_not_found')
  * - 500: Unexpected server error
+ *        (status: 'unavailable', failureMode: 'computation_error')
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -47,7 +55,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         {
           error: 'Account not found',
+          status: 'unavailable' as ReconciliationStatus,
           details: `Account "${accountId}" not found`,
+          failureMode: 'account_not_found' as ReconciliationUnavailableReason,
         },
         { status: 404 },
       );
@@ -60,7 +70,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         {
           error: 'No migration run found',
+          status: 'unavailable' as ReconciliationStatus,
           details: `No completed migration runs exist for account "${accountId}". Run a migration first via POST /api/accounts/${accountId}/migration.`,
+          failureMode: 'no_migration_run' as ReconciliationUnavailableReason,
         },
         { status: 400 },
       );
@@ -71,8 +83,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: 'Failed to compute reconciliation report',
+        error: 'Reconciliation computation failed',
+        status: 'unavailable' as ReconciliationStatus,
         details: error instanceof Error ? error.message : String(error),
+        failureMode: 'computation_error' as ReconciliationUnavailableReason,
       },
       { status: 500 },
     );
