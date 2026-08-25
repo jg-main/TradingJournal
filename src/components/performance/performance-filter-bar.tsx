@@ -21,28 +21,11 @@ import { cn } from '@/lib/utils';
 import { SlidersHorizontalIcon } from 'lucide-react';
 import type {
   DatePreset,
-  AccountScopeMode,
   PerformanceUnit,
   AdvancedFilters,
 } from '@/lib/performance-view-types';
 
-// ── Account Shape (matches GET /api/accounts) ───────────────────────────────
-
-export interface FilterBarAccount {
-  id: string;
-  name: string;
-  broker: string | null;
-  currency: string | null;
-  isActive: boolean | number;
-}
-
 // ── Option Catalogues ───────────────────────────────────────────────────────
-
-const ACCOUNT_SCOPE_OPTIONS: Array<{ value: AccountScopeMode; label: string }> = [
-  { value: 'all', label: 'All Accounts' },
-  { value: 'single', label: 'Single Account' },
-  { value: 'multiple', label: 'Multiple Accounts' },
-];
 
 const DATE_PRESET_OPTIONS: Array<{ value: DatePreset; label: string }> = [
   { value: 'Whole period', label: 'Whole Period' },
@@ -172,50 +155,17 @@ function presetToDateRange(preset: DatePreset): { from: string; to: string } {
  * token values both sit below it).
  *
  * States:
- * - Accounts: scope mode (all/single/multiple) + an account picker for
- *   single/multiple modes, populated from GET /api/accounts. Loading shows a
- *   placeholder; a failed account fetch degrades to an inline error while the
- *   rest of the bar keeps working (all-accounts mode is still usable).
+ * - Account scope: the sidebar AccountProvider is the sole account owner
+ *   (M007/D037) — this bar renders NO account selector and never fetches
+ *   /api/accounts. Every analytics request is scoped to the global account.
  * - Period: relative presets + Custom with from/to date inputs and Apply.
  * - Unit: $/%/R presentation toggle (client-side only — never refetches).
  */
 export function PerformanceFilterBar() {
-  const { filter, setAccountScope, setDateRange, setUnit, setAdvancedFilters, analyticsData } =
+  const { filter, setDateRange, setUnit, setAdvancedFilters, analyticsData } =
     usePerformanceDashboard();
   const [customFrom, setCustomFrom] = useState(filter.dateRange.from);
   const [customTo, setCustomTo] = useState(filter.dateRange.to);
-
-  // Account list for the single/multiple pickers.
-  const [accounts, setAccounts] = useState<FilterBarAccount[]>([]);
-  const [accountsLoading, setAccountsLoading] = useState(true);
-  const [accountsError, setAccountsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAccountsLoading(true);
-    setAccountsError(null);
-
-    fetch('/api/accounts')
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to load accounts');
-        return res.json() as Promise<FilterBarAccount[]>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setAccounts(data);
-        setAccountsLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setAccountsError(err instanceof Error ? err.message : 'Failed to load accounts');
-        setAccountsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Setup options for the Filters popover (GET /api/lookups?type=setup).
   const [setupOptions, setSetupOptions] = useState<SetupLookupRow[]>([]);
@@ -255,26 +205,6 @@ export function PerformanceFilterBar() {
       const range = presetToDateRange(preset);
       setDateRange({ preset, ...range });
     }
-  };
-
-  const handleAccountModeChange = (mode: AccountScopeMode) => {
-    if (mode === 'all') {
-      setAccountScope({ mode: 'all', accountIds: [] });
-      return;
-    }
-    // Preserve existing ids when they are still valid for this mode; otherwise
-    // default to the first account so a single/multiple scope is immediately
-    // actionable instead of erroring with an empty accountIds list.
-    const existing = filter.accountScope.accountIds.filter((id) => accounts.some((a) => a.id === id));
-    const ids =
-      existing.length > 0
-        ? existing
-        : accounts.length > 0
-          ? mode === 'single'
-            ? [accounts[0].id]
-            : [accounts[0].id]
-          : [];
-    setAccountScope({ mode, accountIds: ids });
   };
 
   const handleUnitChange = (unit: PerformanceUnit) => {
@@ -318,94 +248,11 @@ export function PerformanceFilterBar() {
     setDateRange({ preset: 'Custom', from: customFrom, to: customTo });
   };
 
-  const toggleAccount = (id: string) => {
-    const current = filter.accountScope.accountIds;
-    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
-    setAccountScope({ mode: 'multiple', accountIds: next });
-  };
-
-  // Mixed-currency warning: only when the concrete selection spans >1 currency.
-  const selectedCurrencies = new Set(
-    filter.accountScope.accountIds
-      .map((id) => accounts.find((a) => a.id === id)?.currency)
-      .filter((c): c is string => Boolean(c)),
-  );
-  const mixedCurrencies = filter.accountScope.mode !== 'all' && selectedCurrencies.size > 1;
-
-  const accountsAvailable = !accountsLoading && !accountsError && accounts.length > 0;
-
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border bg-card">
-      {/* Account Scope — compact control; accessible name via aria-label
-          (the visible 'Accounts:' form label is gone, CT7). */}
-      <div className="flex items-center gap-2">
-        <Select
-          value={filter.accountScope.mode}
-          onValueChange={(v) => handleAccountModeChange(v as AccountScopeMode)}
-        >
-          <SelectTrigger id="perf-account-scope" size="lg" aria-label="Performance accounts">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ACCOUNT_SCOPE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {filter.accountScope.mode === 'single' && (
-          <Select
-            value={filter.accountScope.accountIds[0] ?? ''}
-            onValueChange={(v) => setAccountScope({ mode: 'single', accountIds: [v] })}
-          >
-            <SelectTrigger
-              size="lg"
-              aria-label="Select account"
-              data-testid="account-single-select"
-              disabled={!accountsAvailable}
-            >
-              <SelectValue
-                placeholder={
-                  accountsLoading ? 'Loading accounts…' : accountsError ? 'Accounts unavailable' : 'Select account'
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((acc) => (
-                <SelectItem key={acc.id} value={acc.id}>
-                  {acc.name}
-                  {acc.broker ? ` (${acc.broker})` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {filter.accountScope.mode === 'multiple' && (
-          <div className="flex items-center gap-3 text-sm" data-testid="account-multi-select">
-            {accountsLoading ? (
-              <span className="text-xs text-muted-foreground">Loading accounts…</span>
-            ) : accountsError ? (
-              <span className="text-xs text-destructive">{accountsError}</span>
-            ) : (
-              accounts.map((acc) => (
-                <label key={acc.id} className="flex items-center gap-1 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filter.accountScope.accountIds.includes(acc.id)}
-                    onChange={() => toggleAccount(acc.id)}
-                    className="size-4 accent-primary"
-                  />
-                  {acc.name}
-                </label>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
+      {/* Account scope is owned by the sidebar AccountProvider (M007/D037):
+          no account selector lives here. The filter bar offers only
+          page-local analytical filters: period, advanced filters, unit. */}
       {/* Date Range Presets — compact control; accessible name via aria-label. */}
       <div className="flex items-center gap-2">
         <Select value={filter.dateRange.preset} onValueChange={(v) => handlePresetChange(v as DatePreset)}>
@@ -598,12 +445,6 @@ export function PerformanceFilterBar() {
         </div>
       </div>
 
-      {/* Mixed Currency Warning */}
-      {mixedCurrencies && (
-        <div className="ml-auto text-xs text-warning" data-testid="mixed-currency-warning">
-          Note: Multi-account aggregation uses USD only
-        </div>
-      )}
     </div>
   );
 }

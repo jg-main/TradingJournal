@@ -2,6 +2,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { ChartWidget } from '../chart-widget';
+
+// Canonical account scope (Fix 4): resolved global account so the provider
+// issues the scoped analytics fetch.
+vi.mock('@/lib/account-context', () => ({
+  useAccount: () => ({
+    accounts: [{ id: 'acc-A', name: 'Account A', broker: null, currency: 'USD', isActive: true }],
+    loading: false,
+    error: null,
+    accountId: 'acc-A',
+    setAccountId: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
 
 afterEach(() => {

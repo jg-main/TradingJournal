@@ -2,9 +2,9 @@
  * Tests for PerformanceFilterBar.
  *
  * Covers: control rendering, preset + custom date range updates propagated to
- * shared context, $/%/R unit toggle, account scope selection with a real
- * account picker, accounts-fetch failure degradation, and the mixed-currency
- * warning.
+ * shared context, $/%/R unit toggle, advanced filters, and the Fix 4
+ * contract — the bar renders NO account selector (the sidebar
+ * AccountProvider is the sole account owner) and never fetches /api/accounts.
  *
  * The bar is built on TradingJournal primitives (radix-based Select/Button/
  * Input at --density-control-h-lg height), so select interactions follow the
@@ -19,6 +19,21 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import React from 'react';
 import { PerformanceFilterBar } from '../performance-filter-bar';
 import { PerformanceDashboardProvider, usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
+
+// Canonical account scope (M007/D037 / Fix 4): the sidebar AccountProvider is
+// the sole account owner — a resolved global account (acc-001) is mocked.
+vi.mock('@/lib/account-context', () => ({
+  useAccount: () => ({
+    accounts: [
+      { id: 'acc-001', name: 'Cash USD', broker: 'IBKR', currency: 'USD', isActive: true },
+    ],
+    loading: false,
+    error: null,
+    accountId: 'acc-001',
+    setAccountId: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 
 // jsdom does not implement Element.prototype.scrollIntoView; Radix Select calls
 // it when opening its option list, so stub it out (matches the repo pattern in
@@ -117,9 +132,6 @@ describe('PerformanceFilterBar', () => {
     globalThis.fetch = vi
       .fn()
       .mockImplementation((url: string) => {
-        if (url.startsWith('/api/accounts')) {
-          return Promise.resolve(okResponse(ACCOUNTS));
-        }
         if (url.startsWith('/api/lookups')) {
           return Promise.resolve(okResponse(SETUPS));
         }
@@ -169,7 +181,10 @@ describe('PerformanceFilterBar', () => {
     expect(screen.queryByText('Period:')).toBeNull();
     expect(screen.queryByText('Unit:')).toBeNull();
     // …and every control keeps an explicit accessible name (role + aria-label).
-    expect(screen.getByRole('combobox', { name: 'Performance accounts' })).toBeDefined();
+    // Fix 4: NO account selector exists — the sidebar is the account owner.
+    expect(screen.queryByRole('combobox', { name: 'Performance accounts' })).toBeNull();
+    expect(screen.queryByTestId('account-single-select')).toBeNull();
+    expect(screen.queryByTestId('account-multi-select')).toBeNull();
     expect(screen.getByRole('combobox', { name: 'Performance period' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Performance filters' })).toBeDefined();
     expect(screen.getByRole('group', { name: 'Performance unit' })).toBeDefined();
@@ -225,69 +240,11 @@ describe('PerformanceFilterBar', () => {
     expect(analyticsCalls).toHaveLength(1);
   });
 
-  it('selects a single account and writes it into the shared scope', async () => {
+  it('never fetches /api/accounts (AccountProvider owns the catalogue)', async () => {
     renderBar();
     await flushAsync();
-
-    await chooseSelectOption('Performance accounts', 'Single Account');
-    // Single mode auto-selects the first account.
-    expect(probe().mode).toBe('single');
-    expect(probe().accountIds).toEqual(['acc-usd']);
-
-    // Switching to the EUR account updates the scope (option name includes
-    // the broker suffix, e.g. "Cash EUR (IBKR)").
-    await chooseSelectOption('Select account', /Cash EUR/);
-    expect(probe().accountIds).toEqual(['acc-eur']);
-  });
-
-  it('toggles multiple accounts with checkboxes and shows the mixed-currency warning', async () => {
-    renderBar();
-    await flushAsync();
-
-    await chooseSelectOption('Performance accounts', 'Multiple Accounts');
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(2);
-
-    fireEvent.click(checkboxes[1]); // add EUR account
-    expect(probe().mode).toBe('multiple');
-    expect(probe().accountIds).toContain('acc-eur');
-
-    // USD + EUR → warning shown.
-    expect(screen.getByTestId('mixed-currency-warning')).toBeDefined();
-
-    // Unchecking back to a single currency hides the warning.
-    fireEvent.click(checkboxes[1]);
-    expect(screen.queryByTestId('mixed-currency-warning')).toBeNull();
-  });
-
-  it('degrades gracefully when the accounts fetch fails (all-accounts still usable)', async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockImplementation((url: string) => {
-        if (url.startsWith('/api/accounts')) {
-          return Promise.reject(new Error('Network error'));
-        }
-        if (url.startsWith('/api/lookups')) {
-          return Promise.resolve(okResponse(SETUPS));
-        }
-        return Promise.resolve(okResponse(ANALYTICS_BODY));
-      });
-
-    renderBar();
-    await flushAsync();
-
-    // Accounts: controls still render.
-    expect(screen.getByRole('combobox', { name: 'Performance accounts' })).toBeDefined();
-
-    // Switching to single mode shows the degraded "unavailable" placeholder,
-    // not a crash.
-    await chooseSelectOption('Performance accounts', 'Single Account');
-    expect(screen.getByTestId('account-single-select')).toBeDefined();
-    expect(screen.getByText('Accounts unavailable')).toBeDefined();
-
-    // Switching to multiple shows the inline error message.
-    await chooseSelectOption('Performance accounts', 'Multiple Accounts');
-    expect(screen.getByText('Network error')).toBeDefined();
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    expect(calls.some((u) => u.includes('/api/accounts'))).toBe(false);
   });
 
   // ═════════════════════════════════════════════════════════════════════════

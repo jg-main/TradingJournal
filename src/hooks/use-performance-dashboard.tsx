@@ -3,12 +3,12 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type {
   PerformanceDashboardFilter,
-  AccountScope,
   DateRange,
   AdvancedFilters,
   PerformanceUnit,
 } from '@/lib/performance-view-types';
 import { createDefaultFilter } from '@/lib/performance-view-types';
+import { useAccount } from '@/lib/account-context';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,7 +31,6 @@ export interface PerformanceAnalyticsData {
 
 export interface PerformanceDashboardContextValue {
   filter: PerformanceDashboardFilter;
-  setAccountScope: (scope: AccountScope) => void;
   setDateRange: (range: DateRange) => void;
   setAdvancedFilters: (filters: AdvancedFilters) => void;
   setUnit: (unit: PerformanceUnit) => void;
@@ -60,13 +59,25 @@ export interface PerformanceDashboardProviderProps {
  * query string. `unit` is deliberately excluded — it is a client-side
  * presentation concern only and must not trigger refetches or cache variance.
  */
-export function buildQueryParams(filter: PerformanceDashboardFilter): URLSearchParams {
+export function buildQueryParams(
+  filter: PerformanceDashboardFilter,
+  globalAccountId?: string,
+): URLSearchParams {
   const params = new URLSearchParams();
 
-  // Account scope
-  params.set('accountScope', filter.accountScope.mode);
-  if (filter.accountScope.accountIds.length > 0) {
-    params.set('accountIds', filter.accountScope.accountIds.join(','));
+  // Account scope — M007/D037: the sidebar AccountProvider is the canonical
+  // account owner. When a global account is resolved (globalAccountId
+  // non-empty) the scope is FORCED to single/<id> regardless of any
+  // page-local filter.accountScope state (legacy persisted 'all'/'multiple'
+  // values cannot override the global selection). Without a resolved global
+  // account the filter's own scope is serialized (tests / server tooling).
+  const hasGlobal = globalAccountId != null && globalAccountId !== '';
+  const scope = hasGlobal
+    ? { mode: 'single' as const, accountIds: [globalAccountId as string] }
+    : filter.accountScope;
+  params.set('accountScope', scope.mode);
+  if (scope.accountIds.length > 0) {
+    params.set('accountIds', scope.accountIds.join(','));
   }
 
   // Date range
@@ -105,10 +116,32 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Canonical account scope (M007/D037): the sidebar AccountProvider is the
+  // sole account-selection owner for primary surfaces. Performance never
+  // fetches /api/accounts itself and never offers an account selector; every
+  // analytics request is forced to accountScope=single&accountIds=<global>.
+  const { accountId, loading: accountsLoading, error: accountsError } = useAccount();
+
+  // Normalize the filter's accountScope to the global selection so any
+  // consumer reading filter.accountScope sees reality — and legacy persisted
+  // 'all'/'single B'/'multiple' state can never override the global account.
+  // (Runs only when the global account resolves or changes; the query itself
+  // is forced via buildQueryParams(filter, accountId) regardless.)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFilterState((prev) => ({
+      ...prev,
+      accountScope: accountId
+        ? { mode: 'single', accountIds: [accountId] }
+        : prev.accountScope,
+    }));
+  }, [accountId]);
+
   // Serialized query drives the fetch effect — unit changes (client-side
   // presentation only) produce an identical queryKey string, so the memoized
-  // string value stays stable and no redundant refetch fires.
-  const queryKey = useMemo(() => buildQueryParams(filter).toString(), [filter]);
+  // string value stays stable and no redundant refetch fires. The global
+  // account is part of the key: switching the sidebar account refetches.
+  const queryKey = useMemo(() => buildQueryParams(filter, accountId).toString(), [filter, accountId]);
 
   // Monotonic request sequence: a slow older response must never overwrite a
   // newer one (debounced refetches can overlap in flight). Only the response
@@ -116,6 +149,14 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
   const requestSeqRef = useRef(0);
 
   const fetchAnalytics = useCallback(async () => {
+    // Never issue an unscoped/all-account request: wait for the canonical
+    // account to resolve. AccountProvider errors surface through the existing
+    // error state instead of broadening to All Accounts.
+    if (accountsLoading || !accountId) return;
+    if (accountsError) {
+      setError(accountsError);
+      return;
+    }
     const requestId = ++requestSeqRef.current;
     setIsLoading(true);
     setError(null);
@@ -140,17 +181,13 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
         setIsLoading(false);
       }
     }
-  }, [queryKey]);
+  }, [queryKey, accountId, accountsLoading, accountsError]);
 
   // Fetch on filter change (debounced)
   useEffect(() => {
     const timeoutId = setTimeout(fetchAnalytics, 300);
     return () => clearTimeout(timeoutId);
   }, [fetchAnalytics]);
-
-  const setAccountScope = useCallback((scope: AccountScope) => {
-    setFilterState((prev) => ({ ...prev, accountScope: scope }));
-  }, []);
 
   const setDateRange = useCallback((range: DateRange) => {
     setFilterState((prev) => ({ ...prev, dateRange: range }));
@@ -171,7 +208,6 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
   const value = useMemo(
     () => ({
       filter,
-      setAccountScope,
       setDateRange,
       setAdvancedFilters,
       setUnit,
@@ -181,7 +217,7 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
       error,
       refetch: fetchAnalytics,
     }),
-    [filter, setAccountScope, setDateRange, setAdvancedFilters, setUnit, setFilter, analyticsData, isLoading, error, fetchAnalytics],
+    [filter, setDateRange, setAdvancedFilters, setUnit, setFilter, analyticsData, isLoading, error, fetchAnalytics],
   );
 
   return (

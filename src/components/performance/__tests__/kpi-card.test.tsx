@@ -3,6 +3,19 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { KpiCard } from '../kpi-card';
+
+// Canonical account scope (Fix 4): resolved global account so the provider
+// issues the scoped analytics fetch.
+vi.mock('@/lib/account-context', () => ({
+  useAccount: () => ({
+    accounts: [{ id: 'acc-A', name: 'Account A', broker: null, currency: 'USD', isActive: true }],
+    loading: false,
+    error: null,
+    accountId: 'acc-A',
+    setAccountId: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 import { PerformanceDashboardProvider, usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 
 afterEach(() => cleanup());
