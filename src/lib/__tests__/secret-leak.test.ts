@@ -100,15 +100,22 @@ function checkApiKeyLeaks(files: SourceFile[]) {
   // ── Check: ai-settings route strips apiKey ──────────────────────────
   const aiSettingsRoute = files.find((f) => f.path.includes('ai-settings/route'));
   if (aiSettingsRoute) {
+    // The route strips apiKey via rest destructuring: `const { apiKey, ...safeRow } = row`
+    // (GET, PUT create-branch, PUT update-branch). Accept both the aliased
+    // `apiKey: _` form and the plain `apiKey` rest-destructuring form.
+    const aliased = aiSettingsRoute.content.includes('apiKey: _, ...safeRow');
+    const plain = aiSettingsRoute.content.includes('apiKey, ...safeRow');
     assert(
-      aiSettingsRoute.content.includes('apiKey: _, ...safeRow'),
-      'ai-settings route uses apiKey: _ destructuring to strip apiKey',
+      aliased || plain,
+      'ai-settings route strips apiKey via rest destructuring before responding',
     );
-    // There are 3 destructuring lines: GET, PUT create-branch, PUT update-branch
-    const stripCount = (aiSettingsRoute.content.match(/const \{ apiKey: _, \.\.\.safeRow \}/g) || []).length;
+    // There are 3 destructuring sites: GET, PUT create-branch, PUT update-branch
+    const stripCount =
+      (aiSettingsRoute.content.match(/const \{ apiKey: _, \.\.\.safeRow \}/g) || []).length +
+      (aiSettingsRoute.content.match(/const \{ apiKey, \.\.\.safeRow \}/g) || []).length;
     assert(
       stripCount >= 2,
-      `ai-settings destructuring apiKey: _ found ${stripCount} times (>=2 expected)`,
+      `ai-settings apiKey-strip destructuring found ${stripCount} times (>=2 expected)`,
     );
   }
 

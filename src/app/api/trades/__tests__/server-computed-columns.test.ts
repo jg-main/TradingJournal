@@ -332,8 +332,8 @@ console.log('\n1. Closed long trade returns computed realizedPnl:');
   const trade = data[0] as Record<string, unknown>;
   // Realized P&L = (110 - 100) * 100 - 5 - 3 = 1000 - 8 = 992
   assertApprox(trade.realizedPnl as number, 992, 0.01, 'realizedPnl = 992 (P&L 1000 - fees 8)');
-  // Return% = 992 / (100 * 100) * 100 = 9.92%
-  assertApprox(trade.returnPct as number, 9.92, 0.01, 'returnPct = 9.92%');
+  // returnPct (fraction) = 992 / (100 * 100) = 0.0992 (9.92%)
+  assertApprox(trade.returnPct as number, 0.0992, 0.0001, 'returnPct = 0.0992 (9.92%)');
   assert(trade.unrealizedPnl === null, 'unrealizedPnl is null for closed trade');
   assert(trade.riskPct === null, 'riskPct is null without snapshot');
   // Verify nested metrics
@@ -369,8 +369,8 @@ console.log('\n2. Closed short trade returns realizedPnl:');
 
   // Realized P&L = (200 - 180) * 50 - 4 - 2 = 1000 - 6 = 994
   assertApprox(trade.realizedPnl as number, 994, 0.01, 'realizedPnl = 994 (P&L 1000 - fees 6)');
-  // Return% = 994 / (200 * 50) * 100 = 9.94%
-  assertApprox(trade.returnPct as number, 9.94, 0.01, 'returnPct = 9.94%');
+  // returnPct (fraction) = 994 / (200 * 50) = 0.0994 (9.94%)
+  assertApprox(trade.returnPct as number, 0.0994, 0.0001, 'returnPct = 0.0994 (9.94%)');
   assertNotNull(trade.realizedPnl, 'realizedPnl is not null');
 }
 
@@ -399,10 +399,10 @@ console.log('\n3. Open trade with currentPrice returns unrealizedPnl:');
 
   // Unrealized P&L = (420 - 400) * 100 = 2000 (gross, exclude_entry_fees)
   assertApprox(trade.unrealizedPnl as number, 1995, 0.01, 'unrealizedPnl = 1995 (net of $5 open fees)');
-  // returnPct = totalNetPnl / totalEntryNotional * 100
+  // returnPct = totalNetPnl / totalEntryNotional (fraction, no *100)
   // totalNetPnl = 0 (realized) + (2000 - 5) (net unrealized) = 1995
-  // returnPct = 1995 / (400 * 100) * 100 = 4.9875
-  assertApprox(trade.returnPct as number, 4.9875, 0.01, 'returnPct = 4.9875% (fees deducted)');
+  // returnPct = 1995 / (400 * 100) = 0.049875 (4.9875%)
+  assertApprox(trade.returnPct as number, 0.049875, 0.0001, 'returnPct = 0.049875 (4.9875%, fees deducted)');
   assertEqual(trade.realizedPnl as number, 0, 'realizedPnl is 0 for open trade (no exits)');
   assert(trade.riskPct === null, 'riskPct is null');
 }
@@ -430,7 +430,7 @@ console.log('\n4. Open trade without currentPrice has null computed fields:');
 
   assert(trade.unrealizedPnl === null, 'unrealizedPnl is null (no currentPrice)');
   assertEqual(trade.realizedPnl as number, 0, 'realizedPnl is 0 (no exits, no realized P&L)');
-  assertEqual(trade.returnPct as number, 0, 'returnPct is 0 (no mark, no unrealized P&L)');
+  assert(trade.returnPct === null, 'returnPct is null (no mark, no unrealized P&L)');
 }
 
 // ── 5. Planned trade ───────────────────────────────────────────────

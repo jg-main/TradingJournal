@@ -22,6 +22,24 @@
  * Run: npx tsx src/lib/__tests__/restore.test.ts
  */
 
+// Intercept Next.js's 'server-only' marker BEFORE @/lib/restore loads:
+// restore.ts imports @/db/index, which imports the 'server-only' package
+// (its default export throws outside React Server Components). The vitest
+// path resolves 'server-only' via the alias in vitest.config.ts
+// (src/lib/testing/server-only-stub.ts); the plain-tsx path intercepts
+// Module._load here and dynamically imports restore inside runTests().
+import Module from 'node:module';
+const originalLoad = (Module as unknown as { _load: (r: string, p: unknown, m: boolean) => unknown })._load;
+(Module as unknown as { _load: (r: string, p: unknown, m: boolean) => unknown })._load = function (
+  this: unknown,
+  request: string,
+  parent: unknown,
+  isMain: boolean
+) {
+  if (request === 'server-only') return {};
+  return originalLoad.call(this, request, parent, isMain);
+};
+
 process.env.DB_FILE_NAME = testDbPath('restore-units');
 
 import { testDbPath } from '../testing/test-db';
@@ -34,7 +52,6 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '@/db/schema';
 import { serializeBackup, TABLE_REGISTRY, getMigrationCount } from '@/lib/backup-serializer';
-import { validateRestoreZip, executeRestore } from '@/lib/restore';
 
 let passed = 0;
 let failed = 0;
@@ -69,6 +86,8 @@ function restoreOptions(testDir: string) {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 async function runTests() {
+  // Dynamic import AFTER the server-only Module._load interception above.
+  const { validateRestoreZip, executeRestore } = await import('@/lib/restore');
   console.log('\n\uD83D\uDDA5\uFE0F Restore Unit Tests');
   console.log('\u2550'.repeat(40) + '\n');
 
@@ -97,7 +116,7 @@ async function runTests() {
 
       // Seed accounting_executions
       sqlite.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
-        VALUES (?, ?, ?, 'buy', '100', '150.00', '1.00', ?, ?)`)
+        VALUES (?, ?, ?, 'buy', '100.00', '150.00', '1.00', ?, ?)`)
         .run('ae-001', 'rt-acc-1', 'inst-aapl', now, now);
 
       // Seed financial_events + ledger_entries + ledger_postings (balanced: one debit + one credit)
@@ -117,10 +136,10 @@ async function runTests() {
 
       // Seed correction_lineage (references accounting_executions, accounts)
       sqlite.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
-        VALUES (?, ?, ?, 'sell', '100', '150.00', '1.00', ?, ?)`)
+        VALUES (?, ?, ?, 'sell', '100.00', '150.00', '1.00', ?, ?)`)
         .run('ae-002-rev', 'rt-acc-1', 'inst-aapl', later, later);
       sqlite.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
-        VALUES (?, ?, ?, 'buy', '100', '152.00', '1.00', ?, ?)`)
+        VALUES (?, ?, ?, 'buy', '100.00', '152.00', '1.00', ?, ?)`)
         .run('ae-003-rep', 'rt-acc-1', 'inst-aapl', later, later);
       sqlite.prepare(`INSERT INTO correction_lineage (id, account_id, original_execution_id, reversal_execution_id, replacement_execution_id, reason, corrected_at, created_at)
         VALUES (?, ?, ?, ?, ?, 'Price correction', ?, ?)`)
@@ -433,17 +452,22 @@ async function runTests() {
     try {
       const now = new Date().toISOString();
 
-      // Seed an account and an open trade
-      sqlite.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
+      // The open-trades guard (checkOpenTrades) inspects the CURRENT journal
+      // DB (getSqliteHandle on DB_FILE_NAME), not the backup ZIP. Seed the
+      // open trade into the live DB so validation fails as expected, then
+      // clean it up so the subsequent replay test is not blocked.
+      const { getSqliteHandle } = await import('@/db/index');
+      const live = getSqliteHandle();
+      live.prepare(`INSERT INTO accounts (id, name, currency, is_active, starting_balance, created_at, updated_at)
         VALUES (?, 'Open Trade Acc', 'USD', 1, 50000, ?, ?)`)
         .run('ot-acc-1', now, now);
-      sqlite.prepare(`INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at)
-        VALUES (?, 'AAPL', 'Apple Inc.', 'stock', 'USD', 1, ?)`)
+      live.prepare(`INSERT INTO instruments (id, symbol, name, type, currency, is_active, created_at)
+        VALUES (?, 'OT-AAPL', 'Apple Inc.', 'stock', 'USD', 1, ?)`)
         .run('ot-instr-1', now);
-      sqlite.prepare(`INSERT INTO lookup_values (id, type, value, is_active, created_at)
+      live.prepare(`INSERT INTO lookup_values (id, type, value, is_active, created_at)
         VALUES (?, 'setup', 'Breakout', 1, ?)`)
         .run('ot-setup-1', now);
-      sqlite.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, opened_at, created_at)
+      live.prepare(`INSERT INTO trades (id, trade_code, account_id, symbol, direction, status, opened_at, created_at)
         VALUES (?, 'OT-001', ?, 'AAPL', 'long', 'open', ?, ?)`)
         .run('ot-trade-1', 'ot-acc-1', now, now);
 
@@ -463,6 +487,9 @@ async function runTests() {
       if (!validation.valid) {
         assert(validation.error.includes('open'), `Error mentions "open": ${validation.error}`);
       }
+
+      // Remove the open trade so later tests (replay restore) are not blocked.
+      live.prepare(`DELETE FROM trades WHERE id = 'ot-trade-1'`).run();
 
       sqlite.close();
     } finally {
@@ -489,7 +516,7 @@ async function runTests() {
         VALUES (?, 'AAPL', 'Apple Inc.', 'stock', 'USD', 1, ?)`)
         .run('rp-instr-1', now);
       sqlite1.prepare(`INSERT INTO accounting_executions (id, account_id, instrument_id, action, quantity, price, fees, posted_at, created_at)
-        VALUES (?, ?, ?, 'buy', '100', '150.00', '1.00', ?, ?)`)
+        VALUES (?, ?, ?, 'buy', '100.00', '150.00', '1.00', ?, ?)`)
         .run('rp-ae-1', 'rp-acc-1', 'rp-instr-1', now, now);
       sqlite1.prepare(`INSERT INTO financial_events (id, account_id, event_type, posted_at, created_at)
         VALUES (?, ?, 'trade_execution', ?, ?)`)

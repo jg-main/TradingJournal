@@ -91,6 +91,11 @@ sqlite.exec(`
     default_commission REAL,
     journal_start_date TEXT,
     currency TEXT DEFAULT 'USD',
+    backup_enabled INTEGER DEFAULT 0,
+    backup_retention_count INTEGER DEFAULT 3,
+    backup_last_run_at TEXT,
+    backup_last_run_status TEXT,
+    backup_cron_time TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -128,6 +133,8 @@ sqlite.exec(`
     reviewed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );
@@ -136,6 +143,9 @@ sqlite.exec(`
     date_added TEXT,
     symbol TEXT NOT NULL,
     sector_id TEXT,
+    name TEXT,
+    sector TEXT,
+    industry TEXT,
     setup_id TEXT,
     direction TEXT NOT NULL,
     thesis TEXT,
@@ -147,6 +157,7 @@ sqlite.exec(`
     status TEXT NOT NULL,
     notes TEXT,
     promoted_trade_id TEXT,
+    alert_config TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );

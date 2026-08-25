@@ -35,10 +35,11 @@ function getDbFilePath(): string {
 
 /**
  * Derive the uploads directory from the project root (process.cwd()).
- * Works in both dev and Docker environments.
+ * Works in both dev and Docker environments. Overridable via UPLOADS_DIR
+ * so tests and alternate deployments can point asset storage elsewhere.
  */
 function getUploadsDir(): string {
-  return join(process.cwd(), 'public', 'uploads', 'trades');
+  return process.env.UPLOADS_DIR || join(process.cwd(), 'public', 'uploads', 'trades');
 }
 
 // ── Stream conversion ───────────────────────────────────────────────────

@@ -83,6 +83,7 @@ sqlite.exec(`
     backup_retention_count INTEGER DEFAULT 3,
     backup_last_run_at TEXT,
     backup_last_run_status TEXT,
+    backup_cron_time TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );

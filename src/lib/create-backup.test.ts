@@ -100,6 +100,9 @@ async function runTests() {
       // Remove the uploads directory to test graceful handling
       const uploadsDir = join(testDir, 'public', 'uploads', 'trades');
       rmSync(uploadsDir, { recursive: true, force: true });
+      // Point the serializer at the test uploads dir (missing here) so the
+      // real repo's public/uploads/trades cannot leak into the archive.
+      process.env.UPLOADS_DIR = uploadsDir;
 
       const stream = await createBackupArchive(testDb);
       assert(stream instanceof ReadableStream, 'missing uploads -> returns a ReadableStream');
@@ -124,6 +127,7 @@ async function runTests() {
       sqlite.close();
     } finally {
       process.env.DB_FILE_NAME = originalEnv;
+      delete process.env.UPLOADS_DIR;
       teardownTestDir();
     }
   }
@@ -168,6 +172,7 @@ async function runTests() {
       writeFileSync(join(uploadsDir, 'screenshot1.png'), Buffer.from('fake png data 1'));
       writeFileSync(join(uploadsDir, 'screenshot2.png'), Buffer.from('fake png data 2'));
       writeFileSync(join(uploadsDir, '.gitkeep'), '');
+      process.env.UPLOADS_DIR = uploadsDir;
 
       const stream = await createBackupArchive(testDb);
       assert(stream instanceof ReadableStream, 'full backup -> returns a ReadableStream');
@@ -201,6 +206,7 @@ async function runTests() {
       sqlite.close();
     } finally {
       process.env.DB_FILE_NAME = originalEnv;
+      delete process.env.UPLOADS_DIR;
       teardownTestDir();
     }
   }
@@ -218,6 +224,7 @@ async function runTests() {
 
       const uploadsDir = join(testDir, 'public', 'uploads', 'trades');
       writeFileSync(join(uploadsDir, '.gitkeep'), '');
+      process.env.UPLOADS_DIR = uploadsDir;
 
       const stream = await createBackupArchive(testDb);
       const buffer = await streamToBuffer(stream);
@@ -235,6 +242,7 @@ async function runTests() {
       sqlite.close();
     } finally {
       process.env.DB_FILE_NAME = originalEnv;
+      delete process.env.UPLOADS_DIR;
       teardownTestDir();
     }
   }

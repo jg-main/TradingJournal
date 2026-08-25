@@ -48,7 +48,7 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('export default function RiskSnapshotCard'), 'exports RiskSnapshotCard as default');
   assert(source.includes('interface RiskSnapshotCardProps'), 'defines RiskSnapshotCardProps interface');
   assert(source.includes("'use client'") || source.includes('"use client"'), 'has use client directive');
-  assert(source.includes("import TradeDetailsCard from './trade-details-card';"), 'imports TradeDetailsCard');
+  assert(!source.includes("import TradeDetailsCard"), 'RiskSnapshotCard does not import TradeDetailsCard (standalone Risk & Reward table)');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -63,10 +63,10 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('plannedValues'), 'accepts plannedValues prop');
   assert(source.includes('actualValues'), 'accepts actualValues prop');
   assert(source.includes('mtmData?: MtmData'), 'accepts optional mtmData prop');
-  assert(source.includes('onRefreshPrice?: () => void'), 'accepts optional onRefreshPrice callback');
+  assert(!source.includes('onRefreshPrice'), 'RiskSnapshotCard no longer accepts onRefreshPrice (moved to TradeDetailsCard)');
   assert(source.includes('tradeStatus?: Trade'), 'accepts optional tradeStatus prop');
-  assert(source.includes('stopAdjustments?: StopAdjustment[]'), 'accepts optional stopAdjustments prop');
-  assert(source.includes('targetAdjustments?: TargetAdjustment[]'), 'accepts optional targetAdjustments prop');
+  assert(!source.includes('stopAdjustments'), 'RiskSnapshotCard no longer accepts stopAdjustments (moved to TradeDetailsCard)');
+  assert(!source.includes('targetAdjustments'), 'RiskSnapshotCard no longer accepts targetAdjustments (moved to TradeDetailsCard)');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -84,22 +84,22 @@ function assert(condition: boolean, msg: string) {
     'RiskSnapshotCard no longer contains the inline "Price Levels" title'
   );
   assert(
-    snapshotSource.includes('<TradeDetailsCard') || snapshotSource.includes('<TradeDetailsCard\n'),
-    'RiskSnapshotCard renders TradeDetailsCard in the two-column grid'
+    !snapshotSource.includes('TradeDetailsCard'),
+    'RiskSnapshotCard no longer renders TradeDetailsCard (phase views render it directly)'
   );
   assert(
-    detailsSource.includes('Trade Details'),
-    'TradeDetailsCard carries the "Trade Details" card title'
+    detailsSource.includes('<dl className="divide-y divide-border text-sm">'),
+    'TradeDetailsCard renders a definition-list layout'
   );
   assert(
-    detailsSource.includes('>Entry</td>') && detailsSource.includes('>Stop</td>'),
-    'TradeDetailsCard renders Entry/Stop rows'
+    detailsSource.includes('>Avg Entry</dt>') && detailsSource.includes('>Stop</dt>'),
+    'TradeDetailsCard renders Avg Entry / Stop rows'
   );
   assert(
-    detailsSource.includes('>Target 1</td>') && detailsSource.includes('>Target 2</td>'),
-    'TradeDetailsCard renders Target 1 / Target 2 rows'
+    detailsSource.includes('>Target</dt>'),
+    'TradeDetailsCard renders the active Target row (second target not surfaced for management)'
   );
-  assert(detailsSource.includes('>Qty</td>'), 'TradeDetailsCard renders Qty row');
+  assert(detailsSource.includes('>Open Size</dt>'), 'TradeDetailsCard renders Open Size row');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -129,16 +129,20 @@ function assert(condition: boolean, msg: string) {
     'imports deriveCurrentStop and deriveCurrentTarget from trade-levels'
   );
   assert(
-    source.includes('deriveCurrentStop(planStop ?? null, initialStopPrice'),
+    source.includes('deriveCurrentStop(') &&
+      source.includes('initialStopPrice ?? null') &&
+      source.includes('stopAdjustments'),
     'current stop derived via deriveCurrentStop(plannedStop, initialStopPrice, adjustments)'
   );
   assert(
-    source.includes('deriveCurrentTarget(planTarget1, 1, targetAdjustments)'),
-    'current target 1 derived via deriveCurrentTarget(plannedTarget1, index 1, adjustments)'
+    source.includes('deriveCurrentTarget(') &&
+      source.includes('plannedValues?.plannedTarget1 ?? null') &&
+      source.includes('targetAdjustments'),
+    'current target derived via deriveCurrentTarget(plannedTarget1, index 1, adjustments)'
   );
   assert(
-    source.includes('deriveCurrentTarget(planTarget2, 2, targetAdjustments)'),
-    'current target 2 derived via deriveCurrentTarget(plannedTarget2, index 2, adjustments)'
+    !source.includes('deriveCurrentTarget(planTarget2'),
+    'no second-target derivation (active management targets the single active level)'
   );
 
   // The derivation helpers themselves must exist in the pure lib (M019 canonical logic)
@@ -155,11 +159,10 @@ function assert(condition: boolean, msg: string) {
 
   const source = fs.readFileSync(detailsSourcePath, 'utf-8');
 
-  assert(source.includes('>Plan</th>'), 'renders Plan column header');
-  assert(source.includes('>Current</th>'), 'renders Current column header');
-  assert(source.includes('>Market</th>'), 'renders Market column header');
-  assert(source.includes('const hasPlan = !!plannedValues;'), 'Plan column gated on plannedValues');
-  assert(source.includes('const hasMtm = mtmData?.price != null && tradeStatus === \'open\''), 'Market column gated on open trade + MTM price');
+  assert(!source.includes('>Plan</th>'), 'no Plan column header (comparison columns removed)');
+  assert(!source.includes('>Current</th>'), 'no Current column header (comparison columns removed)');
+  assert(!source.includes('>Market</th>'), 'no Market column header (comparison columns removed)');
+  assert(source.includes('const canEditLevels = tradeStatus === \'open\' && !!tradeId;'), 'edit affordances gated on open trade + tradeId');
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -173,11 +176,11 @@ function assert(condition: boolean, msg: string) {
 
   assert(
     detailsSource.includes("tradeStatus === 'open'") || detailsSource.includes('tradeStatus === "open"'),
-    'TradeDetailsCard MTM section gated on tradeStatus === "open"'
+    'TradeDetailsCard edit gating uses tradeStatus === "open"'
   );
   assert(
-    detailsSource.includes('mtmData?.price != null'),
-    'TradeDetailsCard MTM gated on mtmData?.price != null (optional chaining — no crash when mtmData absent)'
+    !detailsSource.includes('mtmData'),
+    'TradeDetailsCard no longer renders MTM (MTM stays in RiskSnapshotCard)'
   );
   assert(
     snapshotSource.includes('mtmData?.price != null && tradeStatus'),
@@ -222,7 +225,7 @@ function assert(condition: boolean, msg: string) {
   assert(source.includes('tradeId?: string'), 'TradeDetailsCard accepts optional tradeId prop');
   assert(source.includes('onAdjustmentsChanged?: () => Promise<void>'), 'TradeDetailsCard accepts onAdjustmentsChanged refetch callback');
   assert(
-    source.includes("const canEdit = tradeStatus === 'open' && !!tradeId;"),
+    source.includes("const canEditLevels = tradeStatus === 'open' && !!tradeId;"),
     'edit affordances gated on open trade + tradeId (must-have #3/#5)'
   );
   assert(
@@ -231,7 +234,7 @@ function assert(condition: boolean, msg: string) {
     'edit form POSTs to the S01 stop-adjustments and target-adjustments endpoints'
   );
   assert(source.includes('newStop: value'), 'stop edits send newStop (previousStop server-derived, M019)');
-  assert(source.includes('targetIndex: editingLevel === \'target1\' ? 1 : 2'), 'target edits send targetIndex 1/2');
+  assert(source.includes('targetIndex: 1, newTarget: value'), 'target edits send targetIndex 1 (single active target)');
   assert(source.includes('newTarget: value'), 'target edits send newTarget');
   assert(source.includes('onAdjustmentsChanged?.()'), 'refetches via onAdjustmentsChanged after successful edit');
   assert(
@@ -254,10 +257,11 @@ function assert(condition: boolean, msg: string) {
   const closedSource = fs.readFileSync(closedViewPath, 'utf-8');
   const pageSource = fs.readFileSync(pagePath, 'utf-8');
 
-  assert(snapshotSource.includes('tradeId?: string'), 'RiskSnapshotCard accepts optional tradeId prop');
-  assert(snapshotSource.includes('onAdjustmentsChanged?: () => Promise<void>'), 'RiskSnapshotCard accepts onAdjustmentsChanged callback');
-  assert(snapshotSource.includes('tradeId={tradeId}'), 'RiskSnapshotCard forwards tradeId to TradeDetailsCard');
-  assert(snapshotSource.includes('onAdjustmentsChanged={onAdjustmentsChanged}'), 'RiskSnapshotCard forwards onAdjustmentsChanged to TradeDetailsCard');
+  assert(!snapshotSource.includes('tradeId'), 'RiskSnapshotCard no longer accepts tradeId (standalone risk table)');
+  assert(!snapshotSource.includes('onAdjustmentsChanged'), 'RiskSnapshotCard no longer accepts onAdjustmentsChanged');
+  assert(activeSource.includes('<TradeDetailsCard'), 'ActivePhaseView renders TradeDetailsCard directly');
+  assert(activeSource.includes('tradeId={trade.id}'), 'ActivePhaseView passes trade.id for inline editing');
+  assert(activeSource.includes('onAdjustmentsChanged={onAdjustmentsChanged}'), 'ActivePhaseView passes onAdjustmentsChanged to TradeDetailsCard');
 
   assert(activeSource.includes('targetAdjustments: TargetAdjustment[]'), 'ActivePhaseView accepts targetAdjustments');
   assert(activeSource.includes('onAdjustmentsChanged: () => Promise<void>'), 'ActivePhaseView accepts onAdjustmentsChanged');
@@ -295,9 +299,9 @@ function assert(condition: boolean, msg: string) {
   const bandSource = fs.readFileSync(bandSourcePath, 'utf-8');
 
   assert(bandSource.includes('export default function TradeContextBand'), 'TradeContextBand extracted as a standalone component');
-  assert(bandSource.includes('>Thesis</div>'), 'TradeContextBand renders the Thesis label');
-  assert(bandSource.includes('>Invalidation</div>'), 'TradeContextBand renders the Invalidation label');
-  assert(bandSource.includes('>Pre-Trade Plan</div>'), 'TradeContextBand renders the Pre-Trade Plan label');
+  assert(bandSource.includes("label: 'Thesis'"), 'TradeContextBand renders the Thesis label');
+  assert(bandSource.includes("label: 'Invalidation'"), 'TradeContextBand renders the Invalidation label');
+  assert(bandSource.includes("label: 'Pre-Trade Plan'"), 'TradeContextBand renders the Pre-Trade Plan label');
 
   assert(!snapshotSource.includes('thesis?: string | null;'), 'RiskSnapshotCard no longer accepts the thesis prop');
   assert(!snapshotSource.includes('invalidationCondition?: string | null;'), 'RiskSnapshotCard no longer accepts the invalidationCondition prop');

@@ -14,7 +14,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install all deps (including devDeps) so native modules compile
-RUN npm install
+RUN npm ci
 
 # =============================================================================
 # Stage 2: Builder
