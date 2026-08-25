@@ -9,10 +9,12 @@
  *  - null setupId        Excluded from setupPerformance
  *  - account isolation   Per-account filtering verified
  *
- * Run: DB_FILE_NAME=./.test-m04-s03-db npx tsx src/app/api/reviews/dashboard/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/reviews/dashboard/__tests__/route.test.ts
+ * (uses testDbPath from src/lib/testing/test-db — OS temp, never the repo root)
  */
 
 import { randomUUID } from 'node:crypto';
+import { testDbPath } from '../../../../../lib/testing/test-db';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, and, inArray, isNotNull } from 'drizzle-orm';
@@ -74,7 +76,7 @@ function assertClose(actual: number | null | undefined, expected: number | null,
 
 // ── Setup: test DB ──────────────────────────────────────────────────────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-m04-s03-db';
+const DB_FILE = process.env.DB_FILE_NAME || testDbPath('reviews-dashboard');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
@@ -138,6 +140,8 @@ sqlite.exec(`
     reviewed_at TEXT,
     exit_notes TEXT,
     lesson TEXT,
+    current_price REAL,
+    current_price_fetched_at TEXT,
     created_at TEXT DEFAULT (current_timestamp),
     updated_at TEXT DEFAULT (current_timestamp)
   );

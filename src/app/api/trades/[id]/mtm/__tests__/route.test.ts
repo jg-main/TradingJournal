@@ -3,7 +3,8 @@
  *
  * Tests GET /api/trades/[id]/mtm — latest price snapshot retrieval.
  *
- * Run: DB_FILE_NAME=./.test-mtm.db npx tsx src/app/api/trades/\[id\]/mtm/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/trades/\[id\]/mtm/__tests__/route.test.ts
+ * (uses testDbPath from src/lib/testing/test-db — OS temp, never the repo root)
  */
 
 import { testDbPath } from '../../../../../../lib/testing/test-db';

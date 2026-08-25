@@ -5,7 +5,8 @@
  * PUT upserts with onConflictDoUpdate, auto-calculating totalScore and gradeLabel.
  * GET fetches grade row by tradeId.
  *
- * Run: DB_FILE_NAME=./.test-trades.db npx tsx src/app/api/trades/\[id\]/grade/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/trades/\[id\]/grade/__tests__/route.test.ts
+ * (uses testDbPath from src/lib/testing/test-db — OS temp, never the repo root)
  */
 
 import { testDbPath } from '../../../../../../lib/testing/test-db';

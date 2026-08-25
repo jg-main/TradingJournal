@@ -3,7 +3,8 @@
  *
  * Tests POST /api/trades/mtm/refresh — batch quote fetching with rate-limit.
  *
- * Run: DB_FILE_NAME=./.test-mtm-refresh.db npx tsx src/app/api/trades/mtm/refresh/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/trades/mtm/refresh/__tests__/route.test.ts
+ * (uses testDbPath from src/lib/testing/test-db — OS temp, never the repo root)
  */
 
 import { testDbPath } from '../../../../../../lib/testing/test-db';

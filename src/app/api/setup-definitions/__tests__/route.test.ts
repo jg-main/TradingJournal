@@ -4,7 +4,8 @@
  * Tests POST (create with dual-write), GET (list), GET (single by ID),
  * PUT (update with lookup sync, inactive-edit guard), DELETE (hard-delete with trade check).
  *
- * Run: DB_FILE_NAME=./.test-setups.db npx tsx src/app/api/setup-definitions/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/setup-definitions/__tests__/route.test.ts
+ * (uses testDbPath from src/lib/testing/test-db — OS temp, never the repo root)
  */
 
 import { testDbPath } from '../../../../lib/testing/test-db';

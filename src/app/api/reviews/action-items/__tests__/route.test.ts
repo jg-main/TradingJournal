@@ -7,7 +7,8 @@
  * PUT updates status, actionText, or dueDate.
  * DELETE removes an action item.
  *
- * Run: DB_FILE_NAME=./.test-ms02-t06.db npx tsx src/app/api/reviews/action-items/__tests__/route.test.ts
+ * Run: npx tsx src/app/api/reviews/action-items/__tests__/route.test.ts
+ * (uses testDbPath from src/lib/testing/test-db — OS temp, never the repo root)
  */
 
 import { randomUUID } from 'node:crypto';
