@@ -227,7 +227,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 3: maps a valid buy execution', () => {
     const { row, accountId, symbol } = scenario3ValidBuy.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('mapped');
     expect(result.recordType).toBe('execution');
     expect(result.anomaly).toBeNull();
@@ -235,6 +235,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
     const input = result.input as ExecutionMigrationInput;
     expect(input.action).toBe('buy');
+    expect(input.direction).toBe('long');
     expect(input.quantity).toBe('100.00');
     expect(input.price).toBe('150.50');
     expect(input.fees).toBe('0.00');
@@ -246,7 +247,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 4: maps a valid sell execution', () => {
     const { row, accountId, symbol } = scenario4ValidSell.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('mapped');
     const input = result.input as ExecutionMigrationInput;
     expect(input.action).toBe('sell');
@@ -258,10 +259,11 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 5: maps a valid sell_short execution', () => {
     const { row, accountId, symbol } = scenario5ValidSellShort.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'short');
     expect(result.status).toBe('mapped');
     const input = result.input as ExecutionMigrationInput;
     expect(input.action).toBe('sell_short');
+    expect(input.direction).toBe('short');
     expect(input.symbol).toBe('SPY');
     expect(input.fees).toBe('1.50');
   });
@@ -270,10 +272,11 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 6: maps a valid buy_to_cover execution', () => {
     const { row, accountId, symbol } = scenario6ValidBuyToCover.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'short');
     expect(result.status).toBe('mapped');
     const input = result.input as ExecutionMigrationInput;
     expect(input.action).toBe('buy_to_cover');
+    expect(input.direction).toBe('short');
     expect(input.fees).toBe('0.00');
   });
 
@@ -281,7 +284,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 7: maps an execution with non-zero fees', () => {
     const { row, accountId, symbol } = scenario7WithFees.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('mapped');
     const input = result.input as ExecutionMigrationInput;
     expect(input.fees).toBe('7.99');
@@ -293,7 +296,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 8: returns anomaly for zero price (missing price)', () => {
     const { row, accountId, symbol } = scenario8MissingPrice.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('anomaly');
     expect(result.recordType).toBe('execution');
     expect(result.input).toBeNull();
@@ -305,7 +308,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 9: returns anomaly for negative price', () => {
     const { row, accountId, symbol } = scenario9NegativePrice.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('anomaly');
     expect(result.anomaly?.code).toBe(ANOMALY_CODES.NEGATIVE_PRICE);
     expect(result.anomaly?.field).toBe('price');
@@ -315,7 +318,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 10: returns anomaly for zero quantity', () => {
     const { row, accountId, symbol } = scenario10ZeroQuantity.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('anomaly');
     expect(result.anomaly?.code).toBe(ANOMALY_CODES.ZERO_QUANTITY);
     expect(result.anomaly?.field).toBe('quantity');
@@ -325,14 +328,14 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 11: produces consistent idempotency key for same source id', () => {
     const { row, accountId, symbol } = scenario11DuplicateSourceRow.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('mapped');
     expect(result.idempotencyKey).toBe(
       scenario11DuplicateSourceRow.expected.idempotencyKey,
     );
 
     // Second call with same row produces identical key
-    const result2 = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result2 = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result2.idempotencyKey).toBe(result.idempotencyKey);
   });
 
@@ -340,7 +343,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
 
   it('scenario 14: preserves legacy tradeId as journalTradeId', () => {
     const { row, accountId, symbol } = scenario14LegacyJournalAttribution.input;
-    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol);
+    const result = mapTradeExecutionToExecutionInput(row, accountId, symbol, 'long');
     expect(result.status).toBe('mapped');
     const input = result.input as ExecutionMigrationInput;
     expect(input.journalTradeId).toBe(row.tradeId);
@@ -364,7 +367,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
       notes: null,
       createdAt: '2024-01-01T00:00:00.000Z',
     };
-    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol);
+    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol, 'long');
     expect(result.status).toBe('anomaly');
     expect(result.anomaly?.code).toBe(ANOMALY_CODES.NEGATIVE_QUANTITY);
     expect(result.input).toBeNull();
@@ -383,7 +386,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
       notes: null,
       createdAt: '2024-01-01T00:00:00.000Z',
     };
-    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol);
+    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol, 'long');
     expect(result.status).toBe('anomaly');
     expect(result.anomaly?.code).toBe(ANOMALY_CODES.NEGATIVE_FEES);
     expect(result.input).toBeNull();
@@ -402,7 +405,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
       notes: null,
       createdAt: '2024-06-01T10:00:00.000Z',
     };
-    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol);
+    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol, 'long');
     expect(result.status).toBe('mapped');
     const input = result.input as ExecutionMigrationInput;
     expect(input.postedAt).toBe('2024-06-01T10:00:00.000Z');
@@ -421,7 +424,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
       notes: null,
       createdAt: '',
     };
-    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol);
+    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol, 'long');
     expect(result.status).toBe('anomaly');
     expect(result.anomaly?.code).toBe(ANOMALY_CODES.MISSING_TIMESTAMP);
     expect(result.input).toBeNull();
@@ -440,7 +443,7 @@ describe('mapTradeExecutionToExecutionInput', () => {
       notes: null,
       createdAt: '2024-01-01T00:00:00.000Z',
     };
-    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol);
+    const result = mapTradeExecutionToExecutionInput(row, defaultAccountId, defaultSymbol, 'long');
     expect(result.status).toBe('mapped');
     const input = result.input as ExecutionMigrationInput;
     expect(input.fees).toBe('0.00');
@@ -658,7 +661,7 @@ describe('negative tests (Q7)', () => {
         notes: null,
         createdAt: '2024-01-01T00:00:00.000Z',
       };
-      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL');
+      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL', 'long');
       expect(r.status).toBe('anomaly');
       expect(r.anomaly?.code).toBe(ANOMALY_CODES.MISSING_PRICE);
     });
@@ -676,7 +679,7 @@ describe('negative tests (Q7)', () => {
         notes: null,
         createdAt: '2024-01-01T00:00:00.000Z',
       };
-      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL');
+      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL', 'long');
       expect(r.status).toBe('anomaly');
       expect(r.anomaly?.code).toBe(ANOMALY_CODES.NEGATIVE_QUANTITY);
     });
@@ -694,7 +697,7 @@ describe('negative tests (Q7)', () => {
         notes: null,
         createdAt: '2024-01-01T00:00:00.000Z',
       };
-      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL');
+      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL', 'long');
       expect(r.status).toBe('anomaly');
       expect(r.anomaly?.code).toBe(ANOMALY_CODES.ZERO_QUANTITY);
     });
@@ -712,7 +715,7 @@ describe('negative tests (Q7)', () => {
         notes: null,
         createdAt: '2024-01-01T00:00:00.000Z',
       };
-      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL');
+      const r = mapTradeExecutionToExecutionInput(row, 'acct-1', 'AAPL', 'long');
       expect(r.status).toBe('anomaly');
       expect(r.anomaly?.code).toBe(ANOMALY_CODES.NEGATIVE_FEES);
     });

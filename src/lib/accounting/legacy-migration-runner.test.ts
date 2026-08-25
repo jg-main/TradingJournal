@@ -683,12 +683,20 @@ describe('findLatestMigrationRun', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function migrationExecutions(sqlite: Database.Database, accountId: string): Array<{ action: string; effect: string }> {
+  // Correlate each accounting execution with its own trade_execution
+  // financial event. The migration writer posts both with the same
+  // posted_at, so join on (account_id, event_type, posted_at) instead of
+  // account_id alone — the latter cross-products every execution against
+  // every event of the account once more than one execution exists.
   const rows = sqlite
     .prepare(
       `SELECT ae.action AS action, fe.effect AS effect
        FROM accounting_executions ae
-       LEFT JOIN financial_events fe ON fe.account_id = ae.account_id
-       WHERE ae.account_id = ? AND fe.event_type = 'trade_execution'
+       LEFT JOIN financial_events fe
+         ON fe.account_id = ae.account_id
+        AND fe.event_type = 'trade_execution'
+        AND fe.posted_at = ae.posted_at
+       WHERE ae.account_id = ?
        ORDER BY ae.posted_at ASC, ae.id ASC`,
     )
     .all(accountId) as Array<{ action: string; effect: string }>;
@@ -807,6 +815,38 @@ describe('M007-S02 legacy migration writer economic correctness', () => {
       .prepare(`SELECT COUNT(*) AS count FROM accounting_executions WHERE action IN ('add', 'reduce')`)
       .get() as { count: number }).count;
     expect(count).toBe(0);
+  });
+
+  it('M007-S02: unresolvable action-direction combination returns an ANOMALY outcome (no throw, no alias write)', () => {
+    const accountId = randomUUID();
+    seedAccount(accountId);
+    // A 'buy' on a SHORT trade is a wrong-side concrete action: the
+    // economic resolver rejects it (short side only accepts sell_short /
+    // buy_to_cover / add / reduce). The writer must record an ANOMALY
+    // outcome — not throw (which would fail the whole run) and not persist
+    // an alias/wrong-side execution.
+    seedShortTrade(accountId, { id: 's02-anom-001', action: 'buy', price: 50.00 });
+
+    const result = runLegacyMigration({ sqlite: ctx.sqlite, accountId });
+    expect(result.status).toBe('completed');
+    expect(result.mappedCount).toBe(0);
+    expect(result.anomalyCount).toBe(1);
+
+    // Nothing was persisted for the unresolvable record.
+    const execCount = (ctx.sqlite
+      .prepare('SELECT COUNT(*) AS count FROM accounting_executions WHERE account_id = ?')
+      .get(accountId) as { count: number }).count;
+    expect(execCount).toBe(0);
+
+    // The migration record carries the stable anomaly code + message.
+    const records = listMigrationRecords(ctx.sqlite, result.runId);
+    const anomalyRecord = records.find((r) => r.status === 'anomaly');
+    expect(anomalyRecord).toBeDefined();
+    expect(anomalyRecord!.sourceId).toBe('s02-anom-001');
+    expect(anomalyRecord!.anomalyCode).toBe('ANOMALY_UNSUPPORTED_EXECUTION_ACTION');
+    expect(anomalyRecord!.anomalyField).toBe('action');
+    expect(anomalyRecord!.anomalyDetail).toContain('buy');
+    expect(anomalyRecord!.anomalyDetail).toContain('short');
   });
 
   it('M007-S02: migration re-run stays idempotent after alias resolution (source-key duplicates)', () => {

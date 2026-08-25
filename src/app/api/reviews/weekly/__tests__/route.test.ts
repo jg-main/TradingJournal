@@ -723,7 +723,7 @@ console.log('\n15. DELETE with non-existent id returns 404:');
 
 // ── Cleanup (root-hygiene guard: no disposable DBs in the repo root) ──
 try {
-  disposeSqliteFile(DB_FILE);
+  disposeSqliteFile(sqlite, DB_FILE);
 } catch {
   // ignore cleanup errors
 }

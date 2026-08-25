@@ -16,6 +16,7 @@
 import { normalizeDecimal } from './decimal';
 import type { CanonicalDecimal, EventType } from './types';
 import type { ExecutionAction } from '../positions/types';
+import type { PositionDirection } from './economic-action';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Anomaly Codes
@@ -186,7 +187,15 @@ export interface ExecutionMigrationInput {
   type: 'execution';
   accountId: string;
   symbol: string;
+  /**
+   * The journal workflow action exactly as recorded on the legacy
+   * trade_executions row (may be a generic management alias such as
+   * 'add' / 'reduce'). The migration writer resolves this to the
+   * concrete economic action before canonical accounting.
+   */
   action: ExecutionAction;
+  /** Position direction of the parent trade, used to resolve aliases. */
+  direction: PositionDirection;
   quantity: CanonicalDecimal;
   price: CanonicalDecimal;
   fees: CanonicalDecimal;
@@ -387,15 +396,24 @@ export function mapAccountTransactionToCashEvent(
  * - Fees, if present, must be non-negative.
  * - `executedAt` (or `createdAt` as fallback) is used as `postedAt`.
  *
+ * The workflow action is threaded through unchanged together with the
+ * parent trade's position direction; the migration writer resolves the
+ * concrete economic action (so 'add' on a short becomes sell_short, etc.)
+ * just before canonical accounting. This keeps the pure adapter free of
+ * direction-mapping policy while preserving the original workflow action
+ * for audit trails.
+ *
  * @param row       - Legacy trade_executions row.
  * @param accountId - Account ID resolved from the parent trade.
  * @param symbol    - Instrument symbol resolved from the parent trade.
+ * @param direction - Position direction of the parent trade ('long' | 'short').
  * @returns         - MapResult with either an ExecutionMigrationInput or an anomaly.
  */
 export function mapTradeExecutionToExecutionInput(
   row: LegacyTradeExecution,
   accountId: string,
   symbol: string,
+  direction: PositionDirection,
 ): MapResult {
   const idempotencyKey = buildIdempotencyKey('trade_executions', row.id);
   const sourceTable = 'trade_executions';
@@ -488,6 +506,7 @@ export function mapTradeExecutionToExecutionInput(
       accountId,
       symbol,
       action: row.action,
+      direction,
       quantity: normalizeDecimal(row.quantity),
       price: normalizeDecimal(row.price),
       fees: normalizeDecimal(fees),

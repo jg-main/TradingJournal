@@ -27,6 +27,7 @@ import {
   mapAccountTransactionToCashEvent,
   mapTradeExecutionToExecutionInput,
   mapPriceSnapshotToValuationMark,
+  ANOMALY_CODES,
 } from './legacy-migration';
 import type {
   LegacyAccountTransaction,
@@ -40,6 +41,12 @@ import type {
   MigrationRecordType,
 } from './legacy-migration';
 import type { CanonicalDecimal } from './types';
+import {
+  resolveEconomicExecutionAction,
+  cashDirectionForEconomicAction,
+  AmbiguousEconomicActionError,
+} from './economic-action';
+import type { EconomicAction } from './economic-action';
 import { toMicros, fromMicros } from './decimal';
 import { rebuildPositions } from '../positions/rebuild';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
@@ -155,6 +162,7 @@ interface LegacyTradeJoin {
   tradeId: string;
   accountId: string;
   symbol: string;
+  direction: string;
   executionId: string;
   executedAt: string | null;
   action: string;
@@ -225,13 +233,17 @@ function readAccountTransactions(
 function readTradeExecutions(
   sqlite: Database.Database,
   accountId: string,
-): Array<{ trade: { accountId: string; symbol: string }; execution: LegacyTradeExecution }> {
+): Array<{
+  trade: { accountId: string; symbol: string; direction: 'long' | 'short' };
+  execution: LegacyTradeExecution;
+}> {
   const rows = sqlite
     .prepare(
       `SELECT
          t.id AS tradeId,
          t.account_id AS accountId,
          t.symbol,
+         t.direction,
          e.id AS executionId,
          e.executed_at AS executedAt,
          e.action,
@@ -249,7 +261,11 @@ function readTradeExecutions(
     .all(accountId) as LegacyTradeJoin[];
 
   return rows.map((r) => ({
-    trade: { accountId: r.accountId, symbol: r.symbol },
+    trade: {
+      accountId: r.accountId,
+      symbol: r.symbol,
+      direction: r.direction as 'long' | 'short',
+    },
     execution: {
       id: r.executionId,
       tradeId: r.tradeId,
@@ -486,6 +502,37 @@ function writeExecutionInput(
 ): { outcome: MigrationRecordOutcome } {
   const { idempotencyKey } = input;
 
+  // Resolve the journal workflow action to its concrete economic side for
+  // the parent trade's direction BEFORE any write. Generic management
+  // aliases ('add' / 'reduce') are not canonical accounting actions: 'add'
+  // on a short is a sell_short, 'reduce' on a long is a sell, etc. A legacy
+  // row whose action cannot be resolved for its direction (missing/unknown
+  // direction, or a wrong-side concrete action) is recorded as an ANOMALY
+  // outcome — never thrown, never written as an alias.
+  let concreteAction: EconomicAction;
+  try {
+    concreteAction = resolveEconomicExecutionAction(input.action, input.direction);
+  } catch (err) {
+    if (err instanceof AmbiguousEconomicActionError) {
+      return {
+        outcome: {
+          sourceTable: input.legacySourceTable,
+          sourceId: input.legacySourceId,
+          status: 'anomaly',
+          recordType: 'execution',
+          anomalyCode: ANOMALY_CODES.UNSUPPORTED_EXECUTION_ACTION,
+          anomalyField: 'action',
+          anomalyDetail: err.message,
+          idempotencyKey: idempotencyKey ?? null,
+          accountingEventId: null,
+          accountingExecutionId: null,
+          accountingMarkId: null,
+        },
+      };
+    }
+    throw err;
+  }
+
   // Resolve or create instrument
   const instrument = findOrCreateInstrument(sqlite, input.symbol);
 
@@ -511,11 +558,11 @@ function writeExecutionInput(
     }
   }
 
-  // Write accounting execution
+  // Write accounting execution with the CONCRETE economic action.
   const executionRow = insertAccountingExecution(sqlite, {
     accountId: input.accountId,
     instrumentId: instrument.id,
-    action: input.action,
+    action: concreteAction,
     quantity: input.quantity,
     price: input.price,
     fees: input.fees,
@@ -533,13 +580,16 @@ function writeExecutionInput(
 
   // Write financial event for the cash consideration
   // (same structure as execution-posting.ts without the high-level wrapper).
+  // The description keeps the ORIGINAL workflow action (e.g. 'add'), while
+  // the payload carries the resolved concrete economic action for audit.
   const eventRow = insertFinancialEvent(sqlite, {
     accountId: input.accountId,
     eventType: 'trade_execution',
     idempotencyKey: undefined, // executions use accounting_executions idempotency
     description: `Execution: ${input.action} ${input.quantity} ${input.symbol} @ ${input.price}`,
     payload: JSON.stringify({
-      action: input.action,
+      action: concreteAction,
+      workflowAction: input.action,
       symbol: input.symbol,
       quantity: input.quantity,
       price: input.price,
@@ -548,7 +598,7 @@ function writeExecutionInput(
     }),
     effect: JSON.stringify({
       kind: 'cash',
-      direction: ['sell', 'reduce', 'sell_short'].includes(input.action) ? 'increase' : 'decrease',
+      direction: cashDirectionForEconomicAction(concreteAction),
       amount: finalConsideration,
       amountMicros: considerationMicros,
     }),
@@ -809,6 +859,7 @@ export function runLegacyMigration(
         execution,
         trade.accountId,
         trade.symbol,
+        trade.direction,
       );
 
       if (mapped.status === 'anomaly' || mapped.status === 'unsupported') {

@@ -239,7 +239,13 @@ export function rebuildPositions(
     );
 
     for (const [key, acc] of accumulators.entries()) {
-      const pos = acc.position!;
+      // Best-effort rebuild callers skip rejected executions (see the
+      // `rejected` branch above). When EVERY execution for an instrument
+      // was rejected (e.g. a lone buy_to_cover with no open short), no
+      // position ever materialises — skip persisting it rather than
+      // dereferencing null.
+      const pos = acc.position;
+      if (!pos) continue;
 
       // ── Persist position ─────────────────────────────────────────────
       upsertAccountPosition(sqlite, {
