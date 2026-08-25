@@ -184,6 +184,7 @@ export default defineConfig({
       'src/lib/accounting/__tests__/cross-system-integrity.test.ts',
       'src/lib/accounting/__tests__/cross-cutting-integrity.test.ts',
       'src/lib/accounting/__tests__/accounting-invariant-matrix.test.ts',
+      'src/lib/accounting/__tests__/repair-alias-executions.test.ts',
       'src/lib/accounting/__tests__/account-transactions-writer-guard.test.ts',
       'src/app/api/dashboard/v2/__tests__/route.test.ts',
       'src/app/api/performance/analytics/__tests__/route.test.ts',
