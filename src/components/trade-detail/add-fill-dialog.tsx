@@ -62,15 +62,18 @@ interface FieldErrors {
 // ── Direction-filtered action catalog ──────────────────────────────────
 
 /**
- * Valid fill actions per trade direction. MUST mirror the DIRECTION_ACTIONS
- * table in src/app/api/trades/[id]/executions/route.ts — the server rejects
- * any action outside this set for the trade's direction (400 with
- * fieldErrors.action), so the client never offers an option the API would
- * refuse.
+ * Valid fill actions per trade direction. MUST mirror the canonical
+ * DIRECTION_ACTIONS table in src/lib/trade-execution-engine.ts (the engine
+ * rejects any action outside this set for the trade's direction with a typed
+ * ActionDirectionError), so the client never offers an option the API would
+ * refuse. Add / Reduce are direction-independent workflow management actions
+ * (Fix 9): the engine resolves short add → economic sell_short and short
+ * reduce → economic buy_to_cover (M002-A5), keeping the journal's management
+ * vocabulary while accounting/FIFO apply the concrete economic side.
  */
 export const FILL_ACTIONS_BY_DIRECTION: Record<'long' | 'short', FillAction[]> = {
   long: ['buy', 'add', 'sell', 'reduce'],
-  short: ['sell_short', 'buy_to_cover'],
+  short: ['sell_short', 'add', 'buy_to_cover', 'reduce'],
 };
 
 export const FILL_ACTION_LABELS: Record<FillAction, string> = {
@@ -114,8 +117,9 @@ const textareaClass =
  * POST /api/trades/[id]/executions contract — the same endpoint AddExitDialog
  * and the planned ExecuteDialog funnel through, so accounting stays true for
  * non-planned trades. The action select is filtered by trade direction
- * (long: buy/add/sell/reduce; short: sell_short/buy_to_cover) so the client
- * only offers actions the API accepts. On success, onComplete() lets the
+ * (long: buy/add/sell/reduce; short: sell_short/add/buy_to_cover/reduce) so
+ * the client only offers actions the API accepts — including the generic
+ * Add / Reduce management actions for short trades (Fix 9). On success, onComplete() lets the
  * page refetch executions and the unified history feed.
  */
 export function AddFillDialog({

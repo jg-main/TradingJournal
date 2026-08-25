@@ -46,6 +46,7 @@ import {
   type TradeExecutionContext,
 } from '../trade-execution-engine';
 import { computeTradeMetrics } from '../trade-metrics';
+import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase';
 import { UnsupportedAccountCurrencyError } from '../accounting/errors';
 import { postExecutionFill } from '../accounting/execution-posting';
 import { postFinancialEvent } from '../accounting/posting';
@@ -993,6 +994,145 @@ describe('executeTradeFill', () => {
     expect(metrics.size.exitQuantity).toBe(150);
     expect(metrics.size.openQuantity).toBe(0);
     expect(metrics.position.status).toBe('closed');
+  });
+});
+
+describe('A9-short management actions (Fix 9)', () => {
+  const journalActionsFor = (tradeId: string): string[] =>
+    (
+      sqlite
+        .prepare('SELECT action FROM trade_executions WHERE trade_id = ? ORDER BY created_at')
+        .all(tradeId) as Array<{ action: string }>
+    ).map((r) => r.action);
+
+  const phaseFor = (tradeId: string): string => {
+    const actions = journalActionsFor(tradeId);
+    return deriveWorkflowPhase(
+      'open',
+      null,
+      hasManagementActivity(actions.map((action) => ({ action })) as never),
+    );
+  };
+
+  it('short add/reduce keep journal management vocabulary, resolve canonical accounting, cash, FIFO, managed phase', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 105 });
+
+    // Initial short entry: journal sell_short; phase open (no management yet).
+    const opened = executeTradeFill(
+      fill(tradeId, { action: 'sell_short', quantity: 100, price: 100, fees: 1 }),
+      context,
+    );
+    expect(opened.trade.status).toBe('open');
+    expect(phaseFor(tradeId)).toBe('open');
+
+    // Short ADD: journal 'add' → accounting 'sell_short'; cash increases.
+    const added = executeTradeFill(
+      fill(tradeId, { action: 'add', quantity: 20, price: 101, fees: 1 }),
+      context,
+    );
+    expect(added.trade.status).toBe('open');
+    expect(metricsForTrade(tradeId).size.openQuantity).toBe(120);
+
+    // Short REDUCE (partial): journal 'reduce' → accounting 'buy_to_cover';
+    // cash decreases; trade stays open.
+    const reduced = executeTradeFill(
+      fill(tradeId, { action: 'reduce', quantity: 30, price: 99, fees: 1 }),
+      context,
+    );
+    expect(reduced.trade.status).toBe('open');
+    expect(metricsForTrade(tradeId).size.openQuantity).toBe(90);
+
+    // Journal actions preserve the management vocabulary.
+    expect(journalActionsFor(tradeId)).toEqual(['sell_short', 'add', 'reduce']);
+
+    // Canonical accounting resolves the economic side (M002-A5 frozen).
+    const accountingActions = (
+      sqlite.prepare(
+        'SELECT action FROM accounting_executions WHERE journal_trade_id = ? ORDER BY created_at',
+      ).all(tradeId) as Array<{ action: string }>
+    ).map((r) => r.action);
+    expect(accountingActions).toEqual(['sell_short', 'sell_short', 'buy_to_cover']);
+
+    // Cash direction (canonical projection): short sale proceeds
+    // (100*100−1) + add proceeds (20*101−1) − cover cost (30*99+1) = +9047.
+    // The engine rebuilds account_performance.net_cash after every fill.
+    const perf = sqlite
+      .prepare('SELECT net_cash FROM account_performance WHERE account_id = ?')
+      .get(accountId) as { net_cash: string } | undefined;
+    const expectedNetCash = 100 * 100 - 1 + 20 * 101 - 1 - (30 * 99 + 1);
+    expect(Number(perf?.net_cash ?? '0')).toBeCloseTo(expectedNetCash, 2);
+
+    // FIFO short position coherent: open quantity 90 (lots 100 + 20 − 30).
+    const pos = sqlite
+      .prepare('SELECT quantity FROM account_positions WHERE account_id = ?')
+      .get(accountId) as { quantity: string } | undefined;
+    expect(Number(pos?.quantity ?? 0)).toBeCloseTo(90, 2);
+
+    // Managed phase: after add (management execution), phase derives managed
+    // without any stop/target adjustment.
+    expect(phaseFor(tradeId)).toBe('managed');
+  });
+
+  it('short partial reduce alone turns management activity true (phase managed)', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 105 });
+
+    executeTradeFill(
+      fill(tradeId, { action: 'sell_short', quantity: 100, price: 100 }),
+      context,
+    );
+    executeTradeFill(
+      fill(tradeId, { action: 'reduce', quantity: 30, price: 99 }),
+      context,
+    );
+
+    expect(phaseFor(tradeId)).toBe('managed');
+    expect(metricsForTrade(tradeId).size.openQuantity).toBe(70);
+  });
+
+  it('full-quantity short reduce closes the trade (equivalent to full buy_to_cover)', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 105 });
+
+    executeTradeFill(
+      fill(tradeId, { action: 'sell_short', quantity: 100, price: 100 }),
+      context,
+    );
+    const closed = executeTradeFill(
+      fill(tradeId, { action: 'reduce', quantity: 100, price: 99 }),
+      context,
+    );
+    expect(closed.trade.status).toBe('closed');
+    expect(closed.trade.closedAt).toBeTruthy();
+    expect(metricsForTrade(tradeId).size.openQuantity).toBe(0);
+    // Journal keeps the management vocabulary; accounting resolves buy_to_cover.
+    expect(journalActionsFor(tradeId)).toEqual(['sell_short', 'reduce']);
+    const accountingActions = (
+      sqlite.prepare(
+        'SELECT action FROM accounting_executions WHERE journal_trade_id = ? ORDER BY created_at',
+      ).all(tradeId) as Array<{ action: string }>
+    ).map((r) => r.action);
+    expect(accountingActions).toEqual(['sell_short', 'buy_to_cover']);
+  });
+
+  it('short over-close via reduce is rejected with zero mutation (OverCloseError)', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 105 });
+
+    executeTradeFill(
+      fill(tradeId, { action: 'sell_short', quantity: 100, price: 100 }),
+      context,
+    );
+    expect(() =>
+      executeTradeFill(fill(tradeId, { action: 'reduce', quantity: 150, price: 99 }), context),
+    ).toThrow(OverCloseError);
+    expect(metricsForTrade(tradeId).size.openQuantity).toBe(100);
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(1);
   });
 });
 

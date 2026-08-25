@@ -192,6 +192,7 @@ export default defineConfig({
       'src/app/(trades)/trades/__tests__/distance-columns.test.ts',
       'src/app/(trades)/trades/__tests__/phase-column.test.tsx',
       'src/components/trade-detail/__tests__/planned-phase-view-scratch.test.tsx',
+      'src/components/trade-detail/__tests__/add-fill-dialog.test.tsx',
       'src/components/trade-detail/__tests__/trade-detail-header.test.tsx',
       'src/components/dashboard-v2.test.tsx',
       'src/components/dashboard/filter-context.test.tsx',
