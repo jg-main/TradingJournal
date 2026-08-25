@@ -129,7 +129,7 @@ export default function NewTradePage() {
       </Link>
 
       <p className="mb-6 text-sm text-muted-foreground">
-        Set the ticker, direction, account, setup, and planned price levels.
+        Set the ticker, direction, account, setup, and planned price levels. Saving creates a Planned trade that you can edit until the first execution.
       </p>
 
       <PlanTradeForm

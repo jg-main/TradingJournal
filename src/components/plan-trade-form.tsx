@@ -684,10 +684,10 @@ export default function PlanTradeForm({
             {submitting ? (
               <>
                 <Loader2 className="mr-1 size-4 animate-spin" />
-                Planning...
+                Saving Plan...
               </>
             ) : (
-              'Plan Trade'
+              'Save Plan'
             )}
           </Button>
         </CardFooter>

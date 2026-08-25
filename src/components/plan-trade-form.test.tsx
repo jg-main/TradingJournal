@@ -119,14 +119,14 @@ afterEach(() => {
   cleanup();
 });
 
-function renderForm() {
+function renderForm(overrides?: { onSuccess?: () => void }) {
   return render(
     <TooltipProvider>
       <PlanTradeForm
         accounts={ACCOUNTS}
         setups={SETUPS}
         defaultAccountId="acc-1"
-        onSuccess={vi.fn()}
+        onSuccess={overrides?.onSuccess ?? vi.fn()}
         onCancel={vi.fn()}
       />
     </TooltipProvider>,
@@ -138,9 +138,9 @@ function setField(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
-/** Submit via the Plan Trade button (type="submit", inside the form). */
+/** Submit via the Save Plan button (type="submit", inside the form). */
 function submitForm() {
-  fireEvent.click(screen.getByRole('button', { name: 'Plan Trade' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Plan' }));
 }
 
 /** Switch the Direction Radix Select (combobox) to a specific option. */
@@ -447,3 +447,84 @@ describe('PlanTradeForm — account-relative risk preview (S02/T05)', () => {
     });
   });
 });
+
+describe('PlanTradeForm — explicit save contract (Fix 2)', () => {
+  it('initial CTA reads Save Plan (persistence action)', () => {
+    renderForm();
+    expect(screen.getByRole('button', { name: 'Save Plan' })).toBeTruthy();
+    // No generic Save button may exist on this form; the only submit is Save Plan.
+    expect(screen.queryByRole('button', { name: 'Plan Trade' })).toBeNull();
+  });
+
+  it('successful save posts exactly one trade and reports the persisted id', async () => {
+    const onSuccess = vi.fn();
+    renderForm({ onSuccess });
+    setField('Symbol', 'AAPL');
+    setField('Planned Entry', '100');
+    setField('Stop Loss', '95');
+
+    submitForm();
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledWith('trade-1');
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/trades');
+  });
+
+  it('shows Saving Plan... and disables the button while in flight', async () => {
+    // A never-resolving fetch pins the submitting state.
+    let releaseFetch: (value: Response) => void = () => {};
+    const hanging = vi.fn().mockImplementation(() => new Promise<Response>((resolve) => {
+      releaseFetch = resolve;
+    }));
+    globalThis.fetch = hanging;
+    try {
+      renderForm();
+      setField('Symbol', 'AAPL');
+      setField('Planned Entry', '100');
+      setField('Stop Loss', '95');
+
+      submitForm();
+      expect(screen.getByRole('button', { name: /Saving Plan/ })).toBeTruthy();
+      const button = screen.getByRole('button', { name: /Saving Plan/ });
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+
+      // Resolve: success path navigates via onSuccess (parent owns routing).
+      releaseFetch({ ok: true, status: 201, json: async () => ({ id: 'trade-1' }) } as Response);
+      await waitFor(() => {
+        expect(hanging).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+
+  it('failed save stays on the form, shows the error, and re-enables Save Plan', async () => {
+    const failing = vi.fn().mockImplementation(() => Promise.resolve({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'Account not eligible for planning' }),
+    } as Response));
+    globalThis.fetch = failing;
+    const onSuccess = vi.fn();
+    try {
+      renderForm({ onSuccess });
+      setField('Symbol', 'AAPL');
+      setField('Planned Entry', '100');
+      setField('Stop Loss', '95');
+
+      submitForm();
+      await waitFor(() => {
+        expect(screen.getByText('Account not eligible for planning')).toBeTruthy();
+      });
+      // CTA returns to Save Plan, button enabled, no navigation.
+      const button = screen.getByRole('button', { name: 'Save Plan' }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(failing).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+});
+
