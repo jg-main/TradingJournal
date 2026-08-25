@@ -252,6 +252,21 @@ function urlOf(call: unknown[]): string {
   return String(call[0]);
 }
 
+/** Open the setup picker's Radix Select and click the named option. */
+async function pickSetup(optionName: string) {
+  fireEvent.click(screen.getByRole('combobox'));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const option = screen.getByRole('option', { name: optionName });
+  fireEvent.click(option);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe('ExecuteDialog — setup picker (Fix 7)', () => {
   let fetchMock: ReturnType<typeof vi.spyOn>;
 
@@ -290,20 +305,6 @@ describe('ExecuteDialog — setup picker (Fix 7)', () => {
       />,
     );
     return { ...utils, onOpenChange, onComplete, onTradeChanged };
-  }
-
-  async function pickSetup(optionName: string) {
-    fireEvent.click(screen.getByRole('combobox'));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const option = screen.getByRole('option', { name: optionName });
-    fireEvent.click(option);
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
   }
 
   it('A. setup-less initial open fetches and renders the active setup catalogue', async () => {
@@ -526,5 +527,254 @@ describe('ExecuteDialog — setup picker (Fix 7)', () => {
       expect(screen.queryByText('Check 1')).toBeNull();
       expect(screen.getByLabelText(/Entry Price/)).toBeTruthy();
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Fix 8 — checklist load failure blocks execution and is recoverable
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('ExecuteDialog — checklist load failure (Fix 8)', () => {
+  let fetchMock: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    const impl = (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/api/setup-definitions')) {
+        return Promise.resolve(okJson({ data: SETUPS }));
+      }
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(errJson({ error: 'Checklist unavailable' }, 500));
+      }
+      if (init?.method === 'PUT') {
+        return Promise.resolve(okJson({ id: 'trade-1', setupId: JSON.parse((init.body as string)).setupId }));
+      }
+      return Promise.resolve(okJson({ id: 'trade-1' }));
+    };
+    fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(impl);
+  });
+  afterEach(() => {
+    fetchMock.mockRestore();
+    cleanup();
+  });
+
+  function renderChecklistDialog(overrides?: { trade?: ExecuteTradeData; onTradeChanged?: () => void }) {
+    const onOpenChange = vi.fn();
+    const onComplete = vi.fn();
+    const onTradeChanged = overrides?.onTradeChanged ?? vi.fn();
+    const utils = render(
+      <ExecuteDialog
+        trade={overrides?.trade ?? WITH_SETUP_TRADE}
+        open
+        onOpenChange={onOpenChange}
+        onComplete={onComplete}
+        onTradeChanged={onTradeChanged}
+      />,
+    );
+    return { ...utils, onOpenChange, onComplete, onTradeChanged };
+  }
+
+  it('A. existing-setup checklist failure blocks: error + Retry + Cancel, no entry form, no Execute submit', async () => {
+    renderChecklistDialog();
+    await waitFor(() => {
+      expect(screen.getByText(/Unable to load the pre-execution checklist/)).toBeTruthy();
+    });
+    // Blocking state: Retry + Cancel present.
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    // NO entry form and NO Execute submission surface.
+    expect(screen.queryByLabelText(/Entry Price/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Execute$/ })).toBeNull();
+    // The old "proceeding without gating" wording is gone.
+    expect(screen.queryByText(/proceeding without gating/i)).toBeNull();
+  });
+
+  it('B. existing-setup Retry succeeds with rows → checklist step', async () => {
+    renderChecklistDialog();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    });
+    fetchMock.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(okJson([{ id: 'c1', description: 'Check 1', sortOrder: 0 }]));
+      }
+      return Promise.resolve(okJson({ id: 'trade-1' }));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.getByText('Pre-Execution Checklist')).toBeTruthy();
+      expect(screen.getByText('Check 1')).toBeTruthy();
+    });
+  });
+
+  it('C. existing-setup Retry succeeds empty → entry form', async () => {
+    renderChecklistDialog();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    });
+    fetchMock.mockImplementation((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(okJson([]));
+      }
+      return Promise.resolve(okJson({ id: 'trade-1' }));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Entry Price/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Unable to load/)).toBeNull();
+  });
+
+  it('D. newly-selected setup: PUT succeeds, checklist fails → parent synced, blocked, zero /execute', async () => {
+    const onTradeChanged = vi.fn();
+    renderChecklistDialog({ trade: SETUP_LESS_TRADE, onTradeChanged });
+    await waitFor(() => {
+      expect(screen.getByRole('combobox')).toBeTruthy();
+    });
+    await pickSetup('Breakout');
+    await waitFor(() => {
+      expect(screen.getByText(/Unable to load the pre-execution checklist/)).toBeTruthy();
+    });
+    expect(onTradeChanged).toHaveBeenCalled();
+    expect(screen.queryByLabelText(/Entry Price/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Execute$/ })).toBeNull();
+    const executeCalls = fetchMock.mock.calls.filter((c: [RequestInfo | URL, RequestInit?]) => urlOf(c).includes('/execute'));
+    expect(executeCalls).toHaveLength(0);
+  });
+
+  it('E. newly-selected setup Retry uses the persisted selected setup (not null/old)', async () => {
+    renderChecklistDialog({ trade: SETUP_LESS_TRADE });
+    await waitFor(() => {
+      expect(screen.getByRole('combobox')).toBeTruthy();
+    });
+    await pickSetup('Breakout');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    });
+    fetchMock.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(okJson([]));
+      }
+      return Promise.resolve(okJson({ id: 'trade-1' }));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      const checklistCall = fetchMock.mock.calls.find((c: [RequestInfo | URL, RequestInit?]) => urlOf(c).includes('/api/checks/merged'));
+      expect(checklistCall).toBeTruthy();
+    });
+    const checklistUrl = urlOf(
+      fetchMock.mock.calls.find((c: [RequestInfo | URL, RequestInit?]) => urlOf(c).includes('/api/checks/merged'))!,
+    );
+    expect(checklistUrl).toContain('accountId=acc-A');
+    expect(checklistUrl).toContain('setupId=setup-breakout');
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Entry Price/)).toBeTruthy();
+    });
+  });
+
+  it('F. Cancel from checklist-error closes without execution; reopen initializes from the persisted setup', async () => {
+    const { rerender, onOpenChange } = renderChecklistDialog({ trade: SETUP_LESS_TRADE });
+    await waitFor(() => {
+      expect(screen.getByRole('combobox')).toBeTruthy();
+    });
+    await pickSetup('Breakout');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    });
+    // Cancel closes the dialog (abandon session).
+    rerender(
+      <ExecuteDialog
+        trade={SETUP_LESS_TRADE}
+        open={false}
+        onOpenChange={onOpenChange}
+        onComplete={() => {}}
+        onTradeChanged={() => {}}
+      />,
+    );
+    // Reopen with the PERSISTED setup (parent would have synchronized): the
+    // merged checklist initializes normally (now restored) — no picker, no
+    // stale error.
+    fetchMock.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(okJson([]));
+      }
+      return Promise.resolve(okJson({ id: 'trade-1' }));
+    });
+    rerender(
+      <ExecuteDialog
+        trade={{ ...SETUP_LESS_TRADE, setupId: 'setup-breakout' }}
+        open
+        onOpenChange={onOpenChange}
+        onComplete={() => {}}
+        onTradeChanged={() => {}}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Entry Price/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Unable to load/)).toBeNull();
+  });
+
+  it('G. successful empty initial checklist → entry form, no failure UI', async () => {
+    fetchMock.mockImplementation((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(okJson([]));
+      }
+      return Promise.resolve(okJson({ id: 'trade-1' }));
+    });
+    renderChecklistDialog();
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Entry Price/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Unable to load/)).toBeNull();
+  });
+
+  it('H. successful non-empty checklist → checklist step', async () => {
+    fetchMock.mockImplementation((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(okJson([{ id: 'c1', description: 'Check 1', sortOrder: 0 }]));
+      }
+      return Promise.resolve(okJson({ id: 'trade-1' }));
+    });
+    renderChecklistDialog();
+    await waitFor(() => {
+      expect(screen.getByText('Pre-Execution Checklist')).toBeTruthy();
+      expect(screen.getByText('Check 1')).toBeTruthy();
+    });
+  });
+
+  it('I. cross-trade reset: a failure state never leaks into the next trade', async () => {
+    const { rerender, onOpenChange } = renderChecklistDialog({ trade: WITH_SETUP_TRADE });
+    await waitFor(() => {
+      expect(screen.getByText(/Unable to load the pre-execution checklist/)).toBeTruthy();
+    });
+    // Open trade B (different id, same props shape): session reset must clear
+    // the error and re-initialize from B (restored endpoint → entry form).
+    fetchMock.mockImplementation((url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.includes('/api/checks/merged')) {
+        return Promise.resolve(okJson([]));
+      }
+      return Promise.resolve(okJson({ id: 'trade-2' }));
+    });
+    rerender(
+      <ExecuteDialog
+        trade={{ ...WITH_SETUP_TRADE, id: 'trade-2', tradeCode: 'T-0002' }}
+        open
+        onOpenChange={onOpenChange}
+        onComplete={() => {}}
+        onTradeChanged={() => {}}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Entry Price/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Unable to load/)).toBeNull();
   });
 });

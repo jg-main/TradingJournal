@@ -35,7 +35,15 @@ export interface ExecuteTradeData {
   setupId: string | null;
 }
 
-type DialogStep = 'loading' | 'setup-picker' | 'checklist' | 'entry-form';
+type DialogStep = 'loading' | 'setup-picker' | 'checklist' | 'checklist-error' | 'entry-form';
+
+/**
+ * Fix 8: a checklist dependency load failure is NEVER the same as a
+ * successful empty checklist. Callers branch on the discriminated result.
+ */
+type ChecklistLoadResult =
+  | { ok: true; rows: ChecklistItem[] }
+  | { ok: false; error: string };
 
 interface SetupDefinition {
   id: string;
@@ -175,30 +183,82 @@ export function ExecuteDialog({
     }
   }, []);
 
-  const fetchMergedChecklist = useCallback(
-    async (accountId: string, setupId: string) => {
+  // Fix 8: one authoritative checklist-load context for the session — the
+  // account+setup whose checklist the user is currently trying to load (the
+  // persisted trade's setup for existing setups; the successfully persisted
+  // selected setup for setup-less trades). Retry always uses this, never
+  // stale pre-selection props.
+  const checklistContextRef = useRef<{ accountId: string; setupId: string } | null>(null);
+  // Dedupes the session-initialization effect: React StrictMode double-invokes
+  // effects in dev, which would fire the checklist load twice and let the
+  // second (accidental) request mask a genuine failure. Keyed by
+  // open+trade identity so a reopened dialog or a changed trade re-initializes.
+  const lastInitKeyRef = useRef<string | null>(null);
+  // Monotonic request sequence: an older checklist response (e.g. for setup S)
+  // can never overwrite a newer context (setup T) — the settled UI always
+  // reflects the latest request.
+  const checklistReqSeqRef = useRef(0);
+
+  /**
+   * Fetch the merged checklist for the given context and transition. A
+   * FAILED load enters the blocking 'checklist-error' step (Retry/Cancel only)
+   * — it is never interpreted as an empty checklist, so the entry form and
+   * Execute submission are structurally unreachable while the checklist
+   * dependency is unknown.
+   */
+  const loadChecklistContext = useCallback(
+    async (accountId: string, setupId: string, signal?: AbortSignal): Promise<ChecklistLoadResult> => {
+      const requestId = ++checklistReqSeqRef.current;
+      checklistContextRef.current = { accountId, setupId };
       setLoadingChecklist(true);
       setError(null);
       try {
         const params = new URLSearchParams({ accountId, setupId });
-        const res = await fetch(`/api/checks/merged?${params}`);
+        const res = await fetch(`/api/checks/merged?${params}`, { signal });
         if (!res.ok) {
           const err = await res.json();
           throw new Error(err.error ?? 'Failed to load checklist');
         }
         const rows: ChecklistItem[] = await res.json();
+        if (requestId !== checklistReqSeqRef.current) {
+          return { ok: true, rows: [] as ChecklistItem[] }; // superseded — caller state settled by the newer request
+        }
         setChecklist(rows);
         setCheckedIds(new Set());
-        return rows;
+        if (rows.length === 0) {
+          setStep('entry-form');
+        } else {
+          setStep('checklist');
+        }
+        return { ok: true, rows };
       } catch (e) {
+        if (requestId !== checklistReqSeqRef.current) {
+          return { ok: false, error: 'Superseded' };
+        }
+        // StrictMode remounts abort the prior session's in-flight request —
+        // that is not a checklist failure (the remounted session re-fetches).
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          return { ok: false, error: 'Aborted' };
+        }
         setError(e instanceof Error ? e.message : 'Failed to load checklist');
-        return [] as ChecklistItem[];
+        // Blocking, truthful, retryable state — never "proceed without gating".
+        setStep('checklist-error');
+        return { ok: false, error: e instanceof Error ? e.message : 'Failed to load checklist' };
       } finally {
-        setLoadingChecklist(false);
+        if (requestId === checklistReqSeqRef.current) {
+          setLoadingChecklist(false);
+        }
       }
     },
     [],
   );
+
+  /** Retry the last checklist context (Retry button on checklist-error). */
+  const retryChecklistLoad = useCallback(() => {
+    const ctx = checklistContextRef.current;
+    if (!ctx) return;
+    void loadChecklistContext(ctx.accountId, ctx.setupId);
+  }, [loadChecklistContext]);
 
   // ── Session initialization (deterministic opening contract, Fix 7) ──
   // Runs whenever the dialog opens or the trade prop changes (id/accountId/
@@ -208,10 +268,12 @@ export function ExecuteDialog({
   // setState; the sync resets carry the repo's established suppression.
   useEffect(() => {
     if (!open) return;
+    const initKey = `${trade.id}:${trade.accountId ?? ''}:${trade.setupId ?? ''}`;
+    if (lastInitKeyRef.current === initKey) return;
+    lastInitKeyRef.current = initKey;
     // Session resets are intentionally synchronous (the dialog just opened or
     // the trade prop changed); the cascading-render rule is suppressed for
     // this established open-session reset pattern.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
     setChecklist([]);
     setCheckedIds(new Set());
@@ -221,10 +283,14 @@ export function ExecuteDialog({
     setSavingSetup(false);
     setLoadingChecklist(false);
     setLoadingSetups(false);
+    checklistContextRef.current = null;
+    checklistReqSeqRef.current += 1;
+    lastInitKeyRef.current = null;
 
     // No accountId: preserve the legacy compatibility path (straight to the
     // entry form, no account-scoped setup/checklist machinery).
     if (!trade.accountId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStep('entry-form');
       return;
     }
@@ -240,23 +306,15 @@ export function ExecuteDialog({
     }
 
     // Existing setup: initialize via the merged checklist (never fetch the
-    // whole catalogue for a trade that already has a persisted setup).
+    // whole catalogue for a trade that already has a persisted setup). A
+    // FAILED load blocks in 'checklist-error' (Fix 8) — never entry-form.
+    // The AbortController cancels this session's in-flight request when the
+    // effect cleans up (React StrictMode remounts in dev) so an orphaned
+    // request can never resolve after the session re-initialized.
+    const controller = new AbortController();
     setStep('loading');
-    const params = new URLSearchParams({
-      accountId: trade.accountId,
-      setupId: trade.setupId,
-    });
-    fetch(`/api/checks/merged?${params}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Checklist fetch failed'))))
-      .then((rows: ChecklistItem[]) => {
-        setChecklist(rows);
-        setCheckedIds(new Set());
-        setStep(rows.length === 0 ? 'entry-form' : 'checklist');
-      })
-      .catch(() => {
-        setError('Failed to load checklist — proceeding without gating.');
-        setStep('entry-form');
-      });
+    void loadChecklistContext(trade.accountId, trade.setupId, controller.signal);
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, trade.id, trade.accountId, trade.setupId]);
 
@@ -324,20 +382,18 @@ export function ExecuteDialog({
           return;
         }
 
-        // Fetch merged checklist and transition
-        const rows = await fetchMergedChecklist(trade.accountId, setupDefId);
-        if (rows.length === 0) {
-          setStep('entry-form');
-        } else {
-          setStep('checklist');
-        }
+        // Fetch the merged checklist for the PERSISTED setup and transition.
+        // On failure the dialog enters 'checklist-error' — setup S stays
+        // persisted and parent-synchronized; only the checklist dependency is
+        // blocked (Fix 8).
+        await loadChecklistContext(trade.accountId, setupDefId);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to save setup');
       } finally {
         setSavingSetup(false);
       }
     },
-    [trade.id, trade.accountId, fetchMergedChecklist, onTradeChanged],
+    [trade.id, trade.accountId, loadChecklistContext, onTradeChanged],
   );
 
   // ── Step: Checklist ────────────────────────────────────────────────
@@ -486,6 +542,7 @@ export function ExecuteDialog({
     loading: 'Loading...',
     'setup-picker': 'Select a setup for this trade before proceeding with execution.',
     checklist: 'Complete all pre-execution checklist items.',
+    'checklist-error': 'Unable to load the pre-execution checklist. Retry before executing this trade.',
     'entry-form': `Record entry and optional exit(s) for trade ${trade.tradeCode}.`,
   };
 
@@ -685,6 +742,66 @@ export function ExecuteDialog({
               >
                 <Check className="size-3.5" />
                 Proceed
+              </button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // ── Render: Checklist Error (blocking, Fix 8) ─────────────────────
+
+  if (step === 'checklist-error') {
+    return (
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Execute {trade.direction === 'long' ? 'Long' : 'Short'}: {trade.symbol}
+            </DialogTitle>
+            <DialogDescription>{stepDescription['checklist-error']}</DialogDescription>
+          </DialogHeader>
+
+          {error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </div>
+          )}
+
+          <DialogFooter>
+            <div className="flex w-full items-center justify-between gap-2">
+              <div className="flex gap-2">
+                {originalSetupWasNull && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('setup-picker');
+                      fetchSetupDefinitions();
+                    }}
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    Back
+                  </button>
+                )}
+                <DialogClose asChild>
+                  <button
+                    type="button"
+                    className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+                  >
+                    Cancel
+                  </button>
+                </DialogClose>
+              </div>
+              <button
+                type="button"
+                onClick={retryChecklistLoad}
+                disabled={loadingChecklist}
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+              >
+                {loadingChecklist && <Loader2 className="size-3.5 animate-spin" />}
+                Retry
               </button>
             </div>
           </DialogFooter>
