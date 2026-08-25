@@ -102,6 +102,7 @@ const TSX_TESTS: string[] = [
   'src/lib/period-matrix.test.ts',
   'src/lib/trade-metrics.test.ts',
   'scripts/__tests__/m020-evidence-isolation.test.ts',
+  'scripts/recovery-drill.ts',
 ];
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
