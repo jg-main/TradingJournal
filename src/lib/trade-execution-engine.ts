@@ -61,6 +61,7 @@ import {
   setupDefinitions,
 } from '@/db/schema';
 import { computeTradeMetrics, type ExecutionData, type Direction } from '@/lib/trade-metrics';
+import { resolveEffectiveExecutions } from '@/lib/trade-correction-lifecycle';
 import { computeRiskSnapshotValues } from '@/lib/risk-snapshot';
 import { computeExecutionContext } from '@/lib/execution-context';
 import { checkExecutionReadiness, type ReadinessFailure } from '@/lib/execution-readiness';
@@ -170,6 +171,23 @@ export class TradeDeletedError extends Error {
   constructor() {
     super('Cannot add executions to a deleted trade');
     this.name = 'TradeDeletedError';
+  }
+}
+
+/**
+ * M002-A12: a trade whose effective execution stream has economically closed
+ * (status 'closed', including reviewed trades) may not receive NEW ordinary
+ * executions. Only the immutable execution-correction workflow may alter the
+ * historical stream (and correction may legitimately reopen the trade).
+ * Thrown in the engine pre-flight AFTER same-request idempotency replay so a
+ * network retry of the final closing fill still replays safely.
+ */
+export class TradeClosedError extends Error {
+  constructor() {
+    super(
+      'Closed trades cannot accept new executions. Use execution correction to alter historical fills.',
+    );
+    this.name = 'TradeClosedError';
   }
 }
 
@@ -591,6 +609,7 @@ function isUniqueConstraintViolation(err: unknown): boolean {
  *
  * @throws {TradeNotFoundError}        trade is missing
  * @throws {TradeDeletedError}         trade is deleted
+ * @throws {TradeClosedError}          trade is closed; only correction may alter history
  * @throws {ActionDirectionError}      action not valid for the trade direction
  * @throws {OverCloseError}            closing fill exceeds the open quantity (pre-flight)
  * @throws {OpenPositionRequiredError} 'add'/'reduce' on a planned trade (pre-flight)
@@ -634,6 +653,14 @@ export function executeTradeFill(
     }
   }
 
+  // M002-A12: a closed trade has NO ordinary execution surface — every action
+  // (entry, add, reduce, close) is rejected by the lifecycle boundary before
+  // action-direction validation, so the user sees the correct remediation
+  // (use correction) rather than a misleading over-close or wrong-action
+  // error. Same-key idempotency replay above runs FIRST, so a network retry
+  // of the exact final closing fill replays instead of being rejected.
+  if (trade.status === 'closed') throw new TradeClosedError();
+
   validateActionForDirection(input.action, trade.direction as TradeDirection);
 
   // ── Quantity guards (S04) — pre-flight, zero mutations ─────────────
@@ -647,23 +674,22 @@ export function executeTradeFill(
     throw new OpenPositionRequiredError(input.action, trade.status);
   }
 
-  // Closing/reducing fills may not exceed the currently open quantity
-  // (entry − exit from the persisted execution set). A planned trade has zero
-  // open quantity, so a 'sell'/'buy_to_cover' on a planned trade is caught
-  // here as an over-close — the first-fill gates never see it.
+  // Closing/reducing fills may not exceed the currently open quantity.
+  // M002-A12: the open quantity derives from the CORRECTION-AWARE effective
+  // stream (accounting_executions + correction lineage), not the raw journal
+  // table — corrections rewrite history on the accounting side only, so a
+  // correction-reopened trade must see its true open quantity here (e.g. a
+  // corrected final close 100→60 leaves 40 open and a later reduce 10 is
+  // legal). A planned trade has zero effective executions, so a
+  // 'sell'/'buy_to_cover' on a planned trade is caught here as an over-close
+  // — the first-fill gates never see it.
   if (
     input.action === 'sell' ||
     input.action === 'reduce' ||
     input.action === 'buy_to_cover'
   ) {
-    const existingExecutions = dbHandle
-      .select()
-      .from(tradeExecutions)
-      .where(eq(tradeExecutions.tradeId, input.tradeId))
-      .orderBy(tradeExecutions.executedAt, tradeExecutions.createdAt)
-      .all();
     const openQuantity = computeTradeMetrics({
-      executions: toExecutionData(existingExecutions),
+      executions: resolveEffectiveExecutions(sqlite, input.tradeId),
       direction: trade.direction as Direction,
       riskSnapshot: null,
       stopAdjustments: [],
@@ -793,18 +819,29 @@ export function executeTradeFill(
       throw err;
     }
 
-    // b. Reload all executions and derive the new trade state.
+    // b. Derive the new trade state from the CORRECTION-AWARE effective
+    // stream (accounting_executions + correction lineage — the canonical
+    // truth, since corrections rewrite history there) plus this new journal
+    // execution appended. The raw journal table alone diverges from the
+    // effective stream after any correction (M002-A12): a trade reopened by
+    // correction must not be stamped 'closed' by a subsequent management
+    // fill just because the untouched journal still shows the old exit.
     let metrics: ReturnType<typeof computeTradeMetrics>;
     try {
-      const allExecutions = tx
-        .select()
-        .from(tradeExecutions)
-        .where(eq(tradeExecutions.tradeId, input.tradeId))
-        .orderBy(tradeExecutions.executedAt, tradeExecutions.createdAt)
-        .all();
+      const newExecutionData: ExecutionData = {
+        id: executionId,
+        action: input.action,
+        quantity: input.quantity,
+        price: input.price,
+        fees: input.fees ?? 0,
+        executedAt: execTimestamp,
+      };
 
       metrics = computeTradeMetrics({
-        executions: toExecutionData(allExecutions),
+        executions: [
+          ...resolveEffectiveExecutions(sqlite, input.tradeId),
+          newExecutionData,
+        ],
         direction: trade.direction as Direction,
         riskSnapshot: null,
         stopAdjustments: [],

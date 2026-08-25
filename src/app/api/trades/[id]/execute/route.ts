@@ -8,6 +8,7 @@ import {
   executeTradeFill,
   TradeNotFoundError,
   TradeDeletedError,
+  TradeClosedError,
   IdempotentReplayError,
   ReadinessFailureError,
   ActionDirectionError,
@@ -183,6 +184,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           .where(eq(tradeExecutions.idempotencyKey, `${idempotencyKey}:entry`))
           .get() != null;
       if (!isReplay) {
+        if (trade.status === 'closed') {
+          // M002-A12: a closed trade has no ordinary execution surface — map
+          // the canonical lifecycle rejection to the stable contract (same
+          // response the engine produces for a genuinely new request).
+          return NextResponse.json(
+            {
+              error: 'Closed trades cannot accept new executions',
+              code: 'TRADE_CLOSED_EXECUTION_REJECTED',
+              details: 'Use execution correction to alter historical fills.',
+            },
+            { status: 409 },
+          );
+        }
         return NextResponse.json(
           { error: 'Trade is not in planned status' },
           { status: 400 },
@@ -266,6 +280,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           return NextResponse.json(
             { error: 'Cannot execute a deleted trade' },
             { status: 400 },
+          );
+        }
+        if (err instanceof TradeClosedError) {
+          // M002-A12: compatibility adapter maps the canonical lifecycle
+          // rejection — no independent business rule here.
+          return NextResponse.json(
+            {
+              error: 'Closed trades cannot accept new executions',
+              code: 'TRADE_CLOSED_EXECUTION_REJECTED',
+              details: 'Use execution correction to alter historical fills.',
+            },
+            { status: 409 },
           );
         }
         if (err instanceof ReadinessFailureError) {

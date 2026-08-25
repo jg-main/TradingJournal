@@ -106,7 +106,15 @@ type RouteModule = {
   ) => Promise<NextResponse>;
 };
 
+type ExecutionsRouteModule = {
+  POST: (
+    request: NextRequest,
+    ctx: { params: Promise<{ id: string }> }
+  ) => Promise<NextResponse>;
+};
+
 let route: RouteModule | null = null;
+let executionsRoute: ExecutionsRouteModule | null = null;
 let NextRequestCtor: typeof NextRequest | null = null;
 let db: (typeof import('@/db'))['db'] | null = null;
 let getSqliteHandle: (() => import('better-sqlite3').Database) | null = null;
@@ -134,6 +142,23 @@ async function callCorrect(
       body: typeof body === 'string' ? body : JSON.stringify(body),
     }),
     { params: Promise.resolve({ id: tradeId, execId }) }
+  );
+  return { status: res.status, data: await res.json() };
+}
+
+async function callExecutions(
+  tradeId: string,
+  body: string | Record<string, unknown>
+): Promise<{ status: number; data: unknown }> {
+  if (!executionsRoute || !NextRequestCtor) throw new Error('executions route not initialized');
+  const url = `http://localhost:3000/api/trades/${tradeId}/executions`;
+  const res = await executionsRoute.POST(
+    new NextRequestCtor(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id: tradeId }) }
   );
   return { status: res.status, data: await res.json() };
 }
@@ -361,6 +386,9 @@ async function main(): Promise<void> {
 
   const routeMod = await import('../route');
   route = routeMod as unknown as RouteModule;
+
+  const executionsRouteMod = await import('../../../route');
+  executionsRoute = executionsRouteMod as unknown as ExecutionsRouteModule;
 
   const syncMod = await import('@/lib/positions/trade-execution-sync');
   syncAndRebuildPositions = syncMod.syncAndRebuildPositions;
@@ -669,6 +697,66 @@ async function main(): Promise<void> {
     assertEqual(updatedTrade.openedAt, data.tradeLifecycle.openedAt, 'persisted openedAt matches tradeLifecycle');
     assertEqual(updatedTrade.closedAt, data.tradeLifecycle.closedAt, 'persisted closedAt matches tradeLifecycle');
     assertEqual(accountingExecutionCount('test-account-id'), 4, 'entry + exit + reversal + replacement persist');
+  }
+
+  // ── 11b. A12: after correction reopens the trade, ordinary management ──
+  //      executions work again; before correction, closed trade rejects them.
+
+  console.log('\n11b. 409 before correction, 201 after correction reopens the trade:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({
+      accountId: 'test-account-id',
+      direction: 'long',
+      status: 'open',
+      openedAt: '2025-06-01T10:00:00Z',
+    });
+    const entry = seedExecution(trade.id as string, { action: 'buy', quantity: 100, price: 150.0, fees: 1.0, executedAt: '2025-06-01T10:00:00Z' });
+    const exit = seedExecution(trade.id as string, { action: 'sell', quantity: 100, price: 160.0, fees: 1.0, executedAt: '2025-06-01T15:00:00Z' });
+    mirrorExecution(entry, 'test-account-id', 'AAPL');
+    mirrorExecution(exit, 'test-account-id', 'AAPL');
+
+    // Seed the closed state on the trade row (lifecycle is derived; the
+    // trade with a flat effective stream is closed).
+    requireDb().db.update(schema.trades)
+      .set({ status: 'closed', closedAt: '2025-06-01T15:00:00Z' })
+      .where(eq(schema.trades.id, trade.id as string))
+      .run();
+
+    // Closed trade + NEW ordinary execution → 409 TRADE_CLOSED_EXECUTION_REJECTED.
+    const rejected = await callExecutions(trade.id as string, {
+      action: 'reduce', quantity: 10, price: 155.0, fees: 0, idempotencyKey: 'a12-rejected-pre-correction',
+    });
+    assert(rejected.status === 409, 'closed trade rejects ordinary execution before correction');
+    assertEqual(
+      (rejected.data as { code: string }).code,
+      'TRADE_CLOSED_EXECUTION_REJECTED',
+      'stable lifecycle code',
+    );
+
+    // Correct the final exit 100 → 60: effective remaining quantity 40, trade reopens.
+    const result = await callCorrect(
+      trade.id as string,
+      exit.id as string,
+      validBody({ action: 'sell', quantity: '60.00', price: '158.00', fees: '1.00' }),
+    );
+    assert(result.status === 200, 'exit correction returns 200');
+    const data = result.data as { tradeLifecycle: { status: string; openedAt: string | null; closedAt: string | null } };
+    assertEqual(data.tradeLifecycle.status, 'open', 'correction reopens the trade');
+    assertEqual(data.tradeLifecycle.closedAt, null, 'closedAt cleared on reopen');
+
+    // Now an ordinary management execution (reduce 10) is permitted again.
+    const reduce = await callExecutions(trade.id as string, {
+      action: 'reduce', quantity: 10, price: 155.0, fees: 0, idempotencyKey: 'a12-reduce-after-reopen',
+    });
+    assert(reduce.status === 201, 'ordinary reduce succeeds after correction reopened the trade');
+    const reduceData = reduce.data as { trade: { status: string } };
+    assertEqual(reduceData.trade.status, 'open', 'trade stays open after reduce');
+
+    const finalTrade = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(finalTrade.status, 'open', 'persisted trade status open');
+    assertEqual(finalTrade.reviewedAt, null, 'reviewedAt stays null after the economic correction');
   }
 
   // ── 12. Lifecycle: open trade recloses when partial exit is increased ──

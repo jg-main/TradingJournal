@@ -35,6 +35,7 @@ import {
   executeTradeFill,
   TradeNotFoundError,
   TradeDeletedError,
+  TradeClosedError,
   ActionDirectionError,
   ReadinessFailureError,
   ChecklistGateError,
@@ -991,6 +992,155 @@ describe('executeTradeFill', () => {
     expect(metrics.size.exitQuantity).toBe(150);
     expect(metrics.size.openQuantity).toBe(0);
     expect(metrics.position.status).toBe('closed');
+  });
+});
+
+describe('A12 closed-trade ordinary execution boundary', () => {
+  it('rejects every NEW ordinary action on a closed long trade with zero mutation', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId);
+
+    executeTradeFill(fill(tradeId, { action: 'buy', quantity: 100, price: 100 }), context);
+    const closed = executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 100, price: 110 }),
+      context,
+    );
+    expect(closed.trade.status).toBe('closed');
+
+    const before = {
+      tx: countRows('trade_executions', 'trade_id = ?', tradeId),
+      acct: countRows('accounting_executions', 'journal_trade_id = ?', tradeId),
+      fe: countRows('financial_events', '1 = 1'),
+      fee: countRows('financial_events', "event_type = 'fee'"),
+    };
+
+    for (const [action, quantity] of [
+      ['buy', 10],
+      ['add', 10],
+      ['sell', 10],
+      ['reduce', 10],
+    ] as const) {
+      expect(() =>
+        executeTradeFill(fill(tradeId, { action, quantity, price: 100 }), context),
+      ).toThrow(TradeClosedError);
+    }
+
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(before.tx);
+    expect(countRows('accounting_executions', 'journal_trade_id = ?', tradeId)).toBe(before.acct);
+    expect(countRows('financial_events', '1 = 1')).toBe(before.fe);
+    expect(countRows('financial_events', "event_type = 'fee'")).toBe(before.fee);
+    expect(metricsForTrade(tradeId).position.status).toBe('closed');
+  });
+
+  it('rejects every NEW ordinary action on a closed short trade with zero mutation', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { direction: 'short', plannedStop: 105 });
+
+    executeTradeFill(
+      fill(tradeId, { action: 'sell_short', quantity: 100, price: 100 }),
+      context,
+    );
+    const closed = executeTradeFill(
+      fill(tradeId, { action: 'buy_to_cover', quantity: 100, price: 90 }),
+      context,
+    );
+    expect(closed.trade.status).toBe('closed');
+
+    const before = countRows('trade_executions', 'trade_id = ?', tradeId);
+
+    for (const [action, quantity] of [
+      ['sell_short', 10],
+      ['add', 10],
+      ['buy_to_cover', 10],
+      ['reduce', 10],
+    ] as const) {
+      expect(() =>
+        executeTradeFill(fill(tradeId, { action, quantity, price: 100 }), context),
+      ).toThrow(TradeClosedError);
+    }
+
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(before);
+    expect(metricsForTrade(tradeId).position.status).toBe('closed');
+  });
+
+  it('replays the SAME-key final closing fill after the trade is closed', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId);
+    const buyKey = randomUUID();
+    const closeKey = randomUUID();
+
+    executeTradeFill(
+      fill(tradeId, { action: 'buy', quantity: 100, price: 100, idempotencyKey: buyKey }),
+      context,
+    );
+    const first = executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 100, price: 110, idempotencyKey: closeKey }),
+      context,
+    );
+    expect(first.trade.status).toBe('closed');
+
+    // Network retry of the identical request: replay, NOT TradeClosedError.
+    const replay = executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 100, price: 110, idempotencyKey: closeKey }),
+      context,
+    );
+    expect(replay.replayed).toBe(true);
+    expect(replay.execution.id).toBe(first.execution.id);
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(2);
+    expect(metricsForTrade(tradeId).position.status).toBe('closed');
+  });
+
+  it('rejects a NEW key on the closed trade after replay coverage', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId);
+    const buyKey = randomUUID();
+    const closeKey = randomUUID();
+    const newSellKey = randomUUID();
+    const newBuyKey = randomUUID();
+
+    executeTradeFill(
+      fill(tradeId, { action: 'buy', quantity: 100, price: 100, idempotencyKey: buyKey }),
+      context,
+    );
+    executeTradeFill(
+      fill(tradeId, { action: 'sell', quantity: 100, price: 110, idempotencyKey: closeKey }),
+      context,
+    );
+
+    expect(() =>
+      executeTradeFill(fill(tradeId, { action: 'sell', quantity: 100, price: 110, idempotencyKey: newSellKey }), context),
+    ).toThrow(TradeClosedError);
+    expect(() =>
+      executeTradeFill(fill(tradeId, { action: 'buy', quantity: 10, price: 100, idempotencyKey: newBuyKey }), context),
+    ).toThrow(TradeClosedError);
+  });
+
+  it('rejects ordinary fills on a reviewed closed trade', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId);
+
+    executeTradeFill(fill(tradeId, { action: 'buy', quantity: 100, price: 100 }), context);
+    executeTradeFill(fill(tradeId, { action: 'sell', quantity: 100, price: 110 }), context);
+
+    // Stamp review as the workflow does (reviewedAt != null).
+    const { db } = context;
+    db.update(schema.trades)
+      .set({ reviewedAt: '2026-03-01T00:00:00.000Z' })
+      .where(eq(schema.trades.id, tradeId))
+      .run();
+    expect(
+      db.select().from(schema.trades).where(eq(schema.trades.id, tradeId)).get()?.reviewedAt,
+    ).toBeTruthy();
+
+    expect(() =>
+      executeTradeFill(fill(tradeId, { action: 'buy', quantity: 10, price: 100 }), context),
+    ).toThrow(TradeClosedError);
+    expect(metricsForTrade(tradeId).position.status).toBe('closed');
   });
 });
 

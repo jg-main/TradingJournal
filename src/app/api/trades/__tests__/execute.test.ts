@@ -106,6 +106,7 @@ let route: RouteModule | null = null;
 let NextRequestCtor: typeof NextRequest | null = null;
 let db: (typeof import('@/db'))['db'] | null = null;
 let getSqliteHandle: (() => import('better-sqlite3').Database) | null = null;
+let postExecutionFill: (typeof import('@/lib/accounting/execution-posting'))['postExecutionFill'] | null = null;
 
 function requireDb() {
   if (!db || !getSqliteHandle) throw new Error('db not initialized — call main() first');
@@ -296,6 +297,9 @@ async function main(): Promise<void> {
 
   const nextMod = await import('next/server');
   NextRequestCtor = nextMod.NextRequest;
+
+  const postingMod = await import('@/lib/accounting/execution-posting');
+  postExecutionFill = postingMod.postExecutionFill;
 
   const routeMod = await import('../[id]/execute/route');
   route = routeMod as unknown as RouteModule;
@@ -956,9 +960,10 @@ async function main(): Promise<void> {
     // a 500 rollback.
     const key = randomUUID();
     const nowIso = new Date().toISOString();
+    const journalId = randomUUID();
     requireDb().db.insert(schema.tradeExecutions)
       .values({
-        id: randomUUID(),
+        id: journalId,
         tradeId: trade.id as string,
         action: 'buy',
         quantity: 10,
@@ -969,6 +974,24 @@ async function main(): Promise<void> {
         idempotencyKey: `${key}:entry`,
       })
       .run();
+
+    // M002-A12: the engine's over-close preflight reads the CORRECTION-AWARE
+    // effective stream (accounting_executions + lineage), so the seeded
+    // journal fill must carry its accounting mirror — exactly as the engine
+    // itself always posts one for every journal execution.
+    if (postExecutionFill) {
+      postExecutionFill(requireDb().getSqliteHandle(), {
+        accountId: trade.accountId as string,
+        symbol: 'AAPL',
+        action: 'buy',
+        quantity: '10.00',
+        price: '100.00',
+        fees: '0.00',
+        executedAt: nowIso,
+        idempotencyKey: `trade-execution-${journalId}`,
+        journalTradeId: trade.id as string,
+      });
+    }
 
     const result = await callPost(trade.id as string, {
       entryPrice: 100,

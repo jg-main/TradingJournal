@@ -8,6 +8,7 @@ import {
   executeTradeFill,
   TradeNotFoundError,
   TradeDeletedError,
+  TradeClosedError,
   IdempotentReplayError,
   ReadinessFailureError,
   ActionDirectionError,
@@ -149,6 +150,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json(
           { error: 'Cannot add executions to a deleted trade' },
           { status: 400 },
+        );
+      }
+      if (err instanceof TradeClosedError) {
+        // M002-A12: expected lifecycle rejection — a closed trade has no
+        // ordinary execution surface; only correction may alter history.
+        return NextResponse.json(
+          {
+            error: 'Closed trades cannot accept new executions',
+            code: 'TRADE_CLOSED_EXECUTION_REJECTED',
+            details: 'Use execution correction to alter historical fills.',
+          },
+          { status: 409 },
         );
       }
       if (err instanceof ReadinessFailureError) {

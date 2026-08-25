@@ -250,6 +250,17 @@ function seedSettings(startingAccountValue: number | null): void {
 // 3. Tests — each block invokes the REAL route handler
 // ────────────────────────────────────────────────────────────────────────────
 
+function countExecs(where: string, param: string): number {
+  return (
+    requireDb().getSqliteHandle().prepare(`SELECT count(*) AS count FROM trade_executions WHERE ${where}`).get(param) as { count: number }
+  ).count;
+}
+function countAcct(where: string, param: string): number {
+  return (
+    requireDb().getSqliteHandle().prepare(`SELECT count(*) AS count FROM accounting_executions WHERE ${where}`).get(param) as { count: number }
+  ).count;
+}
+
 async function main(): Promise<void> {
   // Load the real modules AFTER the env var is set so @/db initializes
   // against DB_FILE_NAME with all migrations auto-applied.
@@ -832,6 +843,81 @@ async function main(): Promise<void> {
     });
 
     assert(result.status === 400, 'returns 400 for empty riskOverrideReason');
+  }
+
+  // ── A12. Closed-trade compatibility boundary (M002-A12) ───────────────
+
+  console.log('\nA12. NEW bulk request against a closed trade → 409, zero mutation:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const close = await callPost(trade.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 100,
+      exit1Price: 160.0,
+      exit1Quantity: 100,
+      idempotencyKey: 'a12-close-bulk',
+    });
+    assert(close.status === 201, 'closing bulk 201');
+    const closedTrade = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(closedTrade.status, 'closed', 'trade closed after bulk');
+
+    const beforeTx = countExecs('trade_id = ?', trade.id as string);
+    const beforeAcct = countAcct('journal_trade_id = ?', trade.id as string);
+
+    // Genuinely NEW bulk (no idempotencyKey → fresh derived keys): the first
+    // attempted fill must fail on the closed lifecycle boundary → 409, zero fills.
+    const rejected = await callPost(trade.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 10,
+      exit1Price: 160.0,
+      exit1Quantity: 10,
+    });
+    assert(rejected.status === 409, 'new bulk on closed trade → 409');
+    const err = rejected.data as { error: string; code: string; details: string };
+    assertEqual(err.code, 'TRADE_CLOSED_EXECUTION_REJECTED', 'stable lifecycle code');
+    assertEqual(countExecs('trade_id = ?', trade.id as string), beforeTx, 'zero new journal executions');
+    assertEqual(countAcct('journal_trade_id = ?', trade.id as string), beforeAcct, 'zero new accounting executions');
+  }
+
+  console.log('\nA12. SAME-key retry of a completed closing bulk replays (no 409):');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const baseKey = 'a12-replay-bulk';
+
+    const first = await callPost(trade.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 100,
+      exit1Price: 160.0,
+      exit1Quantity: 100,
+      idempotencyKey: baseKey,
+    });
+    assert(first.status === 201, 'closing bulk 201');
+    const firstData = first.data as { executions: unknown[] };
+    assertEqual(firstData.executions.length, 2, 'two fills created (entry + exit)');
+
+    const closedTrade = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(closedTrade.status, 'closed', 'trade closed after bulk');
+
+    // Client retry with the SAME base key: derived keys replay the accepted
+    // fills — the closed guard must NOT convert this into a rejection.
+    const retry = await callPost(trade.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 100,
+      exit1Price: 160.0,
+      exit1Quantity: 100,
+      idempotencyKey: baseKey,
+    });
+    assert(retry.status === 201, 'same-base-key retry still 201 (replay)');
+    const retryData = retry.data as { executions: unknown[] };
+    assertEqual(retryData.executions.length, 2, 'replay returns the same two fills');
+    assertEqual(countExecs('trade_id = ?', trade.id as string), 2, 'no additional journal executions on retry');
+    const stillClosed = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(stillClosed.status, 'closed', 'trade remains closed');
   }
 
   // ── Summary ──────────────────────────────────────────────────────────

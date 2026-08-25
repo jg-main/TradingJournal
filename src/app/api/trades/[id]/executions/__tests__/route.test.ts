@@ -660,20 +660,22 @@ async function main(): Promise<void> {
     await callPost(trade.id as string, { action: 'buy', quantity: 100, price: 150.0 });
     await callPost(trade.id as string, { action: 'sell', quantity: 100, price: 160.0 });
 
-    // A third exit exceeds the flat position: the engine's S04 pre-flight
-    // quantity guard rejects it with a typed error BEFORE any mutation, so
-    // the route returns a friendly 400 instead of a 500 rollback.
+    // M002-A12: the third exit hits the CLOSED lifecycle boundary — the
+    // trade has no ordinary execution surface, so the canonical engine
+    // rejects it as closed-trade (409) rather than falling through to a
+    // confusing over-close (openQuantity=0) response. Remediation guidance
+    // points to correction.
     const result = await callPost(trade.id as string, {
       action: 'sell',
       quantity: 100,
       price: 162.0,
     });
 
-    assert(result.status === 400, 'returns 400 for the rejected over-close fill');
-    const data = result.data as { error: string; details: { requestedQuantity: number; openQuantity: number } };
-    assertEqual(data.error, 'Over-close rejected', 'error names the over-close');
-    assertEqual(data.details.requestedQuantity, 100, 'details carries the requested quantity');
-    assertEqual(data.details.openQuantity, 0, 'details carries the open quantity');
+    assert(result.status === 409, 'returns 409 for the closed-trade lifecycle rejection');
+    const data = result.data as { error: string; code: string; details: string };
+    assertEqual(data.code, 'TRADE_CLOSED_EXECUTION_REJECTED', 'stable lifecycle code');
+    assertEqual(data.error, 'Closed trades cannot accept new executions', 'error names the closed boundary');
+    assertEqual(data.details, 'Use execution correction to alter historical fills.', 'details carries the correction remediation');
     assertEqual(countRows('trade_executions', 'trade_id = ?', trade.id as string), 2, 'no orphan journal execution');
     assertEqual(countRows('accounting_executions', 'journal_trade_id = ?', trade.id as string), 2, 'no orphan accounting execution');
     const updatedTrade = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
@@ -1265,6 +1267,89 @@ async function main(): Promise<void> {
     assertEqual(countRows('ledger_postings', 'account_id = ?', 'test-account-id') >= 2, true, 'balanced ledger postings created');
     assertEqual(countRows('account_positions', 'account_id = ? AND quantity = ?', 'test-account-id', '100.00'), 1, 'FIFO position rebuilt');
     assertEqual(countRows('account_performance', 'account_id = ?', 'test-account-id'), 1, 'account performance rebuilt');
+  }
+
+  // ── A12. Closed-trade ordinary execution boundary (M002-A12) ──────────
+
+  console.log('\nA12. closed trade + NEW key → 409 TRADE_CLOSED_EXECUTION_REJECTED, zero mutation:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const entry = await callPost(trade.id as string, {
+      action: 'buy', quantity: 100, price: 150.0, fees: 1.0, idempotencyKey: 'a12-entry',
+    });
+    assert(entry.status === 201, 'entry 201');
+
+    const close = await callPost(trade.id as string, {
+      action: 'sell', quantity: 100, price: 160.0, fees: 1.0, idempotencyKey: 'a12-close',
+    });
+    assert(close.status === 201, 'close 201');
+    const closedTrade = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(closedTrade.status, 'closed', 'trade closed after final close fill');
+
+    const before = {
+      tx: countRows('trade_executions', 'trade_id = ?', trade.id as string),
+      acct: countRows('accounting_executions', 'journal_trade_id = ?', trade.id as string),
+      fe: countRows('financial_events', "account_id = ?", 'test-account-id'),
+      fees: countRows('financial_events', "account_id = ? AND event_type = 'fee'", 'test-account-id'),
+      pos: countRows('account_positions', 'account_id = ?', 'test-account-id'),
+      perf: countRows('account_performance', 'account_id = ?', 'test-account-id'),
+    };
+
+    const rejected = await callPost(trade.id as string, {
+      action: 'buy', quantity: 10, price: 150.0, fees: 0, idempotencyKey: 'a12-new-key',
+    });
+    assert(rejected.status === 409, 'new-key ordinary fill on closed trade → 409');
+    const err = rejected.data as { error: string; code: string; details: string };
+    assertEqual(err.code, 'TRADE_CLOSED_EXECUTION_REJECTED', 'stable lifecycle code');
+    assertEqual(err.error, 'Closed trades cannot accept new executions', 'error message');
+    assertEqual(err.details, 'Use execution correction to alter historical fills.', 'remediation guidance');
+
+    // Zero mutation: journal + accounting + events + FIFO + performance all unchanged.
+    assertEqual(countRows('trade_executions', 'trade_id = ?', trade.id as string), before.tx, 'no journal execution created');
+    assertEqual(countRows('accounting_executions', 'journal_trade_id = ?', trade.id as string), before.acct, 'no accounting execution created');
+    assertEqual(countRows('financial_events', "account_id = ?", 'test-account-id'), before.fe, 'no financial event created');
+    assertEqual(countRows('financial_events', "account_id = ? AND event_type = 'fee'", 'test-account-id'), before.fees, 'no fee event created');
+    assertEqual(countRows('account_positions', 'account_id = ?', 'test-account-id'), before.pos, 'FIFO positions unchanged');
+    assertEqual(countRows('account_performance', 'account_id = ?', 'test-account-id'), before.perf, 'account performance unchanged');
+
+    const after = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(after.status, 'closed', 'trade stays closed');
+    assertEqual(after.closedAt, closedTrade.closedAt, 'closedAt unchanged');
+    assertEqual(after.updatedAt, closedTrade.updatedAt, 'updatedAt NOT stamped by a rejected request');
+  }
+
+  console.log('\nA12. SAME-key retry of the final closing fill replays (no 409):');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const trade = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+
+    const entry = await callPost(trade.id as string, {
+      action: 'buy', quantity: 100, price: 150.0, fees: 1.0, idempotencyKey: 'a12b-entry',
+    });
+    assert(entry.status === 201, 'entry 201');
+    const closeKey = 'a12b-close';
+    const first = await callPost(trade.id as string, {
+      action: 'sell', quantity: 100, price: 160.0, fees: 1.0, idempotencyKey: closeKey,
+    });
+    assert(first.status === 201, 'close 201');
+    const firstData = first.data as EngineResultShape;
+    const firstExecId = firstData.execution.id;
+
+    // Network retry of the identical close request: replay, NOT 409.
+    const retry = await callPost(trade.id as string, {
+      action: 'sell', quantity: 100, price: 160.0, fees: 1.0, idempotencyKey: closeKey,
+    });
+    assert(retry.status === 201, 'same-key retry still 201 (replay)');
+    const retryData = retry.data as EngineResultShape;
+    assertEqual(retryData.replayed, true, 'retry is a replay');
+    assertEqual(retryData.execution.id, firstExecId, 'same execution id replayed');
+    assertEqual(countRows('trade_executions', 'trade_id = ?', trade.id as string), 2, 'exactly two journal executions');
+    const stillClosed = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, trade.id as string)).get() as Record<string, unknown>;
+    assertEqual(stillClosed.status, 'closed', 'trade remains closed');
   }
 
   // ── Summary ──────────────────────────────────────────────────────────
