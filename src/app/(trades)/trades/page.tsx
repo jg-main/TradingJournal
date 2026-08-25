@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { NotebookPen, PlusCircle, RefreshCw, Download, Clock } from 'lucide-react';
 import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
@@ -11,6 +12,7 @@ import { ActionsCell } from '@/components/trades/actions-cell';
 import { TradesScratchContext } from '@/components/trades/scratch-context';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
+import { useAccount } from '@/lib/account-context';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -110,11 +112,6 @@ interface TradesResponse {
   plannedTotals?: PlannedTotalsShape;
 }
 
-interface AccountOption {
-  id: string;
-  name: string;
-  broker: string | null;
-}
 
 // ── Tab definitions ────────────────────────────────────────────────────
 
@@ -1412,12 +1409,14 @@ function TradesPageInner() {
   const [toDate, setToDate] = useState(() => {
     return searchParams.get('to') ?? '';
   });
-  const [accountId, setAccountId] = useState(() => {
-    return searchParams.get('accountId') ?? 'all';
-  });
   const [direction, setDirection] = useState(() => {
     return searchParams.get('direction') ?? 'all';
   });
+  // Canonical account scope: the sidebar AccountProvider owns the selected
+  // account (M007/D037). There is NO page-local account selector, no
+  // trades:accountId persistence, and no independent /api/accounts fetch —
+  // trades are always scoped to the provider's accountId once resolved.
+  const { accountId, loading: accountsLoading, error: accountsError, refresh } = useAccount();
   const [refreshing, setRefreshing] = useState(false);
   // Trade awaiting scratch confirmation (M015/S02/T01). The page owns the
   // ConfirmDialog, the DELETE /api/trades/[id] call, and the planned-tab
@@ -1433,7 +1432,6 @@ function TradesPageInner() {
       try {
         if (!searchParams.has('from')) setFromDate(localStorage.getItem('trades:fromDate') ?? '');
         if (!searchParams.has('to')) setToDate(localStorage.getItem('trades:toDate') ?? '');
-        if (!searchParams.has('accountId')) setAccountId(localStorage.getItem('trades:accountId') ?? 'all');
         if (!searchParams.has('direction')) setDirection(localStorage.getItem('trades:direction') ?? 'all');
         if (!searchParams.has('preset')) setActivePreset(localStorage.getItem('trades:preset') || null);
       } catch {
@@ -1492,6 +1490,13 @@ function TradesPageInner() {
     }
   }, [clearDates]);
 
+  // Clear page-local filters only (dates + direction). The global account
+  // scope is owned by AccountProvider and is intentionally NOT touched.
+  const clearPageFilters = useCallback(() => {
+    clearDates();
+    setDirection('all');
+  }, [clearDates]);
+
   // Clear preset highlight when user manually edits dates
   const handleFromDateChange = useCallback((value: string) => {
     setFromDate(value);
@@ -1510,44 +1515,22 @@ function TradesPageInner() {
     const params = new URLSearchParams();
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
-    if (accountId && accountId !== 'all') params.set('accountId', accountId);
     if (direction && direction !== 'all') params.set('direction', direction);
     if (activePreset) params.set('preset', activePreset);
     const qs = params.toString();
     const newUrl = qs ? `?${qs}` : window.location.pathname;
     router.replace(newUrl, { scroll: false });
     // Also persist to localStorage — survives plain sidebar link navigation
+    // (account scope is owned by AccountProvider under app:account, never
+    // trades:accountId).
     try {
       localStorage.setItem('trades:fromDate', fromDate);
       localStorage.setItem('trades:toDate', toDate);
-      localStorage.setItem('trades:accountId', accountId);
       localStorage.setItem('trades:direction', direction);
       if (activePreset) localStorage.setItem('trades:preset', activePreset);
       else localStorage.removeItem('trades:preset');
     } catch { /* localStorage unavailable */ }
-  }, [fromDate, toDate, accountId, direction, activePreset, filtersHydrated, router]);
-
-  // Account options for the filter dropdown
-  const [accounts, setAccounts] = useState<AccountOption[]>([]);
-  const [accountsLoading, setAccountsLoading] = useState(true);
-
-  // Fetch accounts list
-  useEffect(() => {
-    async function loadAccounts() {
-      try {
-        const res = await fetch('/api/accounts');
-        if (res.ok) {
-          const data: AccountOption[] = await res.json();
-          setAccounts(data);
-        }
-      } catch {
-        // Non-critical — leave empty list
-      } finally {
-        setAccountsLoading(false);
-      }
-    }
-    loadAccounts();
-  }, []);
+  }, [fromDate, toDate, direction, activePreset, filtersHydrated, router]);
 
   // Debounce ref to avoid rapid re-fetches while typing dates
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1555,6 +1538,9 @@ function TradesPageInner() {
   // ── Data fetching ─────────────────────────────────────────────────
 
   const fetchTab = useCallback(async (tab: TabDef, page: number = 1) => {
+    // Never issue an unscoped/all-account query: wait for the canonical
+    // account to resolve. The resolution effect below triggers the fetch.
+    if (accountsLoading || !accountId) return;
     setTabLoading((prev) => ({ ...prev, [tab.id]: true }));
     setTabError((prev) => ({ ...prev, [tab.id]: null }));
     try {
@@ -1563,10 +1549,10 @@ function TradesPageInner() {
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
 
-      // Append active filter values
+      // Append active filter values — account scope comes from the provider.
       if (fromDate) params.set('from', toFromIso(fromDate));
       if (toDate) params.set('to', toToIso(toDate));
-      if (accountId && accountId !== 'all') params.set('accountId', accountId);
+      params.set('accountId', accountId);
       if (direction && direction !== 'all') params.set('direction', direction);
 
       const res = await fetch(`/api/trades?${params.toString()}`);
@@ -1589,7 +1575,7 @@ function TradesPageInner() {
     } finally {
       setTabLoading((prev) => ({ ...prev, [tab.id]: false }));
     }
-  }, [fromDate, toDate, accountId, direction]);
+  }, [fromDate, toDate, accountId, direction, accountsLoading]);
 
   // ── Scratch (planned-only soft-delete, R027/D057) ─────────────────────
 
@@ -1632,8 +1618,10 @@ function TradesPageInner() {
   }, [router]);
 
   const handleExportCsv = useCallback(async () => {
+    // Export scope must match the visible dataset: the canonical account.
+    if (accountsLoading || !accountId) return;
     const params = new URLSearchParams();
-    if (accountId && accountId !== 'all') params.set('accountId', accountId);
+    params.set('accountId', accountId);
     const url = `/api/trades/export?${params.toString()}`;
     try {
       const res = await fetch(url);
@@ -1651,7 +1639,7 @@ function TradesPageInner() {
     } catch (err) {
       console.error('Export CSV failed:', err);
     }
-  }, [accountId]);
+  }, [accountId, accountsLoading]);
 
   const handleRefreshPrices = useCallback(async () => {
     setRefreshing(true);
@@ -1758,6 +1746,28 @@ function TradesPageInner() {
         },
       };
       const msg = messages[tab.id];
+      // Page-local filters (dates + direction) can hide rows that DO exist —
+      // the empty state must not falsely claim there are no trades. The
+      // global account scope is deliberately NOT part of this condition.
+      const hasLocalFilters = Boolean(fromDate || toDate || (direction !== 'all'));
+      if (hasLocalFilters) {
+        return (
+          <EmptyState
+            icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
+            title={`${msg.title} match the current filters`}
+            description={`Try adjusting the date range or direction, or clear the page filters.`}
+            action={
+              <button
+                type="button"
+                onClick={clearPageFilters}
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+              >
+                Clear filters
+              </button>
+            }
+          />
+        );
+      }
       return (
         <EmptyState
           icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
@@ -1805,6 +1815,52 @@ function TradesPageInner() {
   }
 
   // ── Render ───────────────────────────────────────────────────────
+
+  // AccountProvider error: never fall back to an unscoped/all-account query.
+  // The sidebar surfaces the same error; here we surface it with the provider
+  // refresh as retry.
+  if (accountsError) {
+    return (
+      <div className="px-4 py-3 sm:px-8 sm:py-10">
+        <EmptyState
+          icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
+          title="Accounts unavailable"
+          description={accountsError}
+          action={
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+            >
+              Retry
+            </button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // No account exists (or none resolved): use the application's existing
+  // setup path — never issue an invalid accountId query.
+  if (!accountsLoading && !accountId) {
+    return (
+      <div className="px-4 py-3 sm:px-8 sm:py-10">
+        <EmptyState
+          icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
+          title="No account yet"
+          description="Create an account to start planning trades. Account scope is set from the sidebar account selector."
+          action={
+            <Link
+              href="/settings/accounts"
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+            >
+              Manage accounts
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <TradesScratchContext.Provider value={{ requestScratch }}>
@@ -1907,31 +1963,10 @@ function TradesPageInner() {
             </div>
           </div>
 
-          {/* Account filter */}
-          <div className="flex flex-col gap-1">
-            <label htmlFor="filter-account" className="text-xs font-medium text-muted-foreground">
-              Account
-            </label>
-            <Select
-              value={accountId}
-              onValueChange={(v) => setAccountId(v)}
-              disabled={accountsLoading}
-            >
-              <SelectTrigger id="filter-account" className="h-8 w-48">
-                <SelectValue placeholder={accountsLoading ? 'Loading...' : 'All accounts'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All accounts</SelectItem>
-                {accounts.map((acct) => (
-                  <SelectItem key={acct.id} value={acct.id}>
-                    {acct.name}
-                    {acct.broker ? ` (${acct.broker})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           {/* Direction filter */}
+          {/* Account scope is owned by the sidebar AccountProvider (M007/D037)
+              — there is intentionally no Account selector here. */}
+
           <div className="flex flex-col gap-1">
             <label htmlFor="filter-direction" className="text-xs font-medium text-muted-foreground">
               Direction

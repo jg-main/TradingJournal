@@ -132,6 +132,19 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
+// Canonical account scope (M007/D037): resolved provider — the page fetches
+// trades scoped to acc-001.
+vi.mock('@/lib/account-context', () => ({
+  useAccount: () => ({
+    accounts: [{ id: 'acc-001', name: 'Test Account', broker: null, currency: 'USD', isActive: true }],
+    loading: false,
+    error: null,
+    accountId: 'acc-001',
+    setAccountId: vi.fn(),
+    refresh: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
 // ── Fixtures ───────────────────────────────────────────────────────────
 
 const mockAccounts = [{ id: 'acc-001', name: 'Test Account', currency: 'USD' }];

@@ -90,7 +90,8 @@ export interface PlanTradeFormProps {
   accounts: Account[];
   setups: SetupDefinition[];
   defaultAccountId: string | null;
-  onSuccess: (tradeId: string) => void;
+  /** Receives the persisted trade (id + canonical accountId from the server). */
+  onSuccess: (result: { id: string; accountId: string }) => void;
   onCancel: () => void;
 }
 
@@ -285,7 +286,9 @@ export default function PlanTradeForm({
       }
 
       const trade = await res.json();
-      onSuccess(trade.id);
+      // The persisted trade is the source of truth — its accountId is the
+      // canonical account the plan now belongs to (never stale form state).
+      onSuccess({ id: trade.id, accountId: trade.accountId ?? '' });
     } catch (err) {
       setError(String(err instanceof Error ? err.message : 'Network error. Please try again.'));
       setSubmitting(false);

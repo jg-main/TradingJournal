@@ -185,6 +185,7 @@ export default defineConfig({
       'src/app/settings/workspace/__tests__/page.test.tsx',
       'src/app/settings/risk-defaults/__tests__/page.test.tsx',
       'src/app/(trades)/trades/__tests__/page.test.tsx',
+      'src/app/(legacy)/trades/new/page.test.tsx',
       'src/app/(trades)/trades/__tests__/actions-propagation.test.tsx',
       'src/app/(trades)/trades/__tests__/scratch-action.test.tsx',
       'src/app/(trades)/trades/__tests__/distance-columns.test.ts',

@@ -123,13 +123,28 @@ vi.mock('@/components/ui/skeleton', () => ({
 }));
 
 vi.mock('@/components/empty-state', () => ({
-  EmptyState: ({ title, description }: { title?: string; description?: string }) =>
-    React.createElement('div', { 'data-testid': 'empty-state' }, title ?? '', description ?? ''),
+  EmptyState: ({ title, description, action }: { title?: string; description?: string; action?: React.ReactNode }) =>
+    React.createElement('div', { 'data-testid': 'empty-state' }, title ?? '', description ?? '', action ?? null),
 }));
 
 // Mock toast
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+
+// Canonical account scope (M007/D037): the sidebar AccountProvider is the
+// single owner. The page consumes useAccount() — a resolved provider
+// (account acc-001, not loading, no error) is mocked here.
+const mockSetAccountId = vi.fn();
+vi.mock('@/lib/account-context', () => ({
+  useAccount: () => ({
+    accounts: [{ id: 'acc-001', name: 'Test Account', broker: null, currency: 'USD', isActive: true }],
+    loading: false,
+    error: null,
+    accountId: 'acc-001',
+    setAccountId: mockSetAccountId,
+    refresh: vi.fn().mockResolvedValue(undefined),
+  }),
 }));
 
 // ---- Mocks for the API responses ----
@@ -203,9 +218,10 @@ describe('Direction filter', () => {
 
     await vi.waitFor(() => {
       expect(screen.getByText('Direction')).toBeTruthy();
-      // 'all' appears for both Account and Direction filters
+      // M007/D037: account scope is the sidebar's; 'all' now appears only
+      // for the Direction filter (no page-local Account selector).
       const allItems = screen.getAllByTestId('select-item-all');
-      expect(allItems.length).toBe(2);
+      expect(allItems.length).toBe(1);
       // 'long' and 'short' are unique to Direction filter
       expect(screen.getByTestId('select-item-long')).toBeTruthy();
       expect(screen.getByTestId('select-item-short')).toBeTruthy();
@@ -303,9 +319,10 @@ describe('Direction filter', () => {
     vi.advanceTimersByTime(500);
     vi.clearAllMocks();
 
-    // Now select All — the direction filter's 'all' is the second instance
+    // Now select All — the only 'all' item is the Direction filter's
+    // (M007/D037: the page-local Account selector was removed).
     const allItems = screen.getAllByTestId('select-item-all');
-    allItems[1].click();
+    allItems[0].click();
     vi.advanceTimersByTime(500);
 
     // After selecting 'all', fetch URLs should not contain direction param
@@ -319,6 +336,83 @@ describe('Direction filter', () => {
       const url = typeof call[0] === 'string' ? call[0] : (call[0] as Request).url;
       expect(url).not.toContain('direction');
     }
+  });
+});
+
+describe('Canonical account scope (Fix 3)', () => {
+  it('scopes every tab fetch to the AccountProvider accountId', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      const fetchCalls = vi.mocked(globalThis.fetch).mock.calls.filter((c) => {
+        const url = typeof c[0] === 'string' ? c[0] : (c[0] as Request).url;
+        return url.includes('/api/trades') && !url.includes('/export') && !url.includes('/refresh');
+      });
+      expect(fetchCalls.length).toBeGreaterThan(0);
+      for (const call of fetchCalls) {
+        const url = typeof call[0] === 'string' ? call[0] : (call[0] as Request).url;
+        expect(url).toContain('accountId=acc-001');
+      }
+    });
+  });
+
+  it('exports CSV scoped to the AccountProvider accountId', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/trades'),
+      );
+    });
+
+    screen.getByTestId('icon-download').click();
+    await vi.waitFor(() => {
+      const exportCalls = vi.mocked(globalThis.fetch).mock.calls.filter((c) => {
+        const url = typeof c[0] === 'string' ? c[0] : (c[0] as Request).url;
+        return url.includes('/api/trades/export');
+      });
+      expect(exportCalls.length).toBe(1);
+      expect(typeof exportCalls[0][0] === 'string' ? exportCalls[0][0] : (exportCalls[0][0] as Request).url)
+        .toContain('accountId=acc-001');
+    });
+  });
+
+  it('shows a filter-aware empty state with Clear filters (no account change)', async () => {
+    setupFetchMocks(async (url: RequestInfo | URL) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({ data: [], total: 0, totals: null, plannedTotals: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    render(React.createElement(TradesPage));
+
+    // Apply a direction filter so the empty tab becomes filter-aware.
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('select-item-long')).toBeTruthy();
+    });
+    screen.getByTestId('select-item-long').click();
+    vi.advanceTimersByTime(500);
+
+    await vi.waitFor(() => {
+      // Every tab shows the filter-aware empty state (all tabs empty).
+      expect(screen.getAllByText(/match the current filters/i).length).toBeGreaterThan(0);
+    });
+    const clearBtn = screen.getAllByRole('button', { name: /Clear filters/i })[0];
+    clearBtn.click();
+    vi.advanceTimersByTime(500);
+
+    // Clear filters clears page-local dates/direction; the global account is
+    // untouched (setAccountId never called).
+    await vi.waitFor(() => {
+      expect(screen.queryAllByText(/match the current filters/i).length).toBe(0);
+    });
+    expect(mockSetAccountId).not.toHaveBeenCalled();
   });
 });
 

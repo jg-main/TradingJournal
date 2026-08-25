@@ -456,7 +456,7 @@ describe('PlanTradeForm — explicit save contract (Fix 2)', () => {
     expect(screen.queryByRole('button', { name: 'Plan Trade' })).toBeNull();
   });
 
-  it('successful save posts exactly one trade and reports the persisted id', async () => {
+  it('successful save posts exactly one trade and reports the persisted id + accountId', async () => {
     const onSuccess = vi.fn();
     renderForm({ onSuccess });
     setField('Symbol', 'AAPL');
@@ -465,7 +465,7 @@ describe('PlanTradeForm — explicit save contract (Fix 2)', () => {
 
     submitForm();
     await waitFor(() => {
-      expect(onSuccess).toHaveBeenCalledWith('trade-1');
+      expect(onSuccess).toHaveBeenCalledWith({ id: 'trade-1', accountId: '' });
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/trades');
