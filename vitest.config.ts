@@ -62,6 +62,7 @@ export default defineConfig({
       'src/lib/__tests__/token-structure.test.ts',
       'src/lib/__tests__/surface-token-migration.test.ts',
       'src/lib/__tests__/execution-idempotency-migration.test.ts',
+      'src/lib/__tests__/use-trade-detail-account-reconciliation.test.ts',
       'src/lib/__tests__/workflow-phase.test.ts',
       'src/lib/__tests__/risk-propagation-s05.test.ts',
       'src/app/api/trades/__tests__/workflow-phase.test.ts',

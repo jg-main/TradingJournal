@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useAccount } from '@/lib/account-context';
+import { useTradeDetailAccountReconciliation } from '@/lib/use-trade-detail-account-reconciliation';
 import Link from 'next/link';
 import { useAppTimezone } from '@/lib/timezone-context';
 import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
@@ -262,7 +264,20 @@ export default function TradeDetailPage() {
   const id = params?.id as string;
   const router = useRouter();
 
+  // Fix 5: Trade Detail participates in the canonical global account scope.
+  // The persisted trade.accountId is authoritative for the INITIAL detail
+  // scope — opening /trades/:id adopts the owning account; after
+  // reconciliation a deliberate sidebar change navigates back to /trades.
+  const { accountId: globalAccountId, setAccountId } = useAccount();
+  const onAccountDivergence = useCallback(() => router.push('/trades'), [router]);
+
   const [trade, setTrade] = useState<Trade | null>(null);
+  const { adoptTradeAccount } = useTradeDetailAccountReconciliation({
+    trade,
+    globalAccountId,
+    setAccountId,
+    onDivergence: onAccountDivergence,
+  });
   const [executions, setExecutions] = useState<Execution[]>([]);
   // M019/S03: unified history feed input — stop/target adjustments from the S01
   // level-history API (the feed also merges executions from the existing fetch).
@@ -329,6 +344,10 @@ export default function TradeDetailPage() {
         }
         const tradeData: Trade = await tradeRes.json();
         setTrade(tradeData);
+        // Fix 5 §2: a successfully loaded trade is authoritative for detail
+        // scope. Adopt its account when the global selection differs (the
+        // hook guards refetches of a settled trade from re-adopting).
+        adoptTradeAccount(tradeData.accountId);
         if (executionsRes.ok) setExecutions(await executionsRes.json());
         if (riskRes.ok) setRiskSnapshot(await riskRes.json());
         if (adjustmentsRes.ok) setStopAdjustments(await adjustmentsRes.json());
@@ -368,7 +387,9 @@ export default function TradeDetailPage() {
     }
     loadData();
     return () => { cancelled = true; };
-  }, [id, refetchTrigger]);
+    // setAccountId / adoptTradeAccount are stable (useCallback); provider
+    // changes never trigger a full reload by themselves.
+  }, [id, refetchTrigger, adoptTradeAccount]);
 
   // Initial batch MTM refresh on mount for open trades
   useEffect(() => {
