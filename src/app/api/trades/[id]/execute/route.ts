@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, getSqliteHandle } from '@/db';
 import { trades, tradeExecutions } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import {
@@ -9,6 +9,7 @@ import {
   TradeNotFoundError,
   TradeDeletedError,
   TradeClosedError,
+  ExecutionIdempotencyConflictError,
   IdempotentReplayError,
   ReadinessFailureError,
   ActionDirectionError,
@@ -176,13 +177,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // allowed even after the trade left 'planned' — the derived per-fill keys
     // already exist, so the engine replays every fill and creates no new rows.
     if (trade.status !== 'planned') {
-      const isReplay =
-        idempotencyKey != null &&
-        db
-          .select()
-          .from(tradeExecutions)
-          .where(eq(tradeExecutions.idempotencyKey, `${idempotencyKey}:entry`))
-          .get() != null;
+      // M002-A13: a derived key owned by ANOTHER trade must never make this
+      // trade look like an idempotent bulk replay — the entry row must exist
+      // AND belong to THIS trade.
+      const replayEntry =
+        idempotencyKey != null
+          ? db
+              .select()
+              .from(tradeExecutions)
+              .where(eq(tradeExecutions.idempotencyKey, `${idempotencyKey}:entry`))
+              .get()
+          : undefined;
+      if (replayEntry && replayEntry.tradeId !== id) {
+        return NextResponse.json(
+          {
+            error: 'Idempotency key conflict',
+            code: 'EXECUTION_IDEMPOTENCY_CONFLICT',
+            details: 'This idempotency key is already associated with another trade.',
+          },
+          { status: 409 },
+        );
+      }
+      const isReplay = replayEntry != null;
       if (!isReplay) {
         if (trade.status === 'closed') {
           // M002-A12: a closed trade has no ordinary execution surface — map
@@ -213,6 +229,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // One base key per bulk request; each fill gets a deterministic derived
     // key so a client retry with the same base key replays every fill.
+    // M002-A13: a CALLER-SUPPLIED base key is required for replay across
+    // network retries — the server-minted fallback guarantees uniqueness of
+    // the accepted call only (the client never knows the derived keys).
     const baseKey = idempotencyKey ?? randomUUID();
 
     const fills: ExecuteTradeFillInput[] = [
@@ -256,6 +275,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
     }
 
+    // ── M002-A13: ownership-preflight every derived key BEFORE any fill ──
+    // Each fill is independently atomic; without a full preflight a foreign
+    // collision on exit1/exit2 would only be discovered AFTER the entry
+    // committed. Cross-trade conflict must produce ZERO new fills, so all
+    // derived keys that already exist anywhere must be owned by THIS trade.
+    if (idempotencyKey != null) {
+      const derivedKeys = fills.map((f) => f.idempotencyKey as string);
+      const foreign = db
+        .select()
+        .from(tradeExecutions)
+        .where(
+          and(
+            inArray(tradeExecutions.idempotencyKey, derivedKeys),
+            ne(tradeExecutions.tradeId, id),
+          ),
+        )
+        .all();
+      if (foreign.length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Idempotency key conflict',
+            code: 'EXECUTION_IDEMPOTENCY_CONFLICT',
+            details: 'This idempotency key is already associated with another trade.',
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     // ── Execute each fill through the canonical engine ─────────────────
 
     // A concurrent duplicate for the same derived key surfaces as an
@@ -290,6 +338,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               error: 'Closed trades cannot accept new executions',
               code: 'TRADE_CLOSED_EXECUTION_REJECTED',
               details: 'Use execution correction to alter historical fills.',
+            },
+            { status: 409 },
+          );
+        }
+        if (err instanceof ExecutionIdempotencyConflictError) {
+          return NextResponse.json(
+            {
+              error: 'Idempotency key conflict',
+              code: 'EXECUTION_IDEMPOTENCY_CONFLICT',
+              details: 'This idempotency key is already associated with another trade.',
             },
             { status: 409 },
           );

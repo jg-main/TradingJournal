@@ -17,5 +17,9 @@ assert(details.includes('onClick={onAddFill}') && details.includes('>\n         
 assert(active.includes('onAddFill={onAddFill}') && !active.includes('AddExitDialog'), 'active view forwards only the canonical fill action');
 assert(page.includes('<AddFillDialog') && page.includes('onComplete={handleExecutionAdded}'), 'page owns completion and refetch after a fill');
 assert(dialog.includes("| 'buy'") && dialog.includes("| 'sell'") && dialog.includes("| 'reduce'"), 'single dialog still supports entry, exit, and reduction actions');
+assert(
+  dialog.includes('if (!submissionKeyRef.current)') && dialog.includes('body.idempotencyKey = submissionKeyRef.current'),
+  'one stable idempotency key is minted per logical submission and reused across retries (M002-A13)',
+);
 if (failures.length) process.exit(1);
 console.log('\nAll Add Fill ownership assertions passed.');

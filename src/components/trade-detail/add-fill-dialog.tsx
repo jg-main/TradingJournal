@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAppTimezone } from '@/lib/timezone-context';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
@@ -137,6 +137,10 @@ export function AddFillDialog({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // M002-A13: ONE idempotency key per LOGICAL submission, reused across
+  // retries of that submission. A fresh key per attempt would let a network
+  // retry create a duplicate fill; the server replays same-key retries.
+  const submissionKeyRef = useRef<string | null>(null);
 
   const fillActions = getFillActions(trade.direction);
 
@@ -190,9 +194,14 @@ export function AddFillDialog({
         fees: parseFloat(form.fees) || 0,
       };
 
-      // One idempotency key per submit attempt (S03): the engine replays
-      // retries with the same key instead of creating a duplicate execution.
-      body.idempotencyKey = crypto.randomUUID();
+      // M002-A13 (S03): one idempotency key per logical submission — the
+      // engine replays retries with the same key instead of creating a
+      // duplicate execution. The key is minted on the FIRST attempt and
+      // reused for every retry of that submission (cleared on success/close).
+      if (!submissionKeyRef.current) {
+        submissionKeyRef.current = crypto.randomUUID();
+      }
+      body.idempotencyKey = submissionKeyRef.current;
 
       if (form.executedAt.trim()) {
         body.executedAt = form.executedAt;
@@ -222,6 +231,7 @@ export function AddFillDialog({
         return;
       }
 
+      submissionKeyRef.current = null;
       onComplete();
       onOpenChange(false);
       setForm({
@@ -256,6 +266,9 @@ export function AddFillDialog({
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
+      // A new dialog session is a new logical submission: drop the previous
+      // submission's idempotency key so the next fill mints its own.
+      submissionKeyRef.current = null;
       setForm({
         action: '',
         quantity: '',

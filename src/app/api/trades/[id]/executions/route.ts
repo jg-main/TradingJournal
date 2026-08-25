@@ -9,6 +9,7 @@ import {
   TradeNotFoundError,
   TradeDeletedError,
   TradeClosedError,
+  ExecutionIdempotencyConflictError,
   IdempotentReplayError,
   ReadinessFailureError,
   ActionDirectionError,
@@ -119,8 +120,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       price,
       fees: fees ?? 0,
       executedAt,
-      // Client-generated key wins; otherwise mint one so retries are
-      // replay-safe even when the UI does not send a key (S03).
+      // M002-A13: a client-supplied key is used as-is (replay-safe across
+      // retries of the SAME logical submission — the UI reuses one key per
+      // submission). When the key is omitted, the server mints one: that
+      // guarantees uniqueness of the ACCEPTED call only — it does NOT make a
+      // later independent HTTP retry replay-safe (the client never knew the
+      // key). Callers that need network-retry idempotency must supply a
+      // stable client key.
       idempotencyKey: idempotencyKey ?? randomUUID(),
       checkResults,
       riskOverrideReason,
@@ -160,6 +166,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             error: 'Closed trades cannot accept new executions',
             code: 'TRADE_CLOSED_EXECUTION_REJECTED',
             details: 'Use execution correction to alter historical fills.',
+          },
+          { status: 409 },
+        );
+      }
+      if (err instanceof ExecutionIdempotencyConflictError) {
+        // M002-A13: a key already owned by another trade is a deterministic
+        // ownership conflict — never a replay, never a 201, never a 500.
+        return NextResponse.json(
+          {
+            error: 'Idempotency key conflict',
+            code: 'EXECUTION_IDEMPOTENCY_CONFLICT',
+            details: 'This idempotency key is already associated with another trade.',
           },
           { status: 409 },
         );

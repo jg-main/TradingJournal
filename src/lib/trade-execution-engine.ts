@@ -175,6 +175,25 @@ export class TradeDeletedError extends Error {
 }
 
 /**
+ * M002-A13: an execution idempotency key is globally unique and permanently
+ * owned by exactly one journal trade. Supplying a key that already belongs to
+ * ANOTHER trade is a deterministic ownership conflict — never a replay, never
+ * a mixed cross-trade response. Thrown pre-flight (read-only) and in the
+ * concurrent UNIQUE-violation path, so the externally visible outcome never
+ * depends on timing.
+ */
+export class ExecutionIdempotencyConflictError extends Error {
+  readonly idempotencyKey: string;
+  readonly requestedTradeId: string;
+  constructor(idempotencyKey: string, requestedTradeId: string) {
+    super('Idempotency key is already associated with another trade.');
+    this.name = 'ExecutionIdempotencyConflictError';
+    this.idempotencyKey = idempotencyKey;
+    this.requestedTradeId = requestedTradeId;
+  }
+}
+
+/**
  * M002-A12: a trade whose effective execution stream has economically closed
  * (status 'closed', including reviewed trades) may not receive NEW ordinary
  * executions. Only the immutable execution-correction workflow may alter the
@@ -563,8 +582,20 @@ function buildReplayResult(
   dbHandle: BetterSQLite3Database<typeof schema>,
   sqlite: Database.Database,
   existingExecution: typeof schema.tradeExecutions.$inferSelect,
-  tradeId: string,
+  expectedTradeId?: string,
 ): TradeExecutionEngineResult {
+  // M002-A13: the replay aggregate is reconstructed from the PERSISTED
+  // execution's own trade identity — never from a caller-supplied resource
+  // ID — so execution/trade/risk identities can never be mixed across
+  // trades. An expected trade ID, when supplied, is asserted (defense in
+  // depth; both call sites pass the requested trade id).
+  const tradeId = existingExecution.tradeId;
+  if (expectedTradeId !== undefined && expectedTradeId !== tradeId) {
+    throw new ExecutionIdempotencyConflictError(
+      existingExecution.idempotencyKey ?? '<null>',
+      expectedTradeId,
+    );
+  }
   const trade = dbHandle
     .select()
     .from(trades)
@@ -610,6 +641,7 @@ function isUniqueConstraintViolation(err: unknown): boolean {
  * @throws {TradeNotFoundError}        trade is missing
  * @throws {TradeDeletedError}         trade is deleted
  * @throws {TradeClosedError}          trade is closed; only correction may alter history
+ * @throws {ExecutionIdempotencyConflictError} idempotency key owned by another trade
  * @throws {ActionDirectionError}      action not valid for the trade direction
  * @throws {OverCloseError}            closing fill exceeds the open quantity (pre-flight)
  * @throws {OpenPositionRequiredError} 'add'/'reduce' on a planned trade (pre-flight)
@@ -637,6 +669,9 @@ export function executeTradeFill(
   if (trade.status === 'deleted') throw new TradeDeletedError();
 
   // Idempotent replay: same idempotency key → return the original result.
+  // M002-A13: a key is permanently owned by the trade that first persisted
+  // it. A key owned by ANOTHER trade is an ownership conflict (typed error,
+  // zero mutation) — never a replay and never a mixed cross-trade response.
   if (input.idempotencyKey) {
     const existing = dbHandle
       .select()
@@ -644,6 +679,17 @@ export function executeTradeFill(
       .where(eq(tradeExecutions.idempotencyKey, input.idempotencyKey))
       .get();
     if (existing) {
+      if (existing.tradeId !== input.tradeId) {
+        logInfo('idempotency-conflict', {
+          idempotencyKey: input.idempotencyKey,
+          requestedTradeId: input.tradeId,
+          owningTradeId: existing.tradeId,
+        });
+        throw new ExecutionIdempotencyConflictError(
+          input.idempotencyKey,
+          input.tradeId,
+        );
+      }
       logInfo('idempotent-replay', {
         idempotencyKey: input.idempotencyKey,
         executionId: existing.id,
@@ -805,6 +851,19 @@ export function executeTradeFill(
           .where(eq(tradeExecutions.idempotencyKey, input.idempotencyKey))
           .get();
         if (concurrent) {
+          // M002-A13: the race path enforces the SAME ownership contract —
+          // a foreign-trade collision is a conflict, never a replay.
+          if (concurrent.tradeId !== input.tradeId) {
+            logInfo('idempotency-conflict (concurrent)', {
+              idempotencyKey: input.idempotencyKey,
+              requestedTradeId: input.tradeId,
+              owningTradeId: concurrent.tradeId,
+            });
+            throw new ExecutionIdempotencyConflictError(
+              input.idempotencyKey,
+              input.tradeId,
+            );
+          }
           logInfo('idempotent-replay (concurrent)', {
             idempotencyKey: input.idempotencyKey,
             executionId: concurrent.id,

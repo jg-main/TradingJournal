@@ -920,6 +920,94 @@ async function main(): Promise<void> {
     assertEqual(stillClosed.status, 'closed', 'trade remains closed');
   }
 
+  // ── A13. Bulk idempotency-key trade ownership (M002-A13) ─────────────
+
+  console.log('\nA13. same-base-key retry on the SAME trade replays; other trade → 409 conflict:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+    const tradeA = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const tradeB = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const baseKey = 'a13-bulk-owner';
+
+    const first = await callPost(tradeA.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 100,
+      exit1Price: 160.0,
+      exit1Quantity: 60,
+      idempotencyKey: baseKey,
+    });
+    assert(first.status === 201, 'trade A bulk 201');
+
+    // Same trade exact retry → replay, zero new rows.
+    const retry = await callPost(tradeA.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 100,
+      exit1Price: 160.0,
+      exit1Quantity: 60,
+      idempotencyKey: baseKey,
+    });
+    assert(retry.status === 201, 'same-trade retry 201 (replay)');
+    const retryData = retry.data as { executions: unknown[] };
+    assertEqual(retryData.executions.length, 2, 'replays the two accepted fills');
+    assertEqual(countExecs('trade_id = ?', tradeA.id as string), 2, 'no new rows on trade A');
+
+    // Trade B same base key → 409 conflict, zero fills on B.
+    const beforeB = countExecs('trade_id = ?', tradeB.id as string);
+    const conflict = await callPost(tradeB.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 10,
+      exit1Price: 160.0,
+      exit1Quantity: 10,
+      idempotencyKey: baseKey,
+    });
+    assert(conflict.status === 409, 'trade B same base key → 409');
+    const err = conflict.data as { error: string; code: string; details: string };
+    assertEqual(err.code, 'EXECUTION_IDEMPOTENCY_CONFLICT', 'stable conflict code');
+    assertEqual(countExecs('trade_id = ?', tradeB.id as string), beforeB, 'zero fills on trade B');
+    assertEqual(countAcct('journal_trade_id = ?', tradeB.id as string), beforeB, 'zero accounting rows on trade B');
+  }
+
+  console.log('\nA13. partial derived-key collision (foreign exit1) rejects BEFORE any fill:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id', startingBalance: 10000 });
+    const tradeA = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const tradeB = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const baseKey = 'a13-partial-collision';
+
+    // Trade A owns ONLY the exit1 derived key (simulate via the execute route
+    // completing a request that includes exit1, then B reuses the base key).
+    const first = await callPost(tradeA.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 100,
+      exit1Price: 160.0,
+      exit1Quantity: 100,
+      idempotencyKey: baseKey,
+    });
+    assert(first.status === 201, 'trade A bulk with entry+exit1 201');
+    assertEqual(countExecs('trade_id = ?', tradeA.id as string), 2, 'trade A owns entry + exit1 derived keys');
+
+    // Trade B submits the same base key: without full preflight its entry
+    // could commit before discovering exit1 belongs to A. A13 must reject
+    // the WHOLE request before the first fill.
+    const beforeB = countExecs('trade_id = ?', tradeB.id as string);
+    const conflict = await callPost(tradeB.id as string, {
+      entryPrice: 150.0,
+      entryQuantity: 10,
+      exit1Price: 160.0,
+      exit1Quantity: 10,
+      idempotencyKey: baseKey,
+    });
+    assert(conflict.status === 409, 'partial collision → 409 before first fill');
+    assertEqual(
+      (conflict.data as { code: string }).code,
+      'EXECUTION_IDEMPOTENCY_CONFLICT',
+      'stable conflict code',
+    );
+    assertEqual(countExecs('trade_id = ?', tradeB.id as string), beforeB, 'B entry never committed');
+  }
+
   // ── Summary ──────────────────────────────────────────────────────────
 
   const total = passed + failed;

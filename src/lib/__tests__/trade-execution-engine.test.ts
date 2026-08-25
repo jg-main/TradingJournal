@@ -36,6 +36,7 @@ import {
   TradeNotFoundError,
   TradeDeletedError,
   TradeClosedError,
+  ExecutionIdempotencyConflictError,
   ActionDirectionError,
   ReadinessFailureError,
   ChecklistGateError,
@@ -992,6 +993,107 @@ describe('executeTradeFill', () => {
     expect(metrics.size.exitQuantity).toBe(150);
     expect(metrics.size.openQuantity).toBe(0);
     expect(metrics.position.status).toBe('closed');
+  });
+});
+
+describe('A13 idempotency-key trade ownership', () => {
+  it('same-trade key reuse replays with self-consistent identity', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId);
+    const key = randomUUID();
+
+    const first = executeTradeFill(
+      fill(tradeId, { action: 'buy', quantity: 100, price: 100, idempotencyKey: key }),
+      context,
+    );
+    expect(first.replayed).toBe(false);
+
+    const replay = executeTradeFill(
+      fill(tradeId, { action: 'buy', quantity: 100, price: 100, idempotencyKey: key }),
+      context,
+    );
+    expect(replay.replayed).toBe(true);
+    expect(replay.execution.id).toBe(first.execution.id);
+    expect(replay.trade.id).toBe(tradeId);
+    expect(replay.execution.tradeId).toBe(tradeId);
+    // Identity assertions: execution.tradeId == trade.id; accounting linkage
+    // matches the owning trade.
+    expect(replay.execution.tradeId).toBe(replay.trade.id);
+    expect(replay.accountingExecution?.journal_trade_id).toBe(tradeId);
+    expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(1);
+  });
+
+  it('cross-trade key reuse is an ownership conflict with zero mutation on B', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeA = seedTrade(accountId);
+    const tradeB = seedTrade(accountId);
+    const key = randomUUID();
+
+    executeTradeFill(
+      fill(tradeA, { action: 'buy', quantity: 100, price: 100, idempotencyKey: key }),
+      context,
+    );
+
+    const beforeB = countRows('trade_executions', 'trade_id = ?', tradeB);
+    let err: unknown = null;
+    try {
+      executeTradeFill(
+        fill(tradeB, { action: 'buy', quantity: 50, price: 100, idempotencyKey: key }),
+        context,
+      );
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ExecutionIdempotencyConflictError);
+    const conflict = err as ExecutionIdempotencyConflictError;
+    expect(conflict.idempotencyKey).toBe(key);
+    expect(conflict.requestedTradeId).toBe(tradeB);
+    expect(countRows('trade_executions', 'trade_id = ?', tradeB)).toBe(beforeB);
+    // A's execution is untouched and still owns the key.
+    expect(countRows('trade_executions', 'trade_id = ?', tradeA)).toBe(1);
+  });
+
+  it('A12 ordering: closed trade + own final-close key replays; new key rejected; foreign key conflicts', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeA = seedTrade(accountId);
+    const tradeB = seedTrade(accountId);
+    const closeKey = randomUUID();
+
+    executeTradeFill(
+      fill(tradeA, { action: 'buy', quantity: 100, price: 100, idempotencyKey: randomUUID() }),
+      context,
+    );
+    const closed = executeTradeFill(
+      fill(tradeA, { action: 'sell', quantity: 100, price: 110, idempotencyKey: closeKey }),
+      context,
+    );
+    expect(closed.trade.status).toBe('closed');
+
+    // Same-trade final-close retry: replay (A12 preserved).
+    const retry = executeTradeFill(
+      fill(tradeA, { action: 'sell', quantity: 100, price: 110, idempotencyKey: closeKey }),
+      context,
+    );
+    expect(retry.replayed).toBe(true);
+
+    // New key on the closed trade: closed boundary.
+    expect(() =>
+      executeTradeFill(fill(tradeA, { action: 'buy', quantity: 10, price: 100, idempotencyKey: randomUUID() }), context),
+    ).toThrow(TradeClosedError);
+
+    // A foreign key owned by tradeB... tradeB owns nothing yet; seed B's own
+    // execution with a distinct key, then use B's key against A → conflict.
+    const bKey = randomUUID();
+    executeTradeFill(
+      fill(tradeB, { action: 'buy', quantity: 10, price: 100, idempotencyKey: bKey }),
+      context,
+    );
+    expect(() =>
+      executeTradeFill(fill(tradeA, { action: 'buy', quantity: 10, price: 100, idempotencyKey: bKey }), context),
+    ).toThrow(ExecutionIdempotencyConflictError);
   });
 });
 

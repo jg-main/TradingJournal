@@ -1352,6 +1352,53 @@ async function main(): Promise<void> {
     assertEqual(stillClosed.status, 'closed', 'trade remains closed');
   }
 
+  // ── A13. Idempotency-key trade ownership (M002-A13) ──────────────────
+
+  console.log('\nA13. cross-trade idempotency reuse → 409 EXECUTION_IDEMPOTENCY_CONFLICT, zero mutation:');
+  {
+    cleanup();
+    seedAccount({ id: 'test-account-id' });
+    const tradeA = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const tradeB = seedTrade({ accountId: 'test-account-id', status: 'planned' });
+    const key = 'a13-cross-trade-key';
+
+    const first = await callPost(tradeA.id as string, {
+      action: 'buy', quantity: 100, price: 150.0, fees: 1.0, idempotencyKey: key,
+    });
+    assert(first.status === 201, 'trade A first fill 201');
+
+    const beforeB = {
+      tx: countRows('trade_executions', 'trade_id = ?', tradeB.id as string),
+      acct: countRows('accounting_executions', 'journal_trade_id = ?', tradeB.id as string),
+      fe: countRows('financial_events', 'account_id = ?', 'test-account-id'),
+    };
+
+    const conflict = await callPost(tradeB.id as string, {
+      action: 'buy', quantity: 50, price: 150.0, fees: 0, idempotencyKey: key,
+    });
+    assert(conflict.status === 409, 'trade B same key → 409');
+    const err = conflict.data as { error: string; code: string; details: string };
+    assertEqual(err.code, 'EXECUTION_IDEMPOTENCY_CONFLICT', 'stable conflict code');
+    assertEqual(err.error, 'Idempotency key conflict', 'error message');
+
+    assertEqual(countRows('trade_executions', 'trade_id = ?', tradeB.id as string), beforeB.tx, 'zero journal rows on B');
+    assertEqual(countRows('accounting_executions', 'journal_trade_id = ?', tradeB.id as string), beforeB.acct, 'zero accounting rows on B');
+    assertEqual(countRows('financial_events', 'account_id = ?', 'test-account-id'), beforeB.fe, 'zero new financial events');
+
+    const tradeBRow = requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, tradeB.id as string)).get() as Record<string, unknown>;
+    assertEqual(tradeBRow.status, 'planned', 'trade B status untouched');
+    assertEqual(tradeBRow.updatedAt, (requireDb().db.select().from(schema.trades).where(eq(schema.trades.id, tradeB.id as string)).get() as Record<string, unknown>).updatedAt, 'trade B updatedAt untouched');
+
+    // Trade A still owns the key and replays it.
+    const replay = await callPost(tradeA.id as string, {
+      action: 'buy', quantity: 100, price: 150.0, fees: 1.0, idempotencyKey: key,
+    });
+    assert(replay.status === 201, 'trade A same-key retry still replays');
+    const replayData = replay.data as EngineResultShape;
+    assertEqual(replayData.replayed, true, 'trade A retry is a replay');
+    assertEqual(replayData.execution.tradeId, tradeA.id, 'replayed execution belongs to trade A');
+  }
+
   // ── Summary ──────────────────────────────────────────────────────────
 
   const total = passed + failed;

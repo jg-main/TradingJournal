@@ -987,7 +987,7 @@ async function main(): Promise<void> {
         quantity: '10.00',
         price: '100.00',
         fees: '0.00',
-        executedAt: nowIso,
+        postedAt: nowIso,
         idempotencyKey: `trade-execution-${journalId}`,
         journalTradeId: trade.id as string,
       });
