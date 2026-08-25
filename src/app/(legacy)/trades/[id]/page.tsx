@@ -683,6 +683,7 @@ export default function TradeDetailPage() {
           open={executeOpen}
           onOpenChange={handleExecuteClose}
           onComplete={handleExecutionAdded}
+          onTradeChanged={() => void handleTradeChanged()}
         />
       )}
 

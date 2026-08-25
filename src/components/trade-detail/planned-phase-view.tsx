@@ -223,6 +223,7 @@ export default function PlannedPhaseView({
             status={trade.status}
             direction={trade.direction}
             tradeCode={trade.tradeCode}
+            setupName={trade.setupName ?? null}
             rightContent={
               <div className="flex items-center gap-1">
                 <button

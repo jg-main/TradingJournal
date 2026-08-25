@@ -54,6 +54,9 @@ interface ExecuteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void;
+  /** Notify the parent (Trade Detail) that the persisted trade changed (setupId
+   *  selection) so it can refresh its canonical trade state immediately. */
+  onTradeChanged?: () => void;
 }
 
 interface FormState {
@@ -107,6 +110,7 @@ export function ExecuteDialog({
   open,
   onOpenChange,
   onComplete,
+  onTradeChanged,
 }: ExecuteDialogProps) {
   const { nowDatetimeLocal } = useAppTimezone();
   // ── Form state (entry form step) ───────────────────────────────────
@@ -125,6 +129,7 @@ export function ExecuteDialog({
 
   const [setupDefinitions, setSetupDefinitions] = useState<SetupDefinition[]>([]);
   const [loadingSetups, setLoadingSetups] = useState(false);
+  const [setupLoadError, setSetupLoadError] = useState<string | null>(null);
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(null);
   const [savingSetup, setSavingSetup] = useState(false);
 
@@ -147,9 +152,9 @@ export function ExecuteDialog({
 
   // ── API helpers ────────────────────────────────────────────────────
 
-  const fetchSetupDefinitions = useCallback(async () => {
+  const fetchSetupDefinitions = useCallback(async (): Promise<boolean> => {
     setLoadingSetups(true);
-    setError(null);
+    setSetupLoadError(null);
     try {
       const res = await fetch('/api/setup-definitions');
       if (!res.ok) {
@@ -157,9 +162,14 @@ export function ExecuteDialog({
         throw new Error(err.error ?? 'Failed to load setup definitions');
       }
       const json = await res.json();
-      setSetupDefinitions(json.data ?? []);
+      // The catalogue is authoritative only after a successful fetch — an
+      // empty array here is a truthful empty catalogue, never a "not loaded"
+      // state.
+      setSetupDefinitions(Array.isArray(json.data) ? json.data : []);
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load setup definitions');
+      setSetupLoadError(e instanceof Error ? e.message : 'Failed to load setup definitions');
+      return false;
     } finally {
       setLoadingSetups(false);
     }
@@ -190,25 +200,52 @@ export function ExecuteDialog({
     [],
   );
 
-  // ── Initialize on mount (async checklist fetch) ───────────────────
-  // Synchronous initial step is already set by getInitialStep() in useState.
-  // This effect only handles the async checklist fetch when step is 'loading'
-  // (meaning both accountId and setupId exist). The fetch and state updates
-  // are chained in .then() callbacks to keep the effect body clear of synchronous
-  // setState.
-  const initRef = useRef(false);
-
+  // ── Session initialization (deterministic opening contract, Fix 7) ──
+  // Runs whenever the dialog opens or the trade prop changes (id/accountId/
+  // setupId), so a reopened dialog or a different trade never reuses stale
+  // setup/checklist/session state (no cross-trade leakage). The async
+  // branches chain in .then() to keep the effect body clear of synchronous
+  // setState; the sync resets carry the repo's established suppression.
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
+    if (!open) return;
+    // Session resets are intentionally synchronous (the dialog just opened or
+    // the trade prop changed); the cascading-render rule is suppressed for
+    // this established open-session reset pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setError(null);
+    setChecklist([]);
+    setCheckedIds(new Set());
+    setSetupDefinitions([]);
+    setSetupLoadError(null);
+    setSelectedSetupId(null);
+    setSavingSetup(false);
+    setLoadingChecklist(false);
+    setLoadingSetups(false);
 
-    if (!trade.accountId || !trade.setupId) return;
+    // No accountId: preserve the legacy compatibility path (straight to the
+    // entry form, no account-scoped setup/checklist machinery).
+    if (!trade.accountId) {
+      setStep('entry-form');
+      return;
+    }
 
+    // Setup-less planned trade: show the setup picker AND load the real
+    // active setup catalogue immediately (Fix 7 — previously the catalogue
+    // was never fetched, so the picker falsely claimed "No setup definitions
+    // found").
+    if (!trade.setupId) {
+      setStep('setup-picker');
+      void fetchSetupDefinitions();
+      return;
+    }
+
+    // Existing setup: initialize via the merged checklist (never fetch the
+    // whole catalogue for a trade that already has a persisted setup).
+    setStep('loading');
     const params = new URLSearchParams({
       accountId: trade.accountId,
       setupId: trade.setupId,
     });
-
     fetch(`/api/checks/merged?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Checklist fetch failed'))))
       .then((rows: ChecklistItem[]) => {
@@ -220,7 +257,8 @@ export function ExecuteDialog({
         setError('Failed to load checklist — proceeding without gating.');
         setStep('entry-form');
       });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, trade.id, trade.accountId, trade.setupId]);
 
   // ── Validation ─────────────────────────────────────────────────────
 
@@ -276,6 +314,9 @@ export function ExecuteDialog({
         }
 
         setSelectedSetupId(setupDefId);
+        // The persisted trade is authoritative — notify Trade Detail so its
+        // state reflects the setup immediately even if execution is cancelled.
+        onTradeChanged?.();
 
         // If no account, skip checklist
         if (!trade.accountId) {
@@ -296,7 +337,7 @@ export function ExecuteDialog({
         setSavingSetup(false);
       }
     },
-    [trade.id, trade.accountId, fetchMergedChecklist],
+    [trade.id, trade.accountId, fetchMergedChecklist, onTradeChanged],
   );
 
   // ── Step: Checklist ────────────────────────────────────────────────
@@ -429,6 +470,7 @@ export function ExecuteDialog({
       setChecklist([]);
       setCheckedIds(new Set());
       setSetupDefinitions([]);
+      setSetupLoadError(null);
       setSelectedSetupId(null);
       setSavingSetup(false);
       setLoadingSetups(false);
@@ -489,10 +531,25 @@ export function ExecuteDialog({
           <div className="space-y-4">
             <div>
               <label className={labelClass}>Setup</label>
+              {/* Fix 7: truthful catalogue states — loading / failure+Retry /
+                  successful-empty / selectable list. The empty message is only
+                  rendered after a SUCCESSFUL fetch returned zero rows; a load
+                  failure is never presented as an empty catalogue. */}
               {loadingSetups ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="size-3.5 animate-spin" />
                   Loading setups...
+                </div>
+              ) : setupLoadError ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">{setupLoadError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void fetchSetupDefinitions()}
+                    className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                  >
+                    Retry
+                  </button>
                 </div>
               ) : setupDefinitions.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
