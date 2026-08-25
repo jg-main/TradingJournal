@@ -112,6 +112,12 @@ export function ExecuteDialog({
   // ── Form state (entry form step) ───────────────────────────────────
   const [form, setForm] = useState<FormState>(() => buildInitialState(trade, nowDatetimeLocal()));
   const [submitting, setSubmitting] = useState(false);
+  // Fix 6: ONE base idempotency key per logical submission, reused across
+  // retries of that submission (the /execute adapter derives
+  // <base>:entry/:exit1/:exit2 and replays same-base retries). A fresh key
+  // per attempt could duplicate a fill whose response was lost. Cleared on
+  // success and on dialog close/abandon.
+  const submissionKeyRef = useRef<string | null>(null);
 
   // ── Step state ─────────────────────────────────────────────────────
   const [step, setStep] = useState<DialogStep>(() => getInitialStep(trade));
@@ -332,10 +338,15 @@ export function ExecuteDialog({
         fees: parseFloat(form.fees) || 0,
       };
 
-      // One idempotency key per submit attempt (S03): retrying the same
-      // bulk request with the same key is replay-safe through the P1 adapter
-      // (derives :entry/:exit1/:exit2 keys) and the canonical engine.
-      body.idempotencyKey = crypto.randomUUID();
+      // Fix 6 (S03): one idempotency key per logical submission — minted on
+      // the FIRST attempt and reused for every retry while the dialog stays
+      // open (network loss / timeout / any non-success response must not mint
+      // a new key; the /execute adapter derives :entry/:exit1/:exit2 and
+      // replays same-base retries). Cleared on success/close.
+      if (!submissionKeyRef.current) {
+        submissionKeyRef.current = crypto.randomUUID();
+      }
+      body.idempotencyKey = submissionKeyRef.current;
 
       if (form.stopPrice.trim()) {
         body.stopPrice = parseFloat(form.stopPrice);
@@ -387,6 +398,7 @@ export function ExecuteDialog({
         return;
       }
 
+      submissionKeyRef.current = null;
       onComplete();
       handleOpenChange(false);
       setForm(buildInitialState(trade, nowDatetimeLocal()));
@@ -408,6 +420,9 @@ export function ExecuteDialog({
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
+      // Closing the dialog abandons the logical submission — a new session
+      // gets a new key.
+      submissionKeyRef.current = null;
       setForm(buildInitialState(trade, nowDatetimeLocal()));
       setError(null);
       setStep('loading');

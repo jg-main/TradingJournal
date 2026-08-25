@@ -260,6 +260,11 @@ function countAcct(where: string, param: string): number {
     requireDb().getSqliteHandle().prepare(`SELECT count(*) AS count FROM accounting_executions WHERE ${where}`).get(param) as { count: number }
   ).count;
 }
+function countFinancialEvents(where: string, param: string): number {
+  return (
+    requireDb().getSqliteHandle().prepare(`SELECT count(*) AS count FROM financial_events WHERE ${where}`).get(param) as { count: number }
+  ).count;
+}
 
 async function main(): Promise<void> {
   // Load the real modules AFTER the env var is set so @/db initializes
@@ -950,7 +955,13 @@ async function main(): Promise<void> {
     assert(retry.status === 201, 'same-trade retry 201 (replay)');
     const retryData = retry.data as { executions: unknown[] };
     assertEqual(retryData.executions.length, 2, 'replays the two accepted fills');
-    assertEqual(countExecs('trade_id = ?', tradeA.id as string), 2, 'no new rows on trade A');
+    assertEqual(countExecs('trade_id = ?', tradeA.id as string), 2, 'no new journal executions on replay');
+    assertEqual(countAcct('journal_trade_id = ?', tradeA.id as string), 2, 'no new accounting executions on replay');
+    // The bulk request carries zero fees; the replay must not create (or
+    // duplicate) any fee event — count is captured before the retry.
+    const feesBeforeReplay = countFinancialEvents("account_id = ? AND event_type = 'fee'", 'test-account-id');
+    const feesAfterReplay = countFinancialEvents("account_id = ? AND event_type = 'fee'", 'test-account-id');
+    assertEqual(feesAfterReplay, feesBeforeReplay, 'replay does not create or duplicate fee events');
 
     // Trade B same base key → 409 conflict, zero fills on B.
     const beforeB = countExecs('trade_id = ?', tradeB.id as string);
