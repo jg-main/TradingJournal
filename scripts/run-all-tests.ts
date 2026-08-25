@@ -151,6 +151,19 @@ async function main(): Promise<void> {
   }
   console.log();
 
+  /* ─── Test ownership guard (T01) ─────────────────────── */
+  console.log('◆  Test ownership check …');
+  const ownership = run(`npx tsx scripts/check-test-ownership.mjs`, PROJECT_ROOT, 'test-ownership');
+  results.push(ownership);
+  if (!ownership.passed) {
+    console.log(`   ✗ test ownership FAILED (unowned or missing test files)`);
+    console.log(ownership.output.split('\n').slice(0, 30).map(l => `     ${l}`).join('\n'));
+    exitCode = 1;
+  } else {
+    console.log(`   ✓ test ownership PASSED`);
+  }
+  console.log();
+
   /* ─── Summary table ──────────────────────────────────── */
   console.log('━'.repeat(60));
   console.log('  Summary');
