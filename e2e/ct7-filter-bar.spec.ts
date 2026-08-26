@@ -2,11 +2,13 @@
  * Corrective Task 7 — compact Performance filter bar + final M001 capture.
  *
  * The filter bar is now a compact analytical toolbar: the visible
- * 'Accounts:' / 'Period:' / 'Unit:' form labels are gone and every control
- * carries an explicit accessible name (Performance accounts / period /
- * filters / unit). This spec verifies presentation + accessibility at
- * 1440/1280/1024 and captures the evidence screenshots, ending with the
- * final full-dashboard M001 capture (1440 dark, populated, normal mode).
+ * 'Period:' / 'Unit:' form labels are gone and every control carries an
+ * explicit accessible name (Performance period / filters / unit). Account
+ * selection is owned exclusively by the sidebar AccountProvider (M007/D037) —
+ * the bar renders no account control of any kind. This spec verifies
+ * presentation + accessibility at 1440/1280/1024 and captures the evidence
+ * screenshots, ending with the final full-dashboard M001 capture (1440 dark,
+ * populated, normal mode).
  *
  * Regression (filter semantics) is covered by the existing performance
  * dashboard suite; here we only verify the presentation contract.
@@ -125,17 +127,18 @@ test.describe('CT7 compact performance filter bar', () => {
     for (const label of ['Accounts:', 'Period:', 'Unit:']) {
       await expect(page.getByText(label, { exact: true })).toHaveCount(0);
     }
-    await expect(page.getByLabel('Performance accounts')).toBeVisible();
+    // The retired page-local account selector is absent (M007/D037: the
+    // sidebar AccountProvider is the sole account owner).
+    await expect(page.getByLabel('Performance accounts')).toHaveCount(0);
+    await expect(page.locator('#perf-account-scope')).toHaveCount(0);
     await expect(page.getByLabel('Performance period')).toBeVisible();
     await expect(page.getByLabel('Performance filters')).toBeVisible();
     await expect(page.getByLabel('Performance unit')).toBeVisible();
-    // Selected state communicates scope: default shows All Accounts + YTD.
-    await expect(page.getByLabel('Performance accounts')).toContainText('All Accounts');
+    // Selected state communicates the default period.
     await expect(page.getByLabel('Performance period')).toContainText('YTD');
 
     // ── Control geometry: 34-36px height, single row, aligned tops ───────
     const controls = [
-      page.locator('#perf-account-scope'),
       page.locator('#perf-date-period'),
       page.getByTestId('filters-trigger'),
       page.getByLabel('Performance unit'),
@@ -156,7 +159,7 @@ test.describe('CT7 compact performance filter bar', () => {
 
     // ── Keyboard: controls are laid out left → right and tab in that order ─
     const xPositions = await page.evaluate(() => {
-      const ids = ['perf-account-scope', 'perf-date-period'];
+      const ids = ['perf-date-period'];
       return [
         ...ids.map((id) => document.getElementById(id)?.getBoundingClientRect().x ?? 0),
         (document.querySelector('[data-testid="filters-trigger"]') as HTMLElement | null)?.getBoundingClientRect().x ?? 0,
@@ -165,10 +168,8 @@ test.describe('CT7 compact performance filter bar', () => {
     });
     const sorted = [...xPositions].sort((a, b) => a - b);
     expect(xPositions).toEqual(sorted); // controls laid out left → right
-    // Tab from the account trigger lands on period → filters → unit ($).
-    await page.getByLabel('Performance accounts').focus();
-    await page.keyboard.press('Tab');
-    await expect(page.getByLabel('Performance period')).toBeFocused();
+    // Tab from the period trigger lands on filters → unit ($).
+    await page.getByLabel('Performance period').focus();
     await page.keyboard.press('Tab');
     await expect(page.getByLabel('Performance filters')).toBeFocused();
     await page.keyboard.press('Tab');
@@ -202,7 +203,7 @@ test.describe('CT7 compact performance filter bar', () => {
     await expect(page.locator('[data-kpi-card]').first()).toBeVisible({ timeout: 30_000 });
     const overflow1024 = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow1024).toBeLessThanOrEqual(1);
-    // Wrapped rows keep whole controls: the four control groups still each
+    // Wrapped rows keep whole controls: the three control groups still each
     // contain their full control (segmented unit never splits internally).
     await expect(page.getByLabel('Performance unit')).toBeVisible();
     await page.screenshot({ path: '/tmp/ct7-filter-bar-1024-dark.png' });

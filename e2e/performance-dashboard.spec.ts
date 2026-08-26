@@ -159,14 +159,21 @@ test.describe('/performance structure', () => {
     await gotoPerformance(page);
 
     // Compact analytical filter bar (CT7): the redundant visible form labels
-    // are gone; every control keeps an explicit accessible name.
+    // are gone; every control keeps an explicit accessible name. No local
+    // account selector exists — the sidebar AccountProvider is the sole
+    // account owner (M007/D037), so the retired control must be absent.
     await expect(page.getByText('Accounts:', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Period:', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Unit:', { exact: true })).toHaveCount(0);
-    await expect(page.getByLabel('Performance accounts')).toBeVisible();
+    await expect(page.getByLabel('Performance accounts')).toHaveCount(0);
+    await expect(page.locator('#perf-account-scope')).toHaveCount(0);
     await expect(page.getByLabel('Performance period')).toBeVisible();
     await expect(page.getByLabel('Performance filters')).toBeVisible();
     await expect(page.getByLabel('Performance unit')).toBeVisible();
+
+    // KPI row and chart grid remain present.
+    await expect(page.locator('section[aria-label="Performance KPI row"]')).toBeVisible();
+    await expect(page.locator('section[aria-label="Performance charts"]')).toBeVisible();
 
     // KPI cards by title.
     for (const title of KPI_TITLES) {
@@ -271,14 +278,67 @@ test.describe('saved dashboards', () => {
 // ────────────────────────────────────────────────────────────────────────────
 // T3: Deterministic filter propagation (S02)
 //
-// Proves that every global filter dimension (Account, Period, Direction, Setup,
-// Result, Symbol) pushes into the shared /api/performance/analytics query and
-// that every analytical widget reacts to the SAME response — no per-widget
-// independent fetching. Also proves unit toggles are client-side only and that
-// the mixed-currency safety warning still surfaces for multi-currency scopes.
+// Proves that every global filter dimension (Period, Direction, Setup, Result,
+// Symbol) pushes into the shared /api/performance/analytics query and that
+// every analytical widget reacts to the SAME response — no per-widget
+// independent fetching. Account scope is owned by the sidebar AccountProvider
+// (M007/D037): the initial request is already forced to the default global
+// account and no page-local account selector exists. Also proves unit toggles
+// are client-side only and that no mixed-currency warning can surface under
+// the USD-only, single-global-account model.
 // ────────────────────────────────────────────────────────────────────────────
 
 const PROP = Date.now().toString(36);
+
+/**
+ * Select an account through the sidebar global account selector (M007/D037).
+ * The application-wide sidebar control is the sole account-selection owner for
+ * /performance; Performance renders no account selector of its own. Matches
+ * the anchored + listbox-scoped pattern used by the other e2e suites.
+ */
+async function selectGlobalAccount(page: Page, name: string) {
+  await expect(page.getByTestId('sidebar-account-trigger')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('sidebar-account-trigger').click();
+  await page
+    .getByRole('listbox')
+    .getByRole('option', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) })
+    .click();
+}
+
+/**
+ * Seed two current-dated accounts for the global account-switch proof.
+ *
+ * Unlike the backdated propagation fixture (whose historical executedAt dates
+ * hit the A2/A2.1 equity-at-open rejection when the opening balance is posted
+ * at initialize-time), every trade here is executed WITHOUT an executedAt
+ * override, so the fills land at the current timestamp and the canonical
+ * equity projection is positive at execution time. 2 closed trades on A,
+ * 1 on B → the analytics tradeCount distinguishes the two scopes.
+ *
+ * Account B is created FIRST so the default global account (newest first =
+ * accounts[0] from GET /api/accounts desc(createdAt)) is account A.
+ */
+async function seedSwitchFixture(page: Page, tag = `SW${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`) {
+  const accountB = await seedAccount(page, `SwitchB-${tag}`, 'USD');
+  const accountA = await seedAccount(page, `SwitchA-${tag}`, 'USD');
+
+  const closeTrade = async (accountId: string, symbol: string) => {
+    const tr = await page.request.post('/api/trades', {
+      data: { symbol, direction: 'long', accountId },
+    });
+    expect(tr.ok()).toBeTruthy();
+    const trade = (await tr.json()) as { id: string };
+    const exec = await page.request.post(`/api/trades/${trade.id}/execute`, {
+      data: { entryPrice: 50, entryQuantity: 10, exit1Price: 55, exit1Quantity: 10, fees: 2 },
+    });
+    expect(exec.ok()).toBeTruthy();
+  };
+
+  await closeTrade(accountA.id, `SWA1${tag}`);
+  await closeTrade(accountA.id, `SWA2${tag}`);
+  await closeTrade(accountB.id, `SWB1${tag}`);
+  return { accountA, accountB };
+}
 
 interface SeededTradeSpec {
   account: 'A' | 'B';
@@ -362,11 +422,11 @@ async function seedTrade(page: Page, accountId: string, spec: SeededTradeSpec) {
  *  T5  A  long  beta   loss  2026-06-10  -55  -2.75R
  *  T6  A  long  alpha  loss  2026-07-01  -55  -2.75R
  *
- * Every drive in the sequence (All→A, Whole→YTD, All→Long, All→alpha,
- * All→Winner) changes the trade set {6,5,4,3,2,1}, so each changes at least
- * one KPI and the monthly chart slice.
+ * Every drive in the sequence (Whole→YTD, All→Long, All→alpha, All→Winner)
+ * changes the trade set {6,5,4,3,2,1} under the global account-A scope, so
+ * each changes at least one KPI and the monthly chart slice.
  *
- * Account B is created FIRST so the account picker default (newest first =
+ * Account B is created FIRST so the default global account (newest first =
  * accounts[0] from GET /api/accounts desc(createdAt)) is account A.
  */
 async function seedPropagationFixture(page: Page, tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`) {
@@ -555,18 +615,13 @@ test.describe('filter propagation (T3)', () => {
     await gotoPerformance(page);
     await waitForInitialAnalytics(page, analytics);
 
-    // ── 1. Account: All → A ────────────────────────────────────────────
-    // accounts[0] is the newest account (desc createdAt) = account A, so
-    // switching to Single Account immediately targets A (no extra fetch).
-    await driveDimension(
-      page,
-      analytics,
-      async () => {
-        await page.locator('#perf-account-scope').click();
-        await page.getByRole('option', { name: 'Single Account' }).click();
-      },
-      `accountScope=single&accountIds=${accountA.id}`,
-    );
+    // ── 1. Account scope: the sidebar global account is the sole owner ──
+    // The default global account (newest active, desc createdAt) is account
+    // A, so the initial analytics request is already scoped to it — there is
+    // no page-local selector to drive (M007/D037) and never accountScope=all.
+    const firstUrl = analytics.analyticsRequests[0];
+    expect(firstUrl).toContain(`accountScope=single&accountIds=${accountA.id}`);
+    expect(firstUrl).not.toContain('accountScope=all');
 
     // ── 2. Period: Whole period → YTD ──────────────────────────────────
     // The default filter preset is already 'YTD' (with no date bound, so it
@@ -693,32 +748,67 @@ test.describe('filter propagation (T3)', () => {
     await expect(page.locator('[data-kpi-value="payoff-ratio"]')).toHaveText(/\d+/);
   });
 
-  test('no mixed-currency warning surfaces when all accounts are USD (USD-only contract)', async ({ page }) => {
+  test('no mixed-currency warning surfaces under the global USD account model', async ({ page }) => {
     const analytics = observeAnalytics(page);
     // USD-only contract (A1): the API rejects non-USD creation, so every
     // account is USD and the mixed-currency warning must never appear.
-    await seedAccount(page, `MixB-${PROP}`, 'USD');
-    await seedAccount(page, `MixA-${PROP}`, 'USD');
+    const mixB = await seedAccount(page, `MixB-${PROP}`, 'USD');
+    const mixA = await seedAccount(page, `MixA-${PROP}`, 'USD');
     await gotoPerformance(page);
     await waitForInitialAnalytics(page, analytics);
 
-    // All-accounts scope never shows the warning.
+    // The retired Performance-local multi-account mode is gone (M007/D037):
+    // no page-local account selector, no single/multi pickers, and no
+    // mixed-currency warning anywhere under the single-global-account model.
+    await expect(page.getByLabel('Performance accounts')).toHaveCount(0);
+    await expect(page.locator('#perf-account-scope')).toHaveCount(0);
+    await expect(page.getByTestId('account-single-select')).toHaveCount(0);
+    await expect(page.getByTestId('account-multi-select')).toHaveCount(0);
     await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
 
-    // Multiple mode starts with the newest account only (single currency).
-    await page.locator('#perf-account-scope').click();
-    await page.getByRole('option', { name: 'Multiple Accounts' }).click();
-    const multi = page.getByTestId('account-multi-select');
-    await expect(multi).toBeVisible();
-    await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
+    // Switching globally between the two USD accounts (real sidebar control)
+    // keeps the warning absent on the single-account analytical scope.
+    for (const account of [mixB, mixA]) {
+      await selectGlobalAccount(page, account.name);
+      await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
+    }
+  });
+});
 
-    // Selecting both USD accounts still never shows the warning.
-    await multi.getByRole('checkbox', { name: `MixB-${PROP}` }).check();
-    await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
+test.describe('global account scope (M007/D037)', () => {
+  test('sidebar account switch A → B drives a scoped Performance refetch without a reload', async ({ page }) => {
+    const analytics = observeAnalytics(page);
+    const { accountA, accountB } = await seedSwitchFixture(page);
+    await gotoPerformance(page);
+    await waitForInitialAnalytics(page, analytics);
 
-    // Untick → single currency, still no warning.
-    await multi.getByRole('checkbox', { name: `MixB-${PROP}` }).uncheck();
-    await expect(page.getByTestId('mixed-currency-warning')).toHaveCount(0);
+    // The initial request is already scoped to the default global account
+    // (the newest active account = A) — never accountScope=all.
+    const initialUrl = analytics.analyticsRequests[0];
+    expect(initialUrl).toContain(`accountScope=single&accountIds=${accountA.id}`);
+    expect(initialUrl).not.toContain('accountScope=all');
+    const initialBody = analytics.lastBody();
+    expect(initialBody?.metadata?.accountCount).toBe(1);
+    expect(initialBody?.metadata?.tradeCount).toBe(2);
+
+    // Switch the application-wide (sidebar) account to B.
+    const beforeResponses = analytics.analyticsResponses.length;
+    await selectGlobalAccount(page, accountB.name);
+
+    // A new analytics request fires scoped to B — no page reload required.
+    await expect.poll(() => analytics.analyticsResponses.length).toBeGreaterThan(beforeResponses);
+    const lastUrl = analytics.analyticsRequests[analytics.analyticsRequests.length - 1];
+    expect(lastUrl).toContain(`accountScope=single&accountIds=${accountB.id}`);
+    expect(lastUrl).not.toContain('accountScope=all');
+
+    // No request in the session ever broadens to All Accounts.
+    expect(analytics.analyticsRequests.every((u) => !u.includes('accountScope=all'))).toBeTruthy();
+
+    // Performance reflects the newly selected account (B's single trade)
+    // while staying on /performance.
+    await expect(page).toHaveURL(/\/performance$/);
+    await expect.poll(() => analytics.lastBody()?.metadata?.tradeCount).toBe(1);
+    await expect(page.getByTestId('sidebar-account-trigger')).toContainText(accountB.name);
   });
 });
 
@@ -1577,10 +1667,9 @@ async function scrollMainToBottom(page: Page) {
   await page.waitForTimeout(300);
 }
 
-/** The five filter-bar control locators (density + alignment targets). */
+/** The filter-bar control locators (density + alignment targets). */
 function filterBarControls(page: Page) {
   return [
-    { name: 'account-scope', loc: page.locator('#perf-account-scope') },
     { name: 'date-period', loc: page.locator('#perf-date-period') },
     { name: 'filters', loc: page.getByTestId('filters-trigger') },
     { name: 'unit', loc: page.locator('[aria-label="Performance unit"]') },
@@ -1623,7 +1712,7 @@ async function walkChecklist(
 
   // 2. Page hierarchy: toolbar → filter bar → KPI rail → charts
   const toolbarBox = await page.getByRole('button', { name: /Customize/ }).boundingBox();
-  const filterLabel = await page.locator('#perf-account-scope').boundingBox();
+  const filterLabel = await page.locator('#perf-date-period').boundingBox();
   const kpiSection = await page.locator('section[aria-label="Performance KPI row"]').boundingBox();
   const chartsSection = await page.locator('section[aria-label="Performance charts"]').boundingBox();
   if (toolbarBox && filterLabel && kpiSection && chartsSection && toolbarBox.y < filterLabel.y && filterLabel.y < kpiSection.y && kpiSection.y < chartsSection.y) {
@@ -1639,9 +1728,9 @@ async function walkChecklist(
     if (b) ctrlBoxes.push({ name, top: b.y, height: b.height });
   }
   const ctrlRows = clusterRows(ctrlBoxes);
-  const heightOk = ctrlBoxes.length === 4 && ctrlBoxes.every((c) => Math.abs(c.height - 36) <= 1.5);
+  const heightOk = ctrlBoxes.length === 3 && ctrlBoxes.every((c) => Math.abs(c.height - 36) <= 1.5);
   const topsOk = ctrlRows.every((row) => Math.max(...row.map((c) => c.top)) - Math.min(...row.map((c) => c.top)) <= 1.5);
-  if (ctrlBoxes.length === 4 && heightOk && topsOk) {
+  if (ctrlBoxes.length === 3 && heightOk && topsOk) {
     rec('filter-bar density', 'PASS', `controls=${ctrlBoxes.map((c) => `${c.name}:${Math.round(c.height)}px`).join(', ')} rows=${ctrlRows.length}`);
   } else {
     fail('filter-bar density', `controls=${ctrlBoxes.map((c) => `${c.name}:${Math.round(c.height)}px@y${Math.round(c.top)}`).join(', ') || 'missing'} rows=${ctrlRows.length}`);
