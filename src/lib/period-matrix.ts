@@ -15,6 +15,13 @@
 
 import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 import { computeWinRate as computeMetricsWinRate, averageRMultiples } from './metrics';
+import {
+  instantToLocalDateKey,
+  addLocalDays,
+  getLocalDayOfWeek,
+  getLocalISOMonday,
+  getISOWeekNumber,
+} from './timezone';
 
 // ── Period Types ────────────────────────────────────────────────────────
 
@@ -137,93 +144,106 @@ export interface PeriodMatrixResult {
 // ── Internal: Period Boundary Helpers ───────────────────────────────────
 
 /**
- * Format a Date as YYYY-MM-DD string.
+ * Normalize an input date to a LOCAL calendar date key (YYYY-MM-DD).
+ *
+ * - Full ISO timestamps (containing 'T') are converted from the instant
+ *   using the configured IANA timezone (D8: never the UTC calendar day).
+ * - Already-normalized YYYY-MM-DD keys are used as-is (intentional local
+ *   calendar dates are never re-shifted).
  */
-function formatDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function toLocalDateKey(dateStr: string, timezone: string): string {
+  if (dateStr.includes('T')) {
+    return instantToLocalDateKey(dateStr, timezone);
+  }
+  const key = dateStr.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    throw new Error(`Invalid date string: ${JSON.stringify(dateStr)}`);
+  }
+  return key;
 }
 
 /**
- * Get the Monday of the ISO week containing the given date.
- *
- * ISO weeks start on Monday.  JavaScript getDay() returns 0 for Sunday,
- * 1 for Monday, ..., 6 for Saturday.  We adjust Sunday (day=0) to use
- * the previous Monday (day - 6 = -6 → setDate(date.getDate() - 6)).
+ * Last calendar day of the month containing the given local date key.
  */
-function getISOMonday(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
+function lastDayOfMonth(dateKey: string): string {
+  const y = Number(dateKey.slice(0, 4));
+  const m = Number(dateKey.slice(5, 7));
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
 }
 
 /**
- * Get the ISO week number for a given date (1-53).
- *
- * Follows ISO 8601: the week containing the first Thursday of the year
- * is week 1.
+ * Add N months to a local date key (clamped to month length).
  */
-function getISOWeekNumber(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7; // Sunday -> 7
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+function addMonths(dateKey: string, months: number): string {
+  const y = Number(dateKey.slice(0, 4));
+  const m = Number(dateKey.slice(5, 7));
+  const day = Number(dateKey.slice(8, 10));
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const ty = target.getUTCFullYear();
+  const tm = target.getUTCMonth() + 1;
+  const last = new Date(Date.UTC(ty, tm, 0)).getUTCDate();
+  const td = Math.min(day, last);
+  return `${ty}-${String(tm).padStart(2, '0')}-${String(td).padStart(2, '0')}`;
 }
 
 /**
  * Determine the period descriptor (periodId, label, startDate, endDate)
- * for the period of the given type that CONTAINS the given date.
+ * for the period of the given type that CONTAINS the given local date.
+ *
+ * All boundaries derive from the LOCAL calendar date key in the configured
+ * IANA timezone (D8): week starts are local Mondays, months are local
+ * calendar months, quarters are local calendar quarters. No machine-timezone
+ * Date methods are used for attribution.
  *
  * @param dateStr Date string in ISO format (YYYY-MM-DD or full timestamp)
  * @param type    Period comparison type
+ * @param timezone IANA timezone controlling calendar attribution
  * @returns PeriodDescriptor describing the containing period
  */
-export function getPeriodFromDate(dateStr: string, type: PeriodComparisonType): PeriodDescriptor {
-  const date = new Date(dateStr.slice(0, 10) + 'T00:00:00');
-  const year = date.getFullYear();
+export function getPeriodFromDate(
+  dateStr: string,
+  type: PeriodComparisonType,
+  timezone: string,
+): PeriodDescriptor {
+  const key = toLocalDateKey(dateStr, timezone);
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
 
   switch (type) {
     case 'wow': {
-      const monday = getISOMonday(date);
-      const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
-      const weekNum = getISOWeekNumber(date);
+      const monday = getLocalISOMonday(key);
+      const sunday = addLocalDays(monday, 6);
+      const weekNum = getISOWeekNumber(key);
       return {
         periodId: `${year}-W${String(weekNum).padStart(2, '0')}`,
         periodLabel: `Week ${weekNum}`,
-        startDate: formatDate(monday),
-        endDate: formatDate(sunday),
+        startDate: monday,
+        endDate: sunday,
       };
     }
     case 'mom': {
-      const month = date.getMonth(); // 0-indexed
-      const first = new Date(year, month, 1);
-      const last = new Date(year, month + 1, 0); // Day 0 of next month = last day
-      const monthStr = String(month + 1).padStart(2, '0');
-      const monthLabel = date.toLocaleString('en-US', { month: 'short' });
+      const first = `${year}-${String(month).padStart(2, '0')}-01`;
+      const monthStr = String(month).padStart(2, '0');
+      const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
       return {
         periodId: `${year}-${monthStr}`,
         periodLabel: `${monthLabel} ${year}`,
-        startDate: formatDate(first),
-        endDate: formatDate(last),
+        startDate: first,
+        endDate: lastDayOfMonth(first),
       };
     }
     case 'qoq': {
-      const quarter = Math.floor(date.getMonth() / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
-      const firstMonth = quarter * 3; // 0, 3, 6, 9
-      const first = new Date(year, firstMonth, 1);
-      const last = new Date(year, firstMonth + 3, 0); // Last day of quarter's last month
+      const quarter = Math.floor((month - 1) / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
+      const firstMonth = quarter * 3 + 1; // 1, 4, 7, 10
+      const first = `${year}-${String(firstMonth).padStart(2, '0')}-01`;
+      const lastMonth = firstMonth + 2;
+      const last = lastDayOfMonth(`${year}-${String(lastMonth).padStart(2, '0')}-01`);
       return {
         periodId: `${year}-Q${quarter + 1}`,
         periodLabel: `Q${quarter + 1} ${year}`,
-        startDate: formatDate(first),
-        endDate: formatDate(last),
+        startDate: first,
+        endDate: last,
       };
     }
   }
@@ -245,12 +265,13 @@ export function generatePriorPeriods(
   referenceDateStr: string,
   type: PeriodComparisonType,
   count: number,
+  timezone: string,
 ): PeriodDescriptor[] {
-  const reference = getPeriodFromDate(referenceDateStr, type);
+  const reference = getPeriodFromDate(referenceDateStr, type, timezone);
   const periods: PeriodDescriptor[] = [reference];
 
   for (let i = 1; i < count; i++) {
-    const prev = getPreviousPeriod(periods[0], type);
+    const prev = getPreviousPeriod(periods[0], type, timezone);
     periods.unshift(prev);
   }
 
@@ -261,29 +282,26 @@ export function generatePriorPeriods(
  * Get the period descriptor for the period immediately preceding the
  * given period.
  */
-function getPreviousPeriod(period: PeriodDescriptor, type: PeriodComparisonType): PeriodDescriptor {
-  const startDate = new Date(period.startDate + 'T00:00:00');
-
+function getPreviousPeriod(
+  period: PeriodDescriptor,
+  type: PeriodComparisonType,
+  timezone: string,
+): PeriodDescriptor {
   switch (type) {
     case 'wow': {
       // Go back 7 days from the start of this period to get the previous Monday
-      const prevMonday = new Date(startDate);
-      prevMonday.setDate(startDate.getDate() - 7);
-      return getPeriodFromDate(formatDate(prevMonday), 'wow');
+      const prevMonday = addLocalDays(period.startDate, -7);
+      return getPeriodFromDate(prevMonday, 'wow', timezone);
     }
     case 'mom': {
       // Go to the 1st of the previous month
-      const prevMonth = startDate.getMonth() - 1;
-      const year = prevMonth < 0 ? startDate.getFullYear() - 1 : startDate.getFullYear();
-      const month = prevMonth < 0 ? 11 : prevMonth;
-      const midOfPrevMonth = new Date(year, month, 15);
-      return getPeriodFromDate(formatDate(midOfPrevMonth), 'mom');
+      const prevMonthStart = addMonths(`${period.startDate.slice(0, 8)}01`, -1);
+      return getPeriodFromDate(prevMonthStart, 'mom', timezone);
     }
     case 'qoq': {
       // Go back 3 months
-      const prevQuarterStart = new Date(startDate);
-      prevQuarterStart.setMonth(startDate.getMonth() - 3);
-      return getPeriodFromDate(formatDate(prevQuarterStart), 'qoq');
+      const prevQuarterStart = addMonths(`${period.startDate.slice(0, 8)}01`, -3);
+      return getPeriodFromDate(prevQuarterStart, 'qoq', timezone);
     }
   }
 }
@@ -303,6 +321,7 @@ function getPreviousPeriod(period: PeriodDescriptor, type: PeriodComparisonType)
 function assignTradesToPeriods(
   trades: PeriodMatrixTradeInput[],
   periods: PeriodDescriptor[],
+  timezone: string,
 ): Map<string, PeriodMatrixTradeInput[]> {
   const map = new Map<string, PeriodMatrixTradeInput[]>();
 
@@ -312,7 +331,13 @@ function assignTradesToPeriods(
 
   for (const trade of trades) {
     if (!trade.closedAt) continue;
-    const tradeDate = trade.closedAt.slice(0, 10);
+    let tradeDate: string;
+    try {
+      tradeDate = instantToLocalDateKey(trade.closedAt, timezone); // local YYYY-MM-DD
+    } catch {
+      // Malformed timestamp — skip deterministically, never fabricate a bucket.
+      continue;
+    }
 
     for (const p of periods) {
       if (tradeDate >= p.startDate && tradeDate <= p.endDate) {
@@ -436,12 +461,14 @@ function computeDelta(current: PeriodMetrics, previous: PeriodMetrics): PeriodDe
  *
  * @param trades     Closed trades with pre-fetched executions and risk data
  * @param type       Period comparison type (wow, mom, or qoq)
+ * @param timezone   IANA timezone controlling calendar attribution (D8)
  * @param maxPeriods Maximum number of periods to include (default 4, minimum 2)
  * @returns PeriodMatrixResult with comparison rows
  */
 export function computePeriodMatrix(
   trades: PeriodMatrixTradeInput[],
   type: PeriodComparisonType,
+  timezone: string,
   maxPeriods = 4,
 ): PeriodMatrixResult {
   // Find the latest trade date to anchor period generation
@@ -463,10 +490,10 @@ export function computePeriodMatrix(
   const latestDate = sorted[0].closedAt as string;
 
   // Generate period descriptors
-  const periods = generatePriorPeriods(latestDate, type, maxPeriodsClamped);
+  const periods = generatePriorPeriods(latestDate, type, maxPeriodsClamped, timezone);
 
   // Assign trades to periods
-  const assigned = assignTradesToPeriods(trades, periods);
+  const assigned = assignTradesToPeriods(trades, periods, timezone);
 
   // Compute metrics per period
   const metricsMap = new Map<string, PeriodMetrics>();

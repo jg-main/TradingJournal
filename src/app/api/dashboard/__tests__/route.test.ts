@@ -44,6 +44,7 @@ import { computeCalendarHeatmap, type CalendarHeatmapTradeInput, type CalendarHe
 import { computePeriodMatrix, type PeriodMatrixTradeInput, type PeriodMatrixResult } from '@/lib/period-matrix';
 import { computeSetupPerformance, type SetupPerfTradeInput } from '@/lib/review-dashboard';
 import { computeAttentionInsights, type AttentionInsightTradeInput, type AttentionInsightsResult } from '@/lib/attention-insights';
+import { instantToLocalDateKey } from '@/lib/timezone';
 
 let passed = 0;
 let failed = 0;
@@ -326,12 +327,20 @@ function doGetDashboard(
     // 2. Separate closed trades
     const closedTrades = allTrades.filter((t) => t.status === 'closed');
 
-    // Apply date filter to closed trades (matches route.ts logic)
+    // Apply date filter to closed trades (matches route.ts logic —
+    // attribution uses the LOCAL calendar date in the configured
+    // app timezone; no profile is seeded, so the fallback is America/Bogota)
+    const TEST_DASHBOARD_TZ = 'America/Bogota';
     const dateFilteredClosedTrades =
       dateFrom || dateTo
         ? closedTrades.filter((t) => {
             if (!t.closedAt) return false;
-            const closedDate = t.closedAt.slice(0, 10);
+            let closedDate: string;
+            try {
+              closedDate = instantToLocalDateKey(t.closedAt, TEST_DASHBOARD_TZ);
+            } catch {
+              return false;
+            }
             if (dateFrom && closedDate < dateFrom) return false;
             if (dateTo && closedDate > dateTo) return false;
             return true;
@@ -589,7 +598,7 @@ function doGetDashboard(
       : computedKpis;
 
     // 9. Compute monthly performance, R distribution, and directional performance
-    const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
+    const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs, TEST_DASHBOARD_TZ);
     const rDistribution = computeRDistribution(closedKpiInputs);
     const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
     const processScoreDistribution = computeProcessScoreDistribution(closedKpiInputs);
@@ -610,11 +619,11 @@ function doGetDashboard(
       closedAt: input.closedAt,
     }));
 
-    const calendarHeatmap = computeCalendarHeatmap(heatmapInputs);
+    const calendarHeatmap = computeCalendarHeatmap(heatmapInputs, TEST_DASHBOARD_TZ);
     const periodMatrix = {
-      wow: computePeriodMatrix(periodInputs, 'wow'),
-      mom: computePeriodMatrix(periodInputs, 'mom'),
-      qoq: computePeriodMatrix(periodInputs, 'qoq'),
+      wow: computePeriodMatrix(periodInputs, 'wow', TEST_DASHBOARD_TZ),
+      mom: computePeriodMatrix(periodInputs, 'mom', TEST_DASHBOARD_TZ),
+      qoq: computePeriodMatrix(periodInputs, 'qoq', TEST_DASHBOARD_TZ),
     };
 
     // Compute setup ranking (matching route.ts step 12)
@@ -674,7 +683,7 @@ function doGetDashboard(
       setupId: trade.setupId as string | null,
     }));
 
-    const attentionInsights = computeAttentionInsights(insightInputs);
+    const attentionInsights = computeAttentionInsights(insightInputs, TEST_DASHBOARD_TZ);
 
     return { status: 200, body: { kpis, mtm, equityCurve, drawdown, monthlyPerformance, rDistribution, directionalPerformance, processScoreDistribution, calendarHeatmap, periodMatrix, setupRanking, attentionInsights } };
   } catch (error) {
@@ -2325,6 +2334,35 @@ cleanup();
   // t1 P&L = (120-100)*100 - 10 = 1990, t2 P&L = (190-200)*50 - 6 = -506
   // Combined = 1990 + (-506) = 1484
   assertClose(result.body.calendarHeatmap![0].days[0].pnl, 1484, 'Combined daily P&L = 1990 + (-506) = 1484');
+}
+
+// ── Test NN: D8 — date filter attributes by LOCAL calendar date (Bogotá) ─
+cleanup();
+{
+  const accountId = seedAccount();
+  seedSetting({ defaultAccountId: accountId });
+
+  // 2026-03-10T00:30:00Z = 2026-03-09 19:30 in America/Bogota (configured fallback
+  // when no app_profile row exists — mirrors getConfiguredTimezone).
+  const t1 = seedTrade(accountId, {
+    symbol: 'D8-TZ',
+    direction: 'long',
+    status: 'closed',
+    closedAt: '2026-03-10T00:30:00.000Z',
+  });
+  seedExecution(t1, { action: 'buy', quantity: 10, price: 100, fees: 2 });
+  seedExecution(t1, { action: 'sell', quantity: 10, price: 110, fees: 2 });
+
+  seedRollforward(accountId, { endingEquity: 52000 });
+
+  // Filter for the LOCAL day 2026-03-09 — the trade must be included.
+  const localDay = doGetDashboard(accountId, '2026-03-09', '2026-03-09');
+  assertClose(localDay.body.kpis!.netPnl, 96, 'netPnl = 96 — trade attributed to local day 2026-03-09');
+  assert(localDay.body.calendarHeatmap![0].days.some((d) => d.date === '2026-03-09'), 'heatmap bucket = 2026-03-09 (local)');
+
+  // The UTC day 2026-03-10 must NOT include it (Bogotá local date is 03-09).
+  const utcDay = doGetDashboard(accountId, '2026-03-10', '2026-03-10');
+  assertClose(utcDay.body.kpis!.netPnl, 0, 'netPnl = 0 — UTC day 2026-03-10 excludes the trade');
 }
 
 // ── Test NN: calendarHeatmap with trades on different dates --------

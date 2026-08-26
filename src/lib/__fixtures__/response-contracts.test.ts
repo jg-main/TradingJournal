@@ -87,6 +87,8 @@ import {
   type PeriodMatrixResult,
 } from '../period-matrix';
 import { computeAttentionInsights, type AttentionInsightTradeInput, type AttentionInsight } from '../attention-insights';
+// D8: tests must explicitly state the timezone controlling attribution.
+const RESPONSE_CONTRACT_TZ = 'UTC';
 
 /* ── Assertion helpers ──────────────────────────────────────────────── */
 
@@ -255,7 +257,7 @@ section('API 1: Dashboard');
   const mtm = computeMarkToMarketSummary([
     { executions: trade3Open, direction: 'long', currentPrice: 82 },
   ]);
-  const monthlyPerformance = computeMonthlyPerformance(closedInputs);
+  const monthlyPerformance = computeMonthlyPerformance(closedInputs, RESPONSE_CONTRACT_TZ);
   const rDistribution = computeRDistribution(closedInputs);
   const directionalPerformance = computeDirectionalPerformance(closedInputs);
   const processScoreDistribution = computeProcessScoreDistribution(closedInputs);
@@ -275,11 +277,11 @@ section('API 1: Dashboard');
     closedAt: t.closedAt,
   }));
 
-  const calendarHeatmap = computeCalendarHeatmap(heatmapInputs);
+  const calendarHeatmap = computeCalendarHeatmap(heatmapInputs, RESPONSE_CONTRACT_TZ);
   const periodMatrix = {
-    wow: computePeriodMatrix(periodInputs, 'wow'),
-    mom: computePeriodMatrix(periodInputs, 'mom'),
-    qoq: computePeriodMatrix(periodInputs, 'qoq'),
+    wow: computePeriodMatrix(periodInputs, 'wow', RESPONSE_CONTRACT_TZ),
+    mom: computePeriodMatrix(periodInputs, 'mom', RESPONSE_CONTRACT_TZ),
+    qoq: computePeriodMatrix(periodInputs, 'qoq', RESPONSE_CONTRACT_TZ),
   };
 
   // Compute setup ranking and attention insights (matching route.ts)
@@ -303,7 +305,7 @@ section('API 1: Dashboard');
     closedAt: t.closedAt,
     setupId: null,
   }));
-  const attentionInsightsResult = computeAttentionInsights(insightInputs);
+  const attentionInsightsResult = computeAttentionInsights(insightInputs, RESPONSE_CONTRACT_TZ);
 
   // ── Construct the dashboard response object ────────────────────
   const dashboardResponse = {

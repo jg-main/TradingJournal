@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { trades, tradeExecutions, tradeGrades, tradeRiskSnapshots, weeklyReviews } from '@/db/schema';
-import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, gte, lt, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { computeWeeklyMetrics, type WeekReviewTradeInput } from '@/lib/weekly-review';
+import { getConfiguredTimezone } from '@/lib/app-profile-server';
+import { addLocalDays, localDateStartToUtc } from '@/lib/timezone';
 
 const generateSchema = z.object({
   weekStart: z.string().trim().min(1, 'weekStart is required'),
@@ -55,21 +57,23 @@ export async function POST(request: NextRequest) {
 
     const { weekStart: rawWeekStart, accountId } = parsed.data;
 
-    // Compute weekStart (Monday) ISO date and weekEnd (Sunday) ISO date
-    const startDate = new Date(rawWeekStart);
-    startDate.setUTCHours(0, 0, 0, 0);
+    // D8: the trader's week is defined by LOCAL calendar boundaries in the
+    // configured app timezone — Monday 00:00 local through next Monday
+    // 00:00 local. The DB query compares absolute timestamps against the
+    // UTC instants corresponding to those LOCAL boundaries (half-open:
+    // >= startUtc, < endExclusiveUtc), so DST and offset changes are
+    // handled correctly.
+    const timezone = getConfiguredTimezone();
+    const weekStartKey = rawWeekStart; // local Monday YYYY-MM-DD
+    const weekEndKey = addLocalDays(weekStartKey, 6); // local Sunday YYYY-MM-DD
 
-    const endDate = new Date(startDate);
-    endDate.setUTCDate(endDate.getUTCDate() + 6);
-    endDate.setUTCHours(23, 59, 59, 999);
+    const weekStartISO = localDateStartToUtc(weekStartKey, timezone);
+    const weekEndISO = localDateStartToUtc(addLocalDays(weekStartKey, 7), timezone);
 
-    const weekStart = startDate.toISOString().split('T')[0];
-    const weekEnd = endDate.toISOString().split('T')[0];
+    const weekStart = weekStartKey;
+    const weekEnd = weekEndKey;
 
-    const weekStartISO = startDate.toISOString();
-    const weekEndISO = endDate.toISOString();
-
-    // Fetch closed trades in range for this account
+    // Fetch closed trades in [local Monday 00:00, next local Monday 00:00)
     const closedTrades = db
       .select()
       .from(trades)
@@ -78,7 +82,7 @@ export async function POST(request: NextRequest) {
           eq(trades.accountId, accountId),
           eq(trades.status, 'closed'),
           gte(trades.closedAt, weekStartISO),
-          lte(trades.closedAt, weekEndISO),
+          lt(trades.closedAt, weekEndISO),
         ),
       )
       .all();

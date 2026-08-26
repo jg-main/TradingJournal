@@ -11,6 +11,7 @@
  */
 
 import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
+import { instantToLocalDateKey } from './timezone';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -88,16 +89,31 @@ export interface CalendarHeatmapStats {
  * (oldest date first).  Multiple trades closing on the same date have
  * their P&L summed.
  *
+ * Attribution uses the LOCAL calendar date in the given IANA timezone
+ * (D8): an instant near local midnight maps to the user's calendar day,
+ * not the UTC calendar day. Trades with null or malformed closedAt are
+ * skipped deterministically.
+ *
  * @param trades Closed trades with pre-fetched executions
+ * @param timezone IANA timezone controlling calendar attribution
  * @returns Daily P&L aggregates, sorted by date ascending
  */
-export function aggregateDailyPnL(trades: CalendarHeatmapTradeInput[]): CalendarHeatmapDay[] {
+export function aggregateDailyPnL(
+  trades: CalendarHeatmapTradeInput[],
+  timezone: string,
+): CalendarHeatmapDay[] {
   const dailyMap = new Map<string, number>();
 
   for (const trade of trades) {
     if (!trade.closedAt) continue;
 
-    const dateKey = trade.closedAt.slice(0, 10); // YYYY-MM-DD
+    let dateKey: string;
+    try {
+      dateKey = instantToLocalDateKey(trade.closedAt, timezone); // local YYYY-MM-DD
+    } catch {
+      // Malformed timestamp — skip deterministically, never fabricate a bucket.
+      continue;
+    }
     const metrics = computeTradeMetrics({
       executions: trade.executions,
       direction: trade.direction,
@@ -147,10 +163,14 @@ export function groupByYear(days: CalendarHeatmapDay[]): CalendarHeatmapYearData
  * by year in one call.
  *
  * @param trades Closed trades with pre-fetched executions
+ * @param timezone IANA timezone controlling calendar attribution
  * @returns Year-grouped daily P&L data, sorted by year ascending
  */
-export function computeCalendarHeatmap(trades: CalendarHeatmapTradeInput[]): CalendarHeatmapYearData[] {
-  const dailyPnL = aggregateDailyPnL(trades);
+export function computeCalendarHeatmap(
+  trades: CalendarHeatmapTradeInput[],
+  timezone: string,
+): CalendarHeatmapYearData[] {
+  const dailyPnL = aggregateDailyPnL(trades, timezone);
   return groupByYear(dailyPnL);
 }
 
@@ -176,11 +196,15 @@ export function toEChartsCalendarData(yearData: CalendarHeatmapYearData): Calend
  * the ECharts visualMap range and tooltip text.
  *
  * @param trades Closed trades with pre-fetched executions
+ * @param timezone IANA timezone controlling calendar attribution
  * @returns Summary statistics (all fields set; minPnl/maxPnl are null for empty input)
  */
-export function computeCalendarHeatmapStats(trades: CalendarHeatmapTradeInput[]): CalendarHeatmapStats {
+export function computeCalendarHeatmapStats(
+  trades: CalendarHeatmapTradeInput[],
+  timezone: string,
+): CalendarHeatmapStats {
   const totalTrades = trades.filter((t) => t.closedAt !== null).length;
-  const daily = aggregateDailyPnL(trades);
+  const daily = aggregateDailyPnL(trades, timezone);
 
   if (daily.length === 0) {
     return { minPnl: null, maxPnl: null, totalDays: 0, totalTrades };

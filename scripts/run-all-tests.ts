@@ -100,6 +100,7 @@ const TSX_TESTS: string[] = [
   'src/lib/export-csv.test.ts',
   'src/lib/grading.test.ts',
   'src/lib/period-matrix.test.ts',
+  'src/lib/timezone.test.ts',
   'src/lib/trade-metrics.test.ts',
   'scripts/__tests__/m020-evidence-isolation.test.ts',
   'scripts/recovery-drill.ts',

@@ -36,6 +36,8 @@ import { computeCalendarHeatmap, type CalendarHeatmapTradeInput } from '@/lib/ca
 import { computePeriodMatrix, type PeriodMatrixTradeInput } from '@/lib/period-matrix';
 import { computeSetupPerformance, type SetupPerfTradeInput } from '@/lib/review-dashboard';
 import { computeAttentionInsights, type AttentionInsightTradeInput } from '@/lib/attention-insights';
+import { getConfiguredTimezone } from '@/lib/app-profile-server';
+import { instantToLocalDateKey } from '@/lib/timezone';
 
 /**
  * Chunk an array of IDs into batches of CHUNK_SIZE and run a query for each chunk,
@@ -118,12 +120,23 @@ export async function GET(request: NextRequest) {
     // 2. Separate closed trades from non-closed trades
     const closedTrades = allTrades.filter((t) => t.status === 'closed');
 
+    // Resolve the configured analytical timezone once per request (D8).
+    // app_profile.timezone is authoritative; UTC is never used as the
+    // user's analytical calendar.
+    const timezone = getConfiguredTimezone();
+
     // Apply date filter to closed trades (scope P&L metrics to date range)
+    // Attribution uses the LOCAL calendar date in the configured timezone.
     const dateFilteredClosedTrades =
       dateFrom || dateTo
         ? closedTrades.filter((t) => {
             if (!t.closedAt) return false;
-            const closedDate = t.closedAt.slice(0, 10);
+            let closedDate: string;
+            try {
+              closedDate = instantToLocalDateKey(t.closedAt, timezone);
+            } catch {
+              return false;
+            }
             if (dateFrom && closedDate < dateFrom) return false;
             if (dateTo && closedDate > dateTo) return false;
             return true;
@@ -309,7 +322,7 @@ export async function GET(request: NextRequest) {
       : computedKpis;
 
     // 9. Compute monthly performance, R distribution, directional performance, and process score distribution
-    const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs);
+    const monthlyPerformance = computeMonthlyPerformance(closedKpiInputs, timezone);
     const rDistribution = computeRDistribution(closedKpiInputs);
     const directionalPerformance = computeDirectionalPerformance(closedKpiInputs);
     const processScoreDistribution = computeProcessScoreDistribution(closedKpiInputs);
@@ -341,11 +354,11 @@ export async function GET(request: NextRequest) {
       closedAt: input.closedAt,
     }));
 
-    const calendarHeatmap = computeCalendarHeatmap(heatmapInputs);
+    const calendarHeatmap = computeCalendarHeatmap(heatmapInputs, timezone);
     const periodMatrix = {
-      wow: computePeriodMatrix(periodInputs, 'wow'),
-      mom: computePeriodMatrix(periodInputs, 'mom'),
-      qoq: computePeriodMatrix(periodInputs, 'qoq'),
+      wow: computePeriodMatrix(periodInputs, 'wow', timezone),
+      mom: computePeriodMatrix(periodInputs, 'mom', timezone),
+      qoq: computePeriodMatrix(periodInputs, 'qoq', timezone),
     };
 
     // 12. Compute setup ranking (per-setup performance sorted by trade count)
@@ -400,7 +413,7 @@ export async function GET(request: NextRequest) {
       setupId: trade.setupId,
     }));
 
-    const attentionInsights = computeAttentionInsights(insightInputs);
+    const attentionInsights = computeAttentionInsights(insightInputs, timezone);
 
     return NextResponse.json({
       kpis,

@@ -24,6 +24,9 @@ import {
   type RollforwardRow,
 } from './dashboard';
 import { type ExecutionData } from './trade-metrics';
+// D8: tests must explicitly state the timezone controlling attribution.
+const TEST_TZ = 'UTC';
+
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -437,7 +440,7 @@ test('open trades not in closedTrades — excluded from P&L metrics', () => {
 
 test('computeMonthlyPerformance — single month, single winning trade', () => {
   const t = makeTrade('m1', 'long', 'closed', longTradeExecutions(50, 60, 100, 2, 2), null, { initialRiskAmount: 400 }, '2026-01-15T10:00:00Z');
-  const r = computeMonthlyPerformance([t]);
+  const r = computeMonthlyPerformance([t], TEST_TZ);
   assertEqual(r.length, 1, 'one month group');
   assertEqual(r[0].month, '2026-01', 'month = 2026-01');
   assertApprox(r[0].netPnl, 996, 'netPnl = 996');
@@ -449,7 +452,7 @@ test('computeMonthlyPerformance — single month, multiple mixed trades', () => 
   const t1 = makeTrade('mp1', 'long', 'closed', longTradeExecutions(50, 60, 100, 2, 2), null, null, '2026-01-05T10:00:00Z');  // +996
   const t2 = makeTrade('mp2', 'long', 'closed', longTradeExecutions(50, 40, 100, 2, 2), null, null, '2026-01-10T10:00:00Z');  // -1004
   const t3 = makeTrade('mp3', 'long', 'closed', longTradeExecutions(100, 100, 100, 0, 0), null, null, '2026-01-20T10:00:00Z');  // 0 (scratch)
-  const r = computeMonthlyPerformance([t1, t2, t3]);
+  const r = computeMonthlyPerformance([t1, t2, t3], TEST_TZ);
   assertEqual(r.length, 1, 'one month group');
   assertClose(r[0].winRate, 1 / 3, 'winRate = 0.333 (1 win, scratch=loss per D013)');
   assertApprox(r[0].netPnl, 996 + (-1004) + 0, 'netPnl = -8');
@@ -460,7 +463,7 @@ test('computeMonthlyPerformance — multiple months, sorted chronologically', ()
   const t1 = makeTrade('mm1', 'long', 'closed', longTradeExecutions(50, 60, 100, 0, 0), null, null, '2025-12-01T10:00:00Z'); // +1000
   const t2 = makeTrade('mm2', 'long', 'closed', longTradeExecutions(50, 40, 100, 0, 0), null, null, '2026-01-01T10:00:00Z'); // -1000
   const t3 = makeTrade('mm3', 'long', 'closed', longTradeExecutions(50, 55, 100, 0, 0), null, null, '2026-02-01T10:00:00Z'); // +500
-  const r = computeMonthlyPerformance([t3, t1, t2]);
+  const r = computeMonthlyPerformance([t3, t1, t2], TEST_TZ);
   assertEqual(r.length, 3, 'three month groups');
   assertEqual(r[0].month, '2025-12', 'first month = 2025-12');
   assertEqual(r[1].month, '2026-01', 'second month = 2026-01');
@@ -471,7 +474,7 @@ test('computeMonthlyPerformance — multiple months, sorted chronologically', ()
 });
 
 test('computeMonthlyPerformance — empty trades returns empty array', () => {
-  const r = computeMonthlyPerformance([]);
+  const r = computeMonthlyPerformance([], TEST_TZ);
   assertEqual(r.length, 0, 'empty array');
 });
 
@@ -481,7 +484,7 @@ test('computeMonthlyPerformance — only non-closed trades excluded', () => {
   ], null, null, null);
   const plannedTrade = makeTrade('p1', 'long', 'planned', [], null, null, null);
   const closedTrade = makeTrade('c1', 'long', 'closed', longTradeExecutions(50, 60, 100, 0, 0), null, null, '2026-03-01T10:00:00Z');
-  const r = computeMonthlyPerformance([openTrade, plannedTrade, closedTrade]);
+  const r = computeMonthlyPerformance([openTrade, plannedTrade, closedTrade], TEST_TZ);
   assertEqual(r.length, 1, 'only closed trade counted');
   assertEqual(r[0].month, '2026-03', 'month = 2026-03');
   assertEqual(r[0].tradeCount, 1, 'tradeCount = 1');
@@ -490,7 +493,7 @@ test('computeMonthlyPerformance — only non-closed trades excluded', () => {
 test('computeMonthlyPerformance — null closedAt excluded', () => {
   const t1 = makeTrade('nc1', 'long', 'closed', longTradeExecutions(50, 60, 100, 0, 0), null, null, '2026-01-01T10:00:00Z');
   const t2 = makeTrade('nc2', 'long', 'closed', longTradeExecutions(50, 55, 100, 0, 0), null, null, null);
-  const r = computeMonthlyPerformance([t1, t2]);
+  const r = computeMonthlyPerformance([t1, t2], TEST_TZ);
   assertEqual(r.length, 1, 'only trade with non-null closedAt counted');
   assertEqual(r[0].month, '2026-01', 'month = 2026-01');
   assertEqual(r[0].tradeCount, 1, 'tradeCount = 1');
@@ -506,7 +509,7 @@ test('computeMonthlyPerformance — mixed direction trades per month', () => {
     { action: 'sell_short', quantity: 100, price: 80, fees: 0, executedAt: '2026-01-01T10:00:00Z' },
     { action: 'buy_to_cover', quantity: 100, price: 90, fees: 0, executedAt: '2026-01-01T14:00:00Z' },
   ], null, null, '2026-01-03T10:00:00Z');  // short: (80-90)*100 = -1000
-  const r = computeMonthlyPerformance([t1, t2, t3]);
+  const r = computeMonthlyPerformance([t1, t2, t3], TEST_TZ);
   assertEqual(r.length, 1, 'one month group');
   assertApprox(r[0].netPnl, 1000 + 1000 + (-1000), 'netPnl = 1000');
   assertClose(r[0].winRate, 2 / 3, 'winRate = 0.667 (2 wins / 3 decisions)');
@@ -1089,6 +1092,26 @@ test('computeKpiMetrics — exposes every supported period-performance metric fr
   assertEqual(r.worstTrade, -12, 'worstTrade = lowest net closed P&L');
   assertEqual(r.averageHoldingDays, 1.5, 'averageHoldingDays = mean completed holding period');
   assertEqual(r.closedTrades, 2, 'closedTrades = period decision count');
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// D8: monthly performance attribution follows the configured timezone
+// ────────────────────────────────────────────────────────────────────────
+
+test('D8: computeMonthlyPerformance attributes by local month (Bogotá)', () => {
+  const trade = makeTrade('d8-month', 'long', 'closed', [
+    { action: 'buy', quantity: 10, price: 100, fees: 2, executedAt: '2026-03-31T15:00:00.000Z' },
+    { action: 'sell', quantity: 10, price: 110, fees: 2, executedAt: '2026-04-01T03:30:00.000Z' },
+  ], null, null, '2026-04-01T03:30:00.000Z');
+
+  // 2026-04-01T03:30Z = 2026-03-31 22:30 in America/Bogota -> March 2026
+  const bogota = computeMonthlyPerformance([trade], 'America/Bogota');
+  assertEqual(bogota.length, 1, 'one month group');
+  assertEqual(bogota[0].month, '2026-03', 'Bogotá month = 2026-03');
+
+  // Same instant under UTC -> April 2026
+  const utc = computeMonthlyPerformance([trade], 'UTC');
+  assertEqual(utc[0].month, '2026-04', 'UTC month = 2026-04');
 });
 
 // ────────────────────────────────────────────────────────────────────────

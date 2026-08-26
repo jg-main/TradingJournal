@@ -63,6 +63,8 @@ import {
   type PerformanceTradeInput,
 } from '@/lib/performance-analytics';
 import { classifyPnlDecision } from '@/lib/metrics';
+import { getConfiguredTimezone } from '@/lib/app-profile-server';
+import { instantToLocalDateKey } from '@/lib/timezone';
 
 /**
  * Chunk an array of IDs into batches of CHUNK_SIZE and run a query for each chunk.
@@ -247,14 +249,20 @@ export async function GET(request: NextRequest) {
 
     // ── Close-date attribution ──────────────────────────────────────────
     // Realized metrics attribute trades to the selected period by CLOSE DATE
-    // (never entry date), via the same closedAt.slice(0, 10) string comparison
-    // as /api/dashboard. ISO dates sort correctly as strings.
+    // (never entry date). Attribution uses the LOCAL calendar date in the
+    // configured app timezone (D8) — never the UTC calendar day.
+    const timezone = getConfiguredTimezone();
     const closedTrades = allTrades.filter((t) => t.status === 'closed');
     const dateFilteredClosedTrades =
       dateFrom || dateTo
         ? closedTrades.filter((t) => {
             if (!t.closedAt) return false;
-            const closedDate = t.closedAt.slice(0, 10);
+            let closedDate: string;
+            try {
+              closedDate = instantToLocalDateKey(t.closedAt, timezone);
+            } catch {
+              return false;
+            }
             if (dateFrom && closedDate < dateFrom) return false;
             if (dateTo && closedDate > dateTo) return false;
             return true;
@@ -411,7 +419,7 @@ export async function GET(request: NextRequest) {
     const maxDrawdown = computeMaxDrawdown(dateFilteredRollforward);
 
     // ── Compute chart data ──────────────────────────────────────────────
-    const monthlyPerformance = computeMonthlyPerformance(kpiTrades);
+    const monthlyPerformance = computeMonthlyPerformance(kpiTrades, timezone);
     const rDistribution = computeRDistribution(kpiTrades);
     const directionalPerformance = computeDirectionalPerformance(kpiTrades);
     const dailyNetPnl = computeDailyNetPnl(perfTrades, metricsCache);

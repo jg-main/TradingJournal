@@ -11,6 +11,7 @@
 
 import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
 import { classifyPnlDecision, computeWinRate as computeMetricsWinRate, averageRMultiples, averageProcessScore } from './metrics';
+import { instantToLocalDateKey } from './timezone';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -260,6 +261,7 @@ export function computeAvgLoss(closedTrades: KpiTradeInput[]): number | null {
  */
 export function computeMonthlyPerformance(
   closedTrades: KpiTradeInput[],
+  timezone: string,
 ): MonthlyPerformanceItem[] {
   const closed = closedTrades.filter(
     (t) => t.status === 'closed' && t.closedAt !== null && t.closedAt !== undefined,
@@ -268,7 +270,16 @@ export function computeMonthlyPerformance(
   const groups = new Map<string, { netPnl: number; pnls: number[] }>();
 
   for (const trade of closed) {
-    const month = (trade.closedAt as string).substring(0, 7); // YYYY-MM
+    // D8: month attribution follows the configured app timezone — a trade
+    // closed just after UTC midnight can still belong to the previous LOCAL
+    // month (e.g. 2026-04-01T03:30Z = 2026-03-31 22:30 in America/Bogota).
+    let localDate: string;
+    try {
+      localDate = instantToLocalDateKey(trade.closedAt as string, timezone);
+    } catch {
+      continue; // malformed timestamp — skip deterministically
+    }
+    const month = localDate.substring(0, 7); // YYYY-MM
     const metrics = computeTradeMetrics({
       executions: trade.executions,
       direction: trade.direction,

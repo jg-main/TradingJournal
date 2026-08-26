@@ -49,7 +49,10 @@ function assertFound(insights: { type: string }[], type: string, msg: string) {
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────
+
+// D8: tests must explicitly state the timezone controlling attribution.
+const TEST_TIMEZONE = 'UTC';
 
 function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string }): AttentionInsightTradeInput {
   return {
@@ -69,7 +72,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
 {
   console.log('\n## Empty input');
 
-  const result = computeAttentionInsights([]);
+  const result = computeAttentionInsights([], TEST_TIMEZONE);
   assertCount(result.insights.length, 0, 'empty trades → no insights');
   assertCount(result.tradeCount, 0, 'empty trades → tradeCount 0');
 }
@@ -84,7 +87,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     makeTrade({ id: 't2' }),
   ];
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertCount(result.insights.length, 0, 'only open trades → no insights');
 }
 
@@ -123,7 +126,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     }),
   ];
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'no_stop_loss', 'no stop insight present');
   const noStop = result.insights.find((i) => i.type === 'no_stop_loss');
   assert(noStop !== undefined, 'found no_stop_loss insight');
@@ -153,7 +156,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   }
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   const noStop = result.insights.find((i) => i.type === 'no_stop_loss');
   assert(noStop !== undefined, 'no stop insight present for 7 trades');
   if (noStop) {
@@ -201,7 +204,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   }
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'day_of_week_best', 'best day insight present');
   const bestDay = result.insights.find((i) => i.type === 'day_of_week_best');
   assert(bestDay !== undefined, 'best day insight found');
@@ -248,7 +251,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   }
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   const bestDay = result.insights.find((i) => i.type === 'day_of_week_best');
   assert(bestDay === undefined, 'small gap → no day_of_week_best insight');
 }
@@ -288,7 +291,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     }),
   ];
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'ungraded_trades', 'ungraded trades insight present');
   const ungraded = result.insights.find((i) => i.type === 'ungraded_trades');
   assert(ungraded !== undefined, 'found ungraded_trades insight');
@@ -335,7 +338,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     }),
   ];
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'top_trade', 'top trade insight present');
   assertFound(result.insights, 'worst_trade', 'worst trade insight present');
 
@@ -374,7 +377,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   });
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'win_streak', 'win streak insight present');
   const streak = result.insights.find((i) => i.type === 'win_streak');
   assert(streak !== undefined, 'found win_streak');
@@ -410,7 +413,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   });
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'losing_streak', 'losing streak insight present');
   const streak = result.insights.find((i) => i.type === 'losing_streak');
   assert(streak !== undefined, 'found losing_streak');
@@ -448,7 +451,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   });
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   const streak = result.insights.find((i) => i.type === 'win_streak');
   assert(streak !== undefined, 'win streak found after scratch gap');
   if (streak) {
@@ -479,7 +482,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   }
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'setup_diversity', 'setup diversity insight present');
 }
 
@@ -504,7 +507,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     );
   }
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assertFound(result.insights, 'unclassified_setups', 'unclassified setups insight present');
 }
 
@@ -532,7 +535,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     }),
   ];
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   const bestDay = result.insights.find((i) => i.type.startsWith('day_of_week'));
   assert(bestDay === undefined, 'single day data → no day-of-week insight');
 }
@@ -565,7 +568,7 @@ function makeTrade(overrides: Partial<AttentionInsightTradeInput> & { id: string
     }),
   ];
 
-  const result = computeAttentionInsights(trades);
+  const result = computeAttentionInsights(trades, TEST_TIMEZONE);
   assert(result.insights.length > 0, 'short trades generate insights');
   assertFound(result.insights, 'top_trade', 'top trade found for short trades');
 }

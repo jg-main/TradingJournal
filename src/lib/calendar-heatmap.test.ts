@@ -25,6 +25,9 @@ import { type ExecutionData } from './trade-metrics';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+// D8: tests must explicitly state the timezone controlling attribution.
+const TEST_TIMEZONE = 'UTC';
+
 function longTradeExecutions(entryPrice: number, exitPrice: number, qty = 100, entryFees = 0, exitFees = 0): ExecutionData[] {
   return [
     { action: 'buy', quantity: qty, price: entryPrice, fees: entryFees, executedAt: '2026-01-01T10:00:00Z' },
@@ -143,7 +146,7 @@ const TRADE_NO_CLOSED_AT = makeTrade(
 
 // 1. Basic daily aggregation — single trade per day
 runTest('aggregateDailyPnL: single trade per day, different days', () => {
-  const result = aggregateDailyPnL([LONG_WIN_TRADE, LONG_LOSS_TRADE]);
+  const result = aggregateDailyPnL([LONG_WIN_TRADE, LONG_LOSS_TRADE], TEST_TIMEZONE);
 
   assertLength(result, 2);
   assertEqual(result[0], { date: '2026-01-15', pnl: 996 }, 'first day = 2026-01-15 with PnL 996');
@@ -153,7 +156,7 @@ runTest('aggregateDailyPnL: single trade per day, different days', () => {
 // 2. Multiple trades on the same date — P&L should be summed
 runTest('aggregateDailyPnL: multiple trades on same day sum P&L', () => {
   // Both trades on 2026-01-20: loss (-1004) + scratch (~0) ≈ -1004
-  const result = aggregateDailyPnL([LONG_LOSS_TRADE, SCRATCH_TRADE]);
+  const result = aggregateDailyPnL([LONG_LOSS_TRADE, SCRATCH_TRADE], TEST_TIMEZONE);
 
   assertLength(result, 1);
   // Scratch: (50.02-50)*100 - 2 = 0, Loss: -1004, total ≈ -1004
@@ -163,7 +166,7 @@ runTest('aggregateDailyPnL: multiple trades on same day sum P&L', () => {
 
 // 3. Short trades
 runTest('aggregateDailyPnL: short win trade produces positive P&L', () => {
-  const result = aggregateDailyPnL([SHORT_WIN_TRADE]);
+  const result = aggregateDailyPnL([SHORT_WIN_TRADE], TEST_TIMEZONE);
 
   assertLength(result, 1);
   // Short: (60-50)*200 - 6 = 1994
@@ -173,14 +176,14 @@ runTest('aggregateDailyPnL: short win trade produces positive P&L', () => {
 
 // 4. Trades without closedAt are skipped
 runTest('aggregateDailyPnL: trades without closedAt are skipped', () => {
-  const result = aggregateDailyPnL([TRADE_NO_CLOSED_AT]);
+  const result = aggregateDailyPnL([TRADE_NO_CLOSED_AT], TEST_TIMEZONE);
 
   assertLength(result, 0);
 });
 
 // 5. Mixed: some with closedAt, some without
 runTest('aggregateDailyPnL: skips null closedAt among valid trades', () => {
-  const result = aggregateDailyPnL([LONG_WIN_TRADE, TRADE_NO_CLOSED_AT, LONG_LOSS_TRADE]);
+  const result = aggregateDailyPnL([LONG_WIN_TRADE, TRADE_NO_CLOSED_AT, LONG_LOSS_TRADE], TEST_TIMEZONE);
 
   assertLength(result, 2);
   assertEqual(result[0].date, '2026-01-15', 'first entry is 2026-01-15');
@@ -189,7 +192,7 @@ runTest('aggregateDailyPnL: skips null closedAt among valid trades', () => {
 
 // 6. Empty input
 runTest('aggregateDailyPnL: empty input returns empty array', () => {
-  const result = aggregateDailyPnL([]);
+  const result = aggregateDailyPnL([], TEST_TIMEZONE);
 
   assertLength(result, 0);
 });
@@ -197,7 +200,7 @@ runTest('aggregateDailyPnL: empty input returns empty array', () => {
 // 7. Sorted chronologically
 runTest('aggregateDailyPnL: results sorted by date ascending', () => {
   // Add in reverse order
-  const result = aggregateDailyPnL([LONG_LOSS_TRADE, SHORT_WIN_TRADE, LONG_WIN_TRADE]);
+  const result = aggregateDailyPnL([LONG_LOSS_TRADE, SHORT_WIN_TRADE, LONG_WIN_TRADE], TEST_TIMEZONE);
 
   assertLength(result, 3);
   assertEqual(result[0].date, '2026-01-15', 'first = 2026-01-15');
@@ -248,7 +251,7 @@ runTest('groupByYear: empty input returns empty array', () => {
 
 // 11. computeCalendarHeatmap — orchestrator
 runTest('computeCalendarHeatmap: full pipeline from trades to year-groups', () => {
-  const result = computeCalendarHeatmap([LONG_WIN_TRADE, LONG_LOSS_TRADE, SHORT_WIN_TRADE]);
+  const result = computeCalendarHeatmap([LONG_WIN_TRADE, LONG_LOSS_TRADE, SHORT_WIN_TRADE], TEST_TIMEZONE);
 
   assertLength(result, 1); // All 2026
   assertEqual(result[0].year, 2026, 'year = 2026');
@@ -263,14 +266,14 @@ runTest('computeCalendarHeatmap: full pipeline from trades to year-groups', () =
 
 // 12. computeCalendarHeatmap — empty input
 runTest('computeCalendarHeatmap: empty input returns empty array', () => {
-  const result = computeCalendarHeatmap([]);
+  const result = computeCalendarHeatmap([], TEST_TIMEZONE);
 
   assertLength(result, 0);
 });
 
 // 13. computeCalendarHeatmap — skips trades without closedAt
 runTest('computeCalendarHeatmap: skips trades without closedAt', () => {
-  const result = computeCalendarHeatmap([TRADE_NO_CLOSED_AT]);
+  const result = computeCalendarHeatmap([TRADE_NO_CLOSED_AT], TEST_TIMEZONE);
 
   assertLength(result, 0);
 });
@@ -303,7 +306,7 @@ runTest('toEChartsCalendarData: empty days returns empty array', () => {
 
 // 16. computeCalendarHeatmapStats — with data
 runTest('computeCalendarHeatmapStats: computes min/max/days/trades', () => {
-  const result = computeCalendarHeatmapStats([LONG_WIN_TRADE, LONG_LOSS_TRADE, SHORT_WIN_TRADE]);
+  const result = computeCalendarHeatmapStats([LONG_WIN_TRADE, LONG_LOSS_TRADE, SHORT_WIN_TRADE], TEST_TIMEZONE);
 
   assertClose(result.minPnl!, -1004, 'minPnl = -1004');
   assertClose(result.maxPnl!, 1994, 'maxPnl = 1994');
@@ -313,7 +316,7 @@ runTest('computeCalendarHeatmapStats: computes min/max/days/trades', () => {
 
 // 17. computeCalendarHeatmapStats — empty input
 runTest('computeCalendarHeatmapStats: empty input returns null stats', () => {
-  const result = computeCalendarHeatmapStats([]);
+  const result = computeCalendarHeatmapStats([], TEST_TIMEZONE);
 
   assertNull(result.minPnl, 'minPnl is null');
   assertNull(result.maxPnl, 'maxPnl is null');
@@ -323,7 +326,7 @@ runTest('computeCalendarHeatmapStats: empty input returns null stats', () => {
 
 // 18. computeCalendarHeatmapStats — skips null closedAt for trade count
 runTest('computeCalendarHeatmapStats: only counts trades with closedAt', () => {
-  const result = computeCalendarHeatmapStats([LONG_WIN_TRADE, TRADE_NO_CLOSED_AT]);
+  const result = computeCalendarHeatmapStats([LONG_WIN_TRADE, TRADE_NO_CLOSED_AT], TEST_TIMEZONE);
 
   assertEqual(result.totalTrades, 1, 'totalTrades = 1 (only closed trades counted)');
   assertEqual(result.totalDays, 1, 'totalDays = 1');
@@ -331,7 +334,7 @@ runTest('computeCalendarHeatmapStats: only counts trades with closedAt', () => {
 
 // 19. computeCalendarHeatmapStats — single trade, same min/max
 runTest('computeCalendarHeatmapStats: single trade has same min/max', () => {
-  const result = computeCalendarHeatmapStats([LONG_WIN_TRADE]);
+  const result = computeCalendarHeatmapStats([LONG_WIN_TRADE], TEST_TIMEZONE);
 
   assertClose(result.minPnl!, 996, 'minPnl = 996');
   assertClose(result.maxPnl!, 996, 'maxPnl = 996');
@@ -344,7 +347,7 @@ runTest('computeCalendarHeatmapStats: single trade has same min/max', () => {
 runTest('Q7-NEGATIVE: trades with empty executions array produce zero PnL', () => {
   const trade = makeTrade('empty-exec-001', 'long', [], '2026-01-15T10:00:00Z');
 
-  const result = aggregateDailyPnL([trade]);
+  const result = aggregateDailyPnL([trade], TEST_TIMEZONE);
 
   assertLength(result, 1);
   assertClose(result[0].pnl, 0, 'empty executions = PnL 0');
@@ -358,7 +361,7 @@ runTest('Q7-NEGATIVE: trades with zero-quantity executions produce zero PnL', ()
   ];
   const trade = makeTrade('zero-qty-001', 'long', executions, '2026-01-15T10:00:00Z');
 
-  const result = aggregateDailyPnL([trade]);
+  const result = aggregateDailyPnL([trade], TEST_TIMEZONE);
 
   assertLength(result, 1);
   assertClose(result[0].pnl, 0, 'zero quantity executions = PnL 0');
@@ -371,20 +374,21 @@ runTest('Q7-NEGATIVE: trade with null fees still computes PnL', () => {
   ];
   const trade = makeTrade('null-fees-001', 'long', executions, '2026-01-15T10:00:00Z');
 
-  const result = aggregateDailyPnL([trade]);
+  const result = aggregateDailyPnL([trade], TEST_TIMEZONE);
 
   assertLength(result, 1);
   assertClose(result[0].pnl, 1000, 'null fees = PnL 1000 (fees treated as 0)');
 });
 
-runTest('Q7-NEGATIVE: invalid date string in closedAt is handled gracefully', () => {
+runTest('Q7-NEGATIVE: invalid date string in closedAt is skipped deterministically', () => {
   const trade = makeTrade('bad-date-001', 'long', longTradeExecutions(50, 60), 'not-a-date');
 
-  const result = aggregateDailyPnL([trade]);
+  const result = aggregateDailyPnL([trade], TEST_TIMEZONE);
 
-  assertLength(result, 1);
-  // Should produce an entry with the raw string sliced to 10 chars
-  assertEqual(result[0].date, 'not-a-date', 'date derived from slice(0,10) of raw string');
+  // D8 §27: malformed timestamps must NOT silently create a false date
+  // bucket — they are skipped deterministically (was: slice(0,10) fabricating
+  // a 'not-a-date' bucket).
+  assertLength(result, 0);
 });
 
 runTest('Q7-NEGATIVE: groupByYear handles dates from different years without day overlap', () => {
@@ -407,12 +411,58 @@ runTest('Q7-NEGATIVE: multiple trades same date in same year group correctly', (
     makeTrade('c', 'long', longTradeExecutions(50, 70, 100), '2026-01-15T12:00:00Z'),
   ];
 
-  const result = computeCalendarHeatmap(trades);
+  const result = computeCalendarHeatmap(trades, TEST_TIMEZONE);
 
   assertLength(result, 1);
   assertLength(result[0].days, 1);
   // (60-50)*100 + (55-50)*100 + (70-50)*100 = 1000 + 500 + 2000 = 3500
   assertClose(result[0].days[0].pnl, 3500, 'three trades same day summed PnL ≈ 3500');
+});
+
+// ── D8 regression tests (canonical app-timezone attribution) ───────────
+
+runTest('D8: Bogotá late-evening close buckets to previous UTC date', () => {
+  // 2026-03-10T00:30:00Z = 2026-03-09 19:30 in America/Bogota
+  const trade = makeTrade('bogota-late-001', 'long', longTradeExecutions(50, 60), '2026-03-10T00:30:00.000Z');
+
+  const bogota = aggregateDailyPnL([trade], 'America/Bogota');
+  assertLength(bogota, 1);
+  assertEqual(bogota[0].date, '2026-03-09', 'Bogotá bucket = 2026-03-09 (not UTC 2026-03-10)');
+
+  const utc = aggregateDailyPnL([trade], 'UTC');
+  assertLength(utc, 1);
+  assertEqual(utc[0].date, '2026-03-10', 'same instant under UTC = 2026-03-10');
+});
+
+runTest('D8: multiple trades on the same LOCAL day aggregate even when UTC dates differ', () => {
+  // 2026-03-10T00:30:00Z and 2026-03-10T04:00:00Z are both 2026-03-09 local in Bogotá
+  const t1 = makeTrade('local-day-001', 'long', longTradeExecutions(50, 60), '2026-03-10T00:30:00.000Z');
+  const t2 = makeTrade('local-day-002', 'long', longTradeExecutions(50, 55), '2026-03-10T04:00:00.000Z');
+
+  const result = aggregateDailyPnL([t1, t2], 'America/Bogota');
+  assertLength(result, 1);
+  assertEqual(result[0].date, '2026-03-09', 'single bucket on the shared LOCAL day');
+  // PnL = (60-50)*100 + (55-50)*100 = 1000 + 500 = 1500
+  assertClose(result[0].pnl, 1500, 'both trades aggregated into the local day');
+});
+
+runTest('D8: year boundary — heatmap year derives from local date, not UTC', () => {
+  // 2027-01-01T02:00:00Z = 2026-12-31 21:00 in America/New_York
+  const trade = makeTrade('year-boundary-001', 'long', longTradeExecutions(50, 60), '2027-01-01T02:00:00.000Z');
+
+  const result = computeCalendarHeatmap([trade], 'America/New_York');
+  assertLength(result, 1);
+  assertEqual(result[0].year, 2026, 'heatmap year = 2026 (local)');
+  assertEqual(result[0].days[0].date, '2026-12-31', 'date key = 2026-12-31');
+});
+
+runTest('D8: malformed closedAt is skipped, never fabricated', () => {
+  const bad = makeTrade('bad-001', 'long', longTradeExecutions(50, 60), 'garbage');
+  const good = makeTrade('good-001', 'long', longTradeExecutions(50, 60), '2026-03-09T12:00:00.000Z');
+
+  const result = aggregateDailyPnL([bad, good], 'America/Bogota');
+  assertLength(result, 1);
+  assertEqual(result[0].date, '2026-03-09', 'only valid trade bucketed');
 });
 
 // ── Summary ───────────────────────────────────────────────────────────

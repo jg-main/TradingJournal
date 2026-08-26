@@ -16,6 +16,7 @@
  */
 
 import { computeTradeMetrics, type ExecutionData } from './trade-metrics';
+import { instantToLocalDateKey, getLocalDayOfWeek } from './timezone';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -77,10 +78,14 @@ export interface AttentionInsightsResult {
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function getDayOfWeek(isoDate: string): number | null {
-  const d = new Date(isoDate);
-  if (isNaN(d.getTime())) return null;
-  return d.getUTCDay();
+function getDayOfWeek(isoDate: string, timezone: string): number | null {
+  try {
+    // D8: day-of-week attribution follows the configured app timezone.
+    const dateKey = instantToLocalDateKey(isoDate, timezone);
+    return getLocalDayOfWeek(dateKey);
+  } catch {
+    return null;
+  }
 }
 
 // ── Streak detection ────────────────────────────────────────────────────
@@ -105,12 +110,13 @@ function classifyTradeOutcome(pnl: number): 'win' | 'loss' | 'scratch' {
  */
 function computeDayOfWeekWinRates(
   trades: AttentionInsightTradeInput[],
+  timezone: string,
 ): { dayName: string; dayIndex: number; wins: number; losses: number; winRate: number | null }[] {
   const dayStats = new Map<number, { wins: number; losses: number }>();
 
   for (const trade of trades) {
     if (!trade.closedAt) continue;
-    const dayIndex = getDayOfWeek(trade.closedAt);
+    const dayIndex = getDayOfWeek(trade.closedAt, timezone);
     if (dayIndex === null) continue;
 
     const metrics = computeTradeMetrics({
@@ -160,8 +166,9 @@ function computeDayOfWeekWinRates(
  */
 function createDayOfWeekInsights(
   trades: AttentionInsightTradeInput[],
+  timezone: string,
 ): AttentionInsight[] {
-  const dayRates = computeDayOfWeekWinRates(trades);
+  const dayRates = computeDayOfWeekWinRates(trades, timezone);
 
   // Need at least 2 days with data
   const daysWithData = dayRates.filter((d) => d.winRate !== null);
@@ -467,12 +474,13 @@ function createSetupConcentrationInsights(
  */
 export function computeAttentionInsights(
   trades: AttentionInsightTradeInput[],
+  timezone: string,
 ): AttentionInsightsResult {
   const insights: AttentionInsight[] = [];
 
   // Order of insertion determines priority (first = most important)
   insights.push(...createNoStopInsights(trades));
-  insights.push(...createDayOfWeekInsights(trades));
+  insights.push(...createDayOfWeekInsights(trades, timezone));
   insights.push(...createUngradedTradeInsights(trades));
   insights.push(...createSetupConcentrationInsights(trades));
   insights.push(...createExtremeTradeInsights(trades));

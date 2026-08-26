@@ -15,7 +15,8 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { testDbPath, disposeSqliteFile } from '../../../../../lib/testing/test-db';
-import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, gte, lt, inArray } from 'drizzle-orm';
+import { addLocalDays, localDateStartToUtc } from '@/lib/timezone';
 
 import * as schema from '@/db/schema';
 import { computeWeeklyMetrics, type WeekReviewTradeInput } from '@/lib/weekly-review';
@@ -34,6 +35,9 @@ function assert(condition: boolean, msg: string) {
 }
 
 // ── Setup: test DB ──────────────────────────────────────────────────
+// D8: tests must explicitly state the timezone controlling attribution.
+// No app_profile is seeded in this harness; the route falls back to America/Bogota.
+const TEST_WEEKLY_TZ = 'America/Bogota';
 
 const DB_FILE = process.env.DB_FILE_NAME || testDbPath('reviews-weekly');
 const sqlite = new Database(DB_FILE);
@@ -168,7 +172,7 @@ sqlite.exec(`
 
 // ── Helpers (mirrors route.ts logic) ────────────────────────────────
 
-function doPost(weekStart: string, accountId: string): {
+function doPost(weekStart: string, accountId: string, timezone: string = TEST_WEEKLY_TZ): {
   status: number;
   data: Record<string, unknown>;
 } {
@@ -180,18 +184,13 @@ function doPost(weekStart: string, accountId: string): {
     return { status: 400, data: { error: 'Validation failed', details: { fieldErrors: { accountId: ['Required'] } } } };
   }
 
-  // Compute week boundaries
-  const startDate = new Date(weekStart);
-  startDate.setUTCHours(0, 0, 0, 0);
-
-  const endDate = new Date(startDate);
-  endDate.setUTCDate(endDate.getUTCDate() + 6);
-  endDate.setUTCHours(23, 59, 59, 999);
-
-  const weekStartStr = startDate.toISOString().split('T')[0];
-  const weekEndStr = endDate.toISOString().split('T')[0];
-  const weekStartISO = startDate.toISOString();
-  const weekEndISO = endDate.toISOString();
+  // Compute week boundaries (D8: local Monday 00:00 through next local
+  // Monday 00:00 in the configured app timezone; query uses the UTC
+  // instants of those LOCAL boundaries, half-open >= start, < end).
+  const weekStartStr = weekStart;
+  const weekEndStr = addLocalDays(weekStart, 6);
+  const weekStartISO = localDateStartToUtc(weekStart, timezone);
+  const weekEndISO = localDateStartToUtc(addLocalDays(weekStart, 7), timezone);
 
   const tradesInRange = db
     .select()
@@ -201,7 +200,7 @@ function doPost(weekStart: string, accountId: string): {
         eq(schema.trades.accountId, accountId),
         eq(schema.trades.status, 'closed'),
         gte(schema.trades.closedAt, weekStartISO),
-        lte(schema.trades.closedAt, weekEndISO),
+        lt(schema.trades.closedAt, weekEndISO),
       ),
     )
     .all();
@@ -720,6 +719,88 @@ console.log('\n15. DELETE with non-existent id returns 404:');
     (result.data as { error: string }).error === 'Weekly review not found',
     'error message is "Weekly review not found"',
   );
+}
+
+// ── D8 boundary regression tests ──────────────────────────────────────
+// §9 Bogotá weekly boundary: local Monday 2026-03-09 through local Sunday
+// 2026-03-15. Bogotá is UTC-5 year-round, so local midnight = 05:00Z.
+
+console.log('\n16. D8: Bogotá weekly boundary includes/excludes at local midnight (05:00Z):');
+{
+  const bogAcc = 'd8-bogota-account';
+  db.insert(schema.accounts).values([{ id: bogAcc, name: 'D8 Bogota' }]).run();
+
+  // Trade A: 2026-03-09T04:59:59.999Z → local Sun 03-08 23:59 → EXCLUDED
+  // Trade B: 2026-03-09T05:00:00.000Z → local Mon 03-09 00:00 → INCLUDED
+  // Trade C: 2026-03-16T04:59:59.999Z → local Sun 03-15 23:59 → INCLUDED
+  // Trade D: 2026-03-16T05:00:00.000Z → local Mon 03-16 00:00 → EXCLUDED
+  const seed = [
+    { id: 'd8-trade-a', code: 'D8-A', closedAt: '2026-03-09T04:59:59.999Z' },
+    { id: 'd8-trade-b', code: 'D8-B', closedAt: '2026-03-09T05:00:00.000Z' },
+    { id: 'd8-trade-c', code: 'D8-C', closedAt: '2026-03-16T04:59:59.999Z' },
+    { id: 'd8-trade-d', code: 'D8-D', closedAt: '2026-03-16T05:00:00.000Z' },
+  ];
+  db.insert(schema.trades)
+    .values(seed.map((s) => ({
+      id: s.id, tradeCode: s.code, accountId: bogAcc, symbol: 'TST',
+      direction: 'long' as const, status: 'closed' as const, closedAt: s.closedAt,
+    })))
+    .run();
+  for (const s of seed) {
+    db.insert(schema.tradeExecutions).values([
+      { id: randomUUID(), tradeId: s.id, executedAt: s.closedAt, action: 'buy', quantity: 1, price: 100, fees: 0 },
+      { id: randomUUID(), tradeId: s.id, executedAt: s.closedAt, action: 'sell', quantity: 1, price: 110, fees: 0 },
+    ]).run();
+  }
+
+  const result = doPost('2026-03-09', bogAcc, 'America/Bogota');
+  const data = result.data as Record<string, unknown>;
+  assert(result.status === 201, 'returns 201');
+  assert(data.closedTrades === 2, 'closedTrades = 2 (trades B and C only)');
+  assert(data.weekStart === '2026-03-09', 'weekStart = 2026-03-09 local');
+  assert(data.weekEnd === '2026-03-15', 'weekEnd = 2026-03-15 local');
+}
+
+// §10 DST-observing zone: America/New_York week Mon 2026-03-02 → Sun
+// 2026-03-08 spans the 2026-03-08 spring-forward (02:00 EST → 03:00 EDT).
+// The local week boundary at Mon 03-09 00:00 EDT = 04:00Z (167h span).
+
+console.log('\n17. D8: DST week boundary (America/New_York, spring forward):');
+{
+  const nyAcc = 'd8-ny-account';
+  db.insert(schema.accounts).values([{ id: nyAcc, name: 'D8 NY' }]).run();
+
+  // Trade E: 2026-03-09T03:59:59.999Z → local Sun 03-08 23:59 EDT → INCLUDED in Mon 03-02 week
+  // Trade F: 2026-03-09T04:00:00.000Z → local Mon 03-09 00:00 EDT → EXCLUDED (next week)
+  const seed = [
+    { id: 'd8-trade-e', code: 'D8-E', closedAt: '2026-03-09T03:59:59.999Z' },
+    { id: 'd8-trade-f', code: 'D8-F', closedAt: '2026-03-09T04:00:00.000Z' },
+  ];
+  db.insert(schema.trades)
+    .values(seed.map((s) => ({
+      id: s.id, tradeCode: s.code, accountId: nyAcc, symbol: 'TST',
+      direction: 'long' as const, status: 'closed' as const, closedAt: s.closedAt,
+    })))
+    .run();
+  for (const s of seed) {
+    db.insert(schema.tradeExecutions).values([
+      { id: randomUUID(), tradeId: s.id, executedAt: s.closedAt, action: 'buy', quantity: 1, price: 100, fees: 0 },
+      { id: randomUUID(), tradeId: s.id, executedAt: s.closedAt, action: 'sell', quantity: 1, price: 110, fees: 0 },
+    ]).run();
+  }
+
+  const result = doPost('2026-03-02', nyAcc, 'America/New_York');
+  const data = result.data as Record<string, unknown>;
+  assert(result.status === 201, 'returns 201');
+  assert(data.closedTrades === 1, 'closedTrades = 1 (trade E only — DST boundary respected)');
+  assert(data.weekStart === '2026-03-02', 'weekStart = 2026-03-02 local');
+  assert(data.weekEnd === '2026-03-08', 'weekEnd = 2026-03-08 local');
+
+  // The week Mon 03-02 → Mon 03-09 spans 167h not 168h; verify via the
+  // UTC bounds produced by the mirror (same helper as the real route).
+  const startMs = Date.parse(localDateStartToUtc('2026-03-02', 'America/New_York'));
+  const endMs = Date.parse(localDateStartToUtc('2026-03-09', 'America/New_York'));
+  assert((endMs - startMs) === 167 * 3600_000, 'DST week UTC span = 167h (not fixed 7×24h)');
 }
 
 // ── Cleanup (root-hygiene guard: no disposable DBs in the repo root) ──

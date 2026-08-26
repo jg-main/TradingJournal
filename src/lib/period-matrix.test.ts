@@ -23,6 +23,9 @@ import { type ExecutionData } from './trade-metrics';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+// D8: tests must explicitly state the timezone controlling attribution.
+const TEST_TIMEZONE = 'UTC';
+
 function longTradeExecutions(entryPrice: number, exitPrice: number, qty = 100, entryFees = 0, exitFees = 0): ExecutionData[] {
   return [
     { action: 'buy', quantity: qty, price: entryPrice, fees: entryFees, executedAt: '2026-01-01T10:00:00Z' },
@@ -206,7 +209,7 @@ const OPEN_TRADE = makeTrade(
 // ── getPeriodFromDate Tests ─────────────────────────────────────────────
 
 runTest('getPeriodFromDate: WoW returns correct ISO week 1 for 2026-01-02', () => {
-  const result = getPeriodFromDate('2026-01-02T10:00:00Z', 'wow');
+  const result = getPeriodFromDate('2026-01-02T10:00:00Z', 'wow', TEST_TIMEZONE);
 
   assertEqual(result.periodId, '2026-W01', 'periodId = 2026-W01');
   assertEqual(result.periodLabel, 'Week 1', 'periodLabel = Week 1');
@@ -217,7 +220,7 @@ runTest('getPeriodFromDate: WoW returns correct ISO week 1 for 2026-01-02', () =
 });
 
 runTest('getPeriodFromDate: WoW returns correct ISO week 2 for 2026-01-09', () => {
-  const result = getPeriodFromDate('2026-01-09', 'wow');
+  const result = getPeriodFromDate('2026-01-09', 'wow', TEST_TIMEZONE);
 
   assertEqual(result.periodId, '2026-W02', 'periodId = 2026-W02');
   assertEqual(result.periodLabel, 'Week 2', 'periodLabel = Week 2');
@@ -226,7 +229,7 @@ runTest('getPeriodFromDate: WoW returns correct ISO week 2 for 2026-01-09', () =
 });
 
 runTest('getPeriodFromDate: WoW returns correct ISO week 5 for 2026-01-30', () => {
-  const result = getPeriodFromDate('2026-01-30', 'wow');
+  const result = getPeriodFromDate('2026-01-30', 'wow', TEST_TIMEZONE);
 
   assertEqual(result.periodId, '2026-W05', 'periodId = 2026-W05');
   assertEqual(result.periodLabel, 'Week 5', 'periodLabel = Week 5');
@@ -235,7 +238,7 @@ runTest('getPeriodFromDate: WoW returns correct ISO week 5 for 2026-01-30', () =
 });
 
 runTest('getPeriodFromDate: MoM returns January 2026', () => {
-  const result = getPeriodFromDate('2026-01-15', 'mom');
+  const result = getPeriodFromDate('2026-01-15', 'mom', TEST_TIMEZONE);
 
   assertEqual(result.periodId, '2026-01', 'periodId = 2026-01');
   assertEqual(result.periodLabel, 'Jan 2026', 'periodLabel = Jan 2026');
@@ -244,7 +247,7 @@ runTest('getPeriodFromDate: MoM returns January 2026', () => {
 });
 
 runTest('getPeriodFromDate: MoM returns February 2026', () => {
-  const result = getPeriodFromDate('2026-02-13', 'mom');
+  const result = getPeriodFromDate('2026-02-13', 'mom', TEST_TIMEZONE);
 
   assertEqual(result.periodId, '2026-02', 'periodId = 2026-02');
   assertEqual(result.periodLabel, 'Feb 2026', 'periodLabel = Feb 2026');
@@ -253,7 +256,7 @@ runTest('getPeriodFromDate: MoM returns February 2026', () => {
 });
 
 runTest('getPeriodFromDate: QoQ returns Q1 2026 for January', () => {
-  const result = getPeriodFromDate('2026-01-15', 'qoq');
+  const result = getPeriodFromDate('2026-01-15', 'qoq', TEST_TIMEZONE);
 
   assertEqual(result.periodId, '2026-Q1', 'periodId = 2026-Q1');
   assertEqual(result.periodLabel, 'Q1 2026', 'periodLabel = Q1 2026');
@@ -262,7 +265,7 @@ runTest('getPeriodFromDate: QoQ returns Q1 2026 for January', () => {
 });
 
 runTest('getPeriodFromDate: QoQ returns Q2 2026 for April', () => {
-  const result = getPeriodFromDate('2026-04-15', 'qoq');
+  const result = getPeriodFromDate('2026-04-15', 'qoq', TEST_TIMEZONE);
 
   assertEqual(result.periodId, '2026-Q2', 'periodId = 2026-Q2');
   assertEqual(result.periodLabel, 'Q2 2026', 'periodLabel = Q2 2026');
@@ -273,7 +276,7 @@ runTest('getPeriodFromDate: QoQ returns Q2 2026 for April', () => {
 // ── generatePriorPeriods Tests ──────────────────────────────────────────
 
 runTest('generatePriorPeriods: generates 4 WoW periods', () => {
-  const periods = generatePriorPeriods('2026-01-30', 'wow', 4);
+  const periods = generatePriorPeriods('2026-01-30', 'wow', 4, TEST_TIMEZONE);
 
   assertLength(periods, 4);
   // Should be: W02, W03, W04, W05 (oldest first)
@@ -284,7 +287,7 @@ runTest('generatePriorPeriods: generates 4 WoW periods', () => {
 });
 
 runTest('generatePriorPeriods: generates 3 MoM periods across year boundary', () => {
-  const periods = generatePriorPeriods('2026-01-15', 'mom', 3);
+  const periods = generatePriorPeriods('2026-01-15', 'mom', 3, TEST_TIMEZONE);
 
   assertLength(periods, 3);
   assertEqual(periods[0].periodId, '2025-11', 'first = Nov 2025');
@@ -293,7 +296,7 @@ runTest('generatePriorPeriods: generates 3 MoM periods across year boundary', ()
 });
 
 runTest('generatePriorPeriods: generates 2 QoQ periods', () => {
-  const periods = generatePriorPeriods('2026-06-15', 'qoq', 2);
+  const periods = generatePriorPeriods('2026-06-15', 'qoq', 2, TEST_TIMEZONE);
 
   assertLength(periods, 2);
   assertEqual(periods[0].periodId, '2026-Q1', 'first = Q1 2026');
@@ -313,7 +316,7 @@ const ALL_TRADES = [
 ];
 
 runTest('computePeriodMatrix: WoW with 6 trades over 5 weeks, 4 periods', () => {
-  const result = computePeriodMatrix(ALL_TRADES, 'wow', 4);
+  const result = computePeriodMatrix(ALL_TRADES, 'wow', TEST_TIMEZONE, 4);
 
   assertEqual(result.comparisonType, 'wow', 'comparisonType = wow');
   // 4 periods → 3 comparison rows
@@ -359,7 +362,7 @@ runTest('computePeriodMatrix: WoW with 6 trades over 5 weeks, 4 periods', () => 
 });
 
 runTest('computePeriodMatrix: WoW R-multiple values are computed correctly', () => {
-  const result = computePeriodMatrix(ALL_TRADES, 'wow', 4);
+  const result = computePeriodMatrix(ALL_TRADES, 'wow', TEST_TIMEZONE, 4);
 
   // Row 1: W5 - two trades with risk data
   //   W5_WIN_1: 1196/500 = 2.392R
@@ -378,7 +381,7 @@ runTest('computePeriodMatrix: WoW R-multiple values are computed correctly', () 
 });
 
 runTest('computePeriodMatrix: WoW with 2 periods (minimum)', () => {
-  const result = computePeriodMatrix(ALL_TRADES, 'wow', 2);
+  const result = computePeriodMatrix(ALL_TRADES, 'wow', TEST_TIMEZONE, 2);
 
   assertLength(result.rows, 1, '2 periods → 1 comparison row');
   assertEqual(result.rows[0].current.periodId, '2026-W05', 'current = W05');
@@ -397,7 +400,7 @@ const MONTHLY_TRADES = [
 ];
 
 runTest('computePeriodMatrix: MoM with 4 periods spanning Jan-Apr', () => {
-  const result = computePeriodMatrix(MONTHLY_TRADES, 'mom', 4);
+  const result = computePeriodMatrix(MONTHLY_TRADES, 'mom', TEST_TIMEZONE, 4);
 
   assertEqual(result.comparisonType, 'mom', 'comparisonType = mom');
   // 4 periods → 3 comparison rows
@@ -428,7 +431,7 @@ const QUARTERLY_TRADES = [
 ];
 
 runTest('computePeriodMatrix: QoQ with Q1 vs Q2', () => {
-  const result = computePeriodMatrix(QUARTERLY_TRADES, 'qoq', 2);
+  const result = computePeriodMatrix(QUARTERLY_TRADES, 'qoq', TEST_TIMEZONE, 2);
 
   assertEqual(result.comparisonType, 'qoq', 'comparisonType = qoq');
   assertLength(result.rows, 1, '2 periods → 1 comparison row');
@@ -449,20 +452,20 @@ runTest('computePeriodMatrix: QoQ with Q1 vs Q2', () => {
 // ── Edge Cases ──────────────────────────────────────────────────────────
 
 runTest('computePeriodMatrix: empty trades returns empty rows', () => {
-  const result = computePeriodMatrix([], 'wow');
+  const result = computePeriodMatrix([], 'wow', TEST_TIMEZONE);
 
   assertEqual(result.comparisonType, 'wow', 'comparisonType preserved');
   assertLength(result.rows, 0, 'no rows for empty input');
 });
 
 runTest('computePeriodMatrix: all null closedAt returns empty rows', () => {
-  const result = computePeriodMatrix([OPEN_TRADE, OPEN_TRADE], 'wow');
+  const result = computePeriodMatrix([OPEN_TRADE, OPEN_TRADE], 'wow', TEST_TIMEZONE);
 
   assertLength(result.rows, 0, 'no rows when all trades are open');
 });
 
 runTest('computePeriodMatrix: trades without risk data have avgR null', () => {
-  const result = computePeriodMatrix([NO_RISK_TRADE, W3_WIN_TRADE], 'wow', 2);
+  const result = computePeriodMatrix([NO_RISK_TRADE, W3_WIN_TRADE], 'wow', TEST_TIMEZONE, 2);
 
   // Both trades in W3
   assertLength(result.rows, 1, '1 comparison row');
@@ -478,7 +481,7 @@ runTest('computePeriodMatrix: all trades in same period produces single row', ()
     makeTrade('same-w3', 'long', longTradeExecutions(40, 45, 200), '2026-01-30T14:00:00Z'),
   ];
 
-  const result = computePeriodMatrix(sameWeekTrades, 'wow', 2);
+  const result = computePeriodMatrix(sameWeekTrades, 'wow', TEST_TIMEZONE, 2);
 
   // All in W05 → current = W05, previous = W04 (no trades)
   assertLength(result.rows, 1, '1 comparison row');
@@ -491,7 +494,7 @@ runTest('computePeriodMatrix: all trades in same period produces single row', ()
 runTest('computePeriodMatrix: null deltas when previous has no metrics', () => {
   const singleWeekTrades = [W5_WIN_1, W5_WIN_2];
 
-  const result = computePeriodMatrix(singleWeekTrades, 'wow', 2);
+  const result = computePeriodMatrix(singleWeekTrades, 'wow', TEST_TIMEZONE, 2);
 
   assertLength(result.rows, 1, '1 comparison row');
   // Previous week has no trades → metrics are null
@@ -511,7 +514,7 @@ runTest('Q7-NEGATIVE: zero-quantity executions produce zero PnL per period', () 
   ];
   const trade = makeTrade('zero-qty', 'long', zeroQtyExecutions, '2026-01-02T14:00:00Z', { initialRiskAmount: 500 });
 
-  const result = computePeriodMatrix([trade], 'wow', 2);
+  const result = computePeriodMatrix([trade], 'wow', TEST_TIMEZONE, 2);
 
   assertLength(result.rows, 1, '1 comparison row');
   assertClose(result.rows[0].current.pnl, 0, 'zero qty → PnL = 0');
@@ -524,21 +527,21 @@ runTest('Q7-NEGATIVE: trade with null fees still computes correctly', () => {
   ];
   const trade = makeTrade('null-fees', 'long', nullFeesExecutions, '2026-01-02T14:00:00Z', { initialRiskAmount: 500 });
 
-  const result = computePeriodMatrix([trade], 'wow', 2);
+  const result = computePeriodMatrix([trade], 'wow', TEST_TIMEZONE, 2);
 
   assertClose(result.rows[0].current.pnl, 1000, 'null fees → PnL = 1000 (fees treated as 0)');
   assertClose(result.rows[0].current.avgR!, 2, 'null fees → avgR = 2 (1000/500)');
 });
 
 runTest('Q7-NEGATIVE: maxPeriods less than 2 is clamped to 2', () => {
-  const result = computePeriodMatrix(ALL_TRADES, 'wow', 1);
+  const result = computePeriodMatrix(ALL_TRADES, 'wow', TEST_TIMEZONE, 1);
 
   assertLength(result.rows, 1, 'clamped to 2 → 1 row');
 });
 
 runTest('Q7-NEGATIVE: very many periods still produce valid comparison rows', () => {
   // Use the all-period spanning trades (W1-W5) to test with 10 periods
-  const result = computePeriodMatrix(ALL_TRADES, 'wow', 10);
+  const result = computePeriodMatrix(ALL_TRADES, 'wow', TEST_TIMEZONE, 10);
 
   // Should produce 9 comparison rows
   assertLength(result.rows, 9, '10 periods → 9 rows');
@@ -558,7 +561,7 @@ runTest('Q7-NEGATIVE: trades at exact period boundary are included', () => {
     { initialRiskAmount: 500 },
   );
 
-  const result = computePeriodMatrix([exactBoundary, W4_SCRATCH_TRADE], 'wow', 2);
+  const result = computePeriodMatrix([exactBoundary, W4_SCRATCH_TRADE], 'wow', TEST_TIMEZONE, 2);
 
   assertLength(result.rows, 1, '1 comparison row');
   assertEqual(result.rows[0].current.periodId, '2026-W05', 'boundary trade in W5');
@@ -568,10 +571,69 @@ runTest('Q7-NEGATIVE: trades at exact period boundary are included', () => {
 runTest('Q7-NEGATIVE: empty executions array produces zero PnL', () => {
   const trade = makeTrade('empty-exec', 'long', [], '2026-01-02T10:00:00Z', { initialRiskAmount: 500 });
 
-  const result = computePeriodMatrix([trade], 'wow', 2);
+  const result = computePeriodMatrix([trade], 'wow', TEST_TIMEZONE, 2);
 
   assertClose(result.rows[0].current.pnl, 0, 'empty exec → PnL = 0');
   assertClose(result.rows[0].current.avgR!, 0, 'empty exec → avgR = 0 (0/500)');
+});
+
+// ── D8 regression tests (canonical app-timezone period attribution) ────
+
+runTest('D8: month boundary — Bogotá late-evening close lands in previous local month (MoM)', () => {
+  // 2026-04-01T03:30:00Z = 2026-03-31 22:30 in America/Bogota → March 2026, NOT April.
+  const trade = makeTrade('mom-boundary-001', 'long', longTradeExecutions(50, 60), '2026-04-01T03:30:00.000Z');
+
+  const bogota = getPeriodFromDate('2026-04-01T03:30:00.000Z', 'mom', 'America/Bogota');
+  assertEqual(bogota.periodId, '2026-03', 'Bogotá MoM period = 2026-03');
+
+  const utc = getPeriodFromDate('2026-04-01T03:30:00.000Z', 'mom', 'UTC');
+  assertEqual(utc.periodId, '2026-04', 'UTC MoM period = 2026-04');
+
+  // Trade attribution follows the same local calendar.
+  const matrix = computePeriodMatrix([trade], 'mom', 'America/Bogota', 2);
+  assertEqual(matrix.rows[0].current.periodId, '2026-03', 'trade assigned to 2026-03');
+  assertEqual(matrix.rows[0].current.tradeCount, 1, 'trade counted in March period');
+});
+
+runTest('D8: quarter boundary — Bogotá late-evening close lands in Q1 (QoQ)', () => {
+  // 2026-04-01T03:30:00Z = 2026-03-31 22:30 in America/Bogota → Q1 2026, NOT Q2.
+  const bogota = getPeriodFromDate('2026-04-01T03:30:00.000Z', 'qoq', 'America/Bogota');
+  assertEqual(bogota.periodId, '2026-Q1', 'Bogotá QoQ period = 2026-Q1');
+
+  const utc = getPeriodFromDate('2026-04-01T03:30:00.000Z', 'qoq', 'UTC');
+  assertEqual(utc.periodId, '2026-Q2', 'UTC QoQ period = 2026-Q2');
+});
+
+runTest('D8: week boundary — UTC Monday that is still Sunday locally stays in the PREVIOUS local ISO week', () => {
+  // 2026-03-09T00:30:00Z = 2026-03-08 19:30 in America/Bogota (Sunday) → ISO week of Mon 2026-03-02.
+  const bogota = getPeriodFromDate('2026-03-09T00:30:00.000Z', 'wow', 'America/Bogota');
+  assertEqual(bogota.startDate, '2026-03-02', 'Bogotá WoW start = previous local Monday 2026-03-02');
+  assertEqual(bogota.periodId, '2026-W10', 'Bogotá WoW period = 2026-W10');
+
+  const utc = getPeriodFromDate('2026-03-09T00:30:00.000Z', 'wow', 'UTC');
+  assertEqual(utc.startDate, '2026-03-09', 'UTC WoW start = 2026-03-09');
+});
+
+runTest('D8: same instant under different configured timezones controls period assignment', () => {
+  // 2026-03-09T00:30:00Z = Monday 00:30 UTC but Sunday 19:30 in Bogotá —
+  // different local dates AND different ISO weeks.
+  const trade = makeTrade('tz-config-001', 'long', longTradeExecutions(50, 60), '2026-03-09T00:30:00.000Z');
+
+  const bogota = computePeriodMatrix([trade], 'wow', 'America/Bogota', 2);
+  const utc = computePeriodMatrix([trade], 'wow', 'UTC', 2);
+  assertEqual(bogota.rows[0].current.periodId, '2026-W10', 'Bogotá WoW period = 2026-W10 (Sunday still previous week)');
+  assertEqual(utc.rows[0].current.periodId, '2026-W11', 'UTC WoW period = 2026-W11 (Monday)');
+  assertNotEqual(bogota.rows[0].current.periodId, utc.rows[0].current.periodId,
+    'configured timezone changes the WoW period of the same instant');
+});
+
+runTest('D8: year-crossing ISO week assignment uses local date', () => {
+  // 2026-01-01T00:30:00Z = 2025-12-31 19:30 in America/Bogota → ISO week 1 of 2026 starts Mon 2025-12-29.
+  const bogota = getPeriodFromDate('2026-01-01T00:30:00.000Z', 'wow', 'America/Bogota');
+  assertEqual(bogota.startDate, '2025-12-29', 'local week start crosses into 2025');
+
+  const utc = getPeriodFromDate('2026-01-01T00:30:00.000Z', 'wow', 'UTC');
+  assertEqual(utc.startDate, '2025-12-29', 'UTC week start also 2025-12-29');
 });
 
 // ── Summary ───────────────────────────────────────────────────────────
