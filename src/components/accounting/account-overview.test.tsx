@@ -120,6 +120,12 @@ const FIXTURE_POPULATED = {
     },
   ],
   eventsTotal: 4,
+  reconciliation: {
+    status: 'clean' as const,
+    failureMode: null,
+    details: null,
+    banner: { status: 'eligible' as const, summary: 'Ready for cutover.', comparisonCount: 6, resolvedCount: 6, unresolvedCount: 0 },
+  },
 };
 
 /** Empty but ACTIVE account — no projection, positions, or events. */
@@ -143,6 +149,12 @@ const FIXTURE_EMPTY = {
   positionsTotal: 0,
   events: [],
   eventsTotal: 0,
+  reconciliation: {
+    status: 'unavailable' as const,
+    failureMode: 'no_migration_run' as const,
+    details: 'No completed migration run exists for this account.',
+    banner: null,
+  },
 };
 
 /** Draft account — inactive with no events, positions, or projection. */
@@ -166,6 +178,12 @@ const FIXTURE_DRAFT = {
   positionsTotal: 0,
   events: [],
   eventsTotal: 0,
+  reconciliation: {
+    status: 'unavailable' as const,
+    failureMode: 'no_migration_run' as const,
+    details: 'No completed migration run exists for this account.',
+    banner: null,
+  },
 };
 
 /** Account with a single position that has no valuation mark (missing price). */
@@ -211,6 +229,12 @@ const FIXTURE_MISSING_PRICE = {
     },
   ],
   eventsTotal: 1,
+  reconciliation: {
+    status: 'unavailable' as const,
+    failureMode: 'no_migration_run' as const,
+    details: 'No completed migration run exists for this account.',
+    banner: null,
+  },
 };
 
 // ── Test Setup ─────────────────────────────────────────────────────────
@@ -709,5 +733,125 @@ describe('AccountOverview — historical inactive account (A6)', () => {
     expect(screen.getByText(/Inactive account\./)).toBeTruthy();
     const settingsLink = screen.getByRole('link', { name: /Settings/i });
     expect(settingsLink.getAttribute('href')).toBe('/settings/accounts/acct-historical/settings');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// D9 — Overview reconciliation state consumption
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('AccountOverview — D9 reconciliation states', () => {
+  it('computation failure: renders warning, keeps metrics, Retry refetches overview', async () => {
+    let fetchCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation(async () => {
+      fetchCount++;
+      return {
+        ok: true,
+        json: async () => ({
+          ...FIXTURE_POPULATED,
+          reconciliation: {
+            status: 'unavailable' as const,
+            failureMode: 'computation_error' as const,
+            details: 'boom',
+            banner: null,
+          },
+        }),
+      };
+    });
+    render(<AccountOverview accountId="acct-d9-fail" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Reconciliation unavailable.')).toBeTruthy();
+    });
+
+    // Normal account content is still visible (warning layer, not failure).
+    expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    expect(screen.getByText('Recent Events')).toBeTruthy();
+
+    // Retry refetches the same overview endpoint.
+    const before = fetchCount;
+    fireEvent.click(screen.getByRole('button', { name: /Retry/i }));
+    await waitFor(() => {
+      expect(fetchCount).toBeGreaterThan(before);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/accounts/acct-d9-fail/overview');
+  });
+
+  it('computation failure: does not hide the positions table', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...FIXTURE_POPULATED,
+        reconciliation: {
+          status: 'unavailable' as const,
+          failureMode: 'computation_error' as const,
+          details: 'boom',
+          banner: null,
+        },
+      }),
+    });
+    render(<AccountOverview accountId="acct-d9-fail2" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Reconciliation unavailable.')).toBeTruthy();
+    });
+    // Positions table still renders.
+    expect(screen.getByText('AAPL')).toBeTruthy();
+    expect(screen.getByText('MSFT')).toBeTruthy();
+  });
+
+  it('no_migration_run: no destructive computation-failure warning', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...FIXTURE_POPULATED,
+        reconciliation: {
+          status: 'unavailable' as const,
+          failureMode: 'no_migration_run' as const,
+          details: 'No completed migration run exists for this account.',
+          banner: null,
+        },
+      }),
+    });
+    render(<AccountOverview accountId="acct-d9-nomig" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+    // Expected absence must NOT look like a system failure.
+    expect(screen.queryByText('Reconciliation unavailable.')).toBeNull();
+    expect(screen.queryByText(/reconciliation health could not be verified/i)).toBeNull();
+  });
+
+  it('clean: no reconciliation-error warning', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED); // reconciliation.status = clean
+    render(<AccountOverview accountId="acct-d9-clean" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+    expect(screen.queryByText('Reconciliation unavailable.')).toBeNull();
+    expect(screen.queryByText(/could not be verified/i)).toBeNull();
+  });
+
+  it('mismatch: not rendered as reconciliation unavailable', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...FIXTURE_POPULATED,
+        reconciliation: {
+          status: 'mismatch' as const,
+          failureMode: null,
+          details: null,
+          banner: { status: 'blocked' as const, summary: 'Reconciliation blocked.', comparisonCount: 6, resolvedCount: 5, unresolvedCount: 1 },
+        },
+      }),
+    });
+    render(<AccountOverview accountId="acct-d9-mismatch" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Net Asset Value')).toBeTruthy();
+    });
+    expect(screen.queryByText('Reconciliation unavailable.')).toBeNull();
   });
 });

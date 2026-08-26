@@ -64,6 +64,24 @@ interface EventRow {
   };
 }
 
+/**
+ * Explicit reconciliation state returned by the Overview API (D9).
+ * Never ambiguous: clean | mismatch | unavailable, with a machine-readable
+ * failureMode when unavailable.
+ */
+interface OverviewReconciliationState {
+  status: 'clean' | 'mismatch' | 'unavailable';
+  failureMode: 'no_migration_run' | 'computation_error' | null;
+  details: string | null;
+  banner: {
+    status: 'eligible' | 'stale' | 'blocked';
+    summary: string;
+    comparisonCount: number;
+    resolvedCount: number;
+    unresolvedCount: number;
+  } | null;
+}
+
 interface OverviewResponse {
   accountId: string;
   /** Whether the account is active (draft accounts start inactive). */
@@ -73,6 +91,7 @@ interface OverviewResponse {
   /** Base currency, shown when recording an opening balance. */
   currency: string | null;
   snapshot: OverviewSnapshot;
+  reconciliation: OverviewReconciliationState;
   positions: PositionRow[];
   positionsTotal: number;
   events: EventRow[];
@@ -352,6 +371,28 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <div>
+      {/* D9: reconciliation computation failure — compact operational warning.
+          Account data remains available; only reconciliation health is unknown.
+          Never shown for clean/mismatch or the expected no-migration state. */}
+      {data.reconciliation?.status === 'unavailable' &&
+        data.reconciliation.failureMode === 'computation_error' && (
+          <div className="mb-5 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+            <div className="flex-1 text-xs leading-relaxed">
+              <span className="font-semibold text-foreground">Reconciliation unavailable.</span>{' '}
+              <span className="text-muted-foreground">
+                Account data is available, but reconciliation health could not be verified. Retry to recompute it.
+              </span>
+            </div>
+            <button
+              onClick={() => void fetchOverview()}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              <RefreshCw className="size-3" />
+              Retry
+            </button>
+          </div>
+        )}
       {/* A6: historical inactive account — read-only for new activity. */}
       {readOnly && (
         <div className="mb-5 flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5">

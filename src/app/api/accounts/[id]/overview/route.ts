@@ -8,10 +8,18 @@
  *   - snapshot: 9-field accounting projection (netCash, nav, markedPositions,
  *     realizedPnl, unrealizedPnl, totalPnl, realizedFees, grossExposure,
  *     netExposure), all nullable
- *   - reconciliation: banner state (eligible / stale / blocked) with counts
+ *   - reconciliation: explicit discriminated state
+ *     { status: clean|mismatch|unavailable, failureMode: null|no_migration_run|
+ *       computation_error, details, banner }
  *   - positions: up to 5 open position rows with valuation-mark enrichment
  *   - events: up to 10 latest authoritative ledger events with category and
  *     basic shape
+ *
+ * The response is PARTIALLY RESILIENT (D9): if reconciliation computation
+ * fails, reconciliation explicitly reports
+ * unavailable/computation_error while snapshot, positions, and events
+ * remain valid. Expected absence (no migration run) reports
+ * unavailable/no_migration_run — never an ambiguous null.
  *
  * All numeric values are canonical decimal strings or null.  Empty arrays
  * are returned for accounts with no positions or events.  Missing-price
@@ -32,7 +40,7 @@ import {
 import { computeReconciliation } from '@/lib/accounting/reconciliation';
 import {
   composeOverviewSnapshot,
-  deriveBannerState,
+  composeOverviewReconciliation,
   mapPositionRow,
 } from '@/lib/account-detail';
 import type { ValuationMarkRow } from '@/db/accounting-repository';
@@ -119,23 +127,38 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const snapshot = composeOverviewSnapshot(snapshotInput);
 
-    // ── 3. Reconciliation Banner ──────────────────────────────────────
-    let reconciliation: ReturnType<typeof deriveBannerState> | null = null;
+    // ── 3. Reconciliation State (D9) ───────────────────────────────────
+    // Explicit discriminated state: clean | mismatch | unavailable.
+    // Expected absence (no migration run) and computation failure are NEVER
+    // collapsed into an ambiguous null — the caller can distinguish them.
+    // A computation failure must not fail the whole Overview: the snapshot,
+    // positions, and events below still return normally.
+    let reconciliationReport: Awaited<ReturnType<typeof computeReconciliation>>;
+    let reconciliationError: unknown;
     try {
-      const report = computeReconciliation(sqlite, accountId);
-      if (report) {
-        reconciliation = deriveBannerState({
-          cutoverEligible: report.cutoverEligible,
-          cutoverRefusalReasons: report.cutoverRefusalReasons,
-          comparisons: report.comparisons.length,
-          matching: report.comparisons.filter((c: { classification: string }) => c.classification === 'match').length,
-          explained: report.comparisons.filter((c: { classification: string }) => c.classification === 'explained').length,
-          unexplained: report.comparisons.filter((c: { classification: string }) => c.classification === 'unexplained').length,
-          computedAt: report.computedAt ?? null,
-        });
-      }
-    } catch {
-      // Reconciliation fetch is best-effort for the overview
+      reconciliationReport = computeReconciliation(sqlite, accountId);
+    } catch (err) {
+      reconciliationError = err;
+    }
+
+    const reconciliation = composeOverviewReconciliation(
+      reconciliationReport,
+      reconciliationError,
+    );
+
+    if (reconciliation.failureMode === 'computation_error') {
+      // Structured server diagnostic — never swallowed. No tokens or
+      // credentials are logged, only the diagnostic context.
+      console.error(
+        '[account-overview] reconciliation-computation-failed',
+        JSON.stringify({
+          subsystem: 'reconciliation',
+          surface: 'account-overview',
+          accountId,
+          failureMode: 'computation_error',
+          message: reconciliation.details,
+        }),
+      );
     }
 
     // ── 4. Positions Preview (up to 5) ────────────────────────────────

@@ -11,6 +11,12 @@
  * @module account-detail
  */
 
+import type {
+  ReconciliationReport,
+  ReconciliationStatus,
+  ReconciliationUnavailableReason,
+} from './accounting/reconciliation';
+
 // ───────────────────────────────────────────────────────────────────────────
 // 1. Overview Snapshot Composition
 // ───────────────────────────────────────────────────────────────────────────
@@ -194,6 +200,96 @@ function buildBannerSummary(
     case 'blocked':
       return `Reconciliation blocked — ${unresolved} unexplained difference(s) out of ${comparisons} comparisons.`;
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 2b. Overview Reconciliation State (D9)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Explicit discriminated reconciliation state carried by the Account
+ * Overview response.
+ *
+ * D9: the Overview must never collapse "expected absence" and "failed
+ * integrity verification" into the same ambiguous null. The dedicated
+ * reconciliation endpoint's taxonomy is reused verbatim:
+ *
+ * - clean        → report computed, cutover eligible
+ * - mismatch     → report computed, unexplained differences exist
+ * - unavailable  → no_migration_run (expected) or computation_error (failure)
+ *
+ * Domain reconciliation status and banner presentation status are separate
+ * concepts and must not be collapsed: banner.status is eligible/stale/blocked
+ * and is derived only for successful reports.
+ */
+export interface OverviewReconciliationState {
+  /** Canonical reconciliation status (same taxonomy as the dedicated endpoint). */
+  status: ReconciliationStatus;
+  /** Machine-readable unavailable reason; null when the report succeeded. */
+  failureMode: ReconciliationUnavailableReason | null;
+  /** Concise human-readable explanation; null for successful reports. */
+  details: string | null;
+  /** Presentation banner for successful reports; null when unavailable. */
+  banner: ReconciliationBanner | null;
+}
+
+/**
+ * Compose the Overview reconciliation state from the canonical report
+ * computation outcome.
+ *
+ * Pure mapping (no logging, no side effects):
+ * - computeError !== undefined → unavailable/computation_error (banner null)
+ * - report undefined           → unavailable/no_migration_run (banner null)
+ * - report present             → clean|mismatch from report.status,
+ *                                failureMode null, banner derived for
+ *                                presentation metadata only.
+ *
+ * The caller (route) is responsible for structured logging on
+ * computation_error; this mapper never fabricates health.
+ *
+ * @param report       Reconciliation report, or undefined when no completed
+ *                     migration run exists for the account.
+ * @param computeError The thrown error when reconciliation computation
+ *                     failed, or undefined on success.
+ * @returns Explicit, never-ambiguous reconciliation state.
+ */
+export function composeOverviewReconciliation(
+  report: ReconciliationReport | undefined,
+  computeError: unknown,
+): OverviewReconciliationState {
+  if (computeError !== undefined) {
+    return {
+      status: 'unavailable',
+      failureMode: 'computation_error',
+      details: computeError instanceof Error ? computeError.message : String(computeError),
+      banner: null,
+    };
+  }
+
+  if (!report) {
+    return {
+      status: 'unavailable',
+      failureMode: 'no_migration_run',
+      details:
+        'No completed migration run exists for this account. Run a migration to compare legacy and accounting data.',
+      banner: null,
+    };
+  }
+
+  return {
+    status: report.status,
+    failureMode: null,
+    details: null,
+    banner: deriveBannerState({
+      cutoverEligible: report.cutoverEligible,
+      cutoverRefusalReasons: report.cutoverRefusalReasons,
+      comparisons: report.comparisons.length,
+      matching: report.comparisons.filter((c) => c.classification === 'match').length,
+      explained: report.comparisons.filter((c) => c.classification === 'explained').length,
+      unexplained: report.comparisons.filter((c) => c.classification === 'unexplained').length,
+      computedAt: report.computedAt ?? null,
+    }),
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────

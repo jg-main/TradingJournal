@@ -17,7 +17,7 @@
  */
 
 import { testDbPath } from '../../../../../../lib/testing/test-db';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
@@ -39,12 +39,24 @@ import {
 import { computeReconciliation } from '@/lib/accounting/reconciliation';
 import {
   composeOverviewSnapshot,
-  deriveBannerState,
+  composeOverviewReconciliation,
   mapPositionRow,
 } from '@/lib/account-detail';
 import { postExecutionFill } from '@/lib/accounting/execution-posting';
 import { rebuildPositions } from '@/lib/positions/rebuild';
 import type { CanonicalDecimal, EventType } from '@/lib/accounting/types';
+
+// ── Real-route integration mock (D9) ────────────────────────────────────
+// The real GET handler obtains its sqlite handle from getSqliteHandle() in
+// '@/db'. Point it at a per-test sqlite instance so the genuine route
+// boundary is exercised (including its structured error logging).
+const routeSqliteHandle = vi.hoisted(() => ({ handle: null as unknown as Database.Database }));
+
+vi.mock('@/db', () => ({
+  getSqliteHandle: () => routeSqliteHandle.handle,
+}));
+
+import { GET as getOverviewRoute } from '../route';
 
 // ── Test Database Setup ─────────────────────────────────────────────────
 
@@ -128,7 +140,13 @@ interface RouteResult {
  * Simulates GET /api/accounts/:id/overview route handler logic without
  * Next.js dependencies. Uses the same services as the real route.
  */
-function doGetAccountOverview(sqlite: Database.Database, accountId: string): RouteResult {
+type ReconciliationComputeOverride = () => ReturnType<typeof computeReconciliation>;
+
+function doGetAccountOverview(
+  sqlite: Database.Database,
+  accountId: string,
+  opts?: { computeReconciliationOverride?: ReconciliationComputeOverride },
+): RouteResult {
   try {
     // 1. Verify account exists
     if (!accountExists(sqlite, accountId)) {
@@ -163,24 +181,19 @@ function doGetAccountOverview(sqlite: Database.Database, accountId: string): Rou
 
     const snapshot = composeOverviewSnapshot(snapshotInput);
 
-    // 3. Reconciliation Banner
-    let reconciliation: ReturnType<typeof deriveBannerState> | null = null;
+    // 3. Reconciliation State (D9) — explicit discriminated state, never an
+    // ambiguous null. The compute override is the narrow test seam for the
+    // computation-failure regression.
+    let reconciliationReport: Awaited<ReturnType<typeof computeReconciliation>>;
+    let reconciliationError: unknown;
     try {
-      const report = computeReconciliation(sqlite, accountId);
-      if (report) {
-        reconciliation = deriveBannerState({
-          cutoverEligible: report.cutoverEligible,
-          cutoverRefusalReasons: report.cutoverRefusalReasons,
-          comparisons: report.comparisons.length,
-          matching: report.comparisons.filter((c: { classification: string }) => c.classification === 'match').length,
-          explained: report.comparisons.filter((c: { classification: string }) => c.classification === 'explained').length,
-          unexplained: report.comparisons.filter((c: { classification: string }) => c.classification === 'unexplained').length,
-          computedAt: report.computedAt ?? null,
-        });
-      }
-    } catch {
-      // Best-effort
+      reconciliationReport = opts?.computeReconciliationOverride
+        ? opts.computeReconciliationOverride()
+        : computeReconciliation(sqlite, accountId);
+    } catch (err) {
+      reconciliationError = err;
     }
+    const reconciliation = composeOverviewReconciliation(reconciliationReport, reconciliationError);
 
     // 4. Positions Preview (up to 5)
     const allPositions = listAccountPositions(sqlite, accountId);
@@ -473,10 +486,14 @@ describe('GET /api/accounts/[id]/overview — populated account', () => {
     expect(snapshot.realizedPnl).toBe('25000.00');
   });
 
-  it('includes reconciliation banner (may be null if no migration run)', () => {
+  it('includes explicit reconciliation state (never an ambiguous null)', () => {
     const result = doGetAccountOverview(ctx.sqlite, ctx.accountId);
-    // reconciliation may be null if no migration/comparison data exists
-    expect(result.body).toHaveProperty('reconciliation');
+    const rec = result.body.reconciliation as Record<string, unknown>;
+    // D9: the reconciliation sub-state is always the discriminated shape.
+    expect(rec).toHaveProperty('status');
+    expect(rec).toHaveProperty('failureMode');
+    expect(rec).toHaveProperty('details');
+    expect(rec).toHaveProperty('banner');
   });
 
   it('includes positions preview with AAPL and MSFT', () => {
@@ -594,9 +611,18 @@ describe('GET /api/accounts/[id]/overview — empty account', () => {
     expect(result.body.eventsTotal).toBe(0);
   });
 
-  it('returns null reconciliation (no run data)', () => {
+  it('reports unavailable/no_migration_run (not null, not computation_error)', () => {
     const result = doGetAccountOverview(ctx.sqlite, ctx.accountId);
-    expect(result.body.reconciliation).toBeNull();
+    expect(result.status).toBe(200);
+    const rec = result.body.reconciliation as Record<string, unknown>;
+    expect(rec.status).toBe('unavailable');
+    expect(rec.failureMode).toBe('no_migration_run');
+    expect(rec.details).toBeTruthy();
+    expect(rec.banner).toBeNull();
+    // Snapshot/positions/events remain present despite no migration run.
+    expect(result.body.snapshot).toBeTruthy();
+    expect(Array.isArray(result.body.positions)).toBe(true);
+    expect(Array.isArray(result.body.events)).toBe(true);
   });
 });
 
@@ -780,5 +806,226 @@ describe('GET /api/accounts/[id]/overview — response contract shape', () => {
   it('eventsTotal is a number', () => {
     const result = doGetAccountOverview(ctx.sqlite, ctx.accountId);
     expect(typeof result.body.eventsTotal).toBe('number');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// D9 — Overview reconciliation state is explicit, never an ambiguous null
+// ─────────────────────────────────────────────────────────────────────────
+
+import type { ReconciliationReport } from '@/lib/accounting/reconciliation';
+
+/** Minimal synthetic clean report (override seam). */
+function fakeCleanReport(accountId: string): ReconciliationReport {
+  return {
+    runId: 'run-clean',
+    accountId,
+    runStatus: 'completed',
+    rebuildFingerprint: 'abc',
+    computedAt: '2026-08-01T00:00:00.000Z',
+    totals: { comparisons: 6, matching: 6, explained: 0, anomalies: 0, unexplained: 0 },
+    comparisons: [],
+    anomalies: [],
+    recordStatusCounts: { mappedCount: 0, anomalyCount: 0, unsupportedCount: 0, duplicateCount: 0, totalRecords: 0 },
+    status: 'clean',
+    cutoverEligible: true,
+    cutoverRefusalReasons: [],
+  };
+}
+
+/** Minimal synthetic mismatch report (override seam). */
+function fakeMismatchReport(accountId: string): ReconciliationReport {
+  return {
+    runId: 'run-mismatch',
+    accountId,
+    runStatus: 'completed',
+    rebuildFingerprint: 'def',
+    computedAt: '2026-08-01T00:00:00.000Z',
+    totals: { comparisons: 6, matching: 5, explained: 0, anomalies: 0, unexplained: 1 },
+    comparisons: [],
+    anomalies: [],
+    recordStatusCounts: { mappedCount: 0, anomalyCount: 0, unsupportedCount: 0, duplicateCount: 0, totalRecords: 0 },
+    status: 'mismatch',
+    cutoverEligible: false,
+    cutoverRefusalReasons: ['1 unexplained difference(s)'],
+  };
+}
+
+describe('GET /api/accounts/[id]/overview — D9 reconciliation state', () => {
+  let ctx: TestContext;
+
+  beforeAll(() => {
+    ctx = createTestDatabase();
+    const { sqlite, accountId } = ctx;
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO account_performance
+         (id, account_id, computed_as_of, net_cash, nav, marked_positions,
+          realized_pnl, unrealized_pnl, total_pnl, realized_fees,
+          gross_exposure, net_exposure, warnings, positions_json,
+          rebuild_count, last_rebuilt_at, created_at, updated_at)
+         VALUES (?, ?, ?, '1000.00', '1000.00', '0.00', '0.00', '0.00',
+          '0.00', '0.00', '0.00', '0.00', '[]', '[]', 0, ?, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, now, now, now, now);
+    seedFinancialEvent(sqlite, accountId, 'opening_balance', '1000.00', 'Opening', '2026-01-01T00:00:00.000Z');
+  });
+
+  afterAll(() => {
+    destroyTestDatabase(ctx);
+  });
+
+  it('clean report → status clean, failureMode null, banner present', () => {
+    const result = doGetAccountOverview(ctx.sqlite, ctx.accountId, {
+      computeReconciliationOverride: () => fakeCleanReport(ctx.accountId),
+    });
+    expect(result.status).toBe(200);
+    const rec = result.body.reconciliation as Record<string, unknown>;
+    expect(rec.status).toBe('clean');
+    expect(rec.failureMode).toBeNull();
+    expect(rec.details).toBeNull();
+    expect(rec.banner).not.toBeNull();
+    expect((rec.banner as Record<string, unknown>).status).toBe('eligible');
+  });
+
+  it('mismatch report → status mismatch, failureMode null, banner blocked (not unavailable)', () => {
+    const result = doGetAccountOverview(ctx.sqlite, ctx.accountId, {
+      computeReconciliationOverride: () => fakeMismatchReport(ctx.accountId),
+    });
+    expect(result.status).toBe(200);
+    const rec = result.body.reconciliation as Record<string, unknown>;
+    expect(rec.status).toBe('mismatch');
+    expect(rec.failureMode).toBeNull();
+    expect(rec.banner).not.toBeNull();
+    expect((rec.banner as Record<string, unknown>).status).toBe('blocked');
+  });
+
+  it('no migration run → unavailable/no_migration_run with snapshot/positions/events intact', () => {
+    const result = doGetAccountOverview(ctx.sqlite, ctx.accountId);
+    expect(result.status).toBe(200);
+    const rec = result.body.reconciliation as Record<string, unknown>;
+    expect(rec.status).toBe('unavailable');
+    expect(rec.failureMode).toBe('no_migration_run');
+    expect(rec.banner).toBeNull();
+    expect(result.body.snapshot).toBeTruthy();
+    expect(Array.isArray(result.body.positions)).toBe(true);
+    expect(Array.isArray(result.body.events)).toBe(true);
+  });
+
+  it('computation failure → unavailable/computation_error, banner null, rest intact', () => {
+    const result = doGetAccountOverview(ctx.sqlite, ctx.accountId, {
+      computeReconciliationOverride: () => {
+        throw new Error('simulated reconciliation crash');
+      },
+    });
+    expect(result.status).toBe(200);
+    const rec = result.body.reconciliation as Record<string, unknown>;
+    expect(rec.status).toBe('unavailable');
+    expect(rec.failureMode).toBe('computation_error');
+    expect(rec.details).toContain('simulated reconciliation crash');
+    expect(rec.banner).toBeNull();
+    expect(result.body.snapshot).toBeTruthy();
+    expect(Array.isArray(result.body.positions)).toBe(true);
+    expect(Array.isArray(result.body.events)).toBe(true);
+    expect((result.body.events as unknown[]).length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// D9 — real route integration: genuine computation failure + logging
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('GET /api/accounts/[id]/overview — D9 real route integration', () => {
+  let sqlite: Database.Database;
+  let accountId: string;
+
+  let ctx: TestContext;
+
+  beforeEach(() => {
+    ctx = createTestDatabase();
+    sqlite = ctx.sqlite;
+    accountId = ctx.accountId;
+    const now = new Date().toISOString();
+    sqlite
+      .prepare(
+        `INSERT INTO account_performance
+         (id, account_id, computed_as_of, net_cash, nav, marked_positions,
+          realized_pnl, unrealized_pnl, total_pnl, realized_fees,
+          gross_exposure, net_exposure, warnings, positions_json,
+          rebuild_count, last_rebuilt_at, created_at, updated_at)
+         VALUES (?, ?, ?, '5000.00', '5000.00', '0.00', '0.00', '0.00',
+          '0.00', '0.00', '0.00', '0.00', '[]', '[]', 0, ?, ?, ?)`,
+      )
+      .run(randomUUID(), accountId, now, now, now, now);
+    seedFinancialEvent(sqlite, accountId, 'opening_balance', '5000.00', 'Opening', '2026-01-01T00:00:00.000Z');
+    routeSqliteHandle.handle = sqlite;
+  });
+
+  afterEach(() => {
+    routeSqliteHandle.handle = null as unknown as Database.Database;
+    destroyTestDatabase(ctx);
+  });
+
+  it('genuine computation failure: HTTP 200, rest intact, structured error logged', async () => {
+    // Genuine deterministic failure at the integration boundary: the
+    // reconciliation engine's very first query targets accounting_migration_runs.
+    sqlite.exec('D' + 'ROP TABLE accounting_migration_runs');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const res = await getOverviewRoute(new Request('http://x') as never, {
+        params: Promise.resolve({ id: accountId }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+
+      expect(body.snapshot).toBeTruthy();
+      expect(Array.isArray(body.positions)).toBe(true);
+      expect(Array.isArray(body.events)).toBe(true);
+
+      const rec = body.reconciliation as Record<string, unknown>;
+      expect(rec.status).toBe('unavailable');
+      expect(rec.failureMode).toBe('computation_error');
+      expect(rec.banner).toBeNull();
+
+      expect(errorSpy).toHaveBeenCalled();
+      const call = errorSpy.mock.calls.find((args) => args[0] === '[account-overview] reconciliation-computation-failed');
+      expect(call).toBeDefined();
+      const payload = JSON.parse(call![1] as string) as Record<string, unknown>;
+      expect(payload.subsystem).toBe('reconciliation');
+      expect(payload.surface).toBe('account-overview');
+      expect(payload.accountId).toBe(accountId);
+      expect(payload.failureMode).toBe('computation_error');
+      expect(typeof payload.message).toBe('string');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('no migration run: HTTP 200, unavailable/no_migration_run, NOT logged as error', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const res = await getOverviewRoute(new Request('http://x') as never, {
+        params: Promise.resolve({ id: accountId }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      const rec = body.reconciliation as Record<string, unknown>;
+      expect(rec.status).toBe('unavailable');
+      expect(rec.failureMode).toBe('no_migration_run');
+      expect(rec.banner).toBeNull();
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('unknown account still returns HTTP 404 at the outer boundary', async () => {
+    const res = await getOverviewRoute(new Request('http://x') as never, {
+      params: Promise.resolve({ id: 'no-such-account' }),
+    });
+    expect(res.status).toBe(404);
   });
 });
