@@ -101,6 +101,7 @@ const TSX_TESTS: string[] = [
   'src/lib/grading.test.ts',
   'src/lib/period-matrix.test.ts',
   'src/lib/timezone.test.ts',
+  'src/lib/trade-execution-idempotency.test.ts',
   'src/lib/trade-metrics.test.ts',
   'scripts/__tests__/m020-evidence-isolation.test.ts',
   'scripts/recovery-drill.ts',
@@ -196,6 +197,19 @@ async function main(): Promise<void> {
     exitCode = 1;
   } else {
     console.log(`   ✓ root test-artifact hygiene PASSED`);
+  }
+  console.log();
+
+  /* ─── Obsolete execution-sync guard (D6) ─────────────── */
+  console.log('◆  Obsolete execution-sync check …');
+  const obsoleteSync = run(`node scripts/check-obsolete-execution-sync.mjs`, PROJECT_ROOT, 'obsolete-execution-sync');
+  results.push(obsoleteSync);
+  if (!obsoleteSync.passed) {
+    console.log(`   ✗ obsolete execution-sync FAILED (forbidden references found)`);
+    console.log(obsoleteSync.output.split('\n').slice(0, 20).map((l) => `     ${l}`).join('\n'));
+    exitCode = 1;
+  } else {
+    console.log(`   ✓ obsolete execution-sync PASSED`);
   }
   console.log();
 

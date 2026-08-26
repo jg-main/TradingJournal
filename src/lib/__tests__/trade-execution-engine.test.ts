@@ -49,6 +49,8 @@ import { computeTradeMetrics } from '../trade-metrics';
 import { deriveWorkflowPhase, hasManagementActivity } from '@/lib/workflow-phase';
 import { UnsupportedAccountCurrencyError } from '../accounting/errors';
 import { postExecutionFill } from '../accounting/execution-posting';
+import { tradeExecutionIdempotencyKey } from '../trade-execution-idempotency';
+import { findAccountingExecutionByIdempotencyKey } from '@/db/accounting-repository';
 import { postFinancialEvent } from '../accounting/posting';
 import { insertValuationMark } from '@/db/accounting-repository';
 import { rebuildAccountPerformance } from '../performance/performance-rebuild';
@@ -366,6 +368,45 @@ describe('executeTradeFill', () => {
     expect(countRows('trade_executions', 'trade_id = ?', tradeId)).toBe(1);
     expect(countRows('accounting_executions', 'journal_trade_id = ?', tradeId)).toBe(1);
     expect(countRows('financial_events', 'account_id = ?', accountId)).toBe(1);
+  });
+
+  it('D6 §15: accounting execution is keyed trade-execution-<journalId> and found via the pure builder', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+
+    const result = executeTradeFill(fill(tradeId), context);
+
+    // Journal execution id E → accounting idempotency key trade-execution-E.
+    const journalId = result.execution.id;
+    const expectedKey = tradeExecutionIdempotencyKey(journalId);
+    expect(expectedKey).toBe(`trade-execution-${journalId}`);
+    expect(result.accountingExecution?.idempotency_key).toBe(expectedKey);
+
+    // Correction lookup via the pure builder finds exactly that row.
+    const found = findAccountingExecutionByIdempotencyKey(context.sqlite, expectedKey);
+    expect(found).toBeDefined();
+    expect(found!.id).toBe(result.accountingExecution!.id);
+    expect(found!.journal_trade_id).toBe(tradeId);
+  });
+
+  it('D6 §16: idempotent replay locates the accounting execution via the pure key builder', () => {
+    const accountId = seedAccount();
+    seedSettings();
+    const tradeId = seedTrade(accountId, { plannedStop: 95 });
+    const key = randomUUID();
+
+    const first = executeTradeFill(fill(tradeId, { idempotencyKey: key }), context);
+    const replay = executeTradeFill(fill(tradeId, { idempotencyKey: key }), context);
+
+    expect(replay.replayed).toBe(true);
+    const found = findAccountingExecutionByIdempotencyKey(
+      context.sqlite,
+      tradeExecutionIdempotencyKey(first.execution.id),
+    );
+    expect(found?.id).toBe(first.accountingExecution!.id);
+    // No duplicate accounting row after replay.
+    expect(countRows('accounting_executions', 'journal_trade_id = ?', tradeId)).toBe(1);
   });
 
   it('atomicity: accounting failure inside the transaction rolls back the journal execution', () => {

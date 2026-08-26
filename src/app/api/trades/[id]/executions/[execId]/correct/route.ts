@@ -11,10 +11,10 @@
  * is the trade-side bridge to that engine:
  *
  * 1. Resolves the trade and its accountId
- * 2. Looks up the accounting execution mirrored for this trade execution via
- *    the idempotency key `trade-execution-<execId>` — the exact key the
- *    executions POST sets through syncAndRebuildPositions (see
- *    src/lib/positions/trade-execution-sync.ts)
+ * 2. Looks up the accounting execution created for this journal execution
+ *    via the deterministic idempotency key `trade-execution-<execId>` — the
+ *    same key executeTradeFill() writes when it creates the journal
+ *    execution and canonical accounting execution atomically
  * 3. Validates the replacement payload with the canonical correction schema
  * 4. Delegates to correctExecution (reversal + replacement + lineage, FIFO
  *    and performance rebuild)
@@ -41,7 +41,7 @@ import { trades } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { correctExecution } from '@/lib/accounting/correction';
 import { correctionInputSchema } from '@/lib/accounting/correction-contracts';
-import { tradeExecutionIdempotencyKey } from '@/lib/positions/trade-execution-sync';
+import { tradeExecutionIdempotencyKey } from '@/lib/trade-execution-idempotency';
 import { findAccountingExecutionByIdempotencyKey } from '@/db/accounting-repository';
 import {
   resolveEffectiveExecutions,
@@ -68,11 +68,12 @@ function logInfo(message: string, ...args: unknown[]): void {
 
 type RouteParams = { params: Promise<{ id: string; execId: string }> };
 
-// The accounting mirror for a legacy trade execution lives under the
-// idempotency key built by tradeExecutionIdempotencyKey (see
-// src/lib/positions/trade-execution-sync.ts) — the key the executions POST
-// sets when it syncs a fill. This route resolves the mirror by that key, so
-// the two surfaces MUST share the builder rather than duplicating the format.
+// The canonical execution engine (executeTradeFill) creates the journal
+// execution AND the canonical accounting execution atomically inside one
+// transaction. The accounting execution uses the deterministic idempotency
+// key built by tradeExecutionIdempotencyKey — the same key this route uses
+// to resolve it, so the writer and the correction reader MUST share the
+// builder rather than duplicating the format.
 
 // ── POST ────────────────────────────────────────────────────────────────
 
@@ -138,9 +139,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // 3. Look up the accounting execution mirrored for this trade execution.
-    //    The mirror is created by syncAndRebuildPositions under the
-    //    trade-execution-<execId> idempotency key when the fill was posted.
+    // 3. Look up the accounting execution created for this journal execution.
+    //    executeTradeFill() creates the journal execution and the canonical
+    //    accounting execution atomically, keyed by trade-execution-<execId>,
+    //    so this route resolves it by that same deterministic key.
     const sqlite = getSqliteHandle();
     const key = tradeExecutionIdempotencyKey(execId);
     const accountingExecution = findAccountingExecutionByIdempotencyKey(sqlite, key);

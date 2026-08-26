@@ -769,10 +769,8 @@ function kernelPostsAdjustment() {
   moduleExports(S, 'fifo.ts exports allocateFifo', 'src/lib/positions/fifo.ts', [
     'allocateFifo',
   ]);
-  moduleExports(S, 'trade-execution-sync.ts exports', 'src/lib/positions/trade-execution-sync.ts', [
+  moduleExports(S, 'trade-execution-idempotency.ts exports', 'src/lib/trade-execution-idempotency.ts', [
     'tradeExecutionIdempotencyKey',
-    'syncTradeExecution',
-    'syncAndRebuildPositions',
   ]);
 
   moduleExports(S, 'performance.ts exports', 'src/lib/performance/performance.ts', [

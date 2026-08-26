@@ -156,7 +156,6 @@ export default defineConfig({
       'src/lib/accounting/__tests__/execution-contracts.test.ts',
       'src/lib/positions/fifo.test.ts',
       'src/lib/positions/rebuild.test.ts',
-      'src/lib/positions/trade-execution-sync.test.ts',
       'src/lib/accounting/__tests__/execution-posting.integration.test.ts',
       'src/app/api/accounts/[id]/executions/__tests__/route.test.ts',
       'src/app/api/accounts/[id]/executions/__tests__/a5-economic-action.test.ts',

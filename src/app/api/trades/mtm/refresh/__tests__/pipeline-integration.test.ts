@@ -27,7 +27,8 @@ import { readFileSync, readdirSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { computeDashboardV2 } from '@/lib/accounting/dashboard-v2';
-import { syncAndRebuildPositions } from '@/lib/positions/trade-execution-sync';
+import { postExecutionFill } from '@/lib/accounting/execution-posting';
+import { rebuildPositions } from '@/lib/positions/rebuild';
 import {
   findOrCreateInstrument,
   findInstrumentBySymbol,
@@ -317,55 +318,42 @@ describe('M006 Pipeline Integration: MTM refresh → sync → Dashboard V2', () 
       const execId = ctx.execIds[t.symbol];
       const tradeId = ctx.tradeIds[t.symbol];
 
-      // Sync the trade execution to accounting (simulates S02 pipeline)
-      const result = syncAndRebuildPositions(
-        ctx.sqlite,
-        {
-          id: execId,
-          tradeId,
-          action: 'buy',
-          quantity: t.shares,
-          price: t.avgEntryPrice,
-          fees: 0,
-          executedAt: new Date().toISOString(),
-        },
-        ctx.accountId,
-        t.symbol,
-      );
-
-      // Should succeed
-      expect('error' in result).toBe(false);
-
-      const success = result as { accountingExecution: { account_id: string; action: string; quantity: string; price: string }; rebuildResult: { positions: Map<string, unknown>; executionCount: number; lotCount: number } };
+      // Create the canonical accounting execution for the journal execution
+      // under the deterministic trade-execution-<id> key (canonical posting
+      // kernel — the same path executeTradeFill uses).
+      const result = postExecutionFill(ctx.sqlite, {
+        accountId: ctx.accountId,
+        symbol: t.symbol,
+        action: 'buy',
+        quantity: normalizeDecimal(t.shares),
+        price: normalizeDecimal(t.avgEntryPrice),
+        fees: '0.00',
+        idempotencyKey: `trade-execution-${execId}`,
+        journalTradeId: tradeId,
+        postedAt: new Date().toISOString(),
+      });
 
       // Verify accounting_execution has correct values
-      expect(success.accountingExecution.account_id).toBe(ctx.accountId);
-      expect(success.accountingExecution.action).toBe('buy');
-      expect(success.accountingExecution.quantity).toBe(normalizeDecimal(t.shares));
-      expect(success.accountingExecution.price).toBe(normalizeDecimal(t.avgEntryPrice));
+      expect(result.execution.accountId).toBe(ctx.accountId);
+      expect(result.execution.action).toBe('buy');
+      expect(result.execution.quantity).toBe(normalizeDecimal(t.shares));
+      expect(result.execution.price).toBe(normalizeDecimal(t.avgEntryPrice));
 
-      // Verify position was rebuilt correctly
+      // Canonical FIFO position rebuild (what executeTradeFill performs
+      // inside its atomic transaction).
+      rebuildPositions(ctx.sqlite, ctx.accountId);
+
+      // Verify position was rebuilt correctly (canonical FIFO rebuild)
       const instrument = findOrCreateInstrument(ctx.sqlite, t.symbol);
-      const posKey = `${ctx.accountId}:${instrument.id}`;
-      const position = success.rebuildResult.positions.get(posKey) as {
-        direction: string;
-        quantity: string;
-        averageCost: string;
-        totalCostBasis: string;
-        realizedGrossPnl: string;
-        realizedFees: string;
-        realizedNetPnl: string;
-        openLots: Array<unknown>;
-      } | undefined;
+      const position = findAccountPosition(ctx.sqlite, ctx.accountId, instrument.id);
 
       expect(position).toBeDefined();
       expect(position!.direction).toBe('long');
       expect(position!.quantity).toBe(normalizeDecimal(t.shares));
-      expect(position!.averageCost).toBe(normalizeDecimal(t.avgEntryPrice));
-      expect(position!.realizedGrossPnl).toBe('0.00');
-      expect(position!.realizedFees).toBe('0.00');
-      expect(position!.realizedNetPnl).toBe('0.00');
-      expect(position!.openLots.length).toBe(1);
+      expect(position!.average_cost).toBe(normalizeDecimal(t.avgEntryPrice));
+      expect(position!.realized_gross_pnl).toBe('0.00');
+      expect(position!.realized_fees).toBe('0.00');
+      expect(position!.realized_net_pnl).toBe('0.00');
     }
 
     // Verify DB has 3 account_positions (one per symbol)

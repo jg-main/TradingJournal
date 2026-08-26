@@ -37,10 +37,10 @@
  * uq_trade_executions_idempotency_key inside the transaction and surfaced as
  * `IdempotentReplayError` with the original result attached.
  *
- * The accounting idempotency key is derived from the journal execution ID via
- * `tradeExecutionIdempotencyKey()` (shared with the legacy sync path — the
- * keys must never diverge, MEM055), and quantities/prices are normalized to
- * canonical decimal strings for the accounting layer.
+ * The accounting idempotency key is deterministically derived from the
+ * persisted journal execution ID via `tradeExecutionIdempotencyKey()` and
+ * shared with correction/replay lookup — the key format must never diverge
+ * between the writer and its readers (MEM055).
  *
  * Pure service: no NextResponse, no request parsing, no HTTP concerns. The
  * caller supplies the drizzle handle and the raw better-sqlite3 handle.
@@ -69,7 +69,7 @@ import { postExecutionFill, type PostExecutionFillResult } from '@/lib/accountin
 import { resolveEconomicExecutionAction } from '@/lib/accounting/economic-action';
 import { rebuildPositionsWithinTransaction } from '@/lib/positions/rebuild';
 import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
-import { tradeExecutionIdempotencyKey } from '@/lib/positions/trade-execution-sync';
+import { tradeExecutionIdempotencyKey } from '@/lib/trade-execution-idempotency';
 import { normalizeDecimal } from '@/lib/accounting/decimal';
 import type { AccountingExecutionRow } from '@/db/accounting-repository';
 import { findAccountingExecutionByIdempotencyKey } from '@/db/accounting-repository';

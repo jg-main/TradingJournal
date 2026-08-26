@@ -10,7 +10,7 @@
  *   postExecutionFill           buy + sell                      sell_short + buy_to_cover
  *   correctExecution            buy → corrected buy             sell_short → corrected sell_short
  *   runLegacyMigration          add + reduce (long trade)       add + reduce (short trade)
- *   syncTradeExecution          add (long trade)                add (short trade)
+ *   executeTradeFill            add (long trade)                add (short trade)
  *
  *   invariant 1 — no-alias persistence:   accounting_executions never stores
  *                 the generic management aliases 'add'/'reduce' (each writer
@@ -43,12 +43,12 @@ import {
   postExecutionFill,
   executionFinancialEventIdempotencyKey,
   executionFeeFinancialEventIdempotencyKey,
-  ensureExecutionFinancialEvent,
-  ensureExecutionFeeFinancialEvent,
 } from '../execution-posting';
 import { correctExecution } from '../correction';
 import { runLegacyMigration } from '../legacy-migration-runner';
-import { syncTradeExecution } from '../../positions/trade-execution-sync';
+import { executeTradeFill, type ExecuteTradeFillInput } from '../../trade-execution-engine';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from '@/db/schema';
 import {
   computeAccountActivity,
   computeAccountCashImpact,
@@ -653,10 +653,15 @@ describe('accounting invariant matrix — legacy migration (runLegacyMigration)'
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Writer path 4 — journal sync (syncTradeExecution)
+// Writer path 4 — canonical execution engine (executeTradeFill)
 // ═══════════════════════════════════════════════════════════════════════════
+// D6: the obsolete fail-open journal→accounting sync writer was retired. The canonical writer for new fills is executeTradeFill, which
+// persists the journal execution, trade lifecycle, risk snapshot, accounting
+// execution, ledger effects, FIFO positions, and account performance inside
+// one atomic transaction. This block proves that path satisfies the same five
+// invariants (D1 economic-action boundary) for long and short.
 
-describe('accounting invariant matrix — journal sync (syncTradeExecution)', () => {
+describe('accounting invariant matrix — canonical execution engine (executeTradeFill)', () => {
   let ctx: TestDatabaseContext;
   let longAccount: string;
   let shortAccount: string;
@@ -664,65 +669,72 @@ describe('accounting invariant matrix — journal sync (syncTradeExecution)', ()
   beforeAll(() => {
     ctx = createTestDatabase({ migrations: true });
     const sqlite = ctx.sqlite;
+    const db = drizzle(sqlite, { schema });
+    const context = { db, sqlite };
+    const now = new Date().toISOString();
 
-    // Long trade: add 100 @ 50.00 fees 1.00 → resolved to buy.
-    longAccount = insertAccount(sqlite, 'sync-long');
-    const longTrade = insertTrade(sqlite, longAccount, 'NVDA', 'long');
-    const longLegacyId = insertLegacyExecution(sqlite, longTrade, 'add', 100, 50.0, 1.0, '2024-02-01T09:30:00.000Z');
-    const longSynced = syncTradeExecution(
-      sqlite,
+    // Global settings row (single-row convention): equity + max-risk defaults.
+    sqlite
+      .prepare(
+        `INSERT OR REPLACE INTO settings (id, starting_account_value, max_risk_per_trade_pct, default_commission)
+         VALUES ('default', 100000, 10, 1)`,
+      )
+      .run();
+
+    // Long trade: add 100 @ 50.00 fees 1.00 → resolved to buy (cash down).
+    longAccount = insertAccount(sqlite, 'engine-long');
+    const longTradeId = insertTrade(sqlite, longAccount, 'NVDA', 'long');
+    sqlite
+      .prepare(`UPDATE trades SET planned_stop = 45 WHERE id = ?`)
+      .run(longTradeId);
+    executeTradeFill(
       {
-        id: longLegacyId,
-        tradeId: longTrade,
+        tradeId: longTradeId,
         action: 'add',
         quantity: 100,
         price: 50.0,
         fees: 1.0,
         executedAt: '2024-02-01T09:30:00.000Z',
-      },
-      longAccount,
-      'NVDA',
+        idempotencyKey: 'invariant-engine-long-' + now,
+      } as ExecuteTradeFillInput,
+      context,
     );
-    ensureExecutionFinancialEvent(sqlite, longSynced, 'NVDA');
-    ensureExecutionFeeFinancialEvent(sqlite, longSynced, 'NVDA');
 
-    // Short trade: add 100 @ 50.00 fees 1.00 → resolved to sell_short.
-    shortAccount = insertAccount(sqlite, 'sync-short');
-    const shortTrade = insertTrade(sqlite, shortAccount, 'NVDA', 'short');
-    const shortLegacyId = insertLegacyExecution(sqlite, shortTrade, 'add', 100, 50.0, 1.0, '2024-02-01T09:30:00.000Z');
-    const shortSynced = syncTradeExecution(
-      sqlite,
+    // Short trade: add 100 @ 50.00 fees 1.00 → resolved to sell_short (cash up).
+    shortAccount = insertAccount(sqlite, 'engine-short');
+    const shortTradeId = insertTrade(sqlite, shortAccount, 'NVDA', 'short');
+    sqlite
+      .prepare(`UPDATE trades SET planned_stop = 55 WHERE id = ?`)
+      .run(shortTradeId);
+    executeTradeFill(
       {
-        id: shortLegacyId,
-        tradeId: shortTrade,
+        tradeId: shortTradeId,
         action: 'add',
         quantity: 100,
         price: 50.0,
         fees: 1.0,
         executedAt: '2024-02-01T09:30:00.000Z',
-      },
-      shortAccount,
-      'NVDA',
+        idempotencyKey: 'invariant-engine-short-' + now,
+      } as ExecuteTradeFillInput,
+      context,
     );
-    ensureExecutionFinancialEvent(sqlite, shortSynced, 'NVDA');
-    ensureExecutionFeeFinancialEvent(sqlite, shortSynced, 'NVDA');
   });
 
   afterAll(() => {
     ctx.dispose();
   });
 
-  it('invariant 1: sync resolves add through trade direction and never persists aliases', () => {
-    expectNoAliasPersistence(ctx.sqlite, longAccount, 'sync long');
-    expectNoAliasPersistence(ctx.sqlite, shortAccount, 'sync short');
+  it('invariant 1: executeTradeFill resolves add through trade direction and never persists aliases', () => {
+    expectNoAliasPersistence(ctx.sqlite, longAccount, 'engine long');
+    expectNoAliasPersistence(ctx.sqlite, shortAccount, 'engine short');
   });
 
-  it('invariant 2: synced executions carry concrete actions with aligned cash direction', () => {
-    expectCashDirectionAlignment(ctx.sqlite, longAccount, 'sync long');
-    expectCashDirectionAlignment(ctx.sqlite, shortAccount, 'sync short');
+  it('invariant 2: executed fills carry concrete actions with aligned cash direction', () => {
+    expectCashDirectionAlignment(ctx.sqlite, longAccount, 'engine long');
+    expectCashDirectionAlignment(ctx.sqlite, shortAccount, 'engine short');
   });
 
-  it('invariant 3: synced long add and short add mirror each other (qty×price ± fees)', () => {
+  it('invariant 3: engine long add and short add mirror each other (qty×price ± fees)', () => {
     const longNet = accountNetMicros(ctx.sqlite, longAccount);
     const shortNet = accountNetMicros(ctx.sqlite, shortAccount);
     expect(longNet).toBe(-100 * 50 * MICROS_PER_UNIT - MICROS_PER_UNIT);
@@ -730,8 +742,9 @@ describe('accounting invariant matrix — journal sync (syncTradeExecution)', ()
     expect(longNet + shortNet).toBe(-2 * MICROS_PER_UNIT);
   });
 
-  it('invariant 5: activity and ledger agree with the cash summary after sync', () => {
-    expectActivityLedgerAgreement(ctx.sqlite, longAccount, 'sync long');
-    expectActivityLedgerAgreement(ctx.sqlite, shortAccount, 'sync short');
+  it('invariant 5: activity and ledger agree with the cash summary after executeTradeFill', () => {
+    expectActivityLedgerAgreement(ctx.sqlite, longAccount, 'engine long');
+    expectActivityLedgerAgreement(ctx.sqlite, shortAccount, 'engine short');
   });
 });
+

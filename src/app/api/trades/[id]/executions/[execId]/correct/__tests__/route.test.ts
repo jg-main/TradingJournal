@@ -59,6 +59,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
+import { resolveEconomicExecutionAction } from '@/lib/accounting/economic-action';
 import * as schema from '@/db/schema';
 import type { NextRequest, NextResponse } from 'next/server';
 
@@ -118,8 +119,8 @@ let executionsRoute: ExecutionsRouteModule | null = null;
 let NextRequestCtor: typeof NextRequest | null = null;
 let db: (typeof import('@/db'))['db'] | null = null;
 let getSqliteHandle: (() => import('better-sqlite3').Database) | null = null;
-let syncAndRebuildPositions: (typeof import('@/lib/positions/trade-execution-sync'))['syncAndRebuildPositions'] | null = null;
 let syncKeyBuilder: ((id: string) => string) | null = null;
+let postExecutionFill: (typeof import('@/lib/accounting/execution-posting'))['postExecutionFill'] | null = null;
 
 function requireDb() {
   if (!db || !getSqliteHandle) throw new Error('db not initialized — call main() first');
@@ -306,29 +307,34 @@ function expectedRiskPct(initialRiskAmount: number, equity: number | null): numb
 }
 
 /**
- * Mirror a legacy trade execution into accounting_executions under the
- * `trade-execution-<id>` idempotency key — the exact path the executions
- * POST uses (syncAndRebuildPositions). Returns the mirrored row.
+ * Create the canonical accounting execution for a journal execution under the
+ * deterministic `trade-execution-<id>` idempotency key — the same key
+ * executeTradeFill() writes and the correction route resolves. Uses the
+ * canonical posting kernel (postExecutionFill), never a fail-open sync path.
+ * Returns the accounting execution row.
  */
 function mirrorExecution(exec: Record<string, unknown>, accountId: string, symbol: string) {
-  if (!syncAndRebuildPositions) throw new Error('sync not initialized');
+  if (!postExecutionFill) throw new Error('postExecutionFill not initialized');
   const h = requireDb().getSqliteHandle();
-  const result = syncAndRebuildPositions(
-    h,
-    {
-      id: exec.id as string,
-      tradeId: exec.tradeId as string,
-      action: exec.action as string,
-      quantity: exec.quantity as number,
-      price: exec.price as number,
-      fees: (exec.fees as number | null) ?? 0,
-      executedAt: (exec.executedAt as string | null) ?? new Date().toISOString(),
-    },
+  // Management aliases (add/reduce) must be resolved to concrete economic
+  // actions through the trade direction — the same D1 resolution the
+  // canonical engine performs before posting.
+  const tradeRow = h
+    .prepare('SELECT direction FROM trades WHERE id = ?')
+    .get(exec.tradeId as string) as { direction: 'long' | 'short' } | undefined;
+  const action = resolveEconomicExecutionAction(exec.action as string, tradeRow?.direction ?? 'long');
+  const result = postExecutionFill(h, {
     accountId,
     symbol,
-  );
-  if ('error' in result) throw new Error(`mirror failed: ${result.error}`);
-  return result.accountingExecution;
+    action,
+    quantity: (exec.quantity as number).toFixed(2),
+    price: (exec.price as number).toFixed(2),
+    fees: ((exec.fees as number | null) ?? 0).toFixed(2),
+    idempotencyKey: `trade-execution-${exec.id as string}`,
+    journalTradeId: exec.tradeId as string,
+    postedAt: (exec.executedAt as string | null) ?? new Date().toISOString(),
+  });
+  return result.execution;
 }
 
 function accountingExecutionCount(accountId: string): number {
@@ -390,9 +396,10 @@ async function main(): Promise<void> {
   const executionsRouteMod = await import('../../../route');
   executionsRoute = executionsRouteMod as unknown as ExecutionsRouteModule;
 
-  const syncMod = await import('@/lib/positions/trade-execution-sync');
-  syncAndRebuildPositions = syncMod.syncAndRebuildPositions;
-  syncKeyBuilder = syncMod.tradeExecutionIdempotencyKey;
+  const idemMod = await import('@/lib/trade-execution-idempotency');
+  syncKeyBuilder = idemMod.tradeExecutionIdempotencyKey;
+  const postingMod = await import('@/lib/accounting/execution-posting');
+  postExecutionFill = postingMod.postExecutionFill;
 
   const routePath = (() => {
     try {
@@ -626,15 +633,15 @@ async function main(): Promise<void> {
 
   // ── 9. Idempotency-key derivation matches the sync contract ─────────
 
-  console.log('\n9. Idempotency key derivation matches trade-execution-sync:');
+  console.log('\n9. Idempotency key derivation matches the canonical key builder:');
   {
     const execId = 'abc-123';
     assertEqual(syncKeyBuilder!(execId), `trade-execution-${execId}`, 'sync key builder produces trade-execution-<execId>');
     const routeSource = readFileSync(routeSourcePath, 'utf-8');
     assert(
       routeSource.includes('tradeExecutionIdempotencyKey(execId)') &&
-        routeSource.includes("from '@/lib/positions/trade-execution-sync'"),
-      'the route resolves the mirror via the shared tradeExecutionIdempotencyKey builder',
+        routeSource.includes("from '@/lib/trade-execution-idempotency'"),
+      'the route resolves the accounting execution via the shared deterministic key builder',
     );
   }
 
