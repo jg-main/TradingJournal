@@ -489,16 +489,17 @@ test.describe('Accounting Correction, Backup, and Legacy Retirement', () => {
 
   test('executes restore and verifies account data is intact', async ({ request }) => {
     // The restore endpoint refuses to proceed while ANY journal trade is open
-    // (data-loss guard, restore.ts checkOpenTrades). In the full-matrix
-    // shared-DB run earlier specs leave open trades, so execute-restore is
-    // skipped here; the complete backup → restore → verify round-trip runs in
-    // a disposable DB via scripts/recovery-drill.ts (registered in
-    // run-all-tests.ts, part of make test-all). Preview validation above still
-    // exercises the restore read path on the shared DB.
-    const openRes = await request.get('/api/trades?status=open&limit=1');
-    const openBody = (await openRes.json().catch(() => null)) as { total?: number } | null;
-    const openCount = openBody?.total ?? 0;
-    test.skip(openCount > 0, `restore guarded: ${openCount} open trade(s) in shared suite DB; round-trip covered by recovery drill`);
+    // (data-loss guard, restore.ts checkOpenTrades). This spec runs in its own
+    // disposable DB via the matrix runner, so the only open trade here is its
+    // own buy (plus correction reversal/replacement). Close it before restore
+    // so the real browser/API restore path executes instead of being skipped.
+    await postExecutionApi(request, accountId, {
+      symbol: 'AAPL',
+      action: 'sell',
+      quantity: '100.00',
+      price: '150.00',
+      fees: '5.00',
+    });
 
     // ── Ensure we have a backup file available ──────────────────────────
     expect(backupFilename).toBeDefined();

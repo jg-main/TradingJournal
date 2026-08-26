@@ -1,11 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import * as schema from '@/db/schema';
+import { runMigrations } from '@/db/run-migrations';
 
 const DB_FILE = process.env.DB_FILE_NAME ?? './.trading-journal/journal.db';
 
@@ -14,8 +12,12 @@ function openDb() {
   const sqlite = new Database(resolve(DB_FILE));
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
-  const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: resolve('src/db/migrations') });
+  // Use the app's own migration path (runMigrations) so the tracking journal
+  // matches what the dev server expects. Mixing drizzle's migrator (content
+  // hashes) with runMigrations (journal tags) makes server startup fail with
+  // "table already exists" on a fresh DB — a latent defect exposed when this
+  // spec runs in its own disposable database.
+  runMigrations(sqlite, resolve('src/db/migrations'));
   return sqlite;
 }
 

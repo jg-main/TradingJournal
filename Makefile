@@ -62,14 +62,14 @@ playwright: ## Run Playwright e2e tests (headless)
 	$(MAKE) playwright-firefox
 	$(MAKE) playwright-webkit
 
-playwright-chromium: ## Run the full Playwright suite in Chromium
-	$(NPX) playwright test --project=chromium
+playwright-chromium: ## Run the full Playwright suite in Chromium (deterministic isolation)
+	node scripts/run-playwright-matrix.mjs --project=chromium
 
-playwright-firefox: ## Run the full Playwright suite in Firefox
-	$(NPX) playwright test --project=firefox
+playwright-firefox: ## Run the full Playwright suite in Firefox (deterministic isolation)
+	node scripts/run-playwright-matrix.mjs --project=firefox
 
-playwright-webkit: ## Run the full Playwright suite in WebKit
-	$(NPX) playwright test --project=webkit
+playwright-webkit: ## Run the full Playwright suite in WebKit (deterministic isolation)
+	node scripts/run-playwright-matrix.mjs --project=webkit
 
 playwright-targeted: ## Run one spec (SPEC=e2e/foo.spec.ts, PROJECT=chromium)
 	@test -n "$(SPEC)" || (echo "Usage: make playwright-targeted SPEC=e2e/example.spec.ts [PROJECT=chromium]" && false)
