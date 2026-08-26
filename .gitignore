@@ -35,6 +35,11 @@ lpt[1-9].*
 .env.*
 !.env.example
 
+# ── Kilo (agent config; API keys referenced via global config env vars) ──
+kilo.json
+kilo.jsonc
+.kilo/
+
 # ── Dependencies & Build ──
 node_modules/
 .next/
