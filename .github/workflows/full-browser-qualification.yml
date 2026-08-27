@@ -1,0 +1,104 @@
+name: Full Browser Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: >-
+          Commit SHA, branch, or tag to qualify. Resolved once to an immutable
+          full SHA; every job below tests that exact commit.
+        required: false
+        default: main
+        type: string
+
+jobs:
+  # Resolve the requested ref ONCE; every downstream job checks out this exact
+  # immutable SHA so application and browser jobs can never test different
+  # commits (no re-resolution of `main` inside individual jobs).
+  resolve:
+    name: Resolve exact SHA
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  application:
+    name: Lint, typecheck, build, and tests
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: make lint
+      - run: make typecheck
+      - run: make build
+      - run: make test-all
+
+  chromium:
+    name: Full browser qualification — Chromium
+    needs: [resolve, application]
+    runs-on: ubuntu-latest
+    # The deterministic matrix (4 sequential partitions with CI retries=2 on
+    # top of known failing tests) needs a long bounded budget; the
+    # `if: always()` artifact upload must still be able to run.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/run-playwright-matrix.mjs --project=chromium
+        env:
+          PLAYWRIGHT_MATRIX_ROOT: ${{ runner.temp }}/trading-journal-playwright
+      - name: Upload Playwright matrix artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-matrix-chromium
+          path: ${{ runner.temp }}/trading-journal-playwright/
+          if-no-files-found: error
+          retention-days: 14
+
+  firefox:
+    name: Full browser qualification — Firefox
+    needs: [resolve, application]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps firefox
+      - run: node scripts/run-playwright-matrix.mjs --project=firefox
+        env:
+          PLAYWRIGHT_MATRIX_ROOT: ${{ runner.temp }}/trading-journal-playwright
+      - name: Upload Playwright matrix artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-matrix-firefox
+          path: ${{ runner.temp }}/trading-journal-playwright/
+          if-no-files-found: error
+          retention-days: 14

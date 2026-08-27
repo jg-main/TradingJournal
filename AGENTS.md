@@ -237,16 +237,26 @@ workflow.
 
 ### Browser test runtime and generated artifacts
 
+- QA levels in CI: an ordinary push/PR runs the application gate plus ONE fast
+  Chromium smoke (`e2e/smoke.spec.ts`). User-facing changes still need targeted
+  local Playwright verification for the changed workflow. The deterministic
+  full Chromium + Firefox matrix is a milestone/release-qualification gate: run
+  it locally via `make playwright-{chromium,firefox}` or through the manual
+  GitHub workflow `.github/workflows/full-browser-qualification.yml`
+  (`workflow_dispatch` with a `ref` input resolved once to an immutable SHA).
+  WebKit remains available for explicit/local compatibility testing but is not
+  part of the ordinary push gate or the mandatory qualification set.
 - Playwright's configured web server must launch Next with `--webpack`. This is
   the stable development path for this workspace; do not switch the browser
   server to the default Turbopack path without investigating `.next` ownership
   and cache behavior first.
 - Local Playwright reports and test results are written to a per-run directory
   under `/tmp` (or to `PLAYWRIGHT_ARTIFACT_DIR` when explicitly set). In CI the
-  matrix runner writes under `PLAYWRIGHT_MATRIX_ROOT` (the workflow sets it to
-  `${{ runner.temp }}/trading-journal-playwright`) and GitHub Actions uploads
-  that tree as a per-browser job artifact, including after failed runs. These
-  outputs are never source files and must not be committed.
+  push-gate smoke writes under `${{ runner.temp }}/trading-journal-playwright-smoke`
+  and the manual qualification matrix writes under `PLAYWRIGHT_MATRIX_ROOT`
+  (`${{ runner.temp }}/trading-journal-playwright`); GitHub Actions uploads
+  those trees as browser-specific job artifacts, including after failed runs.
+  These outputs are never source files and must not be committed.
 - When running Playwright or Next in Docker with the repository bind-mounted,
   run the container as the host user and group, for example
   `--user "$(id -u):$(id -g)"`. This prevents root-owned `.next`, report, and
