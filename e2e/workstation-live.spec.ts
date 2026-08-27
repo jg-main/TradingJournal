@@ -15,7 +15,7 @@
  * Run: npx playwright test e2e/workstation-live.spec.ts --project=chromium
  */
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type Request } from '@playwright/test';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -152,27 +152,42 @@ function captureConsoleInfo(page: Page): string[] {
   return infos;
 }
 
+interface RequestFailureEvent {
+  request: Request;
+  method: string;
+  url: string;
+  errorText: string;
+  /** Epoch ms when the request failed (used to correlate same-batch aborts). */
+  atMs: number;
+}
+
 function captureFailedRequests(
   page: Page,
   options: {
     /**
      * Optional classifier for intentional `net::ERR_ABORTED` lifecycle
-     * cancellations. When it returns true for a failed request, that abort is
-     * treated as expected and excluded from the captured failures. Every
-     * other request failure and every HTTP error response stays binding.
+     * cancellations. Evaluated LAZILY when `failures()` is read (after the
+     * journey), so it can use complete lifecycle knowledge (which requests
+     * were superseded by a later successful request, and which aborts belong
+     * to the same superseded batch). Every other request failure and every
+     * HTTP error response stays binding.
      */
-    allowIntentionalAbort?: (req: { method: string; url: string; errorText: string }) => boolean;
+    allowIntentionalAbort?: (
+      failure: RequestFailureEvent,
+      allFailures: RequestFailureEvent[],
+    ) => boolean;
   } = {},
-): string[] {
-  const failed: string[] = [];
+): { failures: () => string[] } {
+  const rawFailures: RequestFailureEvent[] = [];
+  const httpErrors: string[] = [];
   page.on('requestfailed', (req) => {
-    const method = req.method();
-    const url = req.url();
-    const errorText = req.failure()?.errorText ?? 'unknown';
-    if (options.allowIntentionalAbort?.({ method, url, errorText })) {
-      return;
-    }
-    failed.push(`${method} ${url} (${errorText})`);
+    rawFailures.push({
+      request: req,
+      method: req.method(),
+      url: req.url(),
+      errorText: req.failure()?.errorText ?? 'unknown',
+      atMs: Date.now(),
+    });
   });
   page.on('response', (res) => {
     if (!res.ok() && res.status() >= 400) {
@@ -183,11 +198,21 @@ function captureFailedRequests(
         !url.includes('/close') &&
         !url.includes('/executions')
       ) {
-        failed.push(`${res.url()} (${res.status()})`);
+        httpErrors.push(`${res.url()} (${res.status()})`);
       }
     }
   });
-  return failed;
+  return {
+    failures: (): string[] => {
+      const unexpected = rawFailures.filter(
+        (failure) => !(options.allowIntentionalAbort?.(failure, rawFailures) ?? false),
+      );
+      return [
+        ...unexpected.map((f) => `${f.method} ${f.url} (${f.errorText})`),
+        ...httpErrors,
+      ];
+    },
+  };
 }
 
 // ── Intentional account-switch cancellation classification ────────────────
@@ -199,6 +224,11 @@ function captureFailedRequests(
  * lifecycle aborts its in-flight refresh (POST /api/trades/mtm/refresh) plus
  * its dashboard reload. Superseded batches surface as `net::ERR_ABORTED`
  * `requestfailed` events — expected transport behavior, not request failures.
+ *
+ * Route membership is only a SAFETY NARROWING, never the ownership proof:
+ * the same paths are used by both the superseded and the newly selected
+ * account, so an abort is classified as intentional ONLY when request
+ * ownership says it was superseded.
  */
 const WORKSTATION_LIVE_DATA_PATHS = [
   '/api/dashboard',
@@ -215,19 +245,164 @@ function isWorkstationLiveDataPath(url: string): boolean {
   }
 }
 
+/** The accountId query parameter of a URL, or null when absent/unparseable. */
+function urlAccountId(url: string): string | null {
+  try {
+    return new URL(url).searchParams.get('accountId');
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Narrowly classify a failed request as the intentional cancellation of a
- * superseded workstation live-data batch during an account switch. Only
- * `net::ERR_ABORTED` on the workstation live-data routes qualifies; any other
- * failure — a new-account/unrelated abort, a non-abort network error, or an
- * HTTP error response — stays unexpected.
+ * Track request start order and per-URL successors so the account-switch test
+ * can draw an exact ownership boundary. A request is superseded when either:
+ *  - it started before the final account switch (owned by the pre-switch
+ *    lifecycle), or
+ *  - a NEWER request with the same URL started after it (e.g. the MTM polling
+ *    lifecycle re-runs and supersedes its own in-flight dashboard reload for
+ *    the newly selected account), or
+ *  - it belongs to an account other than the final target (the late MTM
+ *    reload of the superseded account can start just as the switch lands).
+ * A request for the target account started after the switch with no successor
+ * belongs to the target lifecycle and remains binding if it aborts.
  */
-function isIntentionalAccountSwitchAbort(
-  method: string,
-  url: string,
+function trackWorkstationRequestOwnership(page: Page) {
+  let seq = 0;
+  let switched = false;
+  let switchSeq = 0;
+  const sequences = new Map<Request, number>();
+  const succeededRequests = new Set<Request>();
+  page.on('request', (req) => {
+    seq += 1;
+    sequences.set(req, seq);
+  });
+  page.on('response', (res) => {
+    if (res.ok() && isWorkstationLiveDataPath(res.url())) {
+      succeededRequests.add(res.request());
+    }
+  });
+  return {
+    /**
+     * Mark the moment the target account selection is applied. Call
+     * immediately before the switch action; any request that starts after
+     * this point belongs to the newly selected target lifecycle.
+     */
+    markSwitch: (): void => {
+      switched = true;
+      switchSeq = seq;
+    },
+    /** True when the request started before the switch (pre-switch lifecycle). */
+    isSuperseded: (req: Request): boolean => {
+      const s = sequences.get(req);
+      if (s === undefined) return false;
+      if (!switched) return true; // switch not applied yet — still pre-switch
+      return s <= switchSeq;
+    },
+    /**
+     * True when a newer request with the SAME URL started after this request,
+     * i.e. this request was superseded by its own lifecycle's successor (the
+     * MTM polling reload re-run). A request with no such successor was the
+     * latest of its kind and must not be ignored on this basis alone.
+     */
+    isSupersededByNewer: (req: Request): boolean => {
+      const s = sequences.get(req);
+      if (s === undefined) return false;
+      const url = req.url();
+      for (const [other, otherSeq] of sequences) {
+        if (other !== req && otherSeq > s && other.url() === url) {
+          return true;
+        }
+      }
+      return false;
+    },
+    /**
+     * True when a successful live-data response for the SAME URL was delivered
+     * after the switch — the target lifecycle demonstrably recovered, so an
+     * aborted post-switch reload of that URL was a superseded refetch rather
+     * than a genuine failure. A target abort with no delivered successor stays
+     * binding.
+     */
+    urlDelivered: (url: string): boolean => {
+      if (!switched) return false;
+      for (const [req, s] of sequences) {
+        if (s > switchSeq && req.url() === url && succeededRequests.has(req)) {
+          return true;
+        }
+      }
+      return false;
+    },
+  };
+}
+
+/**
+ * Pure ownership classifier: a failed request is the intentional cancellation
+ * of a superseded workstation live-data request ONLY when it terminated with
+ * `net::ERR_ABORTED`, is on a workstation live-data route, AND was superseded:
+ *  - it started before the switch,
+ *  - a newer request for the same URL followed it (MTM reload re-run), or
+ *  - its URL names an account other than the target (a late reload of the
+ *    superseded account), or
+ *  - it is unscoped (`/api/watchlist`, `/api/trades/mtm/refresh`) and belongs
+ *    to the same aborted batch as a superseded account-scoped request
+ *    (`sameBatchAsSuperseded`).
+ *
+ * A request for the TARGET account started after the switch with no successor
+ * — including a target `/api/dashboard` or `/api/dashboard/v2` abort — is
+ * never intentional and stays a binding failure, UNLESS the target lifecycle
+ * demonstrably delivered the same URL after the switch (`urlDelivered`, the
+ * MTM polling reload supersession). Route membership is only a safety
+ * narrowing, never the ownership proof.
+ */
+function isSupersededLifecycleAbort(
+  startedBeforeSwitch: boolean,
+  supersededByNewer: boolean,
   errorText: string,
+  url: string,
+  targetAccountId: string,
+  sameBatchAsSuperseded: boolean,
+  urlDelivered: boolean,
 ): boolean {
-  return errorText === 'net::ERR_ABORTED' && isWorkstationLiveDataPath(url);
+  if (errorText !== 'net::ERR_ABORTED') return false;
+  if (!isWorkstationLiveDataPath(url)) return false;
+  if (startedBeforeSwitch || supersededByNewer || urlDelivered) return true;
+  const acct = urlAccountId(url);
+  if (acct !== null && acct !== targetAccountId) return true; // superseded account
+  if (acct === null && sameBatchAsSuperseded) return true; // unscoped batch leg
+  return false;
+}
+
+/**
+ * Build the lazy abort classifier for the account-switch journey: it allows
+ * only superseded workstation live-data aborts (per
+ * `isSupersededLifecycleAbort`) and correlates unscoped batch legs
+ * (`/api/watchlist`, `/api/trades/mtm/refresh`) with the superseded
+ * account-scoped requests that aborted in the same tick.
+ */
+function buildSwitchAbortClassifier(
+  ownership: ReturnType<typeof trackWorkstationRequestOwnership>,
+  targetAccountId: string,
+): (failure: RequestFailureEvent, allFailures: RequestFailureEvent[]) => boolean {
+  return (failure, allFailures) => {
+    const sameBatchAsSuperseded = allFailures.some(
+      (other) =>
+        other !== failure &&
+        Math.abs(other.atMs - failure.atMs) <= 100 &&
+        (() => {
+          const acct = urlAccountId(other.url);
+          return acct !== null && acct !== targetAccountId;
+        })(),
+    );
+    return isSupersededLifecycleAbort(
+      ownership.isSuperseded(failure.request),
+      ownership.isSupersededByNewer(failure.request),
+      failure.errorText,
+      failure.url,
+      targetAccountId,
+      sameBatchAsSuperseded,
+      ownership.urlDelivered(failure.url),
+    );
+  };
 }
 
 async function selectApplicationAccount(
@@ -372,7 +547,7 @@ test.describe('Live Mode E2E', () => {
     await expect(page.getByTestId('ws-scenario-select')).not.toBeVisible();
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   // ── Test 2: Curated grid panels render in one document-scroll flow ───
@@ -466,7 +641,7 @@ test.describe('Live Mode E2E', () => {
     await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   // ── Test 4: Trades workspace tabs switch open/closed universes ────────
@@ -530,7 +705,7 @@ test.describe('Live Mode E2E', () => {
     await expect(page.getByTestId('ws-position-row-AAPL')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   test('live dashboard values a positive-quantity short position directionally', async ({
@@ -551,45 +726,14 @@ test.describe('Live Mode E2E', () => {
     request,
   }) => {
     const consoleErrors = captureConsoleErrors(page);
-    // The account-switch journey intentionally cancels the superseded
-    // workstation live-data batch for the previously selected account
-    // (dashboard / dashboard-v2 / watchlist / mtm-refresh). Those
-    // net::ERR_ABORTED cancellations are expected lifecycle behavior, not
-    // request failures; every other failure stays binding.
-    const failedRequests = captureFailedRequests(page, {
-      allowIntentionalAbort: ({ method, url, errorText }) =>
-        isIntentionalAccountSwitchAbort(method, url, errorText),
-    });
 
-    // Regression: the classification is narrow. Only net::ERR_ABORTED on the
-    // workstation live-data batch routes is permitted; a stale-account batch
-    // abort is allowed, while a new-account/unrelated abort, a non-abort
-    // failure on the same route, and HTTP errors remain unexpected.
-    expect(
-      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/dashboard?accountId=stale', 'net::ERR_ABORTED'),
-    ).toBe(true);
-    expect(
-      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/dashboard/v2?accountId=stale', 'net::ERR_ABORTED'),
-    ).toBe(true);
-    expect(
-      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/watchlist', 'net::ERR_ABORTED'),
-    ).toBe(true);
-    expect(
-      isIntentionalAccountSwitchAbort('POST', 'http://localhost/api/trades/mtm/refresh', 'net::ERR_ABORTED'),
-    ).toBe(true);
-    // A new-account/unrelated abort is still unexpected.
-    expect(
-      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/accounts', 'net::ERR_ABORTED'),
-    ).toBe(false);
-    expect(
-      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/watchlist/prices?symbols=SPX', 'net::ERR_ABORTED'),
-    ).toBe(false);
-    // A non-abort network failure on the same route stays binding.
-    expect(
-      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/dashboard?accountId=x', 'net::ERR_CONNECTION_REFUSED'),
-    ).toBe(false);
+    // Track request start order so the intentional-cancellation allowance is
+    // scoped by request OWNERSHIP, not by route: the workstation aborts the
+    // superseded live-data lifecycle when the account changes, but a request
+    // for the newly selected account must never be ignored.
+    const ownership = trackWorkstationRequestOwnership(page);
 
-    // Create a second account with different data.
+    // Create the second (target) account with different data.
     const secondAccount = await createLiveAccount(request);
     const secondAccountId = secondAccount.id;
     await postOpeningBalance(request, secondAccountId);
@@ -603,6 +747,83 @@ test.describe('Live Mode E2E', () => {
     await postValuationMark(request, secondAccountId, 'MSFT', '320.00');
     await rebuildPerformance(request, secondAccountId);
 
+    const failedRequests = captureFailedRequests(page, {
+      allowIntentionalAbort: buildSwitchAbortClassifier(ownership, secondAccountId),
+    });
+
+    // Regression: the classifier is scoped to SUPERSEDED requests only. A
+    // request that started before the switch (or was superseded by a newer
+    // same-URL request, or names a superseded account, or whose URL was
+    // delivered by the target lifecycle after the switch) and aborted with
+    // net::ERR_ABORTED on a live-data route is intentional; a request for the
+    // TARGET account started after the switch with no successor and no
+    // delivered recovery is an unexpected failure. The ownership booleans are
+    // the proof; route membership is only a safety narrowing.
+    const TARGET = 'TARGET-ACCOUNT';
+    // A/B. Superseded old-account dashboard/dashboard-v2 abort → allowed.
+    expect(
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard?accountId=OLD', TARGET, false, false),
+    ).toBe(true);
+    expect(
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard/v2?accountId=OLD', TARGET, false, false),
+    ).toBe(true);
+    // C/D. TARGET/new-account dashboard/dashboard-v2 abort started AFTER the
+    // switch with no successor and no delivered recovery → UNEXPECTED FAILURE
+    // (the exact contract the route-only classifier failed to prove).
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard?accountId=${TARGET}`, TARGET, false, false),
+    ).toBe(false);
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET, false, false),
+    ).toBe(false);
+    // C'. A late reload of a SUPERSEDED (non-target) account that aborts after
+    // the switch is intentional — the accountId names the old lifecycle.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard/v2?accountId=OLD', TARGET, false, false),
+    ).toBe(true);
+    // E. New unscoped watchlist request started after the switch → unexpected.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, false, false),
+    ).toBe(false);
+    // F. Old unscoped watchlist request in flight before the switch → allowed.
+    expect(
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, false, false),
+    ).toBe(true);
+    // G. MTM refresh: old in-flight → allowed; new post-switch (no successor)
+    // → binding.
+    expect(
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/trades/mtm/refresh', TARGET, false, false),
+    ).toBe(true);
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/trades/mtm/refresh', TARGET, false, false),
+    ).toBe(false);
+    // G'. A post-switch request superseded by a newer same-URL request (the
+    // MTM polling reload re-run for the target account) is the intentional
+    // lifecycle cancellation, not a failure.
+    expect(
+      isSupersededLifecycleAbort(false, true, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET, false, false),
+    ).toBe(true);
+    expect(
+      isSupersededLifecycleAbort(false, true, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, false, false),
+    ).toBe(true);
+    // G''. An unscoped batch leg that aborts in the same tick as a superseded
+    // account-scoped request is intentional.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, true, false),
+    ).toBe(true);
+    // G'''. A TARGET request that aborts after its URL was delivered by the
+    // target lifecycle (the MTM reload supersession) is intentional: the
+    // lifecycle recovered, so the abort was a redundant refetch.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET, false, true),
+    ).toBe(true);
+    // H. Non-abort network failure stays binding regardless of lifecycle.
+    expect(
+      isSupersededLifecycleAbort(true, false, 'net::ERR_CONNECTION_REFUSED', 'http://localhost/api/dashboard', TARGET, false, false),
+    ).toBe(false);
+    // I. HTTP 4xx/5xx stays binding: the capture helper's response listener is
+    // untouched (errors are never classified through the abort predicate).
+
     await page.goto('/', { waitUntil: 'networkidle' });
 
     const accountSelect = await selectApplicationAccount(
@@ -615,6 +836,12 @@ test.describe('Live Mode E2E', () => {
     const positions = page.getByTestId('ws-panel-positions');
     await expect(positions.getByText('AAPL')).toBeVisible({ timeout: 10000 });
     await expect(positions.getByText('SHRT')).toBeVisible();
+
+    // Mark the ownership boundary immediately before applying the target
+    // account selection: every request in flight now belongs to the
+    // superseded lifecycle, and every request that starts after this point
+    // belongs to the newly selected target account.
+    ownership.markSwitch();
 
     // Switch to the second account.
     const switchedResponse = page.waitForResponse(
@@ -641,7 +868,7 @@ test.describe('Live Mode E2E', () => {
     await expect(positions.getByText('SHRT')).toHaveCount(0);
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   // ── Test 6: MTM polling indicator is visible in live mode ──────────
@@ -662,7 +889,7 @@ test.describe('Live Mode E2E', () => {
     await expect(mtmIndicator).toContainText('MTM Live');
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   test('active live notices use the positive color token', async ({ page }) => {
@@ -717,7 +944,7 @@ test.describe('Live Mode E2E', () => {
     expect(dataMsg).toBeDefined();
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   // ── Test 8: No page errors or unexpected console errors ────────────
@@ -730,7 +957,7 @@ test.describe('Live Mode E2E', () => {
     await page.goto('/', { waitUntil: 'networkidle' });
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   // ── Test 9: Regression — fixture mode still works ──────────────────
@@ -766,7 +993,7 @@ test.describe('Live Mode E2E', () => {
     await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
 
     expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+    expect(failedRequests.failures()).toEqual([]);
   });
 
   // ── Test 10: Regression — scenario switching in fixture mode ────────
