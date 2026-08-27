@@ -179,12 +179,15 @@ test.describe('M012 Trade Lifecycle', () => {
     const trade = await tradeRes.json();
     expect(trade.status).toBe('planned');
 
-    // Execute entry-only via API (no exit data) → status becomes 'open'
+    // Execute entry-only via API (no exit data) → status becomes 'open'.
+    // Stop at 570 keeps proposed initial risk at the exact max-risk boundary
+    // (|580 - 570| * 100 = 1000 = 2% of the 50000 opening balance), which the
+    // canonical readiness gate accepts (the gate is `>`-strict, not `>=`).
     const execRes = await page.request.post(`/api/trades/${trade.id}/execute`, {
       data: {
         entryPrice: 580.0,
         entryQuantity: 100,
-        stopPrice: 560.0,
+        stopPrice: 570.0,
         fees: 5.0,
       },
     });
