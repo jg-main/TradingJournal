@@ -263,7 +263,7 @@ test.describe('M012 Trade Lifecycle', () => {
     await expect(page.getByRole('dialog')).toContainText('Correct Execution: M019CORR');
   });
 
-  test('Trade Details Current Qty tracks the remaining position after a partial exit', async ({ page }) => {
+  test('Trade Details Open Size tracks the remaining position after a partial exit', async ({ page }) => {
     const account = await setupAccount(page, 'E2E M019 Current Quantity Test');
     const tradeRes = await page.request.post('/api/trades', {
       data: { symbol: 'M019QTY', direction: 'long', accountId: account.id },
@@ -288,10 +288,16 @@ test.describe('M012 Trade Lifecycle', () => {
 
     await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
 
-    const tradeDetails = page.locator('[data-slot="card"]').filter({
-      has: page.locator('[data-slot="card-title"]', { hasText: /^Trade Details$/ }),
-    });
-    await expect(tradeDetails.locator('tr').filter({ hasText: 'Qty' })).toContainText('6');
+    // The Trade Details panel is a semantic section (data-area="details"); the
+    // remaining position is the "Open Size" definition row — not the retired
+    // Qty table row. The primary value and the entered/exited breakdown prove
+    // the economics: 10 entered, 4 exited, 6 remaining.
+    const openSizeRow = page
+      .locator('section[data-area="details"]')
+      .locator('dt', { hasText: 'Open Size' })
+      .locator('xpath=..');
+    await expect(openSizeRow.locator('dd > div').first()).toHaveText('6');
+    await expect(openSizeRow).toContainText('10 entered / 4 exited');
   });
 
   test('delete a trade via API and verify removal from UI', async ({ page }) => {
