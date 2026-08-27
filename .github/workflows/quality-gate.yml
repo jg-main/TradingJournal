@@ -44,11 +44,13 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps ${{ matrix.browser }}
       - run: node scripts/run-playwright-matrix.mjs --project=${{ matrix.browser }}
-      - name: Upload Playwright report
+        env:
+          PLAYWRIGHT_MATRIX_ROOT: ${{ runner.temp }}/trading-journal-playwright
+      - name: Upload Playwright matrix artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ matrix.browser }}
-          path: playwright-report/
-          if-no-files-found: ignore
+          name: playwright-matrix-${{ matrix.browser }}
+          path: ${{ runner.temp }}/trading-journal-playwright/
+          if-no-files-found: error
           retention-days: 14

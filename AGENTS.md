@@ -242,9 +242,11 @@ workflow.
   server to the default Turbopack path without investigating `.next` ownership
   and cache behavior first.
 - Local Playwright reports and test results are written to a per-run directory
-  under `/tmp` (or to `PLAYWRIGHT_ARTIFACT_DIR` when explicitly set). CI keeps
-  its report directories in the repository so workflow artifact upload can
-  collect them. These outputs are never source files and must not be committed.
+  under `/tmp` (or to `PLAYWRIGHT_ARTIFACT_DIR` when explicitly set). In CI the
+  matrix runner writes under `PLAYWRIGHT_MATRIX_ROOT` (the workflow sets it to
+  `${{ runner.temp }}/trading-journal-playwright`) and GitHub Actions uploads
+  that tree as a per-browser job artifact, including after failed runs. These
+  outputs are never source files and must not be committed.
 - When running Playwright or Next in Docker with the repository bind-mounted,
   run the container as the host user and group, for example
   `--user "$(id -u):$(id -g)"`. This prevents root-owned `.next`, report, and

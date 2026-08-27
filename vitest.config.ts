@@ -260,6 +260,7 @@ export default defineConfig({
       'src/app/api/dashboard/views/__tests__/route.test.ts',
       'src/components/ui/__tests__/primitive-contracts.test.ts',
       'scripts/journal.test.mjs',
+      'scripts/__tests__/playwright-matrix-artifacts.test.ts',
     ],
     environment: 'jsdom',
   },
