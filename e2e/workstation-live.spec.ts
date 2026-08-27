@@ -201,6 +201,25 @@ async function selectApplicationAccount(
   return accountSelect;
 }
 
+/**
+ * Select the Process Review system template via the view switcher (M018/S02:
+ * Process Review is a dedicated saved view, not part of the curated default).
+ * Pattern from m006-freshness-verify.spec.ts — the Radix dropdown is modal,
+ * so close an open menu via Escape first.
+ */
+async function selectProcessReviewView(page: Page) {
+  const trigger = page.getByTestId('ws-view-switcher-trigger');
+  const content = page.getByTestId('ws-view-switcher-content');
+  if (await content.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(content).toHaveCount(0);
+  }
+  await trigger.click();
+  await expect(content).toBeVisible({ timeout: 3_000 });
+  await page.getByTestId('ws-view-item-ws-system-process-review').click();
+  await expect(content).toHaveCount(0);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -310,11 +329,13 @@ test.describe('Live Mode E2E', () => {
     const grid = page.getByTestId('ws-grid');
     await expect(grid).toBeVisible();
 
+    // M018/S02 curated default (Risk & Positions): risk, positions (the
+    // Trades workspace), account-state, and performance. Process Review is
+    // NOT part of the default catalogue — it lives in its own system view.
     const GRID_AREAS = [
       'account-state',
       'positions',
       'risk',
-      'process-review',
       'performance',
     ] as const;
     for (const area of GRID_AREAS) {
@@ -327,6 +348,9 @@ test.describe('Live Mode E2E', () => {
       expect(box!.x + box!.width, `panel ${area} inside right edge`).toBeLessThanOrEqual(1440);
     }
 
+    // The curated default excludes Process Review (dedicated system view)
+    // and Watchlist (own surface).
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
     await expect(page.getByTestId('ws-panel-watchlist')).toHaveCount(0);
 
     // Risk & Positions uses the browser document as its normal scroll path.
@@ -378,7 +402,10 @@ test.describe('Live Mode E2E', () => {
     const riskCellCount = await riskCells.count();
     expect(riskCellCount).toBeGreaterThan(0);
 
-    // Process Review panel renders (discipline + attention catalogue).
+    // Process Review is not part of the curated default; select its
+    // dedicated system view (M018/S02), then assert the panel renders
+    // (discipline + attention catalogue) with the live account data.
+    await selectProcessReviewView(page);
     await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
@@ -637,9 +664,13 @@ test.describe('Live Mode E2E', () => {
       toolbar.locator('[data-testid^="ws-mtm-"]'),
     ).not.toBeVisible();
 
-    for (const area of ['account-state', 'positions', 'risk', 'process-review', 'performance']) {
+    // M018/S02: the fixture harness shares the same curated default as
+    // production — Process Review lives in its dedicated system view, so the
+    // default fixture grid exposes the same four panels and excludes it.
+    for (const area of ['account-state', 'positions', 'risk', 'performance']) {
       await expect(page.getByTestId(`ws-panel-${area}`)).toBeVisible();
     }
+    await expect(page.getByTestId('ws-panel-process-review')).toHaveCount(0);
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
