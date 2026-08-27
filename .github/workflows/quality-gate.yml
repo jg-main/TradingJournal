@@ -30,7 +30,12 @@ jobs:
     name: Playwright (${{ matrix.browser }})
     needs: application
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The full matrix (4 sequential partitions with CI retries=2 on top of
+    # known failing tests) exceeds the former 45-minute budget. Keep the job
+    # long enough for the matrix command to finish so the `if: always()`
+    # artifact-upload step can actually run; 2h remains bounded and well
+    # inside the runner's hard limit.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
