@@ -207,8 +207,8 @@ test.describe('M012 Trade Lifecycle', () => {
     await page.goto(`/trades/${trade.id}`, { waitUntil: 'networkidle' });
     await expect(page.locator('h1')).toContainText('META');
 
-    // Verify Add Exit button is visible
-    await expect(page.getByRole('button', { name: /add exit/i })).toBeVisible();
+    // Verify the canonical Add Fill action is available for the open trade
+    await expect(page.getByRole('button', { name: 'Add Fill' })).toBeVisible();
 
     // Verify lifecycle stepper shows Execute step
     await expect(page.getByText('Execute', { exact: true })).toBeVisible();
