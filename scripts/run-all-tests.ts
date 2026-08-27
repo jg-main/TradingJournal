@@ -10,14 +10,32 @@
  * Suites run:
  *   1. Vitest — unit tests and API route tests
  *   2. Standalone tsx tests — consolidation library tests in src/lib/*.test.ts
+ *
+ * Timeout policy: the aggregate Vitest process gets a larger bounded timeout
+ * (VITEST_SUITE_TIMEOUT_MS) because the full suite legitimately runs longer
+ * than any single guard on slower CI runners; every individual suite/guard
+ * command keeps the normal bounded DEFAULT_COMMAND_TIMEOUT_MS. All timeouts
+ * remain bounded — a genuinely hung process still fails the gate.
  */
 
 import { execSync } from 'child_process';
 import path from 'path';
+import { pathToFileURL } from 'node:url';
 
 /* ─── Configuration ─────────────────────────────────────────────────────── */
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
+
+/** Bounded process timeout for individual suites and guards. */
+export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
+
+/**
+ * Bounded process timeout for the aggregate Vitest suite. The full suite
+ * needs more wall time than any individual command, so it must not inherit
+ * the per-command timeout; the value is still bounded so a hung Vitest
+ * process fails the quality gate rather than running forever.
+ */
+export const VITEST_SUITE_TIMEOUT_MS = 300_000;
 
 /** Standalone tsx test files (not covered by vitest config). */
 const TSX_TESTS: string[] = [
@@ -104,30 +122,48 @@ const TSX_TESTS: string[] = [
   'src/lib/trade-execution-idempotency.test.ts',
   'src/lib/trade-metrics.test.ts',
   'scripts/__tests__/m020-evidence-isolation.test.ts',
+  'scripts/__tests__/run-all-tests-timeout.test.ts',
   'scripts/recovery-drill.ts',
 ];
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
-interface SuiteResult {
+export interface SuiteResult {
   name: string;
   passed: boolean;
   durationMs: number;
   output: string;
+  /** True when the command was terminated for exceeding its process timeout. */
+  timedOut?: boolean;
 }
 
-function run(cmd: string, cwd: string, label: string): SuiteResult {
+export function run(
+  cmd: string,
+  cwd: string,
+  label: string,
+  timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+): SuiteResult {
   const start = Date.now();
   try {
-    const stdout = execSync(cmd, { cwd, timeout: 120_000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+    const stdout = execSync(cmd, { cwd, timeout: timeoutMs, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
     return { name: label, passed: true, durationMs: Date.now() - start, output: stdout.trim() };
   } catch (e: unknown) {
-    const execErr = e as { stderr?: Buffer | string; stdout?: Buffer | string };
+    const execErr = e as {
+      stderr?: Buffer | string;
+      stdout?: Buffer | string;
+      signal?: NodeJS.Signals | null;
+      status?: number | null;
+    };
     const stderr = execErr.stderr?.toString()?.trim() || '';
     const stdout = execErr.stdout?.toString()?.trim() || '';
+    // execSync marks a timeout termination with SIGTERM and a null exit status;
+    // distinguish it from an ordinary non-zero exit so timeouts are reported
+    // as timeouts rather than looking like assertion failures.
+    const timedOut = execErr.signal === 'SIGTERM' && execErr.status === null;
     return {
       name: label,
       passed: false,
+      timedOut,
       durationMs: Date.now() - start,
       output: stdout + (stdout && stderr ? '\n' : '') + stderr,
     };
@@ -156,10 +192,12 @@ async function main(): Promise<void> {
 
   /* 1. Vitest suite */
   console.log('◆  Running vitest …');
-  const vitestResult = run(`npx vitest run --reporter verbose`, PROJECT_ROOT, 'vitest');
+  const vitestResult = run(`npx vitest run --reporter verbose`, PROJECT_ROOT, 'vitest', VITEST_SUITE_TIMEOUT_MS);
   results.push(vitestResult);
   if (!vitestResult.passed) {
-    console.log(`   ✗ vitest FAILED (${fmtDuration(vitestResult.durationMs)})`);
+    console.log(
+      `   ✗ vitest ${vitestResult.timedOut ? `TIMED OUT after ${fmtDuration(vitestResult.durationMs)}` : `FAILED (${fmtDuration(vitestResult.durationMs)})`}`,
+    );
     console.log(vitestResult.output.slice(0, 2000));
     exitCode = 1;
   } else {
@@ -231,11 +269,11 @@ async function main(): Promise<void> {
   console.log('  Summary');
   console.log('━'.repeat(60));
   const nameWidth = Math.max(...results.map(r => r.name.length), 10) + 2;
-  console.log(`  ${pad('Suite', nameWidth)} ${pad('Result', 8)} ${pad('Duration', 8)}`);
-  console.log(`  ${'─'.repeat(nameWidth)} ${'─'.repeat(8)} ${'─'.repeat(8)}`);
+  console.log(`  ${pad('Suite', nameWidth)} ${pad('Result', 12)} ${pad('Duration', 8)}`);
+  console.log(`  ${'─'.repeat(nameWidth)} ${'─'.repeat(12)} ${'─'.repeat(8)}`);
   for (const r of results) {
-    const status = r.passed ? '✓ PASS' : '✗ FAIL';
-    console.log(`  ${pad(r.name, nameWidth)} ${pad(status, 8)} ${pad(fmtDuration(r.durationMs), 8)}`);
+    const status = r.timedOut ? '✗ TIMED OUT' : (r.passed ? '✓ PASS' : '✗ FAIL');
+    console.log(`  ${pad(r.name, nameWidth)} ${pad(status, 12)} ${pad(fmtDuration(r.durationMs), 8)}`);
   }
   console.log();
   console.log(`  Overall: ${exitCode === 0 ? '✓ ALL PASSED' : `✗ ${results.filter(r => !r.passed).length} FAILED`}`);
@@ -243,7 +281,11 @@ async function main(): Promise<void> {
   process.exit(exitCode);
 }
 
-main().catch((e) => {
-  console.error('run-all-tests.ts: unexpected error', e);
-  process.exit(1);
-});
+// Run as a CLI only when executed directly; the module is importable by the
+// timeout-policy regression test without triggering the orchestrator.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error('run-all-tests.ts: unexpected error', e);
+    process.exit(1);
+  });
+}
