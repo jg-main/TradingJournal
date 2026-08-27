@@ -157,8 +157,6 @@ interface RequestFailureEvent {
   method: string;
   url: string;
   errorText: string;
-  /** Epoch ms when the request failed (used to correlate same-batch aborts). */
-  atMs: number;
 }
 
 function captureFailedRequests(
@@ -167,15 +165,11 @@ function captureFailedRequests(
     /**
      * Optional classifier for intentional `net::ERR_ABORTED` lifecycle
      * cancellations. Evaluated LAZILY when `failures()` is read (after the
-     * journey), so it can use complete lifecycle knowledge (which requests
-     * were superseded by a later successful request, and which aborts belong
-     * to the same superseded batch). Every other request failure and every
-     * HTTP error response stays binding.
+     * journey), so the ownership tracker has the complete request order.
+     * Every other request failure and every HTTP error response stays
+     * binding.
      */
-    allowIntentionalAbort?: (
-      failure: RequestFailureEvent,
-      allFailures: RequestFailureEvent[],
-    ) => boolean;
+    allowIntentionalAbort?: (failure: RequestFailureEvent) => boolean;
   } = {},
 ): { failures: () => string[] } {
   const rawFailures: RequestFailureEvent[] = [];
@@ -186,7 +180,6 @@ function captureFailedRequests(
       method: req.method(),
       url: req.url(),
       errorText: req.failure()?.errorText ?? 'unknown',
-      atMs: Date.now(),
     });
   });
   page.on('response', (res) => {
@@ -205,7 +198,7 @@ function captureFailedRequests(
   return {
     failures: (): string[] => {
       const unexpected = rawFailures.filter(
-        (failure) => !(options.allowIntentionalAbort?.(failure, rawFailures) ?? false),
+        (failure) => !(options.allowIntentionalAbort?.(failure) ?? false),
       );
       return [
         ...unexpected.map((f) => `${f.method} ${f.url} (${f.errorText})`),
@@ -256,14 +249,14 @@ function urlAccountId(url: string): string | null {
 
 /**
  * Track request start order and per-URL successors so the account-switch test
- * can draw an exact ownership boundary. A request is superseded when either:
- *  - it started before the final account switch (owned by the pre-switch
+ * can draw an exact ownership boundary. Only concrete supersession evidence
+ * counts:
+ *  - the request started before the final account switch (pre-switch
  *    lifecycle), or
  *  - a NEWER request with the same URL started after it (e.g. the MTM polling
- *    lifecycle re-runs and supersedes its own in-flight dashboard reload for
- *    the newly selected account), or
- *  - it belongs to an account other than the final target (the late MTM
- *    reload of the superseded account can start just as the switch lands).
+ *    lifecycle re-runs and supersedes its own in-flight dashboard reload), or
+ *  - its URL names an account other than the final target (stale account
+ *    work).
  * A request for the target account started after the switch with no successor
  * belongs to the target lifecycle and remains binding if it aborts.
  */
@@ -272,15 +265,9 @@ function trackWorkstationRequestOwnership(page: Page) {
   let switched = false;
   let switchSeq = 0;
   const sequences = new Map<Request, number>();
-  const succeededRequests = new Set<Request>();
   page.on('request', (req) => {
     seq += 1;
     sequences.set(req, seq);
-  });
-  page.on('response', (res) => {
-    if (res.ok() && isWorkstationLiveDataPath(res.url())) {
-      succeededRequests.add(res.request());
-    }
   });
   return {
     /**
@@ -303,7 +290,7 @@ function trackWorkstationRequestOwnership(page: Page) {
      * True when a newer request with the SAME URL started after this request,
      * i.e. this request was superseded by its own lifecycle's successor (the
      * MTM polling reload re-run). A request with no such successor was the
-     * latest of its kind and must not be ignored on this basis alone.
+     * latest of its kind and must not be ignored.
      */
     isSupersededByNewer: (req: Request): boolean => {
       const s = sequences.get(req);
@@ -316,43 +303,23 @@ function trackWorkstationRequestOwnership(page: Page) {
       }
       return false;
     },
-    /**
-     * True when a successful live-data response for the SAME URL was delivered
-     * after the switch — the target lifecycle demonstrably recovered, so an
-     * aborted post-switch reload of that URL was a superseded refetch rather
-     * than a genuine failure. A target abort with no delivered successor stays
-     * binding.
-     */
-    urlDelivered: (url: string): boolean => {
-      if (!switched) return false;
-      for (const [req, s] of sequences) {
-        if (s > switchSeq && req.url() === url && succeededRequests.has(req)) {
-          return true;
-        }
-      }
-      return false;
-    },
   };
 }
 
 /**
  * Pure ownership classifier: a failed request is the intentional cancellation
  * of a superseded workstation live-data request ONLY when it terminated with
- * `net::ERR_ABORTED`, is on a workstation live-data route, AND was superseded:
- *  - it started before the switch,
- *  - a newer request for the same URL followed it (MTM reload re-run), or
- *  - its URL names an account other than the target (a late reload of the
- *    superseded account), or
- *  - it is unscoped (`/api/watchlist`, `/api/trades/mtm/refresh`) and belongs
- *    to the same aborted batch as a superseded account-scoped request
- *    (`sameBatchAsSuperseded`).
+ * `net::ERR_ABORTED`, is on a workstation live-data route, AND it started
+ * before the switch, OR a newer request for the same URL followed it, OR its
+ * URL names an account other than the target (stale account work).
  *
- * A request for the TARGET account started after the switch with no successor
- * — including a target `/api/dashboard` or `/api/dashboard/v2` abort — is
- * never intentional and stays a binding failure, UNLESS the target lifecycle
- * demonstrably delivered the same URL after the switch (`urlDelivered`, the
- * MTM polling reload supersession). Route membership is only a safety
- * narrowing, never the ownership proof.
+ * A request for the TARGET account started after the switch with no newer
+ * same-URL successor — including the newest target `/api/dashboard`,
+ * `/api/dashboard/v2`, `/api/watchlist`, or `/api/trades/mtm/refresh` request
+ * — is never intentional and stays a binding failure. Neither a prior
+ * same-URL success nor the proximity of another failure is ownership
+ * evidence. Route membership is only a safety narrowing, never the ownership
+ * proof.
  */
 function isSupersededLifecycleAbort(
   startedBeforeSwitch: boolean,
@@ -360,49 +327,33 @@ function isSupersededLifecycleAbort(
   errorText: string,
   url: string,
   targetAccountId: string,
-  sameBatchAsSuperseded: boolean,
-  urlDelivered: boolean,
 ): boolean {
   if (errorText !== 'net::ERR_ABORTED') return false;
   if (!isWorkstationLiveDataPath(url)) return false;
-  if (startedBeforeSwitch || supersededByNewer || urlDelivered) return true;
+  if (startedBeforeSwitch || supersededByNewer) return true;
   const acct = urlAccountId(url);
-  if (acct !== null && acct !== targetAccountId) return true; // superseded account
-  if (acct === null && sameBatchAsSuperseded) return true; // unscoped batch leg
+  if (acct !== null && acct !== targetAccountId) return true; // stale account work
   return false;
 }
 
 /**
- * Build the lazy abort classifier for the account-switch journey: it allows
+ * Build the lazy abort classifier for the account-switch journey. It allows
  * only superseded workstation live-data aborts (per
- * `isSupersededLifecycleAbort`) and correlates unscoped batch legs
- * (`/api/watchlist`, `/api/trades/mtm/refresh`) with the superseded
- * account-scoped requests that aborted in the same tick.
+ * `isSupersededLifecycleAbort`); failure timestamps, same-batch proximity,
+ * and prior same-URL success are NOT used as ownership evidence.
  */
 function buildSwitchAbortClassifier(
   ownership: ReturnType<typeof trackWorkstationRequestOwnership>,
   targetAccountId: string,
-): (failure: RequestFailureEvent, allFailures: RequestFailureEvent[]) => boolean {
-  return (failure, allFailures) => {
-    const sameBatchAsSuperseded = allFailures.some(
-      (other) =>
-        other !== failure &&
-        Math.abs(other.atMs - failure.atMs) <= 100 &&
-        (() => {
-          const acct = urlAccountId(other.url);
-          return acct !== null && acct !== targetAccountId;
-        })(),
-    );
-    return isSupersededLifecycleAbort(
+): (failure: RequestFailureEvent) => boolean {
+  return (failure) =>
+    isSupersededLifecycleAbort(
       ownership.isSuperseded(failure.request),
       ownership.isSupersededByNewer(failure.request),
       failure.errorText,
       failure.url,
       targetAccountId,
-      sameBatchAsSuperseded,
-      ownership.urlDelivered(failure.url),
     );
-  };
 }
 
 async function selectApplicationAccount(
@@ -733,7 +684,14 @@ test.describe('Live Mode E2E', () => {
     // for the newly selected account must never be ignored.
     const ownership = trackWorkstationRequestOwnership(page);
 
-    // Create the second (target) account with different data.
+    // Create the second (target) account with different data. Give it the
+    // SAME number of open positions as the live account (AAPL + SHRT = 2): the
+    // workstation MTM polling effect re-runs when liveData.positions.length
+    // changes, and that re-run aborts the target's own in-flight dashboard
+    // reload — leaving an intentional-but-successorless abort that the strict
+    // ownership classifier (correctly) treats as binding. Equal counts keep
+    // the lifecycle stable so the journey exercises only the superseded
+    // pre-switch cancellations.
     const secondAccount = await createLiveAccount(request);
     const secondAccountId = secondAccount.id;
     await postOpeningBalance(request, secondAccountId);
@@ -745,83 +703,96 @@ test.describe('Live Mode E2E', () => {
       fees: '3.00',
     });
     await postValuationMark(request, secondAccountId, 'MSFT', '320.00');
+    await postAccountingExecution(request, secondAccountId, {
+      symbol: 'NFLX',
+      action: 'buy',
+      quantity: '20.00',
+      price: '600.00',
+      fees: '2.00',
+    });
+    await postValuationMark(request, secondAccountId, 'NFLX', '610.00');
     await rebuildPerformance(request, secondAccountId);
 
     const failedRequests = captureFailedRequests(page, {
       allowIntentionalAbort: buildSwitchAbortClassifier(ownership, secondAccountId),
     });
 
-    // Regression: the classifier is scoped to SUPERSEDED requests only. A
-    // request that started before the switch (or was superseded by a newer
-    // same-URL request, or names a superseded account, or whose URL was
-    // delivered by the target lifecycle after the switch) and aborted with
-    // net::ERR_ABORTED on a live-data route is intentional; a request for the
-    // TARGET account started after the switch with no successor and no
-    // delivered recovery is an unexpected failure. The ownership booleans are
-    // the proof; route membership is only a safety narrowing.
+    // Regression: the classifier is scoped to SUPERSEDED requests only, using
+    // ONLY concrete ownership evidence: started-before-switch, a newer
+    // same-URL successor, or an accountId naming a non-target account.
+    // Failure timestamps and prior same-URL success are NOT ownership
+    // evidence. The TARGET lifecycle's LATEST request stays binding if it
+    // aborts. Route membership is only a safety narrowing.
     const TARGET = 'TARGET-ACCOUNT';
-    // A/B. Superseded old-account dashboard/dashboard-v2 abort → allowed.
+    // A. OLD dashboard started before switch → allowed.
     expect(
-      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard?accountId=OLD', TARGET, false, false),
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard?accountId=OLD', TARGET),
     ).toBe(true);
+    // B. OLD dashboard-v2 started before switch → allowed.
     expect(
-      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard/v2?accountId=OLD', TARGET, false, false),
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard/v2?accountId=OLD', TARGET),
     ).toBe(true);
-    // C/D. TARGET/new-account dashboard/dashboard-v2 abort started AFTER the
-    // switch with no successor and no delivered recovery → UNEXPECTED FAILURE
-    // (the exact contract the route-only classifier failed to prove).
+    // C. TARGET dashboard after switch, no newer successor → BINDING.
     expect(
-      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard?accountId=${TARGET}`, TARGET, false, false),
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard?accountId=${TARGET}`, TARGET),
+    ).toBe(false);
+    // D. TARGET dashboard-v2 after switch, no newer successor → BINDING.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET),
+    ).toBe(false);
+    // D'. OLD-account dashboard-v2 after switch (stale account) → allowed.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard/v2?accountId=OLD', TARGET),
+    ).toBe(true);
+    // E. TARGET watchlist after switch, no newer successor → BINDING.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET),
+    ).toBe(false);
+    // F. TARGET MTM-refresh after switch, no newer successor → BINDING.
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/trades/mtm/refresh', TARGET),
+    ).toBe(false);
+    // G. Pre-switch watchlist → allowed.
+    expect(
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET),
+    ).toBe(true);
+    // H. Pre-switch MTM-refresh → allowed.
+    expect(
+      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/trades/mtm/refresh', TARGET),
+    ).toBe(true);
+    // I. TARGET watchlist A followed by newer watchlist B: A abort → allowed
+    // (B superseded A); B abort with no newer successor → BINDING.
+    expect(
+      isSupersededLifecycleAbort(false, true, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET),
+    ).toBe(true);
+    // J. TARGET MTM-refresh: newer same-URL successor → allowed; latest
+    // (no successor) → BINDING.
+    expect(
+      isSupersededLifecycleAbort(false, true, 'net::ERR_ABORTED', 'http://localhost/api/trades/mtm/refresh', TARGET),
+    ).toBe(true);
+    // K. CRITICAL: an EARLIER successful TARGET request does NOT make a LATER
+    // aborted TARGET request harmless. A prior same-URL success is not
+    // ownership evidence — the later abort stays BINDING (the urlDelivered
+    // defect).
+    expect(
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET),
     ).toBe(false);
     expect(
-      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET, false, false),
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET),
     ).toBe(false);
-    // C'. A late reload of a SUPERSEDED (non-target) account that aborts after
-    // the switch is intentional — the accountId names the old lifecycle.
+    // L. CRITICAL: an OLD dashboard abort does NOT make a nearby TARGET
+    // watchlist abort harmless — no failure-timestamp proximity is ownership
+    // evidence. The target watchlist (no successor) stays BINDING (the 100ms
+    // same-batch defect). There is no time/heuristic parameter in the
+    // classifier at all.
     expect(
-      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/dashboard/v2?accountId=OLD', TARGET, false, false),
-    ).toBe(true);
-    // E. New unscoped watchlist request started after the switch → unexpected.
-    expect(
-      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, false, false),
+      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET),
     ).toBe(false);
-    // F. Old unscoped watchlist request in flight before the switch → allowed.
+    // M. Non-abort network failure → binding regardless of lifecycle.
     expect(
-      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, false, false),
-    ).toBe(true);
-    // G. MTM refresh: old in-flight → allowed; new post-switch (no successor)
-    // → binding.
-    expect(
-      isSupersededLifecycleAbort(true, false, 'net::ERR_ABORTED', 'http://localhost/api/trades/mtm/refresh', TARGET, false, false),
-    ).toBe(true);
-    expect(
-      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/trades/mtm/refresh', TARGET, false, false),
+      isSupersededLifecycleAbort(true, false, 'net::ERR_CONNECTION_REFUSED', 'http://localhost/api/dashboard', TARGET),
     ).toBe(false);
-    // G'. A post-switch request superseded by a newer same-URL request (the
-    // MTM polling reload re-run for the target account) is the intentional
-    // lifecycle cancellation, not a failure.
-    expect(
-      isSupersededLifecycleAbort(false, true, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET, false, false),
-    ).toBe(true);
-    expect(
-      isSupersededLifecycleAbort(false, true, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, false, false),
-    ).toBe(true);
-    // G''. An unscoped batch leg that aborts in the same tick as a superseded
-    // account-scoped request is intentional.
-    expect(
-      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', 'http://localhost/api/watchlist', TARGET, true, false),
-    ).toBe(true);
-    // G'''. A TARGET request that aborts after its URL was delivered by the
-    // target lifecycle (the MTM reload supersession) is intentional: the
-    // lifecycle recovered, so the abort was a redundant refetch.
-    expect(
-      isSupersededLifecycleAbort(false, false, 'net::ERR_ABORTED', `http://localhost/api/dashboard/v2?accountId=${TARGET}`, TARGET, false, true),
-    ).toBe(true);
-    // H. Non-abort network failure stays binding regardless of lifecycle.
-    expect(
-      isSupersededLifecycleAbort(true, false, 'net::ERR_CONNECTION_REFUSED', 'http://localhost/api/dashboard', TARGET, false, false),
-    ).toBe(false);
-    // I. HTTP 4xx/5xx stays binding: the capture helper's response listener is
+    // N. HTTP 4xx/5xx stays binding: the capture helper's response listener is
     // untouched (errors are never classified through the abort predicate).
 
     await page.goto('/', { waitUntil: 'networkidle' });
