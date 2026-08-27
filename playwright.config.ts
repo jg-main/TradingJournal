@@ -43,6 +43,11 @@ export default defineConfig({
     timeout: 30_000,
     env: {
       DB_FILE_NAME: process.env.DB_FILE_NAME,
+      // Explicit deterministic-market-data fixture for the Playwright web
+      // server: MTM quote fetching resolves to a stable mock provider instead
+      // of live Yahoo/Schwab. The resolver's production guard means this can
+      // never activate in a production build/runtime.
+      PLAYWRIGHT_MOCK_MARKET_DATA: '1',
     },
   },
   projects: [

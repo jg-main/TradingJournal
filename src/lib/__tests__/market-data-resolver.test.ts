@@ -52,9 +52,13 @@ import {
   resolveOhlcProvider,
   readActiveMarketDataSettings,
   resolveQuoteProvider,
+  isPlaywrightMockMarketDataEnabled,
 } from '../market-data-resolver';
 import { ClickHouseProvider } from '../clickhouse-provider';
-import { YahooFinanceProvider } from '../market-quote';
+import {
+  YahooFinanceProvider,
+  DeterministicMarketQuoteProvider,
+} from '../market-quote';
 
 // ── Assertion helpers ────────────────────────────────────────────────────
 
@@ -206,4 +210,94 @@ test('Provider Resolver Module', async () => {
   }
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
+});
+
+test('Playwright deterministic-market-data fixture boundary', async () => {
+  const localPassed = passed;
+  const localFailed = failed;
+
+  // process.env is typed readonly for NODE_ENV; use a mutable view for the
+  // fixture-boundary assertions.
+  const mutableEnv = process.env as Record<string, string | undefined>;
+  const savedFlag = mutableEnv.PLAYWRIGHT_MOCK_MARKET_DATA;
+  const savedNodeEnv = mutableEnv.NODE_ENV;
+
+  try {
+    // A. No flag → unchanged provider-resolution behavior (Yahoo path).
+    delete mutableEnv.PLAYWRIGHT_MOCK_MARKET_DATA;
+    mutableEnv.NODE_ENV = 'test';
+    assert(
+      isPlaywrightMockMarketDataEnabled() === false,
+      'no flag → fixture disabled',
+    );
+    assert(
+      resolveQuoteProviderFromSettings('yahoo') instanceof YahooFinanceProvider,
+      'no flag → YahooFinanceProvider (unchanged resolution path)',
+    );
+
+    // B. Explicit flag + non-production → deterministic provider.
+    mutableEnv.PLAYWRIGHT_MOCK_MARKET_DATA = '1';
+    assert(
+      isPlaywrightMockMarketDataEnabled() === true,
+      'flag on (non-production) → fixture enabled',
+    );
+    const provider = resolveQuoteProviderFromSettings('schwab');
+    assert(
+      provider instanceof DeterministicMarketQuoteProvider,
+      'flag on → DeterministicMarketQuoteProvider',
+    );
+    const quotes = await provider.getQuote(['AAPL', 'MSFT']);
+    assertEqual(quotes.length, 2, 'two quotes returned');
+    assert(
+      quotes.every((q) => typeof q.price === 'number' && q.price !== null && q.price > 0),
+      'all quotes have valid non-null prices',
+    );
+    assert(
+      quotes.every((q) => q.source === 'mock'),
+      'quote provenance source is mock',
+    );
+    // Determinism: repeated call returns identical prices.
+    const again = await provider.getQuote(['AAPL', 'MSFT']);
+    assertEqual(
+      JSON.stringify(again.map((q) => q.price)),
+      JSON.stringify(quotes.map((q) => q.price)),
+      'repeated call returns identical deterministic prices',
+    );
+
+    // C. Arbitrary browser-test symbol still receives a deterministic quote.
+    const arbitrary = await provider.getQuote(['OPENTRADEFFE3A']);
+    assertEqual(arbitrary.length, 1, 'one quote for arbitrary symbol');
+    assert(
+      typeof arbitrary[0].price === 'number' && arbitrary[0].price !== null && arbitrary[0].price > 0,
+      'arbitrary symbol gets a valid deterministic quote (no provider lookup)',
+    );
+
+    // D. Production guard: NODE_ENV=production + flag → NOT deterministic.
+    mutableEnv.NODE_ENV = 'production';
+    assert(
+      isPlaywrightMockMarketDataEnabled() === false,
+      'NODE_ENV=production + flag → fixture disabled',
+    );
+    assert(
+      resolveQuoteProviderFromSettings('yahoo') instanceof YahooFinanceProvider,
+      'NODE_ENV=production + flag → real provider path (never the fixture)',
+    );
+  } finally {
+    // E. No flag leakage: restore prior environment so tests stay
+    // order-independent.
+    if (savedFlag === undefined) {
+      delete mutableEnv.PLAYWRIGHT_MOCK_MARKET_DATA;
+    } else {
+      mutableEnv.PLAYWRIGHT_MOCK_MARKET_DATA = savedFlag;
+    }
+    if (savedNodeEnv === undefined) {
+      delete mutableEnv.NODE_ENV;
+    } else {
+      mutableEnv.NODE_ENV = savedNodeEnv;
+    }
+  }
+
+  const fixturePassed = passed - localPassed;
+  const fixtureFailed = failed - localFailed;
+  console.log(`\n=== Fixture boundary results: ${fixturePassed} passed, ${fixtureFailed} failed ===`);
 });

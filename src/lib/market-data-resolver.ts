@@ -23,10 +23,29 @@ import { db } from '@/db';
 import { marketDataSettings } from '@/db/schema';
 import { ClickHouseProvider } from './clickhouse-provider';
 import { SchwabProvider } from './schwab-provider';
-import { YahooFinanceProvider } from './market-quote';
+import { YahooFinanceProvider, DeterministicMarketQuoteProvider } from './market-quote';
 import type { MarketQuoteProvider } from './market-quote';
 import type { MarketOhlcProvider } from './market-ohlc-provider';
 import { resolveMtmRefreshIntervalSeconds } from './market-data-refresh-interval';
+
+// ── Playwright Deterministic-Market-Data Fixture ─────────────────────────
+
+const PLAYWRIGHT_MOCK_MARKET_DATA_ENV = 'PLAYWRIGHT_MOCK_MARKET_DATA';
+
+/**
+ * True only when the EXPLICIT Playwright deterministic-market-data fixture is
+ * requested AND the process is not a production build.
+ *
+ * The fixture must be impossible to enable accidentally in production:
+ * `NODE_ENV=production` disables it even if the env var is present, so a
+ * production runtime always resolves the real provider path.
+ */
+export function isPlaywrightMockMarketDataEnabled(): boolean {
+  return (
+    process.env[PLAYWRIGHT_MOCK_MARKET_DATA_ENV] === '1' &&
+    process.env.NODE_ENV !== 'production'
+  );
+}
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -109,6 +128,21 @@ export function readActiveMarketDataSettings(): MarketDataSettings | null {
 export function resolveQuoteProviderFromSettings(
   activeProvider: string,
 ): MarketQuoteProvider {
+  // Explicit Playwright fixture: return a deterministic provider so browser
+  // MTM refresh behavior does not depend on live Yahoo/Schwab availability.
+  // Guarded so production (NODE_ENV=production) can never select it.
+  if (isPlaywrightMockMarketDataEnabled()) {
+    console.log(
+      JSON.stringify({
+        event: 'resolve_quote_provider',
+        provider: activeProvider,
+        resolved: 'mock',
+        fixture: 'playwright_mock_market_data',
+      }),
+    );
+    return new DeterministicMarketQuoteProvider();
+  }
+
   const provider = activeProvider?.toLowerCase().trim();
 
   if (provider === 'schwab') {

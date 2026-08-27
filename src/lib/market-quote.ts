@@ -275,6 +275,69 @@ export class MockMarketQuoteProvider implements MarketQuoteProvider {
   }
 }
 
+// ── Deterministic Playwright Fixture Provider ──────────────────────────────
+
+/**
+ * Stable symbol → price (USD, two decimals) derived only from the symbol
+ * string. Same symbol always yields the same price; there is no wall-clock
+ * state, randomness, or network involved.
+ */
+export function deterministicPriceForSymbol(symbol: string): number {
+  let hash = 0;
+  for (let i = 0; i < symbol.length; i += 1) {
+    hash = (hash * 31 + symbol.charCodeAt(i)) >>> 0;
+  }
+  // Stable price in the 20.00–199.99 USD range (cents).
+  const cents = 2000 + (hash % 18000);
+  return cents / 100;
+}
+
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function createDeterministicQuote(symbol: string, fetchedAt: string): QuoteResult {
+  const price = deterministicPriceForSymbol(symbol);
+  const previousClose = roundToTwo(price * 0.99);
+  return {
+    symbol,
+    price,
+    marketState: "REGULAR",
+    fetchedAt,
+    source: "mock",
+    shortName: symbol,
+    quoteType: "EQUITY",
+    previousClose,
+    dayHigh: roundToTwo(price * 1.02),
+    dayLow: roundToTwo(price * 0.98),
+    change: roundToTwo(price - previousClose),
+    changePercent: 1,
+    sector: "Technology",
+    industry: "Software",
+  };
+}
+
+/**
+ * DeterministicMarketQuoteProvider returns a stable, valid quote for ANY
+ * symbol — including arbitrary browser-test tickers that are not in any
+ * manifest — so Playwright MTM refresh behavior does not depend on live
+ * external quote-provider availability.
+ *
+ * This is a TEST fixture provider. It is selected only through the explicit
+ * guarded branch in market-data-resolver.ts
+ * (`PLAYWRIGHT_MOCK_MARKET_DATA=1` AND `NODE_ENV !== 'production'`); normal
+ * application operation never resolves it.
+ */
+export class DeterministicMarketQuoteProvider implements MarketQuoteProvider {
+  async getQuote(symbols: string[]): Promise<QuoteResult[]> {
+    if (symbols.length === 0) {
+      return [];
+    }
+    const now = new Date().toISOString();
+    return symbols.map((symbol) => createDeterministicQuote(symbol.toUpperCase(), now));
+  }
+}
+
 // ── OHLC Bar Type ────────────────────────────────────────────────────────
 
 /**
