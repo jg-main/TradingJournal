@@ -463,3 +463,209 @@ describe('WorkstationProvider account control', () => {
     expect(screen.getByTestId('error').textContent).toBe('');
   });
 });
+
+// ── MTM polling eligibility lifecycle ───────────────────────────────────────
+// The polling lifecycle must depend on BOOLEAN "has open positions" (zero vs
+// nonzero), not the exact position count: a user switching accounts with
+// 2 positions -> 1 position must not tear down/restart polling (which would
+// abort the in-flight refresh/reload). Only eligibility flips, account
+// changes, and other real lifecycle changes re-run the polling effect.
+
+function liveDataWithPositions(count: number) {
+  return {
+    success: true as const,
+    data: {
+      accounts: controlledAccounts,
+      positions: Array.from({ length: count }, (_, i) => ({ symbol: `P${i}` })),
+      watchlist: [] as never[],
+      dashboard: { setupRanking: [] },
+      dashboardV2: { account: {} },
+      risk: {},
+    },
+  };
+}
+
+/** Render the provider in live controlled mode and settle the initial fetch + tick. */
+async function renderLiveProvider() {
+  const view = render(
+    <WorkstationProvider
+      liveMode
+      accounts={controlledAccounts}
+      accountId="acc-1"
+      onAccountIdChange={vi.fn()}
+    >
+      <Probe />
+    </WorkstationProvider>,
+  );
+  await flush();
+  await flush();
+  return view;
+}
+
+describe('MTM polling eligibility lifecycle', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    fetchAllLiveDashboardData.mockResolvedValue({
+      success: true,
+      data: {
+        accounts: controlledAccounts,
+        positions: [],
+        watchlist: [],
+        dashboard: { setupRanking: [] },
+        dashboardV2: { account: {} },
+        risk: {},
+      },
+    });
+    refreshMtmPricesLive.mockResolvedValue({
+      success: true,
+      data: { updated: 1, failed: [], timestamp: '2026-08-13T15:00:00.000Z' },
+    });
+    fetchMtmRefreshIntervalLive.mockResolvedValue({ success: true, data: 45 });
+    fetchWatchlistPricesLive.mockResolvedValue({ success: true, data: {} });
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      cleanup();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  });
+
+  it('does not restart polling or abort in-flight MTM work when the nonzero position count changes (2 -> 1)', async () => {
+    let fetchCall = 0;
+    fetchAllLiveDashboardData.mockImplementation(async () => {
+      fetchCall += 1;
+      return liveDataWithPositions(fetchCall <= 2 ? 2 : 1);
+    });
+
+    await renderLiveProvider();
+
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+    const refreshCalls = refreshMtmPricesLive.mock.calls.length;
+    expect(refreshCalls).toBeGreaterThan(0);
+    const firstSignal = refreshMtmPricesLive.mock.calls[0][0] as AbortSignal;
+
+    // Switch positions 2 -> 1 via a manual refresh: eligibility stays nonzero.
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flush();
+    await flush();
+
+    // No new MTM tick fired and the existing MTM request was not torn down.
+    expect(refreshMtmPricesLive.mock.calls.length).toBe(refreshCalls);
+    expect(firstSignal.aborted).toBe(false);
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+  });
+
+  it('does not restart polling when the nonzero position count changes (1 -> 3)', async () => {
+    let fetchCall = 0;
+    fetchAllLiveDashboardData.mockImplementation(async () => {
+      fetchCall += 1;
+      return liveDataWithPositions(fetchCall <= 2 ? 1 : 3);
+    });
+
+    await renderLiveProvider();
+
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+    const refreshCalls = refreshMtmPricesLive.mock.calls.length;
+
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flush();
+    await flush();
+
+    expect(refreshMtmPricesLive.mock.calls.length).toBe(refreshCalls);
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+  });
+
+  it('starts polling when eligibility flips zero -> nonzero (0 -> 1)', async () => {
+    let fetchCall = 0;
+    fetchAllLiveDashboardData.mockImplementation(async () => {
+      fetchCall += 1;
+      return liveDataWithPositions(fetchCall <= 1 ? 0 : 1);
+    });
+    await renderLiveProvider();
+
+    expect(screen.getByTestId('mtm-state').textContent).toBe('paused');
+    expect(refreshMtmPricesLive).not.toHaveBeenCalled();
+
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flush();
+    await flush();
+
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+    expect(refreshMtmPricesLive).toHaveBeenCalled();
+  });
+
+  it('stops polling with legitimate cleanup when eligibility flips nonzero -> zero (1 -> 0)', async () => {
+    let fetchCall = 0;
+    fetchAllLiveDashboardData.mockImplementation(async () => {
+      fetchCall += 1;
+      return liveDataWithPositions(fetchCall <= 1 ? 1 : 0);
+    });
+    const resolvers: Array<(v: unknown) => void> = [];
+    refreshMtmPricesLive.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    await renderLiveProvider();
+
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+    const firstSignal = refreshMtmPricesLive.mock.calls[0][0] as AbortSignal;
+    const refreshCalls = refreshMtmPricesLive.mock.calls.length;
+
+    act(() => {
+      screen.getByTestId('refresh').click();
+    });
+    await flush();
+    await flush();
+
+    // Polling stopped and the in-flight MTM request was legitimately aborted.
+    expect(screen.getByTestId('mtm-state').textContent).toBe('paused');
+    expect(firstSignal.aborted).toBe(true);
+    expect(refreshMtmPricesLive.mock.calls.length).toBe(refreshCalls);
+
+    await act(async () => {
+      for (const resolve of resolvers) {
+        resolve({ success: true, data: { updated: 1, failed: [], timestamp: 'x' } });
+      }
+    });
+    await flush();
+  });
+
+  it('rebinds polling to the new account on account change (nonzero -> nonzero)', async () => {
+    fetchAllLiveDashboardData.mockResolvedValue(liveDataWithPositions(2));
+
+    const view = await renderLiveProvider();
+
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+    const refreshCalls = refreshMtmPricesLive.mock.calls.length;
+    expect(refreshCalls).toBeGreaterThan(0);
+
+    view.rerender(
+      <WorkstationProvider
+        liveMode
+        accounts={controlledAccounts}
+        accountId="acc-2"
+        onAccountIdChange={vi.fn()}
+      >
+        <Probe />
+      </WorkstationProvider>,
+    );
+    await flush();
+    await flush();
+
+    // The old account's polling lifecycle was replaced: a new MTM tick fired
+    // for the new account (rebind) and the selection updated.
+    expect(refreshMtmPricesLive.mock.calls.length).toBeGreaterThan(refreshCalls);
+    expect(screen.getByTestId('mtm-state').textContent).toBe('active');
+    expect(screen.getByTestId('active').textContent).toBe('acc-2');
+  });
+});

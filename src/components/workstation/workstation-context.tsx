@@ -418,19 +418,25 @@ export function WorkstationProvider({
   // Pauses when tab is hidden or positions reach zero.  Sets mtmPollingState
   // so the toolbar can render the active/paused/error indicator.
   //
+  // Polling eligibility is the BOOLEAN "has open positions" (zero vs nonzero),
+  // not the exact position count: a user legitimately switching accounts with
+  // 2 positions -> 1 position must not tear down and restart the polling
+  // lifecycle (which would abort the in-flight refresh/reload). Only
+  // eligibility flips (0 <-> nonzero), account changes, and other real
+  // lifecycle changes re-run the polling effect.
+  const hasOpenPositions = liveData !== null && liveData.positions.length > 0;
+
   // Show the paused indicator when live mode is off, no account is
   // selected, or there are no positions to poll. Adjusted during render
   // (React-sanctioned; replaces the setState-in-effect the linter rejects).
   if (!liveMode || !activeAccountId) {
     if (mtmPollingState !== 'paused') setMtmPollingState('paused');
-  } else if (liveData === null || liveData.positions.length === 0) {
+  } else if (!hasOpenPositions) {
     if (mtmPollingState !== 'paused') setMtmPollingState('paused');
   }
 
   useEffect(() => {
     if (!liveMode || !activeAccountId) return;
-
-    const hasPositions = liveData !== null && liveData.positions.length > 0;
 
     const startPolling = () => {
       if (mtmIntervalRef.current) return; // already polling
@@ -541,7 +547,7 @@ export function WorkstationProvider({
     };
 
     const onVisibilityChange = () => {
-      if (!hasPositions) return;
+      if (!hasOpenPositions) return;
       if (document.hidden) {
         stopPolling();
       } else {
@@ -549,7 +555,7 @@ export function WorkstationProvider({
       }
     };
 
-    if (hasPositions && !document.hidden) {
+    if (hasOpenPositions && !document.hidden) {
       startPolling();
     }
 
@@ -559,12 +565,12 @@ export function WorkstationProvider({
       document.removeEventListener('visibilitychange', onVisibilityChange);
       stopPolling();
       // Resolve any pending interval — use a shallow check to avoid
-      // stale-closure issues with hasPositions.
+      // stale-closure issues with the eligibility boolean.
     };
   }, [
     liveMode,
     activeAccountId,
-    liveData?.positions.length,
+    hasOpenPositions,
     isAccountControlled,
     mtmRefreshIntervalSeconds,
   ]);

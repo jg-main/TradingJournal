@@ -684,14 +684,11 @@ test.describe('Live Mode E2E', () => {
     // for the newly selected account must never be ignored.
     const ownership = trackWorkstationRequestOwnership(page);
 
-    // Create the second (target) account with different data. Give it the
-    // SAME number of open positions as the live account (AAPL + SHRT = 2): the
-    // workstation MTM polling effect re-runs when liveData.positions.length
-    // changes, and that re-run aborts the target's own in-flight dashboard
-    // reload — leaving an intentional-but-successorless abort that the strict
-    // ownership classifier (correctly) treats as binding. Equal counts keep
-    // the lifecycle stable so the journey exercises only the superseded
-    // pre-switch cancellations.
+    // Create the second (target) account with different data: a single MSFT
+    // open position, so the switch journey exercises the meaningful
+    // 2 positions (AAPL + SHRT) -> 1 position transition. The workstation MTM
+    // polling lifecycle depends on zero-vs-nonzero eligibility, so this count
+    // change must NOT tear down/restart polling.
     const secondAccount = await createLiveAccount(request);
     const secondAccountId = secondAccount.id;
     await postOpeningBalance(request, secondAccountId);
@@ -703,14 +700,6 @@ test.describe('Live Mode E2E', () => {
       fees: '3.00',
     });
     await postValuationMark(request, secondAccountId, 'MSFT', '320.00');
-    await postAccountingExecution(request, secondAccountId, {
-      symbol: 'NFLX',
-      action: 'buy',
-      quantity: '20.00',
-      price: '600.00',
-      fees: '2.00',
-    });
-    await postValuationMark(request, secondAccountId, 'NFLX', '610.00');
     await rebuildPerformance(request, secondAccountId);
 
     const failedRequests = captureFailedRequests(page, {
