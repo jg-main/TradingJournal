@@ -12,14 +12,23 @@ import { join } from 'node:path';
  * Behavior:
  * - Creates the `__drizzle_migrations` tracking table if it does not exist.
  * - Reads `meta/_journal.json` from `migrationsDir`.
- * - For each journal entry, skips it if its tag is already recorded.
- * - Otherwise reads `<tag>.sql` and executes it inside BEGIN/COMMIT,
- *   recording the tag as the applied hash.
+ * - For each journal entry, opens a serialized `BEGIN IMMEDIATE` write
+ *   transaction and skips the entry if its tag is already recorded.
+ * - Otherwise reads `<tag>.sql` and executes it inside that transaction,
+ *   recording the tag as the applied hash, then commits.
  * - On ANY error the current migration's transaction is ROLLBACKed and the
  *   error is re-thrown (fail-closed) with a message naming the failing tag.
  *   Errors are never swallowed: a missing journal, missing SQL file, or SQL
  *   failure all abort startup rather than leaving a partially migrated
  *   schema in place.
+ *
+ * Concurrency: the "is this tag recorded" existence check happens INSIDE the
+ * write transaction, so concurrent processes starting against the same
+ * database cannot both observe the same tag as missing and both apply its SQL.
+ * Only one process can hold the SQLite write lock at a time; a competing
+ * process blocks on `BEGIN IMMEDIATE` (bounded by the busy timeout configured
+ * on the connection — better-sqlite3 defaults to 5000ms) and then re-checks
+ * the tag after the holder commits, so it skips instead of re-applying.
  *
  * The tracking table uses the journal tag as the hash column value. This
  * matches the historical behavior of src/db/index.ts and makes hand-written
@@ -44,11 +53,22 @@ export function runMigrations(sqlite: Database.Database, migrationsDir: string):
 
   for (const entry of meta.entries) {
     const tag = entry.tag;
-    if (findExisting.get(tag)) continue;
 
-    const sql = readFileSync(join(migrationsDir, `${tag}.sql`), 'utf8');
-    sqlite.exec('BEGIN');
+    // Serialize each check-and-apply decision under the SQLite write lock.
+    // The existence check must happen inside the write transaction, otherwise
+    // two concurrent runners can both see the tag as missing and both apply
+    // the same SQL (the duplicate-column failure seen during multi-worker
+    // Next.js builds). A competing runner blocks on BEGIN IMMEDIATE (bounded
+    // by the connection's busy timeout), then re-checks after the holder
+    // commits, so it skips rather than re-applying.
+    sqlite.exec('BEGIN IMMEDIATE');
     try {
+      if (findExisting.get(tag)) {
+        sqlite.exec('COMMIT');
+        continue;
+      }
+
+      const sql = readFileSync(join(migrationsDir, `${tag}.sql`), 'utf8');
       sqlite.exec(sql);
       insert.run(tag);
       sqlite.exec('COMMIT');
