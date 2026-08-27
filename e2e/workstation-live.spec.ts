@@ -152,10 +152,27 @@ function captureConsoleInfo(page: Page): string[] {
   return infos;
 }
 
-function captureFailedRequests(page: Page): string[] {
+function captureFailedRequests(
+  page: Page,
+  options: {
+    /**
+     * Optional classifier for intentional `net::ERR_ABORTED` lifecycle
+     * cancellations. When it returns true for a failed request, that abort is
+     * treated as expected and excluded from the captured failures. Every
+     * other request failure and every HTTP error response stays binding.
+     */
+    allowIntentionalAbort?: (req: { method: string; url: string; errorText: string }) => boolean;
+  } = {},
+): string[] {
   const failed: string[] = [];
   page.on('requestfailed', (req) => {
-    failed.push(`${req.url()} (${req.failure()?.errorText ?? 'unknown'})`);
+    const method = req.method();
+    const url = req.url();
+    const errorText = req.failure()?.errorText ?? 'unknown';
+    if (options.allowIntentionalAbort?.({ method, url, errorText })) {
+      return;
+    }
+    failed.push(`${method} ${url} (${errorText})`);
   });
   page.on('response', (res) => {
     if (!res.ok() && res.status() >= 400) {
@@ -171,6 +188,46 @@ function captureFailedRequests(page: Page): string[] {
     }
   });
   return failed;
+}
+
+// ── Intentional account-switch cancellation classification ────────────────
+
+/**
+ * Paths whose requests the workstation intentionally aborts when the account
+ * changes: `fetchAllLiveDashboardData` shares one AbortSignal across
+ * /api/dashboard, /api/dashboard/v2, and /api/watchlist, and the MTM polling
+ * lifecycle aborts its in-flight refresh (POST /api/trades/mtm/refresh) plus
+ * its dashboard reload. Superseded batches surface as `net::ERR_ABORTED`
+ * `requestfailed` events — expected transport behavior, not request failures.
+ */
+const WORKSTATION_LIVE_DATA_PATHS = [
+  '/api/dashboard',
+  '/api/dashboard/v2',
+  '/api/watchlist',
+  '/api/trades/mtm/refresh',
+];
+
+function isWorkstationLiveDataPath(url: string): boolean {
+  try {
+    return WORKSTATION_LIVE_DATA_PATHS.includes(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Narrowly classify a failed request as the intentional cancellation of a
+ * superseded workstation live-data batch during an account switch. Only
+ * `net::ERR_ABORTED` on the workstation live-data routes qualifies; any other
+ * failure — a new-account/unrelated abort, a non-abort network error, or an
+ * HTTP error response — stays unexpected.
+ */
+function isIntentionalAccountSwitchAbort(
+  method: string,
+  url: string,
+  errorText: string,
+): boolean {
+  return errorText === 'net::ERR_ABORTED' && isWorkstationLiveDataPath(url);
 }
 
 async function selectApplicationAccount(
@@ -494,7 +551,43 @@ test.describe('Live Mode E2E', () => {
     request,
   }) => {
     const consoleErrors = captureConsoleErrors(page);
-    const failedRequests = captureFailedRequests(page);
+    // The account-switch journey intentionally cancels the superseded
+    // workstation live-data batch for the previously selected account
+    // (dashboard / dashboard-v2 / watchlist / mtm-refresh). Those
+    // net::ERR_ABORTED cancellations are expected lifecycle behavior, not
+    // request failures; every other failure stays binding.
+    const failedRequests = captureFailedRequests(page, {
+      allowIntentionalAbort: ({ method, url, errorText }) =>
+        isIntentionalAccountSwitchAbort(method, url, errorText),
+    });
+
+    // Regression: the classification is narrow. Only net::ERR_ABORTED on the
+    // workstation live-data batch routes is permitted; a stale-account batch
+    // abort is allowed, while a new-account/unrelated abort, a non-abort
+    // failure on the same route, and HTTP errors remain unexpected.
+    expect(
+      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/dashboard?accountId=stale', 'net::ERR_ABORTED'),
+    ).toBe(true);
+    expect(
+      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/dashboard/v2?accountId=stale', 'net::ERR_ABORTED'),
+    ).toBe(true);
+    expect(
+      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/watchlist', 'net::ERR_ABORTED'),
+    ).toBe(true);
+    expect(
+      isIntentionalAccountSwitchAbort('POST', 'http://localhost/api/trades/mtm/refresh', 'net::ERR_ABORTED'),
+    ).toBe(true);
+    // A new-account/unrelated abort is still unexpected.
+    expect(
+      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/accounts', 'net::ERR_ABORTED'),
+    ).toBe(false);
+    expect(
+      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/watchlist/prices?symbols=SPX', 'net::ERR_ABORTED'),
+    ).toBe(false);
+    // A non-abort network failure on the same route stays binding.
+    expect(
+      isIntentionalAccountSwitchAbort('GET', 'http://localhost/api/dashboard?accountId=x', 'net::ERR_CONNECTION_REFUSED'),
+    ).toBe(false);
 
     // Create a second account with different data.
     const secondAccount = await createLiveAccount(request);
