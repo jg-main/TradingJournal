@@ -48,15 +48,18 @@ test.describe('Dashboard API and production workstation', () => {
   test('production workstation renders all operational panels', async ({ page }) => {
     await page.goto('/');
 
-    // Dense curated default: risk, trades workspace, and the compact
-    // summary row (account state / performance / process review).
-    for (const area of ['risk', 'positions', 'account-state', 'performance', 'process-review']) {
+    // Dense curated default (Risk & Positions): full-width Main Risk
+    // Metrics, the trades workspace, and the compact Account State |
+    // Performance summary row. Process Review is not part of the default —
+    // it lives in its own dedicated system view.
+    for (const area of ['risk', 'positions', 'account-state', 'performance']) {
       await expect(page.getByTestId(`ws-panel-${area}`)).toBeVisible();
     }
-    // Retired surfaces have no cells in the dense default: the period KPI
-    // band, the equity chart rail, and the insights panel. Watchlist stays
-    // out of the curated flow (available via saved views / its page).
-    for (const area of ['kpis', 'equity', 'insights', 'watchlist']) {
+    // Non-default / retired surfaces have no cells in the dense default:
+    // Process Review (dedicated system view), the period KPI band, the
+    // equity chart rail, and the insights panel. Watchlist stays out of the
+    // curated flow (available via saved views / its page).
+    for (const area of ['process-review', 'watchlist', 'kpis', 'equity', 'insights']) {
       await expect(page.getByTestId(`ws-panel-${area}`)).toHaveCount(0);
     }
   });
