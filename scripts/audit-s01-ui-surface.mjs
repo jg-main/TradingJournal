@@ -229,10 +229,7 @@ function routeHandlers(section, label, rel, expect) {
     'account-reconciliation-summary.tsx',
     'account-settings.tsx',
     'account-activity.tsx',
-    'account-executions-activity.tsx',
     'account-correction-form.tsx',
-    'account-execution-form.tsx',
-    'account-valuation-form.tsx',
     'account-performance.tsx',
   ];
   for (const c of components) {

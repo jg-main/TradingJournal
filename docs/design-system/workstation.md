@@ -599,8 +599,8 @@ read-only with no summary section.
 
 ## Setups and ideas panel
 
-The insights panel (testid `ws-panel-insights`) stacks sub-sections in a
-vertically scrolling body:
+The retired setups-and-ideas panel defined these section contracts (the
+shared severity tokens now serve the current Process Review panel):
 
 - `.ws-setups-subheader` — compact uppercase separator with a
   `.ws-setups-subheader-count` (13px, weight 400, end-aligned, no tracking)
@@ -616,8 +616,7 @@ vertically scrolling body:
 - `.ws-severity-badge` — 12px uppercase pill with a severity-tinted
   `color-mix` background + border.
 - `.ws-setups-empty` — per-section empty state (`var(--ws-space-4)` vertical
-  padding), shared by all three sub-panels, keyed off
-  `ws-setups-ideas-empty` for consolidated testid compatibility.
+  padding), shared by the retired sub-panels.
 
 ---
 

@@ -319,7 +319,6 @@ const REQUIRED_PANEL_TESTIDS = [
   'ws-panel-risk',
   'ws-panel-positions',
   'ws-panel-watchlist',
-  'ws-panel-insights',
   'ws-panel-performance',
   'ws-panel-equity',
 ] as const;
