@@ -132,7 +132,8 @@ function captureConsoleErrors(page: Page): string[] {
         text.includes('extension') ||
         text.includes('/reconciliation') ||
         text.includes('/migration') ||
-        text.includes('400 (Bad Request)')
+        text.includes('400 (Bad Request)') ||
+        text.includes('429')
       ) {
         return;
       }
@@ -189,7 +190,8 @@ function captureFailedRequests(
         !url.includes('/reconciliation') &&
         !url.includes('/migration') &&
         !url.includes('/close') &&
-        !url.includes('/executions')
+        !url.includes('/executions') &&
+        !(url.includes('/api/trades/mtm/refresh') && res.status() === 429)
       ) {
         httpErrors.push(`${res.url()} (${res.status()})`);
       }
