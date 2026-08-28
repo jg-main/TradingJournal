@@ -214,15 +214,19 @@ async function openTab(page: Page, name: 'open' | 'closed' | 'planned') {
   await page.getByRole('tab', { name: new RegExp(`^${name}`, 'i') }).click();
 }
 
-/** Select a specific account in the page's Account filter dropdown. */
-async function selectAccountFilter(page: Page, accountName: string) {
-  await expect(page.locator('#filter-account')).toBeEnabled({ timeout: 15_000 });
-  await page.locator('#filter-account').click();
+/**
+ * Select a specific account through the canonical global sidebar account
+ * selector (M007/D037). The sidebar AccountProvider is the single owner of
+ * account scope — the trades page has no local account filter, so there is
+ * nothing to debounce.
+ */
+async function selectSidebarAccount(page: Page, accountName: string) {
+  const trigger = page.getByTestId('sidebar-account-trigger');
+  await expect(trigger).toBeEnabled({ timeout: 15_000 });
+  await trigger.click();
   await page.getByRole('option', { name: new RegExp(`^${accountName}$`) }).click();
-  // The page debounces filter changes (300ms) and then re-fetches every tab at
-  // page 1. Interacting (e.g. paginating) inside that window lets a late
-  // refetch reset the current page back to 1 — wait for it to settle.
-  await page.waitForTimeout(900);
+  // Deterministic verification that AccountProvider adopted the selection.
+  await expect(trigger).toContainText(accountName);
 }
 
 /** Select a direction in the page's Direction filter dropdown. */
@@ -306,7 +310,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
 
     // Rows render for every open state.
     const posRow = tradeRow(page, `POS-${TS}`);
@@ -366,7 +370,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
 
     await expect(tradeRow(page, `UNP1-${TS}`)).toBeVisible({ timeout: 10_000 });
     await expect(tradeRow(page, `UNP2-${TS}`)).toBeVisible();
@@ -388,7 +392,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
     await openTab(page, 'closed');
 
     const gainRow = tradeRow(page, `GAIN-${TS}`);
@@ -452,7 +456,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
     await openTab(page, 'planned');
 
     // Page 1 shows the 50 newest (filler) trades.
@@ -534,11 +538,11 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await openTab(page, 'planned');
 
     // ── Account selector narrows the dataset ─────────────────────────
-    await selectAccountFilter(page, acctB.name);
+    await selectSidebarAccount(page, acctB.name);
     await expect(tradeRow(page, `BPSH-${TS}`)).toBeVisible({ timeout: 10_000 });
     await expect(tradeRow(page, `APLN-${TS}`)).toHaveCount(0);
 
-    await selectAccountFilter(page, acctA.name);
+    await selectSidebarAccount(page, acctA.name);
     await expect(tradeRow(page, `APLN-${TS}`)).toBeVisible({ timeout: 10_000 });
     await expect(tradeRow(page, `BPSH-${TS}`)).toHaveCount(0);
 
@@ -564,7 +568,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await expect(page.locator('#filter-from')).toHaveValue('');
 
     // ── Persistence across reload: account + direction + date preset ─
-    await selectAccountFilter(page, acctB.name);
+    await selectSidebarAccount(page, acctB.name);
     await selectDirectionFilter(page, 'short');
     await page.getByRole('button', { name: 'YTD' }).click();
     await expect(tradeRow(page, `BPSH-${TS}`)).toBeVisible({ timeout: 10_000 });
@@ -628,7 +632,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
 
     const menuFor = async (symbol: string) =>
       tradeRow(page, symbol).getByRole('button', { name: 'Trade actions' });
@@ -675,7 +679,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
 
     await expect(page.getByRole('heading', { name: 'No open trades' })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('You have no open positions. Open trades appear here once an execution is added.')).toBeVisible();
@@ -755,7 +759,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
 
     // Wait for sidebar chrome and filter controls to be interactive before walking.
     await expect(page.getByTestId('sidebar-account-trigger')).toBeVisible({ timeout: 10_000 });
@@ -944,7 +948,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.goto('/trades');
     await hideDevOverlay(page);
     await clearTradesStorage(page);
-    await selectAccountFilter(page, account.name);
+    await selectSidebarAccount(page, account.name);
     await expect(tradeRow(page, `THLG-${TS}`)).toBeVisible({ timeout: 10_000 });
 
     // M014 identity tokens are declared in oklch (Tailwind v4), so
