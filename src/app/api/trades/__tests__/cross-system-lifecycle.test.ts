@@ -83,6 +83,8 @@ process.env.DB_FILE_NAME = TEST_DB_FILE;
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import * as schema from '@/db/schema';
+import { insertValuationMark } from '@/db/accounting-repository';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
 import type { Database } from 'better-sqlite3';
 
 // ── Assertion helpers ───────────────────────────────────────────────────────
@@ -1102,7 +1104,7 @@ async function assertMultiTradeCoherent(
 /** Scenario 7: multi-trade same-symbol — correction isolation across trades. */
 async function scenarioMultiTradeSameSymbol(): Promise<void> {
   const accountId = seedAccount();
-  seedInstrument('AAPL');
+  const aaplInstrumentId = seedInstrument('AAPL');
   await initializeAccount(accountId, 10000);
   seedChecklistItem(accountId);
   seedSettings(10000);
@@ -1116,6 +1118,23 @@ async function scenarioMultiTradeSameSymbol(): Promise<void> {
   assertEqual(entryA.trade.status, 'open', 'multi: trade A open after entry');
   const exitA = engineFill(tradeA, { action: 'sell', quantity: 50, price: 110, fees: 0, executedAt: t() });
   assertEqual(exitA.trade.status, 'open', 'multi: trade A open after exit');
+
+  // M007 completeness contract: a NEW first-fill trade is risk-checked against
+  // the current projection ONLY when it is a complete marked valuation. The
+  // open AAPL position therefore needs a valuation mark before Trade B's
+  // first fill — mirroring a live account whose open position has a market
+  // quote. (Marking AAPL at 102: cash 5500 + 50 × 102 = NAV 10600.)
+  const markH = requireDb().getSqliteHandle();
+  insertValuationMark(markH, {
+    accountId,
+    instrumentId: aaplInstrumentId,
+    price: '102.00',
+    priceMicros: 102_000_000,
+    source: 'market_data',
+    markTimestamp: new Date().toISOString(),
+  });
+  const markedRebuild = rebuildAccountPerformance(markH, accountId);
+  assert(markedRebuild.success, 'multi: marked projection rebuild succeeds');
 
   // Trade B: entry 75 @ 102 on the SAME symbol (shares the FIFO pool).
   const tradeB = seedTrade({ accountId, symbol: 'AAPL', direction: 'long', plannedEntry: 100, plannedStop: 95, plannedQuantity: 75 });

@@ -121,6 +121,7 @@ interface SeedTradeOptions {
   direction?: 'long' | 'short';
   plannedStop?: number | null;
   setupId?: string | null;
+  symbol?: string;
 }
 
 function seedTrade(accountId: string, options: SeedTradeOptions = {}): string {
@@ -130,7 +131,7 @@ function seedTrade(accountId: string, options: SeedTradeOptions = {}): string {
       id: tradeId,
       tradeCode: `TC-${randomUUID().slice(0, 8)}`,
       accountId,
-      symbol: 'AAPL',
+      symbol: options.symbol ?? 'AAPL',
       direction: options.direction ?? 'long',
       status: (options.status ?? 'planned') as 'planned' | 'open' | 'closed' | 'deleted',
       plannedEntry: 100,
@@ -1950,5 +1951,101 @@ describe('S04 backdated fills order deterministically', () => {
     expect(stateA.metrics.openQuantity).toBe(150);
     expect(stateA.metrics.openedAt).toBe(ts);
     expect(stateA.position?.quantity).toBe('150.00');
+  });
+
+  it('M007: unmarked short cash-only NAV never inflates the second-fill risk limit', () => {
+    // Canonical account: opening 50000, max risk 2%. The opening balance is
+    // posted through the balanced posting kernel so the ledger carries it
+    // (readAccountCash reads ledger debit postings).
+    const accountId = seedAccount({ maxRiskPerTradePct: 2, startingBalance: null });
+    seedSettings(50000, 2);
+    postFinancialEvent(sqlite, {
+      accountId,
+      eventType: 'opening_balance',
+      amount: '50000.00',
+      description: 'Opening balance',
+      payload: JSON.stringify({ amount: '50000.00' }),
+      effect: JSON.stringify({ kind: 'cash', direction: 'increase', amount: '50000.00', amountMicros: 50_000_000_000 }),
+      postedAt: now(),
+    });
+
+    // Open a short: sell_short 100 @ 200, stop 210 → proposed risk 1000 =
+    // 2% of 50000 (exact boundary, accepted on the pristine projection).
+    const shortTrade = seedTrade(accountId, { direction: 'short', plannedStop: 210 });
+    const shortResult = executeTradeFill(
+      fill(shortTrade, { action: 'sell_short', quantity: 100, price: 200, fees: 0 }),
+      context,
+    );
+    expect(shortResult.trade.status).toBe('open');
+    // Unmarked short liability → the rebuilt projection is CASH-ONLY and
+    // inflated: 50000 + 20000 = 70000, marked_positions 0.
+    expect(netCash(accountId)).toBe(70000);
+    expect(perfValue(accountId, 'nav')).toBe(70000);
+
+    // Second first-fill trade must FAIL CLOSED: the incomplete (cash-only)
+    // projection is not trusted execution equity — the engine must never see
+    // the inflated 70000 as usable equity. (Different instrument: no FIFO
+    // interaction with the AAPL short.)
+    const secondTrade = seedTrade(accountId, { plannedStop: 80, symbol: 'MSFT' });
+    let caught: unknown;
+    try {
+      executeTradeFill(fill(secondTrade, { quantity: 100, price: 100 }), context);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ReadinessFailureError);
+    expect(
+      (caught as ReadinessFailureError).failures.some(
+        (f) => f.code === 'account-not-trading-ready',
+      ),
+    ).toBe(true);
+    expect(
+      (caught as ReadinessFailureError).failures.some((f) => f.code === 'max-risk-exceeded'),
+    ).toBe(false);
+
+    // After a valid canonical mark + projection rebuild, the complete marked
+    // NAV (70000 - 100 × 200 = 50000) is used and normal max-risk enforcement
+    // resumes against it.
+    insertValuationMark(sqlite, {
+      accountId,
+      instrumentId: shortResult.accountingExecution!.instrument_id,
+      price: '200.00',
+      priceMicros: 200_000_000,
+      source: 'user',
+      markTimestamp: new Date().toISOString(),
+    });
+    const perf = rebuildAccountPerformance(sqlite, accountId);
+    expect(perf.success).toBe(true);
+    expect(perfValue(accountId, 'nav')).toBe(50000);
+
+    // Over-limit second fill: risk |100-80| × 100 = 2000 > 2% of 50000 = 1000
+    // → max-risk enforcement against the complete NAV.
+    let caught2: unknown;
+    try {
+      executeTradeFill(fill(secondTrade, { quantity: 100, price: 100 }), context);
+    } catch (err) {
+      caught2 = err;
+    }
+    expect(caught2).toBeInstanceOf(ReadinessFailureError);
+    const maxRisk = (caught2 as ReadinessFailureError).failures.find(
+      (f) => f.code === 'max-risk-exceeded',
+    );
+    expect(maxRisk).toBeTruthy();
+    expect(maxRisk?.overrideable).toBe(true);
+    expect(maxRisk?.limit).toBe(1000);
+    expect(maxRisk?.computed).toBe(2000);
+    expect(
+      (caught2 as ReadinessFailureError).failures.some(
+        (f) => f.code === 'account-not-trading-ready',
+      ),
+    ).toBe(false);
+
+    // In-limit second fill succeeds once equity is trustworthy: risk 300 < 1000.
+    const secondTradeOk = seedTrade(accountId, { plannedStop: 97, symbol: 'MSFT' });
+    const okResult = executeTradeFill(
+      fill(secondTradeOk, { quantity: 100, price: 100 }),
+      context,
+    );
+    expect(okResult.trade.status).toBe('open');
   });
 });

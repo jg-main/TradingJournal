@@ -36,6 +36,9 @@ import { postFinancialEvent } from '@/lib/accounting/posting';
 import { postExecutionFill } from '@/lib/accounting/execution-posting';
 import { correctExecution } from '@/lib/accounting/correction';
 import { computeAccountActivity, computeRebuildCashFlow } from '@/lib/accounting/activity';
+import { rebuildPositionsWithinTransaction } from '@/lib/positions/rebuild';
+import { rebuildAccountPerformance } from '@/lib/performance/performance-rebuild';
+import { insertValidatedValuationMark } from '@/lib/performance/valuation-repository';
 import type { CanonicalDecimal } from '@/lib/accounting/types';
 
 /** Canonical net cash at/before asOf (test-side mirror of the resolver's cash truth). */
@@ -506,6 +509,251 @@ describe('resolveExecutionEquityContext', () => {
 
     expect(ctx.source).toBe('legacy_compatibility');
     expect(ctx.equity).toBe(100000);
+    expect(ctx.hasUsableEquity).toBe(true);
+  });
+});
+
+describe('M007: incomplete current NAV is never usable execution equity', () => {
+  /**
+   * Real canonical path: account + opening balance + execution fills + FIFO
+   * position rebuild + performance projection rebuild — the same sequence the
+   * execution engine performs after every fill.
+   */
+  function seedFundedAccount(amount: number): string {
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(99999);
+    seedOpeningBalance(accountId, amount, '2026-01-01T00:00:00.000Z');
+    return accountId;
+  }
+
+  function rebuildFullProjection(accountId: string): void {
+    rebuildPositionsWithinTransaction(sqlite, accountId);
+    const result = rebuildAccountPerformance(sqlite, accountId);
+    expect(result.success).toBe(true);
+  }
+
+  function readProjection(accountId: string): {
+    computed_as_of: string;
+    net_cash: string;
+    nav: string;
+    marked_positions: string;
+    warnings: string;
+    positions_json: string;
+  } {
+    return sqlite
+      .prepare(
+        `SELECT computed_as_of, net_cash, nav, marked_positions, warnings, positions_json
+         FROM account_performance WHERE account_id = ?`,
+      )
+      .get(accountId) as {
+      computed_as_of: string;
+      net_cash: string;
+      nav: string;
+      marked_positions: string;
+      warnings: string;
+      positions_json: string;
+    };
+  }
+
+  it('A: cash-only funded account with no open positions keeps current_projection', () => {
+    const accountId = seedFundedAccount(50000);
+    rebuildFullProjection(accountId);
+
+    const proj = readProjection(accountId);
+    expect(proj.nav).toBe('50000.00');
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
+    expect(ctx.equity).toBe(50000);
+    expect(ctx.source).toBe('current_projection');
+    expect(ctx.hasUsableEquity).toBe(true);
+  });
+
+  it('B: unmarked long cash-only NAV is never accepted as execution equity', () => {
+    const accountId = seedFundedAccount(50000);
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '100.00',
+      price: '100.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.000Z',
+    });
+    rebuildFullProjection(accountId);
+
+    const proj = readProjection(accountId);
+    expect(proj.nav).toBe('39995.00'); // cash-only: unmarked long contributes 0
+    expect(proj.marked_positions).toBe('0.00');
+    const positions = JSON.parse(proj.positions_json) as Array<Record<string, unknown>>;
+    expect(positions[0].markStatus).toBe('missing');
+    expect(positions[0].markedValue).toBeNull();
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
+    expect(ctx.source).not.toBe('current_projection');
+    expect(ctx.equity).toBeNull();
+    // Prior canonical trade activity + no trusted complete valuation →
+    // unavailable (never the cash-only 39995).
+    expect(ctx.source).toBe('unavailable');
+    expect(ctx.hasUsableEquity).toBe(false);
+  });
+
+  it('C (safety-critical): unmarked short cash-inflated NAV never becomes usable equity', () => {
+    const accountId = seedFundedAccount(50000);
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'MSFT',
+      action: 'sell_short',
+      quantity: '100.00',
+      price: '200.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.000Z',
+    });
+    rebuildFullProjection(accountId);
+
+    const proj = readProjection(accountId);
+    expect(proj.nav).toBe('69995.00'); // cash-inflated: short liability unmarked
+    expect(proj.marked_positions).toBe('0.00');
+    const positions = JSON.parse(proj.positions_json) as Array<Record<string, unknown>>;
+    expect(positions[0].quantity).toBe('-100.00');
+    expect(positions[0].markStatus).toBe('missing');
+    expect(positions[0].markedValue).toBeNull();
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
+    expect(ctx.equity).not.toBe(69995);
+    expect(ctx.source).not.toBe('current_projection');
+    expect(ctx.equity).toBeNull();
+    expect(ctx.source).toBe('unavailable');
+    expect(ctx.hasUsableEquity).toBe(false);
+  });
+
+  it('D: fully marked long projection is accepted as current_projection', () => {
+    const accountId = seedFundedAccount(50000);
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '100.00',
+      price: '100.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.000Z',
+    });
+    insertValidatedValuationMark(sqlite, {
+      accountId,
+      instrumentSymbol: 'AAPL',
+      price: '110.00',
+      source: 'market_data',
+      markTimestamp: now(),
+    });
+    rebuildFullProjection(accountId);
+
+    const proj = readProjection(accountId);
+    expect(proj.nav).toBe('50995.00'); // 39995 cash + 11000 marked value
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
+    expect(ctx.equity).toBe(50995);
+    expect(ctx.source).toBe('current_projection');
+    expect(ctx.hasUsableEquity).toBe(true);
+  });
+
+  it('E: fully marked short projection is accepted as current_projection', () => {
+    const accountId = seedFundedAccount(50000);
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'MSFT',
+      action: 'sell_short',
+      quantity: '100.00',
+      price: '200.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.000Z',
+    });
+    insertValidatedValuationMark(sqlite, {
+      accountId,
+      instrumentSymbol: 'MSFT',
+      price: '190.00',
+      source: 'market_data',
+      markTimestamp: now(),
+    });
+    rebuildFullProjection(accountId);
+
+    const proj = readProjection(accountId);
+    // 69995 cash + signed short marked value (100 × 190, negative) = 50995.
+    expect(proj.nav).toBe('50995.00');
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
+    expect(ctx.equity).toBe(50995);
+    expect(ctx.source).toBe('current_projection');
+    expect(ctx.hasUsableEquity).toBe(true);
+  });
+
+  it('F: mixed marked + unmarked portfolio fails closed', () => {
+    const accountId = seedFundedAccount(50000);
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '100.00',
+      price: '100.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.000Z',
+    });
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'MSFT',
+      action: 'sell_short',
+      quantity: '100.00',
+      price: '200.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.001Z',
+    });
+    // Only AAPL is marked — MSFT remains unmarked → projection incomplete.
+    insertValidatedValuationMark(sqlite, {
+      accountId,
+      instrumentSymbol: 'AAPL',
+      price: '110.00',
+      source: 'market_data',
+      markTimestamp: now(),
+    });
+    rebuildFullProjection(accountId);
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
+    expect(ctx.source).not.toBe('current_projection');
+    expect(ctx.equity).toBeNull();
+    expect(ctx.source).toBe('unavailable');
+    expect(ctx.hasUsableEquity).toBe(false);
+  });
+
+  it('G: flat/closed position with no mark does not invalidate a complete projection', () => {
+    const accountId = seedFundedAccount(50000);
+    // Round trip → flat: buy 100 @ 100 (fee 5), sell 100 @ 110 (fee 5).
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'buy',
+      quantity: '100.00',
+      price: '100.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.000Z',
+    });
+    postExecutionFill(sqlite, {
+      accountId,
+      symbol: 'AAPL',
+      action: 'sell',
+      quantity: '100.00',
+      price: '110.00',
+      fees: '5.00',
+      postedAt: '2026-01-02T00:00:00.001Z',
+    });
+    rebuildFullProjection(accountId);
+
+    const proj = readProjection(accountId);
+    const positions = JSON.parse(proj.positions_json) as Array<Record<string, unknown>>;
+    expect(positions.length).toBeGreaterThan(0);
+    expect(Number(positions[0].quantity)).toBe(0); // retained flat row, no mark
+    expect(positions[0].markStatus).toBe('missing');
+
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
+    expect(ctx.source).toBe('current_projection');
+    expect(ctx.equity).toBe(50990); // 50000 - 10000 - 5 + 11000 - 5
     expect(ctx.hasUsableEquity).toBe(true);
   });
 });

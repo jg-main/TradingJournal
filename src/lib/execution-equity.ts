@@ -222,13 +222,81 @@ function hasCanonicalTradeActivityAt(
 }
 
 /**
+ * Determine whether the account's current account_performance projection is a
+ * COMPLETE marked valuation — the trust boundary for accepting its NAV as
+ * current execution equity.
+ *
+ * A projection is complete for execution-risk purposes only when every open
+ * (nonzero-quantity) position carries a persisted valuation mark. Unmarked
+ * open positions contribute zero to the projection's marked_positions, so the
+ * persisted NAV degrades to cash-only: that UNDERSTATES long equity and
+ * OVERSTATES short equity (the short case can weaken max-risk enforcement).
+ * A flat/closed position (signed quantity "0.00", direction null) never makes
+ * a projection incomplete, and a cash-only account with no open positions
+ * remains a valid complete projection.
+ *
+ * The completeness signal is STRUCTURAL (positions_json), never presentation
+ * text: each serialized ValuationPosition exposes markStatus and markedValue
+ * directly. Malformed projection data fails closed (treated as incomplete).
+ *
+ * @param sqlite    - Raw better-sqlite3 handle.
+ * @param accountId - The account whose projection is being assessed.
+ */
+function projectionIsCompleteForExecution(
+  sqlite: Database.Database,
+  accountId: string,
+): boolean {
+  const row = sqlite
+    .prepare('SELECT positions_json FROM account_performance WHERE account_id = ?')
+    .get(accountId) as { positions_json: string } | undefined;
+  if (!row) return false;
+
+  let positions: unknown;
+  try {
+    positions = JSON.parse(row.positions_json);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(positions)) return false;
+
+  for (const position of positions) {
+    if (typeof position !== 'object' || position === null) return false;
+    const p = position as Record<string, unknown>;
+
+    const quantity = p.quantity;
+    if (typeof quantity !== 'string' && typeof quantity !== 'number') return false;
+    const signedQuantity = Number(quantity);
+    if (!Number.isFinite(signedQuantity)) return false;
+
+    // Flat/closed positions never invalidate a projection.
+    if (signedQuantity === 0) continue;
+
+    // Open positions must carry a complete valuation mark.
+    if (p.markStatus === 'missing') return false;
+    const markedValue = p.markedValue;
+    if (markedValue === null || markedValue === undefined) return false;
+    if (!Number.isFinite(Number(markedValue))) return false;
+  }
+
+  return true;
+}
+
+/**
  * Resolve the canonical execution equity context for an account at asOf.
  *
  * Precedence (A2 binding contract):
  *
  *   1. current_projection       — account_performance.nav when the projection
  *                                 is at least as fresh as the execution
- *                                 (asOf >= computed_as_of). nav '0.00' → 0.
+ *                                 (asOf >= computed_as_of) AND is a COMPLETE
+ *                                 marked valuation of every open position
+ *                                 (projectionIsCompleteForExecution). An
+ *                                 incomplete projection (unmarked open
+ *                                 position) is never usable as execution
+ *                                 equity: its cash-only NAV understates long
+ *                                 equity and overstates short equity. It falls
+ *                                 through the canonical precedence instead.
+ *                                 nav '0.00' → 0.
  *   2. historical_rollforward   — latest account_rollforward row with
  *                                 date <= asOf (bounded, never "latest row
  *                                 overall").
@@ -277,15 +345,23 @@ export function resolveExecutionEquityContext(
       .get(accountId) as { computed_as_of: string; nav: string } | undefined;
 
     if (projection && asOfTimestamp >= projection.computed_as_of) {
-      // 1. Current projection is pre-fill evidence. Parse even '0.00' → 0.
-      const nav = Number.parseFloat(projection.nav);
-      const equity = Number.isFinite(nav) ? nav : null;
-      return {
-        equity,
-        source: 'current_projection',
-        asOf: projection.computed_as_of,
-        hasUsableEquity: equity != null && equity > 0,
-      };
+      // 1. Current projection is pre-fill evidence ONLY when it is a complete
+      //    marked valuation. An unmarked open position makes the persisted
+      //    NAV cash-only (marked_positions = 0): valid as a reporting NAV, but
+      //    never as execution-risk equity — long NAV is understated and short
+      //    NAV is overstated. Incomplete projections fall through the rest of
+      //    the canonical precedence rather than being trusted.
+      if (projectionIsCompleteForExecution(sqlite, accountId)) {
+        // Parse even '0.00' → 0.
+        const nav = Number.parseFloat(projection.nav);
+        const equity = Number.isFinite(nav) ? nav : null;
+        return {
+          equity,
+          source: 'current_projection',
+          asOf: projection.computed_as_of,
+          hasUsableEquity: equity != null && equity > 0,
+        };
+      }
     }
 
     // 2. Historical: bounded rollforward lookup.
