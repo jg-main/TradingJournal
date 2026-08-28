@@ -189,64 +189,6 @@ function doDeleteView(sqlite: Database.Database, id: string | null): RouteResult
   }
 }
 
-function doMigrateViews(sqlite: Database.Database, body: unknown): RouteResult {
-  try {
-    if (typeof body !== 'object' || body === null) {
-      return { status: 400, body: { error: 'Validation failed' } };
-    }
-    const data = body as Record<string, unknown>;
-    if (!Array.isArray(data.views)) {
-      return { status: 400, body: { error: 'Validation failed', details: 'views array is required' } };
-    }
-
-    let migratedCount = 0;
-    for (const view of data.views) {
-      if (typeof view.id !== 'string' || typeof view.name !== 'string') continue;
-
-      const existing = sqlite.prepare('SELECT id FROM dashboard_views WHERE id = ?').get(view.id) as { id: string } | undefined;
-
-      const layoutStr = serializeJsonField(view.layout ?? '[]');
-      const hiddenStr = serializeJsonField(view.hiddenWidgetIds ?? '[]');
-      const isSystem = view.isSystem === true ? 1 : 0;
-      const isDefault = view.isDefault === true ? 1 : 0;
-
-      if (existing) {
-        sqlite
-          .prepare(
-            `UPDATE dashboard_views
-             SET name = ?, layout = ?, hidden_widget_ids = ?, updated_at = ?, is_default = ?
-             WHERE id = ?`,
-          )
-          .run(view.name, layoutStr, hiddenStr, view.updatedAt ?? new Date().toISOString(), isDefault, view.id);
-      } else {
-        sqlite
-          .prepare(
-            `INSERT INTO dashboard_views (id, name, layout, hidden_widget_ids, created_at, updated_at, is_system, is_default)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .run(
-            view.id,
-            view.name,
-            layoutStr,
-            hiddenStr,
-            view.createdAt ?? new Date().toISOString(),
-            view.updatedAt ?? new Date().toISOString(),
-            isSystem,
-            isDefault,
-          );
-      }
-      migratedCount++;
-    }
-
-    return { status: 200, body: { success: true, migratedCount } };
-  } catch (error) {
-    return {
-      status: 500,
-      body: { error: 'Migration failed', details: String(error) },
-    };
-  }
-}
-
 // ── Test Database Setup ─────────────────────────────────────────────────
 
 function createTestDatabase(): Database.Database {
@@ -470,51 +412,5 @@ describe('DELETE /api/dashboard/views', () => {
     const getResult = doGetViews(sqlite);
     const views = getResult.body as DashboardViewDTO[];
     expect(views.find((v) => v.id === viewId)).toBeUndefined();
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Tests — POST /api/dashboard/views/migrate
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('POST /api/dashboard/views/migrate', () => {
-  it('migrates localStorage views payload successfully', () => {
-    const now = new Date().toISOString();
-    const payload = {
-      views: [
-        {
-          id: 'system-default',
-          name: 'Default',
-          layout: JSON.stringify([{ i: 'kpi', x: 0, y: 0, w: 2, h: 1 }]),
-          hiddenWidgetIds: '[]',
-          createdAt: now,
-          updatedAt: now,
-          isSystem: true,
-          isDefault: true,
-        },
-        {
-          id: randomUUID(),
-          name: 'Migrated View',
-          layout: JSON.stringify([{ i: 'chart', x: 0, y: 1, w: 4, h: 2 }]),
-          hiddenWidgetIds: '["old-widget"]',
-          createdAt: now,
-          updatedAt: now,
-          isSystem: false,
-          isDefault: false,
-        },
-      ],
-      activeViewId: 'system-default',
-    };
-
-    const result = doMigrateViews(sqlite, payload);
-    expect(result.status).toBe(200);
-    const body = result.body as Record<string, unknown>;
-    expect(body.success).toBe(true);
-    expect(body.migratedCount).toBe(2);
-  });
-
-  it('returns 400 for invalid payload (missing views array)', () => {
-    const result = doMigrateViews(sqlite, {});
-    expect(result.status).toBe(400);
   });
 });

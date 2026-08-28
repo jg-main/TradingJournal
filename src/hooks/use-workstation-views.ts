@@ -4,7 +4,7 @@
  * useWorkstationViews — state management for curated saved workstation views
  * (M016/S06).
  *
- * Follows the established useDashboardViews pattern (useReducer + localStorage
+ * Follows the established dashboard-views pattern (useReducer + localStorage
  * + API sync) but owns workstation panel view configuration
  * (`WorkstationViewConfig` from src/lib/workstation-view-types.ts) instead of
  * react-grid-layout items.

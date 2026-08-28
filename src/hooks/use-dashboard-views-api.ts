@@ -1,7 +1,7 @@
 /**
  * API client for dashboard views persistence.
  *
- * Wraps fetch calls to /api/dashboard/views and /api/dashboard/views/migrate.
+ * Wraps fetch calls to /api/dashboard/views.
  * Layout and hiddenWidgetIds are serialized to JSON strings for POST requests
  * (the API stores them as TEXT columns). GET responses return parsed arrays.
  */
@@ -21,11 +21,6 @@ export interface SaveViewPayload {
   updatedAt: string;
   isSystem: boolean;
   isDefault: boolean;
-}
-
-export interface MigrationPayload {
-  views: DashboardView[];
-  activeViewId?: string;
 }
 
 /**
@@ -86,23 +81,4 @@ export async function deleteViewApi(id: string): Promise<void> {
   if (!res.ok) {
     throw new Error(`Failed to delete dashboard view: ${res.status}`);
   }
-}
-
-/**
- * Migrate a batch of views (from localStorage) to the API.
- * Upserts each view into SQLite.
- * Throws on HTTP error or network failure.
- */
-export async function migrateViewsApi(
-  payload: MigrationPayload,
-): Promise<{ success: boolean; migratedCount: number }> {
-  const res = await fetch(`${BASE_URL}/migrate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    throw new Error(`Migration failed: ${res.status}`);
-  }
-  return res.json() as Promise<{ success: boolean; migratedCount: number }>;
 }

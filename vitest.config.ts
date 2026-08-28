@@ -125,7 +125,6 @@ export default defineConfig({
       'src/hooks/use-customization-mode.test.ts',
       'src/hooks/use-chart-resize.test.ts',
       'src/hooks/use-chart-palette.test.tsx',
-      'src/hooks/use-dashboard-views.test.ts',
       'src/hooks/use-workstation-views.test.ts',
       'src/hooks/use-customize-mode.test.ts',
       'src/hooks/__tests__/use-performance-dashboards.test.ts',
