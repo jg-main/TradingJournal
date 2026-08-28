@@ -31,7 +31,6 @@
  * @module workstation-fixtures
  */
 
-import type { KpiMetrics, MtmData } from '@/components/dashboard/kpi-widgets';
 import type {
   EquityDataPoint,
   DrawdownDataPoint,
@@ -56,6 +55,40 @@ import type {
 // ═══════════════════════════════════════════════════════════════════════════
 // Response Shapes (mirrors of the API route contracts)
 // ═══════════════════════════════════════════════════════════════════════════
+
+/** Shape of the KPI metrics returned by /api/dashboard */
+export interface KpiMetrics {
+  totalTrades: number;
+  openTrades: number;
+  winRate: number | null;
+  netPnl: number;
+  avgR: number | null;
+  avgGrade: number | null;
+  currentDrawdown: number | null;
+  currentDrawdownPct: number | null;
+  accountValue: number | null;
+  profitFactor: number | null;
+  avgWin: number | null;
+  avgLoss: number | null;
+  /** Additional selected-period performance metrics (absent only for legacy API payloads). */
+  closedTrades?: number;
+  realizedPnl?: number;
+  totalFees?: number;
+  payoffRatio?: number | null;
+  expectancy?: number | null;
+  expectancyR?: number | null;
+  bestTrade?: number | null;
+  worstTrade?: number | null;
+  averageHoldingDays?: number | null;
+}
+
+/** Shape of the MTM data returned by /api/dashboard */
+export interface MtmData {
+  netUnrealizedPnl: number | null;
+  openTradeCount: number;
+  tradesWithPrices: number;
+  tradesAwaitingData: number;
+}
 
 /**
  * Shape returned by GET /api/dashboard. Mirrors the `DashboardResponse`
