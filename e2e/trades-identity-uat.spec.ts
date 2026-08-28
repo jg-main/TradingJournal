@@ -42,6 +42,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { hideDevOverlay } from './helpers';
+import { insertValidatedValuationMark } from '../src/lib/performance/valuation-repository';
+import { rebuildAccountPerformance } from '../src/lib/performance/performance-rebuild';
 
 const TS = Date.now();
 
@@ -163,6 +165,39 @@ function markOpenTradePrices(marks: { tradeId: string; price: number }[]) {
   }
 }
 
+/**
+ * Persist canonical valuation marks for the account's currently open positions
+ * and rebuild the account performance projection through the PRODUCTION
+ * functions, so a SUBSEQUENT first fill in the same account is risk-checked
+ * against a complete marked valuation (frozen execution-equity contract: an
+ * incomplete current projection is never usable execution equity, so a second
+ * first fill while an earlier position is still open requires current marks).
+ *
+ * This is conceptually SEPARATE from markOpenTradePrices: valuation_marks +
+ * account_performance drive execution-risk readiness, while trades.current_price
+ * drives the Trades page's deterministic UI pricing. NOPX-style unpriced
+ * browser states are preserved by leaving current_price unset.
+ */
+function markAccountPositionsForExecutionRisk(accountId: string, marks: { symbol: string; price: number }[]) {
+  const db = new Database(DB_FILE);
+  try {
+    const nowIso = new Date().toISOString();
+    for (const m of marks) {
+      insertValidatedValuationMark(db, {
+        accountId,
+        instrumentSymbol: m.symbol,
+        price: m.price,
+        source: 'market_data',
+        markTimestamp: nowIso,
+      });
+    }
+    const rebuild = rebuildAccountPerformance(db, accountId);
+    expect(rebuild.success, 'canonical projection rebuild after valuation marks should succeed').toBeTruthy();
+  } finally {
+    db.close();
+  }
+}
+
 async function clearTradesStorage(page: Page) {
   await page.evaluate(() => {
     const keys = [
@@ -236,16 +271,30 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     const pos = await createTrade(page, account.id, { symbol: `POS-${TS}`, direction: 'long' });
     await executeTrade(page, pos.id, { entryPrice: 100, entryQuantity: 100, stopPrice: 95, fees: 5 });
 
+    // POS is open and unmarked — the frozen execution-equity contract requires
+    // a complete marked valuation before the NEXT first fill. Mark POS at the
+    // same deterministic price the Trades UI later uses and rebuild.
+    markAccountPositionsForExecutionRisk(account.id, [{ symbol: `POS-${TS}`, price: 110 }]);
+
     const neg = await createTrade(page, account.id, { symbol: `NEG-${TS}`, direction: 'short' });
     await executeTrade(page, neg.id, { entryPrice: 200, entryQuantity: 100, stopPrice: 210, fees: 5 });
 
     // Partially closed position: 100 entered, 50 sold → open qty 50.
     const part = await createTrade(page, account.id, { symbol: `PART-${TS}`, direction: 'long' });
+    markAccountPositionsForExecutionRisk(account.id, [
+      { symbol: `POS-${TS}`, price: 110 },
+      { symbol: `NEG-${TS}`, price: 215 },
+    ]);
     await executeTrade(page, part.id, { entryPrice: 50, entryQuantity: 100, stopPrice: 48, fees: 5 });
     await addExecution(page, part.id, { action: 'sell', quantity: 50, price: 55, fees: 2 });
 
     // Unpriced open position — no current price mark.
     const nopx = await createTrade(page, account.id, { symbol: `NOPX-${TS}`, direction: 'long' });
+    markAccountPositionsForExecutionRisk(account.id, [
+      { symbol: `POS-${TS}`, price: 110 },
+      { symbol: `NEG-${TS}`, price: 215 },
+      { symbol: `PART-${TS}`, price: 52 },
+    ]);
     await executeTrade(page, nopx.id, { entryPrice: 30, entryQuantity: 100, stopPrice: 28, fees: 5 });
 
     markOpenTradePrices([
@@ -306,9 +355,13 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
 
     const a = await createTrade(page, account.id, { symbol: `UNP1-${TS}`, direction: 'long' });
     await executeTrade(page, a.id, { entryPrice: 40, entryQuantity: 100, stopPrice: 38, fees: 5 });
+    // a is open — mark it (canonical valuation) so b's first fill has complete
+    // execution equity. The browser keeps BOTH positions unpriced: valuation
+    // marks drive readiness only; trades.current_price drives the UI.
+    markAccountPositionsForExecutionRisk(account.id, [{ symbol: `UNP1-${TS}`, price: 40 }]);
     const b = await createTrade(page, account.id, { symbol: `UNP2-${TS}`, direction: 'short' });
     await executeTrade(page, b.id, { entryPrice: 150, entryQuantity: 100, stopPrice: 155, fees: 5 });
-    // No price marks — both positions stay unpriced.
+    // No current-price marks — both positions stay unpriced in the browser.
 
     await page.goto('/trades');
     await hideDevOverlay(page);
@@ -566,6 +619,9 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await createTrade(page, account.id, { symbol: `MPLN-${TS}`, direction: 'long' });
     const open = await createTrade(page, account.id, { symbol: `MOPN-${TS}`, direction: 'long' });
     await executeTrade(page, open.id, { entryPrice: 10, entryQuantity: 100, stopPrice: 9, fees: 2 });
+    // open is open — mark it so the closed trade's first fill has complete
+    // execution equity.
+    markAccountPositionsForExecutionRisk(account.id, [{ symbol: `MOPN-${TS}`, price: 10 }]);
     const closed = await createTrade(page, account.id, { symbol: `MCLS-${TS}`, direction: 'short' });
     await executeTrade(page, closed.id, { entryPrice: 10, entryQuantity: 100, exit1Price: 12, exit1Quantity: 100, fees: 2 });
 
@@ -690,6 +746,9 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await createTrade(page, account.id, { symbol: `KBPL-${TS}`, direction: 'long' });
     const open = await createTrade(page, account.id, { symbol: `KBOP-${TS}`, direction: 'long' });
     await executeTrade(page, open.id, { entryPrice: 10, entryQuantity: 100, stopPrice: 9, fees: 2 });
+    // open is open — mark it so the closed trade's first fill has complete
+    // execution equity.
+    markAccountPositionsForExecutionRisk(account.id, [{ symbol: `KBOP-${TS}`, price: 10 }]);
     const closed = await createTrade(page, account.id, { symbol: `KBCL-${TS}`, direction: 'short' });
     await executeTrade(page, closed.id, { entryPrice: 10, entryQuantity: 100, exit1Price: 12, exit1Quantity: 100, fees: 2 });
 
@@ -872,6 +931,9 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
 
     const longPos = await createTrade(page, account.id, { symbol: `THLG-${TS}`, direction: 'long' });
     await executeTrade(page, longPos.id, { entryPrice: 100, entryQuantity: 100, stopPrice: 95, fees: 5 });
+    // longPos is open — mark it so the short's first fill has complete
+    // execution equity.
+    markAccountPositionsForExecutionRisk(account.id, [{ symbol: `THLG-${TS}`, price: 110 }]);
     const shortPos = await createTrade(page, account.id, { symbol: `THSH-${TS}`, direction: 'short' });
     await executeTrade(page, shortPos.id, { entryPrice: 200, entryQuantity: 100, stopPrice: 210, fees: 5 });
     markOpenTradePrices([
