@@ -1,6 +1,6 @@
 # Production Hardening Gate
 
-**Status:** Planned  
+**Status:** Frozen — M007 Correctness closure audit passed (single-user economic correctness proven; browser-harness-only findings deferred to test infrastructure / Release Readiness)  
 **Must complete before:** M003  
 **Baseline commit:** `beb434f9e8c36085fc222722c8cd2b332d41a078`  
 **Purpose:** Make TradingJournal safe for real single-user operational use in the existing private homelab deployment before resuming feature development.
