@@ -9,8 +9,10 @@
  * 1. Shortcut overlay opens on '?' and dismisses on Escape
  * 2. Shortcut overlay dismisses on backdrop click
  * 3. Shortcut overlay dismisses on close button click
- * 4. Panel focus: 1→Risk, 2→Account State, 3→Positions, 4→Performance,
- *    5→Process Review. Watchlist remains optional in saved views and is
+ * 4. Panel focus: 1→Risk, 2→Account State, 3→Positions, 4→Performance
+ *    in the curated default; 5→Process Review (a dedicated saved view)
+ *    is asserted in that view, since the shortcut no-ops while the panel
+ *    is unrendered. Watchlist remains optional in saved views and is
  *    not a default-layout focus assertion.
  * 5. Panel focus applies visible focus ring (outline)
  * 6. Shortcuts are suppressed when focus is inside editable elements (input/select)
@@ -39,7 +41,6 @@ const PANEL_SHORTCUTS: Record<string, { key: string; area: string }> = {
   '2': { key: '2', area: 'account-state' },
   '3': { key: '3', area: 'positions' },
   '4': { key: '4', area: 'performance' },
-  '5': { key: '5', area: 'process-review' },
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -176,6 +177,31 @@ test.describe('Workstation Keyboard Navigation', () => {
       expect(tabindex).toBe('-1');
     });
   }
+
+  // ── 4b. Digit 5 targets Process Review in its dedicated view ───
+
+  test('pressing 5 focuses the process-review panel in its dedicated view', async ({ page }) => {
+    // M018/S02: Process Review left the curated default. The shortcut
+    // no-ops while the panel is unrendered and focuses it in its own
+    // saved view.
+    const trigger = page.getByTestId('ws-view-switcher-trigger');
+    const content = page.getByTestId('ws-view-switcher-content');
+    await trigger.click();
+    await expect(content).toBeVisible({ timeout: 3_000 });
+    await page.getByTestId('ws-view-item-ws-system-process-review').click();
+    await expect(content).toHaveCount(0);
+    await expect(page.getByTestId('ws-panel-process-review')).toBeVisible();
+
+    await page.keyboard.press('5');
+    await page.waitForTimeout(200);
+
+    const focusedEl = page.locator('[data-testid="ws-panel-process-review"]:focus');
+    await expect(focusedEl).toBeAttached();
+
+    const panel = page.locator('[data-testid="ws-panel-process-review"]');
+    const tabindex = await panel.getAttribute('tabindex');
+    expect(tabindex).toBe('-1');
+  });
 
   // ── 5. Panel focus applies visible outline ──────────────────────
 
