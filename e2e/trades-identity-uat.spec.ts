@@ -30,11 +30,9 @@
  *   - Open positions are priced by marking `trades.current_price` directly in
  *     the WAL SQLite DB (test-only seeding). All quote providers are
  *     network-backed, so the MTM refresh route is intentionally not used.
- *   - Every footer/count assertion is scoped through the account filter so
- *     leftover open trades from other specs running in the same DB cannot
- *     perturb totals.
- *   - `setupAccount` sets a deterministic global starting account value
- *     (50,000) so the Portfolio Heat % footer is exact.
+ *   - Every footer/count assertion is scoped through the sidebar account
+ *     selection so leftover open trades from other specs running in the same
+ *     DB cannot perturb totals.
  *
  * Run: npx playwright test e2e/trades-identity-uat.spec.ts --project=chromium
  */
@@ -54,9 +52,8 @@ const DB_FILE = process.env.DB_FILE_NAME || './.trading-journal/playwright-readi
 // ── Seeding helpers ───────────────────────────────────────────────────
 
 /**
- * Create a fully usable test account: create account, set risk params,
- * activate it, post opening cash, and set a deterministic global equity so
- * the open-tab Portfolio Heat % footer is exact.
+ * Create a fully usable test account: create account, set risk params, and
+ * initialize it through the canonical route (opening balance + activation).
  */
 async function setupAccount(page: Page, name: string) {
   const createResp = await page.request.post('/api/accounts', {
@@ -77,29 +74,7 @@ async function setupAccount(page: Page, name: string) {
   });
   expect(initResp.status(), 'initialization should succeed').toBe(201);
 
-  // Deterministic equity for the portfolio-heat denominator. The trades route
-  // reads settings by the fixed id 'default', while PUT /api/settings creates a
-  // random UUID row — so the global fallback must be seeded directly (test-only
-  // WAL-safe write, mirroring the app's read contract).
-  seedDeterministicEquity();
-
   return account;
-}
-
-/**
- * Upsert the settings row the trades route reads (id = 'default') so the
- * portfolio-heat % footer has a deterministic equity denominator of 50,000.
- */
-function seedDeterministicEquity() {
-  const db = new Database(DB_FILE);
-  try {
-    db.prepare(
-      `INSERT INTO settings (id, starting_account_value) VALUES ('default', 50000)
-       ON CONFLICT(id) DO UPDATE SET starting_account_value = 50000, updated_at = current_timestamp`,
-    ).run();
-  } finally {
-    db.close();
-  }
 }
 
 async function createTrade(page: Page, accountId: string, data: Record<string, unknown>) {
@@ -343,11 +318,17 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await expect(page.getByText('Open Positions Total')).toBeVisible();
     await expect(page.getByText('Partial — 1 unpriced')).toBeVisible();
 
-    // Portfolio heat: deterministic open risk $1,800.00 and 3.60% of $50,000 equity.
+    // Portfolio heat: deterministic open risk $1,800.00. The percentage is
+    // UNAVAILABLE (M002-A9) — the account's intentionally unpriced NOPX open
+    // position leaves no usable canonical equity denominator, so the footer
+    // renders "—" rather than a legacy settings-based percentage.
     await expect(page.getByText('Portfolio Heat $', { exact: true })).toBeVisible();
     await expect(page.getByText('$1,800.00').first()).toBeVisible();
     await expect(page.getByText('Portfolio Heat %', { exact: true })).toBeVisible();
-    await expect(page.getByText('3.60%')).toBeVisible();
+    const heatPctValue = page
+      .getByText('Portfolio Heat %', { exact: true })
+      .locator('xpath=following-sibling::*[1]');
+    await expect(heatPctValue).toHaveText('—');
 
     // Open position count in the footer.
     await expect(page.getByText('Open Positions', { exact: true })).toBeVisible();
