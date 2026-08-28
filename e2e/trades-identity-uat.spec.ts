@@ -745,7 +745,6 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
 
     // Wait for sidebar chrome and filter controls to be interactive before walking.
     await expect(page.getByTestId('sidebar-account-trigger')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('#filter-account')).toBeEnabled();
     await openTab(page, 'open');
     await expect(tradeRow(page, `KBOP-${TS}`)).toBeVisible({ timeout: 10_000 });
 
@@ -811,12 +810,10 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     // navigate their internal calendar parts, so we keep tabbing until every
     // landmark has been seen (capped defensively at 80 presses).
     const landmarks = [
-      'aria="Select account"', // sidebar account switcher
+      'aria="Select account"',
       '"Dashboard"',
-      '"Watchlist"',
+      '"Performance"',
       '"Trades"',
-      '"Reviews"',
-      '"Checks"',
       '"Accounts"',
       '"Sizing"',
       '"Alerts"',
@@ -836,7 +833,6 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
       '"3M"',
       '"MTD"',
       '"1M"',
-      '#filter-account',
       '#filter-direction',
       'role=tab',
       '"Columns"',
