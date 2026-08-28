@@ -24,18 +24,86 @@ async function seedAccount(page: Page, name: string, currency: string) {
   return account;
 }
 
-async function seedTrade(page: Page, accountId: string, spec: {
-  symbol: string; direction: 'long' | 'short'; setup: string; entryPrice: number; entryQuantity: number;
-  exitPrice: number; exitQuantity: number; stopPrice: number; fees: number; executedAt: string;
-}) {
-  const tr = await page.request.post('/api/trades', { data: { symbol: spec.symbol, direction: spec.direction, accountId, setup: spec.setup } });
+/**
+ * Persist a coherent account_rollforward row derived from the canonical state
+ * the execution engine just produced for a completed historical trade, so the
+ * NEXT historical fill on the same account has trusted A2 equity (the frozen
+ * A2 rule rejects backdated fills that lack a bounded rollforward/projection).
+ * Values derive from the actual executions (signed cash flows + fees), the
+ * prior ending equity and the running high-water mark — never an arbitrary
+ * constant. This mirrors the proven performance-dashboard historical pattern
+ * (bd92f62) but stays local to CT3; the product never writes these rows.
+ */
+function persistHistoricalRollforward(
+  db: Database.Database,
+  accountId: string,
+  executedAt: string,
+  prevEndingEquity: number,
+  prevHighWaterMark: number,
+  executions: Array<{ action: string; quantity: number; price: number; fees: number | null }>,
+): number {
+  let cashFlow = 0;
+  let totalFees = 0;
+  for (const x of executions) {
+    const amount = x.quantity * x.price;
+    cashFlow += x.action === 'buy' || x.action === 'buy_to_cover' ? -amount : amount;
+    totalFees += x.fees ?? 0;
+  }
+  const realizedGross = cashFlow;
+  const endingEquity = prevEndingEquity + realizedGross - totalFees;
+  const highWaterMark = Math.max(prevHighWaterMark, endingEquity);
+  const drawdownAmount = Math.max(0, highWaterMark - endingEquity);
+  const drawdownPct = highWaterMark > 0 ? drawdownAmount / highWaterMark : 0;
+  const ts = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO account_rollforward
+       (id, account_id, date, beginning_equity, deposits_withdrawals, realized_gross_pnl, fees,
+        ending_equity, cumulative_pnl, high_water_mark, drawdown_amount, drawdown_pct, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    crypto.randomUUID(),
+    accountId,
+    executedAt.slice(0, 10),
+    prevEndingEquity,
+    realizedGross,
+    totalFees,
+    endingEquity,
+    endingEquity - 50000,
+    highWaterMark,
+    drawdownAmount,
+    drawdownPct,
+    ts,
+    ts,
+  );
+  return endingEquity;
+}
+
+/** Create + fully exit a HISTORICAL trade and persist the coherent rollforward row for the next fill. */
+async function seedHistoricalTrade(
+  page: Page,
+  db: Database.Database,
+  accountId: string,
+  spec: {
+    symbol: string; direction: 'long' | 'short'; setup: string; entryPrice: number; entryQuantity: number;
+    exitPrice: number; exitQuantity: number; stopPrice: number; fees: number; executedAt: string;
+  },
+  prevEndingEquity: number,
+  prevHighWaterMark: number,
+): Promise<number> {
+  const tr = await page.request.post('/api/trades', {
+    data: { symbol: spec.symbol, direction: spec.direction, accountId, setup: spec.setup },
+  });
+  expect(tr.ok(), `trade ${spec.symbol} should be created`).toBeTruthy();
   const trade = (await tr.json()) as { id: string };
-  await page.request.post(`/api/trades/${trade.id}/execute`, {
+  const ex = await page.request.post(`/api/trades/${trade.id}/execute`, {
     data: {
       entryPrice: spec.entryPrice, entryQuantity: spec.entryQuantity, stopPrice: spec.stopPrice,
       exit1Price: spec.exitPrice, exit1Quantity: spec.exitQuantity, fees: spec.fees, executedAt: spec.executedAt,
     },
   });
+  expect(ex.ok(), `historical fill ${spec.symbol} @ ${spec.executedAt} should succeed`).toBeTruthy();
+  const body = await ex.json();
+  return persistHistoricalRollforward(db, accountId, spec.executedAt, prevEndingEquity, prevHighWaterMark, body.executions);
 }
 
 async function seedSetup(page: Page, value: string) {
@@ -47,7 +115,6 @@ async function seedSetup(page: Page, value: string) {
  *  so drawdown is non-zero). Both denominator types are then present. */
 async function seedAll(page: Page) {
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-  const y = new Date().getFullYear();
   const alpha = `Alpha ${tag}`;
   const beta = `Beta ${tag}`;
   await seedSetup(page, alpha);
@@ -64,7 +131,23 @@ async function seedAll(page: Page) {
     { symbol: `C6${TS}`, direction: 'long' as const, setup: alpha, entryPrice: 60, entryQuantity: 100, exitPrice: 80, exitQuantity: 100, stopPrice: 55, fees: 5, executedAt: day(2) },
     { symbol: `C7${TS}`, direction: 'long' as const, setup: beta, entryPrice: 40, entryQuantity: 200, exitPrice: 45, exitQuantity: 200, stopPrice: 38, fees: 8, executedAt: day(0) },
   ];
-  for (const t of trades) await seedTrade(page, t.direction === 'long' ? accountA.id : accountB.id, t);
+  // Coherent per-account historical equity: each account opens at 50000 (the
+  // opening balance is backdated to day(40) by seedAccount) and the running
+  // equity + high-water mark drive the rollforward rows persisted after each fill.
+  const db = new Database(process.env.DB_FILE_NAME as string);
+  const equity: Record<'A' | 'B', number> = { A: 50000, B: 50000 };
+  const highWaterMark: Record<'A' | 'B', number> = { A: 50000, B: 50000 };
+  for (const t of trades) {
+    // Account assignment is explicit (long → account A, short → account B);
+    // the fills are already chronological per account in array order. Each
+    // historical fill persists a coherent rollforward row so the NEXT fill on
+    // that account has trusted A2 equity (frozen A2/A2.1: subsequent backdated
+    // fills require a bounded historical_rollforward source).
+    const accountId = t.direction === 'long' ? accountA.id : accountB.id;
+    const key = t.direction === 'long' ? 'A' : 'B';
+    equity[key] = await seedHistoricalTrade(page, db, accountId, t, equity[key], highWaterMark[key]);
+    highWaterMark[key] = Math.max(highWaterMark[key], equity[key]);
+  }
 
   // Give the seeded trades a positive holding duration: the execute endpoint
   // sets closed_at = executedAt (days ago) while opened_at is the creation
@@ -73,20 +156,11 @@ async function seedAll(page: Page) {
   // update to this run's symbols so other fixtures in the shared DB are
   // untouched. ISO timestamps computed in JS (SQLite datetime() emits naive
   // local strings that would mis-parse against UTC closed_at).
-  const db = new Database(process.env.DB_FILE_NAME as string);
   const upd = db.prepare('UPDATE trades SET opened_at = ? WHERE symbol = ?');
   for (const t of trades) {
     const closed = new Date(t.executedAt);
     upd.run(new Date(closed.getTime() - 2 * 60 * 60 * 1000).toISOString(), t.symbol);
   }
-  const acct = db.prepare('SELECT id FROM accounts ORDER BY created_at ASC LIMIT 1').all() as Array<{ id: string }>;
-  const accountId = acct[0]?.id;
-  const rf = db.prepare(
-    'INSERT OR REPLACE INTO account_rollforward (id, account_id, date, beginning_equity, deposits_withdrawals, realized_gross_pnl, fees, ending_equity, cumulative_pnl, high_water_mark, drawdown_amount, drawdown_pct, created_at, updated_at) VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?, ?, 0, 0, ?, ?)'
-  );
-  const tsNow = new Date().toISOString();
-  rf.run(crypto.randomUUID(), accountId, `${y}-01-15`, 50000, 50000, 50000, 50000, tsNow, tsNow);
-  rf.run(crypto.randomUUID(), accountId, `${y}-01-31`, 49500, 49500, 49500, 49500, tsNow, tsNow);
   db.close();
 }
 
