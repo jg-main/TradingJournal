@@ -29,9 +29,7 @@
  *   - test files and __tests__ directories
  *   - hex / rgb() / oklch() literals inside JS object literals and ECharts
  *     option configs — that is chart-palette territory (S04 contract), not
- *     Tailwind class names (S05). (Observed on 2026-08-03:
- *     src/components/workstation/equity-chart.tsx is the only remaining
- *     surface with such literals and is intentionally outside this contract.)
+ *     Tailwind class names (S05).
  *
  * Allowlist protocol (the "EXEMPT_FILES" mechanism from the slice plan):
  *   Files still awaiting migration are listed in EXEMPT_FILES below, grouped
@@ -61,7 +59,6 @@ const COMPONENTS_DIR = path.resolve(process.cwd(), 'src/components');
 
 const WORKSTATION_TOKEN_BOUNDARY_FILES = [
   'src/app/(workstation)/workspace/workstation.css',
-  'src/components/workstation/equity-chart.tsx',
 ] as const;
 
 /**
