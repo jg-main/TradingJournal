@@ -176,7 +176,7 @@ function markAccountPositionsForExecutionRisk(accountId: string, marks: { symbol
 async function clearTradesStorage(page: Page) {
   await page.evaluate(() => {
     const keys = [
-      'trades:direction', 'trades:fromDate', 'trades:toDate', 'trades:accountId', 'trades:preset',
+      'trades:direction', 'trades:fromDate', 'trades:toDate', 'trades:preset',
       'trades:open:visibility', 'trades:open:sorting', 'trades:open:order',
       'trades:closed:visibility', 'trades:closed:sorting', 'trades:closed:order',
       'trades:planned:visibility', 'trades:planned:sorting', 'trades:planned:order',
@@ -548,7 +548,7 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await clearBtn.click();
     await expect(page.locator('#filter-from')).toHaveValue('');
 
-    // ── Persistence across reload: account + direction + date preset ─
+    // ── Persistence across reload: global account scope + direction/date ─
     await selectSidebarAccount(page, acctB.name);
     await selectDirectionFilter(page, 'short');
     await page.getByRole('button', { name: 'YTD' }).click();
@@ -556,14 +556,16 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
 
     await page.reload();
     await hideDevOverlay(page);
-    // URL carries the full filter state.
+    // Trades-local direction/date filters persist in the URL; the global
+    // account scope is owned by AccountProvider (app:account in localStorage),
+    // never the Trades URL.
     await expect(page).toHaveURL(new RegExp(`from=${ytd}`));
-    await expect(page).toHaveURL(new RegExp(`accountId=${acctB.id}`));
     await expect(page).toHaveURL(/direction=short/);
     // Controls restore their values after accounts reload.
     await expect(page.locator('#filter-from')).toHaveValue(ytd);
     await expect(page.locator('#filter-direction')).toContainText('Short');
-    await expect(page.locator('#filter-account')).toContainText(acctB.name, { timeout: 10_000 });
+    // AccountProvider restores the globally selected account after reload.
+    await expect(page.getByTestId('sidebar-account-trigger')).toContainText(acctB.name, { timeout: 10_000 });
     // Filtered dataset is applied: B's short visible, A's long absent.
     await openTab(page, 'planned');
     await expect(tradeRow(page, `BPSH-${TS}`)).toBeVisible({ timeout: 10_000 });
@@ -577,7 +579,6 @@ test.describe('M014 S06 — Trades page identity UAT', () => {
     await page.addInitScript(() => {
       localStorage.setItem('trades:fromDate', '2020-01-01');
       localStorage.setItem('trades:toDate', '');
-      localStorage.setItem('trades:accountId', 'all');
       localStorage.setItem('trades:direction', 'short');
       localStorage.setItem('trades:preset', 'YTD');
     });
