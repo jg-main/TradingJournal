@@ -208,7 +208,10 @@ test.describe('M004 review system flow', () => {
     // Grade section should be visible for closed trade
     await expect(page.getByText('Grade', { exact: false }).first()).toBeVisible();
 
-    // Mistakes section with FOMO entry text should be visible
+    // Mistakes details live inside a collapsed review section (M020/S04
+    // progressive disclosure); expand the Mistakes section to expose the
+    // recorded root causes through the current UI.
+    await page.getByRole('button', { name: /^Mistakes/ }).click();
     await expect(page.getByText('FOMO entry', { exact: false })).toBeVisible();
     await expect(page.getByText('Exited too early', { exact: false })).toBeVisible();
 
