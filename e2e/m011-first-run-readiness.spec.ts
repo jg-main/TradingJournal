@@ -234,9 +234,10 @@ test.describe('first-run readiness', () => {
     // as their own domain outside the Setup Checklist)
     await page.goto('/settings/accounts', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Add Account' }).click();
-    await page.waitForSelector('#name', { state: 'visible', timeout: 5_000 });
-    await page.locator('#name').fill('Guided Account');
-    await page.locator('#broker').fill('Playwright Broker');
+    // AddAccountDialog exposes canonical labeled fields (account name/broker);
+    // fill auto-waits for the dialog to render after the trigger click.
+    await page.getByLabel('Account name').fill('Guided Account');
+    await page.getByLabel('Broker').fill('Playwright Broker');
     await page.waitForTimeout(300);
     const accountPost = page.waitForResponse(
       (r) => r.url().includes('/api/accounts') && r.request().method() === 'POST',
@@ -252,8 +253,9 @@ test.describe('first-run readiness', () => {
     });
     expect(activateRes.ok()).toBeTruthy();
 
-    // The dialog closes after save; no page navigation occurs
-    await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible({ timeout: 10_000 });
+    // The dialog save navigates into the new account's workspace.
+    await page.waitForURL(`**/settings/accounts/${createdAccount.id}`, { timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Guided Account' })).toBeVisible({ timeout: 10_000 });
 
     readiness = await (await page.request.get('/api/readiness')).json() as { ready: boolean; missing: Array<{ id: string }> };
     expect(readiness.ready).toBe(false);
