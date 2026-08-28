@@ -197,22 +197,15 @@ export default defineConfig({
       'src/components/trade-detail/__tests__/planned-phase-view-scratch.test.tsx',
       'src/components/trade-detail/__tests__/add-fill-dialog.test.tsx',
       'src/components/trade-detail/__tests__/trade-detail-header.test.tsx',
-      'src/components/dashboard-v2.test.tsx',
-      'src/components/dashboard/filter-context.test.tsx',
+
       'src/components/dashboard/dashboard-widget.test.tsx',
-      'src/components/dashboard/dashboard-toolbar.test.tsx',
-      'src/components/dashboard/use-dashboard-layout.test.ts',
-      'src/components/dashboard/account-selector.test.tsx',
+
       'src/components/dashboard/__tests__/chart-palette-migration.test.ts',
       'src/components/dashboard/formatting.test.ts',
-      'src/components/dashboard/kpi-card.test.tsx',
-      'src/components/dashboard/account-performance-panel.test.tsx',
-      'src/components/dashboard/ptd-performance-panel.test.tsx',
-      'src/components/dashboard/current-risk-panel.test.tsx',
-      'src/components/dashboard/kpi-widgets.test.tsx',
+
       'src/components/dashboard/equity-drawdown-chart.test.tsx',
       'src/components/dashboard/monthly-performance-chart.test.tsx',
-      'src/components/dashboard/open-positions-risk-widget.test.tsx',
+
       'src/components/dashboard/r-distribution-chart.test.tsx',
       'src/components/dashboard/directional-performance-widget.test.tsx',
       'src/components/dashboard/calendar-heatmap-widget.test.tsx',
@@ -220,9 +213,7 @@ export default defineConfig({
       'src/components/dashboard/setup-ranking-widget.test.tsx',
       'src/components/dashboard/process-discipline-widget.test.tsx',
       'src/components/dashboard/attention-insights-widget.test.tsx',
-      'src/components/dashboard/add-remove-widgets-dialog.test.tsx',
-      'src/components/dashboard/view-switcher.test.tsx',
-      'src/components/dashboard/manage-views-dialog.test.tsx',
+
       'src/components/sidebar/nav-config.test.ts',
       'src/components/performance/__tests__/kpi-card.test.tsx',
       'src/components/performance/__tests__/kpi-row.test.tsx',
