@@ -172,6 +172,36 @@ function seedProjection(accountId: string, nav: number, computedAsOf = now()): v
     .run(randomUUID(), accountId, computedAsOf, nav.toFixed(2), now(), now(), now());
 }
 
+/** Seed a projection with an explicit positions_json (strict-completeness tests). */
+function seedProjectionWithPositions(
+  accountId: string,
+  nav: string,
+  positionsJson: string,
+  computedAsOf = now(),
+): void {
+  sqlite
+    .prepare(
+      `INSERT INTO account_performance
+         (id, account_id, computed_as_of, net_cash, nav, marked_positions, realized_pnl,
+          unrealized_pnl, total_pnl, realized_fees, gross_exposure, net_exposure,
+          warnings, positions_json, rebuild_count, last_rebuilt_at, created_at, updated_at)
+       VALUES (?, ?, ?, '0.00', ?, '0.00', '0.00', '0.00', '0.00', '0.00', '0.00', '0.00',
+               '[]', ?, 0, ?, ?, ?)`,
+    )
+    .run(randomUUID(), accountId, computedAsOf, nav, positionsJson, now(), now(), now());
+}
+
+/** Seed canonical trade-execution activity (A2 economic criterion for fail-closed). */
+function seedTradeExecutionActivity(accountId: string, postedAt = '2026-01-02T00:00:00.000Z'): void {
+  sqlite
+    .prepare(
+      `INSERT INTO financial_events
+         (id, account_id, event_type, idempotency_key, description, payload, effect, posted_at, created_at)
+       VALUES (?, ?, 'trade_execution', NULL, 'Execution', '{}', '{}', ?, ?)`,
+    )
+    .run(randomUUID(), accountId, postedAt, now());
+}
+
 /** Seed a legacy account_transactions row. */
 function seedLegacyTransaction(accountId: string, type: 'deposit' | 'withdrawal', amount: number, date: string): void {
   sqlite
@@ -754,6 +784,112 @@ describe('M007: incomplete current NAV is never usable execution equity', () => 
     const ctx = resolveExecutionEquityContext(sqlite, accountId, now());
     expect(ctx.source).toBe('current_projection');
     expect(ctx.equity).toBe(50990); // 50000 - 10000 - 5 + 11000 - 5
+    expect(ctx.hasUsableEquity).toBe(true);
+  });
+});
+
+describe('M007: malformed projection completeness data fails closed', () => {
+  /**
+   * Canonical account with opening balance + prior trade-execution activity,
+   * so a rejected current_projection resolves through the canonical
+   * precedence to unavailable (no trusted complete valuation).
+   */
+  function seedMalformedFixture(positionsJson: string): { accountId: string; asOf: string } {
+    const accountId = seedAccount({ startingBalance: null });
+    seedSettings(99999);
+    seedOpeningBalance(accountId, 50000, '2026-01-01T00:00:00.000Z');
+    seedTradeExecutionActivity(accountId, '2026-01-02T00:00:00.000Z');
+    // Projection is temporally eligible at asOf, so completeness decides.
+    seedProjectionWithPositions(accountId, '39995.00', positionsJson, '2026-01-04T00:00:00.000Z');
+    return { accountId, asOf: '2026-01-05T00:00:00.000Z' };
+  }
+
+  function expectUnavailable(accountId: string, asOf: string): void {
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, asOf);
+    expect(ctx.source).not.toBe('current_projection');
+    expect(ctx.equity).toBeNull();
+    expect(ctx.source).toBe('unavailable');
+    expect(ctx.hasUsableEquity).toBe(false);
+  }
+
+  it('M1: absent markStatus on an open position fails closed', () => {
+    // markedValue is a valid canonical string but markStatus is absent.
+    const { accountId, asOf } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '100.00', markedValue: '10000.00' }]),
+    );
+    expectUnavailable(accountId, asOf);
+  });
+
+  it('M2: unknown markStatus on an open position fails closed', () => {
+    const { accountId, asOf } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '100.00', markStatus: 'banana', markedValue: '10000.00' }]),
+    );
+    expectUnavailable(accountId, asOf);
+  });
+
+  it('M3: boolean/array/object markedValue fails closed (no Number coercion)', () => {
+    const { accountId: a1, asOf: t1 } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '100.00', markStatus: 'fresh', markedValue: true }]),
+    );
+    expectUnavailable(a1, t1);
+
+    const { accountId: a2, asOf: t2 } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '100.00', markStatus: 'fresh', markedValue: ['10000.00'] }]),
+    );
+    expectUnavailable(a2, t2);
+
+    const { accountId: a3, asOf: t3 } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '100.00', markStatus: 'fresh', markedValue: { amount: '10000.00' } }]),
+    );
+    expectUnavailable(a3, t3);
+  });
+
+  it('M4: numeric JavaScript quantity fails closed (persisted quantity is a string)', () => {
+    const { accountId, asOf } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: 100, markStatus: 'fresh', markedValue: '10000.00' }]),
+    );
+    expectUnavailable(accountId, asOf);
+  });
+
+  it('M5: structurally invalid numeric strings for quantity fail closed', () => {
+    const { accountId: a1, asOf: t1 } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '', markStatus: 'fresh', markedValue: '10000.00' }]),
+    );
+    expectUnavailable(a1, t1);
+
+    const { accountId: a2, asOf: t2 } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '   ', markStatus: 'fresh', markedValue: '10000.00' }]),
+    );
+    expectUnavailable(a2, t2);
+  });
+
+  it('M6: valid fresh marked open position keeps current_projection', () => {
+    const { accountId, asOf } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '100.00', markStatus: 'fresh', markedValue: '11000.00' }]),
+    );
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, asOf);
+    expect(ctx.source).toBe('current_projection');
+    expect(ctx.equity).toBe(39995);
+    expect(ctx.hasUsableEquity).toBe(true);
+  });
+
+  it('M7: valid stale marked open position keeps current_projection (stale policy unchanged)', () => {
+    const { accountId, asOf } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'short', quantity: '-100.00', markStatus: 'stale', markedValue: '-19000.00' }]),
+    );
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, asOf);
+    expect(ctx.source).toBe('current_projection');
+    expect(ctx.equity).toBe(39995);
+    expect(ctx.hasUsableEquity).toBe(true);
+  });
+
+  it('M8: valid flat missing-mark position does not invalidate the projection', () => {
+    const { accountId, asOf } = seedMalformedFixture(
+      JSON.stringify([{ instrumentId: 'x', direction: 'long', quantity: '0.00', markStatus: 'missing', markedValue: null }]),
+    );
+    const ctx = resolveExecutionEquityContext(sqlite, accountId, asOf);
+    expect(ctx.source).toBe('current_projection');
+    expect(ctx.equity).toBe(39995);
     expect(ctx.hasUsableEquity).toBe(true);
   });
 });

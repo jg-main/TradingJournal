@@ -56,6 +56,7 @@ import {
   type PriorClosedTradeData,
 } from '@/lib/risk-snapshot';
 import { computeAccountActivity, computeRebuildCashFlow } from '@/lib/accounting/activity';
+import { validateDecimal } from '@/lib/accounting/decimal';
 import type { Direction, ExecutionData } from '@/lib/trade-metrics';
 
 /** Where the resolved equity value came from. */
@@ -260,22 +261,35 @@ function projectionIsCompleteForExecution(
   if (!Array.isArray(positions)) return false;
 
   for (const position of positions) {
-    if (typeof position !== 'object' || position === null) return false;
+    // Each member must be a non-null ordinary object (never an array or other
+    // JSON value) exposing the structured completeness fields.
+    if (typeof position !== 'object' || position === null || Array.isArray(position)) {
+      return false;
+    }
     const p = position as Record<string, unknown>;
 
+    // quantity must be a PERSISTED canonical decimal STRING (never a JS
+    // number/boolean/array/object or malformed text). Strict non-coercive
+    // validation: Number(...) alone must never qualify a value.
     const quantity = p.quantity;
-    if (typeof quantity !== 'string' && typeof quantity !== 'number') return false;
+    if (typeof quantity !== 'string' || !validateDecimal(quantity).valid) return false;
     const signedQuantity = Number(quantity);
     if (!Number.isFinite(signedQuantity)) return false;
 
     // Flat/closed positions never invalidate a projection.
     if (signedQuantity === 0) continue;
 
-    // Open positions must carry a complete valuation mark.
-    if (p.markStatus === 'missing') return false;
+    // Open positions must carry a real persisted valuation mark. markStatus
+    // must be EXACTLY 'fresh' or 'stale' (stale policy unchanged); 'missing',
+    // absent, null, or any unknown value fails closed.
+    const markStatus = p.markStatus;
+    if (markStatus !== 'fresh' && markStatus !== 'stale') return false;
+
+    // markedValue must be a PERSISTED canonical decimal STRING — never null,
+    // boolean, array, object, empty/whitespace, NaN, Infinity, or malformed
+    // numeric text. Long may be positive, short negative, zero valid.
     const markedValue = p.markedValue;
-    if (markedValue === null || markedValue === undefined) return false;
-    if (!Number.isFinite(Number(markedValue))) return false;
+    if (typeof markedValue !== 'string' || !validateDecimal(markedValue).valid) return false;
   }
 
   return true;
