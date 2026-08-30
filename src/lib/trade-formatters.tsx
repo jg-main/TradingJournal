@@ -106,7 +106,7 @@ export function PnlCell({ value }: { value: number | null | undefined }) {
     <span
       className={cn(
         'tabular-nums',
-        value > 0 ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-600 dark:text-red-500',
+        value > 0 ? 'text-positive' : 'text-negative',
       )}
     >
       {formatted}
@@ -124,7 +124,7 @@ export function PercentCell({ value }: { value: number | null | undefined }) {
     <span
       className={cn(
         'tabular-nums',
-        value > 0 ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-600 dark:text-red-500',
+        value > 0 ? 'text-positive' : 'text-negative',
       )}
     >
       {formatted}
@@ -142,7 +142,7 @@ export function RCell({ value }: { value: number | null | undefined }) {
     <span
       className={cn(
         'tabular-nums',
-        value > 0 ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-600 dark:text-red-500',
+        value > 0 ? 'text-positive' : 'text-negative',
       )}
     >
       {formatted}
@@ -150,17 +150,14 @@ export function RCell({ value }: { value: number | null | undefined }) {
   );
 }
 
-/** Direction badge: Long (green/up) or Short (red/down) */
+/** Direction badge: neutral Long/Short labels (position orientation, not P&L) */
 export function DirectionBadge({ direction }: { direction: string | null | undefined }) {
   if (!direction) return <span className="text-muted-foreground">—</span>;
   const isLong = direction === 'long';
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium',
-        isLong
-          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
-          : 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400',
+        'inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground',
       )}
     >
       {isLong ? 'Long' : 'Short'}

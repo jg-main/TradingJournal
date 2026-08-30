@@ -201,6 +201,7 @@ export default defineConfig({
 
       'src/components/dashboard/__tests__/chart-palette-migration.test.ts',
       'src/components/dashboard/formatting.test.ts',
+      'src/lib/trade-formatters.test.tsx',
 
       'src/components/dashboard/equity-drawdown-chart.test.tsx',
       'src/components/dashboard/monthly-performance-chart.test.tsx',
@@ -248,6 +249,7 @@ export default defineConfig({
       'src/app/api/accounts/[id]/ledger/__tests__/route.test.ts',
       'src/app/api/dashboard/views/__tests__/route.test.ts',
       'src/components/ui/__tests__/primitive-contracts.test.ts',
+      'src/components/ui/badge.test.tsx',
       'scripts/journal.test.mjs',
       'scripts/__tests__/playwright-matrix-artifacts.test.ts',
     ],

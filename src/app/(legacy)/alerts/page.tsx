@@ -128,10 +128,10 @@ function summarizeEnabledConditions(config: AlertConfig | null): string {
   return enabled.length > 0 ? enabled.join(', ') : 'None';
 }
 
-function directoryBadgeClass(direction: string): string {
-  return direction === 'long'
-    ? 'bg-positive/10 text-positive'
-    : 'bg-negative/10 text-negative';
+function directoryBadgeClass(): string {
+  // Direction is position orientation, not financial outcome — keep the
+  // label neutral instead of mapping long→positive / short→negative.
+  return 'bg-muted text-foreground';
 }
 
 // ── Columns: Configured Alerts ─────────────────────────────────────────
@@ -155,7 +155,7 @@ function buildConfiguredAlertColumns(): ColumnDef<WatchlistItem>[] {
         <span
           className={
             'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ' +
-            directoryBadgeClass(row.original.direction)
+            directoryBadgeClass()
           }
         >
           {row.original.direction === 'long' ? 'Long' : 'Short'}
