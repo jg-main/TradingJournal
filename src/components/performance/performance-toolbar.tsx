@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { DashboardSwitcher } from './dashboard-switcher';
+import { Button } from '@/components/ui/button';
 import type { PerformanceDashboardEnvelope } from '@/lib/performance-view-types';
 
 export interface PerformanceToolbarProps {
@@ -56,21 +57,25 @@ export function PerformanceToolbar({
       />
 
       {!editMode && (
-        <button
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
           onClick={onToggleEditMode}
-          className="inline-flex items-center justify-center text-sm rounded-md border border-border px-3 h-(--density-control-h-lg) hover:bg-muted"
         >
           Customize
-        </button>
+        </Button>
       )}
 
       {editMode && (
-        <button
+        <Button
+          type="button"
+          variant="secondary"
+          size="lg"
           onClick={onToggleEditMode}
-          className="inline-flex items-center justify-center text-sm rounded-md bg-primary text-primary-foreground px-3 h-(--density-control-h-lg) hover:bg-primary/90"
         >
           Done
-        </button>
+        </Button>
       )}
 
       {typeof tradeCount === 'number' && (

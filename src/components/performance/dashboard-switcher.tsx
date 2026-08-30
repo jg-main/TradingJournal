@@ -2,6 +2,13 @@
 
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import type { PerformanceDashboardEnvelope } from '@/lib/performance-view-types';
 
 export interface DashboardSwitcherProps {
@@ -21,6 +28,11 @@ export interface DashboardSwitcherProps {
 /**
  * Performance dashboard selector + management.
  * Consumes the single dashboards store via props (one owner — the shell).
+ *
+ * The overlay is the shared Popover primitive (outside-click/Escape dismissal
+ * and trigger focus restoration are owned by the primitive). Dashboard
+ * choices and management actions render through the shared Button primitive;
+ * the create-name field is the shared Input.
  */
 export function DashboardSwitcher({
   editMode,
@@ -80,104 +92,120 @@ export function DashboardSwitcher({
 
   return (
     <div className="relative inline-block">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center justify-center text-sm rounded-md border border-border px-3 h-(--density-control-h-lg) hover:bg-muted gap-2"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className="font-medium">{activeDashboard?.name ?? 'Dashboards'}</span>
-        <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
-      </button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            aria-label="Switch performance dashboard"
+            className="gap-2"
+          >
+            <span className="font-medium">{activeDashboard?.name ?? 'Dashboards'}</span>
+            <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" sideOffset={8} className="w-64 p-2">
+          <div className="px-2 py-1 text-xs text-muted-foreground">Dashboards</div>
+          <div className="space-y-0.5">
+            {dashboards.map((d) => (
+              <Button
+                key={d.id}
+                type="button"
+                variant={d.id === activeDashboard?.id ? 'secondary' : 'ghost'}
+                size="sm"
+                className="w-full justify-start gap-2 px-2"
+                onClick={() => {
+                  onSwitch(d.id);
+                  setOpen(false);
+                }}
+              >
+                <span className="truncate">{d.name}</span>
+                {d.isSystem && (
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                    System
+                  </span>
+                )}
+              </Button>
+            ))}
+          </div>
 
-      {open && (
-        <div className="absolute left-0 top-full mt-1 z-40 w-64 bg-card border border-border rounded-lg shadow-lg p-2" role="listbox">
-          <div className="text-xs text-muted-foreground px-2 py-1">Dashboards</div>
-          {dashboards.map((d) => (
-            <div
-              key={d.id}
-              role="option"
-              aria-selected={d.id === activeDashboard?.id}
-              className={`flex items-center justify-between px-2 py-1.5 rounded text-sm cursor-pointer hover:bg-muted ${
-                d.id === activeDashboard?.id ? 'bg-muted/60' : ''
-              }`}
-              onClick={() => {
-                onSwitch(d.id);
-                setOpen(false);
-              }}
-            >
-              <span className="truncate">{d.name}</span>
-              {d.isSystem && <span className="text-[10px] text-muted-foreground ml-2 shrink-0">System</span>}
-            </div>
-          ))}
-
-          <div className="border-t border-border mt-2 pt-2 space-y-1">
+          <div className="mt-2 space-y-0.5 border-t border-border pt-2">
             {showCreate ? (
               <div className="flex gap-1 px-1">
-                <input
+                <Input
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
                   placeholder="Dashboard name"
-                  className="flex-1 text-sm rounded border border-border bg-background px-2 py-1"
+                  className="h-(--density-control-h-sm) flex-1"
                   autoFocus
                 />
-                <button
-                  onClick={handleCreate}
-                  className="text-xs rounded border border-border px-2 py-1 hover:bg-muted"
-                >
+                <Button type="button" size="sm" onClick={handleCreate}>
                   OK
-                </button>
+                </Button>
               </div>
             ) : (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start px-2"
                 onClick={() => setShowCreate(true)}
-                className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted"
               >
                 + New Dashboard
-              </button>
+              </Button>
             )}
 
             {activeDashboard && !activeDashboard.isSystem && (
               <>
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start px-2"
                   onClick={handleRename}
-                  className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted"
                 >
                   Rename…
-                </button>
-                <button
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start px-2 text-destructive"
                   onClick={handleDelete}
-                  className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted text-destructive"
                 >
                   Delete…
-                </button>
+                </Button>
               </>
             )}
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start px-2"
               onClick={handleDuplicate}
-              className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted"
             >
               Duplicate
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start px-2"
               onClick={handleReset}
-              className="w-full text-left text-sm px-2 py-1.5 rounded hover:bg-muted"
             >
               Reset to Default
-            </button>
+            </Button>
           </div>
-        </div>
-      )}
+        </PopoverContent>
+      </Popover>
 
       {/* Explicit Save — captures current widget state into the active dashboard */}
       {editMode && (
-        <button
-          onClick={onSave}
-          className="ml-2 inline-flex items-center justify-center text-sm rounded-md bg-primary text-primary-foreground px-3 h-(--density-control-h-lg) hover:bg-primary/90"
-        >
+        <Button type="button" onClick={onSave} className="ml-2">
           Save
-        </button>
+        </Button>
       )}
 
       {writeFailed && (

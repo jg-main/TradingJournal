@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { PerformanceToolbar } from '../performance-toolbar';
@@ -11,12 +11,12 @@ afterEach(() => cleanup());
 
 const defaultDashboard = createSystemDefaultDashboard();
 
-function renderToolbar(editMode: boolean, onToggleEditMode = () => {}) {
+function renderToolbar(editMode: boolean, onToggleEditMode = () => {}, onSave = () => {}) {
   return render(
     <PerformanceToolbar
       editMode={editMode}
       onToggleEditMode={onToggleEditMode}
-      onSave={() => {}}
+      onSave={onSave}
       onSwitch={() => {}}
       dashboards={[defaultDashboard]}
       activeDashboard={defaultDashboard}
@@ -44,6 +44,29 @@ describe('PerformanceToolbar', () => {
     expect(screen.queryByText('Customize')).toBeNull();
   });
 
+  it('renders Customize through the canonical Button (outline entry action)', () => {
+    renderToolbar(false);
+    const customize = screen.getByText('Customize').closest('[data-slot="button"]') as HTMLElement;
+    expect(customize.getAttribute('data-slot')).toBe('button');
+    expect(customize.getAttribute('data-variant')).toBe('outline');
+    expect(customize.getAttribute('data-size')).toBe('lg');
+  });
+
+  it('renders Done through the canonical Button as the secondary action', () => {
+    renderToolbar(true);
+    const done = screen.getByText('Done').closest('[data-slot="button"]') as HTMLElement;
+    expect(done.getAttribute('data-slot')).toBe('button');
+    expect(done.getAttribute('data-variant')).toBe('secondary');
+  });
+
+  it('edit mode shows Save as primary and Done as secondary', () => {
+    renderToolbar(true);
+    const save = screen.getByText('Save').closest('[data-slot="button"]') as HTMLElement;
+    expect(save.getAttribute('data-variant')).toBe('default');
+    const done = screen.getByText('Done').closest('[data-slot="button"]') as HTMLElement;
+    expect(done.getAttribute('data-variant')).toBe('secondary');
+  });
+
   it('toggles mode on click', () => {
     let mode = false;
     const toggle = () => { mode = !mode; };
@@ -66,6 +89,15 @@ describe('PerformanceToolbar', () => {
       />,
     );
     expect(screen.getByText('Done')).toBeDefined();
+  });
+
+  it('Done exits edit mode without implicitly saving', () => {
+    const onSave = vi.fn();
+    const onToggle = vi.fn();
+    renderToolbar(true, onToggle, onSave);
+    fireEvent.click(screen.getByText('Done'));
+    expect(onToggle).toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
   });
 });
 
