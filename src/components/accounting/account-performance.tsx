@@ -111,13 +111,15 @@ function getMarkStatusBadge(status: 'fresh' | 'stale' | 'missing'): { label: str
     case 'stale':
       return { label: 'Stale', className: 'bg-warning/10 text-warning' };
     case 'missing':
-      return { label: 'Missing', className: 'bg-negative/10 text-negative' };
+      return { label: 'Missing', className: 'bg-missing/10 text-missing' };
   }
 }
 
 function getDirectionIcon(direction: 'long' | 'short' | null) {
-  if (direction === 'long') return <TrendingUp className="size-3 text-positive" />;
-  if (direction === 'short') return <TrendingDown className="size-3 text-negative" />;
+  // Direction is position orientation, not financial outcome — the icons
+  // carry orientation, styled neutrally instead of as profit/loss.
+  if (direction === 'long') return <TrendingUp className="size-3 text-muted-foreground" />;
+  if (direction === 'short') return <TrendingDown className="size-3 text-muted-foreground" />;
   return null;
 }
 

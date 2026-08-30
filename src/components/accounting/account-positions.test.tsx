@@ -458,3 +458,120 @@ describe('AccountPositions — accessibility', () => {
     expect(regions[0].getAttribute('aria-label')).toBe('Open FIFO lots');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// M004/T3 — semantic states (direction is not P&L; missing is not a loss)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('AccountPositions — semantic states (M004/T3)', () => {
+  /** Every element whose visible text is exactly a direction label. */
+  function directionLabelElements(): HTMLElement[] {
+    return Array.from(document.querySelectorAll('span, p')).filter(
+      (el) => (el.textContent ?? '').trim() === 'long' || (el.textContent ?? '').trim() === 'short',
+    ) as HTMLElement[];
+  }
+
+  it('Long and Short position direction labels carry no profit/loss semantics', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountPositions accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeTruthy();
+    });
+
+    // AAPL (long) + TSLA (long) + MSFT (short) position labels.
+    const labels = directionLabelElements();
+    expect(labels.length).toBeGreaterThanOrEqual(3);
+    for (const el of labels) {
+      expect(el.className).not.toContain('text-positive');
+      expect(el.className).not.toContain('text-negative');
+      expect(el.className).not.toContain('text-destructive');
+      expect(el.className).not.toContain('bg-positive');
+      expect(el.className).not.toContain('bg-negative');
+    }
+  });
+
+  it('expanded FIFO lot direction badges carry no profit/loss semantics', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountPositions accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeTruthy();
+    });
+
+    const expandBtns = screen.getAllByLabelText('Expand FIFO lots');
+    await act(async () => {
+      fireEvent.click(expandBtns[0]);
+      fireEvent.click(expandBtns[1]);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Side').length).toBeGreaterThanOrEqual(2);
+    });
+
+    const labels = directionLabelElements();
+    // Includes AAPL/TSLA long labels, MSFT short label, and the lot badges.
+    expect(labels.length).toBeGreaterThanOrEqual(5);
+    for (const el of labels) {
+      expect(el.className).not.toContain('text-positive');
+      expect(el.className).not.toContain('text-negative');
+      expect(el.className).not.toContain('bg-positive');
+      expect(el.className).not.toContain('bg-negative');
+    }
+  });
+
+  it('missing mark status uses the canonical missing token', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountPositions accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Missing')).toBeTruthy();
+    });
+
+    const badge = screen.getByText('Missing');
+    expect(badge.className).toContain('bg-missing');
+    expect(badge.className).toContain('text-missing');
+    expect(badge.className).not.toContain('bg-negative');
+    expect(badge.className).not.toContain('text-negative');
+  });
+
+  it('stale mark status remains warning', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountPositions accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Stale')).toBeTruthy();
+    });
+
+    const badge = screen.getByText('Stale');
+    expect(badge.className).toContain('bg-warning/10');
+    expect(badge.className).toContain('text-warning');
+  });
+
+  it('fresh mark status keeps its healthy positive treatment', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountPositions accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Fresh')).toBeTruthy();
+    });
+
+    const badge = screen.getByText('Fresh');
+    expect(badge.className).toContain('bg-positive/10');
+    expect(badge.className).toContain('text-positive');
+  });
+
+  it('financial P&L keeps positive/negative semantics', async () => {
+    mockFetchSuccess(FIXTURE_POPULATED);
+    render(<AccountPositions accountId="acct-001" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeTruthy();
+    });
+
+    const profit = screen.getByText('+$1,525.00');
+    expect(profit.className).toContain('text-positive');
+    const loss = screen.getByText('-$330.00');
+    expect(loss.className).toContain('text-negative');
+  });
+});

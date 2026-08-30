@@ -855,3 +855,128 @@ describe('AccountOverview — D9 reconciliation states', () => {
     expect(screen.queryByText('Reconciliation unavailable.')).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// M004/T3 — semantic states (direction is not P&L; missing is not a loss)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('AccountOverview — semantic states (M004/T3)', () => {
+  const FIXTURE = {
+    accountId: 'acct-sem',
+    isActive: true,
+    name: 'Semantic Account',
+    currency: 'USD',
+    snapshot: {
+      netCash: '10000.00',
+      nav: '25000.00',
+      markedPositions: '15000.00',
+      realizedPnl: '500.00',
+      unrealizedPnl: '-250.00',
+      totalPnl: '1250.00',
+      realizedFees: '50.00',
+      grossExposure: '20000.00',
+      netExposure: '20000.00',
+    },
+    positions: [
+      {
+        symbol: 'AAPL',
+        direction: 'long',
+        quantity: '50.00',
+        averageCost: '150.00',
+        totalCostBasis: '7500.00',
+        markStatus: 'fresh' as const,
+        markPrice: '165.00',
+        markedValue: '8250.00',
+        unrealizedPnl: '750.00',
+        realizedGrossPnl: '200.00',
+        realizedNetPnl: '195.00',
+      },
+      {
+        symbol: 'NVDA',
+        direction: 'short',
+        quantity: '40.00',
+        averageCost: '500.00',
+        totalCostBasis: '20000.00',
+        markStatus: 'missing' as const,
+        markPrice: null,
+        markedValue: null,
+        unrealizedPnl: null,
+        realizedGrossPnl: '-100.00',
+        realizedNetPnl: '-105.00',
+      },
+    ],
+    positionsTotal: 2,
+    events: [],
+    eventsTotal: 0,
+    reconciliation: {
+      status: 'unavailable' as const,
+      failureMode: 'no_migration_run' as const,
+      details: null,
+      banner: null,
+    },
+  };
+
+  async function renderFixture() {
+    mockFetchSuccess(FIXTURE);
+    render(<AccountOverview accountId="acct-sem" />);
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeTruthy();
+    });
+  }
+
+  it('Long direction contains no profit/loss semantics', async () => {
+    await renderFixture();
+    const label = screen.getByText('long');
+    expect(label.textContent).toBe('long');
+    const cell = label.closest('td') as HTMLElement;
+    expect(cell.className).not.toContain('text-positive');
+    expect(cell.className).not.toContain('text-negative');
+    expect(cell.className).not.toContain('text-destructive');
+    expect(cell.innerHTML).not.toContain('text-positive');
+    expect(cell.innerHTML).not.toContain('text-negative');
+    // The orientation icon remains present.
+    expect(cell.querySelector('svg')).toBeTruthy();
+  });
+
+  it('Short direction contains no profit/loss semantics', async () => {
+    await renderFixture();
+    const label = screen.getByText('short');
+    expect(label.textContent).toBe('short');
+    const cell = label.closest('td') as HTMLElement;
+    expect(cell.className).not.toContain('text-positive');
+    expect(cell.className).not.toContain('text-negative');
+    expect(cell.className).not.toContain('text-destructive');
+    expect(cell.innerHTML).not.toContain('text-positive');
+    expect(cell.innerHTML).not.toContain('text-negative');
+    expect(cell.querySelector('svg')).toBeTruthy();
+  });
+
+  it('missing mark status uses the canonical missing token', async () => {
+    await renderFixture();
+    const badge = screen.getByText('Missing');
+    expect(badge.className).toContain('bg-missing');
+    expect(badge.className).toContain('text-missing');
+    expect(badge.className).not.toContain('bg-negative');
+    expect(badge.className).not.toContain('text-negative');
+  });
+
+  it('fresh mark status keeps its healthy positive treatment', async () => {
+    await renderFixture();
+    const badge = screen.getByText('Fresh');
+    expect(badge.className).toContain('bg-positive/10');
+    expect(badge.className).toContain('text-positive');
+  });
+
+  it('financial P&L keeps positive/negative semantics', async () => {
+    await renderFixture();
+    // +$750.00 is the AAPL row unrealized P&L.
+    const profits = screen.getAllByText('+$750.00');
+    expect(profits.length).toBeGreaterThanOrEqual(1);
+    for (const profit of profits) {
+      expect(profit.className).toContain('text-positive');
+    }
+    // The Unrealized P&L metric card renders the negative snapshot as "$-250.00".
+    const loss = screen.getByText(/^\$?-?250\.00$/);
+    expect(loss.className).toContain('text-negative');
+  });
+});

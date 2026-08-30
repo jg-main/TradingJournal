@@ -79,9 +79,9 @@ function getDirectionIcon(direction: string | null) {
   return Minus;
 }
 
-function getDirectionColor(direction: string | null): string {
-  if (direction === 'long') return 'text-positive';
-  if (direction === 'short') return 'text-negative';
+function getDirectionColor(): string {
+  // Direction is position orientation, not financial outcome — keep it
+  // neutral instead of mapping long→positive / short→negative.
   return 'text-muted-foreground';
 }
 
@@ -92,7 +92,7 @@ function getMarkStatusBadge(status: 'fresh' | 'stale' | 'missing' | 'pending'): 
     case 'stale':
       return { label: 'Stale', className: 'bg-warning/10 text-warning' };
     case 'missing':
-      return { label: 'Missing', className: 'bg-negative/10 text-negative' };
+      return { label: 'Missing', className: 'bg-missing/10 text-missing' };
     case 'pending':
       return { label: 'Pending', className: 'bg-muted text-muted-foreground' };
   }
@@ -201,10 +201,7 @@ function FifoLotsExpanded({
                 <td className="px-3 py-2">
                   <span
                     className={cn(
-                      'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-                      lot.direction === 'long'
-                        ? 'bg-positive/10 text-positive'
-                        : 'bg-negative/10 text-negative',
+                      'inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground',
                     )}
                   >
                     {lot.direction}
@@ -438,7 +435,7 @@ export default function AccountPositions({ accountId }: AccountPositionsProps) {
             <tbody className="divide-y divide-border">
               {positions.map((pos) => {
                 const Icon = getDirectionIcon(pos.direction);
-                const dirColor = getDirectionColor(pos.direction);
+                const dirColor = getDirectionColor();
                 const badge = getMarkStatusBadge(pos.markStatus);
                 const isExpanded = expandedRows.has(pos.instrumentId);
                 const hasLots = pos.openLots.length > 0;

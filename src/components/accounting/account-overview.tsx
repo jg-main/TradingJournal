@@ -162,7 +162,7 @@ function getMarkStatusBadge(status: 'fresh' | 'stale' | 'missing' | 'pending'): 
     case 'stale':
       return { label: 'Stale', className: 'bg-warning/10 text-warning' };
     case 'missing':
-      return { label: 'Missing', className: 'bg-negative/10 text-negative' };
+      return { label: 'Missing', className: 'bg-missing/10 text-missing' };
     case 'pending':
       return { label: 'Pending', className: 'bg-muted text-muted-foreground' };
   }
@@ -174,9 +174,9 @@ function getDirectionIcon(direction: string | null) {
   return Minus;
 }
 
-function getDirectionColor(direction: string | null): string {
-  if (direction === 'long') return 'text-positive';
-  if (direction === 'short') return 'text-negative';
+function getDirectionColor(): string {
+  // Direction is position orientation, not financial outcome — keep it
+  // neutral instead of mapping long→positive / short→negative.
   return 'text-muted-foreground';
 }
 
@@ -554,7 +554,7 @@ export default function AccountOverview({ accountId }: AccountOverviewProps) {
                 {positions.map((pos) => {
                   const Icon = getDirectionIcon(pos.direction);
                   const badge = getMarkStatusBadge(pos.markStatus);
-                  const directionColor = getDirectionColor(pos.direction);
+                  const directionColor = getDirectionColor();
 
                   return (
                     <tr key={pos.symbol} className="hover:bg-muted/50">
