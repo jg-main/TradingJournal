@@ -232,7 +232,6 @@ export default defineConfig({
       'src/components/accounting/account-initialization.test.tsx',
       'src/components/accounting/opening-balance-form.test.tsx',
       'src/components/accounting/account-overview.test.tsx',
-      'src/components/accounting/account-performance.test.tsx',
       'src/components/accounting/financial-transaction-composer.test.tsx',
       'src/components/accounting/account-ledger.test.tsx',
       'src/components/accounting/account-positions.test.tsx',

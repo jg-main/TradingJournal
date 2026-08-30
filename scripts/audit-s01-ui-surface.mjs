@@ -230,7 +230,6 @@ function routeHandlers(section, label, rel, expect) {
     'account-settings.tsx',
     'account-activity.tsx',
     'account-correction-form.tsx',
-    'account-performance.tsx',
   ];
   for (const c of components) {
     filePresent(S, c, `src/components/accounting/${c}`);
