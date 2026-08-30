@@ -39,8 +39,8 @@ describe('resolveActiveHref', () => {
 
   it('returns null for paths with no matching nav item', () => {
     expect(resolveActiveHref('/does-not-exist')).toBeNull();
-    // S03: Watchlist and Reviews are dashboard-widget-only workflows; the
-    // legacy pages remain functional routes but have no sidebar nav item.
+    // Watchlist is a workstation-widget-only workflow; the retired weekly
+    // review /reviews page is gone entirely. Neither has a sidebar nav item.
     expect(resolveActiveHref('/watchlist')).toBeNull();
     expect(resolveActiveHref('/reviews')).toBeNull();
     expect(resolveActiveHref('/watchlist/123')).toBeNull();
@@ -55,5 +55,26 @@ describe('resolveActiveHref', () => {
   it('respects a custom section list', () => {
     expect(resolveActiveHref('/trades', [NAV_SECTIONS[0]])).toBe('/trades');
     expect(resolveActiveHref('/settings', [NAV_SECTIONS[0]])).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// M004/T4 — root navigation item: Dashboard → Workstation
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('Root nav item (Workstation)', () => {
+  it('labels the root nav item Workstation with href "/"', () => {
+    const trading = NAV_SECTIONS.find((s) => s.label === 'Trading');
+    expect(trading).toBeTruthy();
+    const root = trading!.items.find((i) => i.href === '/');
+    expect(root).toBeTruthy();
+    expect(root!.label).toBe('Workstation');
+    expect(root!.href).toBe('/');
+  });
+
+  it('keeps the root href active only on the exact root path', () => {
+    expect(resolveActiveHref('/')).toBe('/');
+    expect(resolveActiveHref('/trades')).not.toBe('/');
+    expect(resolveActiveHref('/performance')).not.toBe('/');
   });
 });

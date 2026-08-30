@@ -26,7 +26,7 @@ export interface NavSection {
  * rather than by database entity (M014 S02).
  * Order matters: sections render top-to-bottom in this sequence.
  *
- * - Trading: the daily workflow (dashboard, performance, trades)
+ * - Trading: the daily workflow (workstation, performance, trades)
  * - Accounts: account management
  * - Analysis: planning/analytics tooling (position sizing)
  * - System: settings and maintenance
@@ -38,7 +38,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Trading',
     items: [
-      { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/', label: 'Workstation', icon: LayoutDashboard },
       { href: '/performance', label: 'Performance', icon: TrendingUp },
       { href: '/trades', label: 'Trades', icon: NotebookPen },
     ],

@@ -229,7 +229,11 @@ describe('Open tab Phase column (S05/T03)', () => {
     await waitFor(() => {
       const row = screen.getByTestId('row-open-managed');
       const phaseCell = within(row).getByTestId('cell-phase');
-      expect(within(phaseCell).getByText('Managed')).toBeTruthy();
+      const managed = within(phaseCell).getByText('Managed');
+      expect(managed).toBeTruthy();
+      // M004/T4: Managed consumes the canonical semantic info Badge variant.
+      const badge = managed.closest('[data-slot="badge"]');
+      expect(badge?.getAttribute('data-variant')).toBe('info');
       // The economic Open status is untouched by the phase badge
       expect(within(row).getByTestId('cell-direction')).toBeTruthy();
     });

@@ -34,12 +34,12 @@ vi.mock('next/link', () => ({
     children,
     href,
     className,
+    ...rest
   }: {
     children: React.ReactNode;
     href: string;
     className?: string;
-  }) =>
-    React.createElement('a', { href, className }, children),
+  }) => React.createElement('a', { href, className, ...rest }, children),
 }));
 
 // Mock lucide-react icons to simple span placeholders for snapshot stability
@@ -134,14 +134,20 @@ vi.mock('sonner', () => ({
 
 // Canonical account scope (M007/D037): the sidebar AccountProvider is the
 // single owner. The page consumes useAccount() — a resolved provider
-// (account acc-001, not loading, no error) is mocked here.
+// (account acc-001, not loading, no error) is mocked here. State is mutable
+// so the no-account gate (accountId null) is testable.
 const mockSetAccountId = vi.fn();
+const mockAccountState = vi.hoisted(() => ({
+  accountId: 'acc-001' as string | null,
+  loading: false,
+  error: null as string | null,
+}));
 vi.mock('@/lib/account-context', () => ({
   useAccount: () => ({
-    accounts: [{ id: 'acc-001', name: 'Test Account', broker: null, currency: 'USD', isActive: true }],
-    loading: false,
-    error: null,
-    accountId: 'acc-001',
+    accounts: [],
+    loading: mockAccountState.loading,
+    error: mockAccountState.error,
+    accountId: mockAccountState.accountId,
     setAccountId: mockSetAccountId,
     refresh: vi.fn().mockResolvedValue(undefined),
   }),
@@ -165,7 +171,7 @@ function setupFetchMocks(fetchImpl?: typeof globalThis.fetch) {
   }
 
   // Default mocks: accounts endpoint returns list, trades endpoint returns empty
-  fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: RequestInfo | URL, init?: RequestInit) => {
+  fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: RequestInfo | URL) => {
     const urlStr = typeof url === 'string' ? url : url.toString();
 
     if (urlStr === '/api/accounts') {
@@ -205,6 +211,10 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   selectOnValueChange = null;
+  mockAccountState.accountId = 'acc-001';
+  mockAccountState.loading = false;
+  mockAccountState.error = null;
+  localStorage.clear();
 });
 
 // ── Header buttons render ──────────────────────────────────────────────
@@ -426,6 +436,27 @@ describe('Page header buttons', () => {
       expect(screen.getByText('Export CSV')).toBeTruthy();
       expect(screen.getByText('Refresh Prices')).toBeTruthy();
     });
+  });
+
+  it('renders header actions as canonical Button primitives (default/primary + secondary)', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await waitFor(() => {
+      expect(screen.getByText('Plan Trade')).toBeTruthy();
+    });
+
+    const plan = screen.getByRole('button', { name: /Plan Trade/i });
+    expect(plan.getAttribute('data-slot')).toBe('button');
+    expect(plan.getAttribute('data-variant')).toBe('default');
+
+    const exportBtn = screen.getByRole('button', { name: /Export CSV/i });
+    expect(exportBtn.getAttribute('data-slot')).toBe('button');
+    expect(exportBtn.getAttribute('data-variant')).toBe('secondary');
+
+    const refresh = screen.getByRole('button', { name: /Refresh Prices/i });
+    expect(refresh.getAttribute('data-slot')).toBe('button');
+    expect(refresh.getAttribute('data-variant')).toBe('secondary');
   });
 
   it('navigates to /trades/new when Plan Trade is clicked', async () => {
@@ -1150,6 +1181,102 @@ describe('Date presets (trailing-day arithmetic + local timezone bounds)', () =>
       // browser's local ±HH:MM offset suffix (never "Z").
       expect(url).toContain(encodedParam('from', `2025-07-01T00:00:00.000${offset}`));
       expect(url).toContain(encodedParam('to', `2025-07-31T23:59:59.999${offset}`));
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// M004/T4 — secondary filter + pagination + no-account CTA primitives
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('Filter and pagination primitives (M004/T4)', () => {
+  it('renders date presets as canonical Button primitives with selected/unselected variants', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(screen.getByText('MTD')).toBeTruthy());
+
+    const mtd = screen.getByRole('button', { name: 'MTD' });
+    expect(mtd.getAttribute('data-slot')).toBe('button');
+    // No preset selected initially → secondary.
+    expect(mtd.getAttribute('data-variant')).toBe('secondary');
+
+    mtd.click();
+    vi.advanceTimersByTime(500);
+
+    // The selected preset becomes the primary variant; others stay secondary.
+    await vi.waitFor(() => {
+      expect(mtd.getAttribute('data-variant')).toBe('default');
+    });
+    expect(screen.getByRole('button', { name: '1Y' }).getAttribute('data-variant')).toBe('secondary');
+  });
+
+  it('renders pagination as canonical Button primitives preserving disabled/enabled semantics', async () => {
+    localStorage.clear();
+    const rows = Array.from({ length: 60 }, (_, i) =>
+      makeMinimalTradeRow({ id: `t${i}`, symbol: `S${i}` }),
+    );
+    setupFetchMocks(async (url) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr === '/api/accounts') {
+        return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      if (urlStr.startsWith('/api/trades')) {
+        const u = new URL(urlStr, 'http://localhost');
+        const page = Number(u.searchParams.get('page') ?? '1');
+        const start = (page - 1) * 50;
+        return new Response(JSON.stringify({
+          data: rows.slice(start, start + 50),
+          total: rows.length,
+          totals: { grossRealizedPnl: 0, netRealizedPnl: 0, totalFees: 0, grossUnrealizedPnl: 0, netUnrealizedPnl: 0, totalOpenRisk: 0 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('Not found', { status: 404 });
+    });
+
+    render(React.createElement(TradesPage));
+    vi.advanceTimersByTime(500);
+
+    const openTab = screen.getByTestId('tab-content-open');
+    await vi.waitFor(() => {
+      expect(within(openTab).getByRole('button', { name: 'Previous page' })).toBeTruthy();
+    });
+
+    const prev = within(openTab).getByRole('button', { name: 'Previous page' });
+    const next = within(openTab).getByRole('button', { name: 'Next page' });
+    expect(prev.getAttribute('data-slot')).toBe('button');
+    expect(next.getAttribute('data-slot')).toBe('button');
+    // Page 1: Previous disabled, Next enabled.
+    expect(prev.hasAttribute('disabled')).toBe(true);
+    expect(next.hasAttribute('disabled')).toBe(false);
+
+    fireEvent.click(next);
+    vi.advanceTimersByTime(500);
+
+    // Page 2 of 2: Previous enabled, Next disabled. The pagination controls
+    // unmount during the loading skeleton, so re-query after the refetch.
+    await vi.waitFor(() => {
+      const prevAfter = within(openTab).getByRole('button', { name: 'Previous page' });
+      const nextAfter = within(openTab).getByRole('button', { name: 'Next page' });
+      expect(prevAfter.hasAttribute('disabled')).toBe(false);
+      expect(nextAfter.hasAttribute('disabled')).toBe(true);
+    });
+  });
+});
+
+describe('No-account CTA (M004/T4)', () => {
+  it('renders Manage accounts as a canonical Button wrapping the /settings/accounts link', async () => {
+    mockAccountState.accountId = null;
+    mockAccountState.loading = false;
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      const link = screen.getByRole('link', { name: 'Manage accounts' });
+      expect(link.getAttribute('href')).toBe('/settings/accounts');
+      // Button asChild merges the button primitive onto the link element.
+      expect(link.getAttribute('data-slot')).toBe('button');
+      expect(link.getAttribute('data-variant')).toBe('default');
     });
   });
 });

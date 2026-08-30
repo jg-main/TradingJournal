@@ -8,6 +8,7 @@ import type { ColumnDef, VisibilityState } from '@tanstack/react-table';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ActionsCell } from '@/components/trades/actions-cell';
 import { TradesScratchContext } from '@/components/trades/scratch-context';
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -206,24 +207,24 @@ function PaginationControls({
         <span className="text-xs">({total.toLocaleString()} total)</span>
       </span>
       <div className="flex items-center gap-2">
-        <button
+        <Button
           type="button"
+          variant="secondary"
           disabled={currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
-          className="rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 bg-muted text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
           aria-label="Previous page"
         >
           Previous
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}
-          className="rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 bg-muted text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground disabled:cursor-not-allowed"
           aria-label="Next page"
         >
           Next
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -441,7 +442,7 @@ const openColumns: ColumnDef<TradeRow>[] = [
       const phase = getValue<string>();
       if (phase === 'managed') {
         return (
-          <Badge variant="secondary" className="bg-info/10 text-info">
+          <Badge variant="info">
             Managed
           </Badge>
         );
@@ -1757,13 +1758,13 @@ function TradesPageInner() {
             title={`${msg.title} match the current filters`}
             description={`Try adjusting the date range or direction, or clear the page filters.`}
             action={
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={clearPageFilters}
-                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 Clear filters
-              </button>
+              </Button>
             }
           />
         );
@@ -1827,13 +1828,13 @@ function TradesPageInner() {
           title="Accounts unavailable"
           description={accountsError}
           action={
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => void refresh()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               Retry
-            </button>
+            </Button>
           }
         />
       </div>
@@ -1850,12 +1851,9 @@ function TradesPageInner() {
           title="No account yet"
           description="Create an account to start planning trades. Account scope is set from the sidebar account selector."
           action={
-            <Link
-              href="/settings/accounts"
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
-            >
-              Manage accounts
-            </Link>
+            <Button asChild>
+              <Link href="/settings/accounts">Manage accounts</Link>
+            </Button>
           }
         />
       </div>
@@ -1871,31 +1869,23 @@ function TradesPageInner() {
 
       {/* ── Page header buttons ─────────────────────────────────── */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handlePlanTrade}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          <PlusCircle className="size-4" />
+        <Button type="button" onClick={handlePlanTrade}>
+          <PlusCircle />
           Plan Trade
-        </button>
-        <button
-          type="button"
-          onClick={handleExportCsv}
-          className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground transition-colors"
-        >
-          <Download className="size-4" />
+        </Button>
+        <Button type="button" variant="secondary" onClick={handleExportCsv}>
+          <Download />
           Export CSV
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
           onClick={handleRefreshPrices}
           disabled={refreshing}
-          className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={refreshing ? 'animate-spin' : ''} />
           {refreshing ? 'Refreshing...' : 'Refresh Prices'}
-        </button>
+        </Button>
       </div>
 
       {/* ── Filter controls ─────────────────────────────────────── */}
@@ -1937,28 +1927,27 @@ function TradesPageInner() {
             {/* Date-range presets */}
             <div className="mt-3 flex flex-wrap items-center gap-1">
               {datePresets.map((p) => (
-                <button
+                <Button
                   key={p.label}
                   type="button"
+                  size="sm"
+                  variant={activePreset === p.label ? 'default' : 'secondary'}
                   onClick={() => applyDatePreset(p)}
-                  className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${
-                    activePreset === p.label
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted-foreground/15 hover:text-foreground'
-                  }`}
                 >
                   {p.label}
-                </button>
+                </Button>
               ))}
               {(activePreset || fromDate) && (
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="ghost"
                   onClick={clearDates}
-                  className="ml-0.5 h-7 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="px-1.5"
                   title="Clear date filter"
                 >
                   ✕
-                </button>
+                </Button>
               )}
             </div>
           </div>
