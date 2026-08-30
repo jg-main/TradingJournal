@@ -1280,3 +1280,67 @@ describe('No-account CTA (M004/T4)', () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// M004/T6 — operational page grammar (compact header / filter bar / tabs)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('Operational page grammar (M004/T6)', () => {
+  it('renders a compact header containing the title and all page actions', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Plan Trade')).toBeTruthy();
+    });
+
+    const header = screen.getByTestId('trades-page-header');
+    expect(within(header).getByText('Trades')).toBeTruthy();
+    expect(within(header).getByText('Plan Trade')).toBeTruthy();
+    expect(within(header).getByText('Export CSV')).toBeTruthy();
+    expect(within(header).getByText('Refresh Prices')).toBeTruthy();
+    // Compact header — no hero whitespace, no standalone large H1 region.
+    expect(header.className).not.toContain('py-10');
+  });
+
+  it('renders the page filter bar as a flat structural region after the header', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Plan Trade')).toBeTruthy();
+    });
+
+    const header = screen.getByTestId('trades-page-header');
+    const filterBar = screen.getByTestId('trades-filter-bar');
+    // Filter bar owns all page filters (date scope, presets, direction).
+    expect(within(filterBar).getByLabelText('From')).toBeTruthy();
+    expect(within(filterBar).getByLabelText('To')).toBeTruthy();
+    expect(within(filterBar).getByText('MTD')).toBeTruthy();
+    expect(within(filterBar).getByText('Direction')).toBeTruthy();
+    // Actions live in the header, not the filter bar.
+    expect(within(filterBar).queryByText('Plan Trade')).toBeNull();
+    // Flat structural bar — no content-card container.
+    expect(filterBar.className).not.toContain('rounded-lg');
+    // Filter bar follows the header in DOM order.
+    const pos = header.compareDocumentPosition(filterBar);
+    expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders the tabs region after the filter bar', async () => {
+    setupFetchMocks();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Plan Trade')).toBeTruthy();
+    });
+
+    const filterBar = screen.getByTestId('trades-filter-bar');
+    const tabsRegion = screen.getByTestId('trades-tabs-region');
+    expect(within(tabsRegion).getByTestId('tab-trigger-open')).toBeTruthy();
+    expect(within(tabsRegion).getByTestId('tab-trigger-planned')).toBeTruthy();
+    expect(within(tabsRegion).getByTestId('tab-trigger-closed')).toBeTruthy();
+    const pos = filterBar.compareDocumentPosition(tabsRegion);
+    expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

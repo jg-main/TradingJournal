@@ -1822,7 +1822,7 @@ function TradesPageInner() {
   // refresh as retry.
   if (accountsError) {
     return (
-      <div className="px-4 py-3 sm:px-8 sm:py-10">
+      <div className="px-4 py-4">
         <EmptyState
           icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
           title="Accounts unavailable"
@@ -1845,7 +1845,7 @@ function TradesPageInner() {
   // setup path — never issue an invalid accountId query.
   if (!accountsLoading && !accountId) {
     return (
-      <div className="px-4 py-3 sm:px-8 sm:py-10">
+      <div className="px-4 py-4">
         <EmptyState
           icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
           title="No account yet"
@@ -1862,145 +1862,147 @@ function TradesPageInner() {
 
   return (
     <TradesScratchContext.Provider value={{ requestScratch }}>
-    <div className="px-4 py-3 sm:px-8 sm:py-10">
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight text-foreground">
-        Trades
-      </h1>
+    <div className="flex h-full flex-col">
 
-      {/* ── Page header buttons ─────────────────────────────────── */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Button type="button" onClick={handlePlanTrade}>
-          <PlusCircle />
-          Plan Trade
-        </Button>
-        <Button type="button" variant="secondary" onClick={handleExportCsv}>
-          <Download />
-          Export CSV
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={handleRefreshPrices}
-          disabled={refreshing}
-        >
-          <RefreshCw className={refreshing ? 'animate-spin' : ''} />
-          {refreshing ? 'Refreshing...' : 'Refresh Prices'}
-        </Button>
-      </div>
-
-      {/* ── Filter controls ─────────────────────────────────────── */}
-      <div className="mb-6 rounded-lg border p-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          {/* Date section */}
-          <div className="min-w-0 flex-1">
-            <div className="mb-2 text-xs font-medium text-muted-foreground">Dates</div>
-            <div className="flex flex-wrap items-end gap-3">
-              {/* From date */}
-              <div className="flex flex-col gap-1">
-                <label htmlFor="filter-from" className="text-xs text-muted-foreground">
-                  From
-                </label>
-                <Input
-                  id="filter-from"
-                  type="date"
-                  className="h-8 w-44"
-                  value={fromDate}
-                  onChange={(e) => handleFromDateChange(e.target.value)}
-                />
-              </div>
-
-              {/* To date */}
-              <div className="flex flex-col gap-1">
-                <label htmlFor="filter-to" className="text-xs text-muted-foreground">
-                  To
-                </label>
-                <Input
-                  id="filter-to"
-                  type="date"
-                  className="h-8 w-44"
-                  value={toDate}
-                  onChange={(e) => handleToDateChange(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Date-range presets */}
-            <div className="mt-3 flex flex-wrap items-center gap-1">
-              {datePresets.map((p) => (
-                <Button
-                  key={p.label}
-                  type="button"
-                  size="sm"
-                  variant={activePreset === p.label ? 'default' : 'secondary'}
-                  onClick={() => applyDatePreset(p)}
-                >
-                  {p.label}
-                </Button>
-              ))}
-              {(activePreset || fromDate) && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={clearDates}
-                  className="px-1.5"
-                  title="Clear date filter"
-                >
-                  ✕
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* Direction filter */}
-          {/* Account scope is owned by the sidebar AccountProvider (M007/D037)
-              — there is intentionally no Account selector here. */}
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="filter-direction" className="text-xs font-medium text-muted-foreground">
-              Direction
-            </label>
-            <Select
-              value={direction}
-              onValueChange={(v) => setDirection(v)}
-            >
-              <SelectTrigger id="filter-direction" className="h-8 w-36">
-                <SelectValue placeholder="All" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="long">Long</SelectItem>
-                <SelectItem value="short">Short</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {/* ── Compact operational header: title + page actions ───────── */}
+      <div
+        data-testid="trades-page-header"
+        className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2"
+      >
+        <h1 className="text-sm font-semibold tracking-tight text-foreground">
+          Trades
+        </h1>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button type="button" onClick={handlePlanTrade}>
+            <PlusCircle />
+            Plan Trade
+          </Button>
+          <Button type="button" variant="secondary" onClick={handleExportCsv}>
+            <Download />
+            Export CSV
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleRefreshPrices}
+            disabled={refreshing}
+          >
+            <RefreshCw className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Refreshing...' : 'Refresh Prices'}
+          </Button>
         </div>
       </div>
 
-      {/* ── Tabs ────────────────────────────────────────────────── */}
-      <Tabs
-        value={activeTab}
-        onValueChange={handleTabChange}
+      {/* ── Page-level filter bar ──────────────────────────────────── */}
+      <div
+        data-testid="trades-filter-bar"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-4 py-2"
       >
-        <TabsList>
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.id} value={tab.id}>
-              {tab.label}
-              {tabTotal[tab.id] > 0 && (
-                <span className="ml-1.5 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-xs tabular-nums">
-                  {tabTotal[tab.id]}
-                </span>
-              )}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {/* Date scope */}
+        <div className="flex items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-from" className="text-xs text-muted-foreground">
+              From
+            </label>
+            <Input
+              id="filter-from"
+              type="date"
+              className="h-8 w-44"
+              value={fromDate}
+              onChange={(e) => handleFromDateChange(e.target.value)}
+            />
+          </div>
 
-        {TABS.map((tab) => (
-          <TabsContent key={tab.id} value={tab.id}>
-            {renderTabContent(tab)}
-          </TabsContent>
-        ))}
-      </Tabs>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="filter-to" className="text-xs text-muted-foreground">
+              To
+            </label>
+            <Input
+              id="filter-to"
+              type="date"
+              className="h-8 w-44"
+              value={toDate}
+              onChange={(e) => handleToDateChange(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Date-range presets */}
+        <div className="flex flex-wrap items-center gap-1">
+          {datePresets.map((p) => (
+            <Button
+              key={p.label}
+              type="button"
+              size="sm"
+              variant={activePreset === p.label ? 'default' : 'secondary'}
+              onClick={() => applyDatePreset(p)}
+            >
+              {p.label}
+            </Button>
+          ))}
+          {(activePreset || fromDate) && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={clearDates}
+              className="px-1.5"
+              title="Clear date filter"
+            >
+              ✕
+            </Button>
+          )}
+        </div>
+
+        {/* Direction filter */}
+        {/* Account scope is owned by the sidebar AccountProvider (M007/D037)
+            — there is intentionally no Account selector here. */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="filter-direction" className="text-xs font-medium text-muted-foreground">
+            Direction
+          </label>
+          <Select
+            value={direction}
+            onValueChange={(v) => setDirection(v)}
+          >
+            <SelectTrigger id="filter-direction" className="h-8 w-36">
+              <SelectValue placeholder="All" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="long">Long</SelectItem>
+              <SelectItem value="short">Short</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* ── Tabs + content ─────────────────────────────────────────── */}
+      <div data-testid="trades-tabs-region" className="flex-1 overflow-auto px-4 py-2">
+        <Tabs
+          value={activeTab}
+          onValueChange={handleTabChange}
+        >
+          <TabsList>
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.id} value={tab.id}>
+                {tab.label}
+                {tabTotal[tab.id] > 0 && (
+                  <span className="ml-1.5 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-xs tabular-nums">
+                    {tabTotal[tab.id]}
+                  </span>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {TABS.map((tab) => (
+            <TabsContent key={tab.id} value={tab.id}>
+              {renderTabContent(tab)}
+            </TabsContent>
+          ))}
+        </Tabs>
+      </div>
     </div>
 
     {/* Scratch confirmation (M015/S02/T01) — destructive, closes before DELETE */}
