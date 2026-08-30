@@ -6,7 +6,7 @@
  * for the dashboard home page. Decoupled from Drizzle — uses
  * its own input types so tests run independently without a database.
  *
- * Pattern: src/lib/weekly-review.ts, src/lib/review-dashboard.ts
+ * Pattern: src/lib/review-dashboard.ts
  */
 
 import { computeTradeMetrics, type ExecutionData } from './trade-metrics';

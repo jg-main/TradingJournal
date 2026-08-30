@@ -572,14 +572,11 @@ never cramp.
 ## Process Review panel
 
 The Review Metrics panel (testid `ws-panel-process-review`, grid area
-`review`) stacks the weekly review summary, process score distribution,
-directional performance, and attention items in a vertically scrolling body.
-Sub-sections render bare (no headers) and each shows the shared `.ws-empty`
-state when its fixture is absent. In live mode the panel hosts the weekly
-review write surface (`ws-update-review` opens the review write sheet) and
-a panel-local summary fetch (`ws-weekly-review-summary` and its loading /
-error / empty / week / metric siblings); fixture mode is
-read-only with no summary section.
+`review`) stacks process score distribution, directional performance, and
+attention items in a vertically scrolling body. Sub-sections render bare (no
+headers) and each shows the shared `.ws-empty` state when its fixture is
+absent. The panel is read-only — it renders the shared workstation snapshot
+and never fetches on its own.
 
 - **Attention items** (testid `ws-attention-items`): the top-3
   severity-sorted insights as a compact list. `.ws-attention-list` resets the

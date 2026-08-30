@@ -2,7 +2,7 @@
 /**
  * response-contracts.test.ts
  *
- * Response contract tests for 7 critical APIs.
+ * Response contract tests for 5 critical APIs.
  *
  * Verifies that the JSON response shapes returned by route handlers have
  * the correct field presence and representative values. Since these are
@@ -19,9 +19,6 @@
  *   3. Account Close      — POST /api/accounts/[id]/close → account closure summary
  *   4. Trade Detail       — GET /api/trades/[id] → { ...trade, metrics: TradeMetricsResult }
  *   5. Trade List         — GET /api/trades → { data: [...], total, page, limit }
- *   6. Weekly Review      — GET /api/reviews/weekly → ReviewItem[]
- *                         POST /api/reviews/weekly → upserted ReviewItem
- *   7. Review Dashboard   — GET /api/reviews/dashboard → { setupPerformance, ... }
  *
  * Each section documents the expected response contract as a TypeScript
  * interface inline, then verifies each field by constructing a representative
@@ -52,8 +49,7 @@ import {
 import { computeWinRate, averageRMultiples, averageProcessScore } from '../metrics';
 import { computeOpenPosition, calculateUnrealizedPnL, computeMarkToMarketSummary } from '../mark-to-market';
 import { calculatePositionSize } from '../position-sizing';
-import { computeSetupPerformance, type SetupPerfTradeInput, type SetupPerfResult, type DashboardMetrics } from '../review-dashboard';
-import { computeWeeklyMetrics, type WeekReviewTradeInput } from '../weekly-review';
+import { computeSetupPerformance, type SetupPerfTradeInput } from '../review-dashboard';
 import {
   computeKpiMetrics,
   computeMonthlyPerformance,
@@ -841,205 +837,6 @@ section('API 5: Trade List');
 })();
 
 /* ════════════════════════════════════════════════════════════════════════ */
-/*  API 6: Weekly Review — GET /api/reviews/weekly, POST /api/reviews/     */
-/*  weekly                                                                 */
-/*  Response contract (GET): ReviewItem[]                                  */
-/*    Each item: { id, weekStart, weekEnd, accountId, closedTrades,        */
-/*                netPnl, avgR, winRate, avgProcessScore, notes,           */
-/*                focusNextWeek, createdAt, updatedAt }                    */
-/*  Response contract (POST): single ReviewItem (upserted)                 */
-/* ════════════════════════════════════════════════════════════════════════ */
-
-section('API 6: Weekly Review');
-
-(function testWeeklyReviewContract() {
-  // ── Build a representative WeekReviewTradeInput ─────────────────
-  const tradeInputs: WeekReviewTradeInput[] = [
-    {
-      id: 't1',
-      direction: 'long',
-      executions: [makeExec('buy', 100, 50, 5), makeExec('sell', 100, 60, 5)],
-      grade: { totalScore: 85 },
-      riskSnapshot: { initialRiskAmount: 200 },
-    },
-    {
-      id: 't2',
-      direction: 'short',
-      executions: [makeExec('sell_short', 50, 100, 3), makeExec('buy_to_cover', 50, 110, 3)],
-      grade: { totalScore: 45 },
-      riskSnapshot: { initialRiskAmount: 500 },
-    },
-  ];
-
-  const metrics = computeWeeklyMetrics(tradeInputs);
-
-  // Construct a representative GET response item
-  const reviewItem: Record<string, unknown> = {
-    id: 'review-001',
-    weekStart: '2025-06-09',
-    weekEnd: '2025-06-15',
-    accountId: 'acc-001',
-    closedTrades: metrics.closedTrades,
-    netPnl: metrics.netPnl,
-    avgR: metrics.avgR,
-    winRate: metrics.winRate,
-    avgProcessScore: metrics.avgProcessScore,
-    notes: null,
-    focusNextWeek: null,
-    createdAt: '2025-06-15T23:59:00.000Z',
-    updatedAt: '2025-06-15T23:59:00.000Z',
-  };
-
-  // Verify all fields
-  assertField(reviewItem, 'id', 'string');
-  assertField(reviewItem, 'weekStart', 'string');
-  assertField(reviewItem, 'weekEnd', 'string');
-  assertField(reviewItem, 'accountId', 'string');
-  assert('  closedTrades is number', typeof reviewItem.closedTrades === 'number');
-  assert('  netPnl is number', typeof reviewItem.netPnl === 'number');
-  assert('  avgR is number or null', reviewItem.avgR === null || typeof reviewItem.avgR === 'number');
-  assert('  winRate is number', typeof reviewItem.winRate === 'number');
-  assert('  avgProcessScore is number or null', reviewItem.avgProcessScore === null || typeof reviewItem.avgProcessScore === 'number');
-  assert('  notes is string or null', reviewItem.notes === null || typeof reviewItem.notes === 'string');
-  assert('  focusNextWeek is string or null', reviewItem.focusNextWeek === null || typeof reviewItem.focusNextWeek === 'string');
-  assertField(reviewItem, 'createdAt', 'string');
-  assertField(reviewItem, 'updatedAt', 'string');
-
-  // Representative values
-  assert(reviewItem.closedTrades === 2, '  closedTrades = 2');
-  assertClose('  netPnl = 484', reviewItem.netPnl as number, 990 - 506);
-  assertClose('  winRate = 0.5', reviewItem.winRate as number, 0.5);
-
-  // Verify GET response is an array
-  const getResponse = [reviewItem];
-  assert(Array.isArray(getResponse), '  GET response is array');
-  assert(getResponse.length === 1, '  GET response has 1 item');
-
-  // Verify list response (empty)
-  const emptyResponse: unknown[] = [];
-  assert(Array.isArray(emptyResponse), '  empty GET response is array');
-  assert(emptyResponse.length === 0, '  empty GET response length 0');
-})();
-
-/* ════════════════════════════════════════════════════════════════════════ */
-/*  API 7: Review Dashboard — GET /api/reviews/dashboard?accountId=xxx    */
-/*  Response contract: { setupPerformance: SetupPerfResult[], totalTrades, */
-/*    ungroupedTrades, mistakeFrequency, ungradedTrades }                  */
-/* ════════════════════════════════════════════════════════════════════════ */
-
-section('API 7: Review Dashboard');
-
-(function testReviewDashboardContract() {
-  // Build representative SetupPerfTradeInputs
-  const perfInputs: SetupPerfTradeInput[] = [
-    {
-      id: 't1',
-      direction: 'long',
-      executions: [makeExec('buy', 100, 50, 5), makeExec('sell', 100, 60, 5)],
-      grade: { totalScore: 85 },
-      riskSnapshot: { initialRiskAmount: 200 },
-      setupId: 'setup-breakout',
-    },
-    {
-      id: 't2',
-      direction: 'long',
-      executions: [makeExec('buy', 50, 30, 3), makeExec('sell', 50, 35, 3)],
-      grade: { totalScore: 70 },
-      riskSnapshot: { initialRiskAmount: 100 },
-      setupId: 'setup-breakout',
-    },
-    {
-      id: 't3',
-      direction: 'short',
-      executions: [makeExec('sell_short', 50, 100, 3), makeExec('buy_to_cover', 50, 110, 3)],
-      grade: { totalScore: 45 },
-      riskSnapshot: { initialRiskAmount: 500 },
-      setupId: 'setup-fade',
-    },
-  ];
-
-  const setupNameMap: Record<string, string> = {
-    'setup-breakout': 'Breakout',
-    'setup-fade': 'Fade',
-  };
-
-  const metrics: DashboardMetrics = computeSetupPerformance(perfInputs, setupNameMap);
-
-  // Construct the full response (as returned by route.ts)
-  const response = {
-    setupPerformance: metrics.setupPerformance,
-    totalTrades: metrics.totalTrades,
-    ungroupedTrades: metrics.ungroupedTrades,
-    mistakeFrequency: [] as { mistakeType: string; minor: number; moderate: number; major: number; critical: number; total: number }[],
-    ungradedTrades: [] as { id: string; tradeCode: string; symbol: string; direction: string; closedAt: string | null }[],
-  };
-
-  // Verify top-level structure
-  assert('  setupPerformance is array', Array.isArray(response.setupPerformance));
-  assert('  totalTrades is number', typeof response.totalTrades === 'number');
-  assert('  ungroupedTrades is number', typeof response.ungroupedTrades === 'number');
-  assert('  mistakeFrequency is array', Array.isArray(response.mistakeFrequency));
-  assert('  ungradedTrades is array', Array.isArray(response.ungradedTrades));
-
-  // Verify SetupPerfResult contract
-  const firstSetup = response.setupPerformance[0];
-  assertField(firstSetup as unknown as Record<string, unknown>, 'setupName', 'string');
-  assert('  setupId is string or null', firstSetup.setupId === null || typeof firstSetup.setupId === 'string');
-  assertField(firstSetup as unknown as Record<string, unknown>, 'count', 'number');
-  assert('  winRate is number or null', firstSetup.winRate === null || typeof firstSetup.winRate === 'number');
-  assert('  avgR is number or null', firstSetup.avgR === null || typeof firstSetup.avgR === 'number');
-  assert('  avgProcessScore is number or null', firstSetup.avgProcessScore === null || typeof firstSetup.avgProcessScore === 'number');
-  assert(
-    '  sampleSizeWarning is valid',
-    ['very_small', 'small', 'moderate', 'adequate'].includes(firstSetup.sampleSizeWarning),
-  );
-
-  // Representative values
-  // Breakout setup: 2 trades, both winners, R= (247*2)/(200+100)?? Let me compute
-  // t1: P&L = (60-50)*100 - 10 = 990, R = 990/200 = 4.95
-  // t2: P&L = (35-30)*50 - 6 = 244, R = 244/100 = 2.44
-  // Win rate: excludeScratches, both positive → 1.0
-  // Avg R: (4.95 + 2.44) / 2 ≈ 3.695
-  // Avg grade: (85+70)/2 = 77.5
-  assertClose('  Breakout count = 2', firstSetup.count, 2);
-  assertClose('  Breakout avgR ≈ 3.695', firstSetup.avgR!, (990/200 + 244/100) / 2, 0.01);
-  assertClose('  Breakout avg grade = 77.5', firstSetup.avgProcessScore!, 77.5);
-
-  // Total trades
-  assert(response.totalTrades === 3, '  totalTrades = 3');
-
-  // Ungraded trades shape (contract test — representative value)
-  const ungradedTrade = {
-    id: 'untraded-001',
-    tradeCode: 'T-9999',
-    symbol: 'TSLA',
-    direction: 'long',
-    closedAt: '2025-06-20T10:00:00.000Z',
-  };
-  assertFieldConcrete(ungradedTrade, 'id', 'string');
-  assertFieldConcrete(ungradedTrade, 'tradeCode', 'string');
-  assertFieldConcrete(ungradedTrade, 'symbol', 'string');
-  assertFieldConcrete(ungradedTrade, 'direction', 'string');
-  assert('  closedAt is string or null', ungradedTrade.closedAt === null || typeof ungradedTrade.closedAt === 'string');
-
-  // Mistake frequency shape (contract test — representative value)
-  const mistake = {
-    mistakeType: 'Entry timing',
-    minor: 3,
-    moderate: 1,
-    major: 0,
-    critical: 0,
-    total: 4,
-  };
-  assertFieldConcrete(mistake, 'mistakeType', 'string');
-  assertFieldConcrete(mistake, 'minor', 'number');
-  assertFieldConcrete(mistake, 'moderate', 'number');
-  assertFieldConcrete(mistake, 'major', 'number');
-  assertFieldConcrete(mistake, 'critical', 'number');
-  assertFieldConcrete(mistake, 'total', 'number');
-})();
-
-/* ════════════════════════════════════════════════════════════════════════ */
 /*  ERROR RESPONSE SHAPES                                                   */
 /*  Standardized error shape across all routes:                             */
 /*    { error: string, details?: unknown }                                  */
@@ -1080,7 +877,7 @@ section('Error Shapes');
 
 console.log('');
 console.log('══════════════════════════════════════════════════════════════');
-console.log('  Response Contract Tests — 7 Critical APIs + Error Shapes');
+console.log('  Response Contract Tests — 5 Critical APIs + Error Shapes');
 console.log('══════════════════════════════════════════════════════════════');
 console.log(`  Tests passed: ${passed}`);
 console.log(`  Tests failed: ${failed}`);

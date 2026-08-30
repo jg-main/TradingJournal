@@ -4,9 +4,9 @@
  * GET /api/dashboard?accountId=xxx
  *
  * Returns consolidated dashboard KPI metrics computed from real trade data.
- * Follows the batch-fetch pattern from /api/reviews/dashboard: multiple IN
- * queries to join related tables in application code, then passes them to
- * the pure-function computeKpiMetrics() library for aggregation.
+ * Follows the shared batch-fetch pattern: multiple IN queries to join related
+ * tables in application code, then passes them to the pure-function
+ * computeKpiMetrics() library for aggregation.
  *
  * Error shape follows the standardized pattern from other route handlers.
  */

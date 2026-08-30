@@ -7,7 +7,7 @@
  *
  * Run: npx tsx src/lib/dashboard.test.ts
  *
- * Pattern: src/lib/weekly-review.test.ts, src/lib/review-dashboard.test.ts
+ * Pattern: src/lib/review-dashboard.test.ts
  */
 
 import {

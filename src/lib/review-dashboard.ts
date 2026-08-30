@@ -5,8 +5,6 @@
  * Accepts closed trades with pre-fetched executions, grades, and risk
  * snapshots. Groups by setupId and computes per-setup metrics.
  * Decoupled from Drizzle — tests independently without a database.
- *
- * Pattern: src/lib/weekly-review.ts
  */
 
 import { computeTradeMetrics, type ExecutionData } from './trade-metrics';

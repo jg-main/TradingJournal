@@ -3,8 +3,7 @@
  *
  * Pure (no side effects) metrics computation library.
  * Provides named win-rate policies that capture the distinct semantics
- * currently scattered across dashboard.ts, weekly-review.ts, and
- * review-dashboard.ts.
+ * used across dashboard.ts and review-dashboard.ts.
  *
  * All functions are decoupled from Drizzle and trade types — they operate
  * on plain numbers and simple interfaces, making them independently
@@ -28,7 +27,6 @@
  * - `allDecisions`:       >0 P&L = win, <=0 P&L = loss.  Every input counts as a
  *   decision.  Semantically identical to includeZeroAsLoss for the denominator
  *   count; the name emphasises that no trades are filtered at the input layer.
- *   Used by Weekly Review.
  */
 export type WinRatePolicy = 'includeZeroAsLoss' | 'excludeScratches' | 'allDecisions';
 

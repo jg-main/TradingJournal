@@ -106,7 +106,7 @@ export const helpSections: HelpSection[] = [
       },
       {
         type: 'paragraph',
-        text: 'Tag mistakes (minor, moderate, major, critical) during grading to track recurring behavior patterns. Use the Reviews page to generate weekly reviews that aggregate your metrics and provide actionable insights.',
+        text: 'Tag mistakes (minor, moderate, major, critical) during grading to track recurring behavior patterns. Review the closed trade in Trade Detail to see the grade, mistakes, checklist results, AI assessment, and exit notes together.',
       },
     ],
   },
@@ -135,31 +135,6 @@ export const helpSections: HelpSection[] = [
     ],
   },
   {
-    id: 'weekly-reviews',
-    title: 'Weekly Reviews',
-    description: 'Aggregate your trading performance week by week.',
-    blocks: [
-      {
-        type: 'paragraph',
-        text: 'Weekly reviews automatically aggregate metrics from all trades closed during a given Monday-to-Sunday period. They help you spot trends in your trading behavior.',
-      },
-      {
-        type: 'ordered-list',
-        items: [
-          'Navigate to the Reviews page and click "Generate Review".',
-          'Select the Monday of the week you want to review.',
-          'The review populates with trade count, net P&L, win rate, average R, and process score.',
-          'Add notes about what went well and what to focus on next week.',
-          'Review generates action items — toggle them through Open, In Progress, Done, or Cancelled.',
-        ],
-      },
-      {
-        type: 'note',
-        text: 'Weekly reviews require at least one closed trade in the selected week. The dashboard tab on the Reviews page shows setup performance, mistake frequency, and ungraded trades at a glance.',
-      },
-    ],
-  },
-  {
     id: 'ai-assessment',
     title: 'AI Assessment',
     description: 'Get AI-powered feedback on your trade execution quality.',
@@ -174,7 +149,7 @@ export const helpSections: HelpSection[] = [
           'Go to Settings > AI to configure your AI provider (OpenAI or Anthropic). Enter your API key and choose the model.',
           'After closing a trade, open the trade detail view and click "Assess" to request an AI evaluation.',
           'The assessment scores your process against your defined setup criteria and provides written feedback.',
-          'AI assessments are stored alongside the trade for later reference during weekly reviews.',
+          'AI assessments are stored alongside the trade for later reference in the trade\'s review.',
         ],
       },
       {

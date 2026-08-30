@@ -44,7 +44,6 @@ export default defineConfig({
       'src/components/workstation/workstation-arrange-grid.test.tsx',
       'src/components/workstation/trades-workspace-panel.test.tsx',
       'src/components/workstation/watchlist-panel.test.tsx',
-      'src/components/workstation/review-write-sheet.test.tsx',
       'src/lib/workstation-live-adapter.test.ts',
       'src/lib/account-defaults.test.ts',
       'src/app/api/settings/__tests__/route.default-eligibility.test.ts',

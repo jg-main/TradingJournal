@@ -45,10 +45,11 @@ function assertNoConsoleErrors(errors: string[]): void {
 
 // ── Route Families ──────────────────────────────────────────────────
 
-// /watchlist and /reviews are intentionally absent: since S03 both workflows are
-// reachable exclusively from dashboard widgets (Watchlist panel CRUD and Review
-// Metrics write sheet). The pages remain functional routes and are covered by
-// watchlist.spec.ts / reviews.spec.ts, which navigate directly to the URLs.
+// /watchlist is intentionally absent: since S03 the workflow is reachable
+// exclusively from the dashboard Watchlist widget. /reviews is absent too —
+// M004 retired the weekly-review workflow, so the standalone Reviews route no
+// longer exists. The retained /watchlist route is covered by
+// watchlist.spec.ts, which navigates directly to the URL.
 const LEGACY_ROUTES = [
   { path: '/trades', heading: 'Trades', family: 'trades' },
   { path: '/alerts', heading: 'Alerts', family: 'alerts' },

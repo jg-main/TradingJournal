@@ -14,10 +14,8 @@ const GRADE_FIELDS = {
 const GRADE_TOTAL = 50;
 const GRADE_LABEL = 'B';
 
-test.describe('M004 review system flow', () => {
-  let accountId: string;
+test.describe('M004 per-trade review system flow', () => {
   let tradeId: string;
-  let reviewId: string;
 
   test('01 - create account and closed trade with executions', async ({ page }) => {
     const account = await createTradingAccount(page.request, 'M004 Review Account');
@@ -46,10 +44,8 @@ test.describe('M004 review system flow', () => {
     expect(execRes.ok()).toBeTruthy();
     const t2 = await (await page.request.get(`/api/trades/${tradeId}`)).json();
     expect(t2.status).toBe('closed');
-    // Get the accountId from the trade itself for the weekly review generation
-    accountId = t2.accountId;
 
-    console.log(`Created trade ${trade.tradeCode} (${tradeId}), status: closed, accountId=${accountId}`);
+    console.log(`Created trade ${trade.tradeCode} (${tradeId}), status: closed`);
   });
 
   test('02 - grade the trade with all 6 quality scores', async ({ page }) => {
@@ -124,81 +120,7 @@ test.describe('M004 review system flow', () => {
     console.log(`Created ${mGet.length} mistakes for trade`);
   });
 
-  test('04 - generate weekly review and verify on /reviews page', async ({ page }) => {
-    // Navigate to reviews page
-    await page.goto('/reviews');
-    await page.waitForLoadState('networkidle');
-
-    // Verify h1
-    await expect(page.locator('h1')).toContainText('Reviews');
-
-    // The Generate Review button should be present
-    await expect(page.getByRole('button', { name: 'Generate Review' }).first()).toBeVisible();
-
-    // ── Generate a weekly review via API directly (the dialog hardcodes
-    //    accountId='default', so use the API with the test's accountId) ──
-    const monday = new Date();
-    const day = monday.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    monday.setDate(monday.getDate() + diff);
-    monday.setHours(0, 0, 0, 0);
-    const weekStart = monday.toISOString().split('T')[0];
-
-    const genRes = await page.request.post('/api/reviews/weekly', {
-      data: { weekStart, accountId },
-    });
-    expect(genRes.ok()).toBeTruthy();
-    const review = await genRes.json();
-    reviewId = review.id;
-    expect(review.closedTrades).toBeGreaterThanOrEqual(1);
-    expect(review.netPnl).not.toBe(0);
-    console.log(`Generated review ${reviewId}: closed=${review.closedTrades} netPnl=${review.netPnl}`);
-
-    // Reload the page to see the review in the table
-    await page.reload();
-    await page.waitForLoadState('networkidle');
-
-    // The review row should be visible — week range and trade count
-    // Use the review's own weekStart/end for the display
-    await expect(page.getByText(/NVDA/i)).not.toBeVisible(); // NVDA is on trade detail, not review page
-    console.log('Review table rendered with metrics');
-  });
-
-  test('05 - create action item and verify it via API', async ({ page }) => {
-    // Create action item via API
-    const aiRes = await page.request.post('/api/reviews/action-items', {
-      data: {
-        sourceType: 'weekly_review',
-        sourceId: reviewId,
-        actionText: 'Review NVDA earnings date before next entry',
-        status: 'open',
-      },
-    });
-    expect(aiRes.ok()).toBeTruthy();
-    const actionItem = await aiRes.json();
-    expect(actionItem.id).toBeDefined();
-    expect(actionItem.status).toBe('open');
-    console.log(`Created action item ${actionItem.id}`);
-
-    // Verify action item appears via GET API
-    const getRes = await page.request.get(
-      `/api/reviews/action-items?sourceType=weekly_review&sourceId=${reviewId}`
-    );
-    expect(getRes.ok()).toBeTruthy();
-    const items = await getRes.json();
-    expect(Array.isArray(items)).toBeTruthy();
-    expect(items.length).toBeGreaterThanOrEqual(1);
-    expect(items[0].actionText).toBe('Review NVDA earnings date before next entry');
-    console.log('Action item verified via GET API');
-
-    // Navigate to reviews page and verify the review table renders
-    await page.goto('/reviews');
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('h1')).toContainText('Reviews');
-    console.log('Reviews page renders with action items in database');
-  });
-
-  test('06 - verify trade detail page shows grade and mistakes UI', async ({ page }) => {
+  test('04 - verify trade detail page shows grade and mistakes UI', async ({ page }) => {
     await page.goto(`/trades/${tradeId}`);
     await page.waitForLoadState('networkidle');
 
@@ -218,34 +140,7 @@ test.describe('M004 review system flow', () => {
     console.log('Trade detail page shows grade and mistakes UI');
   });
 
-  test('07 - verify dashboard sections on reviews page', async ({ page }) => {
-    await page.goto('/reviews');
-    await page.waitForLoadState('networkidle');
-
-    // Dashboard section headings
-    await expect(page.getByText('Setup Performance')).toBeVisible();
-    await expect(page.getByText('Grade Trends')).toBeVisible();
-    await expect(page.getByText('Mistake Frequency')).toBeVisible();
-    await expect(page.getByText('Quick Actions')).toBeVisible();
-
-    // Since the trade has null setupId, Setup Performance shows "No setup data available"
-    await expect(page.getByText('No setup data available')).toBeVisible();
-
-    // Grade Trends should show the grade label from the weekly review
-    // Use a more specific locator — the grade badge inside the Grade Trends table
-    const gradeTrendsSection = page.locator('h2').filter({ hasText: 'Grade Trends' }).locator('..');
-    await expect(gradeTrendsSection.getByText(GRADE_LABEL).first()).toBeVisible();
-
-    // Mistake Frequency should show the mistakes we created
-    await expect(page.getByText('Mistake Frequency')).toBeVisible();
-
-    // Quick Actions should show "All trades have been graded"
-    await expect(page.getByText('All trades have been graded')).toBeVisible();
-
-    console.log('All dashboard sections render correctly');
-  });
-
-  test('08 - verify existing pages still render after M004 changes', async ({ page }) => {
+  test('05 - verify existing pages still render after M004 changes', async ({ page }) => {
     // Verify /trades still renders (M002 page)
     await page.goto('/trades');
     await page.waitForLoadState('networkidle');
@@ -260,7 +155,7 @@ test.describe('M004 review system flow', () => {
     console.log('Existing pages still render correctly after M004 changes');
   });
 
-  test('09 - verify grade API validation rejects bad inputs', async ({ page }) => {
+  test('06 - verify grade API validation rejects bad inputs', async ({ page }) => {
     // Score out of range (0 < 1)
     let res = await page.request.put(`/api/trades/${tradeId}/grade`, {
       data: { ...GRADE_FIELDS, setupScore: 0 },
