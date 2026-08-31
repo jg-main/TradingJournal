@@ -6,6 +6,16 @@
 //   - the active fixture scenario (S06 swaps this for a live data source)
 //   - the active account id and the account list available to the toolbar
 //   - the memoized fixture payload for the active scenario
+//   - the stable DATE-INDEPENDENT setup reference map (M004 9D.2 §3)
+//
+// The global Period is NOT owned here.  When mounted on the root dashboard,
+// the page passes the canonical OperationalDateRangeProvider's already
+// resolved plain-YMD range + hydration readiness as CONTROLLED read-only
+// props; period-sensitive consumers read them back from this context.
+// Period changes refetch ONLY the date-aware V1 dashboard (and the Closed
+// Trades history panel), never the CURRENT V2/watchlist/accounts/prices/MTM
+// legs.  MTM reloads go through the 9D.1 CURRENT boundary so a poll can
+// never overwrite the selected-period V1 dashboard.
 //
 // Per AGENTS.md state rules: shared workstation state has exactly one owner.
 // Panels consume this context; they never fetch independently.
@@ -38,9 +48,13 @@ import {
 } from '@/lib/workstation-fixtures';
 
 import {
-  fetchAllLiveDashboardData,
+  adaptRisk,
   fetchAccountsLive,
+  fetchAllLiveDashboardData,
+  fetchCurrentLiveDashboardData,
+  fetchDashboardLive,
   fetchMtmRefreshIntervalLive,
+  fetchSetupLookupsLive,
   fetchWatchlistPricesLive,
   refreshMtmPricesLive,
   adaptV2Account,
@@ -48,6 +62,7 @@ import {
   adaptSymbolPrices,
   buildTradeIdeasFromWatchlist,
   type LiveDashboardData,
+  type ResolvedDateRange,
   type WorkstationAccount,
 } from '@/lib/workstation-live-adapter';
 import { DEFAULT_MTM_REFRESH_INTERVAL_SECONDS } from '@/lib/market-data-refresh-interval';
@@ -59,12 +74,21 @@ export type { WorkstationAccount } from '@/lib/workstation-live-adapter';
 /** MTM polling lifecycle states exposed for the toolbar indicator. */
 export type MtmPollingState = 'active' | 'paused' | 'error';
 
+/** Stable identity for the unbounded default period so effect/memo deps that
+ *  reference the object do not churn on every render when the caller omits
+ *  the controlled period props. */
+const DEFAULT_RESOLVED_PERIOD: ResolvedDateRange = { from: '', to: '' };
+
 /** Derive a WorkstationFixtures payload from live dashboard data.
  *  Populates marketIndices, symbolPrices, and tradeIdeas from the
- *  live price data when available; empty arrays/sets when not. */
+ *  live price data when available; empty arrays/sets when not.
+ *  `setupNames` is the stable DATE-INDEPENDENT reference map (lookup
+ *  values) — trade ideas never derive setup names from the period-scoped
+ *  Dashboard V1 setupRanking (M004 9D.2 §3/§17). */
 function liveDataToFixtures(
   data: LiveDashboardData,
   prices: Record<string, import('@/lib/market-quote').QuoteResult> | null,
+  setupNames: Record<string, string>,
 ): WorkstationFixtures {
   const account = adaptV2Account(data.dashboardV2.account);
 
@@ -73,14 +97,6 @@ function liveDataToFixtures(
   const symbolPrices = prices
     ? adaptSymbolPrices(prices, data.watchlist)
     : {};
-
-  // Build a setup name lookup from the dashboard's setup ranking.
-  const setupNames: Record<string, string> = {};
-  for (const sr of data.dashboard.setupRanking) {
-    if (sr.setupId) {
-      setupNames[sr.setupId] = sr.setupName;
-    }
-  }
 
   const tradeIdeas = buildTradeIdeasFromWatchlist(
     data.watchlist,
@@ -128,6 +144,16 @@ export interface WorkstationContextValue {
   isLoading: boolean;
   /** Last fetch error message, or null when the last fetch succeeded. */
   error: string | null;
+  /** Already-resolved plain YMD global period (canonical owner is
+   *  OperationalDateRangeProvider). Read-only metadata for period-sensitive
+   *  consumers (M004 9D.2 §4). */
+  resolvedPeriod: ResolvedDateRange;
+  /** True once the canonical global period has hydrated from persistence.
+   *  The first period-sensitive V1 request waits for this. */
+  periodHydrated: boolean;
+  /** Configured application timezone (read-only, owned by TimezoneProvider).
+   *  Used by the Closed Trades serializer for ISO day boundaries. */
+  timezone: string;
   /** MTM polling state: active (polling with open positions), paused
    *  (tab hidden or no open positions), or error (last poll failed). */
   mtmPollingState: MtmPollingState;
@@ -148,6 +174,9 @@ export function WorkstationProvider({
   accounts: controlledAccounts,
   accountId: controlledAccountId,
   onAccountIdChange,
+  resolvedPeriod = DEFAULT_RESOLVED_PERIOD,
+  periodHydrated = true,
+  timezone = 'America/Bogota',
   children,
 }: {
   initialScenario?: string;
@@ -158,6 +187,18 @@ export function WorkstationProvider({
   accounts?: { id: string; name: string; currency: string }[];
   accountId?: string;
   onAccountIdChange?: (id: string) => void;
+  /** M004 9D.2: optional CONTROLLED read-only global period (canonical
+   *  owner is OperationalDateRangeProvider). The root dashboard passes the
+   *  already-resolved plain YMD range. When omitted, the workstation is
+   *  unbounded (Max) — preserving isolated /workspace behavior. */
+  resolvedPeriod?: ResolvedDateRange;
+  /** True once the canonical period has hydrated from persistence. The
+   *  first period-sensitive V1 request waits for this so the restored
+   *  selection wins (never a temporary default-YTD request). */
+  periodHydrated?: boolean;
+  /** Configured application timezone (read-only, owned by TimezoneProvider).
+   *  Used for ISO day boundaries in the Closed Trades serializer. */
+  timezone?: string;
   children: ReactNode;
 }) {
   const [scenario, setScenarioState] = useState<WorkstationScenarioId>(() =>
@@ -175,10 +216,22 @@ export function WorkstationProvider({
   const [mtmRefreshIntervalSeconds, setMtmRefreshIntervalSeconds] = useState(
     DEFAULT_MTM_REFRESH_INTERVAL_SECONDS,
   );
+  /** Stable DATE-INDEPENDENT setup reference map (id → name). Fetched once
+   *  per live-mode mount — never on the MTM cadence and never derived from
+   *  the period-scoped V1 setupRanking (M004 9D.2 §3). */
+  const [setupNames, setSetupNames] = useState<Record<string, string>>({});
   const fetchAbortRef = useRef<AbortController | null>(null);
   const mtmIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mtmAbortRef = useRef<AbortController | null>(null);
   const mtmRefreshInFlightRef = useRef(false);
+  /** Latest live snapshot for effects that must read it without re-running
+   *  on every render. */
+  const liveDataRef = useRef<LiveDashboardData | null>(null);
+  /** Monotonic fetch identity: a superseded request never writes state. */
+  const fetchSeqRef = useRef(0);
+  /** Identity of the fetch whose data is currently rendered — distinguishes
+   *  a PERIOD-ONLY change (V1-only refresh) from a full/account load. */
+  const lastFetchKeyRef = useRef<{ account: string; period: string } | null>(null);
 
   // ── Fixture-mode data ──────────────────────────────────────────────
   const fixtureData = useMemo(
@@ -189,8 +242,8 @@ export function WorkstationProvider({
   // ── Live-mode data ─────────────────────────────────────────────────
   const liveFixtures = useMemo<WorkstationFixtures | null>(() => {
     if (!liveData) return null;
-    return liveDataToFixtures(liveData, livePrices);
-  }, [liveData, livePrices]);
+    return liveDataToFixtures(liveData, livePrices, setupNames);
+  }, [liveData, livePrices, setupNames]);
 
   // ── fixturves expose either live or fixture data ───────────────────
   const fixtures: WorkstationFixtures = liveMode && liveFixtures
@@ -282,26 +335,53 @@ export function WorkstationProvider({
     return () => { cancelled = true; };
   }, [liveMode]);
 
+  // ── Stable setup reference names (live mode only) ─────────────────
+  // DATE-INDEPENDENT lookup map for current trade ideas. Fetched ONCE per
+  // live-mode mount — deliberately NOT on the MTM cadence and not derived
+  // from the period-scoped V1 setupRanking (M004 9D.2 §3/§24). Reference
+  // failure degrades honestly to an empty map (setupName null).
+  useEffect(() => {
+    if (!liveMode) return;
+
+    let cancelled = false;
+    const loadSetupNames = async () => {
+      const result = await fetchSetupLookupsLive();
+      if (cancelled) return;
+
+      if (result.success) {
+        setSetupNames(result.data);
+      } else {
+        console.warn(
+          '[workstation] unable to load setup reference names; current trade ideas will omit setup names:',
+          result.error,
+        );
+      }
+    };
+
+    void loadSetupNames();
+    return () => { cancelled = true; };
+  }, [liveMode]);
+
   // ── Refresh live dashboard data (live mode) ────────────────────────
-  // Stable callback re-running the account-scoped dashboard fetch without
-  // changing selection. Consumed by panels (e.g. watchlist CRUD) after a
-  // mutation so the UI reflects the change without a full page reload.
-  // Safe no-op in fixture mode or before an account resolves. Reuses the
-  // abort/refetch pattern of the account-change effect: the newest call
-  // wins, and any superseded request discards its result via signal.aborted.
+  // Manual / mutation refresh: re-fetches the complete required bundle
+  // (CURRENT + selected-period V1) for the active account. The V1 leg always
+  // uses the CURRENT global resolved period — it can never revert to
+  // unbounded data (M004 9D.2 §9). Safe no-op in fixture mode, before an
+  // account resolves, or before the period has hydrated. The newest call
+  // wins: any superseded request is aborted and its sequence is stale.
   const refreshLiveData = useCallback((): void => {
-    if (!liveMode || !activeAccountId) return;
+    if (!liveMode || !activeAccountId || !periodHydrated) return;
 
     // Abort any in-flight fetch so the newest request owns the state.
     fetchAbortRef.current?.abort();
     const controller = new AbortController();
     fetchAbortRef.current = controller;
+    const seq = ++fetchSeqRef.current;
+    const periodKey = `${resolvedPeriod.from}|${resolvedPeriod.to}`;
 
     const fetchLive = async () => {
-      // Enter the loading state inside the async continuation instead of
-      // synchronously on the calling tick: the account-change effect
-      // invokes refreshLiveData() and must not trigger a render cascade
-      // (react-hooks/set-state-in-effect).
+      // Enter the loading state inside the async continuation (see the
+      // existing pattern — never synchronously on the calling tick).
       setIsLoading(true);
       setError(null);
 
@@ -313,11 +393,12 @@ export function WorkstationProvider({
         activeAccountId,
         controller.signal,
         { skipAccounts: isAccountControlled },
+        resolvedPeriod,
       );
 
-      // A newer refresh (or unmount/account change) superseded this
+      // A newer refresh (or unmount/account/period change) superseded this
       // request; it owns loading/error state from here on.
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || seq !== fetchSeqRef.current) return;
 
       if (!result.success) {
         console.error(
@@ -335,35 +416,127 @@ export function WorkstationProvider({
           `${result.data.watchlist.length} watchlist item(s)`,
       );
 
+      lastFetchKeyRef.current = { account: activeAccountId, period: periodKey };
       // Update accounts list from the fresh fetch (may include different
       // accounts than the initial fetchAccountsLive call). Skipped when
       // account selection is controlled externally (M007/D037).
       if (!isAccountControlled) setLiveAccounts(result.data.accounts);
+      liveDataRef.current = result.data;
       setLiveData(result.data);
       setIsLoading(false);
     };
 
     void fetchLive();
-  }, [liveMode, activeAccountId, isAccountControlled]);
+  }, [liveMode, activeAccountId, isAccountControlled, resolvedPeriod, periodHydrated]);
 
-  // ── Fetch dashboard data (live mode, on account resolved) ──────────
-  // The account-change effect drives the first fetch and supersedes any
-  // in-flight request when selection changes. Shares fetchAbortRef with
-  // manual refreshLiveData() calls so a selection change always wins.
+  // ── Fetch orchestration (live mode, account/period resolved) ───────
+  // Drives the FIRST load, ACCOUNT CHANGES, and PERIOD-ONLY changes with
+  // one pipeline (M004 9D.2 §5/§6/§8):
+  //  - Never issues a period-sensitive V1 request before `periodHydrated`;
+  //    the first request therefore uses the RESTORED global period.
+  //  - A PERIOD-ONLY change (same account, different period, data already
+  //    loaded) refetches ONLY the date-aware V1 dashboard and recomposes
+  //    the presentation-only hybrid adapters against the existing CURRENT
+  //    V2 snapshot. No CURRENT leg (V2/watchlist/accounts/prices/MTM) is
+  //    touched.
+  //  - An account change (or first load) refreshes BOTH scopes with the
+  //    current resolved period via the 9D.1 compatibility composition.
+  //  - The newest request always wins: superseded requests are aborted and
+  //    a monotonic sequence guard rejects any stale account/period
+  //    combination that still settles later.
   useEffect(() => {
-    if (!liveMode || !activeAccountId) return;
+    if (!liveMode || !activeAccountId || !periodHydrated) return;
 
-    refreshLiveData();
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+    const seq = ++fetchSeqRef.current;
+    const periodKey = `${resolvedPeriod.from}|${resolvedPeriod.to}`;
+
+    const lastKey = lastFetchKeyRef.current;
+    const isPeriodOnlyChange =
+      lastKey !== null &&
+      lastKey.account === activeAccountId &&
+      lastKey.period !== periodKey &&
+      liveDataRef.current !== null;
+
+    const run = async () => {
+      if (!isPeriodOnlyChange) {
+        // First load or account change: full bundle, V1 scoped to the
+        // current resolved period.
+        setIsLoading(true);
+        setError(null);
+        const result = await fetchAllLiveDashboardData(
+          activeAccountId,
+          controller.signal,
+          { skipAccounts: isAccountControlled },
+          resolvedPeriod,
+        );
+        if (controller.signal.aborted || seq !== fetchSeqRef.current) return;
+        lastFetchKeyRef.current = { account: activeAccountId, period: periodKey };
+        if (!result.success) {
+          setError(result.error);
+          setIsLoading(false);
+          return;
+        }
+        if (!isAccountControlled) setLiveAccounts(result.data.accounts);
+        liveDataRef.current = result.data;
+        setLiveData(result.data);
+        setIsLoading(false);
+        return;
+      }
+
+      // Period-only change: refetch ONLY the date-aware V1 dashboard and
+      // merge it into the existing snapshot. CURRENT V2/watchlist/marks/
+      // positions stay untouched.
+      const dashResult = await fetchDashboardLive(
+        activeAccountId,
+        controller.signal,
+        resolvedPeriod,
+      );
+      if (controller.signal.aborted || seq !== fetchSeqRef.current) return;
+      lastFetchKeyRef.current = { account: activeAccountId, period: periodKey };
+      if (!dashResult.success) {
+        console.error(
+          '[workstation] PERIOD REFRESH — V1 dashboard fetch failed:',
+          dashResult.error,
+        );
+        setError(dashResult.error);
+        return;
+      }
+      const prevData = liveDataRef.current;
+      if (prevData) {
+        const next: LiveDashboardData = {
+          ...prevData,
+          dashboard: dashResult.data,
+          risk: adaptRisk(dashResult.data, prevData.dashboardV2),
+        };
+        liveDataRef.current = next;
+        setLiveData(next);
+      }
+      setError(null);
+    };
+
+    void run();
 
     return () => {
       fetchAbortRef.current?.abort();
     };
-  }, [liveMode, activeAccountId, refreshLiveData]);
+  }, [
+    liveMode,
+    activeAccountId,
+    isAccountControlled,
+    resolvedPeriod,
+    periodHydrated,
+  ]);
 
   // ── Live price fetching (fills marketIndices, symbolPrices, tradeIdeas) ─
-  // Fetches prices for market indices + watchlist symbols when liveData
-  // changes.  Best-effort: a failure leaves marketIndices/symbolPrices
-  // empty but doesn't break the rest of the workstation.
+  // Fetches prices for market indices + watchlist symbols when the CURRENT
+  // watchlist snapshot changes. Deliberately keyed to the watchlist
+  // reference (not the whole live snapshot) so a PERIOD-ONLY refresh — which
+  // replaces only the V1 dashboard — never re-requests prices (M004 9D.2 §6).
+  // Best-effort: a failure leaves marketIndices/symbolPrices empty but
+  // doesn't break the rest of the workstation.
   //
   // Reset live prices when live mode is off. Adjusted during render
   // (React-sanctioned; replaces the setState-in-effect the linter rejects).
@@ -371,14 +544,16 @@ export function WorkstationProvider({
     if (livePrices !== null) setLivePrices(null);
   }
 
+  const liveWatchlist = liveData?.watchlist ?? null;
+
   useEffect(() => {
-    if (!liveMode || !liveData) return;
+    if (!liveMode || !liveWatchlist) return;
 
     let cancelled = false;
 
     const fetchPrices = async () => {
       // Collect all symbols we need prices for: indices + watchlist
-      const wlSymbols = liveData.watchlist
+      const wlSymbols = liveWatchlist
         .map((w) => w.symbol)
         .filter(Boolean);
       const symbols = [
@@ -409,7 +584,7 @@ export function WorkstationProvider({
 
     fetchPrices();
     return () => { cancelled = true; };
-  }, [liveMode, liveData]);
+  }, [liveMode, liveWatchlist]);
 
   // ── MTM polling (live mode only) ─────────────────────────────────
   // Refreshes at the configured cadence when live mode is active, the tab is
@@ -486,7 +661,12 @@ export function WorkstationProvider({
             );
           }
 
-          const result = await fetchAllLiveDashboardData(
+          // MTM reload is CURRENT-ONLY (M004 9D.2 §10): after persisting
+          // fresh quotes, reload ONLY the current-state snapshot through the
+          // 9D.1 CURRENT boundary and merge it into the existing
+          // selected-period V1 dashboard — the retrospective payload is
+          // never replaced or refreshed by a poll.
+          const result = await fetchCurrentLiveDashboardData(
             activeAccountId,
             controller.signal,
             { skipAccounts: isAccountControlled },
@@ -514,7 +694,20 @@ export function WorkstationProvider({
             `[workstation] MTM refresh OK: ${refreshSummary}, ` +
               `${result.data.positions.length} position(s)`,
           );
-          setLiveData(result.data);
+
+          const prevData = liveDataRef.current;
+          if (prevData) {
+            const next: LiveDashboardData = {
+              ...prevData,
+              dashboardV2: result.data.dashboardV2,
+              watchlist: result.data.watchlist,
+              accounts: result.data.accounts,
+              positions: result.data.positions,
+              risk: adaptRisk(prevData.dashboard, result.data.dashboardV2),
+            };
+            liveDataRef.current = next;
+            setLiveData(next);
+          }
           if (!isAccountControlled) setLiveAccounts(result.data.accounts);
           setError(message);
           setMtmPollingState(partialFailure ? 'error' : 'active');
@@ -601,6 +794,9 @@ export function WorkstationProvider({
       liveMode,
       isLoading,
       error,
+      resolvedPeriod,
+      periodHydrated,
+      timezone,
       mtmPollingState,
       mtmRefreshIntervalSeconds,
     }),
@@ -616,6 +812,9 @@ export function WorkstationProvider({
       isAccountControlled,
       isLoading,
       error,
+      resolvedPeriod,
+      periodHydrated,
+      timezone,
       mtmPollingState,
       mtmRefreshIntervalSeconds,
     ],

@@ -45,10 +45,15 @@ import {
 } from './trades-workspace-panel';
 
 // ── Mock workstation context ────────────────────────────────────────────
-// The panel reads only activeAccountId; the mutable mockCtx lets a test
-// switch accounts mid-render to exercise request scoping.
+// The panel reads activeAccountId, the controlled resolved period, and the
+// configured timezone; the mutable mockCtx lets a test switch accounts or
+// periods mid-render to exercise request scoping.
 
-type MockContextValue = { activeAccountId: string };
+type MockContextValue = {
+  activeAccountId: string;
+  resolvedPeriod: { from: string; to: string };
+  timezone: string;
+};
 
 let mockCtx: MockContextValue;
 
@@ -192,7 +197,11 @@ function openClosedTab() {
 }
 
 beforeEach(() => {
-  mockCtx = { activeAccountId: 'acc-1' };
+  mockCtx = {
+    activeAccountId: 'acc-1',
+    resolvedPeriod: { from: '', to: '' },
+    timezone: 'America/Bogota',
+  };
   mockFetch.mockReset();
   // Re-install the fetch stub: the previous test's afterEach unstubbed it.
   vi.stubGlobal('fetch', mockFetch);
@@ -467,7 +476,11 @@ describe('TradesWorkspacePanel request scoping', () => {
     // Switch to acc-2 while its fetch is still in flight.
     const second = deferred<Response>();
     mockFetch.mockReturnValueOnce(second.promise);
-    mockCtx = { activeAccountId: 'acc-2' };
+    mockCtx = {
+      activeAccountId: 'acc-2',
+      resolvedPeriod: { from: '', to: '' },
+      timezone: 'America/Bogota',
+    };
     rerender(<TradesWorkspacePanel positions={OPEN_POSITIONS} />);
 
     // acc-1 data must not linger: the panel shows loading, not stale rows.
@@ -486,5 +499,194 @@ describe('TradesWorkspacePanel request scoping', () => {
     );
     await screen.findByTestId('ws-trades-closed-row-MSFT');
     expect(screen.queryByTestId('ws-trades-closed-row-NVDA')).toBeNull();
+  });
+});
+
+// ── Closed tab: global selected period (M004 9D.2 §12/§13/§23) ──────────
+
+describe('TradesWorkspacePanel closed tab global period', () => {
+  it('adds no from/to for a Max (empty) period — legacy unbounded URL', () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    renderPanel();
+    openClosedTab();
+
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toBe('/api/trades?status=closed&accountId=acc-1&limit=50');
+    expect(url).not.toMatch(/[?&](from|to)=/);
+  });
+
+  it('serializes a bounded from using the timezone day-start instant', () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '2026-06-01', to: '' },
+      timezone: 'America/Bogota',
+    };
+    renderPanel();
+    openClosedTab();
+
+    const [url] = mockFetch.mock.calls[0] as [string];
+    // Bogotá 2026-06-01 local midnight → 05:00Z.
+    expect(url).toContain('from=2026-06-01T05%3A00%3A00.000Z');
+    expect(url).not.toContain('to=');
+  });
+
+  it('serializes a bounded to using the timezone day-end instant', () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '', to: '2026-06-30' },
+      timezone: 'America/Bogota',
+    };
+    renderPanel();
+    openClosedTab();
+
+    const [url] = mockFetch.mock.calls[0] as [string];
+    // Bogotá 2026-06-30 end of day → 2026-07-01T04:59:59.999Z.
+    expect(url).toContain('to=2026-07-01T04%3A59%3A59.999Z');
+    expect(url).not.toContain('from=');
+  });
+
+  it('builds the exact Custom both-bound URL', () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '2026-06-01', to: '2026-06-30' },
+      timezone: 'America/Bogota',
+    };
+    renderPanel();
+    openClosedTab();
+
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toBe(
+      '/api/trades?status=closed&accountId=acc-1&limit=50' +
+        '&from=2026-06-01T05%3A00%3A00.000Z&to=2026-07-01T04%3A59%3A59.999Z',
+    );
+  });
+
+  it('honors the configured timezone for the ISO boundaries', () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '2026-06-01', to: '' },
+      timezone: 'UTC',
+    };
+    renderPanel();
+    openClosedTab();
+
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toContain('from=2026-06-01T00%3A00%3A00.000Z');
+  });
+
+  it('refetches the closed request only when the period changes', async () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    const { rerender } = renderPanel();
+    openClosedTab();
+    await screen.findByTestId('ws-trades-closed-table');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    mockFetch.mockResolvedValueOnce(
+      fakeResponse(200, closedTradesResponse({ total: 7, data: [] })),
+    );
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '2026-06-01', to: '2026-06-30' },
+      timezone: 'America/Bogota',
+    };
+    rerender(<TradesWorkspacePanel positions={OPEN_POSITIONS} />);
+    await screen.findByTestId('ws-trades-closed-empty');
+
+    // Exactly one NEW request (the closed history), carrying the period.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const [url] = mockFetch.mock.calls[1] as [string];
+    expect(url).toContain('from=2026-06-01');
+    expect(url).toContain('to=2026-07-01T04%3A59%3A59.999Z');
+  });
+
+  it('keeps the Open tab (current V2 positions) untouched by a period change', async () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    const { rerender } = renderPanel();
+
+    // Open tab is the passed V2 positions — a period change never re-fetches
+    // them and never changes the open row set.
+    expect(screen.getByTestId('ws-position-row-NVDA')).toBeTruthy();
+
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '2026-06-01', to: '' },
+      timezone: 'America/Bogota',
+    };
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    rerender(<TradesWorkspacePanel positions={OPEN_POSITIONS} />);
+
+    expect(screen.getByTestId('ws-position-row-NVDA')).toBeTruthy();
+    expect(screen.getByTestId('ws-position-row-AMD')).toBeTruthy();
+    // Open count still matches the live snapshot universe.
+    expect(
+      within(screen.getByTestId('ws-trades-tab-open')).getByTestId('ws-trades-open-count').textContent,
+    ).toBe(String(OPEN_POSITIONS.length));
+  });
+
+  it('drops stale closed state synchronously when the period changes', async () => {
+    const first = deferred<Response>();
+    mockFetch.mockReturnValueOnce(first.promise);
+    const { rerender } = renderPanel();
+    openClosedTab();
+    first.resolve(fakeResponse(200, closedTradesResponse()));
+    await screen.findByTestId('ws-trades-closed-table');
+    expect(screen.getByTestId('ws-trades-closed-row-NVDA')).toBeTruthy();
+
+    // Period changes while its fetch is still in flight.
+    const second = deferred<Response>();
+    mockFetch.mockReturnValueOnce(second.promise);
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '2026-06-01', to: '2026-06-30' },
+      timezone: 'America/Bogota',
+    };
+    rerender(<TradesWorkspacePanel positions={OPEN_POSITIONS} />);
+
+    // The previous period's rows must not linger.
+    expect(screen.queryByTestId('ws-trades-closed-table')).toBeNull();
+    expect(screen.getByTestId('ws-trades-closed-loading')).toBeTruthy();
+
+    second.resolve(
+      fakeResponse(200, closedTradesResponse({ total: 1, data: [{ id: 't-aapl', tradeCode: null, symbol: 'AAPL', direction: 'long', setupName: null, closedAt: '2026-06-15T15:00:00.000Z', realizedPnl: 10, returnPct: 0.001, metrics: { position: { closedAt: '2026-06-15T15:00:00.000Z', holdingPeriodDays: 1 }, returnMetrics: { rMultiple: 0.1 } } }], totals: { ...closedTradesResponse().totals, netRealizedPnl: 10 } })),
+    );
+    await screen.findByTestId('ws-trades-closed-row-AAPL');
+    expect(screen.queryByTestId('ws-trades-closed-row-NVDA')).toBeNull();
+  });
+
+  it('labels a bounded closed universe as selected period', async () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    mockCtx = {
+      activeAccountId: 'acc-1',
+      resolvedPeriod: { from: '2026-06-01', to: '2026-06-30' },
+      timezone: 'America/Bogota',
+    };
+    renderPanel();
+    openClosedTab();
+
+    await screen.findByTestId('ws-trades-closed-scope');
+    expect(screen.getByTestId('ws-trades-closed-scope').textContent).toBe(
+      'All 2 closed trades · selected period',
+    );
+    expect(screen.getByTestId('ws-trades-closed-totals').textContent).toContain(
+      'Net P&L · selected period',
+    );
+  });
+
+  it('keeps Max scope copy truthful (all history wording)', async () => {
+    mockFetch.mockResolvedValueOnce(fakeResponse(200, closedTradesResponse()));
+    renderPanel();
+    openClosedTab();
+
+    await screen.findByTestId('ws-trades-closed-scope');
+    expect(screen.getByTestId('ws-trades-closed-scope').textContent).toBe(
+      'All 2 closed trades',
+    );
+    expect(screen.getByTestId('ws-trades-closed-totals').textContent).toContain(
+      'Net P&L · all closed trades',
+    );
   });
 });

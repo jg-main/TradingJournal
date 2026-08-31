@@ -139,7 +139,7 @@ function StatRow({
 // ── Component ───────────────────────────────────────────────────────────
 
 export function PerformancePanel() {
-  const { fixtures } = useWorkstation();
+  const { fixtures, resolvedPeriod } = useWorkstation();
   const { dashboard, dashboardV2 } = fixtures;
   const { kpis } = dashboard;
   const { scope, setScope } = usePerformancePnlScope();
@@ -149,6 +149,14 @@ export function PerformancePanel() {
     openPnl: dashboardV2.riskSummary.openPnl,
     valuationState: dashboardV2.valuation.state,
   });
+
+  // Hybrid scope clarity (M004 9D.2 §14): the panel is intentionally HYBRID.
+  // The "Live P&L" group is CURRENT/V2-sourced and never period-filtered;
+  // the closed-decision metrics are SELECTED_PERIOD V1 retrospective values.
+  // When the global period is bounded, the copy states that scope so the
+  // sidebar Period cannot imply every number in the panel changes.
+  const periodBounded = Boolean(resolvedPeriod.from || resolvedPeriod.to);
+  const closedScopeSuffix = periodBounded ? ' · selected period' : '';
 
   const hasData = kpis.totalTrades > 0;
 
@@ -182,7 +190,7 @@ export function PerformancePanel() {
       <div className="ws-panel-header">
         <span>Performance</span>
         <span className="ws-panel-meta ws-mono">
-          Live P&amp;L · {closedTrades ?? kpis.totalTrades} closed decisions
+          Live P&amp;L · {closedTrades ?? kpis.totalTrades} closed decisions{closedScopeSuffix}
         </span>
       </div>
       <div className="ws-panel-body">
@@ -245,7 +253,9 @@ export function PerformancePanel() {
               />
             </div>
             <div className="ws-perf-group" data-testid="ws-perf-group-risk">
-              <div className="ws-perf-group-header">Closed-trade risk</div>
+              <div className="ws-perf-group-header">
+                Closed-trade risk{closedScopeSuffix}
+              </div>
               <StatRow
                 label="Avg R"
                 value={fmtDecimal(kpis.avgR, 2)}
@@ -261,7 +271,9 @@ export function PerformancePanel() {
           </div>
           <div className="ws-perf-column">
             <div className="ws-perf-group" data-testid="ws-perf-group-win-edge">
-              <div className="ws-perf-group-header">Closed-trade edge</div>
+              <div className="ws-perf-group-header">
+                Closed-trade edge{closedScopeSuffix}
+              </div>
               <StatRow
                 label="Win Rate"
                 value={fmtPct(kpis.winRate)}
@@ -296,21 +308,25 @@ export function PerformancePanel() {
               <StatRow
                 label="All Trades"
                 value={String(kpis.totalTrades)}
+                sub="account scope"
                 testId="ws-perf-total-trades"
               />
               <StatRow
                 label="Closed Decisions"
                 value={closedTrades !== null ? String(closedTrades) : '—'}
+                sub={periodBounded ? 'selected period' : undefined}
                 testId="ws-perf-closed-trades"
               />
               <StatRow
                 label="Open Trades"
                 value={String(kpis.openTrades)}
+                sub="current"
                 testId="ws-perf-open-trades"
               />
               <StatRow
                 label="Avg Holding"
                 value={fmtDays(kpis.averageHoldingDays)}
+                sub={periodBounded ? 'selected period' : undefined}
                 testId="ws-perf-holding-days"
               />
             </div>

@@ -202,7 +202,9 @@ function exportedFunctionBody(source: string, name: string): string | undefined 
   const m = re.exec(source);
   if (!m) return undefined;
   const start = m.index;
-  let i = start + m[0].length;
+  // Point at the opening '(' so the depth count closes on the parameter
+  // list's own ')' — never a later parenthesis inside the body.
+  let i = start + m[0].length - 1;
   let depth = 0;
   for (; i < source.length; i += 1) {
     const ch = source[i];
@@ -212,6 +214,7 @@ function exportedFunctionBody(source: string, name: string): string | undefined 
       if (depth === 0) break;
     }
   }
+  i += 1;
   while (i < source.length && source[i] !== '{') i += 1;
   let braceDepth = 0;
   for (let j = i; j < source.length; j += 1) {
@@ -726,8 +729,8 @@ describe('contract scanner self-test (the contract rejects drift)', () => {
 
   it('flags WorkstationContext importing the P&L scope hook', () => {
     const doctored = contextSource.replace(
-      "import {\n  fetchAllLiveDashboardData,",
-      "import { usePerformancePnlScope } from '@/hooks/use-performance-pnl-scope';\n\nimport {\n  fetchAllLiveDashboardData,",
+      "import {\n  adaptRisk,",
+      "import { usePerformancePnlScope } from '@/hooks/use-performance-pnl-scope';\n\nimport {\n  adaptRisk,",
     );
     expect(doctored).toMatch(/use-performance-pnl-scope/);
   });

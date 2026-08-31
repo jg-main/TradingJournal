@@ -86,12 +86,10 @@ export function Sidebar() {
         <SidebarBrand collapsed={effectiveCollapsed} />
         <SidebarAccount collapsed={effectiveCollapsed} />
 
-        {/* Global operational period selector — visible on the exact primary
-            operational routes migrated so far: /trades and /performance
-            (M004/T9B/T9C). Workstation does not consume the global period
-            until Task 9D, so the selector must never imply a surface
-            consumes a context it ignores. */}
-        {(pathname === '/trades' || pathname === '/performance') && (
+        {/* Global operational period selector — visible on the exact
+            primary operational routes consuming it: the root workstation,
+            /trades, and /performance (M004/T9B/T9C/T9D.2). */}
+        {(pathname === '/' || pathname === '/trades' || pathname === '/performance') && (
           <SidebarPeriod collapsed={effectiveCollapsed} />
         )}
 

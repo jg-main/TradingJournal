@@ -12,9 +12,15 @@
 //                reconciled snapshot the alert strip and risk band
 //                consume), rendered by RiskPositionsTableContent with its
 //                canonical live mark / risk / data-quality indicators.
-//   Closed tab → GET /api/trades?status=closed&accountId=… (server-computed
-//                full-dataset totals for the filtered closed universe),
-//                scoped to the active account from WorkstationContext.
+//   Closed tab → GET /api/trades?status=closed&accountId=…&limit=…
+//                (server-computed full-dataset totals for the filtered
+//                closed universe), scoped to the active account AND the
+//                global selected period (M004 9D.2 §12): the canonical
+//                resolved plain-YMD range is serialized as from=<ISO
+//                instant>/to=<ISO instant> via zonedDayStartIso/
+//                zonedDayEndIso in the configured app timezone. Max
+//                (empty range) adds neither bound. The Open tab is CURRENT
+//                and never period-filtered.
 //
 // The outer wrapper keeps the `ws-panel-positions` testid and the
 // `gridArea: 'trades'` grid cell so existing e2e assertions that target the
@@ -36,6 +42,7 @@ import {
   formatPercent,
   formatRMultiple,
 } from '@/lib/trade-formatters';
+import { zonedDayStartIso, zonedDayEndIso } from '@/lib/operational-date-range';
 import type { DashboardPositionSummary } from '@/lib/accounting/dashboard-v2';
 
 // ── Closed-trades API contract (subset of GET /api/trades) ─────────────
@@ -121,9 +128,12 @@ function directionClass(direction: 'long' | 'short' | null): string {
 function ClosedTabBody({
   state,
   onRetry,
+  bounded,
 }: {
   state: ClosedTradesState;
   onRetry: () => void;
+  /** True when the global selected period has at least one bound. */
+  bounded: boolean;
 }) {
   if (state.status === 'loading') {
     return (
@@ -158,7 +168,9 @@ function ClosedTabBody({
   if (data.data.length === 0) {
     return (
       <div className="ws-empty" data-testid="ws-trades-closed-empty">
-        No closed trades for this account
+        {bounded
+          ? 'No closed trades in selected period'
+          : 'No closed trades for this account'}
       </div>
     );
   }
@@ -166,11 +178,14 @@ function ClosedTabBody({
   // The table shows the most recent page; the universe line states exactly
   // what is visible so the panel never implies a complete history it did
   // not render. The totals below are server-computed over the full
-  // filtered closed dataset.
+  // filtered closed dataset. For a bounded global period the copy states
+  // the real scope — the global Period now visibly bounds this surface
+  // (M004 9D.2 §13).
+  const scopeSuffix = bounded ? ' · selected period' : '';
   const scopeText =
     data.total <= data.data.length
-      ? `All ${data.total.toLocaleString('en-US')} closed trades`
-      : `Latest ${data.data.length} of ${data.total.toLocaleString('en-US')} closed trades`;
+      ? `All ${data.total.toLocaleString('en-US')} closed trades${scopeSuffix}`
+      : `Latest ${data.data.length} of ${data.total.toLocaleString('en-US')} closed trades${scopeSuffix}`;
 
   return (
     <>
@@ -223,7 +238,9 @@ function ClosedTabBody({
           closed-trades API response only — never an open/current account
           total (no-mixing invariant). The label states the scope. */}
       <div className="ws-trades-totals" data-testid="ws-trades-closed-totals">
-        <span className="ws-trades-totals-label">Net P&L · all closed trades</span>
+        <span className="ws-trades-totals-label">
+          Net P&L{bounded ? ' · selected period' : ' · all closed trades'}
+        </span>
         <span
           className={`ws-trades-totals-value ws-num ${pnlClass(data.totals.netRealizedPnl)}`}
           data-testid="ws-trades-closed-net-pnl"
@@ -241,34 +258,42 @@ function ClosedTabBody({
  * TradesWorkspacePanel — the full-width Trades workspace with Open/current
  * and Closed/historical tabs. The Open tab is the current open account
  * positions workflow (fixtures/live valuation snapshot); the Closed tab
- * fetches the account's closed trades from the API with server-computed
- * scoped totals. Tab labels state their real universe; switching tabs never
- * mixes a current account total with a period-filtered total.
+ * fetches the account's closed trades from the API scoped to the global
+ * selected period, with server-computed scoped totals. Tab labels state
+ * their real universe; switching tabs never mixes a current account total
+ * with a period-filtered total.
  */
 export function TradesWorkspacePanel({
   positions,
 }: {
   positions: DashboardPositionSummary[];
 }) {
-  const { activeAccountId } = useWorkstation();
+  const { activeAccountId, resolvedPeriod, timezone } = useWorkstation();
 
   const [closed, setClosed] = useState<ClosedTradesState>({ status: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
+
+  // True when the global selected period has at least one bound. Max
+  // (empty range) keeps the legacy all-history copy.
+  const bounded = resolvedPeriod.from !== '' || resolvedPeriod.to !== '';
 
   const handleRetry = useCallback(() => {
     setReloadKey((key) => key + 1);
   }, []);
 
-  // Request identity: the closed-tab fetch is scoped to the active account
-  // and one retry generation. A change in either must invalidate any stale
-  // ready/error state immediately (no cross-account leftovers).
-  const requestKey = `${activeAccountId}:${reloadKey}`;
+  // Request identity: the closed-tab fetch is scoped to the active account,
+  // the global selected period, and one retry generation. A change in any
+  // must invalidate any stale ready/error state immediately (no cross-account
+  // or cross-period leftovers — M004 9D.2 §12/§23).
+  const requestKey =
+    `${activeAccountId}:${resolvedPeriod.from}:${resolvedPeriod.to}:${reloadKey}`;
 
   // React-sanctioned render adjustment (same idiom as workstation-context):
-  // when the request identity changes (account switch or retry), drop the
-  // previous request's data synchronously so the panel never shows another
-  // account's closed trades (or a stale error) while the new fetch is in
-  // flight. The effect only writes ready/error from async callbacks.
+  // when the request identity changes (account/period switch or retry), drop
+  // the previous request's data synchronously so the panel never shows
+  // another account's or period's closed trades (or a stale error) while the
+  // new fetch is in flight. The effect only writes ready/error from async
+  // callbacks.
   if (
     (closed.status === 'ready' || closed.status === 'error') &&
     closed.requestKey !== requestKey
@@ -287,6 +312,17 @@ export function TradesWorkspacePanel({
       limit: String(CLOSED_LIMIT),
     });
 
+    // Global selected period → ISO instants via the canonical timezone-aware
+    // helpers (never hand-rolled arithmetic). OPEN is current and never
+    // date-filtered; the closed universe is scoped to the resolved range.
+    // Max (empty range) adds neither from nor to (M004 9D.2 §12).
+    if (resolvedPeriod.from) {
+      params.set('from', zonedDayStartIso(resolvedPeriod.from, timezone));
+    }
+    if (resolvedPeriod.to) {
+      params.set('to', zonedDayEndIso(resolvedPeriod.to, timezone));
+    }
+
     fetch(`/api/trades?${params.toString()}`, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) {
@@ -299,7 +335,7 @@ export function TradesWorkspacePanel({
         setClosed({ status: 'ready', requestKey, data });
       })
       .catch((err: unknown) => {
-        // Abort is a lifecycle event (account switch / unmount), not a
+        // Abort is a lifecycle event (account/period switch / unmount), not a
         // user-visible fetch error.
         if (cancelled || controller.signal.aborted) return;
         setClosed({
@@ -313,7 +349,14 @@ export function TradesWorkspacePanel({
       cancelled = true;
       controller.abort();
     };
-  }, [activeAccountId, reloadKey, requestKey]);
+  }, [
+    activeAccountId,
+    reloadKey,
+    resolvedPeriod.from,
+    resolvedPeriod.to,
+    timezone,
+    requestKey,
+  ]);
 
   const closedCount = closed.status === 'ready' ? closed.data.total : null;
 
@@ -371,7 +414,7 @@ export function TradesWorkspacePanel({
             className="ws-trades-content"
             data-testid="ws-trades-closed-content"
           >
-            <ClosedTabBody state={closed} onRetry={handleRetry} />
+            <ClosedTabBody state={closed} onRetry={handleRetry} bounded={bounded} />
           </TabsContent>
         </Tabs>
       </div>

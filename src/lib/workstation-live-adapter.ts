@@ -274,6 +274,34 @@ export async function fetchMtmRefreshIntervalLive(
   };
 }
 
+/** Raw lookup-value row from GET /api/lookups?type=setup. */
+interface SetupLookupRow {
+  id: string;
+  value: string;
+}
+
+/**
+ * Fetch the stable, DATE-INDEPENDENT setup reference names from
+ * /api/lookups?type=setup and key them by lookup id (M004 9D.2 §3).
+ *
+ * Current trade ideas resolve their setup label from this reference map so a
+ * period change can never alter a current trade idea's setup name merely
+ * because the retrospective Dashboard V1 setupRanking changed. Reference
+ * failure degrades honestly to an empty map (callers render setupName null).
+ */
+export async function fetchSetupLookupsLive(
+  signal?: AbortSignal,
+): Promise<LiveFetchResult<Record<string, string>>> {
+  const result = await fetchJson<SetupLookupRow[]>('/api/lookups?type=setup', signal);
+  if (!result.success) return result;
+
+  const byId: Record<string, string> = {};
+  for (const row of result.data) {
+    if (row.id && typeof row.value === 'string') byId[row.id] = row.value;
+  }
+  return { success: true, data: byId };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Transformation functions
 // ═══════════════════════════════════════════════════════════════════════════

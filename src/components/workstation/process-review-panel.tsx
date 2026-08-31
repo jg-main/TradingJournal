@@ -83,9 +83,14 @@ function severityLabel(severity: string): string {
 // ── Component ───────────────────────────────────────────────────────────
 
 export function ProcessReviewPanel() {
-  const { fixtures } = useWorkstation();
+  const { fixtures, resolvedPeriod } = useWorkstation();
   const { dashboard } = fixtures;
   const { processScoreDistribution, directionalPerformance, attentionInsights } = dashboard;
+
+  // Scope clarity (M004 9D.2 §15): this panel renders SELECTED_PERIOD V1
+  // retrospective analytics, so its header states that scope. Max
+  // (empty range) reads "All time".
+  const periodBounded = Boolean(resolvedPeriod.from || resolvedPeriod.to);
 
   const hasScores = processScoreDistribution !== undefined && processScoreDistribution.length > 0;
   const hasDirectional = directionalPerformance !== undefined;
@@ -103,6 +108,9 @@ export function ProcessReviewPanel() {
     >
       <div className="ws-panel-header">
         <span>Review Metrics</span>
+        <span className="ws-panel-meta ws-mono">
+          {periodBounded ? 'Selected period' : 'All time'}
+        </span>
       </div>
       <div className="ws-panel-body">
 

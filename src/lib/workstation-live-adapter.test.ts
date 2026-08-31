@@ -35,6 +35,7 @@ import {
   fetchWatchlistPricesLive,
   refreshMtmPricesLive,
   fetchMtmRefreshIntervalLive,
+  fetchSetupLookupsLive,
   adaptAccounts,
   adaptPositions,
   adaptRisk,
@@ -1785,5 +1786,53 @@ describe('fetchMtmRefreshIntervalLive', () => {
     mockFetchResponse(200, { message: 'No market data settings configured yet.' });
     const fallback = await fetchMtmRefreshIntervalLive();
     expect(fallback).toEqual({ success: true, data: 30 });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// fetchSetupLookupsLive — DATE-INDEPENDENT setup reference map (9D.2 §3/§24)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('fetchSetupLookupsLive', () => {
+  it('fetches the setup lookup reference with no period/date parameters', async () => {
+    mockFetchResponse(200, [
+      { id: 'setup-1', type: 'setup', value: 'Breakout', isActive: true },
+      { id: 'setup-2', type: 'setup', value: 'Pullback', isActive: true },
+    ]);
+    const result = await fetchSetupLookupsLive();
+    expect(result.success).toBe(true);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/lookups?type=setup');
+  });
+
+  it('keys the reference map by lookup id → value', async () => {
+    mockFetchResponse(200, [
+      { id: 'setup-1', type: 'setup', value: 'Breakout', isActive: true },
+      { id: 'setup-2', type: 'setup', value: 'Pullback', isActive: true },
+    ]);
+    const result = await fetchSetupLookupsLive();
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ 'setup-1': 'Breakout', 'setup-2': 'Pullback' });
+    }
+  });
+
+  it('degrades honestly to an empty map on reference failure', async () => {
+    mockFetchResponse(500, { error: 'lookup server down' });
+    const result = await fetchSetupLookupsLive();
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('lookup server down');
+    }
+  });
+
+  it('propagates abort behavior', async () => {
+    mockFetchAbortError();
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const result = await fetchSetupLookupsLive(ctrl.signal);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe('Request was aborted');
+    }
   });
 });

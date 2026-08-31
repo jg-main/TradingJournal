@@ -16,12 +16,22 @@ import { WorkstationKeyboardShortcuts } from '@/components/workstation/workstati
 import { WorkstationViewsProvider } from '@/components/workstation/workstation-views-context';
 import { WorkstationCustomizeProvider } from '@/components/workstation/workstation-customize-context';
 import { useAccount } from '@/lib/account-context';
+import { useOperationalDateRange } from '@/lib/operational-date-range-context';
+import { useAppTimezone } from '@/lib/timezone-context';
 
 export default function DashboardPage() {
   // Global account selection (M007/D037): the sidebar owns the selector;
   // the workstation consumes it as controlled props. /workspace keeps its
   // own uncontrolled provider for isolation.
   const { accounts, accountId, setAccountId } = useAccount();
+
+  // Global operational period (M004 9D.2 §4): the canonical
+  // OperationalDateRangeProvider owns the period; the page only forwards
+  // the already-resolved plain-YMD range + hydration readiness to the
+  // workstation as CONTROLLED read-only input. The workstation is never a
+  // second period owner.
+  const { resolvedRange, hydrated: periodHydrated } = useOperationalDateRange();
+  const { timezone } = useAppTimezone();
 
   return (
     <div className="ws">
@@ -30,6 +40,9 @@ export default function DashboardPage() {
         accounts={accounts}
         accountId={accountId}
         onAccountIdChange={setAccountId}
+        resolvedPeriod={resolvedRange}
+        periodHydrated={periodHydrated}
+        timezone={timezone}
       >
         {/* Saved workstation views (S06): the provider owns the view store so
             the toolbar switcher and the shell's dynamic grid share one

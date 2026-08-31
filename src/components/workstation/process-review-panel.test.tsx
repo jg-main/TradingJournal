@@ -57,12 +57,16 @@ function minimalDashboard(
 
 function renderWithContext(
   dashboard: Partial<DashboardResponse>,
-  opts: { liveMode?: boolean } = {},
+  opts: {
+    liveMode?: boolean;
+    resolvedPeriod?: { from: string; to: string };
+  } = {},
 ) {
   mockUseWorkstation.mockReturnValue({
     fixtures: { dashboard: minimalDashboard(dashboard) },
     liveMode: opts.liveMode ?? false,
     activeAccountId: 'acc-1',
+    resolvedPeriod: opts.resolvedPeriod ?? { from: '', to: '' },
   });
   return render(<ProcessReviewPanel />);
 }
@@ -84,8 +88,20 @@ describe('ProcessReviewPanel', () => {
   it('renders the dense catalogue title Review Metrics in the panel header', () => {
     renderWithContext({});
     const header = screen.getByTestId('ws-panel-process-review').querySelector('.ws-panel-header');
-    expect(header?.textContent).toBe('Review Metrics');
+    expect(header?.textContent).toContain('Review Metrics');
     expect(header?.textContent).not.toContain('Process Review');
+  });
+
+  it('states selected-period scope for a bounded global period (M004 9D.2 §15)', () => {
+    renderWithContext({}, { resolvedPeriod: { from: '2026-06-01', to: '2026-06-30' } });
+    const header = screen.getByTestId('ws-panel-process-review').querySelector('.ws-panel-header');
+    expect(header?.textContent).toContain('Selected period');
+  });
+
+  it('states all-time scope for an unbounded (Max) global period', () => {
+    renderWithContext({}, { resolvedPeriod: { from: '', to: '' } });
+    const header = screen.getByTestId('ws-panel-process-review').querySelector('.ws-panel-header');
+    expect(header?.textContent).toContain('All time');
   });
 
   it('never fetches — the panel is a read-only consumer of the shared snapshot', () => {

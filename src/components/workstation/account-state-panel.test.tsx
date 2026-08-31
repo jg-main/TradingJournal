@@ -369,11 +369,14 @@ describe('AccountStatePanel', () => {
   // ── Total P&L ─────────────────────────────────────────────────────────
 
   describe('Total P&L', () => {
-    it('declares the period-performance scope when valuation is complete', () => {
+    it('declares the account-performance scope when valuation is complete', () => {
       renderPanel(baseDashboardV2({ valuationState: 'complete' }));
       const cell = screen.getByTestId('ws-account-state-total');
       expect(cell.textContent).toContain('$8,300.00');
-      expect(cell.textContent).toContain('Period performance');
+      // Presentation wording is faithful to the V2 account_performance
+      // source and never implies the sidebar's user-selected Period scopes
+      // this cell (M004 9D.2 §16).
+      expect(cell.textContent).toContain('Account performance');
     });
 
     it('renders presentationLabel when valuation state is partial', () => {
@@ -386,7 +389,7 @@ describe('AccountStatePanel', () => {
       const cell = screen.getByTestId('ws-account-state-total');
       expect(cell.textContent).toContain('— Partial — 1 unpriced');
       expect(cell.textContent).not.toContain('$8,300.00');
-      expect(cell.textContent).not.toContain('Period performance');
+      expect(cell.textContent).not.toContain('Account performance');
     });
 
     it('renders presentationLabel when valuation state is unavailable', () => {

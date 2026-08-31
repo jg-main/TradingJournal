@@ -1,10 +1,8 @@
 /**
  * Tests for Sidebar route visibility of the global period selector (M004/T9B).
  *
- * The Period selector renders ONLY on the exact /trades pathname. Performance
- * and Workstation do not consume the global period until Tasks 9C/9D, so a
- * visible global selector must never imply a surface consumes a context it
- * ignores.
+ * The Period selector renders on the exact primary operational routes that
+ * consume it: / (workstation), /trades, and /performance (M004 9D.2 §11).
  *
  * Run: npx vitest run src/components/sidebar/sidebar.test.tsx
  */
@@ -54,15 +52,14 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe('Sidebar period selector route visibility (M004/T9B/T9C)', () => {
-  it.each(['/trades', '/performance'])('renders the period selector on %s', (path) => {
+describe('Sidebar period selector route visibility (M004/T9B/T9C/T9D.2)', () => {
+  it.each(['/', '/trades', '/performance'])('renders the period selector on %s', (path) => {
     mockPathname = path;
     render(<Sidebar />);
     expect(screen.getByTestId('sidebar-period')).toBeTruthy();
   });
 
   it.each([
-    ['/', 'root workstation'],
     ['/trades/new', 'new trade'],
     ['/trades/abc-123', 'trade detail'],
     ['/settings', 'settings hub'],

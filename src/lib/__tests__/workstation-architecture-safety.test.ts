@@ -396,7 +396,9 @@ function exportedAsyncFunctionBodies(source: string): Array<{ name: string; body
   const re = /^export\s+async\s+function\s+([A-Za-z_$][\w$]*)\s*\(/gm;
   for (const m of source.matchAll(re)) {
     const start = m.index ?? 0;
-    let i = start + m[0].length;
+    // Point at the opening '(' so the depth count closes on the parameter
+    // list's own ')' — never a later parenthesis inside the body.
+    let i = start + m[0].length - 1;
     let depth = 0;
     for (; i < source.length; i += 1) {
       const ch = source[i];
@@ -406,6 +408,7 @@ function exportedAsyncFunctionBodies(source: string): Array<{ name: string; body
         if (depth === 0) break;
       }
     }
+    i += 1;
     while (i < source.length && source[i] !== '{') i += 1;
     let braceDepth = 0;
     let end = -1;
@@ -1061,8 +1064,8 @@ describe('scanner self-test (the recap rejects drift)', () => {
       expect.arrayContaining([expect.stringContaining('workstation-live-adapter.ts imports')]),
     );
     const doctoredContext = contextSource.replace(
-      "import {\n  fetchAllLiveDashboardData,",
-      "import { usePerformancePnlScope } from '@/hooks/use-performance-pnl-scope';\n\nimport {\n  fetchAllLiveDashboardData,",
+      "import {\n  adaptRisk,",
+      "import { usePerformancePnlScope } from '@/hooks/use-performance-pnl-scope';\n\nimport {\n  adaptRisk,",
     );
     expect(scopeImportEdgeViolations(adapterSource, doctoredContext, workstationComponentFiles)).toEqual(
       expect.arrayContaining([expect.stringContaining('workstation-context.tsx imports')]),

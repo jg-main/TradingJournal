@@ -171,8 +171,12 @@ export function AccountStatePanel() {
     ? fmtCurrency(metrics.totalPnl)
     : qualifiedValuation;
   const totalClass = valuationIsPriced ? pnlClass(metrics.totalPnl) : '';
+  // Presentation-only scope wording (M004 9D.2 §16): "Account performance"
+  // is faithful to the V2 account_performance projection and cannot be
+  // mistaken for the sidebar's user-selected global Period. The underlying
+  // value is unchanged.
   const totalSub = valuationIsPriced
-    ? `Period performance · ${fmtDate(metrics.provenance.asOf)}`
+    ? `Account performance · ${fmtDate(metrics.provenance.asOf)}`
     : qualifiedValuation;
   const totalLabel = valuationIsStale ? 'Stale Total P&L' : 'Total P&L';
 

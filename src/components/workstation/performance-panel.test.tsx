@@ -143,9 +143,11 @@ function renderWithDashboard(
     riskSummary: { openPnl: '0.00' },
     valuation: { state: 'complete' },
   },
+  opts: { resolvedPeriod?: { from: string; to: string } } = {},
 ) {
   mockUseWorkstation.mockReturnValue({
     fixtures: { dashboard, dashboardV2 },
+    resolvedPeriod: opts.resolvedPeriod ?? { from: '', to: '' },
   });
   return render(<PerformancePanel />);
 }
@@ -490,6 +492,50 @@ describe('PerformancePanel — two-column KPI groups (M018/S01)', () => {
     for (const id of ['ws-perf-group-pnl', 'ws-perf-group-risk', 'ws-perf-group-win-edge', 'ws-perf-group-activity']) {
       expect(screen.queryByTestId(id)).toBeNull();
     }
+  });
+});
+
+describe('PerformancePanel — hybrid scope clarity (M004 9D.2 §14)', () => {
+  it('labels closed-decision metrics as selected period when the global period is bounded', () => {
+    renderWithDashboard(baseDashboard(), undefined, {
+      resolvedPeriod: { from: '2026-06-01', to: '2026-06-30' },
+    });
+
+    const headerMeta = screen
+      .getByTestId('ws-panel-performance')
+      .querySelector('.ws-panel-meta');
+    expect(headerMeta?.textContent).toContain('Live P&L');
+    expect(headerMeta?.textContent).toContain('selected period');
+
+    // Closed-decision groups carry the selected-period scope.
+    const riskHeader = screen.getByTestId('ws-perf-group-risk').querySelector('.ws-perf-group-header');
+    expect(riskHeader?.textContent).toContain('Closed-trade risk · selected period');
+    const edgeHeader = screen.getByTestId('ws-perf-group-win-edge').querySelector('.ws-perf-group-header');
+    expect(edgeHeader?.textContent).toContain('Closed-trade edge · selected period');
+
+    // Activity rows: unbounded/current values are NOT presented as period counts.
+    const totalTrades = screen.getByTestId('ws-perf-total-trades');
+    expect(totalTrades.textContent).toContain('account scope');
+    expect(totalTrades.textContent).not.toContain('selected period');
+    const openTrades = screen.getByTestId('ws-perf-open-trades');
+    expect(openTrades.textContent).toContain('current');
+    expect(openTrades.textContent).not.toContain('selected period');
+    expect(screen.getByTestId('ws-perf-closed-trades').textContent).toContain('selected period');
+    expect(screen.getByTestId('ws-perf-holding-days').textContent).toContain('selected period');
+  });
+
+  it('keeps legacy wording for Max (unbounded) while Live P&L stays explicit', () => {
+    renderWithDashboard(baseDashboard());
+
+    const headerMeta = screen
+      .getByTestId('ws-panel-performance')
+      .querySelector('.ws-panel-meta');
+    expect(headerMeta?.textContent).toContain('Live P&L');
+    expect(headerMeta?.textContent).not.toContain('selected period');
+    expect(screen.getByTestId('ws-perf-closed-trades').textContent).not.toContain('selected period');
+    expect(screen.getByTestId('ws-perf-holding-days').textContent).not.toContain('selected period');
+    // Unbounded counts never masquerade as selected-period counts.
+    expect(screen.getByTestId('ws-perf-total-trades').textContent).toContain('account scope');
   });
 });
 
