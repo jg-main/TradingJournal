@@ -98,10 +98,17 @@ afterEach(() => {
 });
 
 describe('Risk Defaults settings page', () => {
-  it('shows loading state initially', async () => {
+  it('shows loading text while keeping the shell, header, and description', async () => {
     mockFetchSuccess(); // delayed by test framework
     const { container } = render(React.createElement(RiskDefaultsPage));
     expect(container.textContent).toContain('Loading risk defaults...');
+    // The child-page skeleton remains stable while data loads.
+    expect(screen.getByText('Back to Settings')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /risk defaults/i })).toBeTruthy();
+    expect(screen.getByText(/global defaults for all accounts/i)).toBeTruthy();
+    // Fields are not yet rendered.
+    expect(screen.queryByLabelText('Max Risk Per Trade (%)')).toBeNull();
+    expect(screen.queryByLabelText('Default Commission ($)')).toBeNull();
   });
 
   it('renders heading, explanation, and both risk fields after load', async () => {
@@ -118,6 +125,32 @@ describe('Risk Defaults settings page', () => {
     expect(screen.getByLabelText('Max Risk Per Trade (%)')).toBeTruthy();
     expect(screen.getByLabelText('Default Commission ($)')).toBeTruthy();
     expect(screen.getByText('Save Risk Defaults')).toBeTruthy();
+    expect(screen.queryByText('Loading risk defaults...')).toBeNull();
+  });
+
+  it('renders exactly two numeric controls with their native attributes preserved', async () => {
+    mockFetchSuccess();
+    render(React.createElement(RiskDefaultsPage));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /risk defaults/i })).toBeTruthy();
+    });
+
+    const numberInputs = screen.queryAllByRole('spinbutton');
+    expect(numberInputs).toHaveLength(2);
+
+    const riskInput = screen.getByLabelText('Max Risk Per Trade (%)') as HTMLInputElement;
+    expect(riskInput.type).toBe('number');
+    expect(riskInput.step).toBe('0.1');
+    expect(riskInput.min).toBe('0');
+    expect(riskInput.max).toBe('100');
+    expect(riskInput.placeholder).toBe('2');
+
+    const commissionInput = screen.getByLabelText('Default Commission ($)') as HTMLInputElement;
+    expect(commissionInput.type).toBe('number');
+    expect(commissionInput.step).toBe('0.01');
+    expect(commissionInput.min).toBe('0');
+    expect(commissionInput.placeholder).toBe('0');
   });
 
   it('pre-populates risk fields from the API response', async () => {
@@ -338,6 +371,36 @@ describe('Risk Defaults settings page', () => {
     expect(putBody).not.toHaveProperty('startingAccountValue');
     expect(putBody).not.toHaveProperty('journalStartDate');
     // Non-null hidden fields should still be included
+    expect(putBody).toHaveProperty('defaultAccountId', null);
+    expect(putBody).toHaveProperty('currency', 'USD');
+  });
+
+  it('omits an emptied visible value from the PUT body (frozen request-body semantics)', async () => {
+    const fetchMock = mockFetchSuccess();
+    const user = userEvent.setup();
+
+    render(React.createElement(RiskDefaultsPage));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Max Risk Per Trade (%)')).toBeTruthy();
+    });
+
+    // Clear the risk input; keep commission at its loaded value.
+    const riskInput = screen.getByLabelText('Max Risk Per Trade (%)');
+    await user.clear(riskInput);
+    await user.click(screen.getByText('Save Risk Defaults'));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    const putBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    // Empty visible value is omitted — no 0/NaN coercion.
+    expect(putBody).not.toHaveProperty('maxRiskPerTradePct');
+    expect(putBody).toHaveProperty('defaultCommission', 0.5);
+    // Hidden fields still round-trip.
+    expect(putBody).toHaveProperty('startingAccountValue', 50000);
+    expect(putBody).toHaveProperty('journalStartDate', '2025-01-01');
     expect(putBody).toHaveProperty('defaultAccountId', null);
     expect(putBody).toHaveProperty('currency', 'USD');
   });
