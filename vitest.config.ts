@@ -191,6 +191,7 @@ export default defineConfig({
       'src/app/(legacy)/settings/risk-defaults/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/accounts/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/__tests__/page.test.tsx',
+      'src/components/settings/__tests__/settings-child-page.test.tsx',
       'src/app/(trades)/trades/__tests__/page.test.tsx',
       'src/app/(legacy)/trades/new/page.test.tsx',
       'src/app/(trades)/trades/__tests__/actions-propagation.test.tsx',
