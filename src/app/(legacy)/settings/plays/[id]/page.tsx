@@ -133,32 +133,37 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-sm text-muted-foreground">Loading...</p>
+      <div className="mx-auto max-w-5xl px-8 py-10">
+        <div className="max-w-3xl">
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
       </div>
     );
   }
 
   if (!setup) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-sm text-destructive">Play not found.</p>
-        <Link href="/settings/plays" className="mt-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-4" /> Back to Plays
-        </Link>
+      <div className="mx-auto max-w-5xl px-8 py-10">
+        <div className="max-w-3xl">
+          <p className="text-sm text-destructive">Play not found.</p>
+          <Link href="/settings/plays" className="mt-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="size-4" /> Back to Plays
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-8 py-10">
+      <div className="max-w-3xl">
       {/* ── Header ─────────────────────────────────────────────── */}
       <Link href="/settings/plays" className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" />
         Back to Plays
       </Link>
 
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{setup.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">Configure trading setup rules, risk parameters, and AI assessment data.</p>
@@ -360,6 +365,7 @@ export default function PlayDetailPage({ params }: { params: Promise<{ id: strin
             <span className="text-sm text-positive">Saved.</span>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
