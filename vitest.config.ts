@@ -187,6 +187,7 @@ export default defineConfig({
       'src/app/api/performance/analytics/__tests__/route.test.ts',
       'src/app/(legacy)/settings/workspace/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/risk-defaults/__tests__/page.test.tsx',
+      'src/app/(legacy)/settings/accounts/__tests__/page.test.tsx',
       'src/app/(trades)/trades/__tests__/page.test.tsx',
       'src/app/(legacy)/trades/new/page.test.tsx',
       'src/app/(trades)/trades/__tests__/actions-propagation.test.tsx',

@@ -1,13 +1,21 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Landmark } from 'lucide-react';
+import { Landmark } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import DynamicTable from '@/components/dynamic-table';
 import { EmptyState } from '@/components/empty-state';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AddAccountDialog, type CreatedAccount } from '@/components/accounting/add-account-dialog';
 import { useAccount } from '@/lib/account-context';
 
@@ -20,6 +28,9 @@ interface Account {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Radix Select disallows empty item values; '' (no default) maps to this sentinel. */
+const NO_DEFAULT_SENTINEL = '__none__';
 
 export default function AccountsPage() {
   const router = useRouter();
@@ -161,9 +172,9 @@ export default function AccountsPage() {
         <span className="font-semibold text-foreground">
           {row.original.name}
           {persistedDefaultAccountId === row.original.id && (
-            <span className="ml-2 inline-block rounded-full bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
+            <Badge variant="info" className="ml-2">
               Default
-            </span>
+            </Badge>
           )}
         </span>
       ),
@@ -187,15 +198,9 @@ export default function AccountsPage() {
       cell: ({ getValue }) => {
         const active = getValue<boolean>();
         return (
-          <span
-            className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              active
-                ? 'bg-positive/10 text-positive'
-                : 'bg-muted text-muted-foreground'
-            }`}
-          >
+          <Badge variant={active ? 'positive' : 'secondary'}>
             {active ? 'Active' : 'Inactive'}
-          </span>
+          </Badge>
         );
       },
     },
@@ -205,32 +210,24 @@ export default function AccountsPage() {
 
   if (loading && accounts.length === 0) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
+      <div className="mx-auto max-w-7xl px-4 py-6">
         <p className="text-sm text-muted-foreground">Loading accounts...</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-3 sm:px-8 sm:py-10">
-      {/* Back link */}
-      <Link
-        href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    <div data-testid="accounts-page" className="mx-auto max-w-7xl px-4 py-6">
+      {/* Compact management page header */}
+      <div
+        data-testid="accounts-page-header"
+        className="mb-6 flex flex-wrap items-center justify-between gap-3"
       >
-        <ArrowLeft className="size-4" />
-        Back to Settings
-      </Link>
-
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Accounts</h1>
-        <button
-          onClick={() => setDialogOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <Landmark className="size-4" />+ Add Account
-        </button>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Accounts</h1>
+        <Button type="button" onClick={() => setDialogOpen(true)}>
+          <Landmark />
+          Add Account
+        </Button>
       </div>
 
       {/* Messages */}
@@ -238,7 +235,7 @@ export default function AccountsPage() {
         <div
           role={message.type === 'error' ? 'alert' : 'status'}
           aria-live="polite"
-          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+          className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
             message.type === 'success'
               ? 'border-positive/30 bg-positive/10 text-positive'
               : 'border-destructive/30 bg-destructive/10 text-destructive'
@@ -251,7 +248,8 @@ export default function AccountsPage() {
       {/* Default account section */}
       <section
         aria-labelledby="default-account-heading"
-        className="mb-8 rounded-lg border bg-card p-5"
+        data-testid="accounts-default-section"
+        className="mb-6 rounded-lg border bg-card p-5"
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 flex-1">
@@ -264,24 +262,32 @@ export default function AccountsPage() {
             <label htmlFor="default-account" className="mt-4 mb-1.5 block text-sm font-medium text-foreground">
               Account used by default
             </label>
-            <select
-              id="default-account"
-              value={defaultAccountDraft}
-              onChange={(event) => setDefaultAccountDraft(event.target.value)}
-              aria-describedby="default-account-status"
-              className="min-h-10 w-full rounded-md border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            <Select
+              value={defaultAccountDraft === '' ? NO_DEFAULT_SENTINEL : defaultAccountDraft}
+              onValueChange={(value) =>
+                setDefaultAccountDraft(value === NO_DEFAULT_SENTINEL ? '' : value)
+              }
             >
-              <option value="">No default account</option>
-              {accounts.filter((account) => account.isActive).map((account) => (
-                <option key={account.id} value={account.id}>{account.name}</option>
-              ))}
-              {persistedDefaultAccountId &&
-                !accounts.some((account) => account.id === persistedDefaultAccountId && account.isActive) && (
-                  <option value={persistedDefaultAccountId} disabled>
-                    Current default is inactive or unavailable
-                  </option>
-                )}
-            </select>
+              <SelectTrigger
+                id="default-account"
+                className="w-full"
+                aria-describedby="default-account-status"
+              >
+                <SelectValue placeholder="No default account" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_DEFAULT_SENTINEL}>No default account</SelectItem>
+                {accounts.filter((account) => account.isActive).map((account) => (
+                  <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
+                ))}
+                {persistedDefaultAccountId &&
+                  !accounts.some((account) => account.id === persistedDefaultAccountId && account.isActive) && (
+                    <SelectItem value={persistedDefaultAccountId} disabled>
+                      Current default is inactive or unavailable
+                    </SelectItem>
+                  )}
+              </SelectContent>
+            </Select>
             <p id="default-account-status" className="mt-2 text-xs text-muted-foreground" role="status">
               {defaultSettingsStatus === 'unavailable'
                 ? 'Saved default unavailable. Choose an account and save to retry.'
@@ -293,14 +299,14 @@ export default function AccountsPage() {
                 : ''}
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={handleDefaultAccountSave}
             disabled={savingDefault}
-            className="min-h-10 shrink-0 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {savingDefault ? 'Saving default...' : 'Save default'}
-          </button>
+          </Button>
         </div>
       </section>
 
@@ -314,23 +320,25 @@ export default function AccountsPage() {
       />
 
       {/* Table */}
-      {accounts.length === 0 ? (
-        <EmptyState
-          icon={<Landmark className="size-12 text-muted-foreground" strokeWidth={1} />}
-          title="No accounts yet"
-          description="Add your first brokerage account to get started."
-        />
-      ) : (
-        <DynamicTable
-          data={accounts}
-          columns={columns}
-          storageKey="accounts"
-          onRowClick={row => router.push('/settings/accounts/' + row.original.id)}
-          rowHref={row => `/settings/accounts/${row.original.id}`}
-          rowLinkColumnId="name"
-          rowLinkLabel={row => `Open account ${row.original.name}`}
-        />
-      )}
+      <div data-testid="accounts-table-region">
+        {accounts.length === 0 ? (
+          <EmptyState
+            icon={<Landmark className="size-12 text-muted-foreground" strokeWidth={1} />}
+            title="No accounts yet"
+            description="Add your first brokerage account to get started."
+          />
+        ) : (
+          <DynamicTable
+            data={accounts}
+            columns={columns}
+            storageKey="accounts"
+            onRowClick={row => router.push('/settings/accounts/' + row.original.id)}
+            rowHref={row => `/settings/accounts/${row.original.id}`}
+            rowLinkColumnId="name"
+            rowLinkLabel={row => `Open account ${row.original.name}`}
+          />
+        )}
+      </div>
     </div>
   );
 }
