@@ -1,16 +1,19 @@
 /**
- * live-historical-contract.test.ts — M026-1bw68n/S02/T02
+ * live-historical-contract.test.ts — M026-1bw68n/S02/T02 (+ M004 9D.1)
  *
  * Contract tests for the Live vs Historical scope separation documented in
  * the "Live vs Historical scope contract" subsection of
  * docs/design-system/workstation.md (Data ownership section). Proves the
  * invariants pinned by the separation rule:
  *
- *   1. The live adapter (src/lib/workstation-live-adapter.ts) exposes no
- *      period or date filter. Every exported fetch function takes at most an
- *      accountId, an AbortSignal, the documented skipAccounts option (or a
- *      symbol list for the market-price lookup), and no query the adapter
- *      builds carries a period/date parameter.
+ *   1. The CURRENT adapter surface (src/lib/workstation-live-adapter.ts)
+ *      exposes no period or date filter. Every CURRENT fetch function takes
+ *      at most an accountId, an AbortSignal, the documented skipAccounts
+ *      option (or a symbol list for the market-price lookup), and no query
+ *      the CURRENT path builds carries a period/date parameter. The adapter's
+ *      single date-aware entry point is the V1 dashboard fetch, which may
+ *      accept an already-resolved plain YMD range and serialize it only as
+ *      dateFrom/dateTo (M004 9D.1 §4/§5/§6).
  *   2. No import edge connects the live data path to the P&L scope
  *      preference: workstation-live-adapter.ts and workstation-context.tsx
  *      never import use-performance-pnl-scope; only performance-panel.tsx
@@ -65,8 +68,8 @@ const workstationComponentFiles = fs
 
 /* ── Period/date filter vocabulary ─────────────────────────────────────── */
 
-/** Words that mean a date-window or period filter. The live adapter must
- *  never take a parameter or build a query key from this vocabulary. */
+/** Words that mean a date-window or period filter. CURRENT fetch functions
+ *  must never take a parameter or build a query key from this vocabulary. */
 const PERIOD_DATE_PARAM_WORDS = [
   'period', 'periods', 'range', 'daterange', 'datefrom', 'dateto',
   'fromdate', 'todate', 'startdate', 'enddate', 'since', 'lookback',
@@ -171,10 +174,17 @@ function leadingParamNames(segment: string): string[] {
 
 const adapterFunctions = extractExportedFunctions(adapterSource);
 
-/** Export surface the doc contract pins: the async exports are the fetch
- *  functions; their parameters may be at most accountId, an AbortSignal, the
- *  documented skipAccounts option, or a symbol list (price lookup). */
+/** The adapter's date-aware entry points (M004 9D.1 §5/§6/§7): the V1
+ *  dashboard fetch and its compatibility composition wrapper.  Every other
+ *  exported async fetch is a CURRENT-state acquisition. */
+const DATE_AWARE_FETCH_FNS = new Set(['fetchDashboardLive', 'fetchAllLiveDashboardData']);
+
+/** Export surface the doc contract pins: CURRENT fetch functions may take at
+ *  most accountId, an AbortSignal, the documented skipAccounts option, or a
+ *  symbol list (price lookup).  The date-aware V1 fetch and its composition
+ *  wrapper may additionally take the already-resolved `range` argument. */
 const ALLOWED_FETCH_PARAMS = ['accountId', 'signal', 'options', 'skipAccounts', 'symbols'] as const;
+const ALLOWED_DATE_AWARE_FETCH_PARAMS = [...ALLOWED_FETCH_PARAMS, 'range'] as const;
 
 /** Query keys the adapter builds via URLSearchParams({ ... }). */
 function urlSearchParamKeys(source: string): string[] {
@@ -183,6 +193,36 @@ function urlSearchParamKeys(source: string): string[] {
     keys.push(...[...m[1].matchAll(/[A-Za-z_$][\w$]*/g)].map((x) => x[0]));
   }
   return keys;
+}
+
+/** Full source text of one exported function (signature through the matching
+ *  closing brace). */
+function exportedFunctionBody(source: string, name: string): string | undefined {
+  const re = new RegExp(`^export\\s+(?:async\\s+)?function\\s+${name}\\s*\\(`, 'gm');
+  const m = re.exec(source);
+  if (!m) return undefined;
+  const start = m.index;
+  let i = start + m[0].length;
+  let depth = 0;
+  for (; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  while (i < source.length && source[i] !== '{') i += 1;
+  let braceDepth = 0;
+  for (let j = i; j < source.length; j += 1) {
+    const ch = source[j];
+    if (ch === '{') braceDepth += 1;
+    else if (ch === '}') {
+      braceDepth -= 1;
+      if (braceDepth === 0) return source.slice(start, j + 1);
+    }
+  }
+  return undefined;
 }
 
 /* ── Behavioral group: mocked fetch ────────────────────────────────────── */
@@ -467,42 +507,71 @@ function hasPeriodDateQueryParam(url: string): boolean {
   });
 }
 
-/* ── 1. Live adapter exposes no period/date filter ─────────────────────── */
+/* ── 1. CURRENT adapter surface exposes no period/date filter ───────────── */
 
-describe('live adapter exposes no period or date filter', () => {
+describe('CURRENT adapter surface exposes no period or date filter', () => {
   it('keeps a non-trivial exported fetch surface', () => {
     const fetchFns = adapterFunctions.filter((f) => f.isAsync);
-    expect(fetchFns.length).toBeGreaterThanOrEqual(8);
+    expect(fetchFns.length).toBeGreaterThanOrEqual(9);
     expect(adapterFunctions.map((f) => f.name)).toContain('fetchAllLiveDashboardData');
   });
 
-  it('no exported function parameter carries period/date vocabulary', () => {
-    const hits = adapterFunctions.flatMap((fn) =>
-      fn.params.flatMap((segment) => bannedVocabularyHits(segment).map((w) => `${fn.name}: ${w}`)),
-    );
-    expect(hits, 'period/date parameter vocabulary found in the live adapter').toEqual([]);
+  it('no CURRENT fetch parameter carries period/date vocabulary', () => {
+    const hits = adapterFunctions
+      .filter((f) => !DATE_AWARE_FETCH_FNS.has(f.name))
+      .flatMap((fn) =>
+        fn.params.flatMap((segment) => bannedVocabularyHits(segment).map((w) => `${fn.name}: ${w}`)),
+      );
+    expect(hits, 'period/date parameter vocabulary found in a CURRENT fetch').toEqual([]);
   });
 
-  it('fetch functions take at most accountId, AbortSignal, and the documented skipAccounts option', () => {
+  it('CURRENT fetch functions take at most accountId, AbortSignal, and the documented skipAccounts option', () => {
     const violations = adapterFunctions
       .filter((f) => f.isAsync)
       .flatMap((fn) =>
         fn.params
           .flatMap(leadingParamNames)
-          .filter((name) => !(ALLOWED_FETCH_PARAMS as readonly string[]).includes(name))
+          .filter(
+            (name) =>
+              !(DATE_AWARE_FETCH_FNS.has(fn.name)
+                ? (ALLOWED_DATE_AWARE_FETCH_PARAMS as readonly string[])
+                : (ALLOWED_FETCH_PARAMS as readonly string[])
+              ).includes(name),
+          )
           .map((name) => `${fn.name}: ${name}`),
       );
     expect(
       violations,
-      'a fetch function gained a parameter outside {accountId, signal, options, skipAccounts, symbols} — ' +
-        'the doc contract says the live adapter takes no period/date filter',
+      'a CURRENT fetch gained a parameter outside {accountId, signal, options, skipAccounts, symbols} — ' +
+        'the doc contract says CURRENT fetches take no period/date filter',
     ).toEqual([]);
   });
 
-  it('no query the adapter builds carries a period/date key', () => {
+  it('only the date-aware V1 fetch and its composition wrapper may take the resolved range', () => {
+    for (const fn of adapterFunctions) {
+      const hasRange = fn.params.some((segment) => /^range\b/.test(segment.trim()));
+      if (DATE_AWARE_FETCH_FNS.has(fn.name)) {
+        expect(hasRange, `${fn.name} may take the optional range`).toBe(true);
+      } else {
+        expect(hasRange, `${fn.name} must not take a range parameter`).toBe(false);
+      }
+    }
+  });
+
+  it('no query the CURRENT path builds carries a period/date key', () => {
     const keys = urlSearchParamKeys(adapterSource);
     expect(keys.length).toBeGreaterThanOrEqual(2);
     expect(bannedVocabularyHits(keys.join(' ')), 'period/date query key in a live URL').toEqual([]);
+  });
+
+  it('dateFrom/dateTo are serialized only inside the date-aware V1 fetch (9D.1 §10)', () => {
+    const mentioners = adapterFunctions
+      .filter((f) => f.isAsync)
+      .map((f) => ({ name: f.name, body: exportedFunctionBody(adapterSource, f.name) }))
+      .filter(({ body }) => body !== undefined)
+      .filter(({ body }) => /\bdateFrom\b/.test(body!) || /\bdateTo\b/.test(body!))
+      .map(({ name }) => name);
+    expect(mentioners).toEqual(['fetchDashboardLive']);
   });
 });
 
@@ -588,22 +657,24 @@ describe('period-scope preference never alters the live snapshot payload', () =>
 /* ── 4. Scanner self-test (the contract rejects drift) ─────────────────── */
 
 describe('contract scanner self-test (the contract rejects drift)', () => {
-  it('flags an exported fetch function that gains a period parameter', () => {
+  it('flags a CURRENT fetch function that gains a period parameter', () => {
     const doctored = adapterSource.replace(
-      'export async function fetchDashboardLive(\n  accountId: string,\n  signal?: AbortSignal,\n)',
-      'export async function fetchDashboardLive(\n  accountId: string,\n  period: string,\n  signal?: AbortSignal,\n)',
+      'export async function fetchDashboardV2Live(\n  accountId: string,\n  signal?: AbortSignal,\n)',
+      'export async function fetchDashboardV2Live(\n  accountId: string,\n  signal?: AbortSignal,\n  period: string,\n)',
     );
     const fns = extractExportedFunctions(doctored);
-    const hits = fns.flatMap((fn) =>
-      fn.params.flatMap((segment) => bannedVocabularyHits(segment).map((w) => `${fn.name}: ${w}`)),
-    );
-    expect(hits).toContain('fetchDashboardLive: period');
+    const hits = fns
+      .filter((f) => !DATE_AWARE_FETCH_FNS.has(f.name))
+      .flatMap((fn) =>
+        fn.params.flatMap((segment) => bannedVocabularyHits(segment).map((w) => `${fn.name}: ${w}`)),
+      );
+    expect(hits).toContain('fetchDashboardV2Live: period');
   });
 
-  it('flags a date-window parameter on the batch fetch', () => {
+  it('flags a raw date-window parameter on the batch fetch', () => {
     const doctored = adapterSource.replace(
-      'export async function fetchAllLiveDashboardData(\n  accountId: string,\n  signal?: AbortSignal,\n  options?: { skipAccounts?: boolean },\n)',
-      'export async function fetchAllLiveDashboardData(\n  accountId: string,\n  dateFrom: string,\n  signal?: AbortSignal,\n  options?: { skipAccounts?: boolean },\n)',
+      'export async function fetchAllLiveDashboardData(\n  accountId: string,\n  signal?: AbortSignal,\n  options?: { skipAccounts?: boolean },\n  range?: ResolvedDateRange,\n)',
+      'export async function fetchAllLiveDashboardData(\n  accountId: string,\n  signal?: AbortSignal,\n  options?: { skipAccounts?: boolean },\n  dateFrom: string,\n)',
     );
     const fns = extractExportedFunctions(doctored);
     const violations = fns
@@ -611,9 +682,33 @@ describe('contract scanner self-test (the contract rejects drift)', () => {
       .flatMap((fn) =>
         fn.params
           .flatMap(leadingParamNames)
-          .filter((name) => !(ALLOWED_FETCH_PARAMS as readonly string[]).includes(name)),
+          .filter(
+            (name) =>
+              !(DATE_AWARE_FETCH_FNS.has(fn.name)
+                ? (ALLOWED_DATE_AWARE_FETCH_PARAMS as readonly string[])
+                : (ALLOWED_FETCH_PARAMS as readonly string[])
+              ).includes(name),
+          ),
       );
     expect(violations).toContain('dateFrom');
+  });
+
+  it('allows the resolved range on the date-aware V1 fetch (positive control)', () => {
+    const fns = extractExportedFunctions(adapterSource);
+    const violations = fns
+      .filter((f) => f.isAsync)
+      .flatMap((fn) =>
+        fn.params
+          .flatMap(leadingParamNames)
+          .filter(
+            (name) =>
+              !(DATE_AWARE_FETCH_FNS.has(fn.name)
+                ? (ALLOWED_DATE_AWARE_FETCH_PARAMS as readonly string[])
+                : (ALLOWED_FETCH_PARAMS as readonly string[])
+              ).includes(name),
+          ),
+      );
+    expect(violations).toEqual([]);
   });
 
   it('flags a period query key in a URL the adapter builds', () => {

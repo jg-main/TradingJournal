@@ -7,6 +7,19 @@
  * WorkstationWatchlistItem[], WorkstationAccount[], WorkstationPosition[],
  * WorkstationRisk).
  *
+ * Data-boundary contract (M004 9D.1): the adapter separates CURRENT
+ * workstation state from date-aware V1 dashboard / retrospective state.
+ *  - CURRENT acquisition (fetchCurrentLiveDashboardData) touches only
+ *    /api/dashboard/v2, /api/watchlist, and /api/accounts. It must never
+ *    fetch /api/dashboard V1 and never carry a date parameter.
+ *  - The V1 dashboard fetch (fetchDashboardLive) is the adapter's single
+ *    date-aware entry point: it accepts an OPTIONAL already-resolved plain
+ *    YMD range and serializes it only as dateFrom/dateTo. No date math, no
+ *    calendar/time-zone arithmetic, and no period presets happen here — the
+ *    adapter only forwards already-resolved values (M004 9D.1 §4).
+ *  - fetchAllLiveDashboardData composes the two boundaries and remains the
+ *    compatibility path consumed by WorkstationContext (unchanged here).
+ *
  * All functions are pure data-fetching and transformation — no React state,
  * no side effects beyond the HTTP request.  Designed to slot into
  * WorkstationContext live-mode (T02) as a drop-in replacement for the
@@ -68,6 +81,17 @@ export interface WorkstationAccount {
   id: string;
   name: string;
   currency: string;
+}
+
+/**
+ * Already-resolved plain YMD (YYYY-MM-DD) date range.  Empty strings mean
+ * "no bound".  The adapter performs no date math on these values — callers
+ * supply the resolved range and the adapter only forwards it to the
+ * date-aware Dashboard V1 fetch (M004 9D.1 §4).
+ */
+export interface ResolvedDateRange {
+  from: string;
+  to: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -151,12 +175,24 @@ async function fetchJson<T>(
  * transformation needed.  The adapter validates via the typings;
  * runtime validation is deferred to the consuming context so it
  * can surface loading/error states to the UI.
+ *
+ * This is the adapter's single date-aware fetch (M004 9D.1 §6).  It accepts
+ * an OPTIONAL already-resolved plain YMD range:
+ *  - range omitted, or both bounds empty (Max): the URL stays EXACTLY
+ *    `/api/dashboard?accountId=<id>` — no date parameters.
+ *  - range supplied: only dateFrom/dateTo are appended, verbatim.
+ * No other query behavior changes.
  */
 export async function fetchDashboardLive(
   accountId: string,
   signal?: AbortSignal,
+  range?: ResolvedDateRange,
 ): Promise<LiveFetchResult<DashboardResponse>> {
   const params = new URLSearchParams({ accountId });
+  if (range) {
+    if (range.from !== '') params.set('dateFrom', range.from);
+    if (range.to !== '') params.set('dateTo', range.to);
+  }
   return fetchJson<DashboardResponse>(`/api/dashboard?${params.toString()}`, signal);
 }
 
@@ -522,29 +558,41 @@ export function buildTradeIdeasFromWatchlist(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Batched fetch
+// CURRENT-state acquisition boundary (M004 9D.1 §5)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Fetch all live dashboard data for one account in parallel.
- *
- * Requests dashboard, dashboardV2, watchlist, and accounts concurrently.
- * On partial failure (some succeed, some fail) the first error is returned
- * and any successful responses are discarded.  This all-or-nothing approach
- * prevents the UI from rendering with half-live data.
+ * Bundled CURRENT workstation state for one account.  This is the
+ * date-independent half of the live data: the Dashboard V2 snapshot,
+ * watchlist, accounts, and derived positions all describe the account as it
+ * is right now and must NEVER be scoped by a period (M004 9D.1 §3).
  */
-export async function fetchAllLiveDashboardData(
+export interface LiveCurrentDashboardData {
+  dashboardV2: DashboardV2Response;
+  watchlist: WorkstationWatchlistItem[];
+  accounts: WorkstationAccount[];
+  positions: WorkstationPosition[];
+}
+
+/**
+ * Fetch only the CURRENT-state resources for one account, in parallel:
+ *  - /api/dashboard/v2 (ledger-derived current snapshot)
+ *  - /api/watchlist
+ *  - /api/accounts unless skipAccounts (the caller owns the accounts list)
+ *
+ * Never fetches /api/dashboard V1 and never sends a date parameter.
+ * On partial failure the first error is returned (V2, then watchlist, then
+ * accounts) and any successful responses are discarded — the same
+ * all-or-nothing policy as fetchAllLiveDashboardData.
+ */
+export async function fetchCurrentLiveDashboardData(
   accountId: string,
   signal?: AbortSignal,
   options?: { skipAccounts?: boolean },
-): Promise<LiveFetchResult<LiveDashboardData>> {
-  // When the caller owns the accounts list (e.g. the global AccountProvider
-  // in the legacy shell, M007/D037), the accounts leg is redundant — skip it
-  // so MTM polling does not re-fetch /api/accounts every 30s.
+): Promise<LiveFetchResult<LiveCurrentDashboardData>> {
   const skipAccounts = options?.skipAccounts === true;
 
-  const [dashResult, v2Result, wlResult, acctResult] = await Promise.all([
-    fetchDashboardLive(accountId, signal),
+  const [v2Result, wlResult, acctResult] = await Promise.all([
     fetchDashboardV2Live(accountId, signal),
     fetchWatchlistLive(signal),
     skipAccounts
@@ -553,15 +601,73 @@ export async function fetchAllLiveDashboardData(
   ]);
 
   // Collect errors in order of priority
-  const results: LiveFetchResult<unknown>[] = [dashResult, v2Result, wlResult, acctResult];
+  const results: LiveFetchResult<unknown>[] = [v2Result, wlResult, acctResult];
+  for (const r of results) {
+    if (!r.success) return r as LiveFetchError;
+  }
+
+  const dashboardV2 = (v2Result as LiveFetchSuccess<DashboardV2Response>).data;
+  const watchlist = (wlResult as LiveFetchSuccess<WorkstationWatchlistItem[]>).data;
+  const accounts = (acctResult as LiveFetchSuccess<WorkstationAccount[]>).data;
+
+  return {
+    success: true,
+    data: {
+      dashboardV2,
+      watchlist,
+      accounts,
+      positions: adaptPositions(dashboardV2.valuation.positions),
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Batched fetch
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Fetch all live dashboard data for one account in parallel.
+ *
+ * Composes the two explicit adapter boundaries (M004 9D.1 §7):
+ *  1. the date-aware V1 dashboard fetch (retrospective analytics)
+ *  2. the CURRENT-state acquisition (V2 snapshot + watchlist + accounts)
+ *
+ * On partial failure (some succeed, some fail) the first error is returned
+ * in priority order — dashboard, then V2, then watchlist, then accounts —
+ * and any successful responses are discarded.  This all-or-nothing approach
+ * prevents the UI from rendering with half-live data.
+ *
+ * The optional `range` argument is reserved for Task 9D.2: it forwards an
+ * already-resolved plain YMD range to the V1 fetch only.  The default call
+ * with no range is behaviorally identical to the pre-9D.1 adapter, and the
+ * CURRENT legs never receive any date parameter.
+ */
+export async function fetchAllLiveDashboardData(
+  accountId: string,
+  signal?: AbortSignal,
+  options?: { skipAccounts?: boolean },
+  range?: ResolvedDateRange,
+): Promise<LiveFetchResult<LiveDashboardData>> {
+  // When the caller owns the accounts list (e.g. the global AccountProvider
+  // in the legacy shell, M007/D037), the accounts leg is redundant — skip it
+  // so MTM polling does not re-fetch /api/accounts every 30s.
+  const skipAccounts = options?.skipAccounts === true;
+
+  const [dashResult, currentResult] = await Promise.all([
+    fetchDashboardLive(accountId, signal, range),
+    fetchCurrentLiveDashboardData(accountId, signal, { skipAccounts }),
+  ]);
+
+  // Collect errors in order of priority
+  const results: LiveFetchResult<unknown>[] = [dashResult, currentResult];
   for (const r of results) {
     if (!r.success) return r as LiveFetchError;
   }
 
   const dashboard = (dashResult as LiveFetchSuccess<DashboardResponse>).data;
-  const dashboardV2 = (v2Result as LiveFetchSuccess<DashboardV2Response>).data;
-  const watchlist = (wlResult as LiveFetchSuccess<WorkstationWatchlistItem[]>).data;
-  const accounts = (acctResult as LiveFetchSuccess<WorkstationAccount[]>).data;
+  const { dashboardV2, watchlist, accounts, positions } = (
+    currentResult as LiveFetchSuccess<LiveCurrentDashboardData>
+  ).data;
 
   return {
     success: true,
@@ -570,7 +676,7 @@ export async function fetchAllLiveDashboardData(
       dashboardV2,
       watchlist,
       accounts,
-      positions: adaptPositions(dashboardV2.valuation.positions),
+      positions,
       risk: adaptRisk(dashboard, dashboardV2),
     },
   };

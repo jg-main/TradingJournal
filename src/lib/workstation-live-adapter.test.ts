@@ -30,6 +30,7 @@ import {
   fetchDashboardV2Live,
   fetchWatchlistLive,
   fetchAccountsLive,
+  fetchCurrentLiveDashboardData,
   fetchAllLiveDashboardData,
   fetchWatchlistPricesLive,
   refreshMtmPricesLive,
@@ -42,6 +43,8 @@ import {
   adaptSymbolPrices,
   buildTradeIdeasFromWatchlist,
   type LiveDashboardData,
+  type LiveCurrentDashboardData,
+  type ResolvedDateRange,
 } from '@/lib/workstation-live-adapter';
 import type { DashboardResponse, WorkstationPosition, WorkstationWatchlistItem, SymbolPriceData } from '@/lib/workstation-fixtures';
 import type { DashboardV2Response, DashboardPositionSummary } from '@/lib/accounting/dashboard-v2';
@@ -455,6 +458,67 @@ describe('fetchDashboardLive', () => {
     expect(url).toContain('accountId=my-account-123');
   });
 
+  it('omits dateFrom/dateTo when the range is omitted (exact legacy URL)', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    await fetchDashboardLive('acct-1');
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/dashboard?accountId=acct-1');
+  });
+
+  it('serializes a Custom YMD range as plain dateFrom/dateTo', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    const range: ResolvedDateRange = { from: '2026-06-01', to: '2026-06-30' };
+    await fetchDashboardLive('acct-1', undefined, range);
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      '/api/dashboard?accountId=acct-1&dateFrom=2026-06-01&dateTo=2026-06-30',
+    );
+  });
+
+  it('appends only dateFrom when only the from bound is resolved', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    await fetchDashboardLive('acct-1', undefined, { from: '2026-06-01', to: '' });
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      '/api/dashboard?accountId=acct-1&dateFrom=2026-06-01',
+    );
+  });
+
+  it('appends only dateTo when only the to bound is resolved', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    await fetchDashboardLive('acct-1', undefined, { from: '', to: '2026-06-30' });
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      '/api/dashboard?accountId=acct-1&dateTo=2026-06-30',
+    );
+  });
+
+  it('omits both date parameters for an empty Max range', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    await fetchDashboardLive('acct-1', undefined, { from: '', to: '' });
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/dashboard?accountId=acct-1');
+  });
+
+  it('keeps date values plain YMD — no timezone/instant conversion occurs', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    await fetchDashboardLive('acct-1', undefined, { from: '2026-06-01', to: '2026-06-30' });
+    const url = mockFetch.mock.calls[0][0] as string;
+    // Values are forwarded verbatim as YYYY-MM-DD — never an ISO instant with
+    // a T/Z time separator and never a URL-encoded clock component.
+    expect(url).toContain('dateFrom=2026-06-01');
+    expect(url).toContain('dateTo=2026-06-30');
+    expect(url).not.toMatch(/2026-06-0[12]T/);
+    expect(url).not.toMatch(/Z$/);
+    expect(url).not.toContain('%3A');
+  });
+
+  it('preserves the abort signal when a range is supplied', async () => {
+    mockFetchAbortError();
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const result = await fetchDashboardLive('acct-1', ctrl.signal, { from: '2026-06-01', to: '' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe('Request was aborted');
+    }
+  });
+
   it('returns error on network failure', async () => {
     mockFetchNetworkError();
     const result = await fetchDashboardLive(accountId);
@@ -635,6 +699,110 @@ describe('fetchAccountsLive', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.status).toBe(500);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// fetchCurrentLiveDashboardData — CURRENT-state acquisition boundary (9D.1)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('fetchCurrentLiveDashboardData', () => {
+  const accountId = 'acct-1';
+
+  it('fetches /api/dashboard/v2, /api/watchlist, and /api/accounts', async () => {
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+    mockFetchResponse(200, makeAccountRows());
+
+    const result = await fetchCurrentLiveDashboardData(accountId);
+    expect(result.success).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('issues the exact CURRENT URLs with no date parameters', async () => {
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+    mockFetchResponse(200, makeAccountRows());
+
+    await fetchCurrentLiveDashboardData(accountId);
+    const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+    expect(urls).toEqual([
+      '/api/dashboard/v2?accountId=acct-1',
+      '/api/watchlist',
+      '/api/accounts',
+    ]);
+    for (const url of urls) {
+      expect(url).not.toMatch(/dateFrom|dateTo|from=|to=/);
+    }
+  });
+
+  it('skips /api/accounts when skipAccounts is true', async () => {
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+
+    const result = await fetchCurrentLiveDashboardData(accountId, undefined, { skipAccounts: true });
+    expect(result.success).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+    expect(urls).toEqual([
+      '/api/dashboard/v2?accountId=acct-1',
+      '/api/watchlist',
+    ]);
+    if (result.success) {
+      expect(result.data.accounts).toEqual([]);
+    }
+  });
+
+  it('NEVER fetches /api/dashboard V1', async () => {
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+    mockFetchResponse(200, makeAccountRows());
+
+    await fetchCurrentLiveDashboardData(accountId);
+    const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.startsWith('/api/dashboard?'))).toBe(false);
+  });
+
+  it('returns the LiveCurrentDashboardData shape with derived positions', async () => {
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+    mockFetchResponse(200, makeAccountRows());
+
+    const result = await fetchCurrentLiveDashboardData(accountId);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const data: LiveCurrentDashboardData = result.data;
+      expect(data.dashboardV2.account.id).toBe('acct-1');
+      expect(data.watchlist).toHaveLength(3);
+      expect(data.accounts).toHaveLength(3);
+      expect(data.positions).toHaveLength(3);
+      expect(data.positions[0].initialRiskAmount).toBeNull();
+    }
+  });
+
+  it('returns the first error in priority order on partial failure', async () => {
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchNetworkError();
+    mockFetchResponse(200, makeAccountRows());
+
+    const result = await fetchCurrentLiveDashboardData(accountId);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe('Failed to fetch');
+    }
+  });
+
+  it('aborts all requests when the shared signal is aborted', async () => {
+    mockFetchAbortError();
+    mockFetchAbortError();
+    mockFetchAbortError();
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const result = await fetchCurrentLiveDashboardData(accountId, ctrl.signal);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe('Request was aborted');
     }
   });
 });
@@ -860,6 +1028,63 @@ describe('fetchAllLiveDashboardData', () => {
       expect(result.data.positions).toHaveLength(3);
       expect(result.data.positions[0].initialRiskAmount).toBeNull();
       expect(result.data.risk.ptd.realizedPnl).toBe('12437.75');
+    }
+  });
+
+  it('default unbounded call issues the legacy four-URL bundle with no date parameters', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+    mockFetchResponse(200, makeAccountRows());
+
+    await fetchAllLiveDashboardData(accountId);
+    const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+    expect(urls).toEqual([
+      '/api/dashboard?accountId=acct-1',
+      '/api/dashboard/v2?accountId=acct-1',
+      '/api/watchlist',
+      '/api/accounts',
+    ]);
+    for (const url of urls) {
+      expect(url).not.toMatch(/dateFrom|dateTo/);
+    }
+  });
+
+  it('forwards a resolved range to the V1 leg only — CURRENT legs stay date-free', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+    mockFetchResponse(200, makeAccountRows());
+
+    const range: ResolvedDateRange = { from: '2026-06-01', to: '2026-06-30' };
+    const result = await fetchAllLiveDashboardData(accountId, undefined, undefined, range);
+    expect(result.success).toBe(true);
+    const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+    expect(urls[0]).toBe('/api/dashboard?accountId=acct-1&dateFrom=2026-06-01&dateTo=2026-06-30');
+    expect(urls[1]).toBe('/api/dashboard/v2?accountId=acct-1');
+    expect(urls[2]).toBe('/api/watchlist');
+    expect(urls[3]).toBe('/api/accounts');
+  });
+
+  it('keeps the LiveDashboardData contract unchanged when a range is supplied', async () => {
+    mockFetchResponse(200, makeDashboardResponse());
+    mockFetchResponse(200, makeDashboardV2Response());
+    mockFetchResponse(200, makeWatchlistItems(3));
+    mockFetchResponse(200, makeAccountRows());
+
+    const result = await fetchAllLiveDashboardData(
+      accountId,
+      undefined,
+      undefined,
+      { from: '2026-06-01', to: '2026-06-30' },
+    );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const data: LiveDashboardData = result.data;
+      expect(data.dashboard.kpis.totalTrades).toBe(87);
+      expect(data.dashboardV2.account.id).toBe('acct-1');
+      expect(data.positions).toHaveLength(3);
+      expect(data.risk.ptd.realizedPnl).toBe('12437.75');
     }
   });
 

@@ -31,9 +31,10 @@
  *      contiguous regions, hidden/areas consistency, RGL bounds/overlap/
  *      duplicate/future-version checks, persisted data cannot loosen
  *      catalogue bounds (S01 #4/#9).
- *   6. Context-separation invariants — the live adapter exposes no
- *      period/date filter; no import edge from the live data path to the
- *      P&L scope preference (S02; S01 #12/#14).
+ *   6. Context-separation invariants — the CURRENT adapter fetches expose no
+ *      period/date filter; only the explicit date-aware V1 dashboard fetch
+ *      serializes a resolved range; no import edge from the live data path
+ *      to the P&L scope preference (S02; S01 #12/#14; M004 9D.1).
  *   7. Doc-code alignment invariants — workstation.md documents the Live vs
  *      Historical scope contract and the canonical panel testids; the
  *      dedicated alignment guards exist (S01/S02).
@@ -201,7 +202,7 @@ const CAPABILITY_AREAS: readonly CapabilityArea[] = [
   {
     area: 'Live/historical separation',
     verdict: 'refine-retired',
-    guard: 'Live adapter has no period/date filter; WorkstationContext never imports the scope hook; payload invariant proven in live-historical-contract.test.ts (recap group 6)',
+    guard: 'CURRENT adapter fetches have no period/date filter; only the date-aware V1 dashboard fetch serializes a resolved range; WorkstationContext never imports the scope hook; payload invariant proven in live-historical-contract.test.ts (recap group 6)',
     guardFile: 'src/lib/__tests__/live-historical-contract.test.ts',
   },
   {
@@ -367,8 +368,8 @@ function templateConsistencyViolations(
  * 6. Context-separation scanners (S02 contract)
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/** Words that mean a date-window or period filter — the live adapter must
- *  never take a parameter or build a query key from this vocabulary. */
+/** Words that mean a date-window or period filter — CURRENT fetch functions
+ *  must never take a parameter or build a query key from this vocabulary. */
 const PERIOD_DATE_WORDS = [
   'period', 'periods', 'range', 'daterange', 'datefrom', 'dateto',
   'fromdate', 'todate', 'startdate', 'enddate', 'since', 'lookback',
@@ -382,42 +383,60 @@ function bannedVocabularyHits(text: string): string[] {
   );
 }
 
-/** Exported async function signatures from an adapter-like source. */
-function exportedAsyncFunctions(source: string): Array<{ name: string; paramsText: string }> {
-  const fns: Array<{ name: string; paramsText: string }> = [];
+/** The adapter's date-aware entry points (M004 9D.1 §5/§6/§7): the V1
+ *  dashboard fetch and its compatibility composition wrapper.  Every other
+ *  exported async fetch is a CURRENT-state acquisition and must never
+ *  contain or forward a period/date filter. */
+const DATE_AWARE_FETCH_FNS = new Set(['fetchDashboardLive', 'fetchAllLiveDashboardData']);
+
+/** Exported async function name + full source text (signature through the
+ *  matching closing brace). */
+function exportedAsyncFunctionBodies(source: string): Array<{ name: string; body: string }> {
+  const fns: Array<{ name: string; body: string }> = [];
   const re = /^export\s+async\s+function\s+([A-Za-z_$][\w$]*)\s*\(/gm;
   for (const m of source.matchAll(re)) {
-    const open = (m.index ?? 0) + m[0].length - 1;
+    const start = m.index ?? 0;
+    let i = start + m[0].length;
     let depth = 0;
-    let close = -1;
-    for (let i = open; i < source.length; i += 1) {
+    for (; i < source.length; i += 1) {
       const ch = source[i];
       if (ch === '(') depth += 1;
       else if (ch === ')') {
         depth -= 1;
-        if (depth === 0) {
-          close = i;
+        if (depth === 0) break;
+      }
+    }
+    while (i < source.length && source[i] !== '{') i += 1;
+    let braceDepth = 0;
+    let end = -1;
+    for (let j = i; j < source.length; j += 1) {
+      const ch = source[j];
+      if (ch === '{') braceDepth += 1;
+      else if (ch === '}') {
+        braceDepth -= 1;
+        if (braceDepth === 0) {
+          end = j + 1;
           break;
         }
       }
     }
-    if (close >= 0) fns.push({ name: m[1], paramsText: source.slice(open + 1, close) });
+    if (end >= 0) fns.push({ name: m[1], body: source.slice(start, end) });
   }
   return fns;
 }
 
-/** Period/date violations in an adapter source: parameter vocabulary on any
- *  exported async function, plus period/date keys in URLSearchParams. */
-function adapterPeriodViolations(source: string): string[] {
+/** CURRENT-state fetch violations (M004 9D.1 §10): any exported async fetch
+ *  outside the date-aware set that contains/forwards dateFrom/dateTo or takes
+ *  a period/date parameter.  Also catches a CURRENT function building a
+ *  period/date query key inside its body. */
+function currentFetchDateViolations(source: string): string[] {
   const violations: string[] = [];
-  for (const fn of exportedAsyncFunctions(source)) {
-    for (const word of bannedVocabularyHits(fn.paramsText)) {
-      violations.push(`${fn.name}: ${word} parameter`);
-    }
-  }
-  for (const m of source.matchAll(/URLSearchParams\(\{([^}]*)\}\)/g)) {
-    for (const key of [...m[1].matchAll(/[A-Za-z_$][\w$]*/g)].map((x) => x[0])) {
-      if (bannedVocabularyHits(key).length > 0) violations.push(`query key: ${key}`);
+  for (const fn of exportedAsyncFunctionBodies(source)) {
+    if (DATE_AWARE_FETCH_FNS.has(fn.name)) continue;
+    if (/\bdateFrom\b/.test(fn.body)) violations.push(`${fn.name}: contains dateFrom`);
+    if (/\bdateTo\b/.test(fn.body)) violations.push(`${fn.name}: contains dateTo`);
+    for (const word of bannedVocabularyHits(fn.body)) {
+      violations.push(`${fn.name}: contains "${word}"`);
     }
   }
   return violations;
@@ -794,8 +813,37 @@ describe('context-separation invariants (S02 live/historical contract)', () => {
     expect(typeof useWorkstation).toBe('function');
   });
 
-  it('the live adapter exposes no period or date filter', () => {
-    expect(adapterPeriodViolations(adapterSource)).toEqual([]);
+  it('the CURRENT fetch surface exposes no period or date filter (9D.1 §10)', () => {
+    expect(currentFetchDateViolations(adapterSource)).toEqual([]);
+  });
+
+  it('the V1 dashboard fetch is the explicit date-aware entry point (positive control)', () => {
+    const bodies = exportedAsyncFunctionBodies(adapterSource);
+    const dash = bodies.find((f) => f.name === 'fetchDashboardLive');
+    expect(dash).toBeDefined();
+    // fetchDashboardLive serializes the resolved range as dateFrom/dateTo.
+    expect(dash!.body).toContain('dateFrom');
+    expect(dash!.body).toContain('dateTo');
+    expect(dash!.body).toContain('range');
+    // The composition wrapper forwards the optional range to the V1 fetch
+    // and composes the explicit CURRENT boundary.
+    const all = bodies.find((f) => f.name === 'fetchAllLiveDashboardData');
+    expect(all).toBeDefined();
+    expect(all!.body).toContain('range');
+    expect(all!.body).toContain('fetchDashboardLive');
+    expect(all!.body).toContain('fetchCurrentLiveDashboardData');
+    // The CURRENT acquisition exists and is separate from the V1 fetch.
+    const current = bodies.find((f) => f.name === 'fetchCurrentLiveDashboardData');
+    expect(current).toBeDefined();
+    expect(current!.body).toContain('fetchDashboardV2Live');
+  });
+
+  it('the adapter performs no date math and imports no period/timezone sources (9D.1 §4)', () => {
+    expect(adapterSource).not.toMatch(/OperationalDateRangeProvider/);
+    expect(adapterSource).not.toMatch(/operational-date-range/);
+    expect(adapterSource).not.toMatch(/zonedDayStartIso|zonedDayEndIso/);
+    expect(adapterSource).not.toMatch(/localStorage/);
+    expect(adapterSource).not.toMatch(/timezone/);
   });
 
   it('no import edge connects the live data path to the P&L scope preference', () => {
@@ -979,21 +1027,31 @@ describe('scanner self-test (the recap rejects drift)', () => {
     );
   });
 
-  it('flags the live adapter gaining a period parameter or query key', () => {
+  it('flags a CURRENT fetch gaining a period parameter or query key', () => {
     const doctored = adapterSource.replace(
-      'export async function fetchDashboardLive(\n  accountId: string,\n  signal?: AbortSignal,\n)',
-      'export async function fetchDashboardLive(\n  accountId: string,\n  period: string,\n  signal?: AbortSignal,\n)',
+      'export async function fetchDashboardV2Live(\n  accountId: string,\n  signal?: AbortSignal,\n)',
+      'export async function fetchDashboardV2Live(\n  accountId: string,\n  signal?: AbortSignal,\n  period?: string,\n)',
     );
-    expect(adapterPeriodViolations(doctored)).toEqual(
-      expect.arrayContaining([expect.stringContaining('fetchDashboardLive: period parameter')]),
+    expect(currentFetchDateViolations(doctored)).toEqual(
+      expect.arrayContaining([expect.stringContaining('fetchDashboardV2Live: contains "period"')]),
     );
 
     const queryDoctored = adapterSource.replace(
-      'const params = new URLSearchParams({ accountId });',
-      'const params = new URLSearchParams({ accountId, period });',
+      'export async function fetchDashboardV2Live(\n  accountId: string,\n  signal?: AbortSignal,\n): Promise<LiveFetchResult<DashboardV2Response>> {\n  const params = new URLSearchParams({ accountId });',
+      'export async function fetchDashboardV2Live(\n  accountId: string,\n  signal?: AbortSignal,\n): Promise<LiveFetchResult<DashboardV2Response>> {\n  const params = new URLSearchParams({ accountId, period });',
     );
-    expect(adapterPeriodViolations(queryDoctored)).toEqual(
-      expect.arrayContaining([expect.stringContaining('query key: period')]),
+    expect(currentFetchDateViolations(queryDoctored)).toEqual(
+      expect.arrayContaining([expect.stringContaining('fetchDashboardV2Live: contains "period"')]),
+    );
+  });
+
+  it('flags a CURRENT fetch that forwards dateFrom/dateTo', () => {
+    const doctored = adapterSource.replace(
+      "export async function fetchWatchlistLive(\n  signal?: AbortSignal,\n): Promise<LiveFetchResult<WorkstationWatchlistItem[]>> {\n  return fetchJson<WorkstationWatchlistItem[]>('/api/watchlist', signal);",
+      "export async function fetchWatchlistLive(\n  signal?: AbortSignal,\n): Promise<LiveFetchResult<WorkstationWatchlistItem[]>> {\n  const params = new URLSearchParams({ dateFrom: '2026-06-01' });\n  return fetchJson<WorkstationWatchlistItem[]>('/api/watchlist?', signal);",
+    );
+    expect(currentFetchDateViolations(doctored)).toEqual(
+      expect.arrayContaining([expect.stringContaining('fetchWatchlistLive: contains dateFrom')]),
     );
   });
 
