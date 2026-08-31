@@ -134,7 +134,10 @@ function DashboardSync() {
         onReset={resetDashboard}
         tradeCount={tradeCount}
       />      <PerformanceFilterBar />
-      <div className="flex-1 overflow-auto p-4 space-y-6">
+      <div
+        data-testid="performance-content"
+        className="flex-1 overflow-auto px-4 py-2 space-y-6"
+      >
         <section aria-label="Performance KPI row">
           <KpiRow editMode={editMode} />
         </section>

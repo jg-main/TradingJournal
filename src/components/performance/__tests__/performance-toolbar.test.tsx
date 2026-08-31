@@ -101,6 +101,43 @@ describe('PerformanceToolbar', () => {
   });
 });
 
+describe('PerformanceToolbar page identity (M004/T7)', () => {
+  it('renders a compact semantic H1 with the page title Performance', () => {
+    renderToolbar(false);
+    const heading = screen.getByRole('heading', { name: 'Performance', level: 1 });
+    expect(heading).toBeDefined();
+    expect(heading.textContent).toBe('Performance');
+  });
+
+  it('keeps the dashboard selector as context after the page title', () => {
+    renderToolbar(false);
+    const heading = screen.getByRole('heading', { name: 'Performance' });
+    const trigger = screen.getByRole('button', { name: /Switch performance dashboard/ });
+    // Active dashboard name still reads as context on the trigger.
+    expect(trigger.textContent).toContain('Performance Default');
+    // Title precedes the selector in DOM order (page identity first).
+    const pos = heading.compareDocumentPosition(trigger);
+    expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('keeps Customize visible in normal mode alongside the title', () => {
+    renderToolbar(false);
+    expect(screen.getByText('Performance')).toBeDefined();
+    expect(screen.getByText('Customize')).toBeDefined();
+    expect(screen.getByText('5 trades')).toBeDefined();
+  });
+
+  it('keeps the header chrome canonical (border-b, bg-card, px-4)', () => {
+    renderToolbar(false);
+    const header = screen.getByTestId('performance-page-header');
+    expect(header.className).toContain('border-b');
+    expect(header.className).toContain('bg-card');
+    expect(header.className).toContain('px-4');
+    // No hero whitespace or page wrapper.
+    expect(header.className).not.toContain('py-10');
+  });
+});
+
 describe('PerformanceDashboardShell mode flow', () => {
   it('normal mode has no edit chrome; Customize reveals edit controls', () => {
     render(
@@ -120,5 +157,23 @@ describe('PerformanceDashboardShell mode flow', () => {
     expect(screen.getByText('Done')).toBeDefined();
     expect(screen.getByText('+ Add KPI')).toBeDefined();
     expect(screen.getByText('+ Add Chart')).toBeDefined();
+  });
+
+  it('keeps the operational order header → filter bar → fluid content (M004/T7)', () => {
+    render(
+      <PerformanceDashboardProvider>
+        <PerformanceInstanceProvider>
+          <PerformanceDashboardShell />
+        </PerformanceInstanceProvider>
+      </PerformanceDashboardProvider>,
+    );
+    const header = screen.getByTestId('performance-page-header');
+    const content = screen.getByTestId('performance-content');
+    // Content follows the header (the filter bar sits between them).
+    const pos = header.compareDocumentPosition(content);
+    expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Content stays fluid — no page wrapper or max-width introduced.
+    expect(content.className).not.toContain('max-w-');
+    expect(content.className).toContain('px-4');
   });
 });
