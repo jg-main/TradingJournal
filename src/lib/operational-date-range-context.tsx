@@ -6,6 +6,7 @@ import {
   OPERATIONAL_DATE_RANGE_STORAGE_KEY,
   defaultOperationalDateRangeSelection,
   deserializeOperationalDateRange,
+  isValidCustomRange,
   resolveOperationalDateRange,
   serializeOperationalDateRange,
   type OperationalDatePreset,
@@ -94,6 +95,10 @@ export function OperationalDateRangeProvider({ children }: { children: React.Rea
 
   const setCustomRange = useCallback(
     (from: string, to: string) => {
+      // Defense-in-depth: enforce the canonical Custom invariant before
+      // committing. Invalid ranges are a safe no-op — they never touch
+      // selection, resolvedRange, or the persisted payload.
+      if (!isValidCustomRange(from, to)) return;
       commitSelection({ preset: 'Custom', from, to });
     },
     [commitSelection],

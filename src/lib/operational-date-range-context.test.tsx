@@ -40,6 +40,10 @@ function Probe() {
       <span data-testid="hydrated">{String(hydrated)}</span>
       <button data-testid="set-3m" onClick={() => setPreset('3M')} />
       <button data-testid="set-custom" onClick={() => setCustomRange('2026-01-01', '2026-06-30')} />
+      <button data-testid="set-reversed" onClick={() => setCustomRange('2026-12-31', '2026-01-01')} />
+      <button data-testid="set-malformed" onClick={() => setCustomRange('2026-02-30', '')} />
+      <button data-testid="set-one-sided-from" onClick={() => setCustomRange('2026-01-01', '')} />
+      <button data-testid="set-one-sided-to" onClick={() => setCustomRange('', '2026-06-30')} />
     </div>
   );
 }
@@ -204,6 +208,84 @@ describe('storage failure degradation', () => {
       screen.getByTestId('set-3m').click();
     });
     expect(screen.getByTestId('preset').textContent).toBe('3M');
+  });
+});
+
+describe('Custom-range invariant enforcement (M004/T9A.1)', () => {
+  it('rejects a reversed range as a safe no-op preserving state and persistence', async () => {
+    renderProvider();
+    await flush();
+    // Establish a valid Custom state first.
+    act(() => {
+      screen.getByTestId('set-custom').click();
+    });
+    const before = storedValue();
+    expect(screen.getByTestId('preset').textContent).toBe('Custom');
+
+    // Reversed range must not throw and must not change anything.
+    expect(() => {
+      act(() => {
+        screen.getByTestId('set-reversed').click();
+      });
+    }).not.toThrow();
+    expect(screen.getByTestId('preset').textContent).toBe('Custom');
+    expect(screen.getByTestId('from').textContent).toBe('2026-01-01');
+    expect(screen.getByTestId('to').textContent).toBe('2026-06-30');
+    expect(storedValue()).toBe(before);
+  });
+
+  it('rejects a malformed date range as a safe no-op', async () => {
+    renderProvider();
+    await flush();
+    act(() => {
+      screen.getByTestId('set-custom').click();
+    });
+    const before = storedValue();
+
+    expect(() => {
+      act(() => {
+        screen.getByTestId('set-malformed').click();
+      });
+    }).not.toThrow();
+    expect(screen.getByTestId('from').textContent).toBe('2026-01-01');
+    expect(screen.getByTestId('to').textContent).toBe('2026-06-30');
+    expect(storedValue()).toBe(before);
+  });
+
+  it('allows a valid one-sided range with only from', async () => {
+    renderProvider();
+    await flush();
+    act(() => {
+      screen.getByTestId('set-one-sided-from').click();
+    });
+    expect(screen.getByTestId('preset').textContent).toBe('Custom');
+    expect(screen.getByTestId('from').textContent).toBe('2026-01-01');
+    expect(screen.getByTestId('to').textContent).toBe('');
+    expect(storedValue()).toBe('{"version":1,"preset":"Custom","from":"2026-01-01","to":""}');
+  });
+
+  it('allows a valid one-sided range with only to', async () => {
+    renderProvider();
+    await flush();
+    act(() => {
+      screen.getByTestId('set-one-sided-to').click();
+    });
+    expect(screen.getByTestId('preset').textContent).toBe('Custom');
+    expect(screen.getByTestId('from').textContent).toBe('');
+    expect(screen.getByTestId('to').textContent).toBe('2026-06-30');
+    expect(storedValue()).toBe('{"version":1,"preset":"Custom","from":"","to":"2026-06-30"}');
+  });
+
+  it('a valid complete Custom range still persists exactly as before', async () => {
+    renderProvider();
+    await flush();
+    act(() => {
+      screen.getByTestId('set-custom').click();
+    });
+    expect(screen.getByTestId('preset').textContent).toBe('Custom');
+    expect(storedValue()).toBe(
+      '{"version":1,"preset":"Custom","from":"2026-01-01","to":"2026-06-30"}',
+    );
   });
 });
 
