@@ -15,6 +15,7 @@ import {
   defaultOperationalDateRangeSelection,
   deserializeOperationalDateRange,
   isValidCustomRange,
+  millisecondsUntilNextOperationalLocalDay,
   resolveOperationalDateRange,
   sanitizePersistedOperationalDateRange,
   serializeOperationalDateRange,
@@ -29,6 +30,7 @@ import {
 } from './operational-date-range';
 
 const UTC = 'UTC';
+const HOUR_MS = 3_600_000;
 const sel = (preset: OperationalDateRangeSelection['preset'], from = '', to = ''): OperationalDateRangeSelection =>
   ({ preset, from, to });
 
@@ -233,5 +235,37 @@ describe('configured-timezone day boundaries', () => {
     expect(zonedDayStartIso('2026-12-31', 'UTC')).toBe('2026-12-31T00:00:00.000Z');
     expect(zonedDayEndIso('2026-12-31', 'UTC')).toBe('2026-12-31T23:59:59.999Z');
     expect(zonedDayStartIso('2026-02-28', 'America/Bogota')).toBe('2026-02-28T05:00:00.000Z');
+  });
+});
+
+describe('next local midnight scheduling (M004/T9E)', () => {
+  it('America/Bogota partial day schedules the real absolute delay', () => {
+    // 2026-08-31T12:00Z is 07:00 local in Bogotá; the next local midnight is
+    // 2026-09-01T05:00:00.000Z (UTC-5, no DST) → 17 hours.
+    expect(millisecondsUntilNextOperationalLocalDay('America/Bogota', new Date('2026-08-31T12:00:00Z'))).toBe(17 * HOUR_MS);
+  });
+
+  it('America/Bogota a normal local day is 24 hours (no DST assumption)', () => {
+    // Exactly at Bogotá midnight: the NEXT boundary is one full local day later.
+    expect(millisecondsUntilNextOperationalLocalDay('America/Bogota', new Date('2026-09-01T05:00:00.000Z'))).toBe(24 * HOUR_MS);
+  });
+
+  it('America/New_York spring DST day is 23 hours', () => {
+    // 2026-03-08 00:00 local (EST, UTC-5) → 2026-03-09 00:00 local (EDT,
+    // UTC-4). The local day between the two midnights is 23 hours.
+    expect(millisecondsUntilNextOperationalLocalDay('America/New_York', new Date('2026-03-08T05:00:00.000Z'))).toBe(23 * HOUR_MS);
+  });
+
+  it('America/New_York fall DST day is 25 hours', () => {
+    // 2026-11-01 00:00 local (EDT, UTC-4) → 2026-11-02 00:00 local (EST,
+    // UTC-5). The local day between the two midnights is 25 hours.
+    expect(millisecondsUntilNextOperationalLocalDay('America/New_York', new Date('2026-11-01T04:00:00.000Z'))).toBe(25 * HOUR_MS);
+  });
+
+  it('does not assume a fixed 24-hour interval across a UTC day boundary', () => {
+    // The helper derives the delay from the next local date's midnight
+    // instant — a partially elapsed day returns the remaining hours, never
+    // a hardcoded 24h.
+    expect(millisecondsUntilNextOperationalLocalDay('UTC', new Date('2026-08-31T18:00:00Z'))).toBe(6 * HOUR_MS);
   });
 });

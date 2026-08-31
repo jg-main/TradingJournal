@@ -1,12 +1,13 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppTimezone } from '@/lib/timezone-context';
 import {
   OPERATIONAL_DATE_RANGE_STORAGE_KEY,
   defaultOperationalDateRangeSelection,
   deserializeOperationalDateRange,
   isValidCustomRange,
+  millisecondsUntilNextOperationalLocalDay,
   resolveOperationalDateRange,
   serializeOperationalDateRange,
   type OperationalDatePreset,
@@ -21,6 +22,14 @@ import {
  * Trades, and Performance. Persists the semantic selection under
  * `app:date-range`; relative presets are recomputed from the configured app
  * timezone on every resolution, never stored as stale resolved dates.
+ *
+ * Lifecycle (M004/T9E): while the app stays open, RELATIVE presets roll
+ * forward at the configured LOCAL-CALENDAR midnight via a single timeout
+ * re-armed per boundary. The public `resolvedRange` is stabilized BY VALUE —
+ * a midnight tick whose from/to are unchanged keeps the same reference, so
+ * consumers keyed on `resolvedRange` never refetch merely because the clock
+ * advanced. Max/Custom never auto-roll, and automatic rollover never touches
+ * the semantic selection or `app:date-range`.
  *
  * Must be mounted inside TimezoneProvider (resolution depends on the
  * configured timezone).
@@ -104,12 +113,62 @@ export function OperationalDateRangeProvider({ children }: { children: React.Rea
     [commitSelection],
   );
 
-  // Relative presets resolve against the current calendar date in the
-  // configured timezone whenever the selection or timezone changes.
-  const resolvedRange = useMemo(
-    () => resolveOperationalDateRange(selection, timezone, new Date()),
-    [selection, timezone],
-  );
+  // Pure derivation from the CURRENT calendar date in the configured
+  // timezone — recomputed each render so a midnight rollover's rendered
+  // value and the timer's tick always agree (M004/T9E §7/§8).
+  const derivedRange = resolveOperationalDateRange(selection, timezone, new Date());
+
+  // Stabilized canonical state: recompute-on-render adjusts it when the
+  // values genuinely change, and the local-midnight tick publishes via
+  // setState. Identical from/to keep the SAME object reference, so consumers
+  // keyed on resolvedRange never observe a change merely because the clock
+  // advanced.
+  const [resolvedRange, setResolvedRange] = useState<ResolvedOperationalDateRange>(derivedRange);
+  if (resolvedRange.from !== derivedRange.from || resolvedRange.to !== derivedRange.to) {
+    setResolvedRange(derivedRange);
+  }
+
+  // Local-midnight rollover (M004/T9E §7/§9): for a hydrated RELATIVE preset,
+  // schedule ONE timeout to the next configured local midnight; on fire,
+  // recompute the resolved range from the actual current date and re-arm for
+  // the next boundary. Max/Custom never auto-roll. The timer is re-armed on
+  // preset/timezone change and cleaned up on unmount. Automatic rollover
+  // never writes `app:date-range` or mutates the semantic selection.
+  const midnightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const publishMidnightRange = useCallback(() => {
+    const candidate = resolveOperationalDateRange(selection, timezone, new Date());
+    setResolvedRange((prev) =>
+      prev.from === candidate.from && prev.to === candidate.to ? prev : candidate,
+    );
+  }, [selection, timezone]);
+
+  useEffect(() => {
+    const isRelative = selection.preset !== 'Max' && selection.preset !== 'Custom';
+    if (!hydrated || !isRelative) return () => {};
+
+    let cancelled = false;
+    const arm = () => {
+      const delay = Math.max(
+        0,
+        millisecondsUntilNextOperationalLocalDay(timezone, new Date()),
+      );
+      midnightTimerRef.current = setTimeout(() => {
+        if (cancelled) return;
+        publishMidnightRange();
+        arm();
+      }, delay);
+    };
+    arm();
+
+    return () => {
+      cancelled = true;
+      if (midnightTimerRef.current) {
+        clearTimeout(midnightTimerRef.current);
+        midnightTimerRef.current = null;
+      }
+    };
+  }, [hydrated, publishMidnightRange, selection, timezone]);
 
   const value = useMemo(
     () => ({ selection, resolvedRange, hydrated, setPreset, setCustomRange }),

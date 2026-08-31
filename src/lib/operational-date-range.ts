@@ -190,6 +190,21 @@ export function zonedDayEndIso(ymd: string, timezone: string): string {
   return new Date(nextDayStart - 1).toISOString();
 }
 
+/**
+ * Milliseconds from `now` until the next LOCAL-CALENDAR midnight in the
+ * configured application timezone (M004/T9E §5/§6).
+ *
+ * A local day is NOT assumed to be 24 hours: DST spring-forward days produce
+ * a ~23h boundary and fall-back days a ~25h boundary, because the delay is
+ * derived from the real absolute instant of the next local date's midnight.
+ * Returns 0 when `now` is already exactly at a local midnight boundary.
+ */
+export function millisecondsUntilNextOperationalLocalDay(timezone: string, now: Date): number {
+  const today = todayInTimezone(timezone, now);
+  const nextMidnightInstant = Date.parse(zonedDayStartIso(addCalendarDays(today, 1), timezone));
+  return nextMidnightInstant - now.getTime();
+}
+
 // ── Resolution ──────────────────────────────────────────────────────────
 
 /**
