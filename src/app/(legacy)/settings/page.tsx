@@ -233,14 +233,14 @@ export default function SettingsHubPage() {
   const shouldShowChecklist = readiness !== null && readiness.ready === false;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-8 py-10">
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Settings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage your trading journal preferences, risk parameters, and trading setups.
+            Configure your trading journal
           </p>
         </div>
         {!loading && readiness?.ready && (
