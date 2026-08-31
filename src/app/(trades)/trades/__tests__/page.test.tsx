@@ -98,8 +98,13 @@ vi.mock('@/components/ui/select', () => ({
     selectOnValueChange = onValueChange ?? null;
     return React.createElement('div', { 'data-testid': 'select', 'data-value': value }, children);
   },
-  SelectTrigger: ({ children }: { children: React.ReactNode }) =>
-    React.createElement('div', { 'data-testid': 'select-trigger' }, children),
+  SelectTrigger: ({ children, 'aria-label': ariaLabel }: { children: React.ReactNode; 'aria-label'?: string }) =>
+    React.createElement('button', {
+      'data-testid': 'select-trigger',
+      role: 'combobox',
+      'aria-label': ariaLabel,
+      type: 'button' as const,
+    }, children),
   SelectContent: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', { 'data-testid': 'select-content' }, children),
   SelectItem: ({ children, value }: { children: React.ReactNode; value: string }) =>
@@ -151,6 +156,24 @@ vi.mock('@/lib/account-context', () => ({
     setAccountId: mockSetAccountId,
     refresh: vi.fn().mockResolvedValue(undefined),
   }),
+}));
+
+// Canonical global operational period (M004/T9B): the sidebar Period selector
+// owns the real provider. The page only consumes the resolved range; tests
+// mutate this mock to prove the API contract.
+const mockPeriodState = vi.hoisted(() => ({
+  selection: { preset: 'YTD' as string, from: '' as string, to: '' as string },
+  resolvedRange: { from: '' as string, to: '' as string },
+  hydrated: true,
+  setPreset: vi.fn(),
+  setCustomRange: vi.fn(),
+}));
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => mockPeriodState,
+}));
+
+vi.mock('@/lib/timezone-context', () => ({
+  useAppTimezone: () => ({ timezone: 'America/Bogota' }),
 }));
 
 // ---- Mocks for the API responses ----
@@ -214,6 +237,10 @@ afterEach(() => {
   mockAccountState.accountId = 'acc-001';
   mockAccountState.loading = false;
   mockAccountState.error = null;
+  // Reset the global-period mock to the default unbounded range.
+  mockPeriodState.selection = { preset: 'YTD', from: '', to: '' };
+  mockPeriodState.resolvedRange = { from: '', to: '' };
+  mockPeriodState.hydrated = true;
   localStorage.clear();
 });
 
@@ -222,12 +249,12 @@ afterEach(() => {
 // ── Direction filter ──────────────────────────────────────────────────
 
 describe('Direction filter', () => {
-  it('renders the Direction label and three options', async () => {
+  it('renders the Direction filter and three options', async () => {
     setupFetchMocks();
     render(React.createElement(TradesPage));
 
     await vi.waitFor(() => {
-      expect(screen.getByText('Direction')).toBeTruthy();
+      expect(screen.getByRole('combobox', { name: 'Direction' })).toBeTruthy();
       // M007/D037: account scope is the sidebar's; 'all' now appears only
       // for the Direction filter (no page-local Account selector).
       const allItems = screen.getAllByTestId('select-item-all');
@@ -417,12 +444,13 @@ describe('Canonical account scope (Fix 3)', () => {
     clearBtn.click();
     vi.advanceTimersByTime(500);
 
-    // Clear filters clears page-local dates/direction; the global account is
-    // untouched (setAccountId never called).
+    // Clear filters clears the page-local Direction filter; the global
+    // account and the global period are untouched (neither setter called).
     await vi.waitFor(() => {
       expect(screen.queryAllByText(/match the current filters/i).length).toBe(0);
     });
     expect(mockSetAccountId).not.toHaveBeenCalled();
+    expect(mockPeriodState.setPreset).not.toHaveBeenCalled();
   });
 });
 
@@ -1058,24 +1086,16 @@ describe('Deleted tab (R027)', () => {
   });
 });
 
-// ── Date preset + timezone tests ───────────────────────────────────────
-// T02: 1M/3M/6M presets use trailing-day arithmetic (not first-of-month) and
-// from/to bounds carry the browser's local timezone offset instead of UTC "Z".
+// ── Global operational period API contract ──────────────────────────────
+// M004/T9B: Trades owns NO date state. The canonical period comes from
+// OperationalDateRangeProvider (sidebar Period selector). Open requests are
+// never date-filtered; historical tabs receive configured-timezone
+// boundaries derived from the provider's resolved range.
 
-// Mirror of the page's localOffsetSuffix() — computes the env-timezone offset
-// for a given instant so assertions adapt to whatever TZ the test runs in.
-function localOffsetFor(instant: string): string {
-  const offsetMin = -new Date(instant).getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '-';
-  const abs = Math.abs(offsetMin);
-  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
-  const mm = String(abs % 60).padStart(2, '0');
-  return `${sign}${hh}:${mm}`;
-}
+// Encodes a query param the same way URLSearchParams does in the page fetch.
+const encodedParam = (key: string, value: string) => new URLSearchParams({ [key]: value }).toString();
 
-describe('Date presets (trailing-day arithmetic + local timezone bounds)', () => {
-  // Pinned "today" so preset arithmetic is deterministic: July 31, 2026 noon UTC
-  // (noon keeps the local calendar date July 31 in every timezone).
+describe('Global operational period API contract (M004/T9B)', () => {
   const PINNED_NOW = '2026-07-31T12:00:00Z';
 
   beforeEach(() => {
@@ -1084,104 +1104,146 @@ describe('Date presets (trailing-day arithmetic + local timezone bounds)', () =>
   });
 
   afterEach(() => {
-    // Re-pin to the auto-advancing fake clock (≈ real now) so later tests are
-    // unaffected by the July 31 system-time pinning above.
     vi.setSystemTime(new Date());
     localStorage.clear();
   });
 
-  // Captures the most recent /api/trades URL and serves a generic empty response.
+  // Captures the latest /api/trades URL per status and serves empty responses.
   function setupTradesUrlCapture() {
-    let tradesUrl: string | null = null;
+    const urls: Record<string, string> = {};
     setupFetchMocks(async (url) => {
       const urlStr = typeof url === 'string' ? url : url.toString();
       if (urlStr === '/api/accounts') {
         return new Response(JSON.stringify(mockAccounts), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       if (urlStr.startsWith('/api/trades')) {
-        tradesUrl = urlStr;
+        const u = new URL(urlStr, 'http://localhost');
+        urls[u.searchParams.get('status') ?? ''] = urlStr;
         return new Response(JSON.stringify({ data: [], total: 0, totals: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return new Response('Not found', { status: 404 });
     });
-    return () => tradesUrl;
+    return urls;
   }
 
-  // Encodes a query param the same way URLSearchParams does in the page fetch.
-  const encodedParam = (key: string, value: string) => new URLSearchParams({ [key]: value }).toString();
-
-  it('1M preset on July 31 uses trailing-day arithmetic: from = June 30 (not June 1)', async () => {
-    const getTradesUrl = setupTradesUrlCapture();
+  it('Open requests never carry from/to regardless of the global period', async () => {
+    mockPeriodState.selection = { preset: 'Custom', from: '2026-06-01', to: '2026-06-30' };
+    mockPeriodState.resolvedRange = { from: '2026-06-01', to: '2026-06-30' };
+    const urls = setupTradesUrlCapture();
     render(React.createElement(TradesPage));
 
-    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
-    screen.getByText('1M').click();
+    await vi.waitFor(() => expect(urls.open).toBeDefined());
+    expect(urls.open).toContain('accountId=acc-001');
+    expect(urls.open).not.toContain('from=');
+    expect(urls.open).not.toContain('to=');
+  });
+
+  it('Closed requests carry configured-timezone boundaries for the global range', async () => {
+    mockPeriodState.selection = { preset: 'Custom', from: '2026-06-01', to: '2026-06-30' };
+    mockPeriodState.resolvedRange = { from: '2026-06-01', to: '2026-06-30' };
+    const urls = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(urls.closed).toBeDefined());
+    // America/Bogota (UTC-5): local start of 2026-06-01 = 05:00Z;
+    // local end of 2026-06-30 = one ms before 2026-07-01 local midnight.
+    expect(urls.closed).toContain(encodedParam('from', '2026-06-01T05:00:00.000Z'));
+    expect(urls.closed).toContain(encodedParam('to', '2026-07-01T04:59:59.999Z'));
+  });
+
+  it('Planned requests carry the same global boundaries', async () => {
+    mockPeriodState.resolvedRange = { from: '2026-06-01', to: '2026-06-30' };
+    const urls = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(urls.planned).toBeDefined());
+    expect(urls.planned).toContain(encodedParam('from', '2026-06-01T05:00:00.000Z'));
+    expect(urls.planned).toContain(encodedParam('to', '2026-07-01T04:59:59.999Z'));
+  });
+
+  it('Deleted requests carry the same global boundaries', async () => {
+    mockPeriodState.resolvedRange = { from: '2026-06-01', to: '2026-06-30' };
+    const urls = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(urls.deleted).toBeDefined());
+    expect(urls.deleted).toContain(encodedParam('from', '2026-06-01T05:00:00.000Z'));
+    expect(urls.deleted).toContain(encodedParam('to', '2026-07-01T04:59:59.999Z'));
+  });
+
+  it('Max (empty resolved range) produces no historical date params', async () => {
+    mockPeriodState.selection = { preset: 'Max', from: '', to: '' };
+    mockPeriodState.resolvedRange = { from: '', to: '' };
+    const urls = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(urls.closed).toBeDefined());
+    expect(urls.closed).not.toContain('from=');
+    expect(urls.closed).not.toContain('to=');
+  });
+
+  it('uses the context resolvedRange for a relative preset — no Trades-local date math', async () => {
+    // Provider-resolved YTD range (the page never recomputes presets itself).
+    mockPeriodState.selection = { preset: 'YTD', from: '', to: '' };
+    mockPeriodState.resolvedRange = { from: '2026-01-01', to: '' };
+    const urls = setupTradesUrlCapture();
+    render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(urls.closed).toBeDefined());
+    expect(urls.closed).toContain(encodedParam('from', '2026-01-01T05:00:00.000Z'));
+    expect(urls.closed).not.toContain('to=');
+  });
+
+  it('a global period change refetches the historical tabs', async () => {
+    const urls = setupTradesUrlCapture();
+    const { rerender } = render(React.createElement(TradesPage));
+
+    await vi.waitFor(() => expect(urls.closed).toBeDefined());
+    expect(urls.closed).not.toContain('from=');
+
+    // The global period changes (e.g. the sidebar selector commits a new range).
+    mockPeriodState.resolvedRange = { from: '2026-06-01', to: '' };
+    rerender(React.createElement(TradesPage));
     vi.advanceTimersByTime(500);
 
-    const offset = localOffsetFor(PINNED_NOW);
     await vi.waitFor(() => {
-      const url = getTradesUrl();
-      expect(url).not.toBeNull();
-      expect(url).toContain(encodedParam('from', `2026-06-30T00:00:00.000${offset}`));
-      expect(url).not.toContain('from=2026-06-01');
+      expect(urls.closed).toContain(encodedParam('from', '2026-06-01T05:00:00.000Z'));
     });
   });
 
-  it('3M preset on July 31 uses 91 trailing days: from = May 1 (not April 1)', async () => {
-    const getTradesUrl = setupTradesUrlCapture();
+  it('Clear page filters clears Direction only — the global period is untouched', async () => {
+    const setPreset = mockPeriodState.setPreset;
+    setupFetchMocks(async (url: RequestInfo | URL) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr.startsWith('/api/trades')) {
+        return new Response(JSON.stringify({ data: [], total: 0, totals: null, plannedTotals: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+    });
     render(React.createElement(TradesPage));
 
-    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
-    screen.getByText('3M').click();
+    await vi.waitFor(() => expect(screen.getByTestId('select-item-long')).toBeTruthy());
+    screen.getByTestId('select-item-long').click();
     vi.advanceTimersByTime(500);
 
-    const offset = localOffsetFor(PINNED_NOW);
     await vi.waitFor(() => {
-      const url = getTradesUrl();
-      expect(url).not.toBeNull();
-      expect(url).toContain(encodedParam('from', `2026-05-01T00:00:00.000${offset}`));
-      expect(url).not.toContain('from=2026-04-01');
+      expect(screen.getAllByText(/match the current filters/i).length).toBeGreaterThan(0);
     });
-  });
-
-  it('6M preset on July 31 uses 180 trailing days: from = February 1 (not January 1)', async () => {
-    const getTradesUrl = setupTradesUrlCapture();
-    render(React.createElement(TradesPage));
-
-    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
-    screen.getByText('6M').click();
+    const clearBtn = screen.getAllByRole('button', { name: /Clear filters/i })[0];
+    clearBtn.click();
     vi.advanceTimersByTime(500);
 
-    const offset = localOffsetFor(PINNED_NOW);
     await vi.waitFor(() => {
-      const url = getTradesUrl();
-      expect(url).not.toBeNull();
-      expect(url).toContain(encodedParam('from', `2026-02-01T00:00:00.000${offset}`));
-      expect(url).not.toContain('from=2026-01-01');
+      expect(screen.queryAllByText(/match the current filters/i).length).toBe(0);
     });
-  });
-
-  it('from/to bounds carry the browser local timezone offset, never hardcoded Z', async () => {
-    const getTradesUrl = setupTradesUrlCapture();
-    render(React.createElement(TradesPage));
-
-    await vi.waitFor(() => expect(getTradesUrl()).not.toBeNull());
-
-    // Set From and To directly through the date inputs (index 0 = From, 1 = To)
-    const inputs = screen.getAllByTestId('input');
-    fireEvent.change(inputs[0], { target: { value: '2025-07-01' } });
-    fireEvent.change(inputs[1], { target: { value: '2025-07-31' } });
-    vi.advanceTimersByTime(500);
-
-    const offset = localOffsetFor(PINNED_NOW);
-    await vi.waitFor(() => {
-      const url = getTradesUrl();
-      expect(url).not.toBeNull();
-      // Start of local day for From, end of local day for To, both with the
-      // browser's local ±HH:MM offset suffix (never "Z").
-      expect(url).toContain(encodedParam('from', `2025-07-01T00:00:00.000${offset}`));
-      expect(url).toContain(encodedParam('to', `2025-07-31T23:59:59.999${offset}`));
-    });
+    // Clearing page filters must not touch the canonical period provider.
+    expect(setPreset).not.toHaveBeenCalled();
+    expect(mockPeriodState.setCustomRange).not.toHaveBeenCalled();
+    // Account scope also untouched.
+    expect(mockSetAccountId).not.toHaveBeenCalled();
   });
 });
 
@@ -1190,25 +1252,22 @@ describe('Date presets (trailing-day arithmetic + local timezone bounds)', () =>
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('Filter and pagination primitives (M004/T4)', () => {
-  it('renders date presets as canonical Button primitives with selected/unselected variants', async () => {
+  it('no longer renders Trades-local date controls (global period in sidebar)', async () => {
     setupFetchMocks();
     render(React.createElement(TradesPage));
 
-    await vi.waitFor(() => expect(screen.getByText('MTD')).toBeTruthy());
-
-    const mtd = screen.getByRole('button', { name: 'MTD' });
-    expect(mtd.getAttribute('data-slot')).toBe('button');
-    // No preset selected initially → secondary.
-    expect(mtd.getAttribute('data-variant')).toBe('secondary');
-
-    mtd.click();
-    vi.advanceTimersByTime(500);
-
-    // The selected preset becomes the primary variant; others stay secondary.
     await vi.waitFor(() => {
-      expect(mtd.getAttribute('data-variant')).toBe('default');
+      expect(screen.getByText('Plan Trade')).toBeTruthy();
     });
-    expect(screen.getByRole('button', { name: '1Y' }).getAttribute('data-variant')).toBe('secondary');
+
+    // The From/To inputs and date-preset buttons are gone (M004/T9B).
+    expect(screen.queryByLabelText('From')).toBeNull();
+    expect(screen.queryByLabelText('To')).toBeNull();
+    expect(screen.queryByText('MTD')).toBeNull();
+    expect(screen.queryByText('YTD')).toBeNull();
+    expect(screen.queryByText('Max')).toBeNull();
+    // Direction remains the only page-local filter.
+    expect(screen.getByRole('combobox', { name: 'Direction' })).toBeTruthy();
   });
 
   it('renders pagination as canonical Button primitives preserving disabled/enabled semantics', async () => {
@@ -1313,11 +1372,12 @@ describe('Operational page grammar (M004/T6)', () => {
 
     const header = screen.getByTestId('trades-page-header');
     const filterBar = screen.getByTestId('trades-filter-bar');
-    // Filter bar owns all page filters (date scope, presets, direction).
-    expect(within(filterBar).getByLabelText('From')).toBeTruthy();
-    expect(within(filterBar).getByLabelText('To')).toBeTruthy();
-    expect(within(filterBar).getByText('MTD')).toBeTruthy();
-    expect(within(filterBar).getByText('Direction')).toBeTruthy();
+    // The filter bar owns the Direction filter only (M004/T9B — the global
+    // period moved to the sidebar Period selector).
+    expect(within(filterBar).getByRole('combobox', { name: 'Direction' })).toBeTruthy();
+    expect(within(filterBar).queryByLabelText('From')).toBeNull();
+    expect(within(filterBar).queryByLabelText('To')).toBeNull();
+    expect(within(filterBar).queryByText('MTD')).toBeNull();
     // Actions live in the header, not the filter bar.
     expect(within(filterBar).queryByText('Plan Trade')).toBeNull();
     // Flat structural bar — no content-card container.

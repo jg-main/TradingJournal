@@ -145,6 +145,22 @@ vi.mock('@/lib/account-context', () => ({
   }),
 }));
 
+// Canonical global operational period (M004/T9B): unbounded resolved range so
+// phase-column rendering is unaffected by any date filtering.
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => ({
+    selection: { preset: 'YTD', from: '', to: '' },
+    resolvedRange: { from: '', to: '' },
+    hydrated: true,
+    setPreset: vi.fn(),
+    setCustomRange: vi.fn(),
+  }),
+}));
+
+vi.mock('@/lib/timezone-context', () => ({
+  useAppTimezone: () => ({ timezone: 'America/Bogota' }),
+}));
+
 // ── Fixtures ───────────────────────────────────────────────────────────
 
 const mockAccounts = [{ id: 'acc-001', name: 'Test Account', currency: 'USD' }];

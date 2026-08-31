@@ -118,6 +118,78 @@ export function addCalendarYears(ymd: string, delta: number): string {
   return formatYmd(targetYear, m, day);
 }
 
+/** Calendar-day arithmetic (UTC calendar on the YMD string — no timezone). */
+export function addCalendarDays(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + delta));
+  return formatYmd(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
+}
+
+// ── Configured-timezone day boundaries ──────────────────────────────────
+
+/**
+ * UTC offset (ms) in `timezone` at a given absolute instant.
+ * Derived from Intl wall-clock parts, so DST-capable zones use the correct
+ * offset for the requested date.
+ */
+function zonedOffsetMs(timezone: string, instant: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(instant));
+  const m: Record<string, number> = {};
+  for (const p of parts) {
+    if (p.type !== 'literal') m[p.type] = Number(p.value);
+  }
+  return Date.UTC(m.year, m.month - 1, m.day, m.hour, m.minute, m.second) - instant;
+}
+
+/**
+ * Absolute ISO instant (Z) for a local wall-clock time on a YYYY-MM-DD date
+ * in `timezone`. Two-pass offset correction converges for standard, DST, and
+ * end-of-month dates without assuming every day is 24 hours.
+ */
+function zonedInstantFromLocal(
+  ymd: string,
+  timezone: string,
+  hour: number,
+  minute: number,
+  second: number,
+  ms: number,
+): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  let instant = Date.UTC(y, m - 1, d, hour, minute, second, ms);
+  instant = Date.UTC(y, m - 1, d, hour, minute, second, ms) - zonedOffsetMs(timezone, instant);
+  instant = Date.UTC(y, m - 1, d, hour, minute, second, ms) - zonedOffsetMs(timezone, instant);
+  return new Date(instant).toISOString();
+}
+
+/**
+ * Absolute ISO instant for local midnight (00:00:00.000) of a YYYY-MM-DD
+ * date in the configured application timezone.
+ * America/Bogota 2026-06-30 → "2026-06-30T05:00:00.000Z".
+ */
+export function zonedDayStartIso(ymd: string, timezone: string): string {
+  return zonedInstantFromLocal(ymd, timezone, 0, 0, 0, 0);
+}
+
+/**
+ * Absolute ISO instant for the end of a YYYY-MM-DD local calendar day in the
+ * configured application timezone — one millisecond before the NEXT local
+ * day begins (DST-aware, never a fixed 24-hour assumption).
+ * America/Bogota 2026-06-30 → "2026-07-01T04:59:59.999Z".
+ */
+export function zonedDayEndIso(ymd: string, timezone: string): string {
+  const nextDayStart = Date.parse(zonedDayStartIso(addCalendarDays(ymd, 1), timezone));
+  return new Date(nextDayStart - 1).toISOString();
+}
+
 // ── Resolution ──────────────────────────────────────────────────────────
 
 /**

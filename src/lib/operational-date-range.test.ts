@@ -19,6 +19,8 @@ import {
   sanitizePersistedOperationalDateRange,
   serializeOperationalDateRange,
   todayInTimezone,
+  zonedDayEndIso,
+  zonedDayStartIso,
   OPERATIONAL_DATE_PRESETS,
   OPERATIONAL_DATE_RANGE_STORAGE_KEY,
   OPERATIONAL_DATE_RANGE_VERSION,
@@ -200,5 +202,36 @@ describe('persistence contract', () => {
 
   it('returns null for null input (caller falls back to default)', () => {
     expect(deserializeOperationalDateRange(null)).toBeNull();
+  });
+});
+
+describe('configured-timezone day boundaries', () => {
+  it('America/Bogota start of day maps to 05:00Z (UTC-5, no DST)', () => {
+    expect(zonedDayStartIso('2026-06-30', 'America/Bogota')).toBe('2026-06-30T05:00:00.000Z');
+  });
+
+  it('America/Bogota end of day is one millisecond before the next local day', () => {
+    expect(zonedDayEndIso('2026-06-30', 'America/Bogota')).toBe('2026-07-01T04:59:59.999Z');
+  });
+
+  it('America/New_York winter local midnight uses UTC-5', () => {
+    expect(zonedDayStartIso('2026-01-15', 'America/New_York')).toBe('2026-01-15T05:00:00.000Z');
+  });
+
+  it('America/New_York summer local midnight uses UTC-4 (DST-aware)', () => {
+    expect(zonedDayStartIso('2026-07-15', 'America/New_York')).toBe('2026-07-15T04:00:00.000Z');
+  });
+
+  it('America/New_York end of day tracks the local day length, not 24h', () => {
+    // Winter day: 24h → next-day start 05:00Z minus 1ms.
+    expect(zonedDayEndIso('2026-01-15', 'America/New_York')).toBe('2026-01-16T04:59:59.999Z');
+    // Summer day: 24h → next-day start 04:00Z minus 1ms.
+    expect(zonedDayEndIso('2026-07-15', 'America/New_York')).toBe('2026-07-16T03:59:59.999Z');
+  });
+
+  it('handles month-end and year-end boundaries', () => {
+    expect(zonedDayStartIso('2026-12-31', 'UTC')).toBe('2026-12-31T00:00:00.000Z');
+    expect(zonedDayEndIso('2026-12-31', 'UTC')).toBe('2026-12-31T23:59:59.999Z');
+    expect(zonedDayStartIso('2026-02-28', 'America/Bogota')).toBe('2026-02-28T05:00:00.000Z');
   });
 });

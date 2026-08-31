@@ -10,6 +10,7 @@ import { NAV_SECTIONS, resolveActiveHref } from './nav-config';
 import { SidebarNavItem } from './nav-item';
 import { SidebarBrand } from './sidebar-brand';
 import { SidebarAccount } from './sidebar-account';
+import { SidebarPeriod } from './sidebar-period';
 import { SidebarValue } from './sidebar-value';
 
 const COLLAPSED_STORAGE_KEY = 'sidebar:collapsed';
@@ -84,6 +85,12 @@ export function Sidebar() {
       >
         <SidebarBrand collapsed={effectiveCollapsed} />
         <SidebarAccount collapsed={effectiveCollapsed} />
+
+        {/* Global operational period selector — currently visible only on
+            /trades (M004/T9B). Performance and Workstation do not consume
+            the global period until Tasks 9C/9D, so the selector must never
+            imply a surface consumes a context it ignores. */}
+        {pathname === '/trades' && <SidebarPeriod collapsed={effectiveCollapsed} />}
 
         {/* Navigation */}
         <nav className="flex-1 space-y-4 overflow-y-auto p-2">

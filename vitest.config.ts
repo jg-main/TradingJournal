@@ -218,6 +218,8 @@ export default defineConfig({
       'src/components/dashboard/attention-insights-widget.test.tsx',
 
       'src/components/sidebar/nav-config.test.ts',
+      'src/components/sidebar/sidebar.test.tsx',
+      'src/components/sidebar/sidebar-period.test.tsx',
       'src/components/performance/__tests__/kpi-card.test.tsx',
       'src/components/performance/__tests__/kpi-row.test.tsx',
       'src/components/performance/__tests__/chart-grid.test.tsx',

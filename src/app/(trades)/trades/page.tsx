@@ -14,8 +14,10 @@ import { TradesScratchContext } from '@/components/trades/scratch-context';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { useAccount } from '@/lib/account-context';
+import { useAppTimezone } from '@/lib/timezone-context';
+import { useOperationalDateRange } from '@/lib/operational-date-range-context';
+import { zonedDayStartIso, zonedDayEndIso } from '@/lib/operational-date-range';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import DynamicTable from '@/components/dynamic-table';
 import {
@@ -136,30 +138,6 @@ const TABS: TabDef[] = [
 const PAGE_SIZE = 50;
 
 // ── Helpers ────────────────────────────────────────────────────────────
-
-/**
- * Browser-local timezone offset suffix, e.g. "-05:00" or "+02:00".
- * Date-range bounds must be interpreted against the user's local day
- * boundaries, not hardcoded UTC, so the ISO strings carry the local offset.
- */
-function localOffsetSuffix(): string {
-  const offsetMin = -new Date().getTimezoneOffset();
-  const sign = offsetMin >= 0 ? '+' : '-';
-  const abs = Math.abs(offsetMin);
-  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
-  const mm = String(abs % 60).padStart(2, '0');
-  return `${sign}${hh}:${mm}`;
-}
-
-/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the from bound (start of local day). */
-function toFromIso(dateStr: string): string {
-  return `${dateStr}T00:00:00.000${localOffsetSuffix()}`;
-}
-
-/** Convert a YYYY-MM-DD date string to an ISO 8601 datetime for the to bound (end of local day). */
-function toToIso(dateStr: string): string {
-  return `${dateStr}T23:59:59.999${localOffsetSuffix()}`;
-}
 
 function SkeletonRows() {
   return (
@@ -1404,12 +1382,6 @@ function TradesPageInner() {
   // Filter state starts from the URL so the server render and first client
   // render are identical. Persisted browser-only values are restored after
   // hydration below.
-  const [fromDate, setFromDate] = useState(() => {
-    return searchParams.get('from') ?? '';
-  });
-  const [toDate, setToDate] = useState(() => {
-    return searchParams.get('to') ?? '';
-  });
   const [direction, setDirection] = useState(() => {
     return searchParams.get('direction') ?? 'all';
   });
@@ -1418,23 +1390,22 @@ function TradesPageInner() {
   // trades:accountId persistence, and no independent /api/accounts fetch —
   // trades are always scoped to the provider's accountId once resolved.
   const { accountId, loading: accountsLoading, error: accountsError, refresh } = useAccount();
+  // Canonical operational period (M004/T9B): the global OperationalDateRange
+  // provider owns selection, resolution, hydration, and persistence. Trades
+  // owns NO date state — it consumes only the resolved range.
+  const { resolvedRange, hydrated: periodHydrated } = useOperationalDateRange();
+  const { timezone } = useAppTimezone();
   const [refreshing, setRefreshing] = useState(false);
   // Trade awaiting scratch confirmation (M015/S02/T01). The page owns the
   // ConfirmDialog, the DELETE /api/trades/[id] call, and the planned-tab
   // refetch; ActionsCell only triggers the request via context.
   const [scratchTargetId, setScratchTargetId] = useState<string | null>(null);
-  const [activePreset, setActivePreset] = useState<string | null>(() => {
-    return searchParams.get('preset');
-  });
   const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   useEffect(() => {
     const restorePersistedFilters = window.setTimeout(() => {
       try {
-        if (!searchParams.has('from')) setFromDate(localStorage.getItem('trades:fromDate') ?? '');
-        if (!searchParams.has('to')) setToDate(localStorage.getItem('trades:toDate') ?? '');
         if (!searchParams.has('direction')) setDirection(localStorage.getItem('trades:direction') ?? 'all');
-        if (!searchParams.has('preset')) setActivePreset(localStorage.getItem('trades:preset') || null);
       } catch {
         // Browser storage may be unavailable; URL/default state remains valid.
       } finally {
@@ -1445,103 +1416,46 @@ function TradesPageInner() {
     return () => window.clearTimeout(restorePersistedFilters);
   }, [searchParams]);
 
-  // Date-range presets
-  const datePresets = useMemo(() => {
-    const today = new Date();
-    // Local-calendar formatting — never toISOString(), which would shift the
-    // date by the UTC offset (e.g. a July 31 local midnight becomes July 30
-    // 14:00Z when the browser is east of UTC).
-    const fmt = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const startOfYear = new Date(today.getFullYear(), 0, 1);
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    // Trailing-day arithmetic (not calendar-month snapping): "1M" on July 31
-    // is June 30 (31 days back), "3M" is May 1 (91 days back), "6M" is
-    // February 1 (180 days back).
-    const daysAgo = (n: number) => {
-      const d = new Date(today);
-      d.setDate(d.getDate() - n);
-      return d;
-    };
-    return [
-      { label: 'Max', from: '' },
-      { label: 'YTD', from: fmt(startOfYear) },
-      { label: '1Y', from: fmt(new Date(today.getFullYear() - 1, today.getMonth(), today.getDate())) },
-      { label: '6M', from: fmt(daysAgo(180)) },
-      { label: '3M', from: fmt(daysAgo(91)) },
-      { label: 'MTD', from: fmt(startOfMonth) },
-      { label: '1M', from: fmt(daysAgo(31)) },
-    ];
-  }, []);
-
-  const clearDates = useCallback(() => {
-    setFromDate('');
-    setToDate('');
-    setActivePreset(null);
-  }, []);
-
-  const applyDatePreset = useCallback((preset: { label: string; from: string }) => {
-    if (preset.label === 'Max') {
-      clearDates();
-      setActivePreset(preset.label);
-    } else {
-      setFromDate(preset.from);
-      setToDate('');
-      setActivePreset(preset.label);
-    }
-  }, [clearDates]);
-
-  // Clear page-local filters only (dates + direction). The global account
-  // scope is owned by AccountProvider and is intentionally NOT touched.
+  // Clear page-local filters only (direction). The global account scope is
+  // owned by AccountProvider and the global period by OperationalDateRange
+  // provider — neither is touched by clearing page filters.
   const clearPageFilters = useCallback(() => {
-    clearDates();
     setDirection('all');
-  }, [clearDates]);
-
-  // Clear preset highlight when user manually edits dates
-  const handleFromDateChange = useCallback((value: string) => {
-    setFromDate(value);
-    setActivePreset(null);
   }, []);
 
-  const handleToDateChange = useCallback((value: string) => {
-    setToDate(value);
-    setActivePreset(null);
-  }, []);
-
-  // Sync filter state to URL search params and localStorage for persistence
+  // Sync page-local filter state to URL search params and localStorage for
+  // persistence. Only Trades-specific state lives here: Direction. The global
+  // period (app:date-range) and account scope (app:account) are owned by
+  // their canonical providers and are never duplicated into trades: keys or
+  // the Trades URL.
   useEffect(() => {
     if (!filtersHydrated) return;
 
     const params = new URLSearchParams();
-    if (fromDate) params.set('from', fromDate);
-    if (toDate) params.set('to', toDate);
     if (direction && direction !== 'all') params.set('direction', direction);
-    if (activePreset) params.set('preset', activePreset);
     const qs = params.toString();
     const newUrl = qs ? `?${qs}` : window.location.pathname;
     router.replace(newUrl, { scroll: false });
-    // Also persist to localStorage — survives plain sidebar link navigation
-    // (account scope is owned by AccountProvider under app:account, never
-    // trades:accountId).
+    // Persist Direction to localStorage — survives plain sidebar link
+    // navigation (account scope is owned by AccountProvider under
+    // app:account, never trades:accountId; the period under app:date-range).
     try {
-      localStorage.setItem('trades:fromDate', fromDate);
-      localStorage.setItem('trades:toDate', toDate);
       localStorage.setItem('trades:direction', direction);
-      if (activePreset) localStorage.setItem('trades:preset', activePreset);
-      else localStorage.removeItem('trades:preset');
     } catch { /* localStorage unavailable */ }
-  }, [fromDate, toDate, direction, activePreset, filtersHydrated, router]);
+  }, [direction, filtersHydrated, router]);
 
-  // Debounce ref to avoid rapid re-fetches while typing dates
+  // Debounce ref to avoid rapid re-fetches while changing filters
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Data fetching ─────────────────────────────────────────────────
 
   const fetchTab = useCallback(async (tab: TabDef, page: number = 1) => {
     // Never issue an unscoped/all-account query: wait for the canonical
-    // account to resolve. The resolution effect below triggers the fetch.
+    // account to resolve. Also wait for BOTH hydrations so the first request
+    // uses the restored direction and restored global period, never a
+    // default-YTD placeholder that immediately refetches.
     if (accountsLoading || !accountId) return;
+    if (!periodHydrated || !filtersHydrated) return;
     setTabLoading((prev) => ({ ...prev, [tab.id]: true }));
     setTabError((prev) => ({ ...prev, [tab.id]: null }));
     try {
@@ -1549,12 +1463,16 @@ function TradesPageInner() {
       params.set('status', tab.apiStatus);
       params.set('page', String(page));
       params.set('limit', String(PAGE_SIZE));
-
-      // Append active filter values — account scope comes from the provider.
-      if (fromDate) params.set('from', toFromIso(fromDate));
-      if (toDate) params.set('to', toToIso(toDate));
       params.set('accountId', accountId);
       if (direction && direction !== 'all') params.set('direction', direction);
+
+      // Global operational period → status-aware boundaries.
+      // OPEN is never date-filtered: an open trade opened years ago but
+      // still open must always remain visible regardless of the period.
+      if (tab.apiStatus !== 'open') {
+        if (resolvedRange.from) params.set('from', zonedDayStartIso(resolvedRange.from, timezone));
+        if (resolvedRange.to) params.set('to', zonedDayEndIso(resolvedRange.to, timezone));
+      }
 
       const res = await fetch(`/api/trades?${params.toString()}`);
       if (!res.ok) {
@@ -1576,7 +1494,7 @@ function TradesPageInner() {
     } finally {
       setTabLoading((prev) => ({ ...prev, [tab.id]: false }));
     }
-  }, [fromDate, toDate, accountId, direction, accountsLoading]);
+  }, [resolvedRange, accountId, direction, accountsLoading, periodHydrated, filtersHydrated, timezone]);
 
   // ── Scratch (planned-only soft-delete, R027/D057) ─────────────────────
 
@@ -1677,7 +1595,7 @@ function TradesPageInner() {
     if (tabDef) fetchTab(tabDef, tabPage[tabId]);
   }, [fetchTab, tabPage]);
 
-  // Fetch all tabs — fires when filters change (debounced)
+  // Fetch all tabs — fires when filters or the global period change (debounced)
   useEffect(() => {
     // Clear any pending debounce
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -1691,7 +1609,7 @@ function TradesPageInner() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [fetchTab]); // fetchTab changes when fromDate, toDate, or accountId change
+  }, [fetchTab]); // fetchTab changes when resolvedRange, direction, accountId, hydration, or timezone change
 
   // Memoized column definitions per tab
   const colMap = useMemo<
@@ -1747,28 +1665,74 @@ function TradesPageInner() {
         },
       };
       const msg = messages[tab.id];
-      // Page-local filters (dates + direction) can hide rows that DO exist —
-      // the empty state must not falsely claim there are no trades. The
-      // global account scope is deliberately NOT part of this condition.
-      const hasLocalFilters = Boolean(fromDate || toDate || (direction !== 'all'));
-      if (hasLocalFilters) {
+      // The GLOBAL period filters historical tabs (closed/planned/deleted via
+      // the API's status-aware date attribution) but NEVER the Open tab — an
+      // open trade must stay visible regardless of the selected period.
+      // Direction is the only page-local filter.
+      const isOpenTab = tab.id === 'open';
+      const hasDirectionFilter = direction !== 'all';
+      const periodIsBounded = Boolean(resolvedRange.from || resolvedRange.to);
+
+      if (isOpenTab) {
+        if (hasDirectionFilter) {
+          return (
+            <EmptyState
+              icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
+              title={`${msg.title} match the current filters`}
+              description="Try adjusting the direction, or clear the page filters."
+              action={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={clearPageFilters}
+                >
+                  Clear filters
+                </Button>
+              }
+            />
+          );
+        }
         return (
           <EmptyState
             icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
-            title={`${msg.title} match the current filters`}
-            description={`Try adjusting the date range or direction, or clear the page filters.`}
+            title={msg.title}
+            description={msg.description}
+          />
+        );
+      }
+
+      // Historical tabs — an empty result may be caused by the selected
+      // period. Never imply there is no historical data at all.
+      if (hasDirectionFilter || periodIsBounded) {
+        const title = periodIsBounded && hasDirectionFilter
+          ? `${msg.title} match the selected period or current page filters`
+          : periodIsBounded
+            ? `${msg.title} match the selected period`
+            : `${msg.title} match the current filters`;
+        return (
+          <EmptyState
+            icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
+            title={title}
+            description={
+              periodIsBounded
+                ? 'Adjust the period in the sidebar or change the page filters to see more trades.'
+                : 'Try adjusting the direction, or clear the page filters.'
+            }
             action={
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={clearPageFilters}
-              >
-                Clear filters
-              </Button>
+              hasDirectionFilter ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={clearPageFilters}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined
             }
           />
         );
       }
+
       return (
         <EmptyState
           icon={<NotebookPen className="size-12 text-muted-foreground" strokeWidth={1} />}
@@ -1898,83 +1862,24 @@ function TradesPageInner() {
         data-testid="trades-filter-bar"
         className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-4 py-2"
       >
-        {/* Date scope */}
-        <div className="flex items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="filter-from" className="text-xs text-muted-foreground">
-              From
-            </label>
-            <Input
-              id="filter-from"
-              type="date"
-              className="h-8 w-44"
-              value={fromDate}
-              onChange={(e) => handleFromDateChange(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor="filter-to" className="text-xs text-muted-foreground">
-              To
-            </label>
-            <Input
-              id="filter-to"
-              type="date"
-              className="h-8 w-44"
-              value={toDate}
-              onChange={(e) => handleToDateChange(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* Date-range presets */}
-        <div className="flex flex-wrap items-center gap-1">
-          {datePresets.map((p) => (
-            <Button
-              key={p.label}
-              type="button"
-              size="sm"
-              variant={activePreset === p.label ? 'default' : 'secondary'}
-              onClick={() => applyDatePreset(p)}
-            >
-              {p.label}
-            </Button>
-          ))}
-          {(activePreset || fromDate) && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={clearDates}
-              className="px-1.5"
-              title="Clear date filter"
-            >
-              ✕
-            </Button>
-          )}
-        </div>
-
-        {/* Direction filter */}
-        {/* Account scope is owned by the sidebar AccountProvider (M007/D037)
+        {/* Direction filter — the only Trades-local filter. The global
+            operational period is owned by the sidebar Period selector
+            (M004/T9B); the page consumes it via useOperationalDateRange.
+            Account scope is owned by the sidebar AccountProvider (M007/D037)
             — there is intentionally no Account selector here. */}
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filter-direction" className="text-xs font-medium text-muted-foreground">
-            Direction
-          </label>
-          <Select
-            value={direction}
-            onValueChange={(v) => setDirection(v)}
-          >
-            <SelectTrigger id="filter-direction" className="h-8 w-36">
-              <SelectValue placeholder="All" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="long">Long</SelectItem>
-              <SelectItem value="short">Short</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select
+          value={direction}
+          onValueChange={(v) => setDirection(v)}
+        >
+          <SelectTrigger id="filter-direction" className="h-8 w-36" aria-label="Direction">
+            <SelectValue placeholder="All" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="long">Long</SelectItem>
+            <SelectItem value="short">Short</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* ── Tabs + content ─────────────────────────────────────────── */}
