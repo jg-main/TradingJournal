@@ -5,11 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
-  ArrowLeft,
   CircleCheck,
   Loader2,
   X,
 } from 'lucide-react';
+import { SettingsChildPage } from '@/components/settings/settings-child-page';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -113,24 +113,10 @@ export default function DangerZonePage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <Link
-          href="/settings"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Back to Settings
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Danger Zone
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Destructive actions that permanently alter your journal data.
-        </p>
-      </div>
-
+    <SettingsChildPage
+      title="Danger Zone"
+      description="Destructive actions that permanently alter your journal data."
+    >
       {/* Reset flow card */}
       <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6">
         {/* ── Warning Step ──────────────────────── */}
@@ -289,6 +275,6 @@ export default function DangerZonePage() {
           </div>
         )}
       </div>
-    </div>
+    </SettingsChildPage>
   );
 }

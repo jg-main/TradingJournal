@@ -112,7 +112,7 @@ describe('SettingsChildPage', () => {
   });
 });
 
-describe('SettingsChildPage extraction architecture (M004 Task 13-18)', () => {
+describe('SettingsChildPage extraction architecture (M004 Task 13-19)', () => {
   const repoRoot = resolve(__dirname, '..', '..', '..', '..');
   const componentSource = readFileSync(
     resolve(repoRoot, 'src/components/settings/settings-child-page.tsx'),
@@ -146,6 +146,10 @@ describe('SettingsChildPage extraction architecture (M004 Task 13-18)', () => {
     resolve(repoRoot, 'src/app/(legacy)/settings/journal-setup/page.tsx'),
     'utf8',
   );
+  const dangerZoneSource = readFileSync(
+    resolve(repoRoot, 'src/app/(legacy)/settings/danger-zone/page.tsx'),
+    'utf8',
+  );
 
   it('the shell + Back navigation live ONLY in SettingsChildPage', () => {
     // The component is the sole owner of the canonical outer shell and back link.
@@ -162,6 +166,7 @@ describe('SettingsChildPage extraction architecture (M004 Task 13-18)', () => {
       ['ai', aiSource],
       ['market-data', marketDataSource],
       ['journal-setup', journalSetupSource],
+      ['danger-zone', dangerZoneSource],
     ] as const) {
       expect(src, `${name} must not duplicate the outer shell`).not.toContain(
         'mx-auto max-w-5xl px-8 py-10',
@@ -178,6 +183,7 @@ describe('SettingsChildPage extraction architecture (M004 Task 13-18)', () => {
       aiSource,
       marketDataSource,
       journalSetupSource,
+      dangerZoneSource,
     ]) {
       expect(src).not.toContain('mx-auto max-w-2xl px-6 py-8');
     }
@@ -192,6 +198,7 @@ describe('SettingsChildPage extraction architecture (M004 Task 13-18)', () => {
       aiSource,
       marketDataSource,
       journalSetupSource,
+      dangerZoneSource,
     ]) {
       expect(src).toContain("from '@/components/settings/settings-child-page'");
       expect(src).toContain('<SettingsChildPage');
