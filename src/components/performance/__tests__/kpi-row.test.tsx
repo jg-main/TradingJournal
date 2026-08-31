@@ -6,6 +6,18 @@ import { KpiRow } from '../kpi-row';
 import { PerformanceDashboardProvider } from '@/hooks/use-performance-dashboard';
 import { PerformanceInstanceProvider } from '../performance-instance-context';
 
+// Canonical global operational period (M004/T9C): the sidebar Period
+// selector owns the real provider; tests provide a stable mock.
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => ({
+    selection: { preset: 'YTD', from: '', to: '' },
+    resolvedRange: { from: '', to: '' },
+    hydrated: true,
+    setPreset: vi.fn(),
+    setCustomRange: vi.fn(),
+  }),
+}));
+
 // jsdom gaps for Radix Select (repo pattern — see performance-filter-bar.test.tsx).
 Element.prototype.scrollIntoView = () => {};
 

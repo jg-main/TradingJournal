@@ -1,9 +1,12 @@
 /**
- * Tests for the PerformanceDashboardContext provider + usePerformanceDashboard hook.
+ * Tests for the PerformanceDashboardContext provider + usePerformanceDashboard hook
+ * (M004/T9C).
  *
  * Covers: default filter shape, debounced single fetch keyed on the serialized
- * API query, filter-change refetches, unit changes NOT triggering refetches,
- * error surfacing (non-OK + network), the stale-response guard, and
+ * API query, filter-change refetches, the GLOBAL operational period contract
+ * (sole date owner, hydration gate, restored-period first request, plain YMD
+ * query keys, Max no-dates, period-change refetch), unit changes NOT
+ * triggering refetches, error surfacing, the stale-response guard, and
  * missing-provider failure.
  *
  * Run: npx vitest run src/hooks/__tests__/use-performance-dashboard.test.tsx
@@ -38,6 +41,20 @@ vi.mock('@/lib/account-context', () => ({
     setAccountId: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
   }),
+}));
+
+// Canonical global operational period (M004/T9B/T9C): the sidebar Period
+// selector owns the real provider. The provider consumes only the resolved
+// range + hydration flag; tests mutate this mock directly.
+const mockPeriod = vi.hoisted(() => ({
+  selection: { preset: 'YTD' as string, from: '' as string, to: '' as string },
+  resolvedRange: { from: '' as string, to: '' as string },
+  hydrated: true,
+  setPreset: vi.fn(),
+  setCustomRange: vi.fn(),
+}));
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => mockPeriod,
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -75,19 +92,19 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('buildQueryParams', () => {
-  it('serializes account scope, date range and advanced filters', () => {
-    const filter: PerformanceDashboardFilter = {
-      accountScope: { mode: 'multiple', accountIds: ['acc-1', 'acc-2'] },
-      dateRange: { preset: 'Custom', from: '2026-01-01', to: '2026-06-30' },
-      advancedFilters: {
-        setupIds: ['s-1'],
-        directions: ['long'],
-        symbols: ['AAPL'],
-        tradeResults: ['win'],
-      },
-      unit: 'currency',
-    };
-    const qs = buildQueryParams(filter).toString();
+  const baseFilter: PerformanceDashboardFilter = {
+    accountScope: { mode: 'multiple', accountIds: ['acc-1', 'acc-2'] },
+    advancedFilters: {
+      setupIds: ['s-1'],
+      directions: ['long'],
+      symbols: ['AAPL'],
+      tradeResults: ['win'],
+    },
+    unit: 'currency',
+  };
+
+  it('serializes account scope, the GLOBAL effective range, and advanced filters', () => {
+    const qs = buildQueryParams(baseFilter, undefined, { from: '2026-01-01', to: '2026-06-30' }).toString();
     expect(qs).toContain('accountScope=multiple');
     expect(qs).toContain('accountIds=acc-1%2Cacc-2');
     expect(qs).toContain('dateFrom=2026-01-01');
@@ -98,41 +115,23 @@ describe('buildQueryParams', () => {
     expect(qs).toContain('tradeResults=win');
   });
 
+  it('omits dateFrom/dateTo when the effective range is empty (Max)', () => {
+    const qs = buildQueryParams(baseFilter, undefined, { from: '', to: '' }).toString();
+    expect(qs).not.toContain('dateFrom');
+    expect(qs).not.toContain('dateTo');
+  });
+
   it('excludes unit (client-side presentation must not refetch)', () => {
-    const filter: PerformanceDashboardFilter = {
-      accountScope: { mode: 'all', accountIds: [] },
-      dateRange: { preset: 'YTD', from: '', to: '' },
-      advancedFilters: { setupIds: [], directions: [], symbols: [], tradeResults: [] },
-      unit: 'r',
-    };
-    const qs = buildQueryParams(filter).toString();
+    const qs = buildQueryParams(baseFilter, undefined, { from: '2026-01-01', to: '' }).toString();
     expect(qs).not.toContain('unit');
-    expect(qs).toContain('accountScope=all');
+    expect(qs).toContain('accountScope=multiple');
   });
 
   it('FORCES single/<global> when a global account is supplied (legacy scope cannot override)', () => {
-    const filter: PerformanceDashboardFilter = {
-      accountScope: { mode: 'all', accountIds: [] },
-      dateRange: { preset: 'YTD', from: '', to: '' },
-      advancedFilters: { setupIds: [], directions: [], symbols: [], tradeResults: [] },
-      unit: 'currency',
-    };
-    const qs = buildQueryParams(filter, 'acc-A').toString();
+    const qs = buildQueryParams(baseFilter, 'acc-A', { from: '2026-01-01', to: '' }).toString();
     expect(qs).toContain('accountScope=single');
     expect(qs).toContain('accountIds=acc-A');
-    expect(qs).not.toContain('accountScope=all');
-
-    // Even a legacy multiple scope is overridden by the global account.
-    const legacy: PerformanceDashboardFilter = {
-      accountScope: { mode: 'multiple', accountIds: ['acc-B', 'acc-C'] },
-      dateRange: { preset: 'YTD', from: '', to: '' },
-      advancedFilters: { setupIds: [], directions: [], symbols: [], tradeResults: [] },
-      unit: 'currency',
-    };
-    const qs2 = buildQueryParams(legacy, 'acc-A').toString();
-    expect(qs2).toContain('accountScope=single');
-    expect(qs2).toContain('accountIds=acc-A');
-    expect(qs2).not.toContain('acc-B');
+    expect(qs).not.toContain('accountScope=multiple');
   });
 });
 
@@ -146,6 +145,9 @@ describe('PerformanceDashboardProvider', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     globalThis.fetch = vi.fn().mockResolvedValue(okResponse(analyticsBody(100)));
+    mockPeriod.selection = { preset: 'YTD', from: '', to: '' };
+    mockPeriod.resolvedRange = { from: '', to: '' };
+    mockPeriod.hydrated = true;
   });
 
   afterEach(() => {
@@ -154,15 +156,20 @@ describe('PerformanceDashboardProvider', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('exposes the default filter on mount (accountScope normalized to global)', () => {
+  it('exposes the page-local filter on mount (no dateRange — global period owns dates)', () => {
     const { result } = renderHook(() => usePerformanceDashboard(), { wrapper });
     // Fix 4: the provider normalizes accountScope to the global selection
     // (single/acc-A) — legacy 'all' defaults cannot persist.
     expect(result.current.filter.accountScope).toEqual({ mode: 'single', accountIds: ['acc-A'] });
-    expect(result.current.filter.dateRange.preset).toBe('YTD');
+    expect('dateRange' in result.current.filter).toBe(false);
     expect(result.current.filter.unit).toBe('currency');
     expect(result.current.analyticsData).toBeNull();
     expect(result.current.isLoading).toBe(false);
+  });
+
+  it('exposes no setDateRange mutable owner', () => {
+    const { result } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    expect('setDateRange' in result.current).toBe(false);
   });
 
   it('fetches once on mount, debounced, scoped to the global account', async () => {
@@ -178,17 +185,82 @@ describe('PerformanceDashboardProvider', () => {
     expect(url).toMatch(/^\/api\/performance\/analytics\?accountScope=single&accountIds=acc-A/);
   });
 
-  it('refetches with updated query after a date-range change', async () => {
-    const { result } = renderHook(() => usePerformanceDashboard(), { wrapper });
+  it('does NOT fetch while the global period is not yet hydrated (no default-YTD request)', async () => {
+    mockPeriod.hydrated = false;
+    renderHook(() => usePerformanceDashboard(), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    // No request may fire against the default YTD before period restoration.
+    expect(globalThis.fetch).not.toHaveBeenCalled();
 
+    // Hydration completes with a restored 3M range → the FIRST request uses it.
+    mockPeriod.hydrated = true;
+    mockPeriod.selection = { preset: '3M', from: '', to: '' };
+    mockPeriod.resolvedRange = { from: '2026-05-01', to: '' };
+    const { rerender } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    rerender();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain('dateFrom=2026-05-01');
+  });
+
+  it('sends plain YMD dates for a global Custom range (no instants, no offsets)', async () => {
+    mockPeriod.selection = { preset: 'Custom', from: '2026-06-01', to: '2026-06-30' };
+    mockPeriod.resolvedRange = { from: '2026-06-01', to: '2026-06-30' };
+    renderHook(() => usePerformanceDashboard(), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain('dateFrom=2026-06-01');
+    expect(url).toContain('dateTo=2026-06-30');
+    expect(url).not.toContain('T00');
+    expect(url).not.toContain('Z');
+  });
+
+  it('sends no date params for a Max (empty) global range', async () => {
+    mockPeriod.selection = { preset: 'Max', from: '', to: '' };
+    mockPeriod.resolvedRange = { from: '', to: '' };
+    renderHook(() => usePerformanceDashboard(), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).not.toContain('dateFrom');
+    expect(url).not.toContain('dateTo');
+  });
+
+  it('uses the provider resolvedRange exactly for a relative preset (no Performance date math)', async () => {
+    mockPeriod.selection = { preset: 'YTD', from: '', to: '' };
+    mockPeriod.resolvedRange = { from: '2026-01-01', to: '' };
+    renderHook(() => usePerformanceDashboard(), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain('dateFrom=2026-01-01');
+    expect(url).not.toContain('dateTo');
+  });
+
+  it('refetches exactly once when the global period changes', async () => {
+    renderHook(() => usePerformanceDashboard(), { wrapper });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
 
-    act(() => {
-      result.current.setDateRange({ preset: '1M', from: '2026-07-01', to: '' });
-    });
+    mockPeriod.resolvedRange = { from: '2026-07-01', to: '' };
+    mockPeriod.selection = { preset: '1M', from: '', to: '' };
+    const { rerender } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    rerender();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
@@ -196,8 +268,6 @@ describe('PerformanceDashboardProvider', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
     expect(url).toContain('dateFrom=2026-07-01');
-    expect(url).toContain('accountScope=single');
-    expect(url).toContain('accountIds=acc-A');
   });
 
   it('does NOT refetch when only the unit changes (identical query key)', async () => {
@@ -217,6 +287,22 @@ describe('PerformanceDashboardProvider', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(result.current.filter.unit).toBe('percent');
+  });
+
+  it('refetches on an advanced-filter change', async () => {
+    const { result } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.setAdvancedFilters({ setupIds: ['s-1'], directions: [], symbols: [], tradeResults: [] });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('stores fetched analytics data', async () => {
@@ -269,9 +355,9 @@ describe('PerformanceDashboardProvider', () => {
     });
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
 
-    // Filter change triggers a second fetch that resolves immediately.
+    // Page-local filter change triggers a second fetch that resolves immediately.
     act(() => {
-      result.current.setDateRange({ preset: '1M', from: '2026-07-01', to: '' });
+      result.current.setAdvancedFilters({ setupIds: ['s-1'], directions: [], symbols: [], tradeResults: [] });
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
@@ -304,6 +390,58 @@ describe('PerformanceDashboardProvider', () => {
     });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
+
+  it('initialFilter.dateRange cannot override the global period', async () => {
+    // A legacy caller passes a dateRange through the generic initialFilter —
+    // the provider must strip it (the global period always wins).
+    const wrapperWithLegacy = ({ children }: { children: React.ReactNode }) => (
+      <PerformanceDashboardProvider
+        initialFilter={
+          { dateRange: { preset: '1M', from: '1999-01-01', to: '' } } as unknown as Partial<PerformanceDashboardFilter>
+        }
+      >
+        {children}
+      </PerformanceDashboardProvider>
+    );
+    mockPeriod.resolvedRange = { from: '2026-05-01', to: '' };
+    mockPeriod.selection = { preset: '3M', from: '', to: '' };
+    renderHook(() => usePerformanceDashboard(), { wrapper: wrapperWithLegacy });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    const url = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain('dateFrom=2026-05-01');
+    expect(url).not.toContain('1999');
+  });
+
+  it('generic setFilter cannot override the global period (dateRange stripped at runtime)', async () => {
+    const { result } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    mockPeriod.resolvedRange = { from: '2026-06-01', to: '2026-06-30' };
+    mockPeriod.selection = { preset: 'Custom', from: '2026-06-01', to: '2026-06-30' };
+    const { rerender } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    rerender();
+
+    // A malicious/legacy setFilter call carrying a dateRange must be ignored.
+    act(() => {
+      result.current.setFilter(
+        { dateRange: { preset: '1M', from: '1999-01-01', to: '' } } as unknown as Partial<PerformanceDashboardFilter>,
+      );
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    const urls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    const last = urls[urls.length - 1];
+    expect(last).toContain('dateFrom=2026-06-01');
+    expect(last).not.toContain('1999');
+  });
 });
 
 describe('PerformanceDashboardProvider — Fix 4 global account scope', () => {
@@ -315,6 +453,8 @@ describe('PerformanceDashboardProvider — Fix 4 global account scope', () => {
     mockAccount.accountId = 'acc-A';
     mockAccount.loading = false;
     mockAccount.error = null;
+    mockPeriod.hydrated = true;
+    mockPeriod.resolvedRange = { from: '', to: '' };
   });
 
   afterEach(() => {
@@ -336,7 +476,8 @@ describe('PerformanceDashboardProvider — Fix 4 global account scope', () => {
     // Resolution completes → the debounced fetch fires scoped to the account.
     mockAccount.loading = false;
     mockAccount.accountId = 'acc-A';
-    renderHook(() => usePerformanceDashboard(), { wrapper }).rerender;
+    const { rerender } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    rerender();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
@@ -367,6 +508,8 @@ describe('PerformanceDashboardProvider — Fix 4 global account scope', () => {
 
     // Global switch A -> B.
     mockAccount.accountId = 'acc-B';
+    const { rerender } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    rerender();
     act(() => {
       result.current.refetch(); // key changed; refetch uses the new scope
     });
@@ -416,6 +559,8 @@ describe('PerformanceDashboardProvider — Fix 4 global account scope', () => {
 
     // Switch global to B → new debounced fetch (fast) resolves with 200.
     mockAccount.accountId = 'acc-B';
+    const { rerender } = renderHook(() => usePerformanceDashboard(), { wrapper });
+    rerender();
     act(() => {
       result.current.refetch();
     });

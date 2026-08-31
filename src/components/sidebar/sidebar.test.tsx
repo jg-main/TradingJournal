@@ -54,16 +54,15 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe('Sidebar period selector route visibility (M004/T9B)', () => {
-  it('renders the period selector on the exact /trades pathname', () => {
-    mockPathname = '/trades';
+describe('Sidebar period selector route visibility (M004/T9B/T9C)', () => {
+  it.each(['/trades', '/performance'])('renders the period selector on %s', (path) => {
+    mockPathname = path;
     render(<Sidebar />);
     expect(screen.getByTestId('sidebar-period')).toBeTruthy();
   });
 
   it.each([
     ['/', 'root workstation'],
-    ['/performance', 'performance'],
     ['/trades/new', 'new trade'],
     ['/trades/abc-123', 'trade detail'],
     ['/settings', 'settings hub'],

@@ -12,6 +12,7 @@ import {
   PERFORMANCE_SYSTEM_DASHBOARD_IDS,
   PERFORMANCE_DASHBOARD_CONFIG_VERSION,
   type PerformanceDashboardConfig,
+  type PerformanceDashboardFilter,
 } from '../performance-view-types';
 import { getValidWidgetTypes, getDefaultWidgetInstances, PERFORMANCE_WIDGET_REGISTRY } from '../performance-widget-registry';
 
@@ -104,17 +105,20 @@ describe('performance-view-types', () => {
       expect(isPerformanceDashboardConfigShape(config)).toBe(false);
     });
 
-    it('accepts config with optional filterSnapshot', () => {
+    it('accepts config with optional filterSnapshot (incl. legacy dateRange)', () => {
       const config: PerformanceDashboardConfig = {
         version: 1,
         name: 'Test Dashboard',
         instances: [],
         filterSnapshot: {
           accountScope: { mode: 'all', accountIds: [] },
+          // Legacy persisted filterSnapshot may carry a dateRange — it is
+          // inert compatibility metadata (M004/T9C), preserved by validation
+          // and cloning but never applied as a live period owner.
           dateRange: { preset: 'YTD', from: '', to: '' },
           advancedFilters: { setupIds: [], directions: [], symbols: [], tradeResults: [] },
           unit: 'currency',
-        },
+        } as Partial<PerformanceDashboardFilter> & { dateRange?: unknown },
       };
       expect(isPerformanceDashboardConfigShape(config)).toBe(true);
     });
@@ -197,11 +201,10 @@ describe('performance-view-types', () => {
   });
 
   describe('createDefaultFilter', () => {
-    it('creates filter with all defaults', () => {
+    it('creates the page-local filter defaults (no dateRange — global period owns dates)', () => {
       const filter = createDefaultFilter();
       expect(filter.accountScope.mode).toBe('all');
       expect(filter.accountScope.accountIds).toEqual([]);
-      expect(filter.dateRange.preset).toBe('YTD');
       expect(filter.advancedFilters.setupIds).toEqual([]);
       expect(filter.advancedFilters.directions).toEqual([]);
       expect(filter.advancedFilters.symbols).toEqual([]);
@@ -299,10 +302,12 @@ describe('performance-view-types', () => {
         ],
         filterSnapshot: {
           accountScope: { mode: 'single', accountIds: ['acc-1'] },
+          // Legacy dateRange inside an inert filterSnapshot is preserved by
+          // the deep clone (M004/T9C) — never applied as a live owner.
           dateRange: { preset: '1M', from: '2026-01-01', to: '2026-01-31' },
           advancedFilters: { setupIds: ['s1'], directions: ['long'], symbols: [], tradeResults: [] },
           unit: 'r',
-        },
+        } as Partial<PerformanceDashboardFilter> & { dateRange?: unknown },
       };
 
       const clone = cloneDashboardConfig(config);
@@ -310,15 +315,15 @@ describe('performance-view-types', () => {
       clone.instances[0].config.titleOverride = 'Changed';
       clone.instances[0].layout.x = 99;
       clone.instances[0].instanceId = 'inst-clone';
-      // Independent filterSnapshot (deep copy).
+      // Independent filterSnapshot (deep copy) — incl. the legacy dateRange.
       clone.filterSnapshot!.accountScope!.accountIds.push('acc-2');
-      clone.filterSnapshot!.dateRange!.preset = '3M';
+      (clone.filterSnapshot as unknown as { dateRange: { preset: string } }).dateRange.preset = '3M';
 
       expect(config.instances[0].config.titleOverride).toBe('Original');
       expect(config.instances[0].layout.x).toBe(0);
       expect(config.instances[0].instanceId).toBe('inst-1');
       expect(config.filterSnapshot!.accountScope!.accountIds).toEqual(['acc-1']);
-      expect(config.filterSnapshot!.dateRange!.preset).toBe('1M');
+      expect((config.filterSnapshot as unknown as { dateRange: { preset: string } }).dateRange.preset).toBe('1M');
     });
 
     it('cloneDashboardConfig clones the curated default without aliasing', () => {

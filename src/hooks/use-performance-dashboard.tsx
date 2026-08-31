@@ -3,12 +3,12 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type {
   PerformanceDashboardFilter,
-  DateRange,
   AdvancedFilters,
   PerformanceUnit,
 } from '@/lib/performance-view-types';
 import { createDefaultFilter } from '@/lib/performance-view-types';
 import { useAccount } from '@/lib/account-context';
+import { useOperationalDateRange } from '@/lib/operational-date-range-context';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,7 +31,6 @@ export interface PerformanceAnalyticsData {
 
 export interface PerformanceDashboardContextValue {
   filter: PerformanceDashboardFilter;
-  setDateRange: (range: DateRange) => void;
   setAdvancedFilters: (filters: AdvancedFilters) => void;
   setUnit: (unit: PerformanceUnit) => void;
   setFilter: (filter: Partial<PerformanceDashboardFilter>) => void;
@@ -52,16 +51,21 @@ export interface PerformanceDashboardProviderProps {
   initialFilter?: Partial<PerformanceDashboardFilter>;
 }
 
-// ── Helper: build query params from filter ──────────────────────────────────
+// ── Helper: build query params from filter + global range ───────────────────
 
 /**
- * Serialize a PerformanceDashboardFilter into the /api/performance/analytics
- * query string. `unit` is deliberately excluded — it is a client-side
- * presentation concern only and must not trigger refetches or cache variance.
+ * Serialize the page-local PerformanceDashboardFilter plus the GLOBAL
+ * operational period into the /api/performance/analytics query string.
+ *
+ * M004/T9C: dates come exclusively from the global OperationalDateRange
+ * provider's resolved range (plain YYYY-MM-DD local-calendar keys — the API
+ * owns local attribution). `unit` is deliberately excluded — it is a
+ * client-side presentation concern only.
  */
 export function buildQueryParams(
   filter: PerformanceDashboardFilter,
   globalAccountId?: string,
+  effectiveRange?: { from: string; to: string },
 ): URLSearchParams {
   const params = new URLSearchParams();
 
@@ -80,12 +84,12 @@ export function buildQueryParams(
     params.set('accountIds', scope.accountIds.join(','));
   }
 
-  // Date range
-  if (filter.dateRange.from) {
-    params.set('dateFrom', filter.dateRange.from);
+  // Date range — global operational period only.
+  if (effectiveRange?.from) {
+    params.set('dateFrom', effectiveRange.from);
   }
-  if (filter.dateRange.to) {
-    params.set('dateTo', filter.dateRange.to);
+  if (effectiveRange?.to) {
+    params.set('dateTo', effectiveRange.to);
   }
 
   // Advanced filters
@@ -107,10 +111,24 @@ export function buildQueryParams(
 
 // ── Provider ────────────────────────────────────────────────────────────────
 
+/**
+ * Strip any legacy dateRange a caller might pass through the generic
+ * Performance filter APIs (initialFilter / setFilter) — the global operational
+ * period always wins (M004/T9C).
+ */
+function sanitizeFilterPartial(partial: Partial<PerformanceDashboardFilter>): Partial<PerformanceDashboardFilter> {
+  const copy = { ...partial } as Partial<PerformanceDashboardFilter> & { dateRange?: unknown };
+  delete copy.dateRange;
+  return copy;
+}
+
 export function PerformanceDashboardProvider({ children, initialFilter }: PerformanceDashboardProviderProps) {
+  // Page-local mutable state contains ONLY the genuinely local dimensions:
+  // account compatibility scope, advanced filters, and presentation unit.
+  // The date range is NOT owned here (M004/T9C) — it is the global period.
   const [filter, setFilterState] = useState<PerformanceDashboardFilter>(() => ({
     ...createDefaultFilter(),
-    ...initialFilter,
+    ...sanitizeFilterPartial(initialFilter ?? {}),
   }));
   const [analyticsData, setAnalyticsData] = useState<PerformanceAnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,6 +139,12 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
   // fetches /api/accounts itself and never offers an account selector; every
   // analytics request is forced to accountScope=single&accountIds=<global>.
   const { accountId, loading: accountsLoading, error: accountsError } = useAccount();
+
+  // Canonical global operational period (M004/T9B/T9C): the sidebar Period
+  // selector is the only editor. Performance derives its analytical dates
+  // from the provider's resolved range and waits for hydration before the
+  // first request.
+  const { resolvedRange, hydrated: periodHydrated } = useOperationalDateRange();
 
   // Normalize the filter's accountScope to the global selection so any
   // consumer reading filter.accountScope sees reality — and legacy persisted
@@ -140,8 +164,12 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
   // Serialized query drives the fetch effect — unit changes (client-side
   // presentation only) produce an identical queryKey string, so the memoized
   // string value stays stable and no redundant refetch fires. The global
-  // account is part of the key: switching the sidebar account refetches.
-  const queryKey = useMemo(() => buildQueryParams(filter, accountId).toString(), [filter, accountId]);
+  // account AND the global period are part of the key: switching either
+  // refetches.
+  const queryKey = useMemo(
+    () => buildQueryParams(filter, accountId, resolvedRange).toString(),
+    [filter, accountId, resolvedRange],
+  );
 
   // Monotonic request sequence: a slow older response must never overwrite a
   // newer one (debounced refetches can overlap in flight). Only the response
@@ -157,6 +185,10 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
       setError(accountsError);
       return;
     }
+    // Never issue an analytics request against the default YTD before the
+    // persisted global period has been restored — the first request must use
+    // the restored range.
+    if (!periodHydrated) return;
     const requestId = ++requestSeqRef.current;
     setIsLoading(true);
     setError(null);
@@ -181,17 +213,13 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
         setIsLoading(false);
       }
     }
-  }, [queryKey, accountId, accountsLoading, accountsError]);
+  }, [queryKey, accountId, accountsLoading, accountsError, periodHydrated]);
 
-  // Fetch on filter change (debounced)
+  // Fetch on filter/period/account change (debounced)
   useEffect(() => {
     const timeoutId = setTimeout(fetchAnalytics, 300);
     return () => clearTimeout(timeoutId);
   }, [fetchAnalytics]);
-
-  const setDateRange = useCallback((range: DateRange) => {
-    setFilterState((prev) => ({ ...prev, dateRange: range }));
-  }, []);
 
   const setAdvancedFilters = useCallback((filters: AdvancedFilters) => {
     setFilterState((prev) => ({ ...prev, advancedFilters: filters }));
@@ -202,13 +230,14 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
   }, []);
 
   const setFilter = useCallback((partial: Partial<PerformanceDashboardFilter>) => {
-    setFilterState((prev) => ({ ...prev, ...partial }));
+    // Runtime defense: the type excludes dateRange, but strip it anyway so no
+    // generic setFilter call can recreate a second period owner.
+    setFilterState((prev) => ({ ...prev, ...sanitizeFilterPartial(partial) }));
   }, []);
 
   const value = useMemo(
     () => ({
       filter,
-      setDateRange,
       setAdvancedFilters,
       setUnit,
       setFilter,
@@ -217,7 +246,7 @@ export function PerformanceDashboardProvider({ children, initialFilter }: Perfor
       error,
       refetch: fetchAnalytics,
     }),
-    [filter, setDateRange, setAdvancedFilters, setUnit, setFilter, analyticsData, isLoading, error, fetchAnalytics],
+    [filter, setAdvancedFilters, setUnit, setFilter, analyticsData, isLoading, error, fetchAnalytics],
   );
 
   return (

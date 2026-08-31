@@ -6,6 +6,18 @@ import { KpiCard } from '../kpi-card';
 
 // Canonical account scope (Fix 4): resolved global account so the provider
 // issues the scoped analytics fetch.
+
+// Canonical global operational period (M004/T9C): the sidebar Period
+// selector owns the real provider; tests provide a stable mock.
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => ({
+    selection: { preset: 'YTD', from: '', to: '' },
+    resolvedRange: { from: '', to: '' },
+    hydrated: true,
+    setPreset: vi.fn(),
+    setCustomRange: vi.fn(),
+  }),
+}));
 vi.mock('@/lib/account-context', () => ({
   useAccount: () => ({
     accounts: [{ id: 'acc-A', name: 'Account A', broker: null, currency: 'USD', isActive: true }],
@@ -337,10 +349,14 @@ describe('KpiCard conversion and data states', () => {
       .mockReturnValueOnce(pending);
 
     function StaleHarness() {
-      const { setDateRange } = usePerformanceDashboard();
+      const { setAdvancedFilters } = usePerformanceDashboard();
       return (
         <div>
-          <button onClick={() => setDateRange({ preset: '1M', from: '2026-07-01', to: '' })}>
+          <button
+            onClick={() =>
+              setAdvancedFilters({ setupIds: ['s-1'], directions: [], symbols: [], tradeResults: [] })
+            }
+          >
             refilter
           </button>
           <KpiCard instanceId="inst-1" widgetType="net-pnl" config={{}} />

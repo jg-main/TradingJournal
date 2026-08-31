@@ -1,15 +1,11 @@
 /**
- * Tests for PerformanceFilterBar.
+ * Tests for PerformanceFilterBar (M004/T9C).
  *
- * Covers: control rendering, preset + custom date range updates propagated to
- * shared context, $/%/R unit toggle, advanced filters, and the Fix 4
- * contract — the bar renders NO account selector (the sidebar
- * AccountProvider is the sole account owner) and never fetches /api/accounts.
- *
- * The bar is built on TradingJournal primitives (radix-based Select/Button/
- * Input at --density-control-h-lg height), so select interactions follow the
- * repository pattern for radix Select: open the combobox trigger, then click
- * the option rendered in the portal.
+ * Covers: control rendering (page-local advanced filters + unit only — the
+ * global period lives in the sidebar), $/%/R unit toggle, advanced filters,
+ * and the Fix 4 contract — the bar renders NO account selector (the sidebar
+ * AccountProvider is the sole account owner), NO period selector, and never
+ * fetches /api/accounts.
  *
  * Run: npx vitest run src/components/performance/__tests__/performance-filter-bar.test.tsx
  */
@@ -33,6 +29,19 @@ vi.mock('@/lib/account-context', () => ({
     setAccountId: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
   }),
+}));
+
+// Canonical global operational period (M004/T9C): the sidebar Period selector
+// owns it. The filter bar must never touch the provider setters.
+const mockPeriod = vi.hoisted(() => ({
+  selection: { preset: 'YTD' as string, from: '' as string, to: '' as string },
+  resolvedRange: { from: '' as string, to: '' as string },
+  hydrated: true,
+  setPreset: vi.fn(),
+  setCustomRange: vi.fn(),
+}));
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => mockPeriod,
 }));
 
 // jsdom does not implement Element.prototype.scrollIntoView; Radix Select calls
@@ -84,9 +93,6 @@ function FilterProbe() {
       {JSON.stringify({
         mode: filter.accountScope.mode,
         accountIds: filter.accountScope.accountIds,
-        preset: filter.dateRange.preset,
-        from: filter.dateRange.from,
-        to: filter.dateRange.to,
         unit: filter.unit,
         advancedFilters: filter.advancedFilters,
       })}
@@ -101,23 +107,6 @@ function renderBar() {
       <FilterProbe />
     </PerformanceDashboardProvider>,
   );
-}
-
-/** Open a radix Select by combobox name and click the given option label. */
-async function chooseSelectOption(comboboxName: string, optionName: string | RegExp) {
-  fireEvent.click(screen.getByRole('combobox', { name: comboboxName }));
-  // Radix renders the option list in a portal after the open state settles;
-  // flush microtasks under fake timers before querying the option.
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-    await Promise.resolve();
-  });
-  const option = screen.getByRole('option', { name: optionName });
-  fireEvent.click(option);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
-    await Promise.resolve();
-  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -180,12 +169,16 @@ describe('PerformanceFilterBar', () => {
     expect(screen.queryByText('Accounts:')).toBeNull();
     expect(screen.queryByText('Period:')).toBeNull();
     expect(screen.queryByText('Unit:')).toBeNull();
-    // …and every control keeps an explicit accessible name (role + aria-label).
     // Fix 4: NO account selector exists — the sidebar is the account owner.
     expect(screen.queryByRole('combobox', { name: 'Performance accounts' })).toBeNull();
     expect(screen.queryByTestId('account-single-select')).toBeNull();
     expect(screen.queryByTestId('account-multi-select')).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Performance period' })).toBeDefined();
+    // M004/T9C: NO period selector or Custom date inputs — the sidebar Period
+    // selector owns the analytical period.
+    expect(screen.queryByRole('combobox', { name: 'Performance period' })).toBeNull();
+    expect(screen.queryByLabelText('Custom from date')).toBeNull();
+    expect(screen.queryByLabelText('Custom to date')).toBeNull();
+    expect(screen.queryByText('Apply')).toBeNull();
     expect(screen.getByRole('button', { name: 'Performance filters' })).toBeDefined();
     expect(screen.getByRole('group', { name: 'Performance unit' })).toBeDefined();
     // Default unit is currency ($ pressed).
@@ -193,30 +186,11 @@ describe('PerformanceFilterBar', () => {
     await flushAsync();
   });
 
-  it('applies a relative preset to the shared date range', async () => {
+  it('never calls a global Period setter (sidebar owns the period)', async () => {
     renderBar();
     await flushAsync();
-    await chooseSelectOption('Performance period', '1 Month');
-    expect(probe().preset).toBe('1M');
-    // 1M preset computes a concrete from date (today minus one month).
-    expect(probe().from).not.toBe('');
-  });
-
-  it('applies a custom date range via the Apply button', async () => {
-    renderBar();
-    await flushAsync();
-
-    await chooseSelectOption('Performance period', 'Custom');
-    expect(screen.getByLabelText('Custom from date')).toBeDefined();
-    expect(screen.getByLabelText('Custom to date')).toBeDefined();
-
-    fireEvent.change(screen.getByLabelText('Custom from date'), { target: { value: '2026-01-01' } });
-    fireEvent.change(screen.getByLabelText('Custom to date'), { target: { value: '2026-06-30' } });
-    fireEvent.click(screen.getByText('Apply'));
-
-    expect(probe().preset).toBe('Custom');
-    expect(probe().from).toBe('2026-01-01');
-    expect(probe().to).toBe('2026-06-30');
+    expect(mockPeriod.setPreset).not.toHaveBeenCalled();
+    expect(mockPeriod.setCustomRange).not.toHaveBeenCalled();
   });
 
   it('toggles the presentation unit without touching the query', async () => {

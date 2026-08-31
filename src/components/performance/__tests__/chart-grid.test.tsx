@@ -22,6 +22,18 @@ async function chooseSelectOption(comboboxName: string, optionName: string | Reg
 
 // ECharts renders to canvas, which jsdom does not implement. The chart body is
 // not under test here — the editing chrome around each widget is.
+
+// Canonical global operational period (M004/T9C): the sidebar Period
+// selector owns the real provider; tests provide a stable mock.
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => ({
+    selection: { preset: 'YTD', from: '', to: '' },
+    resolvedRange: { from: '', to: '' },
+    hydrated: true,
+    setPreset: vi.fn(),
+    setCustomRange: vi.fn(),
+  }),
+}));
 vi.mock('@/components/dashboard-chart', () => ({
   DashboardChart: () => <div data-testid="chart-option" />,
 }));

@@ -4,38 +4,19 @@ import React, { useEffect, useState } from 'react';
 import { usePerformanceDashboard } from '@/hooks/use-performance-dashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { SlidersHorizontalIcon } from 'lucide-react';
 import type {
-  DatePreset,
   PerformanceUnit,
   AdvancedFilters,
 } from '@/lib/performance-view-types';
 
 // ── Option Catalogues ───────────────────────────────────────────────────────
-
-const DATE_PRESET_OPTIONS: Array<{ value: DatePreset; label: string }> = [
-  { value: 'Whole period', label: 'Whole Period' },
-  { value: 'YTD', label: 'YTD' },
-  { value: '1Y', label: '1 Year' },
-  { value: '6M', label: '6 Months' },
-  { value: '3M', label: '3 Months' },
-  { value: '1M', label: '1 Month' },
-  { value: 'Custom', label: 'Custom' },
-];
 
 const UNIT_OPTIONS: Array<{ value: PerformanceUnit; label: string }> = [
   { value: 'currency', label: '$' },
@@ -103,69 +84,36 @@ function FilterDimensionSection({
   );
 }
 
-// ── Date Preset Helpers ─────────────────────────────────────────────────────
-
-function presetToDateRange(preset: DatePreset): { from: string; to: string } {
-  const now = new Date();
-
-  switch (preset) {
-    case 'Whole period':
-      return { from: '', to: '' };
-    case 'YTD':
-      return { from: `${now.getFullYear()}-01-01`, to: '' };
-    case '1Y': {
-      const oneYearAgo = new Date(now);
-      oneYearAgo.setFullYear(now.getFullYear() - 1);
-      return { from: oneYearAgo.toISOString().split('T')[0], to: '' };
-    }
-    case '6M': {
-      const sixMonthsAgo = new Date(now);
-      sixMonthsAgo.setMonth(now.getMonth() - 6);
-      return { from: sixMonthsAgo.toISOString().split('T')[0], to: '' };
-    }
-    case '3M': {
-      const threeMonthsAgo = new Date(now);
-      threeMonthsAgo.setMonth(now.getMonth() - 3);
-      return { from: threeMonthsAgo.toISOString().split('T')[0], to: '' };
-    }
-    case '1M': {
-      const oneMonthAgo = new Date(now);
-      oneMonthAgo.setMonth(now.getMonth() - 1);
-      return { from: oneMonthAgo.toISOString().split('T')[0], to: '' };
-    }
-    case 'Custom':
-      return { from: '', to: '' };
-    default:
-      return { from: '', to: '' };
-  }
-}
-
 // ── Filter Bar Component ────────────────────────────────────────────────────
 
 /**
  * Global filter bar for the Performance dashboard.
  *
- * Owns no state of its own beyond transient UI (account list + custom range
- * inputs); every filter decision is pushed into the shared
- * PerformanceDashboardContext so the KPI row and chart grid react together.
+ * Owns no state of its own beyond transient UI (custom-range inputs for the
+ * advanced Filters popover is not present here); every filter decision is
+ * pushed into the shared PerformanceDashboardContext so the KPI row and chart
+ * grid react together.
  *
  * Controls are TradingJournal primitives (Select/Button/Input) at the
  * --density-control-h-lg (36px) height — the sizing that lands inside the
  * R002 34-36px control-height window at 1440px (the default 32px and sm 28px
  * token values both sit below it).
  *
+ * M004/T9C: the analytical PERIOD is NOT here. The global operational period
+ * (OperationalDateRangeProvider / sidebar Period selector) is the sole date
+ * owner; Performance's analytics derive their dates from its resolved range.
+ * This bar contains only page-local controls: advanced filters and unit.
+ *
  * States:
  * - Account scope: the sidebar AccountProvider is the sole account owner
  *   (M007/D037) — this bar renders NO account selector and never fetches
  *   /api/accounts. Every analytics request is scoped to the global account.
- * - Period: relative presets + Custom with from/to date inputs and Apply.
+ * - Period: NOT here — the global operational period owns Performance dates.
  * - Unit: $/%/R presentation toggle (client-side only — never refetches).
  */
 export function PerformanceFilterBar() {
-  const { filter, setDateRange, setUnit, setAdvancedFilters, analyticsData } =
+  const { filter, setUnit, setAdvancedFilters, analyticsData } =
     usePerformanceDashboard();
-  const [customFrom, setCustomFrom] = useState(filter.dateRange.from);
-  const [customTo, setCustomTo] = useState(filter.dateRange.to);
 
   // Setup options for the Filters popover (GET /api/lookups?type=setup).
   const [setupOptions, setSetupOptions] = useState<SetupLookupRow[]>([]);
@@ -197,15 +145,6 @@ export function PerformanceFilterBar() {
       cancelled = true;
     };
   }, []);
-
-  const handlePresetChange = (preset: DatePreset) => {
-    if (preset === 'Custom') {
-      setDateRange({ preset: 'Custom', from: customFrom, to: customTo });
-    } else {
-      const range = presetToDateRange(preset);
-      setDateRange({ preset, ...range });
-    }
-  };
 
   const handleUnitChange = (unit: PerformanceUnit) => {
     setUnit(unit);
@@ -244,56 +183,12 @@ export function PerformanceFilterBar() {
   // current scope, stable under the symbol filter itself).
   const symbolOptions = analyticsData?.metadata.distinctSymbols ?? [];
 
-  const handleCustomDateApply = () => {
-    setDateRange({ preset: 'Custom', from: customFrom, to: customTo });
-  };
-
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border bg-card">
-      {/* Account scope is owned by the sidebar AccountProvider (M007/D037):
-          no account selector lives here. The filter bar offers only
-          page-local analytical filters: period, advanced filters, unit. */}
-      {/* Date Range Presets — compact control; accessible name via aria-label. */}
-      <div className="flex items-center gap-2">
-        <Select value={filter.dateRange.preset} onValueChange={(v) => handlePresetChange(v as DatePreset)}>
-          <SelectTrigger id="perf-date-period" size="lg" aria-label="Performance period">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {DATE_PRESET_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Custom Date Range (shown when Custom is selected) */}
-      {filter.dateRange.preset === 'Custom' && (
-        <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            value={customFrom}
-            onChange={(e) => setCustomFrom(e.target.value)}
-            className="h-(--density-control-h-lg) w-auto"
-            aria-label="Custom from date"
-            placeholder="From"
-          />
-          <span className="text-muted-foreground">to</span>
-          <Input
-            type="date"
-            value={customTo}
-            onChange={(e) => setCustomTo(e.target.value)}
-            className="h-(--density-control-h-lg) w-auto"
-            aria-label="Custom to date"
-            placeholder="To"
-          />
-          <Button type="button" size="lg" onClick={handleCustomDateApply}>
-            Apply
-          </Button>
-        </div>
-      )}
+      {/* Account scope is owned by the sidebar AccountProvider (M007/D037)
+          and the analytical PERIOD by the global OperationalDateRangeProvider
+          (sidebar Period selector, M004/T9C) — neither lives here. The bar
+          offers only page-local controls: advanced filters and unit. */}
 
       {/* Filters (advanced dimensions: Setup / Direction / Symbol / Trade Result) */}
       <div className="flex items-center gap-2">

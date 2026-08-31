@@ -24,14 +24,6 @@ export interface AccountScope {
   accountIds: string[]; // Empty when mode is 'all', single element when mode is 'single'
 }
 
-export type DatePreset = 'Whole period' | 'YTD' | '1Y' | '6M' | '3M' | '1M' | 'Custom';
-
-export interface DateRange {
-  preset: DatePreset;
-  from: string; // ISO date string (YYYY-MM-DD) or empty for 'Whole period'
-  to: string; // ISO date string (YYYY-MM-DD) or empty for open-ended
-}
-
 export interface AdvancedFilters {
   setupIds: string[];
   directions: Array<'long' | 'short'>;
@@ -44,7 +36,10 @@ export type PerformanceUnit = 'currency' | 'percent' | 'r';
 
 export interface PerformanceDashboardFilter {
   accountScope: AccountScope;
-  dateRange: DateRange;
+  // NOTE (M004/T9C): there is intentionally NO dateRange field. The global
+  // operational period (OperationalDateRangeProvider / app:date-range) is the
+  // sole owner of Performance's date range. Legacy `filterSnapshot.dateRange`
+  // values in persisted dashboards are inert compatibility metadata.
   advancedFilters: AdvancedFilters;
   unit: PerformanceUnit;
 }
@@ -219,7 +214,6 @@ export function migratePerformanceDashboardConfig(
 export function createDefaultFilter(): PerformanceDashboardFilter {
   return {
     accountScope: { mode: 'all', accountIds: [] },
-    dateRange: { preset: 'YTD', from: '', to: '' },
     advancedFilters: {
       setupIds: [],
       directions: [],

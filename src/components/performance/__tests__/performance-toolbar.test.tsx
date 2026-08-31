@@ -7,6 +7,18 @@ import { PerformanceInstanceProvider } from '../performance-instance-context';
 import { PerformanceDashboardShell } from '../performance-dashboard-shell';
 import { createSystemDefaultDashboard } from '@/lib/performance-view-types';
 
+// Canonical global operational period (M004/T9C): the sidebar Period
+// selector owns the real provider; tests provide a stable mock.
+vi.mock('@/lib/operational-date-range-context', () => ({
+  useOperationalDateRange: () => ({
+    selection: { preset: 'YTD', from: '', to: '' },
+    resolvedRange: { from: '', to: '' },
+    hydrated: true,
+    setPreset: vi.fn(),
+    setCustomRange: vi.fn(),
+  }),
+}));
+
 afterEach(() => cleanup());
 
 const defaultDashboard = createSystemDefaultDashboard();
