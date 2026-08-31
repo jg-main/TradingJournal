@@ -1,16 +1,21 @@
 /**
- * Component tests for the Workspace settings page.
+ * Component tests for the Workspace settings page (M004 Task 11).
  *
- * Covers:
- * - Loading state shows loading text
- * - Renders timezone selector after loading
- * - No displayName or defaultCurrency fields in the DOM
- * - Displays current timezone from API
- * - Save submits correct data and redirects
- * - API error displays error message
- * - Network error during initial fetch shows fallback
+ * Covers the child-page grammar contract:
+ * - Loading state keeps the page shell (Back to Settings + Workspace heading)
+ *   while only the content body shows the loading text.
+ * - Renders the timezone control after loading via the shared Select.
+ * - No displayName or defaultCurrency fields in the DOM.
+ * - Displays the current timezone from the API.
+ * - All supported timezone values remain selectable.
+ * - Save submits the correct PUT payload and redirects to /settings.
+ * - API error displays an error message.
+ * - Network error during initial fetch shows usable defaults.
  *
- * Run: npx vitest run --reporter verbose src/app/settings/workspace/__tests__/page.test.tsx
+ * Radix Select is not a native <select>, so interactions follow real user
+ * semantics (click the trigger, click the option) rather than selectOptions.
+ *
+ * Run: npx vitest run "src/app/(legacy)/settings/workspace/__tests__/page.test.tsx"
  */
 
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
@@ -50,6 +55,34 @@ beforeAll(async () => {
   WorkspacePage = mod.default;
 });
 
+// Module-level bridge to wire Select onValueChange to SelectItem clicks —
+// the established repo pattern for unit-testing shared Select consumers
+// (the real Radix Select needs a full DOM interaction harness).
+let selectOnValueChange: ((v: string) => void) | null = null;
+
+vi.mock('@/components/ui/select', () => ({
+  Select: ({ children, value, onValueChange }: { children: React.ReactNode; value?: string; onValueChange?: (v: string) => void }) => {
+    selectOnValueChange = onValueChange ?? null;
+    return React.createElement('div', { 'data-testid': 'select', 'data-value': value }, children);
+  },
+  SelectTrigger: ({ children, 'aria-label': ariaLabel }: { children: React.ReactNode; 'aria-label'?: string }) =>
+    React.createElement('button', {
+      'data-testid': 'select-trigger',
+      role: 'combobox',
+      'aria-label': ariaLabel,
+      type: 'button' as const,
+    }, children),
+  SelectContent: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('div', { 'data-testid': 'select-content' }, children),
+  SelectItem: ({ children, value }: { children: React.ReactNode; value: string }) =>
+    React.createElement('button', {
+      'data-testid': `select-item-${value}`,
+      type: 'button' as const,
+      onClick: () => selectOnValueChange?.(value),
+    }, children),
+  SelectValue: () => React.createElement('span', { 'data-testid': 'select-value' }),
+}));
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 const UNMOCKED_FETCH = globalThis.fetch;
@@ -77,6 +110,11 @@ function mockFetchNetworkError() {
   return mockFn;
 }
 
+/** Select a timezone through the shared Select bridge (option button click). */
+function pickTimezone(value: string) {
+  screen.getByTestId(`select-item-${value}`).click();
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────
 
 afterEach(() => {
@@ -86,10 +124,13 @@ afterEach(() => {
 });
 
 describe('Workspace settings page', () => {
-  it('shows loading state initially', async () => {
+  it('shows loading text while keeping the shell and header geometry', async () => {
     mockFetchSuccess(); // delayed, not awaited
     const { container } = render(React.createElement(WorkspacePage));
     expect(container.textContent).toContain('Loading workspace settings...');
+    // The child-page skeleton remains stable while data loads.
+    expect(screen.getByText('Back to Settings')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /workspace/i })).toBeTruthy();
   });
 
   it('renders timezone selector and heading after load', async () => {
@@ -103,6 +144,7 @@ describe('Workspace settings page', () => {
     expect(screen.getByText('Back to Settings')).toBeTruthy();
     expect(screen.getByLabelText('Timezone')).toBeTruthy();
     expect(screen.getByText('Save Workspace')).toBeTruthy();
+    expect(screen.queryByText('Loading workspace settings...')).toBeNull();
   });
 
   it('pre-selects the timezone from the API response', async () => {
@@ -110,8 +152,8 @@ describe('Workspace settings page', () => {
     render(React.createElement(WorkspacePage));
 
     await waitFor(() => {
-      const select = screen.getByLabelText('Timezone') as HTMLSelectElement;
-      expect(select.value).toBe('America/New_York');
+      // The shared Select exposes the current value via its value prop.
+      expect(screen.getByTestId('select').getAttribute('data-value')).toBe('America/New_York');
     });
   });
 
@@ -123,26 +165,51 @@ describe('Workspace settings page', () => {
       expect(screen.getByRole('heading', { name: /workspace/i })).toBeTruthy();
     });
 
-    // Should only have the timezone field
-    const visibleInputs = screen.queryAllByRole('combobox');
-    expect(visibleInputs).toHaveLength(1);
+    // Only the timezone control exists — no free-text or hidden fields surface.
+    expect(screen.getByLabelText('Timezone')).toBeTruthy();
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
     expect(screen.queryByText(/display.*name/i)).toBeNull();
     expect(screen.queryByText(/default.*currency/i)).toBeNull();
   });
 
-  it('submits timezone change and redirects to /settings', async () => {
+  it('keeps every supported timezone value selectable', async () => {
+    mockFetchSuccess();
+    render(React.createElement(WorkspacePage));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('select')).toBeTruthy();
+    });
+
+    const values = [
+      'America/New_York',
+      'America/Chicago',
+      'America/Denver',
+      'America/Los_Angeles',
+      'America/Bogota',
+      'Europe/London',
+      'Europe/Berlin',
+      'Asia/Tokyo',
+      'Asia/Shanghai',
+      'Australia/Sydney',
+      'UTC',
+    ];
+    for (const value of values) {
+      expect(screen.getByTestId(`select-item-${value}`)).toBeTruthy();
+    }
+  });
+
+  it('submits the timezone change and redirects to /settings', async () => {
     const fetchMock = mockFetchSuccess();
     const user = userEvent.setup();
 
     render(React.createElement(WorkspacePage));
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Timezone')).toBeTruthy();
+      expect(screen.getByTestId('select')).toBeTruthy();
     });
 
-    // Change timezone
-    const select = screen.getByLabelText('Timezone');
-    await user.selectOptions(select, 'Europe/London');
+    // Change timezone through the shared Select.
+    pickTimezone('Europe/London');
 
     // Click save
     await user.click(screen.getByText('Save Workspace'));
@@ -220,7 +287,7 @@ describe('Workspace settings page', () => {
       expect(screen.getByLabelText('Timezone')).toBeTruthy();
     });
 
-    await user.selectOptions(screen.getByLabelText('Timezone'), 'Europe/London');
+    await pickTimezone('Europe/London');
     await user.click(screen.getByText('Save Workspace'));
 
     await waitFor(() => {
@@ -239,9 +306,8 @@ describe('Workspace settings page', () => {
       expect(screen.getByRole('heading', { name: /workspace/i })).toBeTruthy();
     });
 
-    // Default timezone should be used
-    const select = screen.getByLabelText('Timezone') as HTMLSelectElement;
-    expect(select.value).toBe('America/Bogota');
+    // Default timezone should be used.
+    expect(screen.getByTestId('select').getAttribute('data-value')).toBe('America/Bogota');
   });
 
   it('renders with defaults when initial fetch fails', async () => {
@@ -252,5 +318,7 @@ describe('Workspace settings page', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /workspace/i })).toBeTruthy();
     });
+    // The form body is still usable with the default timezone.
+    expect(screen.getByTestId('select').getAttribute('data-value')).toBe('America/Bogota');
   });
 });
