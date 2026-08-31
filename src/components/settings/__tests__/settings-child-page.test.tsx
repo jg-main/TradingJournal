@@ -76,6 +76,26 @@ describe('SettingsChildPage', () => {
     expect(screen.queryByText('Loading workspace settings...')).toBeNull();
   });
 
+  it('renders children when loading is omitted (static child needs no fake loading props)', () => {
+    // A static Settings child (e.g. Integrations) passes neither loading nor
+    // loadingText — children render and no loading text is required.
+    render(
+      <SettingsChildPage title="Integrations" description="Static sub-hub.">
+        <a href="/settings/ai">AI Provider</a>
+      </SettingsChildPage>,
+    );
+    expect(screen.getByRole('link', { name: 'AI Provider' })).toBeTruthy();
+    expect(screen.queryByText(/loading/i)).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'Integrations' })).toBeTruthy();
+  });
+
+  it('supports explicit loading + loadingText props (Workspace/Risk contract)', () => {
+    // The migrated fetch-driven children keep passing both props explicitly.
+    renderChild({ loading: true, loadingText: 'Loading workspace settings...' });
+    expect(screen.getByText('Loading workspace settings...')).toBeTruthy();
+    expect(screen.queryByLabelText('sample field')).toBeNull();
+  });
+
   it('renders a success message', () => {
     renderChild({ message: { type: 'success', text: 'Saved successfully.' } });
     expect(screen.getByText('Saved successfully.')).toBeTruthy();
@@ -92,7 +112,7 @@ describe('SettingsChildPage', () => {
   });
 });
 
-describe('SettingsChildPage extraction architecture (M004 Task 13)', () => {
+describe('SettingsChildPage extraction architecture (M004 Task 13/14)', () => {
   const repoRoot = resolve(__dirname, '..', '..', '..', '..');
   const componentSource = readFileSync(
     resolve(repoRoot, 'src/components/settings/settings-child-page.tsx'),
@@ -106,6 +126,10 @@ describe('SettingsChildPage extraction architecture (M004 Task 13)', () => {
     resolve(repoRoot, 'src/app/(legacy)/settings/risk-defaults/page.tsx'),
     'utf8',
   );
+  const integrationsSource = readFileSync(
+    resolve(repoRoot, 'src/app/(legacy)/settings/integrations/page.tsx'),
+    'utf8',
+  );
 
   it('the shell + Back navigation live ONLY in SettingsChildPage', () => {
     // The component is the sole owner of the canonical outer shell and back link.
@@ -113,10 +137,11 @@ describe('SettingsChildPage extraction architecture (M004 Task 13)', () => {
     expect(componentSource).toContain('Back to Settings');
     expect(componentSource).toContain('ArrowLeft');
 
-    // The two child pages must NOT reintroduce their own copies.
+    // The migrated child pages must NOT reintroduce their own copies.
     for (const [name, src] of [
       ['workspace', workspaceSource],
       ['risk-defaults', riskSource],
+      ['integrations', integrationsSource],
     ] as const) {
       expect(src, `${name} must not duplicate the outer shell`).not.toContain(
         'mx-auto max-w-5xl px-8 py-10',
@@ -126,17 +151,15 @@ describe('SettingsChildPage extraction architecture (M004 Task 13)', () => {
       );
       expect(src, `${name} must not render its own ArrowLeft`).not.toContain('<ArrowLeft');
     }
+    // Integrations must also have shed its legacy isolated shell.
+    expect(integrationsSource).not.toContain('mx-auto max-w-2xl px-6 py-8');
   });
 
-  it('both child pages consume the single structural owner', () => {
-    expect(workspaceSource).toContain(
-      "from '@/components/settings/settings-child-page'",
-    );
-    expect(riskSource).toContain(
-      "from '@/components/settings/settings-child-page'",
-    );
-    expect(workspaceSource).toContain('<SettingsChildPage');
-    expect(riskSource).toContain('<SettingsChildPage');
+  it('the migrated child pages consume the single structural owner', () => {
+    for (const src of [workspaceSource, riskSource, integrationsSource]) {
+      expect(src).toContain("from '@/components/settings/settings-child-page'");
+      expect(src).toContain('<SettingsChildPage');
+    }
   });
 
   it('the shared component owns structure only — no form/control/business concerns', () => {

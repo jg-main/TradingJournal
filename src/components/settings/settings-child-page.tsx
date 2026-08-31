@@ -31,8 +31,13 @@ export interface SettingsChildMessage {
 export interface SettingsChildPageProps {
   title: string;
   description: ReactNode;
-  loading: boolean;
-  loadingText: string;
+  /**
+   * Optional loading lifecycle. Defaults to false so STATIC child pages
+   * (e.g. the Integrations sub-hub) need no fake loading props.
+   */
+  loading?: boolean;
+  /** Loading text rendered only while loading === true. */
+  loadingText?: string;
   message?: SettingsChildMessage | null;
   children: ReactNode;
 }
@@ -40,7 +45,7 @@ export interface SettingsChildPageProps {
 export function SettingsChildPage({
   title,
   description,
-  loading,
+  loading = false,
   loadingText,
   message,
   children,

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Brain, Database } from 'lucide-react';
+import { Brain, Database } from 'lucide-react';
+import { SettingsChildPage } from '@/components/settings/settings-child-page';
 
 // ── Sub-hub Cards ───────────────────────────────────────────────────────
 
@@ -21,28 +22,17 @@ const integrationCards = [
 ];
 
 // ── Page ────────────────────────────────────────────────────────────────
+// STATIC Settings sub-hub: no fetch, no loading lifecycle, no message, no
+// save action. SettingsChildPage provides the Settings-family shell, Back
+// navigation, and header; the two destination cards stay local at the
+// established 672px child-content scale.
 
 export default function IntegrationsPage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <Link
-          href="/settings"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Back to Settings
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Integrations
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Manage AI service providers and market data sources for your journal.
-        </p>
-      </div>
-
-      {/* Card grid */}
+    <SettingsChildPage
+      title="Integrations"
+      description="Manage AI service providers and market data sources for your journal."
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         {integrationCards.map((card) => (
           <Link
@@ -56,6 +46,6 @@ export default function IntegrationsPage() {
           </Link>
         ))}
       </div>
-    </div>
+    </SettingsChildPage>
   );
 }
