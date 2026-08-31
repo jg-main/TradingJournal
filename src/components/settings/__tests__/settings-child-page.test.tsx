@@ -112,7 +112,7 @@ describe('SettingsChildPage', () => {
   });
 });
 
-describe('SettingsChildPage extraction architecture (M004 Task 13/14)', () => {
+describe('SettingsChildPage extraction architecture (M004 Task 13/14/15)', () => {
   const repoRoot = resolve(__dirname, '..', '..', '..', '..');
   const componentSource = readFileSync(
     resolve(repoRoot, 'src/components/settings/settings-child-page.tsx'),
@@ -130,6 +130,10 @@ describe('SettingsChildPage extraction architecture (M004 Task 13/14)', () => {
     resolve(repoRoot, 'src/app/(legacy)/settings/integrations/page.tsx'),
     'utf8',
   );
+  const backupSource = readFileSync(
+    resolve(repoRoot, 'src/app/(legacy)/settings/backup/page.tsx'),
+    'utf8',
+  );
 
   it('the shell + Back navigation live ONLY in SettingsChildPage', () => {
     // The component is the sole owner of the canonical outer shell and back link.
@@ -142,6 +146,7 @@ describe('SettingsChildPage extraction architecture (M004 Task 13/14)', () => {
       ['workspace', workspaceSource],
       ['risk-defaults', riskSource],
       ['integrations', integrationsSource],
+      ['backup', backupSource],
     ] as const) {
       expect(src, `${name} must not duplicate the outer shell`).not.toContain(
         'mx-auto max-w-5xl px-8 py-10',
@@ -151,12 +156,13 @@ describe('SettingsChildPage extraction architecture (M004 Task 13/14)', () => {
       );
       expect(src, `${name} must not render its own ArrowLeft`).not.toContain('<ArrowLeft');
     }
-    // Integrations must also have shed its legacy isolated shell.
+    // Integrations and Backup must also have shed their legacy isolated shells.
     expect(integrationsSource).not.toContain('mx-auto max-w-2xl px-6 py-8');
+    expect(backupSource).not.toContain('mx-auto max-w-2xl px-6 py-8');
   });
 
   it('the migrated child pages consume the single structural owner', () => {
-    for (const src of [workspaceSource, riskSource, integrationsSource]) {
+    for (const src of [workspaceSource, riskSource, integrationsSource, backupSource]) {
       expect(src).toContain("from '@/components/settings/settings-child-page'");
       expect(src).toContain('<SettingsChildPage');
     }

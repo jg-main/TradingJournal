@@ -1,9 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   CircleCheck,
   CircleX,
   HelpCircle,
@@ -14,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { JSX } from 'react';
 import RestoreModal, { type BackupFileEntry, formatBackupDate } from '@/components/restore-modal';
+import { SettingsChildPage } from '@/components/settings/settings-child-page';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -362,50 +361,23 @@ export default function BackupsSettingsPage() {
   };
 
   // ── Render ──────────────────────────────────────────────────────────
-
-  if (loading && !settings) {
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-8">
-        <Link
-          href="/settings"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Back to Settings
-        </Link>
-        <p className="text-sm text-muted-foreground">Loading backup settings...</p>
-      </div>
-    );
-  }
+  // Initial loading is ONLY loading && !settings. Background refreshes
+  // (focus/pageshow/visibility) set loading=true while settings already
+  // exist — the loaded Backup surface must remain visible then, so the
+  // shared child shell receives the derived initialLoading gate (M004/T15).
+  const initialLoading = loading && !settings;
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
-      <Link
-        href="/settings"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    <>
+      <SettingsChildPage
+        title="Backup"
+        description="Configure automated backups, retention, and restore options."
+        loading={initialLoading}
+        loadingText="Loading backup settings..."
+        message={message}
       >
-        <ArrowLeft className="size-4" />
-        Back to Settings
-      </Link>
-
-      <h1 className="mb-8 text-2xl font-semibold tracking-tight text-foreground">
-        Backup
-      </h1>
-
-      {message && (
-        <div
-          className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
-            message.type === 'success'
-              ? 'border-positive/30 bg-positive/10 text-positive'
-              : 'border-destructive/30 bg-destructive/10 text-destructive'
-          }`}
-        >
-          {message.text}
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {/* ── Status Indicator ─────────────────────────────────────── */}
+        <div className="space-y-6">
+          {/* ── Status Indicator ─────────────────────────────────────── */}
         <div className="rounded-lg border border-border bg-card p-6">
           <h2 className="mb-4 text-sm font-semibold text-foreground">Status</h2>
 
@@ -692,8 +664,9 @@ export default function BackupsSettingsPage() {
           </div>
         </div>
       </div>
+      </SettingsChildPage>
 
       {showRestoreModal && <RestoreModal onClose={() => setShowRestoreModal(false)} initialFile={restoreFile} />}
-    </div>
+    </>
   );
 }
