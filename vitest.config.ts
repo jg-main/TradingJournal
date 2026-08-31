@@ -28,6 +28,8 @@ export default defineConfig({
       'src/hooks/use-performance-pnl-scope.test.ts',
       'src/lib/workstation-view-types.test.ts',
       'src/lib/account-context.test.tsx',
+      'src/lib/operational-date-range.test.ts',
+      'src/lib/operational-date-range-context.test.tsx',
       'src/lib/workstation-fixtures.test.ts',
       'src/lib/dash-ac-fixtures.test.ts',
       'src/components/workstation/workstation-context.test.tsx',

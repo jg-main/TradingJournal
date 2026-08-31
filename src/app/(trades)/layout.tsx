@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sidebar";
 import { KeyboardShortcutsProvider } from "@/components/keyboard-shortcuts";
 import { TimezoneProvider } from "@/lib/timezone-context";
 import { AccountProvider } from "@/lib/account-context";
+import { OperationalDateRangeProvider } from "@/lib/operational-date-range-context";
 import "../globals.css";
 
 const geistSans = Geist({
@@ -40,12 +41,14 @@ export default function TradesRootLayout({
       <body className="min-h-full flex">
         <TimezoneProvider>
           <TooltipProvider>
-            <AccountProvider>
-              <KeyboardShortcutsProvider>
-                <Sidebar />
-                <main className="flex-1 overflow-auto">{children}</main>
-              </KeyboardShortcutsProvider>
-            </AccountProvider>
+            <OperationalDateRangeProvider>
+              <AccountProvider>
+                <KeyboardShortcutsProvider>
+                  <Sidebar />
+                  <main className="flex-1 overflow-auto">{children}</main>
+                </KeyboardShortcutsProvider>
+              </AccountProvider>
+            </OperationalDateRangeProvider>
           </TooltipProvider>
         </TimezoneProvider>
       </body>
