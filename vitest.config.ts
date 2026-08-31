@@ -190,6 +190,7 @@ export default defineConfig({
       'src/app/(legacy)/settings/workspace/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/risk-defaults/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/accounts/__tests__/page.test.tsx',
+      'src/app/(legacy)/settings/accounts/[id]/__tests__/layout.test.tsx',
       'src/app/(legacy)/settings/__tests__/page.test.tsx',
       'src/components/settings/__tests__/settings-child-page.test.tsx',
       'src/components/settings/__tests__/settings-management-page.test.tsx',

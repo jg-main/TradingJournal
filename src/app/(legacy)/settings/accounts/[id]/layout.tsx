@@ -89,7 +89,7 @@ export default function AccountDetailLayout({
   // ── Loading state ──────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto max-w-7xl px-4 py-6">
         <p className="text-sm text-muted-foreground">Loading account...</p>
       </div>
     );
@@ -98,7 +98,7 @@ export default function AccountDetailLayout({
   // ── Error / not-found state ────────────────────────────────────────
   if (!account || error) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-8">
+      <div className="mx-auto max-w-7xl px-4 py-6">
         <Link
           href="/settings/accounts"
           className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -117,7 +117,7 @@ export default function AccountDetailLayout({
 
   // ── Loaded shell ───────────────────────────────────────────────────
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-4 py-6">
       {/* Back link */}
       <Link
         href="/settings/accounts"
