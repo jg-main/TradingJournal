@@ -13,7 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { SettingsManagementPage } from '@/components/settings/settings-management-page';
 
 interface SetupDefinition {
   id: string;
@@ -134,57 +134,43 @@ export default function PlaysSettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-10">
-      <div className="max-w-3xl">
-        {/* ── Parent navigation ─────────────────────────────────── */}
-        <Link
-          href="/settings/journal-setup"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Back to Journal Setup
-        </Link>
-
-        {/* ── Header ─────────────────────────────────────────────── */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Plays</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Trading setups that appear in the Plan Trade dropdown. Click a play to configure its rules, checks, and AI assessment data.
-            </p>
-          </div>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setNewName(''); }}>
-            <DialogTrigger asChild>
-              <Button onClick={() => setDialogOpen(true)}>New Play</Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <form onSubmit={handleCreate}>
-                <DialogHeader>
-                  <DialogTitle>New Play</DialogTitle>
-                </DialogHeader>
-                <div className="mt-4">
-                  <label htmlFor="newName" className="mb-1 block text-sm font-medium text-foreground">
-                    Name *
-                  </label>
-                  <input
-                    id="newName"
-                    type="text"
-                    required
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="e.g. Breakout Pullback"
-                  />
-                </div>
-                <DialogFooter showCloseButton className="mt-6">
-                  <Button type="submit" disabled={saving || !newName.trim()}>
-                    {saving ? 'Creating...' : 'Create'}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+    <SettingsManagementPage
+      title="Plays"
+      description="Trading setups that appear in the Plan Trade dropdown. Click a play to configure its rules, checks, and AI assessment data."
+      action={
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setNewName(''); }}>
+          <DialogTrigger asChild>
+            <Button onClick={() => setDialogOpen(true)}>New Play</Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <form onSubmit={handleCreate}>
+              <DialogHeader>
+                <DialogTitle>New Play</DialogTitle>
+              </DialogHeader>
+              <div className="mt-4">
+                <label htmlFor="newName" className="mb-1 block text-sm font-medium text-foreground">
+                  Name *
+                </label>
+                <input
+                  id="newName"
+                  type="text"
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="e.g. Breakout Pullback"
+                />
+              </div>
+              <DialogFooter showCloseButton className="mt-6">
+                <Button type="submit" disabled={saving || !newName.trim()}>
+                  {saving ? 'Creating...' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      }
+    >
 
       {message && (
         <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
@@ -261,7 +247,6 @@ export default function PlaysSettingsPage() {
           ))}
         </div>
       )}
-      </div>
-    </div>
+    </SettingsManagementPage>
   );
 }

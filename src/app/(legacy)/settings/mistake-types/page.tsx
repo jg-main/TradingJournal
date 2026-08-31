@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, AlertTriangle, Loader2, Plus } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
 import {
   Dialog,
@@ -14,6 +13,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { SettingsManagementPage } from '@/components/settings/settings-management-page';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -199,97 +199,81 @@ export default function MistakeTypesPage() {
   // ── Render ───────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-10">
-      <div className="max-w-3xl">
-        {/* Parent navigation */}
-        <Link
-          href="/settings/journal-setup"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Back to Journal Setup
-        </Link>
+    <SettingsManagementPage
+      title="Mistake Types"
+      description="Manage mistake categories for trade reviews."
+      action={
+        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+          <DialogTrigger asChild>
+            <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
+              <Plus className="mr-1.5 size-4" />
+              Add Mistake Type
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <form onSubmit={handleSave}>
+              <DialogHeader>
+                <DialogTitle>{editingId ? 'Edit Mistake Type' : 'Add Mistake Type'}</DialogTitle>
+              </DialogHeader>
 
-        {/* Header */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Mistake Types
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Manage mistake categories for trade reviews.
-            </p>
-          </div>
-          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-            <DialogTrigger asChild>
-              <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
-                <Plus className="mr-1.5 size-4" />
-                Add Mistake Type
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <form onSubmit={handleSave}>
-                <DialogHeader>
-                  <DialogTitle>{editingId ? 'Edit Mistake Type' : 'Add Mistake Type'}</DialogTitle>
-                </DialogHeader>
-
-                <div className="mt-4 space-y-4">
-                  {/* Value */}
-                  <div>
-                    <label htmlFor="value" className="mb-1 block text-sm font-medium text-foreground">
-                      Value *
-                    </label>
-                    <input
-                      id="value"
-                      type="text"
-                      required
-                      value={form.value}
-                      onChange={handleChange('value')}
-                      className={`w-full rounded-md border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 ${
-                        formErrors.value
-                          ? 'border-destructive focus:border-destructive focus:ring-destructive/30'
-                          : 'border-input focus:border-ring focus:ring-ring'
-                      }`}
-                      placeholder="e.g. fomo_entry"
-                    />
-                    {formErrors.value && (
-                      <p className="mt-1 text-xs text-destructive">{formErrors.value}</p>
-                    )}
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <label htmlFor="description" className="mb-1 block text-sm font-medium text-foreground">
-                      Description *
-                    </label>
-                    <textarea
-                      id="description"
-                      rows={3}
-                      required
-                      value={form.description}
-                      onChange={handleChange('description')}
-                      className={`w-full rounded-md border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 ${
-                        formErrors.description
-                          ? 'border-destructive focus:border-destructive focus:ring-destructive/30'
-                          : 'border-input focus:border-ring focus:ring-ring'
-                      }`}
-                      placeholder="Describe this mistake type and when to use it"
-                    />
-                    {formErrors.description && (
-                      <p className="mt-1 text-xs text-destructive">{formErrors.description}</p>
-                    )}
-                  </div>
+              <div className="mt-4 space-y-4">
+                {/* Value */}
+                <div>
+                  <label htmlFor="value" className="mb-1 block text-sm font-medium text-foreground">
+                    Value *
+                  </label>
+                  <input
+                    id="value"
+                    type="text"
+                    required
+                    value={form.value}
+                    onChange={handleChange('value')}
+                    className={`w-full rounded-md border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 ${
+                      formErrors.value
+                        ? 'border-destructive focus:border-destructive focus:ring-destructive/30'
+                        : 'border-input focus:border-ring focus:ring-ring'
+                    }`}
+                    placeholder="e.g. fomo_entry"
+                  />
+                  {formErrors.value && (
+                    <p className="mt-1 text-xs text-destructive">{formErrors.value}</p>
+                  )}
                 </div>
 
-                <DialogFooter showCloseButton className="mt-6">
-                  <Button type="submit" disabled={saving || !form.value.trim() || !form.description.trim()}>
-                    {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+                {/* Description */}
+                <div>
+                  <label htmlFor="description" className="mb-1 block text-sm font-medium text-foreground">
+                    Description *
+                  </label>
+                  <textarea
+                    id="description"
+                    rows={3}
+                    required
+                    value={form.description}
+                    onChange={handleChange('description')}
+                    className={`w-full rounded-md border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 ${
+                      formErrors.description
+                        ? 'border-destructive focus:border-destructive focus:ring-destructive/30'
+                        : 'border-input focus:border-ring focus:ring-ring'
+                    }`}
+                    placeholder="Describe this mistake type and when to use it"
+                  />
+                  {formErrors.description && (
+                    <p className="mt-1 text-xs text-destructive">{formErrors.description}</p>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter showCloseButton className="mt-6">
+                <Button type="submit" disabled={saving || !form.value.trim() || !form.description.trim()}>
+                  {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+        }
+      >
 
       {/* Status message */}
       {message && (
@@ -385,7 +369,6 @@ export default function MistakeTypesPage() {
           </table>
         </div>
       )}
-      </div>
-    </div>
+    </SettingsManagementPage>
   );
 }
