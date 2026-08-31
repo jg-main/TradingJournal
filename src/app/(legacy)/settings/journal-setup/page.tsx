@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Gamepad2, AlertTriangle } from 'lucide-react';
+import { Gamepad2, AlertTriangle } from 'lucide-react';
+import { SettingsChildPage } from '@/components/settings/settings-child-page';
 
 // ── Sub-hub Cards ───────────────────────────────────────────────────────
 
@@ -21,28 +22,17 @@ const journalCards = [
 ];
 
 // ── Page ────────────────────────────────────────────────────────────────
+// STATIC Settings sub-hub: no fetch, no loading lifecycle, no message, no
+// save action. SettingsChildPage provides the Settings-family shell, Back
+// navigation, and header; the two destination cards stay local at the
+// established 672px child-content scale.
 
 export default function JournalSetupPage() {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <Link
-          href="/settings"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Back to Settings
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Journal Setup
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Configure trading setups and mistake categories used in your journal.
-        </p>
-      </div>
-
-      {/* Card grid */}
+    <SettingsChildPage
+      title="Journal Setup"
+      description="Configure trading setups and mistake categories used in your journal."
+    >
       <div className="grid gap-4 sm:grid-cols-2">
         {journalCards.map((card) => (
           <Link
@@ -56,6 +46,6 @@ export default function JournalSetupPage() {
           </Link>
         ))}
       </div>
-    </div>
+    </SettingsChildPage>
   );
 }
