@@ -199,17 +199,19 @@ export default function MistakeTypesPage() {
   // ── Render ───────────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      {/* Header */}
-      <div className="mb-8">
+    <div className="mx-auto max-w-5xl px-8 py-10">
+      <div className="max-w-3xl">
+        {/* Parent navigation */}
         <Link
-          href="/settings"
-          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          href="/settings/journal-setup"
+          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Back to Settings
+          Back to Journal Setup
         </Link>
-        <div className="flex items-center justify-between gap-4">
+
+        {/* Header */}
+        <div className="mb-8 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Mistake Types
@@ -288,7 +290,6 @@ export default function MistakeTypesPage() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
 
       {/* Status message */}
       {message && (
@@ -384,6 +385,7 @@ export default function MistakeTypesPage() {
           </table>
         </div>
       )}
+      </div>
     </div>
   );
 }

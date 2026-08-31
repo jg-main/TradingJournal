@@ -198,6 +198,7 @@ export default defineConfig({
       'src/app/(legacy)/settings/market-data/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/journal-setup/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/plays/__tests__/page.test.tsx',
+      'src/app/(legacy)/settings/mistake-types/__tests__/page.test.tsx',
       'src/app/(legacy)/settings/danger-zone/__tests__/page.test.tsx',
       'src/app/(trades)/trades/__tests__/page.test.tsx',
       'src/app/(legacy)/trades/new/page.test.tsx',
