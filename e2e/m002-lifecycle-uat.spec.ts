@@ -437,7 +437,7 @@ test.describe('M002 trading lifecycle browser UAT at laptop viewport', () => {
     await expect(detailPage.locator('h1')).toHaveText(symbol, { timeout: 15_000 });
     await expect(detailPage.locator('[data-slot="badge"]').filter({ hasText: 'Closed' }).first()).toBeVisible();
     const lifecyclePanel = detailPage.locator('.td-panel[data-area="lifecycle"]');
-    for (const step of ['Plan', 'Size', 'Execute', 'Manage', 'Exit', 'Grade']) {
+    for (const step of ['Plan', 'Size', 'Execute', 'Manage', 'Close', 'Review']) {
       await expect(lifecyclePanel.getByText(step, { exact: true })).toBeVisible();
     }
     const detailsPanel = detailPage.locator('.td-panel[data-area="details"]');
@@ -596,7 +596,7 @@ test.describe('M002 trading lifecycle browser UAT at laptop viewport', () => {
 
     // Lifecycle timeline shows all phases for the open trade.
     const lifecyclePanel = page.locator('.td-panel[data-area="lifecycle"]');
-    for (const step of ['Plan', 'Size', 'Execute', 'Manage', 'Exit', 'Grade']) {
+    for (const step of ['Plan', 'Size', 'Execute', 'Manage', 'Close', 'Review']) {
       await expect(lifecyclePanel.getByText(step, { exact: true })).toBeVisible();
     }
     await assertNoHorizontalOverflow(page, LAPTOP_VIEWPORT.width);

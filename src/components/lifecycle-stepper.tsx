@@ -32,8 +32,8 @@ const STEPS: Step[] = [
   { number: 2, label: 'Size' },
   { number: 3, label: 'Execute' },
   { number: 4, label: 'Manage' },
-  { number: 5, label: 'Exit' },
-  { number: 6, label: 'Grade' },
+  { number: 5, label: 'Close' },
+  { number: 6, label: 'Review' },
 ];
 
 export function getCurrentStep(
@@ -64,7 +64,7 @@ export function getCurrentStep(
       };
     case 'closed':
       return {
-        // Steps 1-5 are complete for closed trades. Step 6 (Grade) is current.
+        // Steps 1-5 are complete for closed trades. Step 6 (Review) is current.
         // S07/T02: the reviewed step (7) is driven by the durable reviewedAt
         // marker alone — not by the presence of exit notes, a lesson, a grade,
         // or recorded mistakes (evidence presence ≠ reviewed).
