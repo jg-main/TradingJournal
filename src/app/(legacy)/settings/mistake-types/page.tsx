@@ -57,10 +57,15 @@ export default function MistakeTypesPage() {
 
   // ── Fetch ───────────────────────────────────────────────────────────
 
-  const fetchMistakeTypes = useCallback(async () => {
+  const fetchMistakeTypes = useCallback(async (options?: { clearMessage?: boolean }) => {
     try {
       setLoading(true);
-      setMessage(null);
+      // Mutation-driven refreshes pass { clearMessage: false } so a
+      // just-reported success message survives the follow-up list GET;
+      // initial/manual loads keep clearing stale messages.
+      if (options?.clearMessage !== false) {
+        setMessage(null);
+      }
       const res = await fetch('/api/lookups?type=mistake_type');
       if (!res.ok) {
         const err = await res.json().catch(() => null);
@@ -165,7 +170,7 @@ export default function MistakeTypesPage() {
       });
       setDialogOpen(false);
       resetForm();
-      await fetchMistakeTypes();
+      await fetchMistakeTypes({ clearMessage: false });
       router.refresh();
     } catch {
       setMessage({ type: 'error', text: 'Network error. Failed to save mistake type.' });
@@ -190,7 +195,7 @@ export default function MistakeTypesPage() {
         return;
       }
       setMessage({ type: 'success', text: `"${mt.value}" deactivated.` });
-      await fetchMistakeTypes();
+      await fetchMistakeTypes({ clearMessage: false });
     } catch {
       setMessage({ type: 'error', text: 'Network error. Failed to delete mistake type.' });
     }

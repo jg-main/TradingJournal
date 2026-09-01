@@ -208,7 +208,11 @@ describe('Mistake Types settings page — create/edit/delete flows', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: /add mistake type/i })).toBeNull();
     });
-    expect(calls.filter((c) => c.method === 'GET' && c.url === '/api/lookups?type=mistake_type').length).toBeGreaterThanOrEqual(2);
+    // Success feedback survives the mutation-driven list refresh (M004 micro-fix).
+    await waitFor(() => {
+      expect(calls.filter((c) => c.method === 'GET' && c.url === '/api/lookups?type=mistake_type').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText('Mistake type created.')).toBeTruthy();
+    });
   });
 
   it('keeps the Create button disabled until both fields are filled', async () => {
@@ -258,6 +262,11 @@ describe('Mistake Types settings page — create/edit/delete flows', () => {
       value: 'fomo_retest',
       description: 'Entering after an extended move without confirmation.',
     });
+    // Success feedback survives the mutation-driven list refresh (M004 micro-fix).
+    await waitFor(() => {
+      expect(calls.filter((c) => c.method === 'GET' && c.url === '/api/lookups?type=mistake_type').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText('Mistake type updated.')).toBeTruthy();
+    });
   });
 
   it('soft-deletes after the exact confirmation and reports success', async () => {
@@ -274,7 +283,11 @@ describe('Mistake Types settings page — create/edit/delete flows', () => {
     await waitFor(() => {
       expect(calls.some((c) => c.method === 'DELETE' && c.url === '/api/lookups/mt-1')).toBe(true);
     });
-    expect(calls.filter((c) => c.method === 'GET' && c.url === '/api/lookups?type=mistake_type').length).toBeGreaterThanOrEqual(2);
+    // Success feedback survives the mutation-driven list refresh (M004 micro-fix).
+    await waitFor(() => {
+      expect(calls.filter((c) => c.method === 'GET' && c.url === '/api/lookups?type=mistake_type').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByText('"fomo_entry" deactivated.')).toBeTruthy();
+    });
   });
 
   it('skips deletion when the confirmation is dismissed', async () => {
