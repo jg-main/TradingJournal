@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, FileText, ScrollText } from 'lucide-react';
 import { HelpTooltip } from '@/components/help-tooltip';
+import { Button } from '@/components/ui/button';
 import { SettingsChildPage } from '@/components/settings/settings-child-page';
 
 interface AiSettings {
@@ -508,13 +509,9 @@ export default function AiSettingsPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
-          >
+          <Button type="submit" disabled={saving}>
             {saving ? 'Saving...' : 'Save AI Settings'}
-          </button>
+          </Button>
           {message?.type === 'success' && (
             <span className="text-sm text-positive">Saved.</span>
           )}

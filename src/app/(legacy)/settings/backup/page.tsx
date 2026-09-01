@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { JSX } from 'react';
 import RestoreModal, { type BackupFileEntry, formatBackupDate } from '@/components/restore-modal';
+import { Button } from '@/components/ui/button';
 import { SettingsChildPage } from '@/components/settings/settings-child-page';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -442,11 +443,11 @@ export default function BackupsSettingsPage() {
 
             <div className="flex items-center justify-between border-t border-border pt-3">
               <span className="text-sm text-muted-foreground">Backup Now</span>
-              <button
+              <Button
                 type="button"
                 onClick={handleBackupNow}
                 disabled={backingUp}
-                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+                size="sm"
               >
                 {backingUp ? (
                   <>
@@ -459,7 +460,7 @@ export default function BackupsSettingsPage() {
                     Backup Now
                   </>
                 )}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -520,14 +521,13 @@ export default function BackupsSettingsPage() {
                 onChange={(e) => setBackupCronTime(e.target.value)}
                 className="rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <button
+              <Button
                 type="button"
                 onClick={() => handleCronTimeChange(backupCronTime)}
                 disabled={saving}
-                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {saving ? 'Saving...' : 'Save Time'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -554,14 +554,13 @@ export default function BackupsSettingsPage() {
                 </option>
               ))}
             </select>
-            <button
+            <Button
               type="button"
               onClick={handleRetentionSave}
               disabled={saving}
-              className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               {saving ? 'Saving...' : 'Save'}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -600,26 +599,29 @@ export default function BackupsSettingsPage() {
                       <td className="px-3 py-2.5 text-right text-muted-foreground">{file.sizeHuman}</td>
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
+                          <Button
                             type="button"
                             onClick={() => { setRestoreFile(file); setShowRestoreModal(true); }}
-                            className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
+                            size="sm"
                           >
                             Restore
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             onClick={() => void handleDeleteFile(file.filename)}
                             disabled={deletingFiles.has(file.filename)}
-                            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
+                            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                             title="Delete backup"
+                            aria-label={`Delete backup ${file.filename}`}
                           >
                             {deletingFiles.has(file.filename) ? (
                               <Loader2 className="size-4 animate-spin" />
                             ) : (
                               <Trash2 className="size-4" />
                             )}
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -639,8 +641,10 @@ export default function BackupsSettingsPage() {
             Download a backup to your computer or upload one to restore.
           </p>
           <div className="flex items-center gap-3">
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => {
                 const a = document.createElement('a');
                 a.href = '/api/backup';
@@ -649,18 +653,17 @@ export default function BackupsSettingsPage() {
                 a.click();
                 document.body.removeChild(a);
               }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
             >
               Download Backup
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="sm"
               onClick={() => { setRestoreFile(undefined); setShowRestoreModal(true); }}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:bg-foreground/80 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
             >
               <Upload className="size-3.5" />
               Upload Backup
-            </button>
+            </Button>
           </div>
         </div>
       </div>

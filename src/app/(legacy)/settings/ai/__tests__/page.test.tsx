@@ -179,6 +179,18 @@ describe('AI Settings page (SettingsChildPage adoption)', () => {
     expect(document.title).toBe('AI Settings — Trading Journal');
   });
 
+  it('renders Save AI Settings through the shared Button primitive (M004 micro-fix)', async () => {
+    installRouter({ 'GET /api/ai-settings': PERSISTED }, []);
+    render(<AiPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Model')).toBeTruthy();
+    });
+    const save = screen.getByRole('button', { name: /save ai settings/i });
+    expect(save.getAttribute('data-slot')).toBe('button');
+    expect(save.getAttribute('data-variant')).toBe('default');
+  });
+
   it('builds the frozen OpenAI save payload (no baseUrl/apiKey/systemPrompt when empty)', async () => {
     const calls: FetchCall[] = [];
     installRouter(

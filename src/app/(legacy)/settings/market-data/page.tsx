@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CircleCheck, CircleX, HelpCircle, Loader2, Plug, Unplug } from 'lucide-react';
 import type { JSX } from 'react';
+import { Button } from '@/components/ui/button';
 import { SettingsChildPage } from '@/components/settings/settings-child-page';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -510,14 +511,13 @@ export default function MarketDataSettingsPage() {
 
             {/* Save provider and refresh settings */}
             <div className="flex items-center gap-3 border-t border-border pt-4">
-              <button
+              <Button
                 type="button"
                 onClick={handleSaveProvider}
                 disabled={saving}
-                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {saving ? 'Saving...' : 'Save market data settings'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -614,22 +614,21 @@ export default function MarketDataSettingsPage() {
 
             {/* Save + Test ClickHouse connection */}
             <div className="flex items-center gap-3 border-t border-border pt-4">
-              <button
+              <Button
                 type="button"
                 onClick={handleSaveClickHouse}
                 disabled={saving}
-                className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {saving ? 'Saving...' : 'Save'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="outline"
                 onClick={handleTestConnection}
                 disabled={testing}
-                className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {testing ? 'Testing...' : 'Test Connection'}
-              </button>
+              </Button>
             </div>
 
             {connectionResult && (
@@ -739,20 +738,19 @@ export default function MarketDataSettingsPage() {
             {/* Actions */}
             <div className="flex items-center gap-3 border-t border-border pt-4">
               {schwabStatus?.connected ? (
-                <button
+                <Button
                   type="button"
+                  variant="destructive"
                   onClick={handleDisconnectSchwab}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-card px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Unplug className="size-4" />
                   Disconnect
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button
                   type="button"
                   onClick={handleConnectSchwab}
                   disabled={schwabConnecting || schwabStatus?.errorType === 'not_configured'}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
                 >
                   {schwabConnecting ? (
                     <>
@@ -765,7 +763,7 @@ export default function MarketDataSettingsPage() {
                       Connect Schwab
                     </>
                   )}
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -782,11 +780,10 @@ export default function MarketDataSettingsPage() {
 
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <button
+              <Button
                 type="button"
                 onClick={handleEnrichProfiles}
                 disabled={enriching}
-                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/80 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80"
               >
                 {enriching ? (
                   <>
@@ -796,7 +793,7 @@ export default function MarketDataSettingsPage() {
                 ) : (
                   'Enrich Missing Profiles'
                 )}
-              </button>
+              </Button>
             </div>
 
             {enrichResult && (

@@ -123,6 +123,27 @@ describe('Market Data settings page (SettingsChildPage adoption)', () => {
     expect(screen.queryByText('Loading market data settings...')).toBeNull();
   });
 
+  it('renders the action controls through the shared Button primitive (M004 micro-fix)', async () => {
+    installRouter(INITIAL_ROUTES);
+    render(<MarketDataPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save market data settings' })).toBeTruthy();
+    });
+
+    // Primary commitments use the default variant; Test Connection stays an
+    // outline secondary action; the Schwab disconnect keeps destructive
+    // styling. All render through the shared primitive (data-slot="button").
+    for (const name of ['Save market data settings', 'Save', 'Connect Schwab', 'Enrich Missing Profiles']) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn.getAttribute('data-slot'), `Market Data action ${name}`).toBe('button');
+      expect(btn.getAttribute('data-variant'), `Market Data action ${name}`).toBe('default');
+    }
+    const testBtn = screen.getByRole('button', { name: 'Test Connection' });
+    expect(testBtn.getAttribute('data-slot')).toBe('button');
+    expect(testBtn.getAttribute('data-variant')).toBe('outline');
+  });
+
   it('populates the loaded settings and keeps the ClickHouse password empty', async () => {
     installRouter(INITIAL_ROUTES);
     render(<MarketDataPage />);

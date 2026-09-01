@@ -183,6 +183,34 @@ describe('Backup settings page (SettingsChildPage adoption)', () => {
     expect(screen.getByText('2026-08-29T00:00:00.000Z')).toBeTruthy();
   });
 
+  it('renders the action controls through the shared Button primitive (M004 micro-fix)', async () => {
+    installRouter(INITIAL_ROUTES);
+    render(<BackupPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Backup Now' })).toBeTruthy();
+    });
+
+    // Primary commitments (Backup Now, Save Time, retention Save, Restore,
+    // Upload) use the default Button variant; Download is the outline
+    // secondary action in the same group. All render through the shared
+    // primitive (data-slot="button") with the exact names preserved.
+    const primary = ['Backup Now', 'Save Time', 'Save', 'Restore', 'Upload Backup'];
+    for (const name of primary) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn.getAttribute('data-slot'), `Backup action ${name}`).toBe('button');
+    }
+    const download = screen.getByRole('button', { name: 'Download Backup' });
+    expect(download.getAttribute('data-slot')).toBe('button');
+    expect(download.getAttribute('data-variant')).toBe('outline');
+    const upload = screen.getByRole('button', { name: 'Upload Backup' });
+    expect(upload.getAttribute('data-variant')).toBe('default');
+    // The destructive delete row action keeps destructive styling, not primary.
+    const del = screen.getByRole('button', { name: /delete backup/i });
+    expect(del.getAttribute('data-slot')).toBe('button');
+    expect(del.getAttribute('data-variant')).toBe('ghost');
+  });
+
   it('shows the Scheduled Backups empty state when files=[]', async () => {
     installRouter({
       ...INITIAL_ROUTES,
