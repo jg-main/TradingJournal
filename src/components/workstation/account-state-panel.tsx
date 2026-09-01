@@ -26,6 +26,10 @@
 //                        period-performance projection here.
 //   Total P&L         — metrics.totalPnl (PnL coloured), explicitly scoped
 //                        to the period-performance projection.
+//   Time-Weighted Return — metrics.twr (canonical Dashboard V2 value,
+//                        formatted as a percentage; null → dash).
+//   Modified Dietz Return — metrics.modifiedDietzReturn (canonical Dashboard
+//                        V2 value, formatted as a percentage; null → dash).
 //   Drawdown          — metrics.drawdown + drawdownPct (ALWAYS ws-neg)
 
 import { useWorkstation } from './workstation-context';
@@ -180,6 +184,14 @@ export function AccountStatePanel() {
     : qualifiedValuation;
   const totalLabel = valuationIsStale ? 'Stale Total P&L' : 'Total P&L';
 
+  // Canonical period-performance returns — formatted exactly as supplied by
+  // Dashboard V2 (never recomputed client-side). Null → dash. Positive and
+  // negative values use the established P&L colouring; zero stays neutral.
+  const twrValue = fmtPct(metrics.twr);
+  const twrClass = pnlClass(metrics.twr);
+  const dietzValue = fmtPct(metrics.modifiedDietzReturn);
+  const dietzClass = pnlClass(metrics.modifiedDietzReturn);
+
   // Drawdown is ALWAYS negative class — it represents a loss from peak.
   const drawdownValue = fmtCurrency(metrics.drawdown);
   const drawdownPct = fmtPct(metrics.drawdownPct);
@@ -241,6 +253,20 @@ export function AccountStatePanel() {
             sub={totalSub}
             valueClassName={totalClass}
             testId="ws-account-state-total"
+          />
+          <StatCell
+            label="Time-Weighted Return"
+            value={twrValue}
+            sub="Account performance"
+            valueClassName={twrClass}
+            testId="ws-account-state-twr"
+          />
+          <StatCell
+            label="Modified Dietz Return"
+            value={dietzValue}
+            sub="Account performance"
+            valueClassName={dietzClass}
+            testId="ws-account-state-modified-dietz"
           />
           <StatCell
             label="Drawdown"

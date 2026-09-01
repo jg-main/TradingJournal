@@ -234,7 +234,7 @@ describe('AccountStatePanel', () => {
     expect(screen.getByTestId('ws-panel-account-state')).toBeTruthy();
   });
 
-  it('renders the metrics grid with all seven cells', () => {
+  it('renders the metrics grid with all nine cells', () => {
     renderPanel();
     const grid = screen.getByTestId('ws-account-state-metrics');
     expect(grid).toBeTruthy();
@@ -244,6 +244,8 @@ describe('AccountStatePanel', () => {
     expect(screen.getByTestId('ws-account-state-realized')).toBeTruthy();
     expect(screen.getByTestId('ws-account-state-open-pnl')).toBeTruthy();
     expect(screen.getByTestId('ws-account-state-total')).toBeTruthy();
+    expect(screen.getByTestId('ws-account-state-twr')).toBeTruthy();
+    expect(screen.getByTestId('ws-account-state-modified-dietz')).toBeTruthy();
     expect(screen.getByTestId('ws-account-state-drawdown')).toBeTruthy();
   });
 
@@ -257,6 +259,8 @@ describe('AccountStatePanel', () => {
       'ws-account-state-realized',
       'ws-account-state-open-pnl',
       'ws-account-state-total',
+      'ws-account-state-twr',
+      'ws-account-state-modified-dietz',
       'ws-account-state-drawdown',
     ].map((testId) => screen.getByTestId(testId));
 
@@ -330,6 +334,65 @@ describe('AccountStatePanel', () => {
       renderPanel(baseDashboardV2({ valuationState: 'unavailable' }));
       const cell = screen.getByTestId('ws-account-state-nav');
       expect(cell.textContent).toContain('Ledger only');
+    });
+  });
+
+  // ── Canonical return metrics (M004 hands-on fix) ─────────────────────
+
+  describe('Time-Weighted Return & Modified Dietz Return', () => {
+    it('formats positive canonical values as two-decimal percentages', () => {
+      renderPanel(
+        baseDashboardV2({ metrics: { twr: '2.3456', modifiedDietzReturn: '1.2345' } }),
+      );
+      const twr = screen.getByTestId('ws-account-state-twr');
+      expect(twr.textContent).toContain('2.35%');
+      const dietz = screen.getByTestId('ws-account-state-modified-dietz');
+      expect(dietz.textContent).toContain('1.23%');
+    });
+
+    it('formats negative canonical values with the negative semantic class', () => {
+      renderPanel(
+        baseDashboardV2({ metrics: { twr: '-1.235', modifiedDietzReturn: '-0.55' } }),
+      );
+      const twrValue = screen.getByTestId('ws-account-state-twr').querySelector('.ws-num');
+      expect(twrValue!.textContent).toBe('-1.24%');
+      expect(twrValue!.className).toContain('ws-neg');
+      const dietzValue = screen.getByTestId('ws-account-state-modified-dietz').querySelector('.ws-num');
+      expect(dietzValue!.textContent).toBe('-0.55%');
+      expect(dietzValue!.className).toContain('ws-neg');
+    });
+
+    it('formats zero as 0.00% with neutral presentation', () => {
+      renderPanel(
+        baseDashboardV2({ metrics: { twr: '0', modifiedDietzReturn: '0' } }),
+      );
+      for (const testId of ['ws-account-state-twr', 'ws-account-state-modified-dietz']) {
+        const value = screen.getByTestId(testId).querySelector('.ws-num');
+        expect(value!.textContent).toBe('0.00%');
+        expect(value!.className).not.toContain('ws-pos');
+        expect(value!.className).not.toContain('ws-neg');
+      }
+    });
+
+    it('renders a dash when the canonical value is unavailable — no synthetic fallback', () => {
+      renderPanel(
+        baseDashboardV2({ metrics: { twr: null, modifiedDietzReturn: null } }),
+      );
+      expect(screen.getByTestId('ws-account-state-twr').textContent).toContain('—');
+      expect(screen.getByTestId('ws-account-state-modified-dietz').textContent).toContain('—');
+    });
+
+    it('exposes the exact user-facing labels and never "TWR"', () => {
+      renderPanel();
+      expect(screen.getByTestId('ws-account-state-twr').textContent).toContain('Time-Weighted Return');
+      expect(screen.getByTestId('ws-account-state-modified-dietz').textContent).toContain('Modified Dietz Return');
+      expect(screen.queryByText('TWR')).toBeNull();
+    });
+
+    it('labels both rows with the Account performance scope sub-line', () => {
+      renderPanel();
+      expect(screen.getByTestId('ws-account-state-twr').textContent).toContain('Account performance');
+      expect(screen.getByTestId('ws-account-state-modified-dietz').textContent).toContain('Account performance');
     });
   });
 
@@ -514,7 +577,7 @@ describe('AccountStatePanel', () => {
       expect(screen.queryByText('Current drawdown')).toBeNull();
     });
 
-    it('still renders the full metrics grid (all seven stat cells)', () => {
+    it('still renders the full metrics grid (all nine stat cells)', () => {
       renderPanel();
       expect(screen.getByTestId('ws-account-state-metrics')).toBeTruthy();
       expect(screen.getByTestId('ws-account-state-cash')).toBeTruthy();
@@ -523,6 +586,8 @@ describe('AccountStatePanel', () => {
       expect(screen.getByTestId('ws-account-state-realized')).toBeTruthy();
       expect(screen.getByTestId('ws-account-state-open-pnl')).toBeTruthy();
       expect(screen.getByTestId('ws-account-state-total')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-twr')).toBeTruthy();
+      expect(screen.getByTestId('ws-account-state-modified-dietz')).toBeTruthy();
       expect(screen.getByTestId('ws-account-state-drawdown')).toBeTruthy();
     });
   });
