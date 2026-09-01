@@ -51,7 +51,7 @@ function assertDeepEqual(actual: unknown, expected: unknown, msg: string) {
 
 // ── Setup: test DB (H1 — disposable SQLite lives under os.tmpdir()) ──────
 
-const DB_FILE = process.env.DB_FILE_NAME || testDbPath('trades-export');
+const DB_FILE = testDbPath('trades-export');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');

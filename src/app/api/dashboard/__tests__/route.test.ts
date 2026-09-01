@@ -98,7 +98,7 @@ function assertClose(actual: number | null | undefined, expected: number | null,
 
 // ── Setup: test DB (H1 — disposable SQLite lives under os.tmpdir()) ──────
 
-const DB_FILE = process.env.DB_FILE_NAME || testDbPath('dashboard-route');
+const DB_FILE = testDbPath('dashboard-route');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
