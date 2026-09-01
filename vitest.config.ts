@@ -271,6 +271,7 @@ export default defineConfig({
       'src/components/ui/badge.test.tsx',
       'scripts/journal.test.mjs',
       'scripts/__tests__/playwright-matrix-artifacts.test.ts',
+      'scripts/__tests__/check-root-test-artifacts.test.ts',
     ],
     environment: 'jsdom',
   },

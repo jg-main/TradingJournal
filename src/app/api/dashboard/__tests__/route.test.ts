@@ -9,15 +9,15 @@
  *  - Rollforward vs settings fallback for account value
  *  - Error shapes
  *
- * Run: npx tsx src/app/api/dashboard/__tests__/route.test.ts (sets its own DB_FILE_NAME)
+ * Run: npx tsx src/app/api/dashboard/__tests__/route.test.ts (uses an OS-temp test DB)
  */
-
-process.env.DB_FILE_NAME = './.test-m05-s03-db';
 
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq, desc, and, ne } from 'drizzle-orm';
+import { unlinkSync } from 'node:fs';
+import { testDbPath, disposeSqliteFile } from '../../../../lib/testing/test-db';
 
 import * as schema from '@/db/schema';
 import {
@@ -96,9 +96,9 @@ function assertClose(actual: number | null | undefined, expected: number | null,
   }
 }
 
-// ── Setup: test DB ──────────────────────────────────────────────────────
+// ── Setup: test DB (H1 — disposable SQLite lives under os.tmpdir()) ──────
 
-const DB_FILE = process.env.DB_FILE_NAME || './.test-m05-s03-db';
+const DB_FILE = process.env.DB_FILE_NAME || testDbPath('dashboard-route');
 const sqlite = new Database(DB_FILE);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
@@ -2719,6 +2719,15 @@ cleanup();
 }
 
 // ── Summary ────────────────────────────────────────────────────────────
+
+// H1 teardown: close the connection and remove the owned DB + SQLite
+// companions so the repository root stays clean even on ordinary failures.
+disposeSqliteFile(sqlite, DB_FILE);
+try {
+  unlinkSync(`${DB_FILE}-journal`);
+} catch {
+  // no rollback journal present (WAL mode)
+}
 
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 
