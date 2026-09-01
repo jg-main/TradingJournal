@@ -293,9 +293,11 @@ describe('AccountStatePanel', () => {
   // ── Marked positions ──────────────────────────────────────────────────
 
   describe('Marked positions', () => {
-    it('shows no qualifier when valuation state is complete', () => {
+    it('shows "Current marks" qualifier when valuation state is complete', () => {
       renderPanel(baseDashboardV2({ valuationState: 'complete' }));
       const cell = screen.getByTestId('ws-account-state-marked');
+      expect(cell.textContent).toContain('Marked positions');
+      expect(cell.textContent).toContain('Current marks');
       expect(cell.textContent).toContain('$75,000.00');
       expect(cell.textContent).not.toContain('Partial valuation');
       expect(cell.textContent).not.toContain('Unavailable');
@@ -304,13 +306,22 @@ describe('AccountStatePanel', () => {
     it('shows "Partial valuation" qualifier when state is partial', () => {
       renderPanel(baseDashboardV2({ valuationState: 'partial' }));
       const cell = screen.getByTestId('ws-account-state-marked');
+      expect(cell.textContent).toContain('Marked positions');
       expect(cell.textContent).toContain('Partial valuation');
     });
 
     it('shows "Unavailable" qualifier when state is unavailable', () => {
       renderPanel(baseDashboardV2({ valuationState: 'unavailable' }));
       const cell = screen.getByTestId('ws-account-state-marked');
+      expect(cell.textContent).toContain('Marked positions');
       expect(cell.textContent).toContain('Unavailable');
+    });
+
+    it('keeps the stale title and shows "Stale valuation" qualifier when state is stale', () => {
+      renderPanel(baseDashboardV2({ valuationState: 'stale' }));
+      const cell = screen.getByTestId('ws-account-state-marked');
+      expect(cell.textContent).toContain('Stale marked positions');
+      expect(cell.textContent).toContain('Stale valuation');
     });
   });
 

@@ -82,11 +82,11 @@ type ValuationState = DashboardV2Response['valuation']['state'];
 
 /** Sub-line text for marked positions based on valuation completeness. */
 function markedPositionsQualifier(state: ValuationState): string {
+  if (state === 'complete') return 'Current marks';
   if (state === 'partial') return 'Partial valuation';
   if (state === 'unavailable') return 'Unavailable';
-  if (state === 'stale') return 'Stale valuation';
-  // 'complete'
-  return '';
+  // 'stale'
+  return 'Stale valuation';
 }
 
 /** NAV qualification label. */
