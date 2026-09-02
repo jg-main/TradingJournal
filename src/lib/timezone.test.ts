@@ -13,6 +13,7 @@
 
 import {
   instantToLocalDateKey,
+  localDateTimeToUtc,
   localDateStartToUtc,
   localDateEndExclusiveToUtc,
   localDateToUtcRange,
@@ -81,6 +82,12 @@ assertEqual(localDateStartToUtc('2026-03-10', 'UTC'), '2026-03-10T00:00:00.000Z'
 assertEqual(instantToLocalDateKey(localDateStartToUtc('2026-03-09', 'America/Bogota'), 'America/Bogota'), '2026-03-09', 'round-trip Bogotá start');
 assertEqual(instantToLocalDateKey(localDateStartToUtc('2026-07-01', 'America/New_York'), 'America/New_York'), '2026-07-01', 'round-trip NY EDT start (UTC-4)');
 assertEqual(instantToLocalDateKey(localDateStartToUtc('2027-01-01', 'America/New_York'), 'America/New_York'), '2027-01-01', 'round-trip NY EST start (UTC-5)');
+
+// ── F1. Local datetime → UTC instant ───────────────────────────────────
+
+console.log('\nF1. Local datetime → UTC instant:');
+assertEqual(localDateTimeToUtc('2026-09-02T09:30', 'America/Bogota'), '2026-09-02T14:30:00.000Z', 'Bogotá 09:30 execution time serializes as 14:30Z');
+assertEqual(localDateTimeToUtc('2026-07-01T09:30', 'America/New_York'), '2026-07-01T13:30:00.000Z', 'New York EDT execution time honors DST');
 
 // ── G. Local next-date → UTC exclusive end boundary ─────────────────────
 

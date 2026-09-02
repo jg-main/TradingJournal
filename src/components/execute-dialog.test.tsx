@@ -68,6 +68,16 @@ function lastKey(): string | null {
   return null;
 }
 
+function lastExecuteBody(): Record<string, unknown> {
+  const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+  for (let i = calls.length - 1; i >= 0; i--) {
+    if (String(calls[i][0]).includes('/execute')) {
+      return JSON.parse((calls[i][1] as RequestInit).body as string) as Record<string, unknown>;
+    }
+  }
+  throw new Error('Expected an execute request');
+}
+
 const UNMOCKED_FETCH = globalThis.fetch;
 
 describe('ExecuteDialog — idempotency-key lifecycle (Fix 6)', () => {
@@ -94,6 +104,22 @@ describe('ExecuteDialog — idempotency-key lifecycle (Fix 6)', () => {
     const key = lastKey();
     expect(key).toBeTruthy();
     expect(key!.length).toBeGreaterThan(10);
+  });
+
+  it('serializes the configured-timezone execution time as a UTC instant', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({}),
+    } as Response);
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Executed At'), {
+      target: { value: '2026-09-02T09:30' },
+    });
+    fillAndSubmit();
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    expect(lastExecuteBody().executedAt).toBe('2026-09-02T14:30:00.000Z');
   });
 
   it('B. network-error retry reuses the SAME key', async () => {

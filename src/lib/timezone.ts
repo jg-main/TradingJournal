@@ -102,6 +102,47 @@ export function zoneOffsetMsAt(utcMs: number, timezone: string): number {
 }
 
 /**
+ * Convert a datetime-local control value into its UTC instant using the
+ * configured application timezone, rather than the browser/process timezone.
+ * Execution timestamps are financial records, so storage must be an
+ * unambiguous ISO instant even when the trader's browser is in another zone.
+ */
+export function localDateTimeToUtc(localDateTime: string, timezone: string): string {
+  assertValidTimezone(timezone);
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(localDateTime);
+  if (!match) {
+    throw new Error(`Invalid local datetime: ${JSON.stringify(localDateTime)}`);
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6] ?? 0);
+  const millisecond = Number((match[7] ?? '').padEnd(3, '0') || 0);
+  const wallTimeUtc = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+  const wallDate = new Date(wallTimeUtc);
+  if (
+    month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59
+    || wallDate.getUTCFullYear() !== year || wallDate.getUTCMonth() !== month - 1 || wallDate.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid local datetime: ${JSON.stringify(localDateTime)}`);
+  }
+
+  // utc = local wall time - zone offset at the resulting instant. Repeating
+  // handles normal DST transitions without relying on the browser timezone.
+  let utc = wallTimeUtc;
+  for (let i = 0; i < 5; i++) {
+    const next = wallTimeUtc - zoneOffsetMsAt(utc, timezone);
+    if (next === utc) break;
+    utc = next;
+  }
+
+  return new Date(utc).toISOString();
+}
+
+/**
  * Convert a local calendar date key (YYYY-MM-DD) to the UTC instant of
  * LOCAL midnight (00:00) in the configured timezone, as an ISO string.
  *

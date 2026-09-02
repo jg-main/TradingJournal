@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Loader2, Plus, X, Check, ArrowLeft } from 'lucide-react';
 import { useAppTimezone } from '@/lib/timezone-context';
+import { localDateTimeToUtc } from '@/lib/timezone';
 import {
   Dialog,
   DialogContent,
@@ -120,7 +121,7 @@ export function ExecuteDialog({
   onComplete,
   onTradeChanged,
 }: ExecuteDialogProps) {
-  const { nowDatetimeLocal } = useAppTimezone();
+  const { nowDatetimeLocal, timezone } = useAppTimezone();
   // ── Form state (entry form step) ───────────────────────────────────
   const [form, setForm] = useState<FormState>(() => buildInitialState(trade, nowDatetimeLocal()));
   const [submitting, setSubmitting] = useState(false);
@@ -450,7 +451,7 @@ export function ExecuteDialog({
       }
 
       if (form.executedAt.trim()) {
-        body.executedAt = form.executedAt;
+        body.executedAt = localDateTimeToUtc(form.executedAt, timezone);
       }
 
       const e1p = form.exit1Price.trim();
